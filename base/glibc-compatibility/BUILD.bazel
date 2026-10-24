@@ -67,8 +67,7 @@ ch_cc_library(
     ] + glob(["musl/*.h"]) + select({
         "@platforms//cpu:x86_64": glob(["musl/x86_64/*.h"]),
         "@platforms//cpu:aarch64": glob(["musl/aarch64/*.h"]),
-    }),
-    hdrs = ["spawn.h"],
+    }) + ["spawn.h"],
     copts = [
         "-fomit-frame-pointer",
         "-std=gnu11",
@@ -77,6 +76,7 @@ ch_cc_library(
         "-Wno-builtin-requires-header",
         "-Wno-error",
     ],
+    implementation_deps = ["//base/glibc-rseq"],
     language = "C",
     libcxx_headers = False,
     local_includes = select({

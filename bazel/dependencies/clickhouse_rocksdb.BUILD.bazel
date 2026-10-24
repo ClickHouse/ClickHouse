@@ -335,7 +335,7 @@ ch_cc_library(
         "@clickhouse_zlib_ng//:_zlib",
         "@lz4//:lz4",
         "@lz4//:lz4_hc",
-        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_zstd//:_zstd",
     ],
     includes = [
         "include",
@@ -402,8 +402,5 @@ ch_cc_library(
     ],
     local_includes = [
         ".",
-    ],
-    deps = [
-        "@clickhouse_zstd//:_zstd",
     ],
 )

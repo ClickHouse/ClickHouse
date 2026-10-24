@@ -67,6 +67,10 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
+    implementation_deps = [
+        "@clickhouse_krb5//:_krb5",
+        "@clickhouse_openssl//:crypto",
+    ],
     includes = [
         "src",
     ],
@@ -86,9 +90,5 @@ ch_cc_library(
         "gl",
         "digest-md5",
         "configured/private",
-    ],
-    deps = [
-        "@clickhouse_krb5//:_krb5",
-        "@clickhouse_openssl//:crypto",
     ],
 )

@@ -43,7 +43,12 @@ common --@llvm//toolchain:sysroot_compile_files=@clickhouse_sysroot//:linux_comp
 common --@llvm-project//third-party:llvm_enable_zlib=false
 common --@llvm-project//third-party:llvm_enable_zstd=false
 
+# ClickHouse owns the Linux compiler runtime at executable links.
+common:clickhouse_runtime --@bazel_tools//tools/cpp:link_extra_libs=//bazel:clickhouse_link_runtime
+common:clickhouse_runtime --//bazel:clickhouse_link_runtime=@clickhouse_llvm_project//:clang_rt_builtins
+
 common:x86_64 --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+common:x86_64 --config=clickhouse_runtime
 common:x86_64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=x86-64-v3,-mpclmul,-mbranches-within-32B-boundaries,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 # Match CMake's code-generation flags for the LLVM libraries in ClickHouse.
 # per_file_copt leaves exec tools and the separately configured runtimes alone.
@@ -53,6 +58,7 @@ common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
 common:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
+common:aarch64 --config=clickhouse_runtime
 common:aarch64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 
 # Use LLVM's Linux x86-64 execution platform for C++, Rust, and code generators.

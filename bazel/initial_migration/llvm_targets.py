@@ -385,7 +385,7 @@ def declare_from_references(root, references):
             for a in references
         }),
     })
-    rust_localization_groups = {arch: {} for arch in references}
+    builtins_group_counts = {}
     for name, variants in targets.items():
         compiled = {}
         for arch, value in variants.items():
@@ -476,9 +476,8 @@ def declare_from_references(root, references):
                 if len(groups) != 1:
                     raise ValueError(f'{arch} libllvmlibc must have one math object group')
                 # Native links require LLVM math before glibc-compatibility.
-                # rseq already depends on glibc-compatibility; attach rseq to
-                # the math object owner so Bazel preserves that link order.
-                groups[0]['runtime_link_deps'] = ['@clickhouse//:glibc-rseq']
+                # glibc-compatibility owns the private dependency on rseq.
+                groups[0]['runtime_link_deps'] = ['@clickhouse//base/glibc-compatibility']
             compiled[arch] = {
                 'groups': groups,
                 'deps': [':' + d for d in depends if d in targets],
@@ -487,18 +486,20 @@ def declare_from_references(root, references):
                 'alwayslink': name in {'clang_rt_builtins', 'clang_rt_xray', 'libllvmlibc'},
             }
         build.target(name, compiled)
-        if name in ('clang_rt_builtins', 'libllvmlibc'):
+        if name == 'clang_rt_builtins':
             for arch, target in compiled.items():
                 groups = target['groups']
                 if not groups or any(not group['srcs'] for group in groups):
                     raise ValueError(f'{arch} {name}: Rust localization requires nonempty native compile groups')
-                rust_localization_groups[arch][name] = len(groups)
+                builtins_group_counts[arch] = len(groups)
     if len(outline_generated) != 125 or outline_generated.keys() != outline_commands.keys():
         raise ValueError(f'CMake AArch64 reference outline sources do not match recorded Ninja: '
                          f'{len(outline_generated)} sources, {len(outline_commands)} generators')
 
+    if set(builtins_group_counts) != set(references):
+        raise ValueError('Rust localization requires LLVM builtins groups for every architecture')
     (root / 'bazel/rules/rust_localization_data.bzl').write_text(
-        'RUST_LOCALIZATION_GROUPS = ' + json.dumps(rust_localization_groups, indent=4) + '\n')
+        'CLANG_RT_BUILTINS_GROUP_COUNTS = ' + json.dumps(builtins_group_counts, indent=4) + '\n')
     print('Embedded LLVM:', len(targets), 'CMake libraries;',
           ', '.join(a + ' ' + str(len(o)) + ' generated headers' for a, o in generated.items()))
     return build, targets, templates | RUNTIME_ROOT_INPUTS

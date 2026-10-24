@@ -4,8 +4,11 @@ package(default_visibility = ["//visibility:public"])
 
 poco_cc_library(
     name = "_poco_json",
-    srcs = glob(["src/*.cpp"]),
-    hdrs = glob(["include/**/*.h"]),
+    srcs = glob(["src/*.cpp"]) + ["include/Poco/JSON/PrintHandler.h"],
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/Poco/JSON/PrintHandler.h"],
+    ),
     copts = [
         "-Wno-deprecated-dynamic-exception-spec",
         "-Wno-sign-compare",
@@ -50,5 +53,5 @@ poco_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

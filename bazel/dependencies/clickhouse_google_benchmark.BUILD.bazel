@@ -45,7 +45,7 @@ ch_cc_library(
         "include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = [],
 )
 
 ch_cc_library(

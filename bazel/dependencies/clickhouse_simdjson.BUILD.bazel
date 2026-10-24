@@ -105,5 +105,5 @@ ch_cc_library(
             "src/fallback.cpp",
         ],
     }),
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

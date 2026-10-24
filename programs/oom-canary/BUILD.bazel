@@ -15,11 +15,12 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common",
         "//src:dbms",
+        "//src/Common:exception_api",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_DEFINES,
     local_includes = [
         ".",
-        "../../" + "bazel/gen",
     ],
 )

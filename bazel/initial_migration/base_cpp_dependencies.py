@@ -388,6 +388,22 @@ def run(root, from_generator=False):
     stats = Counter()
     paths = build_files(root)
     publish_base(root, paths, stats, from_generator)
+    compatibility = root / "base/glibc-compatibility/BUILD.bazel"
+    before = compatibility.read_text()
+    source = Source(before)
+    compile_0 = next(rule for _, rule in source.rules()
+                     if ast.literal_eval(attrs(rule)["name"]) == "glibc-compatibility__compile_0")
+    data = attrs(compile_0)
+    if "hdrs" in data:
+        if ast.literal_eval(data["hdrs"]) != ["spawn.h"]:
+            raise ValueError("glibc-compatibility__compile_0 public headers changed")
+        compatibility.write_text(replace_attrs(before, {
+            "glibc-compatibility__compile_0": {
+                "srcs": source.text(data["srcs"]) + ' + ["spawn.h"]',
+                "hdrs": None,
+            }
+        }))
+        stats["glibc-compatibility spawn.h moved to srcs"] += 1
     base = root / "base/BUILD.bazel"
     if base.exists() and base not in paths:
         paths.append(base)

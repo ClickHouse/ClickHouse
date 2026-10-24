@@ -77,7 +77,6 @@ exports_files([
     "FrequencyHolder.cpp",
     "FullyQualifiedObjectPath.cpp",
     "FunctionDocumentation.cpp",
-    "GetPriorityForLoadBalancing.cpp",
     "HTTPConnectionPool.cpp",
     "HTTPHeaderFilter.cpp",
     "Hex.cpp",
@@ -213,7 +212,6 @@ exports_files([
     "StatusFile.cpp",
     "StopToken.cpp",
     "StringSearcher.cpp",
-    "StringUtils.cpp",
     "StringValueFilter.cpp",
     "StudentTTable.cpp",
     "StudentTTest.cpp",
@@ -223,7 +221,6 @@ exports_files([
     "SystemLogBase.cpp",
     "TCPSocketMemInfo.cpp",
     "TLDListsHolder.cpp",
-    "TargetSpecific.cpp",
     "TemporarySecretFile.cpp",
     "TerminalSize.cpp",
     "ThreadFuzzer.cpp",
@@ -538,6 +535,10 @@ ch_cc_library(
     hdrs = ["CaresPTRResolver.h"],
     clickhouse_code = True,
     copts = ["-Wno-reserved-identifier"],
+    implementation_deps = [
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+    ],
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     strip_include_prefix = "/src",
     deps = [
@@ -682,10 +683,13 @@ ch_cc_library(
 
 _PARSER_SUPPORT_HEADERS = [
     "Allocator.h",
+    "AsynchronousMetricsKeyValuesMode.h",
     "AtomicLogger.h",
     "BitHelpers.h",
     "CacheLine.h",
     "CalendarTimeInterval.h",
+    "CollectionOfDerived.h",
+    "DateLUT.h",
     "CurrentThreadHelpers.h",
     "Documentation.h",
     "FiberLocal.h",
@@ -703,6 +707,7 @@ _PARSER_SUPPORT_HEADERS = [
     "SettingsChanges.h",
     "SharedLockGuard.h",
     "SipHash.h",
+    "ThreadPool_fwd.h",
     "VariableContext.h",
     "VersionNumber.h",
     "checkStackSize.h",
@@ -710,6 +715,13 @@ _PARSER_SUPPORT_HEADERS = [
     "memcpySmall.h",
     "quoteString.h",
     "transformEndianness.h",
+    "Concepts.h",
+    "JemallocCacheAllocator.h",
+    "NaNUtils.h",
+    "RWLock.h",
+    "SeccompFilter.h",
+    "formatIPv6.h",
+    "iota.h",
 ]
 
 ch_cc_library(
@@ -718,6 +730,8 @@ ch_cc_library(
     clickhouse_code = True,
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     deps = [
+        "//bazel:clickhouse_config_headers",
+        ":string_utils",
         "//base:common",
         "//src/Common:exception_api",
         "//src/Common:memory_tracking_api",
@@ -770,6 +784,55 @@ ch_cc_library(
 )
 
 ch_cc_library(
+    name = "cow",
+    hdrs = ["COW.h"],
+    clickhouse_code = True,
+    strip_include_prefix = "/src",
+    deps = ["@clickhouse_boost//:boost_headers"],
+)
+
+ch_cc_library(
+    name = "target_specific",
+    srcs = ["TargetSpecific.cpp"],
+    hdrs = [
+        "CPUID.h",
+        "TargetSpecific.h",
+    ],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "string_utils",
+    srcs = ["StringUtils.cpp"],
+    hdrs = ["StringUtils.h"],
+    clickhouse_code = True,
+    implementation_deps = [":target_specific"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "load_balancing_priority",
+    srcs = ["GetPriorityForLoadBalancing.cpp"],
+    hdrs = [
+        "GetPriorityForLoadBalancing.h",
+        "Priority.h",
+    ],
+    clickhouse_code = True,
+    implementation_deps = [":exception_api"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = [
+        "//src:core_types",
+        "//base:common",
+    ],
+)
+
+ch_cc_library(
     name = "Common",
     srcs = [
         "Exception.cpp",
@@ -799,7 +862,14 @@ ch_cc_library(
             "TypePromotion.h",
             "typeid_cast.h",
             "assert_cast.h",
-        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS + _PARSER_SUPPORT_HEADERS + _CACHE_POLICY_PUBLIC_HEADERS + _CACHE_POLICY_PRIVATE_HEADERS,
+            "COW.h",
+            "StringUtils.h",
+            "TargetSpecific.h",
+            "CPUID.h",
+        ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS + _PARSER_SUPPORT_HEADERS + _CACHE_POLICY_PUBLIC_HEADERS + _CACHE_POLICY_PRIVATE_HEADERS + [
+            "Priority.h",
+            "GetPriorityForLoadBalancing.h",
+        ],
     ),
     clickhouse_code = True,
     implementation_deps = [
@@ -837,5 +907,15 @@ ch_cc_library(
         ":parser_support_api",
         ":cache_policy",
         ":assert_cast",
+        ":string_utils",
+        ":target_specific",
+        "//src/Common:current_metrics",
+        "//src/Common:shared_mutex",
+        ":load_balancing_priority",
+        "//src:core_defines",
+        "//src:io_string_buffers",
+        "//src:with_context",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
     ],
 )

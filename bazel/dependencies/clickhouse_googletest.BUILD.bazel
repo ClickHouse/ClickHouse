@@ -86,7 +86,6 @@ ch_cc_library(
         "googletest/src/gtest.cc",
     ],
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_abseil_cpp//:absl_flags_internal",
     ],
 )

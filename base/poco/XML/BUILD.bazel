@@ -4,13 +4,41 @@ package(default_visibility = ["//visibility:public"])
 
 _XML_PRIVATE_HEADERS = [
     "include/Poco/DOM/AttrMap.h",
+    "include/Poco/DOM/CDATASection.h",
     "include/Poco/DOM/ChildNodesList.h",
     "include/Poco/DOM/DOMBuilder.h",
+    "include/Poco/DOM/DOMException.h",
+    "include/Poco/DOM/DOMImplementation.h",
     "include/Poco/DOM/DOMSerializer.h",
     "include/Poco/DOM/DTDMap.h",
+    "include/Poco/DOM/DocumentFragment.h",
+    "include/Poco/DOM/DocumentType.h",
     "include/Poco/DOM/ElementsByTagNameList.h",
+    "include/Poco/DOM/Entity.h",
+    "include/Poco/DOM/EntityReference.h",
     "include/Poco/DOM/EventDispatcher.h",
+    "include/Poco/DOM/EventException.h",
+    "include/Poco/DOM/EventListener.h",
+    "include/Poco/DOM/NodeAppender.h",
+    "include/Poco/DOM/NodeFilter.h",
+    "include/Poco/DOM/NodeIterator.h",
+    "include/Poco/DOM/Notation.h",
+    "include/Poco/DOM/ProcessingInstruction.h",
+    "include/Poco/DOM/TreeWalker.h",
+    "include/Poco/SAX/AttributesImpl.h",
+    "include/Poco/SAX/DeclHandler.h",
     "include/Poco/SAX/EntityResolverImpl.h",
+    "include/Poco/SAX/LocatorImpl.h",
+    "include/Poco/SAX/SAXException.h",
+    "include/Poco/SAX/WhitespaceFilter.h",
+    "include/Poco/SAX/XMLFilter.h",
+    "include/Poco/SAX/XMLFilterImpl.h",
+    "include/Poco/XML/Content.h",
+    "include/Poco/XML/NamespaceStrategy.h",
+    "include/Poco/XML/QName.h",
+    "include/Poco/XML/ValueTraits.h",
+    "include/Poco/XML/XMLStreamParser.h",
+    "include/Poco/XML/XMLStreamParserException.h",
 ]
 
 poco_cc_library(
@@ -120,6 +148,5 @@ poco_cc_library(
     ],
     deps = [
         "//base/poco/Foundation:_poco_foundation",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
 )

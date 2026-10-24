@@ -234,6 +234,24 @@ cc_library(
 )
 
 cc_library(
+    name = "pfr",
+    srcs = glob(["boost/pfr/detail/*.hpp"]),
+    hdrs = ["boost/pfr.hpp"] + glob(["boost/pfr/*.hpp"]),
+    features = ["external_include_paths"],
+    includes = ["."],
+)
+
+# BOOST_PP_ITERATE and BOOST_PP_ASSIGN_SLOT repeatedly include these files
+# with BOOST_PP_FILENAME_n, BOOST_PP_VALUE or BOOST_PP_LOCAL_MACRO defined.
+_BOOST_PP_TEXTUAL = glob([
+    "boost/preprocessor/iteration/detail/**/*.hpp",
+    "boost/preprocessor/slot/detail/slot*.hpp",
+]) + [
+    "boost/preprocessor/slot/detail/counter.hpp",
+    "boost/preprocessor/slot/detail/shared.hpp",
+]
+
+cc_library(
     name = "boost_headers",
     hdrs = glob(
         [
@@ -241,20 +259,42 @@ cc_library(
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + [
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_PP_TEXTUAL + [
             "boost/compute.hpp",
             "boost/compute/**",
-            "boost/numeric/odeint/external/compute/**",
+            # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
+            "boost/python.hpp",
+            "boost/python/**",
+            "boost/parameter/python*",
+            "boost/mpi.hpp",
+            "boost/mpi/**",
+            "boost/graph/accounting.hpp",
+            "boost/graph/distributed/**",
+            "boost/graph/parallel/**",
+            "boost/graph/use_mpi.hpp",
+            "boost/property_map/parallel/**",
+            "boost/gil/extension/io/jpeg*",
+            "boost/gil/extension/io/jpeg/**",
+            "boost/gil/extension/io/png*",
+            "boost/gil/extension/io/png/**",
+            "boost/gil/extension/io/tiff*",
+            "boost/gil/extension/io/tiff/**",
+            "boost/gil/extension/io/raw*",
+            "boost/gil/extension/io/raw/**",
+            "boost/numeric/odeint/external/**",
             "boost/numeric/ublas/opencl.hpp",
             "boost/numeric/ublas/opencl/**",
             "boost/program_options/detail/config_file.hpp",
+            "boost/pfr.hpp",
+            "boost/pfr/**",
         ],
     ),
     features = ["external_include_paths"],
-    textual_hdrs = glob(["boost/**/*.inc"]),
+    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_PP_TEXTUAL,
     deps = [
         ":boost_asio_options",
         ":boost_config",
+        ":pfr",
     ],
 )
 

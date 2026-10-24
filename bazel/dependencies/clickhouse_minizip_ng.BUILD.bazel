@@ -35,7 +35,7 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_xz//:_liblzma",
-        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_zstd//:_zstd",
         "@clickhouse_openssl//:crypto",
     ],
     includes = [
@@ -96,8 +96,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    deps = [
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_zstd//:_zstd",
-    ],
+    deps = ["@clickhouse_zlib_ng//:_zlib"],
 )

@@ -106,15 +106,11 @@ ch_cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_silk//:_silk_fibers",
-    ] + [
         "//base/glibc-compatibility",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
-        "@clickhouse_cctz//:tzdata",
         "@clickhouse_grpc//:grpc",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_vectorscan//:_vectorscan",
         "@clickhouse_zstd//:_zstd",
-    ] + [
         "//src/Common:memory_tracking_api",
         "//src:core_types",
         ":headers",
@@ -131,6 +127,15 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
         "//src:dbms",
+        "//src/Common:exception_api",
+        "//src:dbms__compile_0",
+        "//src/Common:assert_cast",
+        "//src/Common:parser_support_api",
+        "//src:io_string_buffers",
+        "//src/Storages/System:headers",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = [
@@ -214,9 +219,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "../../" + "bazel/gen",
-    ],
     source_headers = True,
 )
 
@@ -229,6 +231,7 @@ cc_library(
         exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS,
     ),
     deps = [
+        "//src/Common/ZooKeeper:headers",
         "//src:headers",
         "//base:common",
         "//src/Parsers:clickhouse_parsers",

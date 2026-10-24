@@ -68,5 +68,5 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": glob(["src/arm64/*.cpp"]),
     }),
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

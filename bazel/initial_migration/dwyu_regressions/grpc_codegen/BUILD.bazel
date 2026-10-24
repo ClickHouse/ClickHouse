@@ -4,5 +4,5 @@ cc_library(
     name = "undef_only",
     testonly = True,
     srcs = ["undef_only.cc"],
-    deps = ["@clickhouse_grpc//:grpc_codegen_headers"],
+    deps = ["@clickhouse_grpc//:grpc++"],
 )

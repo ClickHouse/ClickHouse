@@ -55,7 +55,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["configured/private"],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
 )

@@ -14,6 +14,9 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
+    implementation_deps = [
+        "@clickhouse_librdkafka//:_rdkafka",
+    ],
     includes = ["include"],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
@@ -28,6 +31,5 @@ ch_cc_library(
     deps = [
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport",
         "@clickhouse_boost//:boost_headers",
-        "@clickhouse_librdkafka//:_rdkafka",
     ],
 )

@@ -39,7 +39,7 @@ _PRIVATE_STORAGES_SYSTEM_1_HEADERS = glob(
 
 _PUBLIC_STORAGES_SYSTEM_HEADERS = glob(
     ["*.h"],
-    exclude = _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
+    exclude = _PRIVATE_STORAGES_SYSTEM_1_HEADERS + ["attachInformationSchemaTables.h"],
 )
 
 _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES = [
@@ -316,7 +316,21 @@ ch_cc_library(
         "getQueriedColumnsMaskAndHeader.cpp",
     ] + _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
     clickhouse_code = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["clickhouse_code"],
-    implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [":clickhouse_storages_system_information_schema"],
+    implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [
+        ":clickhouse_storages_system_information_schema",
+        "//src/Common:current_metrics",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+        "//src/Common:assert_cast",
+        "//src/Common:parser_support_api",
+        "//src/Common:memory_tracking_api",
+        "//src/Common:string_utils",
+        "//src:io_string_buffers",
+        "//src:with_context",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
+        "//src/AggregateFunctions:aggregate_api",
+    ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
     source_headers = True,
@@ -329,8 +343,8 @@ ch_cc_library(
         "//bazel:gen/embedded/src/Storages/System/attachInformationSchemaTables.cpp",
         "attachSystemTablesImpl.h",
         "SystemTableSourceRegistry.h",
-        "attachInformationSchemaTables.h",
     ],
+    hdrs = ["attachInformationSchemaTables.h"],
     additional_compiler_inputs = [
         "//bazel:gen/embedded/src/Storages/System/information_schema/character_sets.sql",
         "//bazel:gen/embedded/src/Storages/System/information_schema/collations.sql",
@@ -349,13 +363,11 @@ ch_cc_library(
         "@clickhouse_nuraft//:_nuraft",
         "@clickhouse_icu//:_icuuc",
         "//src:clickhouse_common_io__compile_0",
-        "@clickhouse_fmtlib//:_fmt",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/JSON:_poco_json",
         "//base/poco/Net:_poco_net",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "//base/poco/Util:_poco_util",
-        "@clickhouse_jemalloc//:_jemalloc",
         "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
@@ -373,6 +385,7 @@ ch_cc_library(
         "//base/glibc-compatibility",
         "//base:common",
         "//src/Common",
+        "//src:with_context",
     ],
 )
 
@@ -562,7 +575,6 @@ cc_library(
         "@clickhouse_zstd//:_zstd",
         "@clickhouse_zxc//:_zxc",
         "@clickhouse_grpc//:address_sorting",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
         "//src/Access/Common:clickhouse_common_access",
         "//src/Common/Config:clickhouse_common_config",
@@ -625,5 +637,7 @@ cc_library(
         "//src:headers",
         "//base:common",
         "//src/Common",
+        "//src:column_types",
+        "//src:with_context",
     ],
 )

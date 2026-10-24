@@ -111,6 +111,9 @@ ch_cc_library(
         "//src/Common",
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "//src:dbms__compile_1",
+        "//src/Common:parser_support_api",
+        "//src:column_types",
+        "//src/Common:string_utils",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
     local_includes = [
@@ -358,7 +361,6 @@ cc_library(
         "@clickhouse_zstd//:_zstd",
         "@clickhouse_zxc//:_zxc",
         "@clickhouse_grpc//:address_sorting",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
         "//src/Access/Common:clickhouse_common_access",
         "//src/Common/Config:clickhouse_common_config",

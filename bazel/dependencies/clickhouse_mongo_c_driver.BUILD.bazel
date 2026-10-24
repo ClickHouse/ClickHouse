@@ -125,35 +125,19 @@ expand_template(
     template = ":src/libmongoc/src/mongoc/mongoc-version.h.in",
 )
 
-_BSON_PRIVATE_HEADERS = [
-    "src/libbson/src/bson/bson-error-private.h",
-    "src/libbson/src/bson/bson-timegm-private.h",
-    "src/libbson/src/bson/bson-vector-private.h",
-]
+_BSON_PRIVATE_HEADERS = glob(["src/libbson/src/bson/*-private.h"])
 
-_MONGOC_PRIVATE_HEADERS = [
-    "src/libmongoc/src/mongoc/mongoc-ocsp-cache-private.h",
-    "src/libmongoc/src/mongoc/mongoc-openssl-private.h",
-    "src/libmongoc/src/mongoc/mongoc-stream-tls-openssl-bio-private.h",
-    "src/libmongoc/src/mongoc/mongoc-aggregate-private.h",
-    "src/libmongoc/src/mongoc/mongoc-cluster-cyrus-private.h",
-    "src/libmongoc/src/mongoc/mongoc-cluster-oidc-private.h",
-    "src/libmongoc/src/mongoc/mongoc-cluster-sasl-private.h",
-    "src/libmongoc/src/mongoc/mongoc-cluster-sspi-private.h",
-    "src/libmongoc/src/mongoc/mongoc-compression-private.h",
-    "src/libmongoc/src/mongoc/mongoc-crypto-cng-private.h",
-    "src/libmongoc/src/mongoc/mongoc-crypto-common-crypto-private.h",
-    "src/libmongoc/src/mongoc/mongoc-crypto-openssl-private.h",
-    "src/libmongoc/src/mongoc/mongoc-gridfs-file-list-private.h",
-    "src/libmongoc/src/mongoc/mongoc-handshake-compiler-private.h",
-    "src/libmongoc/src/mongoc/mongoc-memcmp-private.h",
-    "src/libmongoc/src/mongoc/mongoc-oidc-env-private.h",
-    "src/libmongoc/src/mongoc/mongoc-rand-private.h",
-    "src/libmongoc/src/mongoc/mongoc-server-monitor-private.h",
-    "src/libmongoc/src/mongoc/mongoc-stream-gridfs-download-private.h",
-    "src/libmongoc/src/mongoc/mongoc-stream-gridfs-upload-private.h",
-    "src/libmongoc/src/mongoc/mongoc-stream-tls-openssl-private.h",
-]
+_MONGOC_PRIVATE_HEADERS = glob(
+    ["src/libmongoc/src/mongoc/*-private.h"],
+    exclude = [
+        "src/libmongoc/src/mongoc/mongoc-buffer-private.h",
+        "src/libmongoc/src/mongoc/mongoc-cyrus-private.h",
+        "src/libmongoc/src/mongoc/mongoc-http-private.h",
+        "src/libmongoc/src/mongoc/mongoc-secure-channel-private.h",
+        "src/libmongoc/src/mongoc/mongoc-secure-transport-private.h",
+        "src/libmongoc/src/mongoc/mongoc-sspi-private.h",
+    ],
+)
 
 ch_cc_library(
     name = "_libbson",
@@ -175,7 +159,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = [],
     includes = [
         "src/common/src",
         "src/libbson/src",
@@ -228,7 +212,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
-        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_zstd//:_zstd",
     ],
     includes = [
         "src/libmongoc/src",

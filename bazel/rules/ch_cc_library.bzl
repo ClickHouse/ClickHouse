@@ -1,6 +1,8 @@
 """CMake native libraries compiled for the ClickHouse target platform."""
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(":repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "repository_path")
 
 # Place these before library copts: several libraries require an older ISA.
@@ -20,7 +22,6 @@ CLICKHOUSE_CODE_FLAGS = [
 def ch_cc_library(
         name,
         hdrs = [],
-        additional_compiler_inputs = [],
         copts = [],
         clickhouse_code = False,
         source_headers = False,
@@ -36,7 +37,8 @@ def ch_cc_library(
 
     llvm_headers supplies LLVM compiler-rt, libc and libunwind headers for
     libraries which request them. libcxx_headers supplies the pinned libc++
-    headers to C/ASM. link_runtime adds libc++, libc++abi and libunwind libs.
+    headers to C/ASM. link_runtime privately supplies libc++; its dependencies
+    provide libc++abi and libunwind.
     source_headers adds //src:clickhouse_source_headers privately when True.
     """
     cpu_flags = select({
@@ -67,15 +69,7 @@ def ch_cc_library(
             for arch in CLICKHOUSE_TARGET_FLAGS
         } | {"//conditions:default": headers}) + kwargs.get("deps", [])
     if link_runtime:
-        runtime = [
-            Label("@clickhouse_llvm_project//:cxx"),
-            Label("@clickhouse_llvm_project//:cxxabi"),
-        ]
-        unwind = [Label("@clickhouse_llvm_project//:unwind")]
-        kwargs["deps"] = kwargs.get("deps", []) + select({
-            str(Label("@platforms//cpu:" + arch)): unwind if arch in arches else []
-            for arch in CLICKHOUSE_TARGET_FLAGS
-        } | {"//conditions:default": unwind})
+        runtime = [Label("@clickhouse_llvm_project//:cxx")]
         kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + select({
             str(Label("@platforms//cpu:" + arch)): runtime if arch in arches else []
             for arch in CLICKHOUSE_TARGET_FLAGS
@@ -85,6 +79,16 @@ def ch_cc_library(
             str(Label("@platforms//cpu:" + arch)): [Label("@clickhouse_llvm_project//:libcxx_config_headers")]
             for arch in arches
         } | {"//conditions:default": []}) + kwargs.get("implementation_deps", [])
+    cc_library(
+        name = name,
+        hdrs = hdrs,
+        copts = cpu_flags + code_flags + copts +
+                (cmake_prefix_maps(arches) if map_source_files else []) + _sysroot_copts(arches, language),
+        features = ["-fortify_source", "-default_compile_flags", "-llvm_system_c_headers"] + features,
+        **kwargs
+    )
+
+def _sysroot_copts(arches, language):
     native_options = {"//conditions:default": []}
     for arch in arches:
         cpu = str(Label("@platforms//cpu:" + arch))
@@ -97,12 +101,20 @@ def ch_cc_library(
             # GCC's sysroot must not supply a second C++ standard library.
             options.append("-nostdinc++")
         native_options[cpu] = options
-    cc_library(
+    return select(native_options)
+
+def ch_cc_binary(name, copts = [], **kwargs):
+    """Build a C++ tool with the same sysroot as ch_cc_library."""
+    cc_binary(
         name = name,
-        hdrs = hdrs,
-        additional_compiler_inputs = additional_compiler_inputs,
-        copts = cpu_flags + code_flags + copts +
-                (cmake_prefix_maps(arches) if map_source_files else []) + select(native_options),
-        features = ["-fortify_source", "-default_compile_flags", "-llvm_system_c_headers"] + features,
+        copts = copts + _sysroot_copts(["x86_64", "aarch64"], "CXX"),
+        **kwargs
+    )
+
+def ch_cc_test(name, copts = [], **kwargs):
+    """Build a C++ test with the same sysroot as ch_cc_library."""
+    cc_test(
+        name = name,
+        copts = copts + _sysroot_copts(["x86_64", "aarch64"], "CXX"),
         **kwargs
     )

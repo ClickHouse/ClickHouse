@@ -37,5 +37,5 @@ ch_cc_library(
         "src/mapping_tables.cpp",
         "src/normalization_tables.cpp",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

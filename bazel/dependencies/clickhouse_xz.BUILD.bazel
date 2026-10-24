@@ -130,5 +130,5 @@ ch_cc_library(
         "src/common",
     ],
     textual_hdrs = glob(["src/liblzma/api/lzma/*.h"]),
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = [],
 )

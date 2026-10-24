@@ -1422,29 +1422,7 @@ _LICENSE_INPUTS = {
     "utils/list-licenses/MPL-2.0.txt": "//:utils/list-licenses/MPL-2.0.txt",
 }
 
-CODEGEN_RULES = {
-    "generate_contrib_flatbuffers_generated_File_generated_h": {
-        "srcs": [
-            "@clickhouse_arrow//:cpp/src/arrow/ipc/feather.fbs",
-            "@clickhouse_arrow//:format/File.fbs",
-            "@clickhouse_arrow//:format/Message.fbs",
-            "@clickhouse_arrow//:format/Schema.fbs",
-            "@clickhouse_arrow//:format/SparseTensor.fbs",
-            "@clickhouse_arrow//:format/Tensor.fbs",
-        ],
-        "outs": [
-            "gen/contrib/flatbuffers/generated/File_generated.h",
-            "gen/contrib/flatbuffers/generated/Message_generated.h",
-            "gen/contrib/flatbuffers/generated/Schema_generated.h",
-            "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "gen/contrib/flatbuffers/generated/Tensor_generated.h",
-            "gen/contrib/flatbuffers/generated/feather_generated.h",
-        ],
-        "tools": [
-            "@clickhouse_flatbuffers//:flatc",
-        ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/flatbuffers/generated\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/flatbuffers/generated\" && \"$$execroot/$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$$execroot/$(BINDIR)/bazel/gen/contrib/flatbuffers/generated\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/File.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Message.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Schema.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/SparseTensor.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Tensor.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/cpp/src/arrow/ipc/feather.fbs\"",
-    },
+ARROW_FLIGHT_CODEGEN_RULES = {
     "generate_contrib_arrow_cmake_cpp_src_arrow_flight_Flight_pb_h": {
         "srcs": [
             "@clickhouse_arrow//:format/File.fbs",
@@ -1559,16 +1537,16 @@ CODEGEN_RULES = {
             "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
         ],
         "outs": [
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc",
         ],
         "tools": [
             "@clickhouse_grpc//:grpc_cpp_plugin",
             "@clickhouse_google_protobuf//:protoc",
         ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight\" --grpc_out \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" -I \"$$execroot/" + repository_path("contrib/arrow") + "/format\" -I \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Flight.proto\"",
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight\" --grpc_out \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" -I \"$$execroot/" + repository_path("contrib/arrow") + "/format\" -I \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Flight.proto\"",
     },
     "generate_contrib_arrow_cmake_cpp_src_arrow_flight_sql_FlightSql_pb_h": {
         "srcs": [
@@ -1684,16 +1662,280 @@ CODEGEN_RULES = {
             "@clickhouse_google_protobuf//:src/google/protobuf/wrappers.proto",
         ],
         "outs": [
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
-            "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
+            "config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.cc",
         ],
         "tools": [
             "@clickhouse_grpc//:grpc_cpp_plugin",
             "@clickhouse_google_protobuf//:protoc",
         ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql\" --grpc_out \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" -I \"$$execroot/" + repository_path("contrib/arrow") + "/format\" -I \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/FlightSql.proto\"",
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight/sql\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight/sql\" && \"$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)\" --cpp_out \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight/sql\" --grpc_out \"$$execroot/$(RULEDIR)/config/contrib/arrow-cmake/cpp/src/arrow/flight/sql\" \"--plugin=protoc-gen-grpc=$$execroot/$(execpath @clickhouse_grpc//:grpc_cpp_plugin)\" -I \"$$execroot/" + repository_path("contrib/arrow") + "/format\" -I \"$$execroot/" + repository_path("contrib/google-protobuf") + "/src\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/FlightSql.proto\"",
+    },
+}
+
+KRB5_PRIVATE_CODEGEN_RULES = {
+    "generate_contrib_krb5_cmake_include_private_error_map_h": {
+        "srcs": [],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/error_map.h",
+        ],
+        "tools": [
+            "@clickhouse_krb5//:gen_map",
+        ],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private\nmkdir -p \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/krb5\" && cd \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/krb5\" && \"$$execroot/$(execpath @clickhouse_krb5//:gen_map)\" \"-o$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/error_map.h\" NAME=gsserrmap KEY=OM_uint32 'VALUE=char*' COMPARE=compare_OM_uint32 FREEVALUE=free_string",
+    },
+    "generate_contrib_krb5_cmake_include_private_errmap_h": {
+        "srcs": [],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/errmap.h",
+        ],
+        "tools": [
+            "@clickhouse_krb5//:gen",
+        ],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private\nmkdir -p \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/generic\" && cd \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/generic\" && \"$$execroot/$(execpath @clickhouse_krb5//:gen)\" bimap \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/errmap.h\" NAME=mecherrmap LEFT=OM_uint32 'RIGHT=struct mecherror' LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_asn1_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
+            "config/contrib/krb5-cmake/include_private/asn1_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=asn1_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=asn1_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/asn1_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_k5e1_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
+            "config/contrib/krb5-cmake/include_private/k5e1_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=k5e1_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=k5e1_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/k5e1_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kdb5_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
+            "config/contrib/krb5-cmake/include_private/kdb5_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=kdb5_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=kdb5_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/kdb5_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb524_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
+            "config/contrib/krb5-cmake/include_private/krb524_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=krb524_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=krb524_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/krb524_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb5_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
+            "config/contrib/krb5-cmake/include_private/krb5_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=krb5_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=krb5_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/krb5_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kv5m_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
+            "config/contrib/krb5-cmake/include_private/kv5m_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=kv5m_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=kv5m_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/kv5m_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_asn1_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/krb5/error_tables/asn1_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/asn1_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_k5e1_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/krb5/error_tables/k5e1_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/k5e1_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kdb5_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/krb5/error_tables/kdb5_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/kdb5_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb524_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/krb5/error_tables/krb524_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/krb524_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb5_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/krb5/error_tables/krb5_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/krb5_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kv5m_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/krb5/error_tables/kv5m_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/kv5m_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_gssapi_krb5_gssapi_err_krb5_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
+            "config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
+            "config/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=gssapi_err_krb5.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=gssapi_err_krb5.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/gssapi_err_krb5.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_gssapi_generic_gssapi_err_generic_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
+            "config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
+            "config/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=gssapi_err_generic.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=gssapi_err_generic.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/gssapi_err_generic.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_util_profile_prof_err_c": {
+        "srcs": [
+            ":config/contrib/krb5-cmake/include_private/util/profile/prof_err.et",
+            "@clickhouse_krb5//:src/util/et/et_c.awk",
+            "@clickhouse_krb5//:src/util/et/et_h.awk",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
+            "config/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
+            "config/contrib/krb5-cmake/include_private/prof_err.h",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private $(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=prof_err.h \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile/prof_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=prof_err.c textdomain= localedir= \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile/prof_err.et\" && cp \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile/prof_err.h\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/prof_err.h\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_gssapi_krb5_gssapi_err_krb5_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/gssapi/krb5/gssapi_err_krb5.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/krb5/gssapi_err_krb5.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_lib_gssapi_generic_gssapi_err_generic_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/lib/gssapi/generic/gssapi_err_generic.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/generic/gssapi_err_generic.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et\"",
+    },
+    "generate_contrib_krb5_cmake_include_private_util_profile_prof_err_et": {
+        "srcs": [
+            "@clickhouse_krb5//:src/util/profile/prof_err.et",
+        ],
+        "outs": [
+            "config/contrib/krb5-cmake/include_private/util/profile/prof_err.et",
+        ],
+        "tools": [],
+        "cmd": "execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile\nmkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && cd \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/profile/prof_err.et\" \"$$execroot/$(RULEDIR)/config/contrib/krb5-cmake/include_private/util/profile/prof_err.et\"",
+    },
+}
+
+CODEGEN_RULES = {
+    "generate_contrib_flatbuffers_generated_File_generated_h": {
+        "srcs": [
+            "@clickhouse_arrow//:cpp/src/arrow/ipc/feather.fbs",
+            "@clickhouse_arrow//:format/File.fbs",
+            "@clickhouse_arrow//:format/Message.fbs",
+            "@clickhouse_arrow//:format/Schema.fbs",
+            "@clickhouse_arrow//:format/SparseTensor.fbs",
+            "@clickhouse_arrow//:format/Tensor.fbs",
+        ],
+        "outs": [
+            "gen/contrib/flatbuffers/generated/File_generated.h",
+            "gen/contrib/flatbuffers/generated/Message_generated.h",
+            "gen/contrib/flatbuffers/generated/Schema_generated.h",
+            "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+            "gen/contrib/flatbuffers/generated/Tensor_generated.h",
+            "gen/contrib/flatbuffers/generated/feather_generated.h",
+        ],
+        "tools": [
+            "@clickhouse_flatbuffers//:flatc",
+        ],
+        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/flatbuffers/generated\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/flatbuffers/generated\" && \"$$execroot/$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$$execroot/$(BINDIR)/bazel/gen/contrib/flatbuffers/generated\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/File.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Message.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Schema.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/SparseTensor.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Tensor.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/cpp/src/arrow/ipc/feather.fbs\"",
     },
     "generate_contrib_openldap_cmake_lber_version_c": {
         "srcs": [
@@ -1715,257 +1957,21 @@ CODEGEN_RULES = {
         "tools": [],
         "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/openldap-cmake\nmkdir -p \"$$execroot/" + repository_path("contrib/openldap") + "\" && cd \"$$execroot/" + repository_path("contrib/openldap") + "\" && SOURCE_DATE_EPOCH=1 bash \"$$execroot/" + repository_path("contrib/openldap") + "/build/mkversion\" -v 2.6.15 liblber.la > \"$$execroot/$(BINDIR)/bazel/gen/contrib/openldap-cmake/ldap-version.c\"",
     },
-    "generate_contrib_krb5_cmake_include_private_error_map_h": {
-        "srcs": [],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/error_map.h",
-        ],
-        "tools": [
-            "@clickhouse_krb5//:gen_map",
-        ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private\nmkdir -p \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/krb5\" && cd \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/krb5\" && \"$$execroot/$(execpath @clickhouse_krb5//:gen_map)\" \"-o$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/error_map.h\" NAME=gsserrmap KEY=OM_uint32 'VALUE=char*' COMPARE=compare_OM_uint32 FREEVALUE=free_string",
-    },
-    "generate_contrib_krb5_cmake_include_private_errmap_h": {
-        "srcs": [],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/errmap.h",
-        ],
-        "tools": [
-            "@clickhouse_krb5//:gen",
-        ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private\nmkdir -p \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/generic\" && cd \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/generic\" && \"$$execroot/$(execpath @clickhouse_krb5//:gen)\" bimap \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/errmap.h\" NAME=mecherrmap LEFT=OM_uint32 'RIGHT=struct mecherror' LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp",
-    },
     "generate_contrib_krb5_cmake_include_krb5_krb5_h": {
         "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
+            "@clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
+            "@clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
+            "@clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
+            "@clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
+            "@clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
+            "@clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
             "@clickhouse_krb5//:src/include/krb5/krb5.hin",
         ],
         "outs": [
             "gen/contrib/krb5-cmake/include/krb5/krb5.h",
         ],
         "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include/krb5\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cat \"$$execroot/" + repository_path("contrib/krb5") + "/src/include/krb5/krb5.hin\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h\" > \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include/krb5/krb5.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_asn1_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-            "gen/contrib/krb5-cmake/include_private/asn1_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=asn1_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=asn1_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/asn1_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_k5e1_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-            "gen/contrib/krb5-cmake/include_private/k5e1_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=k5e1_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=k5e1_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/k5e1_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kdb5_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-            "gen/contrib/krb5-cmake/include_private/kdb5_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=kdb5_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=kdb5_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/kdb5_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb524_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-            "gen/contrib/krb5-cmake/include_private/krb524_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=krb524_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=krb524_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/krb524_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb5_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-            "gen/contrib/krb5-cmake/include_private/krb5_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=krb5_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=krb5_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/krb5_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kv5m_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
-            "gen/contrib/krb5-cmake/include_private/kv5m_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=kv5m_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=kv5m_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/kv5m_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_asn1_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/krb5/error_tables/asn1_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/asn1_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_k5e1_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/krb5/error_tables/k5e1_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/k5e1_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kdb5_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/krb5/error_tables/kdb5_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/kdb5_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb524_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/krb5/error_tables/krb524_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/krb524_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_krb5_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/krb5/error_tables/krb5_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/krb5_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_krb5_error_tables_kv5m_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/krb5/error_tables/kv5m_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/krb5/error_tables/kv5m_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_gssapi_krb5_gssapi_err_krb5_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
-            "gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
-            "gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=gssapi_err_krb5.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=gssapi_err_krb5.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_gssapi_generic_gssapi_err_generic_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
-            "gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
-            "gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=gssapi_err_generic.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=gssapi_err_generic.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_util_profile_prof_err_c": {
-        "srcs": [
-            "//bazel:gen/contrib/krb5-cmake/include_private/util/profile/prof_err.et",
-            "@clickhouse_krb5//:src/util/et/et_c.awk",
-            "@clickhouse_krb5//:src/util/et/et_h.awk",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
-            "gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
-            "gen/contrib/krb5-cmake/include_private/prof_err.h",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_h.awk\" outfile=prof_err.h \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile/prof_err.et\" && awk -f \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/et/et_c.awk\" outfile=prof_err.c textdomain= localedir= \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile/prof_err.et\" && cp \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/prof_err.h\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_gssapi_krb5_gssapi_err_krb5_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/gssapi/krb5/gssapi_err_krb5.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/krb5/gssapi_err_krb5.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_lib_gssapi_generic_gssapi_err_generic_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/lib/gssapi/generic/gssapi_err_generic.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/lib/gssapi/generic/gssapi_err_generic.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.et\"",
-    },
-    "generate_contrib_krb5_cmake_include_private_util_profile_prof_err_et": {
-        "srcs": [
-            "@clickhouse_krb5//:src/util/profile/prof_err.et",
-        ],
-        "outs": [
-            "gen/contrib/krb5-cmake/include_private/util/profile/prof_err.et",
-        ],
-        "tools": [],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile\" && cp \"$$execroot/" + repository_path("contrib/krb5") + "/src/util/profile/prof_err.et\" \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include_private/util/profile/prof_err.et\"",
+        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/krb5-cmake/include/krb5\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake\" && cat \"$$execroot/" + repository_path("contrib/krb5") + "/src/include/krb5/krb5.hin\" \"$$execroot/$(location @clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h)\" \"$$execroot/$(location @clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h)\" \"$$execroot/$(location @clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h)\" \"$$execroot/$(location @clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h)\" \"$$execroot/$(location @clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h)\" \"$$execroot/$(location @clickhouse_krb5//:config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h)\" > \"$$execroot/$(BINDIR)/bazel/gen/contrib/krb5-cmake/include/krb5/krb5.h\"",
     },
     "generate_contrib_libhdfs3_cmake_ClientDatanodeProtocol_pb_h": {
         "srcs": [

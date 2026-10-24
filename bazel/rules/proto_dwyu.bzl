@@ -43,13 +43,38 @@ def _action(action):
 def _problem(problems, reason, **evidence):
     problems.append(dict(reason = reason, **evidence))
 
-def _compile_unit(action, sources, problems):
+def _routing_record(record, routing_file):
+    return {
+        "schema": 1,
+        "record_kind": "PROTO_DWYU_ROUTING",
+        "routing_file": routing_file,
+        "label": record["label"],
+        "configured_owner": record["configured_owner"],
+        "kind": record["kind"],
+        "status": record["status"],
+        "problems": [problem["reason"] for problem in record["problems"]],
+        "generated_sources": record["generated_sources"],
+        "generated_headers": record["generated_headers"],
+        "compile_actions": [
+            {"src": action["src"], "object": action["object"]}
+            for action in record["compile_actions"]
+        ],
+        "direct_proto_deps": [
+            {"label": dep["label"], "configured_owner": dep["configured_owner"]}
+            for dep in record["direct_proto_deps"]
+        ],
+    }
+
+def _compile_unit(ctx, action, sources, problems, cc):
     # CppCompileAction.argv is expanded with a null paramFilePath in Bazel 9.3.
     # Never interpret an unexpanded @file or a new driver output mode as success.
+    if not ctx.target_platform_has_constraint(ctx.attr._linux[platform_common.ConstraintValueInfo]):
+        _problem(problems, "unsupported_compile_platform", action = _action(action))
+        return None
     argv = action.argv
     outputs = {file.path: file for file in action.outputs.to_list()}
     inputs = {file.path: file for file in action.inputs.to_list()}
-    if (not argv or action.env == None or argv.count("-c") != 1 or argv.count("-o") != 1 or
+    if (not argv or action.env == None or len([arg for arg in argv if arg == "-c"]) != 1 or len([arg for arg in argv if arg == "-o"]) != 1 or
         any([arg.startswith("@") for arg in argv])):
         _problem(problems, "unsupported_compile_command", action = _action(action))
         return None
@@ -86,9 +111,12 @@ def _compile_unit(action, sources, problems):
         src = src,
         object = obj,
         original = argv,
-        compile_index = c,
-        output_index = o,
-        skipped_outputs = {i: True for i in skip if i not in [c, c + 1, o, o + 1]},
+        skipped_outputs = skip,
+        # CppCompileAction.getSchedulingDependencies() supplies declared headers
+        # to aquery; Action.inputs alone contains mandatory/discovered inputs.
+        inputs = depset(transitive = [action.inputs, cc.headers]),
+        # CppCompileAction.getEffectiveEnvironment() sets PWD on Linux.
+        environment = dict(action.env, PWD = "/proc/self/cwd"),
         action = action,
     )
 
@@ -96,7 +124,8 @@ def _impl(target, ctx):
     dependencies = getattr(ctx.rule.attr, "deps", [])
     transitive = [dep[_ProtoDwyuInfo].reports for dep in dependencies if _ProtoDwyuInfo in dep]
     report = ctx.actions.declare_file(target.label.name + ".proto_dwyu_report.json")
-    files = [report]
+    routing = ctx.actions.declare_file(target.label.name + ".proto_dwyu_routing.json")
+    files = [report, routing]
     problems = []
     units = []
     generation = []
@@ -154,7 +183,7 @@ def _impl(target, ctx):
             sources = {file: True for file in generated_sources}
             compiles = [action for action in target.actions if action.mnemonic == "CppCompile"]
             for action in compiles:
-                unit = _compile_unit(action, sources, problems)
+                unit = _compile_unit(ctx, action, sources, problems, cc)
                 if unit != None:
                     units.append(unit)
             should_generate = proto_common.experimental_should_generate_code(target[ProtoInfo], provider, ctx.rule.kind, target.label)
@@ -197,11 +226,11 @@ def _impl(target, ctx):
                         compiler_output = ctx.actions.declare_file(name + ".i")
                         args = ctx.actions.args()
                         args.add_all([
-                            compiler_output.path if i == unit.output_index + 1 else ("-E" if i == unit.compile_index else unit.original[i])
+                            unit.original[i]
                             for i in range(1, len(unit.original))
                             if i not in unit.skipped_outputs
                         ])
-                        args.add("-dI")
+                        args.add_all(["-o", compiler_output.path, "-E", unit.src.path, "-dI"])
                         public, private = dwyu_process_compiler_command(
                             ctx,
                             unit.src,
@@ -210,11 +239,11 @@ def _impl(target, ctx):
                             "proto",
                             unit.original[0],
                             unit.original[1:],
-                            depset([manifest], transitive = [unit.action.inputs, cc.headers]),
+                            depset([manifest], transitive = [unit.inputs]),
                             toolchain.all_files,
                             manifest,
                             args,
-                            environment = unit.action.env,
+                            environment = unit.environment,
                         )
                         pp_files.append({"public": public.path, "private": private.path})
                         files.extend([public, private])
@@ -227,10 +256,12 @@ def _impl(target, ctx):
         record.update({
             "src": unit.src.path,
             "object": unit.object.path,
+            "environment": unit.environment,
+            "inputs": _paths(unit.inputs.to_list()),
             "pp_report": pp_files[index] if index < len(pp_files) else None,
         })
         records.append(record)
-    ctx.actions.write(report, json.encode({
+    record = {
         "schema": 1,
         "label": str(target.label),
         "configured_owner": report.path,
@@ -253,7 +284,9 @@ def _impl(target, ctx):
         "direct_headers": _paths(list(cc.direct_public_headers) + list(cc.direct_textual_headers)) if cc else [],
         "runtime": runtime,
         "owned_headers": manifest.path if manifest else None,
-    }))
+    }
+    ctx.actions.write(report, json.encode(record))
+    ctx.actions.write(routing, json.encode(_routing_record(record, routing.path)))
     reports = depset(direct = files, transitive = transitive)
     return [_ProtoDwyuInfo(identity = report, reports = reports), OutputGroupInfo(proto_dwyu = reports)]
 
@@ -265,6 +298,7 @@ proto_dwyu = aspect(
     required_aspect_providers = [[CcInfo]],
     provides = [_ProtoDwyuInfo],
     attrs = {
+        "_linux": attr.label(default = Label("@platforms//os:linux")),
         "_tool_preprocessing": attr.label(
             default = Label("//bazel/rules:dwyu_preprocessing"),
             executable = True,

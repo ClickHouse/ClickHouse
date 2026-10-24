@@ -33,6 +33,8 @@ ch_cc_library(
         "//programs/su:clickhouse-su-lib",
         "//programs/zookeeper-dump-tree:clickhouse-zookeeper-dump-tree-lib",
         "//programs/zookeeper-remove-by-list:clickhouse-zookeeper-remove-by-list-lib",
+        "//src/Common:exception_api",
+        "//src/Common:string_utils",
     ],
     link_runtime = True,
     llvm_headers = False,
@@ -114,7 +116,6 @@ ch_cc_library(
     }) + [
         "//bazel/rust:prql_cc",
         "//bazel/rust:polyglot_cc",
-        "//bazel/rust:delta_kernel_ffi_cc",
         "//bazel/rust:chdig_cc",
     ],
 )

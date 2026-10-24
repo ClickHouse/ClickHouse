@@ -15,6 +15,8 @@ ch_cc_library(
         "//base:common",
         "//src:dbms",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src:io_string_buffers",
+        "//src:column_types",
     ],
     link_runtime = True,
     local_defines = [
@@ -97,9 +99,6 @@ ch_cc_library(
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    local_includes = [
-        "../../../" + "bazel/gen",
     ],
     alwayslink = True,
 )

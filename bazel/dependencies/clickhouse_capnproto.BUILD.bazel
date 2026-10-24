@@ -129,7 +129,7 @@ ch_cc_library(
         ],
     ),
     copts = _CAPNPROTO_COPTS,
-    implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = [],
     includes = [
         "c++/src",
     ],

@@ -174,7 +174,7 @@ cmake_cargo = rule(
         "_native_unwind": attr.label(default = "@llvm//runtimes/libunwind:libunwind.static", cfg = "exec"),
         "_native_gcc_s": attr.label(default = "@llvm//runtimes/libunwind:gcc_s", allow_single_file = True, cfg = "exec"),
         "_native_glibc": attr.label(default = "@llvm//runtimes/glibc:glibc_library_search_directory", allow_single_file = True, cfg = "exec"),
-        "_native_headers": attr.label(default = "@clickhouse_llvm_project//:runtime_source_inputs"),
+        "_native_headers": attr.label(default = "@clickhouse_llvm_project//:runtime_libcxx_headers"),
         "_driver": attr.label(default = "//bazel/rules:cmake_cargo", executable = True, cfg = "exec"),
     },
     fragments = ["cpp"],

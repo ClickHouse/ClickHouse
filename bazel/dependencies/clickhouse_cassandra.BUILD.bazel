@@ -253,7 +253,7 @@ ch_cc_library(
         ],
     includes = ["src/third_party/curl"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
     alwayslink = True,
 )
 
@@ -270,7 +270,7 @@ ch_cc_library(
         ],
     includes = ["src/third_party/hdr_histogram"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
     alwayslink = True,
 )
 
@@ -288,6 +288,6 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
     alwayslink = True,
 )

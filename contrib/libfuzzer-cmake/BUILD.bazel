@@ -6,7 +6,6 @@ cc_library(
     name = "_fuzzer",
     deps = [
         "@llvm-project//compiler-rt:fuzzer_main",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
         "//base/glibc-compatibility",
@@ -19,7 +18,6 @@ cc_library(
     name = "_fuzzer_no_main",
     deps = [
         "@llvm-project//compiler-rt:fuzzer",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
         "//base/glibc-compatibility",

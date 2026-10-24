@@ -30,8 +30,20 @@ FIELDS = {
 OTHER_CC = {"cc_import", "cc_proto_library", "cc_shared_library",
             "rust_import", "rust_library", "rust_static_library"}
 
-DECLARED_CC = NATIVE_CC | {"ch_cc_library", "poco_cc_library", "ch_grpc_cc_library"}
+DECLARED_CC = NATIVE_CC | {
+    "ch_cc_library", "ch_cc_binary", "ch_cc_test",
+    "poco_cc_library", "ch_grpc_cc_library",
+}
 FIXTURE_PACKAGE = "bazel/initial_migration/dwyu_regressions/"
+DWYU_ASPECT = "//bazel/rules:dwyu.bzl%"
+DWYU_ASPECTS = {"dwyu", "dwyu_closure", "dwyu_production_closure"}
+DWYU_PARAMETERS = {
+    "dwyu_analysis_ignores_private_headers_from_deps": "true",
+    "dwyu_analysis_optimizes_impl_deps": "true",
+    "dwyu_analysis_reports_missing_direct_deps": "true",
+    "dwyu_analysis_reports_unused_deps": "true",
+    "dwyu_verbose": "false",
+}
 
 
 def read_production_census(path, digest, workspace=Path(".")):
@@ -426,6 +438,24 @@ def runtime_cpp_candidate(row):
                 "Assemble", "CppCompileHeader", "CppModuleCompile")))
 
 
+def runtime_asm_candidate(row):
+    """Only original Assemble actions can propose preprocessed runtime ASM."""
+    return (row["rule_class"] == "llvm_runtime_objects"
+            and row.get("language") == "ASM"
+            and row["sources"]["srcs"] is not None and row["sources"]["srcs"] > 0
+            and row["actions"].get("Assemble", 0) > 0
+            and not any(row["actions"].get(name, 0) for name in (
+                "CppCompile", "CppCompileHeader", "CppModuleCompile")))
+
+
+def runtime_compile_candidate(row):
+    return runtime_cpp_candidate(row) or runtime_asm_candidate(row)
+
+
+def runtime_action_name(row):
+    return "Assemble" if row["language"] == "ASM" else "CppCompile"
+
+
 def configuration_map(data, field):
     return {str(config["id"]): config for config in data.get(field, [])}
 
@@ -625,48 +655,164 @@ class Audit:
 
 
 def configured_analyzers(path):
-    """Map actual analyzed owner/checksum to Bazel's declared report artifact."""
-    data = json.loads(path.read_bytes())
-    configs = configuration_map(data, "configuration")
-    targets = {str(t["id"]): t for t in data.get("targets", [])}
-    fragments = {str(f["id"]): f for f in data.get("pathFragments", [])}
-    artifacts = {}
-    for artifact in data.get("artifacts", []):
-        parts = []
-        current = str(artifact["pathFragmentId"])
-        while current in fragments:
-            fragment = fragments[current]
-            parts.append(fragment["label"])
-            current = str(fragment.get("parentId", 0))
-        artifacts[str(artifact["id"])] = str(Path(*reversed(parts)))
+    """Bind each configured analyzer to its own --owned_headers FileWrite."""
+    graph = RuntimeActionGraph(path, ("DwyuAnalyzeTarget", "FileWrite"), None, rule_classes=None)
+    by_path = defaultdict(list)
+    for ident, artifact in graph.artifacts.items():
+        by_path[artifact].append(ident)
+    writes = defaultdict(list)
+    for key, actions in graph.owners.items():
+        for action in actions:
+            if action["mnemonic"] == "FileWrite":
+                for ident in action.get("outputIds", []):
+                    writes[str(ident)].append((key, action))
     owners = defaultdict(list)
     headers = defaultdict(list)
-    for action in data.get("actions", []):
-        config = configs.get(str(action.get("configurationId", 0)))
-        if config is None:
-            raise ValueError("DwyuAnalyzeTarget without configuration")
-        target = targets[str(action["targetId"])]
-        key = identity(target["label"], config["checksum"])
-        outputs = [artifacts[str(file)] for file in action.get("outputIds", [])]
-        reports = [name for name in outputs if name.endswith("_dwyu_report.json")]
-        if action["mnemonic"] == "DwyuAnalyzeTarget":
-            if len(reports) != 1:
-                raise ValueError("ambiguous DwyuAnalyzeTarget report: " + repr((key, reports)))
-            owners[key].append(reports[0])
-        for name in outputs:
-            if name.endswith(".dwyu_owned_headers.json"):
-                contents = json.loads(action["fileContents"])
-                if any(not isinstance(contents.get(field), typ) for field, typ in (
-                    ("public", dict), ("private", dict), ("required", list),
-                    ("raw_assembly", list), ("unchecked_link_inputs", list),
-                )):
-                    raise ValueError("invalid DWYU header manifest: " + key)
-                headers[key].append({"artifact": name, "contents": contents})
+    for key, actions in graph.owners.items():
+        for action in actions:
+            if action["mnemonic"] != "DwyuAnalyzeTarget":
+                continue
+            outputs = graph.files(action, "outputIds")
+            if len(outputs) != 1 or not outputs[0].endswith("_dwyu_report.json"):
+                raise ValueError("ambiguous DwyuAnalyzeTarget report: " + repr((key, outputs)))
+            argv = analyzer_arguments(action)
+            report = analyzer_option(argv, "--output")
+            owned = analyzer_option(argv, "--owned_headers")
+            inspected = analyzer_option(argv, "--target_under_inspection")
+            if (identity(inspected, graph.configs[str(action["configurationId"])]["checksum"]) != key
+                    or report != outputs[0] or len(by_path[report]) != 1
+                    or len(by_path.get(owned, [])) != 1 or owned in graph.tree_artifacts
+                    or report in graph.tree_artifacts or not owned.endswith(".dwyu_owned_headers.json")):
+                raise ValueError("wrong configured analyzer owner, report or header artifact: " + key)
+            ident = by_path[owned][0]
+            found = writes.get(ident, [])
+            if (len(found) != 1 or found[0][0] != key
+                    or [str(i) for i in found[0][1].get("outputIds", [])] != [ident]
+                    or ident not in graph.input_ids(action)):
+                raise ValueError("analyzer --owned_headers has no unique same-owner FileWrite input: " + key)
+            contents = json.loads(found[0][1]["fileContents"])
+            if any(not isinstance(contents.get(field), typ) for field, typ in (
+                ("public", dict), ("private", dict), ("required", list),
+                ("raw_assembly", list), ("unchecked_link_inputs", list),
+            )):
+                raise ValueError("invalid DWYU header manifest: " + key)
+            if owners[key]:
+                raise ValueError("ambiguous DwyuAnalyzeTarget report: " + repr((key, owners[key] + [report])))
+            owners[key].append(report)
+            headers[key].append({"artifact": owned, "contents": contents})
     return dict(owners), dict(headers)
 
 
+def analyzer_arguments(action):
+    """Expand only param files recorded by this original Bazel action."""
+    args = action.get("arguments")
+    if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
+        raise ValueError("configured analyzer has no command-line arguments")
+    parameters = {}
+    for item in action.get("paramFiles", []):
+        name = item["execPath"]
+        content = item["arguments"]
+        if (not isinstance(name, str) or not name or name in parameters
+                or Path(name).is_absolute() or ".." in Path(name).parts
+                or not isinstance(content, list) or any(not isinstance(arg, str) for arg in content)):
+            raise ValueError("invalid configured analyzer param file")
+        parameters[name] = content
+    expanded, used = [], set()
+    for arg in args:
+        if arg.startswith("@") and arg[1:] in parameters:
+            name = arg[1:]
+            if name in used:
+                raise ValueError("repeated configured analyzer param file")
+            used.add(name)
+            expanded.extend(parameters[name])
+        else:
+            expanded.append(arg)
+    if used != set(parameters):
+        raise ValueError("unbound configured analyzer param file")
+    return expanded
+
+
+def analyzer_option(args, name):
+    """DWYU make_param_file_args uses --name followed by its values."""
+    if args.count(name) != 1:
+        raise ValueError("missing or repeated configured analyzer option " + name)
+    pos = args.index(name) + 1
+    end = pos
+    while end < len(args) and not args[end].startswith("--"):
+        end += 1
+    if end - pos != 1:
+        raise ValueError("wrong arity for configured analyzer option " + name)
+    return args[pos]
+
+
+def native_category(key, row, owners=None, headers=None):
+    """Classify native files; a header category never proves PP or CppCompile."""
+    if row["is_tool"]:
+        return "tool_configuration"
+    if row["rule_class"] not in NATIVE_CC:
+        return "unsupported_rule"
+    counts = row["sources"]
+    if any(count is None for count in counts.values()):
+        return "unresolved_native_sources"
+    if not any(counts.values()):
+        return "native_forwarder_no_sources"
+    if row["actions"].get("CppCompile"):
+        return "compiled_native"
+    if any(row["actions"].get(name) for name in ("Assemble", "CppModuleCompile", "CppModuleCodegen")):
+        return "native_with_non_cpp_compile_sources"
+    if (key != identity(row["label"], row["checksum"]) or not isinstance(owners, dict)
+            or not isinstance(headers, dict) or len(owners.get(key, [])) != 1
+            or len(headers.get(key, [])) != 1):
+        return "unresolved_native_sources"
+    # _compiler_srcs exhaustively classifies ctx.rule.files.srcs, rejecting
+    # unknown files/trees; _compiler_header_manifest records private headers,
+    # compile sources, raw assembly and unchecked link inputs. A .h-named
+    # generator producing a .o/.a/.S/.cpp file cannot pass these checks.
+    manifest = headers[key][0]
+    if not isinstance(manifest, dict):
+        return "unresolved_native_sources"
+    owned = manifest.get("contents")
+    if (not isinstance(owned, dict) or not isinstance(manifest.get("artifact"), str)
+            or not manifest["artifact"].endswith(".dwyu_owned_headers.json") or any(
+                not isinstance(owned.get(field), typ) for field, typ in (
+                    ("public", dict), ("private", dict), ("required", list),
+                    ("raw_assembly", list), ("unchecked_link_inputs", list)))):
+        return "unresolved_native_sources"
+    if any(owned.get(field) for field in (
+            "raw_assembly", "unchecked_link_inputs", "raw_link_candidates", "unverified_compiler_inputs")):
+        return "native_with_non_cpp_compile_sources"
+    public, private, required = owned["public"], owned["private"], owned["required"]
+    paths = list(public) + list(public.values()) + list(private) + list(private.values()) + required
+    if not paths or any(not isinstance(path, str) or not path or Path(path).is_absolute()
+                        or ".." in Path(path).parts for path in paths):
+        return "unresolved_native_sources"
+    if not set(required).issubset(set(public.values()) | set(private.values())):
+        return "unresolved_native_sources"
+    # Private source files are in "private" but not in "required". A file
+    # explicitly present in textual_hdrs as well as srcs must still have an
+    # actual header suffix. Do not infer files from a configured label's name.
+    suffixes = {".h", ".hh", ".hpp", ".hxx", ".h++", ".H", ".inc", ".inl", ".ipp", ".tcc", ".txx"}
+    source_public_headers = (
+        counts["srcs"] == 0
+        and bool(counts["hdrs"] or counts["textual_hdrs"])
+        and not private
+        and not row["actions"]
+        and all(not path.startswith("bazel-out/") for path in public.values())
+    )
+    if (not set(private.values()).issubset(set(required))
+            or any(Path(path).suffix not in suffixes
+                   and not (source_public_headers and not Path(path).suffix)
+                   for path in paths)):
+        return "native_with_non_cpp_compile_sources"
+    if counts["srcs"] and not private:
+        # Nonempty srcs labels may expand to no files. No assertion about
+        # private headers can be made without a private File.
+        return "unresolved_native_sources"
+    return "header_only_native"
+
+
 class RuntimeActionGraph:
-    """Decode only the llvm_runtime_objects actions from an original aquery."""
+    """Decode original aquery artifacts and actions, optionally constrained to cquery rows."""
 
     def __init__(self, path, mnemonic, rows, rule_classes=("llvm_runtime_objects",)):
         data = json.loads(path.read_bytes())
@@ -707,18 +853,19 @@ class RuntimeActionGraph:
                 raise ValueError("runtime action without configuration")
             target = self.targets[str(action["targetId"])]
             key = identity(target["label"], config["checksum"])
-            row = rows.get(key)
-            if (row is None or (rule_classes is not None and row["rule_class"] not in rule_classes)
-                    or classes[str(target["ruleClassId"])] != row["rule_class"]
-                    or row["is_tool"] != config.get("isTool", False)):
-                raise ValueError("runtime action outside original configured closure: " + key)
+            if rows is not None:
+                row = rows.get(key)
+                if (row is None or (rule_classes is not None and row["rule_class"] not in rule_classes)
+                        or classes[str(target["ruleClassId"])] != row["rule_class"]
+                        or row["is_tool"] != config.get("isTool", False)):
+                    raise ValueError("runtime action outside original configured closure: " + key)
             self.owners[key].append(action)
 
     def files(self, action, field):
         return [self.artifacts[str(ident)] for ident in action.get(field, [])]
 
-    def inputs(self, action):
-        """Resolve one unit at a time; never cache the broad input set per TU."""
+    def input_ids(self, action):
+        """Resolve original artifact IDs; detect absent depsets and cycles."""
         files, visited = set(), set()
         pending = [(str(ident), False) for ident in action.get("inputDepSetIds", [])]
         entered = set()
@@ -735,9 +882,15 @@ class RuntimeActionGraph:
             item = self.input_sets[ident]
             entered.add(ident)
             pending.append((ident, True))
-            files.update(self.files(item, "directArtifactIds"))
+            files.update(str(i) for i in item.get("directArtifactIds", []))
             pending.extend((str(dep), False) for dep in item.get("transitiveDepSetIds", []))
+        if files - self.artifacts.keys():
+            raise ValueError("unknown artifact in action input depsets")
         return files
+
+    def inputs(self, action):
+        """Resolve one unit at a time; never cache the broad input set per TU."""
+        return {self.artifacts[ident] for ident in self.input_ids(action)}
 
 
 _RUNTIME_PP_SHELL = """compiler="$1"; pp="$2"; headers="$3"; shift 3
@@ -751,19 +904,22 @@ _RUNTIME_PP_SHELL = """compiler="$1"; pp="$2"; headers="$3"; shift 3
 
 def runtime_compile_source(ordinary, cpp, language):
     """A compile mnemonic and a rule's language alone do not prove it has a TU."""
+    expected_mnemonic = "Assemble" if language == "ASM" else "CppCompile"
+    if cpp.get("mnemonic") != expected_mnemonic:
+        raise ValueError("runtime action does not match configured language: " + language)
     cmd = cpp.get("arguments", [])
     out = ordinary.files(cpp, "outputIds")
     if (len(out) != 1 or not out[0].endswith(".pic.o") or out[0] in ordinary.tree_artifacts
             or len(cmd) < 5 or cmd[-4:-1] != ["-o", out[0], "-c"]
             or cpp.get("paramFiles")):
-        raise ValueError("runtime CppCompile does not have one recorded object and fixed compile tail")
+        raise ValueError("runtime compile does not have one recorded object and fixed compile tail")
     source = cmd[-1]
     ext = Path(source).suffix
-    extensions = {"C": {".c"}, "CXX": {".cc", ".cpp", ".cxx", ".c++", ".C"}}
+    extensions = {"C": {".c"}, "CXX": {".cc", ".cpp", ".cxx", ".c++", ".C"}, "ASM": {".S"}}
     if language not in extensions or ext not in extensions[language] or source in ordinary.tree_artifacts:
-        raise ValueError("runtime CppCompile input does not match configured language: " + source)
+        raise ValueError("runtime compile input does not match configured language: " + source)
     if source not in ordinary.inputs(cpp):
-        raise ValueError("runtime CppCompile source missing from action inputs: " + source)
+        raise ValueError("runtime compile source missing from action inputs: " + source)
     return source
 
 
@@ -787,32 +943,84 @@ def runtime_unit_binding(ordinary, preprocess, cpp, pp, language):
     if (len(argv) < 4 or argv[0] not in ("/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh")
             or argv[1:4] != ["-c", _RUNTIME_PP_SHELL, ""]
             or argv[4:] != expected_args):
-        raise ValueError("runtime preprocessing command differs from CppCompile: " + source)
+        raise ValueError("runtime preprocessing command differs from original compiler action: " + source)
     if pp.get("environmentVariables", []) != cpp.get("environmentVariables", []):
-        raise ValueError("runtime preprocessing environment differs from CppCompile: " + source)
+        raise ValueError("runtime preprocessing environment differs from original compiler action: " + source)
     if preprocess.inputs(pp) != ordinary.inputs(cpp):
         raise ValueError("runtime preprocessing inputs differ from CppCompile: " + source)
     return source
 
 
+def validate_runtime_header_claims(row, claims, observed, original_declaration):
+    """Bind owned files to the ordinary runtime rule, never to its input set alone."""
+    expected = {"language", "units", "private_headers", "textual_srcs", "legacy_hdrs"}
+    if (not isinstance(original_declaration, dict) or set(original_declaration) != expected
+            or original_declaration["language"] != row["language"]):
+        raise ValueError("invalid ordinary LLVM runtime input declaration")
+    for field in expected - {"language"}:
+        files = original_declaration[field]
+        if (not isinstance(files, list) or len(set(files)) != len(files)
+                or any(not isinstance(file, str) or not file or Path(file).is_absolute()
+                       or ".." in Path(file).parts for file in files)):
+            raise ValueError("invalid ordinary LLVM runtime declared " + field)
+    units = original_declaration["units"]
+    headers = original_declaration["private_headers"]
+    textual = original_declaration["textual_srcs"]
+    legacy = original_declaration["legacy_hdrs"]
+    owned = units + headers + textual
+    if (sorted(units) != sorted(observed) or len(set(owned)) != len(owned)
+            or claims.get("runtime_private_headers") != headers
+            or claims.get("runtime_textual_srcs") != textual
+            or claims.get("public") != {}
+            or claims.get("private") != {file: file for file in owned}
+            or not isinstance(claims.get("required"), list)
+            or sorted(claims["required"]) != sorted(owned)
+            or claims.get("raw_assembly") != []
+            or claims.get("unchecked_link_inputs") != []
+            or claims.get("raw_link_candidates") != []
+            or claims.get("unverified_compiler_inputs") != sorted(legacy)):
+        raise ValueError("LLVM runtime owned manifest differs from its ordinary declared TUs/headers")
+    return frozenset(headers + textual + legacy)
+
+
+def runtime_declaration(declarations, key):
+    """Read the unique ordinary rule declaration, with no aspect or tree artifact."""
+    actions = declarations.owners.get(key, [])
+    if len(actions) != 1:
+        raise ValueError("runtime needs exactly one ordinary input declaration")
+    action = actions[0]
+    outputs = declarations.files(action, "outputIds")
+    if (len(outputs) != 1 or not outputs[0].endswith(".llvm_runtime_inputs.json")
+            or outputs[0] in declarations.tree_artifacts or action.get("aspectDescriptorIds")
+            or declarations.inputs(action) or not isinstance(action.get("fileContents"), str)):
+        raise ValueError("invalid ordinary runtime declaration FileWrite")
+    return json.loads(action["fileContents"])
+
+
 def audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manifest):
     """Extra artifact/argv queries are confined to actual runtime compilations."""
-    selected = {key: row for key, row in eligible.items() if runtime_cpp_candidate(row)}
+    selected = {key: row for key, row in eligible.items() if runtime_compile_candidate(row)}
     if not selected:
         return {}
     scope = "kind('^llvm_runtime_objects( rule)?$', deps(" + query_labels(roots) + "))"
     include = ("--include_artifacts", "--include_commandline", "--include_param_files")
     ordinary_path = audit.query("runtime-ordinary-actions", "aquery",
-                                "mnemonic('^CppCompile$', " + scope + ")", include)
+                                "mnemonic('^(CppCompile|Assemble)$', " + scope + ")", include)
     preprocess_path = audit.query("runtime-preprocess-actions", "aquery",
                                   "mnemonic('^DwyuCompilerPreprocess$', " + scope + ")", (
                                       aspect, "--include_aspects", "--output_groups=dwyu",
                                   ) + include)
-    ordinary = RuntimeActionGraph(ordinary_path, "CppCompile", rows)
+    declaration_path = audit.query(
+        "runtime-declared-inputs", "aquery",
+        "outputs('.*[.]llvm_runtime_inputs[.]json', " + scope + ")",
+        ("--include_artifacts", "--include_file_write_contents"))
+    ordinary = RuntimeActionGraph(ordinary_path, ("CppCompile", "Assemble"), rows)
     preprocess = RuntimeActionGraph(preprocess_path, "DwyuCompilerPreprocess", rows)
+    declarations = RuntimeActionGraph(declaration_path, "FileWrite", rows)
     manifest["runtime_action_queries"] = {
         "ordinary": sha_file(ordinary_path),
         "preprocessing": sha_file(preprocess_path),
+        "declared_inputs": sha_file(declaration_path),
     }
     # llvm_runtime_objects accepts legacy C/CXX sources without advertising
     # LlvmRuntimeCompileInfo when any source is not a C/CXX TU. Such a target
@@ -820,12 +1028,12 @@ def audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manife
     for key, row in list(selected.items()):
         try:
             actions = ordinary.owners.get(key, [])
-            if len(actions) != row["actions"]["CppCompile"]:
-                raise ValueError("runtime original CppCompile count changed")
+            if len(actions) != row["actions"][runtime_action_name(row)]:
+                raise ValueError("runtime original compiler action count changed")
             sources = [runtime_compile_source(ordinary, action, row["language"]) for action in actions]
             if len(set(sources)) != len(sources):
                 raise ValueError("runtime compiles one source more than once")
-            row["category"] = "compiled_llvm_runtime"
+            row["category"] = "preprocessed_llvm_assembly" if runtime_asm_candidate(row) else "compiled_llvm_runtime"
         except (KeyError, TypeError, ValueError) as exc:
             row["category"] = "unsupported_compiled_or_cc_provider"
             row["runtime_source_binding"] = {"status": "not_proved", "reason": str(exc)}
@@ -836,11 +1044,11 @@ def audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manife
     for key, row in selected.items():
         result[key] = {"status": "not_proved"}
         try:
-            expected_count = row["actions"]["CppCompile"]
+            expected_count = row["actions"][runtime_action_name(row)]
             compile_actions = ordinary.owners.get(key, [])
             preprocessed_actions = preprocess.owners.get(key, [])
             if len(compile_actions) != expected_count or len(preprocessed_actions) != expected_count:
-                raise ValueError("runtime original CppCompile and PP counts differ")
+                raise ValueError("runtime original compiler action and PP counts differ")
             compiled = {}
             for action in compile_actions:
                 args = action.get("arguments", [])
@@ -862,12 +1070,27 @@ def audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manife
             if len(configured) != 1:
                 raise ValueError("runtime needs exactly one owned headers manifest")
             claims = configured[0]["contents"]
-            if (claims["public"] or claims["private"] != {src: src for src in observed}
-                    or sorted(claims["required"]) != observed or claims["raw_assembly"]
-                    or claims["unchecked_link_inputs"]):
-                raise ValueError("runtime owned manifest must name exactly the original C/C++ TUs")
+            declared = validate_runtime_header_claims(
+                row, claims, observed, runtime_declaration(declarations, key))
+            for action in compile_actions:
+                if not set(declared).issubset(ordinary.inputs(action)):
+                    # Every LLVM TU receives the family headers, textual sources,
+                    # and raw hdrs. Neither provenance nor availability suffices alone.
+                    raise ValueError("runtime declared input absent from original compiler action")
+            units = []
+            for source in observed:
+                outputs = preprocess.files(traced[source], "outputIds")
+                units.append({
+                    "source": source,
+                    "object": ordinary.files(compiled[source], "outputIds")[0],
+                    "preprocessing": next(file for file in outputs if file.endswith(".i")),
+                    "headers": next(file for file in outputs if file.endswith(".headers")),
+                })
+            if len({unit["object"] for unit in units}) != len(units):
+                raise ValueError("runtime compiler actions share an output")
             result[key] = {"status": "matched_original_actions", "tu_count": len(observed),
-                           "language": row["language"]}
+                           "language": row["language"], "mnemonic": runtime_action_name(row),
+                           "units": units, "action_queries": manifest["runtime_action_queries"]}
         except (KeyError, TypeError, ValueError) as exc:
             result[key]["reason"] = str(exc)
     return result
@@ -880,9 +1103,12 @@ def audit_closure(audit, roots, rows, eligible, manifest):
         "dwyu_production_closure" if audit.production_census else "dwyu_closure")
     actions = audit.query("closure-analyzers", "aquery", expr, (
         aspect, "--include_aspects", "--include_artifacts", "--include_file_write_contents",
-        "--output_groups=dwyu",
+        "--include_commandline", "--include_param_files", "--output_groups=dwyu",
     ))
     owners, headers = configured_analyzers(actions)
+    for key, row in eligible.items():
+        if row["rule_class"] in NATIVE_CC:
+            row["category"] = native_category(key, row, owners, headers)
     runtime_bindings = audit_runtime_bindings(audit, roots, rows, eligible, headers, aspect, manifest)
     manifest["runtime_analyzers_not_eligible"] = sorted(
         key for key in owners if key in rows
@@ -949,7 +1175,8 @@ def audit_closure(audit, roots, rows, eligible, manifest):
     run["bep"] = sha_file(bep)
     executed = defaultdict(list)
     filesets = {}
-    remaining = []
+    completed_roots = defaultdict(list)
+    expected_roots = {census_canonical(label) for label in roots}
     with bep.open() as stream:
         for line in stream:
             event = json.loads(line)
@@ -963,11 +1190,19 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             if "namedSet" in event.get("id", {}):
                 filesets[event["id"]["namedSet"]["id"]] = event["namedSetOfFiles"]
             target = event.get("id", {}).get("targetCompleted", {})
-            if canonical(target.get("label", "")) in {census_canonical(label) for label in roots}:
-                remaining.extend(
-                    f["id"] for group in event.get("completed", {}).get("outputGroup", [])
-                    if group.get("name") == "dwyu" for f in group.get("fileSets", [])
-                )
+            if canonical(target.get("label", "")) in expected_roots:
+                key = identity(target["label"], target.get("configuration", {}).get("id", ""))
+                if key not in rows or rows[key]["is_tool"]:
+                    raise ValueError("DWYU closure root has unknown configured identity: " + key)
+                completed_roots[key].append(event)
+    remaining = []
+    for key, completions in completed_roots.items():
+        for event in select_completions(completions, True, command=run["command"], row=rows[key]):
+            # Failed roots can carry fresh negative reports, but cannot attest
+            # that a DWYU output was successfully produced.
+            if event.get("completed", {}).get("success") is True and "aborted" not in event:
+                remaining.extend(f["id"] for group in event["completed"].get("outputGroup", [])
+                                 if group.get("name") == "dwyu" for f in group.get("fileSets", []))
     named_files = {}
     visited = set()
     while remaining:
@@ -1030,7 +1265,7 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             validate_link_evidence(source)
             validate_compiler_coverage(source)
             unverified_inputs = []
-            if runtime_cpp_candidate(row):
+            if runtime_compile_candidate(row):
                 unverified_inputs = validate_runtime_compiler_inputs(
                     source, configured_headers[0]["contents"])
         except ValueError as exc:
@@ -1039,9 +1274,9 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             continue
         report["findings"] = {field: len(source[field]) for field in FIELDS}
         report["findings"]["unverified_link_deps"] = len(source.get("unverified_link_deps", []))
-        if runtime_cpp_candidate(row):
+        if runtime_compile_candidate(row):
             report["compiler_binding"] = runtime_bindings[key]
-        if runtime_cpp_candidate(row) and runtime_bindings[key]["status"] != "matched_original_actions":
+        if runtime_compile_candidate(row) and runtime_bindings[key]["status"] != "matched_original_actions":
             report["status"] = "not_proved"
             report["reason"] = runtime_bindings[key].get("reason", "unmatched runtime compiler action")
         elif unverified_inputs:
@@ -1065,6 +1300,12 @@ def audit_closure(audit, roots, rows, eligible, manifest):
             report["status"] = "not_proved"
             report["reason"] = "no matching successful action or original BEP file digest"
 
+    if audit.production_census:
+        from audit_rust_import_dwyu import collect_consumer_evidence
+        collect_consumer_evidence(audit, roots, rows, eligible, bep, execroot, aspect)
+
+    from audit_textual_consumer_dwyu import collect as collect_textual_consumers
+    collect_textual_consumers(audit, eligible, headers, execroot)
 
     # Keep generated protobuf C++ results separate from native and LLVM owners.
     # cc_proto_library itself remains a forwarding rule, never a CPP pass.
@@ -1091,19 +1332,80 @@ def report_path(execroot, row):
     return path / pkg / (name + "_dwyu_report.json")
 
 
-def select_completions(events, strict):
+def dwyu_request(command):
+    """Bind BEP aspect attributes to the complete DWYU command used by this audit."""
+    requested = []
+    parameters = dict(DWYU_PARAMETERS)
+    if command is None:
+        # Compatibility for callers which use the pinned --config=dwyu only.
+        command = ["--config=dwyu"]
+    for arg in command:
+        if arg == "--config=dwyu":
+            requested.append(DWYU_ASPECT + "dwyu")
+        elif arg.startswith("--aspects="):
+            requested.extend(arg[len("--aspects="):].split(","))
+        elif arg.startswith("--aspects_parameters="):
+            option = arg[len("--aspects_parameters="):]
+            name, separator, value = option.partition("=")
+            value = value.lower()
+            if (not separator or name not in parameters or value not in ("true", "false")
+                    or (name != "dwyu_verbose" and value != DWYU_PARAMETERS[name])):
+                raise ValueError("unsupported or weakened DWYU aspect parameter: " + option)
+            parameters[name] = value
+        elif arg in ("--aspects", "--aspects_parameters", "--config"):
+            raise ValueError("DWYU audit requires unambiguous --option=value command arguments")
+    if (len(requested) != 1 or requested[0] not in
+            {DWYU_ASPECT + name for name in DWYU_ASPECTS}):
+        raise ValueError("DWYU command has no unique supported aspect")
+    return requested[0], parameters
+
+
+def select_completions(events, strict, *, command=None, row=None):
+    """Return the requested aspect, or aspect-free ordinary completion only."""
     selected = []
+    requested, expected = dwyu_request(command) if strict else (None, None)
     for event in events:
+        target = event["id"]["targetCompleted"]
+        if row is not None and identity(
+                target.get("label", ""), target.get("configuration", {}).get("id", "")) != identity(
+                    row["label"], row["checksum"]):
+            raise ValueError("BEP completion has another owner or configuration")
+        aspect = target.get("aspect", "")
         completed = event.get("completed", {})
         groups = [g.get("name") for g in completed.get("outputGroup", [])]
-        aspect = event["id"]["targetCompleted"].get("aspect", "")
-        if (("dwyu" in aspect.lower()) or ("dwyu" in groups)) == strict:
-            selected.append(event)
+        if not strict:
+            if not aspect and "dwyu" not in groups:
+                selected.append(event)
+            continue
+        name, separator, attributes = aspect.partition("[")
+        if name != requested:
+            if "dwyu" in groups:
+                raise ValueError("DWYU output group belongs to a different aspect")
+            continue
+        if not separator or not attributes.endswith("]"):
+            raise ValueError("missing requested DWYU aspect parameters")
+        fields = attributes[:-1].split(",")
+        observed = {}
+        for field in fields:
+            key, equals, value = field.partition("=")
+            if (not equals or key not in expected or key in observed
+                    or value not in ('"true"', '"false"')):
+                raise ValueError("invalid or duplicate requested DWYU aspect parameter")
+            observed[key] = value[1:-1]
+        if observed != expected:
+            raise ValueError("BEP DWYU aspect parameters differ from the original command")
+        if groups.count("dwyu") > 1:
+            raise ValueError("duplicate DWYU output group")
+        if len(selected) != 0:
+            raise ValueError("duplicate configured DWYU completion")
+        selected.append(event)
+    if not strict and len(selected) > 1:
+        raise ValueError("duplicate ordinary configured completion")
     return selected
 
 
-def read_strict(row, events, path, original_deleted, filesets):
-    selected = select_completions(events, True)
+def read_strict(row, events, path, original_deleted, filesets, *, command=None):
+    selected = select_completions(events, True, command=command, row=row)
     result = {"status": "missing", "completions": selected, "previous_report_removed": original_deleted}
     if not selected:
         result["reason"] = "no fresh DWYU completion for label and configuration"
@@ -1161,11 +1463,11 @@ def read_strict(row, events, path, original_deleted, filesets):
         elif not all(e.get("completed", {}).get("success") for e in selected):
             result["status"] = "failed"
             result["reason"] = "zero findings but aspect failed"
-        elif runtime_cpp_candidate(row):
+        elif runtime_compile_candidate(row):
             # A top-level BEP alone does not bind the DWYU command to the
             # original compile action. The configured-closure audit does.
             result["status"] = "not_proved"
-            result["reason"] = "runtime CPP needs the configured-closure action binding"
+            result["reason"] = "runtime compiler audit needs the configured-closure action binding"
         else:
             result["status"] = "clean"
     except (ValueError, AttributeError, KeyError, TypeError) as exc:
@@ -1234,20 +1536,12 @@ def main():
             elif args.production_census and not row["owned_repository"]:
                 row["category"] = "unowned_closure"
             elif row["rule_class"] in NATIVE_CC:
-                if any(count is None for count in row["sources"].values()):
-                    row["category"] = "unresolved_native_sources"
-                elif any(row["sources"].values()):
-                    if row["actions"].get("CppCompile"):
-                        row["category"] = "compiled_native"
-                    elif not row["sources"]["srcs"]:
-                        row["category"] = "header_only_native"
-                    else:
-                        row["category"] = "native_with_non_cpp_compile_sources"
+                row["category"] = native_category(key, row)
+                if all(count is not None for count in row["sources"].values()) and any(row["sources"].values()):
                     eligible[key] = row
-                else:
-                    row["category"] = "native_forwarder_no_sources"
-            elif runtime_cpp_candidate(row):
-                row["category"] = "llvm_runtime_compiler_candidate"
+            elif runtime_compile_candidate(row):
+                row["category"] = ("llvm_runtime_assembly_candidate" if runtime_asm_candidate(row)
+                                   else "llvm_runtime_compiler_candidate")
                 eligible[key] = row
             elif row["rule_class"] in OTHER_CC or any(
                     re.search(r"CppCompile|Assemble|Rustc|RustCompile", action) for action in row["actions"]):
@@ -1284,9 +1578,20 @@ def main():
                     raise RuntimeError("bazel info execution_root failed")
                 execroot = Path(Path(info["stdout"]["file"]).read_text().strip())
                 labels = [row["label"] for row in selected.values()]
+                declared = audit.query("requested-cpp-outputs", "aquery",
+                                       "outputs('.*(_dwyu_report[.]json|[.]dwyu_owned_headers[.]json)', "
+                                       + query_labels(labels) + ")", (
+                                           "--config=dwyu", "--include_aspects", "--include_artifacts",
+                                           "--include_file_write_contents", "--include_commandline",
+                                           "--include_param_files", "--remote_download_outputs=minimal"))
+                owners, headers = configured_analyzers(declared)
+                for key, row in selected.items():
+                    if row["rule_class"] in NATIVE_CC:
+                        row["category"] = native_category(key, row, owners, headers)
                 native, native_events, _ = audit.build("ordinary", labels, False)
                 for key, row in selected.items():
-                    completed = select_completions(native_events.get(key, []), False)
+                    completed = select_completions(native_events.get(key, []), False,
+                                                   command=native["command"], row=row)
                     status = "missing" if not completed else ("passed" if all(
                         e.get("completed", {}).get("success") for e in completed) else "failed")
                     row["ordinary"] = {"status": status, "invocation_uuid": native.get("invocation_uuid"),
@@ -1300,7 +1605,8 @@ def main():
                 strict, strict_events, filesets = audit.build("strict", labels, True)
                 for key, row in selected.items():
                     row["strict"] = read_strict(row, strict_events.get(key, []),
-                                                report_path(execroot, row), deleted[key], filesets)
+                                                report_path(execroot, row), deleted[key], filesets,
+                                                command=strict["command"])
                     row["strict"]["invocation_uuid"] = strict.get("invocation_uuid")
                     if not strict_events.get(key):
                         alternatives = [k for k in strict_events if k.startswith(row["label"] + " (")]
@@ -1308,6 +1614,8 @@ def main():
                             row["strict"] = {"status": "configuration_not_reproduced",
                                              "actual_strict_identities": alternatives,
                                              "invocation_uuid": strict.get("invocation_uuid")}
+                from audit_textual_consumer_dwyu import collect as collect_textual_consumers
+                collect_textual_consumers(audit, selected, headers, execroot)
         manifest["categories"] = dict(Counter(row["category"] for row in rows.values()))
         manifest["ordinary"] = dict(Counter(row["ordinary"]["status"] for row in eligible.values()))
         manifest["strict"] = dict(Counter(row["strict"]["status"] for row in eligible.values()))
@@ -1366,9 +1674,21 @@ def main():
                 and any(name in ("CppCompile", "CppCompileHeader", "CppModuleCompile")
                         for name in row["actions"])
             }
+            unsupported_llvm_assembly = {
+                key for key, row in rows.items()
+                if row["owned_repository"] and not row["is_tool"]
+                and row["rule_class"] == "llvm_runtime_objects"
+                and row["actions"].get("Assemble", 0) and key not in eligible
+            }
+            manifest["unsupported_llvm_assembly"] = sorted(unsupported_llvm_assembly)
+            assembly = {key: row for key, row in eligible.items() if runtime_asm_candidate(row)}
+            manifest["llvm_assembly_passed"] = not unsupported_llvm_assembly and all(
+                row["ordinary"]["status"] == "passed" and row["strict"]["status"] == "clean"
+                for row in assembly.values()
+            )
             manifest["unsupported_production_cpp"] = sorted(unsupported_cpp)
             manifest["production_cpp_passed"] = (
-                bool(eligible) and not unsupported_cpp
+                any(not runtime_asm_candidate(row) for row in eligible.values()) and not unsupported_cpp
                 and manifest.get("proto_cpp", {"scope_complete": True})["scope_complete"]
             ) and not any(
                 row["category"] == "unresolved_native_sources" for row in rows.values()
@@ -1378,7 +1698,7 @@ def main():
                 "requested_not_in_eligible_closure", "runtime_analyzers_not_eligible",
                 "runtime_preprocessors_not_eligible",
             )) and all(row["ordinary"]["status"] == "passed" and row["strict"]["status"] == "clean"
-                      for row in eligible.values())
+                      for row in eligible.values() if not runtime_asm_candidate(row))
     except (OSError, ValueError, KeyError, RuntimeError) as exc:
         manifest["error"] = type(exc).__name__ + ": " + str(exc)
     path = audit.out / "manifest.json"
@@ -1389,7 +1709,7 @@ def main():
         "categories": manifest.get("categories"), "ordinary": manifest.get("ordinary"),
         "strict": manifest.get("strict"), "error": manifest.get("error")
     }, sort_keys=True), flush=True)
-    passed = manifest.get("production_cpp_passed", False) if args.production_census else manifest["audit_passed"]
+    passed = (manifest.get("production_cpp_passed", False) and manifest.get("llvm_assembly_passed", False)) if args.production_census else manifest["audit_passed"]
     return 0 if passed else 1
 
 

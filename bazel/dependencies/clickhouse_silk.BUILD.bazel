@@ -27,13 +27,11 @@ ch_cc_library(
         "@clickhouse_liburing//:_liburing",
         ":_silk_util",
         "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:_boost_context",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "src",
-    ],
-    deps = [
-        "@clickhouse_boost//:_boost_context",
     ],
 )
 

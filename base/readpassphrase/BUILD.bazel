@@ -18,7 +18,7 @@ ch_cc_library(
         "-Wno-reserved-id-macro",
         "-Wno-disabled-macro-expansion",
     ],
-    implementation_deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = [],
     includes = [
         ".",
     ],

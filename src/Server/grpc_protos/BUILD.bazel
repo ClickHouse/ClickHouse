@@ -68,10 +68,8 @@ ch_cc_library(
     strip_include_prefix = "/bazel/gen/src/Server/grpc_protos",
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
         "@clickhouse_grpc//:grpc",
         "@clickhouse_grpc//:grpc++",
-        "@clickhouse_grpc//:grpc_codegen_headers",
     ],
 )

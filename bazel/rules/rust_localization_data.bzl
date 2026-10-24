@@ -1,10 +1,4 @@
-RUST_LOCALIZATION_GROUPS = {
-    "x86_64": {
-        "clang_rt_builtins": 2,
-        "libllvmlibc": 1
-    },
-    "aarch64": {
-        "clang_rt_builtins": 127,
-        "libllvmlibc": 1
-    }
+CLANG_RT_BUILTINS_GROUP_COUNTS = {
+    "x86_64": 2,
+    "aarch64": 127,
 }

@@ -1,0 +1,13 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# The ordinary CppLink must obtain sched_getcpu from glibc-compatibility,
+# rseq_cpu_id from glibc-rseq, and expf from LLVM libc before the fallback.
+cc_binary(
+    name = "rseq_link",
+    srcs = ["rseq_link.c"],
+    linkstatic = True,
+    tags = ["manual"],
+    deps = ["@clickhouse_llvm_project//:libllvmlibc"],
+)

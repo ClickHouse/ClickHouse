@@ -16,6 +16,9 @@ ch_cc_library(
         "//src/Common",
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "//src:dbms__compile_1",
+        "//src/Common:exception_api",
+        "//src/Common:assert_cast",
+        "//src:column_types",
     ],
     link_runtime = True,
     local_defines = [

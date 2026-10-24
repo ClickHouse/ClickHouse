@@ -154,9 +154,3 @@ ch_cc_library(
     ],
     local_includes = ["config/private"],
 )
-
-ch_cc_library(
-    name = "_ssh_cpp",
-    hdrs = ["include/libssh/libsshpp.hpp"],
-    deps = [":_ssh"],
-)

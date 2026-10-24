@@ -4,9 +4,18 @@ package(default_visibility = ["//visibility:public"])
 
 _UTIL_PRIVATE_HEADERS = [
     "include/Poco/Util/ConfigurationView.h",
+    "include/Poco/Util/FilesystemConfiguration.h",
+    "include/Poco/Util/IniFileConfiguration.h",
+    "include/Poco/Util/IntValidator.h",
     "include/Poco/Util/LoggingConfigurator.h",
     "include/Poco/Util/LoggingSubsystem.h",
     "include/Poco/Util/OptionProcessor.h",
+    "include/Poco/Util/PropertyFileConfiguration.h",
+    "include/Poco/Util/RegExpValidator.h",
+    "include/Poco/Util/SystemConfiguration.h",
+    "include/Poco/Util/Timer.h",
+    "include/Poco/Util/TimerTask.h",
+    "include/Poco/Util/Validator.h",
 ]
 
 poco_cc_library(

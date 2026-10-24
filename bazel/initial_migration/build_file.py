@@ -873,6 +873,11 @@ class BuildFile:
             })
             return
         group_count = max(len(v['groups']) for v in variants.values())
+        llvm_runtime = self.owner == llvm_targets.PREFIX and name in llvm_targets.NATIVE_RUNTIMES
+        math_archive = llvm_runtime and name == 'libllvmlibc'
+        if math_archive and any(len(v['groups']) != 1 or not v['groups'][0].get('cmake_runtime')
+                                for v in variants.values()):
+            raise ValueError('Rust localization requires one libllvmlibc archive per CPU')
         fastops = self.owner == 'contrib/fastops' and name == '_fastops'
         if fastops and (kind != 'STATIC_LIBRARY' or
                         {arch: len(variant['groups']) for arch, variant in variants.items()} !=
@@ -908,12 +913,12 @@ class BuildFile:
             if runtime_groups:
                 if len(runtime_groups) != len(groups) or kind != 'STATIC_LIBRARY':
                     raise ValueError('Mixed CMake runtime compilation groups for ' + name)
+                group_compatible = ['@platforms//cpu:' + next(iter(groups))] if len(groups) == 1 else compatible
                 attrs = {}
                 for field in ('srcs', 'hdrs', 'copts', 'local_defines'):
                     values = {}
-                    for arch in ARCHES:
-                        group = groups.get(arch, {})
-                        value = inputs.get(arch, {}).get(field, []) if field in LABEL_ATTRIBUTES else group.get(field, [])
+                    for arch, group in groups.items():
+                        value = inputs[arch][field] if field in LABEL_ATTRIBUTES else group.get(field, [])
                         if field in LABEL_ATTRIBUTES:
                             value = self.label_inputs(value, source_files=field == 'srcs')
                         values['@platforms//cpu:' + arch] = value
@@ -928,27 +933,30 @@ class BuildFile:
                 }
                 if unmapped:
                     attrs['reference_source_root'] = select(unmapped)
-                languages = {group['language'] for arch, group in groups.items() if inputs[arch]['srcs']}
-                # llvm_runtime_objects returns before reading language if srcs
-                # is empty. Missing CMake groups need no fallback language.
-                attrs['language'] = next(iter(languages)) if len(languages) == 1 else select({
-                    '@platforms//cpu:' + arch: groups.get(arch, {}).get('language', 'C')
-                    for arch in ARCHES
+                attrs['language'] = select({
+                    '@platforms//cpu:' + arch: group['language'] for arch, group in groups.items()
                 })
                 object_name = name + '__runtime_objects_' + str(index)
                 self.rule('llvm_runtime_objects', object_name, {
                     **attrs,
-                    'target_compatible_with': compatible,
+                    'target_compatible_with': group_compatible,
                 })
-                self.rule('cc_library', name + '__compile_' + str(index), {
+                self.rule('cc_library', name if math_archive else name + '__compile_' + str(index), {
                     'srcs': [':' + object_name],
                     'deps': select({
-                        '@platforms//cpu:' + arch: groups.get(arch, {}).get('runtime_link_deps', [])
-                        for arch in ARCHES
+                        '@platforms//cpu:' + arch: (
+                            ([self.label(d) for d in variants[arch]['deps']] if math_archive else []) +
+                            group.get('runtime_link_deps', [])
+                        )
+                        for arch, group in groups.items()
                     }),
-                    'target_compatible_with': compatible,
+                    'linkopts': select({'@platforms//cpu:' + arch: v['linkopts'] for arch, v in variants.items()})
+                    if math_archive else [],
+                    'target_compatible_with': group_compatible,
                     'alwayslink': select({'@platforms//cpu:' + arch: v['alwayslink'] for arch, v in variants.items()}),
                 })
+                if math_archive:
+                    return
                 continue
             attrs = {}
             native_library = kind != 'EXECUTABLE' or index != 0 or name == 'clickhouse'
@@ -1196,6 +1204,7 @@ class BuildFile:
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [
                 ':' + name + '__compile_' + str(i)
                 for i in range(1 if kind == 'EXECUTABLE' else 0, group_count)
+                if not llvm_runtime or i < len(v['groups'])
             ]
             for arch, v in variants.items()
         })

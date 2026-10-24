@@ -66,5 +66,5 @@ ch_cc_library(
         "include/uv/threadpool.h",
         "include/uv/unix.h",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    implementation_deps = [],
 )

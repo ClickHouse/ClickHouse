@@ -24,5 +24,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

@@ -1,16 +1,36 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version", "cmake_prefix_maps", "repository_path")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:codegen_actions.bzl", "declare_codegen")
+load("@clickhouse//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version", "cmake_prefix_maps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+[
+    declare_codegen(
+        name = name,
+        attrs = attrs,
+    )
+    for name, attrs in ARROW_FLIGHT_CODEGEN_RULES.items()
+]
+
 _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/array/dict_internal.h",
+    "cpp/src/arrow/compute/cast_internal.h",
+    "cpp/src/arrow/compute/exec_internal.h",
+    "cpp/src/arrow/compute/expression_internal.h",
+    "cpp/src/arrow/compute/function_internal.h",
+    "cpp/src/arrow/compute/kernels/aggregate_basic_internal.h",
+    "cpp/src/arrow/compute/kernels/aggregate_internal.h",
+    "cpp/src/arrow/compute/kernels/aggregate_var_std_internal.h",
     "cpp/src/arrow/compute/kernels/base_arithmetic_internal.h",
+    "cpp/src/arrow/compute/kernels/chunked_internal.h",
+    "cpp/src/arrow/compute/kernels/common_internal.h",
     "cpp/src/arrow/compute/kernels/copy_data_internal.h",
     "cpp/src/arrow/compute/kernels/gather_internal.h",
+    "cpp/src/arrow/compute/kernels/hash_aggregate_internal.h",
+    "cpp/src/arrow/compute/kernels/pivot_internal.h",
     "cpp/src/arrow/compute/kernels/ree_util_internal.h",
     "cpp/src/arrow/compute/kernels/scalar_cast_internal.h",
     "cpp/src/arrow/compute/kernels/scalar_string_internal.h",
@@ -19,23 +39,63 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/compute/kernels/vector_selection_internal.h",
     "cpp/src/arrow/compute/kernels/vector_selection_take_internal.h",
     "cpp/src/arrow/compute/kernels/vector_sort_internal.h",
+    "cpp/src/arrow/compute/key_hash_internal.h",
+    "cpp/src/arrow/compute/key_map_internal.h",
+    "cpp/src/arrow/compute/light_array_internal.h",
+    "cpp/src/arrow/compute/registry_internal.h",
+    "cpp/src/arrow/compute/row/compare_internal.h",
+    "cpp/src/arrow/compute/row/encode_internal.h",
+    "cpp/src/arrow/compute/row/grouper_internal.h",
+    "cpp/src/arrow/compute/row/row_encoder_internal.h",
+    "cpp/src/arrow/compute/row/row_internal.h",
+    "cpp/src/arrow/filesystem/azurefs_internal.h",
+    "cpp/src/arrow/ipc/metadata_internal.h",
     "cpp/src/arrow/tensor/converter_internal.h",
+    "cpp/src/arrow/util/atfork_internal.h",
+    "cpp/src/arrow/util/bitset_stack_internal.h",
+    "cpp/src/arrow/util/bpacking_dispatch_internal.h",
     "cpp/src/arrow/util/bpacking_scalar_generated_internal.h",
+    "cpp/src/arrow/util/bpacking_scalar_internal.h",
+    "cpp/src/arrow/util/bpacking_simd512_generated_internal.h",
+    "cpp/src/arrow/util/bpacking_simd_internal.h",
+    "cpp/src/arrow/util/bpacking_simd_kernel_internal.h",
+    "cpp/src/arrow/util/cache_internal.h",
     "cpp/src/arrow/util/chrono_internal.h",
+    "cpp/src/arrow/util/counting_semaphore_internal.h",
     "cpp/src/arrow/util/date_internal.h",
     "cpp/src/arrow/util/decimal_internal.h",
     "cpp/src/arrow/util/dict_util_internal.h",
+    "cpp/src/arrow/util/double_conversion_internal.h",
+    "cpp/src/arrow/util/fixed_width_internal.h",
+    "cpp/src/arrow/util/int128_internal.h",
+    "cpp/src/arrow/util/map_internal.h",
     "cpp/src/arrow/util/memory_internal.h",
+    "cpp/src/arrow/util/print_internal.h",
+    "cpp/src/arrow/util/rle_bitmap_internal.h",
     "cpp/src/arrow/util/slice_util_internal.h",
+    "cpp/src/arrow/util/sort_internal.h",
+    "cpp/src/arrow/util/stopwatch_internal.h",
+    "cpp/src/arrow/util/tdigest_internal.h",
+    "cpp/src/arrow/util/trie_internal.h",
+    "cpp/src/arrow/util/ulp_distance_internal.h",
     "cpp/src/arrow/util/union_util.h",
-]
+    "cpp/src/arrow/util/utf8_internal.h",
+] + glob([
+    "cpp/src/arrow/csv/*_internal.h",
+])
 
 _PARQUET_PRIVATE_HEADERS = [
+    "cpp/src/parquet/arrow/path_internal.h",
+    "cpp/src/parquet/arrow/schema_internal.h",
+    "cpp/src/parquet/bloom_filter_block_impl_internal.h",
+    "cpp/src/parquet/chunker_internal.h",
     "cpp/src/parquet/chunker_internal_generated.h",
+    "cpp/src/parquet/encryption/encryption_internal.h",
     "cpp/src/parquet/encryption/openssl_internal.h",
     "cpp/src/parquet/geospatial/util_json_internal.h",
     "cpp/src/parquet/level_comparison_avx2_internal.h",
     "cpp/src/parquet/level_conversion_bmi2_internal.h",
+    "cpp/src/parquet/schema_internal.h",
 ]
 
 exports_files([
@@ -420,7 +480,6 @@ ch_cc_library(
         "@clickhouse_snappy//:_snappy",
         "@clickhouse_zlib_ng//:_zlib",
         "@clickhouse_zstd//:_zstd",
-        "@clickhouse_zstd//:_zstd__compile_0",
     ],
     includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -469,7 +528,6 @@ cc_library(
     ],
     strip_include_prefix = "config/contrib/arrow-cmake/cpp/src",
     deps = [
-        "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
         "@clickhouse_boost//:_boost_filesystem",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
@@ -480,11 +538,19 @@ cc_library(
     ],
 )
 
+_FLIGHT_PRIVATE_HEADERS = [
+    "cpp/src/arrow/flight/cookie_internal.h",
+    "cpp/src/arrow/flight/otel_logging_internal.h",
+    "cpp/src/arrow/flight/serialization_internal.h",
+    "cpp/src/arrow/flight/sql/sql_info_internal.h",
+    "cpp/src/arrow/flight/transport/grpc/serialization_internal.h",
+]
+
 ch_cc_library(
     name = "_arrow_flight",
     srcs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
         "cpp/src/arrow/flight/client.cc",
         "cpp/src/arrow/flight/client_cookie_middleware.cc",
         "cpp/src/arrow/flight/client_tracing_middleware.cc",
@@ -504,7 +570,7 @@ ch_cc_library(
         "cpp/src/arrow/flight/sql/server_session_middleware.cc",
         "cpp/src/arrow/flight/sql/server.cc",
         "cpp/src/arrow/flight/sql/sql_info_internal.cc",
-    ],
+    ] + _FLIGHT_PRIVATE_HEADERS,
     hdrs = glob(
         [
             "cpp/src/arrow/flight/*.h",
@@ -514,31 +580,34 @@ ch_cc_library(
         exclude = [
             "**/test_*.h",
             "**/*test_util*.h",
-        ],
-    ),
+        ] + _FLIGHT_PRIVATE_HEADERS,
+    ) + [
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
+    ],
     additional_compiler_inputs = [
-        "@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+        ":config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
     ],
     copts = [
         "-w",
         "-std=c++23",
     ],
-    implementation_deps = [
-        "@clickhouse_grpc//:grpc__compile_0",
-        "@clickhouse_grpc//:grpc_codegen_headers",
-        "@clickhouse_google_protobuf//:_libprotobuf",
+    implementation_deps = ["@clickhouse_grpc//:grpc__compile_0"],
+    includes = [
+        "cpp/src",
+        "config/contrib/arrow-cmake/cpp/src",
     ],
-    includes = ["cpp/src"],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = ["config/contrib/arrow-cmake/cpp/src"],
-    private_hdrs = ["@clickhouse//bazel:gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc"],
+    private_hdrs = [":config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.cc"],
     deps = [
-        "@clickhouse//bazel:arrow_flight_generated_headers",
         ":_arrow",
         ":_arrow__compile_0",
         "@clickhouse_grpc//:grpc++",
         "@clickhouse_abseil_cpp//:absl_synchronization",
         "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_google_protobuf//:_libprotobuf",
     ],
 )
 
@@ -601,6 +670,7 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": [
             "cpp/src/parquet/bloom_filter_avx2.cc",
+            "cpp/src/parquet/bloom_filter_avx2_internal.h",
         ],
         "@platforms//cpu:aarch64": [],
     }) + _PARQUET_PRIVATE_HEADERS,
@@ -612,6 +682,8 @@ ch_cc_library(
         ],
         exclude = [
             "cpp/src/parquet/arrow/test_util.h",
+            "cpp/src/parquet/arrow/fuzz_encoding_internal.h",
+            "cpp/src/parquet/bloom_filter_avx2_internal.h",
             "cpp/src/parquet/encryption/test_encryption_util.h",
             "cpp/src/parquet/test_util.h",
             "cpp/src/parquet/level_comparison_inc.h",
@@ -769,21 +841,9 @@ _PARQUET_COPTS = [
 ] + cmake_prefix_maps([
     "aarch64",
     "x86_64",
-]) + select({
-    "//conditions:default": [],
-    "@platforms//cpu:x86_64": [
-        "--sysroot=" + repository_path("contrib/sysroot") + "/linux-x86_64/x86_64-linux-gnu/libc",
-        "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-x86_64",
-        "-nostdinc++",
-    ],
-    "@platforms//cpu:aarch64": [
-        "--sysroot=" + repository_path("contrib/sysroot") + "/linux-aarch64/aarch64-linux-gnu/libc",
-        "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-aarch64",
-        "-nostdinc++",
-    ],
-})
+])
 
-cc_binary(
+ch_cc_binary(
     name = "parquet_dump_schema",
     srcs = [
         "cpp/tools/parquet/parquet_dump_schema.cc",
@@ -793,7 +853,6 @@ cc_binary(
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
         ":_arrow",
@@ -808,7 +867,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+ch_cc_binary(
     name = "parquet_reader",
     srcs = [
         "cpp/tools/parquet/parquet_reader.cc",
@@ -818,7 +877,6 @@ cc_binary(
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
         ":_arrow",
@@ -833,7 +891,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+ch_cc_binary(
     name = "parquet_scan",
     srcs = [
         "cpp/tools/parquet/parquet_scan.cc",
@@ -843,7 +901,6 @@ cc_binary(
     linkopts = _GENERATED_LINKOPTS_0,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
         ":_arrow",

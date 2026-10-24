@@ -1,18 +1,10 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
     name = "clickhouse_common_access",
     srcs = glob(["*.cpp"]),
-    hdrs = glob(
-        ["*.h"],
-        exclude = [
-            "AccessEntityType.h",
-            "SQLSecurityDefs.h",
-        ],
-    ),
     clickhouse_code = True,
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
@@ -24,10 +16,19 @@ ch_cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_openssl//:crypto",
         "//base/glibc-compatibility",
         "@clickhouse_cctz//:tzdata",
+        "//src/Common:parser_support_api",
+        "//src/Common",
+        "//src:headers",
+        "//src/Parsers:parser_api",
+        "//base/poco/Net:_poco_net",
+        "//base:common",
+        "//src/Access/Common:headers",
+        "//src/Common:exception_api",
+        "//src/Common:string_utils",
+        "//src:io_string_buffers",
     ],
     link_runtime = True,
     llvm_headers = False,
@@ -95,22 +96,23 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
-        ":headers",
         "//src:core_types",
-        "//src/Common",
-        "//src:headers",
         "//src/Parsers:headers",
-        "//base/poco/Net:_poco_net",
-        "//base:common",
     ],
 )
 
 ch_cc_library(
     name = "headers",
-    hdrs = [
-        "AccessEntityType.h",
-        "SQLSecurityDefs.h",
-    ],
+    hdrs = glob(["*.h"]),
     clickhouse_code = True,
-    deps = ["//src:core_types"],
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Net:_poco_net",
+        "//src:core_types",
+        "//src:io_string_buffers",
+        "//src/Common:exception_api",
+        "//src/Common:string_utils",
+        "//src/Parsers:parser_api",
+    ],
 )

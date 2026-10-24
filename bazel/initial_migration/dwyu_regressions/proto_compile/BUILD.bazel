@@ -73,6 +73,8 @@ cc_proto_library(
 # Protoc still executes, but the generated C++ has no protobuf runtime.
 proto_lang_toolchain(
     name = "tool_only_cc_proto",
+    # Protobuf selects this toolchain for non-test well-known protos too.
+    testonly = False,
     command_line = "--cpp_out=$(OUT)",
     denylisted_protos = ["@clickhouse_google_protobuf//:libprotobuf_well_known_protos"],
     output_files = "multiple",

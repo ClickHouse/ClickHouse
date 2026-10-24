@@ -724,7 +724,6 @@ ch_cc_library(
 cc_library(
     name = "_vectorscan",
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_vectorscan__compile_0",
         ":_vectorscan__compile_1",
         ":_vectorscan__compile_2",

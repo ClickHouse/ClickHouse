@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -33,7 +32,7 @@ _ZSTD_LOCAL_DEFINES = [
 ]
 
 ch_cc_library(
-    name = "_zstd__compile_0",
+    name = "_zstd",
     srcs = glob(["lib/common/*.c"]) + [
         "lib/compress/fse_compress.c",
         "lib/compress/hist.c",
@@ -69,7 +68,9 @@ ch_cc_library(
         "lib/legacy",
         "lib/common",
     ],
-    deps = [":_zstd__compile_1"],
+    deps = [
+        ":_zstd__compile_1",
+    ],
 )
 
 ch_cc_library(
@@ -88,13 +89,5 @@ ch_cc_library(
         "lib",
         "lib/legacy",
         "lib/common",
-    ],
-)
-
-cc_library(
-    name = "_zstd",
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-        ":_zstd__compile_0",
     ],
 )

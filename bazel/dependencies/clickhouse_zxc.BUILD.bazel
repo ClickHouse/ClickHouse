@@ -125,9 +125,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -177,9 +175,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -206,9 +202,7 @@ ch_cc_library(
         "src/lib",
         "src/lib/vendors",
     ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -238,9 +232,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -263,9 +255,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -283,9 +273,7 @@ ch_cc_library(
         "src/lib",
         "src/lib/vendors",
     ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -315,9 +303,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -340,9 +326,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )
 
@@ -360,8 +344,6 @@ ch_cc_library(
         "src/lib",
         "src/lib/vendors",
     ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    deps = [],
     alwayslink = True,
 )

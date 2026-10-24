@@ -13,11 +13,14 @@ ch_cc_library(
         "//src/Common",
         "@clickhouse_boost//:boost_headers",
         "//src:clickhouse_common_io__compile_0",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src/Common:string_utils",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_DEFINES,
     local_includes = [
         ".",
-        "../../" + "bazel/gen",
     ],
 )

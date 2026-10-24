@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,24 +17,16 @@ ch_cc_library(
         "-w",
         "-std=c++23",
     ],
-    includes = ["include"],
+    features = ["-system_include_paths"],
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    strip_include_prefix = "include",
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
     ],
-)
-
-cc_library(
-    name = "functions_hashing_headers",
-    hdrs = glob(["include/*.h"]),
-    features = ["-system_include_paths"],
-    strip_include_prefix = "include",
-    visibility = ["//src/Functions:__pkg__"],
 )

@@ -1,0 +1,1263 @@
+{
+  "base_revision": "66a8e867eb80f7963e17741673760176bd986108",
+  "base_tree": "6156a794e15d3bc634ebed15774e171394bbf127",
+  "build_files": {
+    "bazel/BUILD.bazel": {
+      "blob": "bf3367597cdc6f2f8bd69577ae4ad038578c2e5b",
+      "declarations": 65
+    },
+    "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel": {
+      "blob": "b6b0b8911a66489b33278279a1237ccd408fcc1a",
+      "declarations": 135
+    },
+    "bazel/rust/BUILD.bazel": {
+      "blob": "c361c233cde82ad68867c57272898ea18377ac61",
+      "declarations": 6
+    }
+  },
+  "groups": {
+    "llvm_runtime_compile_without_CcInfo": [
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_0",
+        "line": 5980
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_1",
+        "line": 6218
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_10",
+        "line": 6580
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_100",
+        "line": 9550
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_101",
+        "line": 9583
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_102",
+        "line": 9616
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_103",
+        "line": 9649
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_104",
+        "line": 9682
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_105",
+        "line": 9715
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_106",
+        "line": 9748
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_107",
+        "line": 9781
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_108",
+        "line": 9814
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_109",
+        "line": 9847
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_11",
+        "line": 6613
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_110",
+        "line": 9880
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_111",
+        "line": 9913
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_112",
+        "line": 9946
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_113",
+        "line": 9979
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_114",
+        "line": 10012
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_115",
+        "line": 10045
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_116",
+        "line": 10078
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_117",
+        "line": 10111
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_118",
+        "line": 10144
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_119",
+        "line": 10177
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_12",
+        "line": 6646
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_120",
+        "line": 10210
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_121",
+        "line": 10243
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_122",
+        "line": 10276
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_123",
+        "line": 10309
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_124",
+        "line": 10342
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_125",
+        "line": 10375
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_126",
+        "line": 10408
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_13",
+        "line": 6679
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_14",
+        "line": 6712
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_15",
+        "line": 6745
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_16",
+        "line": 6778
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_17",
+        "line": 6811
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_18",
+        "line": 6844
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_19",
+        "line": 6877
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_2",
+        "line": 6316
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_20",
+        "line": 6910
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_21",
+        "line": 6943
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_22",
+        "line": 6976
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_23",
+        "line": 7009
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_24",
+        "line": 7042
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_25",
+        "line": 7075
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_26",
+        "line": 7108
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_27",
+        "line": 7141
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_28",
+        "line": 7174
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_29",
+        "line": 7207
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_3",
+        "line": 6349
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_30",
+        "line": 7240
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_31",
+        "line": 7273
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_32",
+        "line": 7306
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_33",
+        "line": 7339
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_34",
+        "line": 7372
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_35",
+        "line": 7405
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_36",
+        "line": 7438
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_37",
+        "line": 7471
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_38",
+        "line": 7504
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_39",
+        "line": 7537
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_4",
+        "line": 6382
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_40",
+        "line": 7570
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_41",
+        "line": 7603
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_42",
+        "line": 7636
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_43",
+        "line": 7669
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_44",
+        "line": 7702
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_45",
+        "line": 7735
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_46",
+        "line": 7768
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_47",
+        "line": 7801
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_48",
+        "line": 7834
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_49",
+        "line": 7867
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_5",
+        "line": 6415
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_50",
+        "line": 7900
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_51",
+        "line": 7933
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_52",
+        "line": 7966
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_53",
+        "line": 7999
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_54",
+        "line": 8032
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_55",
+        "line": 8065
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_56",
+        "line": 8098
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_57",
+        "line": 8131
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_58",
+        "line": 8164
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_59",
+        "line": 8197
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_6",
+        "line": 6448
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_60",
+        "line": 8230
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_61",
+        "line": 8263
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_62",
+        "line": 8296
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_63",
+        "line": 8329
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_64",
+        "line": 8362
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_65",
+        "line": 8395
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_66",
+        "line": 8428
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_67",
+        "line": 8461
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_68",
+        "line": 8494
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_69",
+        "line": 8527
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_7",
+        "line": 6481
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_70",
+        "line": 8560
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_71",
+        "line": 8593
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_72",
+        "line": 8626
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_73",
+        "line": 8659
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_74",
+        "line": 8692
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_75",
+        "line": 8725
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_76",
+        "line": 8758
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_77",
+        "line": 8791
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_78",
+        "line": 8824
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_79",
+        "line": 8857
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_8",
+        "line": 6514
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_80",
+        "line": 8890
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_81",
+        "line": 8923
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_82",
+        "line": 8956
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_83",
+        "line": 8989
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_84",
+        "line": 9022
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_85",
+        "line": 9055
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_86",
+        "line": 9088
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_87",
+        "line": 9121
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_88",
+        "line": 9154
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_89",
+        "line": 9187
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_9",
+        "line": 6547
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_90",
+        "line": 9220
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_91",
+        "line": 9253
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_92",
+        "line": 9286
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_93",
+        "line": 9319
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_94",
+        "line": 9352
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_95",
+        "line": 9385
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_96",
+        "line": 9418
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_97",
+        "line": 9451
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_98",
+        "line": 9484
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_builtins__runtime_objects_99",
+        "line": 9517
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_xray__runtime_objects_0",
+        "line": 10467
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:clang_rt_xray__runtime_objects_1",
+        "line": 10590
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:cxx__runtime_objects_0",
+        "line": 10661
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:cxxabi__runtime_objects_0",
+        "line": 10793
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:libllvmlibc__runtime_objects_0",
+        "line": 10884
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:unwind__runtime_objects_0",
+        "line": 11056
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:unwind__runtime_objects_1",
+        "line": 11126
+      },
+      {
+        "file": "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel",
+        "kind": "llvm_runtime_objects",
+        "label": "@clickhouse_llvm_project//:unwind__runtime_objects_2",
+        "line": 11193
+      }
+    ],
+    "precompiled_cc_import": [
+      {
+        "file": "bazel/rust/BUILD.bazel",
+        "kind": "cc_import",
+        "label": "//bazel/rust:chdig_cc",
+        "line": 189
+      },
+      {
+        "file": "bazel/rust/BUILD.bazel",
+        "kind": "cc_import",
+        "label": "//bazel/rust:delta_kernel_ffi_cc",
+        "line": 189
+      },
+      {
+        "file": "bazel/rust/BUILD.bazel",
+        "kind": "cc_import",
+        "label": "//bazel/rust:pco_cc",
+        "line": 189
+      },
+      {
+        "file": "bazel/rust/BUILD.bazel",
+        "kind": "cc_import",
+        "label": "//bazel/rust:polyglot_cc",
+        "line": 189
+      },
+      {
+        "file": "bazel/rust/BUILD.bazel",
+        "kind": "cc_import",
+        "label": "//bazel/rust:prql_cc",
+        "line": 189
+      },
+      {
+        "file": "bazel/rust/BUILD.bazel",
+        "kind": "cc_import",
+        "label": "//bazel/rust:skim_cc",
+        "line": 189
+      }
+    ],
+    "protobuf_generated_cc": [
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_annotations_cc_proto",
+        "line": 61
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_auth_cc_proto",
+        "line": 81
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_backend_cc_proto",
+        "line": 101
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_billing_cc_proto",
+        "line": 121
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_client_cc_proto",
+        "line": 146
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_config_change_cc_proto",
+        "line": 166
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_consumer_cc_proto",
+        "line": 186
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_context_cc_proto",
+        "line": 206
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_control_cc_proto",
+        "line": 227
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_distribution_cc_proto",
+        "line": 251
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_documentation_cc_proto",
+        "line": 271
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_endpoint_cc_proto",
+        "line": 291
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_error_reason_cc_proto",
+        "line": 311
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_field_behavior_cc_proto",
+        "line": 332
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_field_info_cc_proto",
+        "line": 353
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_http_cc_proto",
+        "line": 373
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_httpbody_cc_proto",
+        "line": 394
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_label_cc_proto",
+        "line": 414
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_launch_stage_cc_proto",
+        "line": 434
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_log_cc_proto",
+        "line": 455
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_logging_cc_proto",
+        "line": 475
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_metric_cc_proto",
+        "line": 500
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_monitored_resource_cc_proto",
+        "line": 525
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_monitoring_cc_proto",
+        "line": 545
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_policy_cc_proto",
+        "line": 566
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_quota_cc_proto",
+        "line": 586
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_resource_cc_proto",
+        "line": 607
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_routing_cc_proto",
+        "line": 628
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_service_cc_proto",
+        "line": 671
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_source_info_cc_proto",
+        "line": 692
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_system_parameter_cc_proto",
+        "line": 712
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_usage_cc_proto",
+        "line": 732
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_api_visibility_cc_proto",
+        "line": 753
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_cloud_common_operation_metadata_cc_proto",
+        "line": 777
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_cloud_extended_operations_cc_proto",
+        "line": 798
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_cloud_location_locations_cc_proto",
+        "line": 823
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_cloud_orgpolicy_v1_orgpolicy_cc_proto",
+        "line": 844
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_iam_credentials_v1_common_cc_proto",
+        "line": 870
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_iam_credentials_v1_iamcredentials_cc_proto",
+        "line": 895
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_iam_v1_iam_policy_cc_proto",
+        "line": 924
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_iam_v1_options_cc_proto",
+        "line": 944
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_iam_v1_policy_cc_proto",
+        "line": 965
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_longrunning_operations_cc_proto",
+        "line": 994
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_rpc_code_cc_proto",
+        "line": 1014
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_rpc_context_attribute_context_cc_proto",
+        "line": 1040
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_rpc_error_details_cc_proto",
+        "line": 1061
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_rpc_status_cc_proto",
+        "line": 1082
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_storage_v2_storage_cc_proto",
+        "line": 1115
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_calendar_period_cc_proto",
+        "line": 1135
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_color_cc_proto",
+        "line": 1156
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_date_cc_proto",
+        "line": 1176
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_datetime_cc_proto",
+        "line": 1197
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_dayofweek_cc_proto",
+        "line": 1217
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_decimal_cc_proto",
+        "line": 1237
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_expr_cc_proto",
+        "line": 1257
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_fraction_cc_proto",
+        "line": 1277
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_interval_cc_proto",
+        "line": 1298
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_latlng_cc_proto",
+        "line": 1318
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_localized_text_cc_proto",
+        "line": 1338
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_money_cc_proto",
+        "line": 1358
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_month_cc_proto",
+        "line": 1378
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_phone_number_cc_proto",
+        "line": 1398
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_postal_address_cc_proto",
+        "line": 1418
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_quaternion_cc_proto",
+        "line": 1438
+      },
+      {
+        "file": "bazel/BUILD.bazel",
+        "kind": "cc_proto_library",
+        "label": "//bazel:google_type_timeofday_cc_proto",
+        "line": 1458
+      }
+    ]
+  },
+  "schema": 1
+}

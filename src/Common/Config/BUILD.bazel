@@ -3,20 +3,6 @@ load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
-    name = "config_processor_api",
-    hdrs = ["ConfigProcessor.h"],
-    clickhouse_code = True,
-    strip_include_prefix = "/src",
-    deps = [
-        "//bazel:clickhouse_config_headers",
-        "//src/Common",
-        "//base/poco/Foundation:_poco_foundation",
-        "//base/poco/Util:_poco_util",
-        "//base/poco/XML:_poco_xml",
-    ],
-)
-
-ch_cc_library(
     name = "clickhouse_common_config",
     srcs = [
         "AbstractConfigurationComparison.cpp",
@@ -30,10 +16,7 @@ ch_cc_library(
         "ConfigHelper.cpp",
         "parseConnectionCredentials.cpp",
     ],
-    hdrs = glob(
-        ["*.h"],
-        exclude = ["ConfigProcessor.h"],
-    ),
+    hdrs = glob(["*.h"]),
     clickhouse_code = True,
     implementation_deps = [
         "//src:headers",
@@ -42,6 +25,10 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_yaml_cpp//:_yaml_cpp",
         "//src/Compression:clickhouse_compression",
+        "//src/Common:exception_api",
+        "//src/Common:string_utils",
+        "//src:io_string_buffers",
+        "//src/Compression:codec_api",
     ],
     link_runtime = True,
     local_defines = select({
@@ -109,6 +96,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     source_headers = True,
+    strip_include_prefix = "/src",
     deps = [
         "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
@@ -134,16 +122,14 @@ ch_cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
         "//src/Common",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
         "//base/poco/XML:_poco_xml",
         "//bazel:clickhouse_config_headers",
         "//base:common",
-        ":config_processor_api",
+        "//src/Common:parser_support_api",
     ],
 )

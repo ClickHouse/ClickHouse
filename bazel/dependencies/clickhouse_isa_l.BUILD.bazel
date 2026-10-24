@@ -50,8 +50,8 @@ ch_cc_library(
             "raid/raid_base.c",
         ] + glob(
             [
-                "crc/**/*.h",
-                "erasure_code/**/*.h",
+                "crc/*.h",
+                "erasure_code/*.h",
                 "igzip/*.h",
             ],
             exclude = [
@@ -487,7 +487,6 @@ cc_library(
     name = "_isal",
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":_isal__compile_0",
         ":_isal__compile_1",
     ],

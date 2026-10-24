@@ -102,7 +102,6 @@ ch_cc_library(
         "src/util.c",
         "src/witness.c",
         ":config/contrib/jemalloc-cmake/include_linux/jemalloc/internal/jemalloc_internal_defs.h",
-    ] + [
         "include/jemalloc/internal/activity_callback.h",
         "include/jemalloc/internal/arena_externs.h",
         "include/jemalloc/internal/arena_inlines_a.h",
@@ -257,8 +256,5 @@ ch_cc_library(
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_protos.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_rename.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_typedefs.h",
-    ],
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
     ],
 )

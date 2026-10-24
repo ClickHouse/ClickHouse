@@ -12,11 +12,11 @@ ch_cc_library(
         "//src/Common",
         "//src/Common/ZooKeeper:headers",
         "//src/Dictionaries:clickhouse_dictionaries",
+        "//src/Common:exception_api",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
-        "../../" + "bazel/gen",
     ],
 )

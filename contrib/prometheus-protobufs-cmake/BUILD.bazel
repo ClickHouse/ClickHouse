@@ -67,7 +67,6 @@ ch_cc_library(
     strip_include_prefix = "/bazel/gen/contrib/prometheus-protobufs-cmake",
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//base/glibc-compatibility",
     ],
 )

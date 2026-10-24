@@ -75,9 +75,7 @@ ch_cc_library(
         "-w",
         "-std=gnu11",
     ],
-    implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
-    ],
+    implementation_deps = [],
     includes = ["include"],
     language = "C",
     libcxx_headers = False,

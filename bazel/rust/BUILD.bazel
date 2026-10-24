@@ -7,7 +7,7 @@ load("//bazel/rules:openssl_headers.bzl", "openssl_headers")
 load("//bazel/rules:rust_archive.bzl", "rust_archive")
 load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
-load("//bazel/rules:rust_localization_data.bzl", "RUST_LOCALIZATION_GROUPS")
+load("//bazel/rules:rust_localization_data.bzl", "CLANG_RT_BUILTINS_GROUP_COUNTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -102,13 +102,6 @@ rust_cbindgen(
     vendor = "@clickhouse_rust_vendor//:sources",
 )
 
-cc_library(
-    name = "delta_kernel_ffi_headers",
-    hdrs = [":delta_ffi_headers"],
-    includes = ["delta_ffi_headers"],
-    visibility = ["//src:__pkg__"],
-)
-
 rust_static_library(
     name = "delta_kernel_ffi",
     srcs = ["delta.rs"],
@@ -161,12 +154,13 @@ rust_static_library(
 
 RUST_LOCALIZATION_REFERENCES = select({
     "@platforms//cpu:" + arch: [
-        "@clickhouse_llvm_project//:" + runtime + "__compile_" + str(index)
-        for runtime, count in groups.items()
+        "@clickhouse_llvm_project//:clang_rt_builtins__compile_" + str(index)
         for index in range(count)
     ]
-    for arch, groups in RUST_LOCALIZATION_GROUPS.items()
-})
+    for arch, count in CLANG_RT_BUILTINS_GROUP_COUNTS.items()
+}) + [
+    "@clickhouse_llvm_project//:libllvmlibc",
+]
 
 [
     rust_archive(
@@ -184,27 +178,25 @@ RUST_LOCALIZATION_REFERENCES = select({
     for name, spec in RUST_ARCHIVES.items()
 ]
 
+_C_FFI_HEADERS = [
+    "pco",
+    "polyglot",
+    "prql",
+    "skim",
+]
+
 [
     cc_import(
         name = name + "_cc",
-        hdrs = ["//rust/workspace:" + name + "/include/" + name + ".h"] if name in [
-            "pco",
-            "skim",
-        ] else [],
+        hdrs = [":delta_ffi_headers"] if name == "delta_kernel_ffi" else ["//rust/workspace:" + name + "/include/" + name + ".h"] if name in _C_FFI_HEADERS else [],
         static_library = ":" + name + "_processed",
-        strip_include_prefix = "/rust/workspace/" + name + "/include" if name in [
-            "pco",
-            "skim",
-        ] else None,
+        strip_include_prefix = "delta_ffi_headers" if name == "delta_kernel_ffi" else "/rust/workspace/" + name + "/include" if name in _C_FFI_HEADERS else None,
         # Cargo bundles cxx.cc and skim/build.rs's bridge objects into the archive.
         # Only rules_rs needs the separate Bazel C++ bridge.
-        deps = (["//rust/workspace:" + name + "_headers"] if name in [
-            "polyglot",
-            "prql",
-        ] else []) + (select({
+        deps = select({
             "//bazel:use_cmake_metadata": [],
             "//conditions:default": [":skim_bridge"],
-        }) if name == "skim" else []),
+        }) if name == "skim" else [],
     )
     for name in RUST_ARCHIVES
     if name != "wasmtime"

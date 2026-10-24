@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 _NET_SSL_PRIVATE_HEADERS = [
     "include/Poco/Net/HTTPSSessionInstantiator.h",
+    "include/Poco/Net/HTTPSStreamFactory.h",
     "include/Poco/Net/KeyConsoleHandler.h",
     "include/Poco/Net/KeyFileHandler.h",
     "include/Poco/Net/SecureServerSocketImpl.h",
@@ -138,6 +139,8 @@ poco_cc_library(
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "@clickhouse_openssl//:crypto",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
     ],
     local_defines = _NET_SSL_DEFINES,
 )

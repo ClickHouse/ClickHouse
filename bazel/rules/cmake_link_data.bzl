@@ -7,7 +7,7 @@ CMAKE_LINK = {
     "@clickhouse_llvm_project//:clang_rt_builtins__compile_1",
     "@clickhouse_llvm_project//:clang_rt_xray__compile_0",
     "@clickhouse_llvm_project//:clang_rt_xray__compile_1",
-    "@clickhouse_llvm_project//:libllvmlibc__compile_0",
+    "@clickhouse_llvm_project//:libllvmlibc",
     "//src/Common:clickhouse_new_delete",
     "//src:clickhouse_common_io__compile_0",
     "//src/Common:cares_ptr_resolver",
@@ -379,7 +379,7 @@ CMAKE_LINK = {
     "@clickhouse_simdutf//:_simdutf",
     "@clickhouse_libarchive//:_libarchive",
     "@clickhouse_minizip_ng//:_minizip",
-    "@clickhouse_zstd//:_zstd__compile_0",
+    "@clickhouse_zstd//:_zstd",
     "@clickhouse_zstd//:_zstd__compile_1",
     "@clickhouse_xz//:_liblzma",
     "@clickhouse_bzip2//:_bzip2",
@@ -446,7 +446,12 @@ CMAKE_LINK = {
     "//src/Common:current_metrics",
     "//src/Common:shared_mutex",
     "//src/Functions/array:array_distance_transposed",
-    "//src/Common:assert_cast"
+    "//src/Common:assert_cast",
+    "//src/Common:string_utils",
+    "//src/Common:target_specific",
+    "//src:with_context",
+    "//src:io_string_buffers",
+    "//src/Common:load_balancing_priority",
   ],
   "expected_objects": [
     170,
@@ -455,7 +460,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    424,
+    419,
     1,
     1,
     1,
@@ -513,7 +518,7 @@ CMAKE_LINK = {
     16,
     7,
     3,
-    2346,
+    2345,
     15,
     18,
     1,
@@ -892,7 +897,12 @@ CMAKE_LINK = {
     1,
     1,
     1,
-    1
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
   ],
   "archives": [
     {
@@ -954,9 +964,168 @@ CMAKE_LINK = {
       "name": "src/libclickhouse_new_delete.a"
     },
     {
-      "objects": [[439, 0, 1], [6, 0, 17], [7, 0, 1], [6, 17, 26], [440, 0, 1], [6, 26, 44], [434, 0, 1], [6, 44, 60], [435, 0, 1], [6, 60, 72], [8, 0, 1], [6, 72, 117], [434, 1, 2], [6, 117, 137], [441, 0, 1], [6, 137, 149], [438, 0, 1], [6, 149, 163], [9, 0, 1], [6, 163, 185],
-            [443, 0, 1],
-            [6, 185, 424]],
+      "objects": [
+        [
+          439,
+          0,
+          1
+        ],
+        [
+          6,
+          0,
+          17
+        ],
+        [
+          7,
+          0,
+          1
+        ],
+        [
+          6,
+          17,
+          26
+        ],
+        [
+          440,
+          0,
+          1
+        ],
+        [
+          6,
+          26,
+          44
+        ],
+        [
+          434,
+          0,
+          1
+        ],
+        [
+          6,
+          44,
+          60
+        ],
+        [
+          435,
+          0,
+          1
+        ],
+        [
+          6,
+          60,
+          62
+        ],
+        [
+          448,
+          0,
+          1
+        ],
+        [
+          6,
+          62,
+          71
+        ],
+        [
+          8,
+          0,
+          1
+        ],
+        [
+          6,
+          71,
+          116
+        ],
+        [
+          434,
+          1,
+          2
+        ],
+        [
+          6,
+          116,
+          136
+        ],
+        [
+          441,
+          0,
+          1
+        ],
+        [
+          6,
+          136,
+          148
+        ],
+        [
+          438,
+          0,
+          1
+        ],
+        [
+          6,
+          148,
+          149
+        ],
+        [
+          444,
+          0,
+          1
+        ],
+        [
+          6,
+          149,
+          158
+        ],
+        [
+          445,
+          0,
+          1
+        ],
+        [
+          6,
+          158,
+          160
+        ],
+        [
+          9,
+          0,
+          1
+        ],
+        [
+          6,
+          160,
+          182
+        ],
+        [
+          443,
+          0,
+          1
+        ],
+        [
+          6,
+          182,
+          326
+        ],
+        [
+          447,
+          0,
+          1
+        ],
+        [
+          6,
+          326,
+          373
+        ],
+        [
+          447,
+          1,
+          2
+        ],
+        [
+          6,
+          373,
+          419
+        ]
+      ],
       "name": "src/libclickhouse_common_io.a"
     },
     {
@@ -1321,7 +1490,17 @@ CMAKE_LINK = {
         [
           64,
           806,
-          1201
+          833
+        ],
+        [
+          446,
+          0,
+          1
+        ],
+        [
+          64,
+          833,
+          1200
         ],
         [
           66,
@@ -1330,8 +1509,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1201,
-          1251
+          1200,
+          1250
         ],
         [
           67,
@@ -1340,8 +1519,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1251,
-          1626
+          1250,
+          1625
         ],
         [
           68,
@@ -1350,8 +1529,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1626,
-          1666
+          1625,
+          1665
         ],
         [
           436,
@@ -1360,8 +1539,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1666,
-          1667
+          1665,
+          1666
         ],
         [
           436,
@@ -1370,8 +1549,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1667,
-          1669
+          1666,
+          1668
         ],
         [
           436,
@@ -1380,8 +1559,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1669,
-          1689
+          1668,
+          1688
         ],
         [
           436,
@@ -1390,8 +1569,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1689,
-          1998
+          1688,
+          1997
         ],
         [
           66,
@@ -1400,8 +1579,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          1998,
-          2000
+          1997,
+          1999
         ],
         [
           66,
@@ -1410,8 +1589,8 @@ CMAKE_LINK = {
         ],
         [
           64,
-          2000,
-          2346
+          1999,
+          2345
         ]
       ],
       "name": "src/libdbms.a"

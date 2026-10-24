@@ -6,7 +6,7 @@ load("//bazel/rules:llvm_runtime.bzl", "LlvmRuntimeCompileInfo")
 
 def _failing_nm_impl(ctx):
     exe = ctx.actions.declare_file(ctx.label.name)
-    ctx.actions.write(exe, "#!/bin/sh\nexit 53\n", is_executable = True)
+    ctx.actions.write(exe, "#!/bin/sh\nprintf 'DWYU runtime nm fixture: intentional failure (53)\\n' >&2\nexit 53\n", is_executable = True)
     return [DefaultInfo(executable = exe)]
 
 failing_nm = rule(

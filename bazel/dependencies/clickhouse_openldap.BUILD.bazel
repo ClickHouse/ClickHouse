@@ -79,7 +79,6 @@ ch_cc_library(
         "libraries/liblber/sockbuf.c",
         "libraries/liblber/stdio.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
-        "include/ac/syslog.h",
     ],
     hdrs = [
         ":ldap_config",
@@ -196,6 +195,9 @@ ch_cc_library(
         "libraries/libldap/string.c",
         "libraries/libldap/tavl.c",
     ] + glob(["libraries/libldap/thr_*.c"]) + [
+        "include/ldap_schema.h",
+        "include/ldap_utf8.h",
+        "include/ldif.h",
         "libraries/libldap/threads.c",
         "libraries/libldap/tls2.c",
         "libraries/libldap/tls_g.c",
@@ -219,17 +221,12 @@ ch_cc_library(
         "include/ldap_pvt_thread.h",
         "include/ldap_rq.h",
     ] + glob(["libraries/libldap/**/*.h"]),
-    hdrs = [
-        "include/ldap_schema.h",
-        "include/ldap_utf8.h",
-        "include/ldif.h",
-        "include/slapi-plugin.h",
-    ],
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = [
+        ":_api",
         ":_lber",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
@@ -244,7 +241,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["libraries/libldap"],
-    deps = [
-        ":_api",
-    ],
 )

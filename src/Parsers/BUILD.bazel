@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -131,6 +130,21 @@ _PRIVATE_PARSERS_HEADERS = [
     "parseIntervalKind.h",
 ]
 
+_PARSER_INTERFACE_HEADERS = [
+    "CommonParsers.h",
+    "IAST.h",
+    "IASTFormatState.h",
+    "IASTHash.h",
+    "IAST_fwd.h",
+    "IParser.h",
+    "IParserBase.h",
+    "IdentifierQuotingStyle.h",
+    "InlineVector.h",
+    "Lexer.h",
+    "LiteralEscapingStyle.h",
+    "TokenIterator.h",
+]
+
 _PARSERS_API_HEADERS = [
     "ASTCopyQuery.h",
     "ASTDescribeCacheQuery.h",
@@ -199,28 +213,29 @@ ch_cc_library(
         "PRQL/ParserPRQLQuery.cpp",
         "Polyglot/ParserPolyglotQuery.cpp",
     ] + glob(["Trino/*.cpp"]) + glob(["Prometheus/*.cpp"]) + glob(["LogsQL/*.cpp"]) + _PRIVATE_PARSERS_HEADERS,
-    hdrs = glob(
-        ["**/*.h"],
-        exclude = _PRIVATE_PARSERS_HEADERS + [
-            "ASTCreateWasmFunctionQuery.h",
-            "ASTSQLSecurity.h",
-            "LexerStandalone.h",
-            "clickhouse_lexer.h",
-            "tests/**",
-            "**/tests/**",
-        ],
-    ),
+    hdrs = _PARSERS_API_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "//base:pcg_random",
         "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Functions:headers",
-        "//rust/workspace:prql_headers",
-        "//rust/workspace:polyglot_headers",
+        "//bazel/rust:prql_cc",
+        "//bazel/rust:polyglot_cc",
         "//base/poco/JSON:_poco_json",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
         "//src/Functions/URL:clickhouse_functions_url__compile_1",
+        "//src/Common:assert_cast",
+        "//src/Common:string_utils",
+        "//src:column_types",
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_fmtlib//:_fmt",
+        "//base/poco/Foundation:_poco_foundation",
+        "//bazel:clickhouse_config_headers",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src:core_defines",
+        "//src:io_string_buffers",
     ],
     link_runtime = True,
     local_defines = select({
@@ -289,45 +304,60 @@ ch_cc_library(
     deps = [
         "//src:core_types",
         ":headers",
-        "//base/poco/Foundation:_poco_foundation",
-        "//bazel:clickhouse_config_headers",
         "//src/Common",
         "//src:headers",
-        "@clickhouse_boost//:boost_headers",
-        "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
         "//contrib/cityhash102:_cityhash",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//src/Access/Common:clickhouse_common_access",
         "//base:common",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
+        "//src/Access/Common:headers",
+        "//src:with_context",
+        "//src/Parsers:parser_api",
     ],
 )
 
-cc_library(
+ch_cc_library(
     name = "headers",
     hdrs = glob(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_PARSERS_HEADERS + _PARSERS_API_HEADERS + [
+        exclude = _PRIVATE_PARSERS_HEADERS + _PARSERS_API_HEADERS + _PARSER_INTERFACE_HEADERS + [
             "LexerStandalone.h",
             "clickhouse_lexer.h",
             "tests/**",
             "**/tests/**",
         ],
     ),
+    clickhouse_code = True,
     deps = [
+        ":parser_api",
         "//base/poco/JSON:_poco_json",
         "//src:headers",
         "//src:core_types",
         "//base:common",
         "//src/Common:exception_api",
         "//src/Common:parser_support_api",
+    ],
+)
+
+ch_cc_library(
+    name = "parser_api",
+    hdrs = _PARSER_INTERFACE_HEADERS,
+    clickhouse_code = True,
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//src:core_defines",
+        "//src:core_types",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "@clickhouse_boost//:boost_headers",
+        "//contrib/cityhash102:_cityhash",
     ],
 )

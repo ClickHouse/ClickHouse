@@ -13,7 +13,7 @@ load("//bazel/initial_migration:native_stripped_hash.bzl", "native_stripped_hash
 load("//bazel/rules:build_options.bzl", "build_options")
 load("//bazel/rules:build_options_data.bzl", "BUILD_OPTIONS")
 load("//bazel/rules:codegen_actions.bzl", "declare_codegen")
-load("//bazel/rules:codegen_rules.bzl", "CODEGEN_RULES")
+load("//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES", "CODEGEN_RULES", "KRB5_PRIVATE_CODEGEN_RULES")
 load("//bazel/rules:grpc_proto_sources.bzl", "grpc_proto_sources")
 load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")
 
@@ -1515,37 +1515,19 @@ cc_library(
     strip_include_prefix = "gen/includes/configs",
 )
 
-cc_library(
-    name = "krb5_generated_headers",
-    hdrs = ["gen/contrib/krb5-cmake/include/krb5/krb5.h"],
-    includes = ["gen/contrib/krb5-cmake/include"],
+copy_file(
+    name = "configure_include_com_err_h",
+    src = "@clickhouse_krb5//:src/util/et/com_err.h",
+    out = "gen/contrib/krb5-cmake/include/com_err.h",
 )
 
 cc_library(
-    name = "krb5_private_generated_headers",
+    name = "krb5_generated_headers",
     hdrs = [
-        "gen/contrib/krb5-cmake/include_private/asn1_err.h",
-        "gen/contrib/krb5-cmake/include_private/errmap.h",
-        "gen/contrib/krb5-cmake/include_private/error_map.h",
-        "gen/contrib/krb5-cmake/include_private/gssapi_err_generic.h",
-        "gen/contrib/krb5-cmake/include_private/gssapi_err_krb5.h",
-        "gen/contrib/krb5-cmake/include_private/k5e1_err.h",
-        "gen/contrib/krb5-cmake/include_private/kdb5_err.h",
-        "gen/contrib/krb5-cmake/include_private/krb524_err.h",
-        "gen/contrib/krb5-cmake/include_private/krb5_err.h",
-        "gen/contrib/krb5-cmake/include_private/kv5m_err.h",
-        "gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.h",
-        "gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.h",
-        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.h",
-        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.h",
-        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.h",
-        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.h",
-        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.h",
-        "gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.h",
-        "gen/contrib/krb5-cmake/include_private/prof_err.h",
-        "gen/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
+        ":configure_include_com_err_h",
+        "gen/contrib/krb5-cmake/include/krb5/krb5.h",
     ],
-    includes = ["gen/contrib/krb5-cmake/include_private"],
+    includes = ["gen/contrib/krb5-cmake/include"],
 )
 
 cc_library(
@@ -1576,23 +1558,6 @@ cc_library(
     ],
     includes = ["gen/contrib/flatbuffers"],
     deps = ["@clickhouse_flatbuffers//:_flatbuffers"],
-)
-
-cc_library(
-    name = "arrow_flight_generated_headers",
-    hdrs = [
-        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.grpc.pb.h",
-        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.h",
-        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.grpc.pb.h",
-        "gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.h",
-    ],
-    includes = ["gen/contrib/arrow-cmake/cpp/src"],
-    visibility = ["@clickhouse_arrow//:__pkg__"],
-    deps = [
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_grpc//:grpc++",
-        "@clickhouse_grpc//:grpc_codegen_headers",
-    ],
 )
 
 platform(
@@ -1774,11 +1739,20 @@ build_options(
 [
     filegroup(
         name = "generated_" + arch,
-        srcs = [":generate_native_ClickStack"] + ([":build_options"] + [
+        srcs = [
+            ":generate_native_ClickStack",
+            ":build_options",
+        ] + [
             ":" + name
             for name in CODEGEN_RULES
             if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_native_") or name == "extract_googleapis"
-        ]),
+        ] + [
+            "@clickhouse_arrow//:" + name
+            for name in ARROW_FLIGHT_CODEGEN_RULES
+        ] + [
+            "@clickhouse_krb5//:" + name
+            for name in KRB5_PRIVATE_CODEGEN_RULES
+        ],
     )
     for arch in [
         "x86_64",
@@ -1826,4 +1800,10 @@ filegroup(
         for out in CODEGEN_RULES["generate_native_embedded_sources"]["outs"]
         if out.startswith("gen/embedded/contrib/cctz/testdata/zoneinfo/")
     ],
+)
+
+label_flag(
+    name = "clickhouse_link_runtime",
+    build_setting_default = "@bazel_tools//tools/cpp:empty_lib",
+    scope = "target",
 )

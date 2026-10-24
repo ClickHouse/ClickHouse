@@ -638,7 +638,6 @@ ch_cc_library(
         "-Wno-unused-command-line-argument",
     ],
     implementation_deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         ":crypto__compile_1",
     ],
     includes = ["include"],

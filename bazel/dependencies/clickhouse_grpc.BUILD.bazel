@@ -1,6 +1,5 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -533,7 +532,7 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )
 
 _GENERATED_COPTS_1 = [
@@ -1694,11 +1693,6 @@ cc_library(
 
 # grpc_cpp_plugin emits ports_def.inc and ports_undef.inc in generated
 # headers and sources. The gRPC runtime itself does not include this pair.
-cc_library(
-    name = "grpc_codegen_headers",
-    includes = ["include"],
-    textual_hdrs = glob(["include/grpcpp/*.inc"]),
-)
 
 ch_cc_library(
     name = "grpc++",
@@ -1740,7 +1734,6 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ] + [
         "include/grpc/credentials_cpp.h",
         "include/grpc/load_reporting.h",
         "include/grpcpp/ext/call_metric_recorder.h",
@@ -1777,6 +1770,7 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
+    textual_hdrs = glob(["include/grpcpp/*.inc"]),
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         ":grpc",
@@ -1825,7 +1819,6 @@ ch_cc_library(
         "src/cpp/util/status.cc",
         "src/cpp/util/string_ref.cc",
         "src/cpp/util/time_cc.cc",
-    ] + [
         "include/grpc/load_reporting.h",
         "include/grpcpp/ext/call_metric_recorder.h",
         "include/grpcpp/ext/health_check_service_server_builder_option.h",
@@ -1862,6 +1855,7 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
+    textual_hdrs = glob(["include/grpcpp/*.inc"]),
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         ":grpc_unsecure",
@@ -1878,7 +1872,7 @@ ch_cc_library(
     ],
 )
 
-cc_binary(
+ch_cc_binary(
     name = "grpc_cpp_plugin",
     srcs = [
         "src/compiler/cpp_plugin.cc",
@@ -1933,19 +1927,7 @@ cc_binary(
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
-    ]) + select({
-        "//conditions:default": [],
-        "@platforms//cpu:x86_64": [
-            "--sysroot=" + repository_path("contrib/sysroot") + "/linux-x86_64/x86_64-linux-gnu/libc",
-            "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-x86_64",
-            "-nostdinc++",
-        ],
-        "@platforms//cpu:aarch64": [
-            "--sysroot=" + repository_path("contrib/sysroot") + "/linux-aarch64/aarch64-linux-gnu/libc",
-            "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-aarch64",
-            "-nostdinc++",
-        ],
-    }),
+    ]),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
@@ -2036,19 +2018,14 @@ cc_binary(
         "third_party/xxhash",
     ],
     deps = [
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:libllvmlibc",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_google_protobuf//:_libprotoc",
-        "@clickhouse_zlib_ng//:_zlib",
-        "@clickhouse_abseil_cpp//:absl_base_cpu_detect",
         "@clickhouse_abseil_cpp//:absl_examine_stack",
-        "@clickhouse_abseil_cpp//:absl_exponential_biased",
         "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor",
         "@clickhouse_abseil_cpp//:absl_flags_program_name",
         "@clickhouse_abseil_cpp//:absl_graphcycles_internal",
-        "@clickhouse_abseil_cpp//:absl_leak_check",
         "@clickhouse_abseil_cpp//:absl_log_globals",
         "@clickhouse_abseil_cpp//:absl_log_internal_fnmatch",
         "@clickhouse_abseil_cpp//:absl_log_internal_format",
@@ -2056,7 +2033,6 @@ cc_binary(
         "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set",
         "@clickhouse_abseil_cpp//:absl_malloc_internal",
         "@clickhouse_abseil_cpp//:absl_stacktrace",
-        "@clickhouse_abseil_cpp//:absl_strerror",
         "@clickhouse_abseil_cpp//:absl_symbolize",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
@@ -2064,9 +2040,6 @@ cc_binary(
         ":grpc_plugin_support",
         "@clickhouse_llvm_project//:unwind",
         "@clickhouse_google_protobuf//:utf8_validity",
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
     ],
 )
 
@@ -2128,7 +2101,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "grpc_unsecure__compile_0",
-    srcs = glob(["src/core/call/call_*.cc"]) + ([
+    srcs = glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -2143,7 +2116,7 @@ ch_cc_library(
     ] + glob(["src/core/channelz/*.cc"]) + [
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
-    ]) + glob(["src/core/client_channel/client_*.cc"]) + [
+    ] + glob(["src/core/client_channel/client_*.cc"]) + [
         "src/core/client_channel/direct_channel.cc",
         "src/core/client_channel/dynamic_filters.cc",
         "src/core/client_channel/global_subchannel_pool.cc",
@@ -2362,7 +2335,6 @@ ch_cc_library(
         "src/core/util/uuid_v4.cc",
         "src/core/util/validation_errors.cc",
         "src/core/util/work_serializer.cc",
-    ] + [
         "include/grpc/census.h",
         "include/grpc/fork.h",
         "src/core/call/call_finalization.h",
@@ -2700,7 +2672,8 @@ ch_cc_library(
         "third_party/upb/upb/wire/encode.c",
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
-    ] + ["third_party/upb/upb/lex/strtod.h"],
+        "third_party/upb/upb/lex/strtod.h",
+    ],
     hdrs = [
         "third_party/upb/upb/lex/atoi.h",
         "third_party/upb/upb/lex/round_trip.h",
@@ -2818,7 +2791,6 @@ ch_cc_library(
         "third_party/upb/upb/wire/decode_fast/select.c",
         "third_party/upb/upb/wire/eps_copy_input_stream.c",
         "third_party/upb/upb/wire/reader.c",
-    ] + [
         "third_party/upb/upb/mini_descriptor/internal/base92.h",
         "third_party/upb/upb/mini_descriptor/internal/decoder.h",
         "third_party/upb/upb/mini_descriptor/internal/wire_constants.h",
@@ -2903,7 +2875,7 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )
 
 ch_cc_library(
@@ -2926,7 +2898,6 @@ ch_cc_library(
         "third_party/upb/upb/reflection/method_def.c",
         "third_party/upb/upb/reflection/oneof_def.c",
         "third_party/upb/upb/reflection/service_def.c",
-    ] + [
         "third_party/upb/upb/message/copy.h",
         "third_party/upb/upb/message/merge.h",
         "third_party/upb/upb/reflection/internal/def_builder.h",
@@ -3101,5 +3072,5 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

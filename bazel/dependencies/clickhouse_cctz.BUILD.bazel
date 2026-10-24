@@ -1268,5 +1268,5 @@ ch_cc_library(
             "--embed-dir=$(GENDIR)/bazel/gen/embedded",
         ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

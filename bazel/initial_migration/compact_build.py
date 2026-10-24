@@ -242,7 +242,7 @@ def inline_small_constants(source):
     return source.rewrite(edits)
 
 
-def simplify_list_expressions(source, join_expression_lists=False):
+def simplify_list_expressions(source, join_expression_lists=False, preserve_selects=False):
     edits = []
 
     class Simplify(ast.NodeVisitor):
@@ -267,7 +267,7 @@ def simplify_list_expressions(source, join_expression_lists=False):
             self.generic_visit(node)
 
         def visit_Call(self, node):
-            value = shared_cpu_selection(node)
+            value = None if preserve_selects else shared_cpu_selection(node)
             if value is not None:
                 edits.append((*source.span(node), source.text(value)))
             else:

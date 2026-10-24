@@ -229,18 +229,25 @@ cc_library(
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_grpc//:grpc++_unsecure",
-        "@clickhouse_grpc//:grpc_codegen_headers",
     ],
 )
 
 dwyu_cc_consumer_audit(
     name = "grpc_secure",
+    compiler_sources = [
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+    ],
     consumers = ["//src/Server/grpc_protos:clickhouse_grpc_protos"],
     owner = "@clickhouse_grpc//:grpc++",
 )
 
 dwyu_cc_consumer_audit(
     name = "grpc_unsecure",
+    compiler_sources = [
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+    ],
     consumers = [":generated_unsecure"],
     owner = "@clickhouse_grpc//:grpc++_unsecure",
 )
@@ -255,4 +262,16 @@ dwyu_cc_consumer_audit(
     name = "boost_config",
     consumers = ["@clickhouse_boost//:_boost_iostreams"],
     owner = "@clickhouse_boost//:boost_config",
+)
+
+# These are the existing ClickHouse format compilations with the actual
+# msgpack.hpp include and the original dbms__compile_0 definitions and flags.
+dwyu_cc_consumer_audit(
+    name = "msgpack_formats",
+    compiler_sources = [
+        "src/Processors/Formats/Impl/MsgPackRowInputFormat.cpp",
+        "src/Processors/Formats/Impl/MsgPackRowOutputFormat.cpp",
+    ],
+    consumers = ["//src:dbms__compile_0"],
+    owner = "@clickhouse_msgpack_c//:msgpack_c",
 )

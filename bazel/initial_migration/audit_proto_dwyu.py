@@ -1,6 +1,7 @@
 """Check original protobuf-generated C++ compilations and their DWYU reports."""
 
 from collections import defaultdict
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -15,6 +16,7 @@ PROTO_KINDS = ("proto_library", "cc_proto_library")
 ORIGINAL_ACTIONS = ("GenProto", "GenProtoDescriptorSet", "CppCompile",
                     "CppCompileHeader", "CppModuleCompile", "CppLink", "CppArchive")
 REPORT_SUFFIX = ".proto_dwyu_report.json"
+ROUTING_SUFFIX = ".proto_dwyu_routing.json"
 PROTO_ASPECT = "--aspects=//bazel/rules:proto_dwyu.bzl%proto_dwyu"
 NATIVE_ACTIONS = ("ClickHouseNativeArchive", "ClickHouseNativeLink")
 ARCHIVE_ACTIONS = ("CppArchive", "CppLink")
@@ -26,6 +28,33 @@ def output_path(name):
             or ".." in Path(name).parts or not name.startswith("bazel-out/")):
         raise ValueError("invalid generated protobuf output: " + repr(name))
     return name
+
+
+def read_routing_record(bep, execroot, produced, key, name, record):
+    routing_name = name[:-len(REPORT_SUFFIX)] + ROUTING_SUFFIX
+    routing_key, action = produced[routing_name]
+    routing, evidence = bep.read_report(execroot, key, routing_name)
+    expected = {
+        "schema": 1,
+        "record_kind": "PROTO_DWYU_ROUTING",
+        "routing_file": routing_name,
+        "label": record["label"],
+        "configured_owner": record["configured_owner"],
+        "kind": record["kind"],
+        "status": record["status"],
+        "problems": [problem["reason"] for problem in record["problems"]],
+        "generated_sources": record["generated_sources"],
+        "generated_headers": record["generated_headers"],
+        "compile_actions": [{"src": action["src"], "object": action["object"]}
+                            for action in record["compile_actions"]],
+        "direct_proto_deps": [{"label": dep["label"], "configured_owner": dep["configured_owner"]}
+                              for dep in record["direct_proto_deps"]],
+    }
+    if (routing_key != key or action["mnemonic"] != "FileWrite"
+            or action.get("fileContents") is None or json.loads(action["fileContents"]) != routing
+            or routing != expected):
+        raise ValueError("proto routing differs from its original configured FileWrite: " + routing_name)
+    return evidence
 
 
 def environment(action):
@@ -203,14 +232,82 @@ def graph_source(graph, action):
     return sources[0], output_path(outputs[0])
 
 
-def exact_recorded_compile(graph, cpp, observed):
+def compile_inputs(key, original, reports, compiled):
+    """Match the declared and current aquery inputs for each original CppCompile."""
+    current = {}
+    for action in reports.owners.get(key, []):
+        if action["mnemonic"] == "CppCompile":
+            unit = graph_source(reports, action)
+            if unit in current:
+                raise ValueError("duplicate current protobuf CppCompile: " + unit[1])
+            current[unit] = action
+
+    inputs = {}
+    for cpp in compiled:
+        unit = graph_source(original, cpp)
+        action = current.pop(unit, None)
+        if action is None:
+            raise ValueError("missing current protobuf CppCompile: " + unit[1])
+        aspect = cc_proto_descriptor(original, cpp)
+        current_aspect = cc_proto_descriptor(reports, action)
+        if (not isinstance(cpp.get("actionKey"), str) or not cpp["actionKey"]
+                or cpp["actionKey"] != action.get("actionKey")
+                or bool(cpp.get("discoversInputs")) != bool(action.get("discoversInputs"))
+                or any(aspect.get(k) != current_aspect.get(k) for k in ("name", "parameters"))
+                or cpp["arguments"] != action["arguments"] or environment(cpp) != environment(action)
+                or set(original.files(cpp, "outputIds")) != set(reports.files(action, "outputIds"))):
+            raise ValueError("declared and current protobuf CppCompile differ: " + unit[1])
+        inputs[unit[1]] = original.inputs(cpp) | reports.inputs(action)
+    if current:
+        raise ValueError("unexpected current protobuf CppCompile for " + key)
+    return inputs
+
+
+def exact_recorded_compile(graph, cpp, observed, inputs):
     src, obj = graph_source(graph, cpp)
     if (observed.get("src") != src or observed.get("object") != obj
             or observed.get("argv") != cpp.get("arguments")
             or observed.get("environment") != environment(cpp)
             or not isinstance(observed.get("inputs"), list)
-            or set(observed["inputs"]) != graph.inputs(cpp)):
-        raise ValueError("protobuf observer differs from original CppCompile: " + obj)
+            or len(observed["inputs"]) != len(inputs) or set(observed["inputs"]) != inputs):
+        fields = (
+            ("src", observed.get("src"), src),
+            ("object", observed.get("object"), obj),
+            ("argv", observed.get("argv"), cpp.get("arguments")),
+            ("environment", observed.get("environment"), environment(cpp)),
+            ("inputs", sorted(observed["inputs"]) if isinstance(observed.get("inputs"), list)
+             else observed.get("inputs"), sorted(inputs)),
+        )
+        mismatches = {}
+        for name, recorded, expected in fields:
+            if recorded == expected:
+                continue
+            info = {}
+            for key, value in (("recorded", recorded), ("expected", expected)):
+                raw = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode()
+                info[key] = {"type": type(value).__name__, "sha256": hashlib.sha256(raw).hexdigest(),
+                             "count": len(value) if isinstance(value, (str, list, dict)) else None}
+            if name in ("src", "object", "argv", "inputs"):
+                left = recorded if isinstance(recorded, list) else [recorded]
+                right = expected if isinstance(expected, list) else [expected]
+                for index in range(max(len(left), len(right))):
+                    a = left[index] if index < len(left) else None
+                    b = right[index] if index < len(right) else None
+                    if a == b:
+                        continue
+                    info["first_difference_index"] = index
+                    for key, value in (("recorded", a), ("expected", b)):
+                        if (isinstance(value, str) and len(value) <= 256
+                                and re.fullmatch(
+                                    r"(?:(?:bazel-out|external|src)/[A-Za-z0-9_/.+~-]+"
+                                    r"\.(?:c|cc|cpp|cxx|h|hh|hpp|o|obj|d|a|bc)|"
+                                    r"-(?:O[0123szg]|g[0-3]?|f(?:PIC|PIE|no-exceptions|no-rtti)))", value)
+                                and ".." not in Path(value).parts):
+                            info["first_" + key] = value
+                    break
+            mismatches[name] = info
+        raise ValueError("protobuf observer differs from original CppCompile: " +
+                         json.dumps(mismatches, sort_keys=True, separators=(",", ":")))
     return src, obj
 
 
@@ -354,7 +451,7 @@ def option(argv, name):
     return argv[indices[0] + 1]
 
 
-def bind_preprocessor(key, cpp, observed, record, original, reports, outputs):
+def bind_preprocessor(key, cpp, observed, record, original, reports, outputs, original_inputs):
     """Bind the report action to the original compiler, source and compiler options."""
     src, obj = graph_source(original, cpp)
     pair = observed.get("pp_report")
@@ -389,7 +486,6 @@ def bind_preprocessor(key, cpp, observed, record, original, reports, outputs):
             or argv[1:4] != ["-c", _RUNTIME_PP_SHELL, ""] or argv[4:] != expected
             or environment(preprocess) != environment(cpp)):
         raise ValueError("protobuf preprocessor changed compiler options or environment: " + obj)
-    original_inputs = original.inputs(cpp)
     pp_inputs = reports.inputs(preprocess)
     process_inputs = reports.inputs(process)
     if (not original_inputs <= pp_inputs or record["owned_headers"] not in pp_inputs
@@ -650,7 +746,8 @@ def schema_evidence(key, row, record, graph, native, coverage, report_bep, execr
 
 def audit_proto(audit, roots, rows, selected, native_bep, execroot):
     result = {"scope_complete": False, "compiled_owners": {}, "forwarders": {},
-              "unqualified": {}, "selected_original_cc_proto": sorted(selected)}
+              "unqualified": {}, "unqualified_reports": {},
+              "selected_original_cc_proto": sorted(selected)}
     proto_labels = sorted({row["label"] for row in selected.values()})
     root_scope = "deps(" + query_labels(roots) + ")"
     scope = ("kind('^proto_library( rule)?$', "
@@ -659,17 +756,22 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
     include = ("--include_aspects", "--include_artifacts", "--include_commandline", "--include_param_files")
     original_path = audit.query("proto-original-actions", "aquery",
                                 "mnemonic('^(GenProto|GenProtoDescriptorSet|CppCompile|CppCompileHeader|"
-                                "CppModuleCompile|CppLink|CppArchive|FileWrite)$', " + scope + ")", include)
+                                "CppModuleCompile|CppLink|CppArchive|FileWrite)$', " + scope + ")",
+                                ("--include_pruned_inputs",) + include)
     report_path = audit.query("proto-report-actions", "aquery",
-                              "mnemonic('^(FileWrite|DwyuCompilerPreprocess|DwyuProcessSourceFile)$', "
+                              "mnemonic('^(CppCompile|FileWrite|DwyuCompilerPreprocess|DwyuProcessSourceFile)$', "
                               "kind('^(proto_library|cc_proto_library)( rule)?$', " + proto_scope + "))",
-                              (PROTO_ASPECT, "--output_groups=proto_dwyu", "--include_file_write_contents") + include)
+                              (PROTO_ASPECT, "--output_groups=proto_dwyu", "--include_file_write_contents",
+                               "--noinclude_pruned_inputs") + include)
     link_path = audit.query("proto-original-final-links", "aquery",
                             "mnemonic('^(ClickHouseNativeArchive|ClickHouseNativeLink)$', " + root_scope + ")",
                             ("--include_artifacts", "--include_aspects"))
     original = RuntimeActionGraph(original_path, ORIGINAL_ACTIONS + ("FileWrite",), rows, ("proto_library",))
-    reports = RuntimeActionGraph(report_path, ("FileWrite", "DwyuCompilerPreprocess", "DwyuProcessSourceFile"),
-                                 rows, PROTO_KINDS)
+    reports = RuntimeActionGraph(report_path, ("CppCompile", "FileWrite", "DwyuCompilerPreprocess",
+                                              "DwyuProcessSourceFile"), rows, PROTO_KINDS)
+    if any(a.get("discoversInputs") for actions in reports.owners.values() for a in actions
+           if a["mnemonic"] != "CppCompile"):
+        raise ValueError("protobuf report action discovers inputs")
     links = RuntimeActionGraph(link_path, NATIVE_ACTIONS, rows, None)
     result["queries"] = {"ordinary": sha_file(original_path), "reports": sha_file(report_path),
                          "links": sha_file(link_path)}
@@ -687,7 +789,7 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
     pp_bep = ProtoBep(bep, proto_labels, rows, "proto_dwyu")
     result["report_bep"] = pp_bep.path
     produced = recorded_output(reports.owners, reports)
-    metadata = {}
+    metadata, routing_evidence = {}, {}
     for name, (key, action) in produced.items():
         if not name.endswith(REPORT_SUFFIX):
             continue
@@ -701,6 +803,7 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                     or action["mnemonic"] != "FileWrite" or action.get("fileContents") is None
                     or json.loads(action["fileContents"]) != record):
                 raise ValueError("proto observer metadata differs from configured FileWrite")
+            routing_evidence[name] = read_routing_record(pp_bep, execroot, produced, key, name, record)
             metadata[name] = (key, record, evidence)
         except (KeyError, TypeError, ValueError, OSError) as exc:
             result["unqualified"][key] = str(exc)
@@ -723,9 +826,11 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
     for name, (key, record, evidence) in metadata.items():
         if key in seen:
             result["unqualified"][key] = "multiple reports for the same configured proto owner"
+            result["unqualified_reports"].pop(key, None)
             continue
         seen.add(key)
         row = rows[key]
+        invalid_metadata = key in result["unqualified"]
         try:
             if record.get("problems") or record.get("status") == "unsupported":
                 raise ValueError("protobuf observer did not support owner: " + repr(record.get("problems")))
@@ -737,7 +842,8 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                 if child not in expected:
                     raise ValueError("forwarded proto owner outside original graph")
                 result["forwarders"][key] = {"status": "forwarder", "cpp_qualified": False,
-                                             "delegates": [child], "evidence": evidence}
+                                             "delegates": [child], "evidence": evidence,
+                                             "routing_evidence": routing_evidence[name]}
                 continue
             cpp = [a for a in original.owners.get(key, []) if a["mnemonic"] == "CppCompile"]
             if any(a["mnemonic"] in ("CppCompileHeader", "CppModuleCompile")
@@ -758,6 +864,7 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                     "status": record["status"], "cpp_qualified": False, "schema": schema,
                     "delegates": [owner_report(dep, metadata, rows) for dep in record["direct_proto_deps"]],
                     "evidence": evidence,
+                    "routing_evidence": routing_evidence[name],
                 }
                 continue
             if record["status"] != "compiled" or not cpp:
@@ -771,14 +878,14 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                 row, record, metadata, rows, runtime_graph, links, native, coverage)
             entered, uses, findings, unit_proofs = set(), set(), {"public": [], "private": []}, []
             proto_links = [a for a in original.owners.get(key, []) if a["mnemonic"] in ("CppLink", "CppArchive")]
+            inputs = compile_inputs(key, original, reports, cpp)
             for action in cpp:
-                cc_proto_descriptor(original, action)
                 src, obj = graph_source(original, action)
                 if src not in record["generated_sources"] or obj not in recorded:
                     raise ValueError("original proto C++ unit absent from observer")
-                exact_recorded_compile(original, action, recorded[obj])
+                exact_recorded_compile(original, action, recorded[obj], inputs[obj])
                 compilation = original_compile_reached(key, action, original, native, coverage, proto_links, links)
-                pair = bind_preprocessor(key, action, recorded[obj], record, original, reports, produced)
+                pair = bind_preprocessor(key, action, recorded[obj], record, original, reports, produced, inputs[obj])
                 if pp_bep.failed(key, pair["preprocess_output"]) or pp_bep.failed(key, pair["header_trace"]):
                     raise ValueError("actual proto compiler preprocessing failed")
                 files, missing, used, proof = read_header_uses(key, pair, record, headers, pp_bep, execroot, allowed)
@@ -800,9 +907,20 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                 "schema": schema, "runtime_owner": runtime_owner["owner"],
                 "runtime_ownership": runtime_owner, "runtime_native": runtime_native,
                 "evidence": evidence, "headers": header_proof,
+                "routing_evidence": routing_evidence[name],
             }
         except (KeyError, TypeError, ValueError, OSError, UnicodeError) as exc:
             result["unqualified"][key] = str(exc)
+            # Only a unique, supported proto_library FileWrite already matched
+            # to this configured owner and its successful BEP may explain an
+            # unqualified child. It never qualifies that child's C++ actions.
+            if (not invalid_metadata and row["rule_class"] == "proto_library"
+                    and record.get("status") == "compiled" and not record.get("problems")):
+                result["unqualified_reports"][key] = {
+                    "label": row["label"], "checksum": row["checksum"], "status": "not_proved",
+                    "cpp_qualified": False, "reason": str(exc), "evidence": evidence,
+                    "routing_evidence": routing_evidence[name],
+                }
     missing_selected = set(selected) - set(result["forwarders"])
     for key in missing_selected:
         result["unqualified"].setdefault(key, "no qualified original cc_proto forwarding report")

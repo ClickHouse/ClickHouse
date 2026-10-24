@@ -17,7 +17,7 @@ ch_cc_library(
         "-std=c++23",
         "--embed-dir=" + repository_path("contrib/Jieba-CPP") + "/data",
     ],
-    implementation_deps = ["@clickhouse_zstd//:_zstd__compile_0"],
+    implementation_deps = ["@clickhouse_zstd//:_zstd"],
     includes = [
         "include",
     ],
@@ -31,8 +31,5 @@ ch_cc_library(
         "data",
     ],
     private_hdrs = ["data/jieba_hmm_model.dat"],
-    deps = [
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse_darts_clone//:darts_clone",
-    ],
+    deps = ["@clickhouse_darts_clone//:darts_clone"],
 )

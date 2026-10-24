@@ -132,7 +132,7 @@ CMAKE_LINK = {
     "@clickhouse_llvm_project//:clang_rt_builtins__compile_126",
     "@clickhouse_llvm_project//:clang_rt_xray__compile_0",
     "@clickhouse_llvm_project//:clang_rt_xray__compile_1",
-    "@clickhouse_llvm_project//:libllvmlibc__compile_0",
+    "@clickhouse_llvm_project//:libllvmlibc",
     "//src/Common:clickhouse_new_delete",
     "//src:clickhouse_common_io__compile_0",
     "//src/Common:cares_ptr_resolver",
@@ -489,7 +489,7 @@ CMAKE_LINK = {
     "@clickhouse_simdutf//:_simdutf",
     "@clickhouse_libarchive//:_libarchive",
     "@clickhouse_minizip_ng//:_minizip",
-    "@clickhouse_zstd//:_zstd__compile_0",
+    "@clickhouse_zstd//:_zstd",
     "@clickhouse_zstd//:_zstd__compile_1",
     "@clickhouse_xz//:_liblzma",
     "@clickhouse_bzip2//:_bzip2",
@@ -555,7 +555,12 @@ CMAKE_LINK = {
     "//src/Common:current_metrics",
     "//src/Common:shared_mutex",
     "//src/Functions/array:array_distance_transposed",
-    "//src/Common:assert_cast"
+    "//src/Common:assert_cast",
+    "//src/Common:string_utils",
+    "//src/Common:target_specific",
+    "//src:with_context",
+    "//src:io_string_buffers",
+    "//src/Common:load_balancing_priority",
   ],
   "expected_objects": [
     157,
@@ -689,7 +694,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    424,
+    419,
     1,
     1,
     1,
@@ -746,7 +751,7 @@ CMAKE_LINK = {
     16,
     7,
     3,
-    2347,
+    2346,
     15,
     18,
     1,
@@ -1110,7 +1115,12 @@ CMAKE_LINK = {
     1,
     1,
     1,
-    1
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
   ],
   "archives": [
     {
@@ -1787,9 +1797,168 @@ CMAKE_LINK = {
       "name": "src/libclickhouse_new_delete.a"
     },
     {
-      "objects": [[548, 0, 1], [131, 0, 17], [132, 0, 1], [131, 17, 26], [549, 0, 1], [131, 26, 44], [543, 0, 1], [131, 44, 60], [544, 0, 1], [131, 60, 72], [133, 0, 1], [131, 72, 117], [543, 1, 2], [131, 117, 137], [550, 0, 1], [131, 137, 149], [547, 0, 1], [131, 149, 163], [134, 0, 1], [131, 163, 185],
-            [552, 0, 1],
-            [131, 185, 424]],
+      "objects": [
+        [
+          548,
+          0,
+          1
+        ],
+        [
+          131,
+          0,
+          17
+        ],
+        [
+          132,
+          0,
+          1
+        ],
+        [
+          131,
+          17,
+          26
+        ],
+        [
+          549,
+          0,
+          1
+        ],
+        [
+          131,
+          26,
+          44
+        ],
+        [
+          543,
+          0,
+          1
+        ],
+        [
+          131,
+          44,
+          60
+        ],
+        [
+          544,
+          0,
+          1
+        ],
+        [
+          131,
+          60,
+          62
+        ],
+        [
+          557,
+          0,
+          1
+        ],
+        [
+          131,
+          62,
+          71
+        ],
+        [
+          133,
+          0,
+          1
+        ],
+        [
+          131,
+          71,
+          116
+        ],
+        [
+          543,
+          1,
+          2
+        ],
+        [
+          131,
+          116,
+          136
+        ],
+        [
+          550,
+          0,
+          1
+        ],
+        [
+          131,
+          136,
+          148
+        ],
+        [
+          547,
+          0,
+          1
+        ],
+        [
+          131,
+          148,
+          149
+        ],
+        [
+          553,
+          0,
+          1
+        ],
+        [
+          131,
+          149,
+          158
+        ],
+        [
+          554,
+          0,
+          1
+        ],
+        [
+          131,
+          158,
+          160
+        ],
+        [
+          134,
+          0,
+          1
+        ],
+        [
+          131,
+          160,
+          182
+        ],
+        [
+          552,
+          0,
+          1
+        ],
+        [
+          131,
+          182,
+          326
+        ],
+        [
+          556,
+          0,
+          1
+        ],
+        [
+          131,
+          326,
+          373
+        ],
+        [
+          556,
+          1,
+          2
+        ],
+        [
+          131,
+          373,
+          419
+        ]
+      ],
       "name": "src/libclickhouse_common_io.a"
     },
     {
@@ -2145,7 +2314,17 @@ CMAKE_LINK = {
         [
           188,
           806,
-          1201
+          833
+        ],
+        [
+          555,
+          0,
+          1
+        ],
+        [
+          188,
+          833,
+          1200
         ],
         [
           190,
@@ -2154,8 +2333,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1201,
-          1627
+          1200,
+          1626
         ],
         [
           191,
@@ -2164,8 +2343,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1627,
-          1667
+          1626,
+          1666
         ],
         [
           545,
@@ -2174,8 +2353,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1667,
-          1668
+          1666,
+          1667
         ],
         [
           545,
@@ -2184,8 +2363,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1668,
-          1670
+          1667,
+          1669
         ],
         [
           545,
@@ -2194,8 +2373,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1670,
-          1690
+          1669,
+          1689
         ],
         [
           545,
@@ -2204,8 +2383,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1690,
-          1999
+          1689,
+          1998
         ],
         [
           190,
@@ -2214,8 +2393,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          1999,
-          2001
+          1998,
+          2000
         ],
         [
           190,
@@ -2224,8 +2403,8 @@ CMAKE_LINK = {
         ],
         [
           188,
-          2001,
-          2347
+          2000,
+          2346
         ]
       ],
       "name": "src/libdbms.a"

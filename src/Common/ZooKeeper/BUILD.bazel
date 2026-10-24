@@ -22,6 +22,11 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+        "//src:io_string_buffers",
+        "//src/Common:parser_support_api",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = select({
@@ -92,9 +97,7 @@ ch_cc_library(
     source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
-        ],
+        "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
     }) + [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -111,22 +114,17 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
-        ],
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:LLVMX86CodeGen"],
         "@platforms//cpu:aarch64": [],
     }) + [
         "//base/glibc-compatibility",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
-        "@clickhouse_cctz//:tzdata",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_openldap//:_ldap",
-        "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
     ],
@@ -215,15 +213,17 @@ ch_cc_library(
         "//src/Parsers:clickhouse_parsers",
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
+        "//src/Common:stopwatch",
+        "//src/Common:string_utils",
+        "//src:with_context",
+        "//src/Parsers:parser_api",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
-        ],
+        "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
     }) + [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -240,9 +240,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
-        ],
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:LLVMX86CodeGen"],
         "@platforms//cpu:aarch64": [],
     }) + [
         ":headers",
@@ -257,16 +255,18 @@ ch_cc_library(
         "//src/Compression:clickhouse_compression",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
-        "@clickhouse_cctz//:tzdata",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_nuraft//:_nuraft",
         "@clickhouse_openldap//:_ldap",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
+        "//src/Common:current_metrics",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src:io_string_buffers",
     ],
 )
 
@@ -284,15 +284,18 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+        "//src:io_string_buffers",
+        "//src/Common:parser_support_api",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "@clickhouse_llvm_project//:LLVMAArch64CodeGen",
-        ],
+        "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
     }) + [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -309,22 +312,17 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
     ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_llvm_project//:LLVMX86CodeGen",
-        ],
+        "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:LLVMX86CodeGen"],
         "@platforms//cpu:aarch64": [],
     }) + [
         "//base/glibc-compatibility",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
-        "@clickhouse_cctz//:tzdata",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_openldap//:_ldap",
-        "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
     ],
@@ -348,7 +346,6 @@ ch_cc_library(
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
-        "//bazel:clickhouse_config_headers",
         "//src:core_types",
         "//src:headers",
         "//src/Common",
@@ -356,5 +353,9 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common:exception_api",
+        "//src/Common:current_metrics",
+        "//src/Common:parser_support_api",
+        "//src/Common:load_balancing_priority",
+        "//src/Parsers:parser_api",
     ],
 )

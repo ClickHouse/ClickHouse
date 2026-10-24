@@ -5,6 +5,13 @@ load(":normalized_clickhouse.bzl", "normalized_clickhouse")
 
 package(default_visibility = ["//visibility:public"])
 
+py_binary(
+    name = "rust_import_evidence",
+    srcs = ["rust_import_evidence.py"],
+    interpreter_args = ["-B"],
+    python_version = "3.11",
+)
+
 exports_files(
     glob(["license_substitutions_*.json"]),
     visibility = ["//visibility:public"],

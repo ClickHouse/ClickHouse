@@ -281,6 +281,15 @@ existing behavior for explicitly requested targets.
 
 ## Binary comparison
 
+Bazel snapshot `b54899c28` built all 47 requested targets on both CPUs. `//src:unit_tests_dbms` linked on both; these builds did not run the tests. The build-event SHA-256 and byte count for each remotely stripped ClickHouse ELF match the recorded native CMake reference. The unstripped SHA-256 identifies the Bazel output.
+
+| Native Bazel build | Unstripped SHA-256 | Bytes | Stripped SHA-256 (matches CMake) | Bytes |
+| --- | --- | ---: | --- | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/a07177bd-f2c7-4e54-8096-1418e94801eb) | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/47b385af-39c4-4578-b6a2-61b2aeb726f7) | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+
+The [x86-64 DWYU run](https://app.buildbuddy.io/invocation/28038fb9-34db-428f-9dea-056a48dea3ae) and [ARM64 DWYU run](https://app.buildbuddy.io/invocation/84ed0103-9876-414f-b65c-ca24d279a7c4) failed. Each recorded 802 C++ target results and passed all 16 C++ controls. The separate producer control `proto_negative_0` rejected an unexpected Bazel action mnemonic, and the generated-file audit could not identify a unique `google_api_annotations_proto` report. The original publication check rejected this snapshot. DWYU remains incomplete.
+
 Bazel cleanup checks build `//:clickhouse` and compare the normalized
 ELF with the recorded native CMake hashes. The `7ba337afe` check uses
 `--remote_download_outputs=minimal` and compares actual build-event

@@ -1,7 +1,6 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps", "repository_path")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -676,7 +675,15 @@ ch_cc_library(
         "upb_generator/minitable/names.cc",
         "upb_generator/minitable/names_internal.cc",
         "upb_generator/plugin.cc",
-    ] + [
+        "src/google/protobuf/compiler/java/doc_comment.h",
+        "src/google/protobuf/compiler/java/names_internal.h",
+        "src/google/protobuf/compiler/notices.h",
+        "src/google/protobuf/compiler/objectivec/line_consumer.h",
+        "src/google/protobuf/compiler/objectivec/nsobject_methods.h",
+        "src/google/protobuf/compiler/retention.h",
+        "src/google/protobuf/compiler/subprocess.h",
+        "src/google/protobuf/compiler/versions.h",
+        "src/google/protobuf/compiler/zip_writer.h",
         "src/google/protobuf/compiler/cpp/enum.h",
         "src/google/protobuf/compiler/cpp/extension.h",
         "src/google/protobuf/compiler/cpp/field.h",
@@ -760,30 +767,21 @@ ch_cc_library(
         "src/google/protobuf/compiler/csharp/c_sharp_features.pb.h",
         "src/google/protobuf/compiler/csharp/csharp_generator.h",
         "src/google/protobuf/compiler/csharp/names.h",
-        "src/google/protobuf/compiler/java/doc_comment.h",
         "src/google/protobuf/compiler/java/generator.h",
         "src/google/protobuf/compiler/java/helpers.h",
         "src/google/protobuf/compiler/java/java_features.pb.h",
         "src/google/protobuf/compiler/java/name_resolver.h",
         "src/google/protobuf/compiler/java/names.h",
-        "src/google/protobuf/compiler/java/names_internal.h",
         "src/google/protobuf/compiler/java/options.h",
         "src/google/protobuf/compiler/kotlin/generator.h",
-        "src/google/protobuf/compiler/notices.h",
         "src/google/protobuf/compiler/objectivec/generator.h",
-        "src/google/protobuf/compiler/objectivec/line_consumer.h",
         "src/google/protobuf/compiler/objectivec/names.h",
-        "src/google/protobuf/compiler/objectivec/nsobject_methods.h",
         "src/google/protobuf/compiler/plugin.h",
         "src/google/protobuf/compiler/plugin.pb.h",
         "src/google/protobuf/compiler/python/generator.h",
         "src/google/protobuf/compiler/python/pyi_generator.h",
-        "src/google/protobuf/compiler/retention.h",
         "src/google/protobuf/compiler/rust/generator.h",
         "src/google/protobuf/compiler/scc.h",
-        "src/google/protobuf/compiler/subprocess.h",
-        "src/google/protobuf/compiler/versions.h",
-        "src/google/protobuf/compiler/zip_writer.h",
     ] + glob([
         "src/google/protobuf/compiler/code_*.h",
         "src/google/protobuf/compiler/php/*.h",
@@ -869,7 +867,6 @@ ch_cc_library(
         "upb/wire/eps_copy_input_stream.c",
     ] + glob(["upb/wire/internal/*.c"]) + [
         "upb/wire/reader.c",
-    ] + [
         "upb/message/promote.h",
         "upb/reflection/internal/def_builder.h",
         "upb/reflection/internal/strdup2.h",
@@ -934,7 +931,10 @@ ch_cc_library(
     language = "C",
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [":utf8_validity"],
+    deps = [
+        ":utf8_validity",
+        ":_utf8_validity_c",
+    ],
 )
 
 cc_library(
@@ -946,7 +946,7 @@ cc_library(
     ],
 )
 
-cc_binary(
+ch_cc_binary(
     name = "protoc",
     srcs = [
         "src/google/protobuf/compiler/main.cc",
@@ -1000,19 +1000,7 @@ cc_binary(
     ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
-    ]) + select({
-        "//conditions:default": [],
-        "@platforms//cpu:x86_64": [
-            "--sysroot=" + repository_path("contrib/sysroot") + "/linux-x86_64/x86_64-linux-gnu/libc",
-            "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-x86_64",
-            "-nostdinc++",
-        ],
-        "@platforms//cpu:aarch64": [
-            "--sysroot=" + repository_path("contrib/sysroot") + "/linux-aarch64/aarch64-linux-gnu/libc",
-            "--gcc-toolchain=" + repository_path("contrib/sysroot") + "/linux-aarch64",
-            "-nostdinc++",
-        ],
-    }),
+    ]),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
@@ -1102,7 +1090,6 @@ cc_binary(
         ":_libprotoc__compile_0",
         "@clickhouse//base/glibc-compatibility",
         "@clickhouse_abseil_cpp//:absl_log_initialize",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "@clickhouse_llvm_project//:clang_rt_xray",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
@@ -1127,7 +1114,7 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )
 
 ch_cc_library(

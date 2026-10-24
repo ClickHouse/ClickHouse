@@ -5,14 +5,17 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_helper.bzl", "cc_helper")
 
 LlvmRuntimeCompileInfo = provider(
-    "The original compile commands and inputs of configured LLVM runtime C/C++ sources.",
+    "The original commands and inputs of configured runtime C, C++, or preprocessed .S sources.",
     fields = {
         "units": "Ordered structs(src, output, compiler, command, inputs), one per compile action.",
         "toolchain_files": "Files from the compiler toolchain; excludes other declared inputs.",
-        "declared_inputs": "Private compiler input availability from hdrs, not header ownership or exports.",
-        "language": "The configured C or CXX language.",
+        "declared_inputs": "Raw hdrs availability, never header ownership or exports.",
+        "private_headers": "Owned private headers split from configured srcs.",
+        "textual_srcs": "Owned textual sources, never independent compilation units.",
+        "language": "C, CXX, or ASM; ASM units contain only preprocessed .S sources.",
     },
 )
 
@@ -35,7 +38,18 @@ def _resource_dir(ctx, toolchain, features, action):
 
 def _llvm_runtime_objects_impl(ctx):
     # One architecture may have fewer File API compile groups than the other.
-    if not ctx.files.srcs:
+    # CMake File API supplies compiled units, while srcs also owns private
+    # headers. Do not invoke Clang separately on those headers.
+    header_extensions = cc_helper.extensions.CC_HEADER + [".inc", ".def", ".ipp"]
+    private_headers = []
+    sources = []
+    for file in ctx.files.srcs:
+        extension = "." + file.extension
+        if extension in header_extensions or (not file.extension and "libcxx/include/" in file.path):
+            private_headers.append(file)
+        else:
+            sources.append(file)
+    if not sources:
         return [DefaultInfo(files = depset())]
 
     toolchain = find_cc_toolchain(ctx)
@@ -55,10 +69,10 @@ def _llvm_runtime_objects_impl(ctx):
     triple = ctx.attr.arch + "-linux-gnu"
     gcc_root = ctx.attr._sysroot.label.workspace_root + "/linux-" + ctx.attr.arch
     header_inputs = depset(
-        ctx.files.hdrs,
+        ctx.files.hdrs + private_headers + ctx.files.textual_srcs,
         transitive = [toolchain.all_files, ctx.attr._sysroot[DefaultInfo].files],
     )
-    labels = {target.label: target for target in ctx.attr.srcs + ctx.attr.hdrs}.values()
+    labels = {target.label: target for target in ctx.attr.srcs + ctx.attr.hdrs + ctx.attr.textual_srcs}.values()
     copts = [
         ctx.expand_make_variables("copts", ctx.expand_location(option, targets = labels), {})
         for option in ctx.attr.copts
@@ -95,10 +109,10 @@ def _llvm_runtime_objects_impl(ctx):
     extensions = {
         "C": ["c"],
         "CXX": ["cc", "cpp", "cxx", "c++", "C"],
-        "ASM": [],
+        "ASM": ["S"],
     }[ctx.attr.language]
-    collect_units = all([not src.is_directory and src.extension in extensions for src in ctx.files.srcs])
-    for src in ctx.files.srcs:
+    collect_units = all([not src.is_directory and src.extension in extensions for src in sources])
+    for src in sources:
         # .pic.o makes cc_library retain these CMake PIE/PIC objects for a
         # shared or PIE link. CMake's flags, rather than this suffix, select PIC.
         output = ctx.actions.declare_file(ctx.label.name + "/" + src.path + ".pic.o")
@@ -112,17 +126,27 @@ def _llvm_runtime_objects_impl(ctx):
             outputs = [output],
             arguments = [args],
             mnemonic = "Assemble" if ctx.attr.language == "ASM" else "CppCompile",
-            progress_message = "Compiling ClickHouse runtime %{input}",
+            progress_message = "Compiling ClickHouse runtime " + src.short_path,
         )
         outputs.append(output)
         if collect_units:
             units.append(struct(src = src, output = output, compiler = compiler, command = command, inputs = inputs))
     result = [DefaultInfo(files = depset(outputs))]
     if collect_units:
+        declaration = ctx.actions.declare_file(ctx.label.name + ".llvm_runtime_inputs.json")
+        ctx.actions.write(declaration, json.encode({
+            "language": ctx.attr.language,
+            "units": [src.path for src in sources],
+            "private_headers": [file.path for file in private_headers],
+            "textual_srcs": [file.path for file in ctx.files.textual_srcs],
+            "legacy_hdrs": [file.path for file in ctx.files.hdrs],
+        }))
         result.append(LlvmRuntimeCompileInfo(
             units = units,
             toolchain_files = toolchain.all_files,
             declared_inputs = depset(ctx.files.hdrs),
+            private_headers = depset(private_headers),
+            textual_srcs = depset(ctx.files.textual_srcs),
             language = ctx.attr.language,
         ))
     return result
@@ -130,8 +154,12 @@ def _llvm_runtime_objects_impl(ctx):
 llvm_runtime_objects = rule(
     implementation = _llvm_runtime_objects_impl,
     attrs = {
-        "srcs": attr.label_list(allow_files = True),
+        "srcs": attr.label_list(allow_files = True, doc = "Compiled sources and private runtime headers."),
         "hdrs": attr.label_list(allow_files = True),
+        "textual_srcs": attr.label_list(
+            allow_files = [".c", ".cc", ".cpp", ".cxx", ".c++", ".C", ".S"],
+            doc = "Sources included by another translation unit; declared but never compiled separately.",
+        ),
         "copts": attr.string_list(),
         "local_defines": attr.string_list(),
         "local_includes": attr.string_list(doc = "Private package-relative source and generated include directories."),

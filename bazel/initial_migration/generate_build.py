@@ -484,14 +484,17 @@ class Graph:
                 if path == str(self.build / 'contrib/librdkafka-cmake/auxdir'):
                     path = str(self.build / 'contrib/librdkafka-cmake')
                 if path == str(self.build / 'contrib/delta-kernel-rs/include'):
-                    flags += [flag, '$(GENDIR)/bazel/rust/delta_ffi_headers']
-                    hdrs.add('//bazel/rust:delta_ffi_headers')
+                    external_deps.add('//bazel/rust:delta_kernel_ffi_cc')
                     continue
                 replacement = next((d for dep_name, d in BCR_DEPENDENCIES.items()
                                     if not (native and dep_name == name)
                                     and path.removeprefix(str(ROOT) + '/') in d['include_directories']), None)
                 if replacement:
                     external_deps.update(replacement['deps'])
+                    continue
+                # Program libraries resolve generated configuration headers
+                # from their declared deps, not from CMake's build root.
+                if path == str(self.build) and all(s.startswith('programs/') for s in sources):
                     continue
                 hdrs.update(self.headers(path))
                 if path.startswith(str(self.build)):
@@ -995,6 +998,20 @@ def main():
         for spec in REPOSITORIES.values()
     )
     factor_build_selections(ROOT, selection_builds)
+    # Rule transfers can leave adjacent literal lists. Preserve select()
+    # and its no-match error after the CPU selections have been factored.
+    from initial_migration.compact_build import Source, simplify_list_expressions
+    for path in sorted(selection_builds):
+        before = path.read_text()
+        after = before
+        while True:
+            updated = simplify_list_expressions(Source(after), preserve_selects=True)
+            if updated == after:
+                break
+            after = updated
+        if after != before:
+            path.write_text(after)
+    format_build_files()
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

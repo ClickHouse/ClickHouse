@@ -85,5 +85,5 @@ ch_cc_library(
         "_XOPEN_SOURCE=700",
         "__USE_XOPEN2K8",
     ],
-    deps = ["@clickhouse_llvm_project//:clang_rt_builtins"],
+    deps = [],
 )

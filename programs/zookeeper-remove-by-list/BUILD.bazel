@@ -11,12 +11,13 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Dictionaries:clickhouse_dictionaries",
+        "//src:clickhouse_common_io__compile_0",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
-        "../../" + "bazel/gen",
     ],
     source_headers = True,
 )

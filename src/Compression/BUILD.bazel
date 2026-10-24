@@ -28,7 +28,10 @@ ch_cc_library(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_COMPRESSION_HEADERS,
+        exclude = _PRIVATE_COMPRESSION_HEADERS + [
+            "CompressionInfo.h",
+            "ICompressionCodec.h",
+        ],
     ),
     clickhouse_code = True,
     implementation_deps = [
@@ -39,10 +42,15 @@ ch_cc_library(
         "//contrib/cityhash102:_cityhash",
         "@clickhouse_zxc//:_zxc",
         "@clickhouse_sz3//:sz3",
-        "@clickhouse_zstd//:_zstd__compile_0",
+        "@clickhouse_zstd//:_zstd",
         "@lz4//:lz4",
         "@lz4//:lz4_hc",
         "//base/poco/Foundation:_poco_foundation",
+        "//src/Common:current_metrics",
+        "//src/Common:stopwatch",
+        "//src/Common:string_utils",
+        "//src/Common:target_specific",
+        "//src:core_defines",
     ],
     link_runtime = True,
     local_defines = select({
@@ -133,16 +141,35 @@ ch_cc_library(
         "@clickhouse_boost//:_boost_context",
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_silk//:_silk_fibers",
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:clang_rt_builtins",
         "//src/Parsers:clickhouse_parsers",
         "//base:common",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
         "//src:headers",
         "//src/Common",
         "//base/poco/Util:_poco_util",
         "//base:pcg_random",
         "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src/Common:memory_tracking_api",
+        "//src:io_string_buffers",
+        ":codec_api",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
+    ],
+)
+
+ch_cc_library(
+    name = "codec_api",
+    hdrs = [
+        "CompressionInfo.h",
+        "ICompressionCodec.h",
+    ],
+    clickhouse_code = True,
+    deps = [
+        "//src/Parsers:parser_api",
+        "//src/Common:memory_tracking_api",
+        "@clickhouse_boost//:boost_headers",
+        "//base:common",
     ],
 )
