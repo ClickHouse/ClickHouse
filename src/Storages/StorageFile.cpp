@@ -2507,6 +2507,21 @@ Chunk StorageFileSource::generate()
         if (input_format && split_file)
         {
             finishReadingSplitFileBucket();
+
+            /// Only the reader of one of the buckets has recorded the statistics, the others do nothing here.
+            if (current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+                && getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+            {
+                try
+                {
+                    if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                        input_format->cacheFilterColumnStatistics();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("StorageFile"), "Failed to keep the statistics of a split file");
+                }
+            }
         }
         else if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
             && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))

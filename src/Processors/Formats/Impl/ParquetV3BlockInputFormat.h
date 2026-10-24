@@ -30,6 +30,10 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// so that the other row groups of the file are read by other readers of the same query rather than
     /// skipped. Not serialized, like `file_footer`.
     bool is_split_for_parallel_reading = false;
+    /// For a split file, whether the reader of this bucket records the statistics of all row groups of the
+    /// file, to keep them in the metadata cache (see `IInputFormat::cacheFilterColumnStatistics`). One bucket
+    /// is enough. Not serialized, like `file_footer`.
+    bool keeps_filter_column_statistics = false;
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);

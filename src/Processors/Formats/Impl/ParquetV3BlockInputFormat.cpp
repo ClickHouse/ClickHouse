@@ -241,9 +241,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 reader->reader.setFileFooter(load_footer());
             }
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            /// The sources of a split file don't keep the statistics: each reads only some of the row groups.
+            /// Of the readers of a split file, only one records the statistics (of all row groups, also of the other buckets).
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition
-                && !(buckets_to_read && buckets_to_read->is_split_for_parallel_reading))
+                && !(buckets_to_read && buckets_to_read->is_split_for_parallel_reading && !buckets_to_read->keeps_filter_column_statistics))
             {
                 /// Ranges are collected only for the columns not kept yet, and only while they can still be kept.
                 Block key_block = getPort().getHeader();
@@ -603,6 +603,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     result->file_footer = file_footer;
     result->column_chunks = column_chunks;
     result->is_split_for_parallel_reading = is_split_for_parallel_reading;
+    result->keeps_filter_column_statistics = keeps_filter_column_statistics;
     return result;
 }
 
@@ -712,6 +713,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
     }
     for (size_t i = 0; i < row_groups.size(); ++i)
         buckets[i % num_buckets]->row_group_ids.push_back(row_groups[i]);
+    buckets.front()->keeps_filter_column_statistics = true;
 
     return {buckets.begin(), buckets.end()};
 }
