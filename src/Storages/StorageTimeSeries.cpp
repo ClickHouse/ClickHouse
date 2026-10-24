@@ -2,26 +2,42 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <Core/Field.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/queryNormalization.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
@@ -64,6 +80,7 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsUInt64 metric_families_deduplication_cache_expiration_seconds;
     extern const TimeSeriesSettingsUInt64 metric_families_deduplication_cache_size_bytes;
     extern const TimeSeriesSettingsUInt64 tags_deduplication_cache_expiration_seconds;
@@ -477,6 +494,136 @@ void StorageTimeSeries::clearCaches()
     checkTimeSeriesVersionIsSupported(*this);
     createOrDropTagsDeduplicationCache();
     createOrDropMetricFamiliesDeduplicationCache();
+}
+
+void StorageTimeSeries::startup()
+{
+    /// Captured once: an ALTER that replaces the cache while this runs leaves the new cache empty.
+    auto cache = getTagsDeduplicationCache();
+    if (!cache)
+        return;
+
+    try
+    {
+        prewarmTagsDeduplicationCache(*cache);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("StorageTimeSeries"),
+            fmt::format("Failed to prewarm the tags deduplication cache of {}", getStorageID().getNameForLogs()));
+    }
+}
+
+void StorageTimeSeries::prewarmTagsDeduplicationCache(TimeSeriesDeduplicationCache & cache)
+{
+    const size_t max_entries = cache.getMaxEntries();
+    if (!max_entries)
+        return;
+
+    /// A name lookup in `getTable` waits until the tags table has started.
+    /// Its inner table is not a loader dependency of this table.
+    const auto * target = tryGetTarget(ViewTarget::Tags);
+    if (!target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TimeSeries table {} has no tags target", getStorageID().getNameForLogs());
+
+    StorageID tags_table_id = target->table_id;
+    if (target->is_inner_table)
+    {
+        const auto time_series_id = getStorageID();
+        tags_table_id = StorageID{
+            time_series_id.getDatabaseName(),
+            getTimeSeriesInnerTableName(ViewTarget::Tags, time_series_id, getVersion())};
+    }
+
+    DatabaseCatalog::instance().getTable(tags_table_id, getContext());
+
+    /// The same columns, in the same order, as the block `TimeSeriesSink` passes to `filterOutWrittenRows`.
+    Names column_names;
+    column_names.push_back(TimeSeriesColumnNames::ID);
+    column_names.push_back(TimeSeriesColumnNames::MetricName);
+    const Map & tags_to_columns = (*storage_settings.get())[TimeSeriesSetting::tags_to_columns];
+    for (const auto & tag_name_and_column_name : tags_to_columns)
+    {
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        column_names.push_back(tuple.at(1).safeGet<String>());
+    }
+    column_names.push_back(TimeSeriesColumnNames::Tags);
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    for (const auto & column_name : column_names)
+        select_list->children.push_back(make_intrusive<ASTIdentifier>(column_name));
+
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
+    table_expression->children.push_back(table_expression->database_and_table_name);
+
+    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    table_element->table_expression = std::move(table_expression);
+    table_element->children.push_back(table_element->table_expression);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(table_element));
+
+    auto select_query = make_intrusive<ASTSelectQuery>();
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    /// `LIMIT` then applies to distinct rows, so repeated rows of one series do not fill the cache.
+    select_query->distinct = true;
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(max_entries)));
+
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->list_of_selects = list_of_selects;
+    union_query->children.push_back(std::move(list_of_selects));
+
+    auto read_context = Context::createCopy(getContext());
+    read_context->makeQueryContext();
+    read_context->setInternalQuery(true);
+    read_context->setCurrentQueryId("");
+
+    /// The scan stops with the entries collected so far after as many rows as the cache holds entries,
+    /// as many bytes as the cache holds, or ten seconds. One thread reads the rows in the order of the table.
+    const UInt64 max_bytes = (*storage_settings.get())[TimeSeriesSetting::tags_deduplication_cache_size_bytes];
+    read_context->setSetting("max_threads", Field(UInt64(1)));
+    read_context->setSetting("max_rows_to_read", Field(UInt64(max_entries)));
+    read_context->setSetting("max_bytes_to_read", Field(max_bytes));
+    read_context->setSetting("read_overflow_mode", Field("break"));
+    read_context->setSetting("max_execution_time", Field(UInt64(10)));
+    read_context->setSetting("timeout_overflow_mode", Field("break"));
+
+    Stopwatch watch{CLOCK_MONOTONIC};
+
+    /// A loader thread has no thread group, and the process list entry requires one.
+    ThreadGroupSwitcher thread_group_switcher(
+        ThreadGroup::createForQuery(read_context), ThreadName::BACKGROUND_QUERY, /*allow_existing_group=*/ true);
+
+    /// The read limits are checked through the process list entry.
+    const auto query_for_logging = union_query->formatForLogging();
+    auto process_list_entry = read_context->getProcessList().insert(
+        query_for_logging, normalizedQueryHash(query_for_logging, false), union_query.get(), read_context, watch.getStart(), /*is_internal=*/ true);
+    read_context->setProcessListElement(process_list_entry->getQueryStatus());
+
+    InterpreterSelectQueryAnalyzer interpreter(
+        union_query, read_context, SelectQueryOptions().setInternal(true).ignoreAccessCheck());
+    auto io = interpreter.execute();
+    PullingPipelineExecutor executor(io.pipeline);
+
+    size_t rows = 0;
+    Block block;
+    while (executor.pull(block))
+    {
+        rows += block.rows();
+        cache.addWrittenRows(block, block.getPositionByName(TimeSeriesColumnNames::ID));
+    }
+
+    LOG_INFO(
+        getLogger("StorageTimeSeries"),
+        "Prewarmed the tags deduplication cache of {} with {} rows in {} ms",
+        getStorageID().getNameForLogs(),
+        rows,
+        watch.elapsedMilliseconds());
 }
 
 
@@ -1403,7 +1550,8 @@ the [recent_samples_ttl_seconds](#settings) setting and with `ttl_only_drop_part
 - the [tags](#tags-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates (tables of [version](#schema-versioning) 7 or earlier use [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) instead because they aggregate the columns `min_time` and `max_time` in this table).
 Most duplicates don't even reach the table: the deduplication cache of the `TimeSeries` table skips the time series written recently
-(see the `tags_deduplication_cache_expiration_seconds` setting; a table of version 7 or earlier uses this cache only if it doesn't store `min_time` and `max_time`, see the `store_min_time_and_max_time` setting);
+(see the `tags_deduplication_cache_expiration_seconds` setting; a table of version 7 or earlier uses this cache only if it doesn't store `min_time` and `max_time`, see the `store_min_time_and_max_time` setting).
+When the table starts, the cache is filled from the tags table, up to the cache capacity, so a restarted server does not write every time series again;
 - the [time ranges](#time-ranges-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because every insert writes the time range of the inserted samples
 and the ranges of the same time series must be merged into one;
 - the [metric families](#metric-families-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
@@ -1498,7 +1646,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `metric_families_deduplication_cache_size_bytes` | UInt64 | 10485760 | Maximum size in bytes of the deduplication cache of the [metric families](#metric-families-table) table. The cache remembers the descriptions of the metric families written recently, so they aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). Set to 0 to disable the cache, see also `metric_families_deduplication_cache_expiration_seconds` |
 | `metric_families_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [metric families](#metric-families-table) table expires, counted from the moment the metric family was written. So every metric family is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Set to 0 to disable the cache |
 | `tags_deduplication_cache_size_bytes` | UInt64 | 104857600 | Maximum size in bytes of the deduplication cache of the [tags](#tags-table) table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time` (tables of [version](#schema-versioning) 7 or earlier store them unless `store_min_time_and_max_time` is disabled), because otherwise every insert changes these columns: the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also `tags_deduplication_cache_expiration_seconds` |
-| `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time`, see `tags_deduplication_cache_size_bytes`. Set to 0 to disable the cache |
+| `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. When the table starts, the cache is filled from the tags table, up to the cache capacity, so a restarted server does not write every time series again. Used only when the [tags](#tags-table) table doesn't store `min_time` and `max_time`, see `tags_deduplication_cache_size_bytes`. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration). Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Requires `recent_samples_ttl_seconds` to be non-zero |
