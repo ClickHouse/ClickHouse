@@ -2,8 +2,6 @@
 -- A table on the left side must produce a clear error instead of an internal
 -- "Method getResultType is not supported for TABLE query tree node" exception.
 
-SET enable_analyzer = 1;
-
 SELECT system.numbers IN (1, 2, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT system.numbers NOT IN (1, 2, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT system.numbers GLOBAL IN (1, 2, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
