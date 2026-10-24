@@ -18,6 +18,16 @@ class IServer;
 /// and to the same `/js/...` when there is no proxy.
 String relativeServerRootURL(const HTTPServerRequest & request);
 
+/// The query string of the requested page without the credentials (`user`, `password`) and the SQL (`query`),
+/// as `?...`, or empty: a reverse proxy can select a backend with routing parameters such as `?cluster=a`,
+/// which the requests for the embedded files need as well. Characters that are unsafe in an HTML attribute
+/// are percent-encoded.
+String routingQueryOfRequest(const HTTPServerRequest & request);
+
+/// The URL of an embedded JavaScript or CSS file `js/<name>` for the requested page: relative to the page
+/// (`relativeServerRootURL`) and with its routing parameters (`routingQueryOfRequest`).
+String serverAssetURL(const HTTPServerRequest & request, std::string_view name);
+
 /// Response with HTML page that allows to send queries and show results in browser.
 
 class PlayWebUIRequestHandler : public HTTPRequestHandler

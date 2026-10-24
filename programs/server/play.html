@@ -8076,10 +8076,14 @@ class QueryResultElement extends HTMLElement
     /// it does not depend on a suffix of the route (`/play/`), where a document-relative URL would
     /// resolve to `/play/js/...`. A page opened straight from disk has no server, so the name is
     /// resolved against the document instead, which finds the copy sitting next to `play.html` in
-    /// the source tree.
+    /// the source tree. The routing parameters of the page (`routingParameters`), with which a reverse
+    /// proxy can select a backend, are kept as well: resolving the relative name drops them.
     static _assetURL(name)
     {
-        return new URL('js/' + name, location.protocol === 'file:' ? document.baseURI : defaultServerAddress()).href;
+        if (location.protocol === 'file:') return new URL('js/' + name, document.baseURI).href;
+        const url = new URL('js/' + name, defaultServerAddress());
+        url.search = routingParameters();
+        return url.href;
     }
 
     async _getViz()
