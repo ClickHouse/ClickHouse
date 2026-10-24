@@ -19,6 +19,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -260,6 +261,9 @@ bool PartLog::addNewPartsImpl(
 
     try
     {
+        /// The outcome of a cancelled operation is recorded too, so its cancellation must not stop this.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
         auto table_id = parts.front().part->storage.getStorageID();
         part_log = current_context->getPartLog(); // assume parts belong to the same table
         if (!part_log)

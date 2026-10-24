@@ -4881,6 +4881,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts) const
 try
 {
+    /// The outcome of a cancelled operation is recorded too, so its cancellation must not stop this.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     auto table_id = getStorageID();
     if (auto part_log = getContext()->getPartLog())
@@ -14082,6 +14085,9 @@ void MergeTreeData::writePartLog(
     const std::map<String, UInt64> & projections_duration_ms)
 try
 {
+    /// The outcome of a cancelled operation is recorded too, so its cancellation must not stop this.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     auto table_id = getStorageID();
     auto part_log = getContext()->getPartLog();
     if (!part_log)

@@ -23,6 +23,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/indexHint.h>
+#include <Functions/CancellationBudget.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
@@ -39,6 +40,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <base/sort.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -144,10 +146,11 @@ void tryFoldFunctionToConstant(
             column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
         }
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         if (!best_effort)
             throw;
+        rethrowIfQueryCancelled(e);
         return;
     }
 
@@ -791,6 +794,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
 
     node.function_base = function_base;
     node.result_type = result_type;
+    CurrentThread::checkIfNotCancelled();
     node.function = node.function_base->prepare(arguments);
 
     tryFoldFunctionToConstant(node, arguments, all_const, /*best_effort=*/false);
@@ -1106,6 +1110,7 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                 if (evaluate_constants && node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
                 {
                     auto [arguments, all_const] = getFunctionArguments(node->children);
+                    CurrentThread::checkIfNotCancelled();
                     node->function = node->function_base->prepare(arguments);
                     tryFoldFunctionToConstant(*node, arguments, all_const, /*best_effort=*/true);
                 }
@@ -1300,6 +1305,7 @@ std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, Fo
             args.push_back({col, child->result_type, child->result_name});
         }
 
+        CurrentThread::checkIfNotCancelled();
         ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
         const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
         if (!column_const)
@@ -1318,6 +1324,7 @@ std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, Fo
         /// Swallowing the exception is Ok: the predicate is left unfolded, and evaluating it
         /// at runtime reproduces the exception (or not, under short-circuit evaluation)
         /// exactly as the query dictates
+        CurrentThread::checkIfNotCancelled();
         return std::nullopt;
     }
 }
@@ -2101,7 +2108,11 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                         }
 
                         if (has_all_arguments)
+                        {
+                            if (input_rows_count > 0 && node->type == ActionType::FUNCTION)
+                                CurrentThread::checkIfNotCancelled();
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
+                        }
                         else if (params.allow_unknown_function_arguments)
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, false);
                         else /// Recorded as unknown, so that a node shared by several parents is walked once.
@@ -3624,11 +3635,12 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     {
         filter_with_default_value_inputs = buildFilterActionsDAG({filter_node}, input_node_name_to_default_input_column);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /** It is possible that duing DAG construction, some functions cannot be executed for constant default value inputs
           * and exception will be thrown.
           */
+        rethrowIfQueryCancelled(e);
         return false;
     }
 
