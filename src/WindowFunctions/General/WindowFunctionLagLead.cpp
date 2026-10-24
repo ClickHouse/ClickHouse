@@ -30,7 +30,7 @@ DataTypePtr lagLeadResultType(const String & name, const DataTypes & argument_ty
 Int64 checkedOffset(const String & name, Int64 offset)
 {
     if (offset < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in (0, {}], {} given", name, INT64_MAX, offset);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in [0, {}], {} given", name, INT64_MAX, offset);
 
     return offset;
 }
