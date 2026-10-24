@@ -361,15 +361,8 @@ void LocalServer::processError(std::string_view query) const
             message = client_exception->message();
         }
 
-        /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-        fmt::print(stderr, "Received exception:\n{}\n", message);
-        if (is_interactive)
-            fmt::print(stderr, "\n");
-        else
-            fmt::print(stderr, "(query: {})\n", query);
-#pragma clang diagnostic pop
+        printErrorReport(fmt::format(
+            "Received exception:\n{}\n{}", message, is_interactive ? "\n" : fmt::format("(query: {})\n", query)));
     }
     else
     {
@@ -1476,7 +1469,10 @@ catch (DB::Exception & e)
         return Application::EXIT_OK;
 
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
-    std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
+    /// A non-interactive run rethrows the query exception from processError, so this is where it
+    /// is reported. After a Ctrl+C `stderr` may be a terminal that stopped draining, so the report
+    /// goes through the same bounded path as in processError instead of a blocking write.
+    printErrorReport(getExceptionMessageForLogging(e, need_print_stack_trace, true) + "\n");
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
@@ -1485,7 +1481,7 @@ catch (...)
     if (stdout_is_broken)
         return Application::EXIT_OK;
 
-    std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
+    printErrorReport(DB::getCurrentExceptionMessage(true) + "\n");
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
 }
