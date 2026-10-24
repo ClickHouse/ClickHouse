@@ -204,7 +204,8 @@ protected:
 
     void makeContext(HTTPServerRequest & request)
     {
-        context = session->makeQueryContext();
+        /// Pass a copy, because without a session context `makeQueryContext()` drops the session's client info.
+        context = session->makeQueryContext(ClientInfo{session->getClientInfo()});
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
