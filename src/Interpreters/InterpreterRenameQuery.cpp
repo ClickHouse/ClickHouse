@@ -42,6 +42,11 @@ BlockIO InterpreterRenameQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
+        if (!rename.database)
+            params.additional_access_check = [this](const String & default_database, bool throw_if_unresolved)
+            {
+                getContext()->checkAccess(getRequiredAccessForDictionaries(default_database, throw_if_unresolved));
+            };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -77,6 +82,10 @@ BlockIO InterpreterRenameQuery::execute()
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
         table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name, nullptr);
+
+    /// Under the guards, so that no other query changes what the names hold before the rename.
+    if (!skip_access_check && !rename.database)
+        getContext()->checkAccess(getRequiredAccessForDictionaries(current_database, /*assume_dictionary_if_missing=*/ false));
 
     if (rename.database)
         return executeToDatabase(rename, descriptions);
@@ -135,7 +144,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(ddl_guards[from]));
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};
@@ -290,6 +299,59 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of rename query");
         }
+    }
+    return required_access;
+}
+
+AccessRightsElements InterpreterRenameQuery::getRequiredAccessForDictionaries(const String & default_database, bool assume_dictionary_if_missing) const
+{
+    AccessRightsElements required_access;
+    const auto & rename = query_ptr->as<const ASTRenameQuery &>();
+
+    /// The table privileges imply the view ones but not the dictionary ones, and `RENAME TABLE` moves a dictionary too.
+    std::map<UniqueTableName, std::optional<bool>> moved;
+    auto may_be_dictionary = [&](const UniqueTableName & name) -> std::optional<bool>
+    {
+        if (auto it = moved.find(name); it != moved.end())
+            return it->second;
+        auto database = DatabaseCatalog::instance().tryGetDatabase(name.database_name);
+        auto table = database ? database->tryGetTable(name.table_name, getContext()) : nullptr;
+        if (!table)
+            return std::nullopt;
+        return table->isDictionary();
+    };
+
+    for (const auto & elem : rename.getElements())
+    {
+        RenameDescription description(elem, default_database);
+        UniqueTableName from(description.from_database_name, description.from_table_name);
+        UniqueTableName to(description.to_database_name, description.to_table_name);
+
+        /// Nothing moves: an exchange of a name with itself is a no-op, a rename of it fails.
+        if (!(from < to) && !(to < from))
+            continue;
+
+        auto from_kind = may_be_dictionary(from);
+        if (!from_kind && !assume_dictionary_if_missing)
+            continue; /// Nothing moves: `IF EXISTS` skips the element, otherwise the rename fails on it.
+
+        bool from_is_dictionary = from_kind.value_or(true);
+        std::optional<bool> to_kind;
+        if (rename.exchange)
+            to_kind = may_be_dictionary(to).value_or(assume_dictionary_if_missing);
+
+        if (from_is_dictionary)
+        {
+            required_access.emplace_back(AccessType::DROP_DICTIONARY, from.database_name, from.table_name);
+            required_access.emplace_back(AccessType::CREATE_DICTIONARY, to.database_name, to.table_name);
+        }
+        if (to_kind.value_or(false))
+        {
+            required_access.emplace_back(AccessType::DROP_DICTIONARY, to.database_name, to.table_name);
+            required_access.emplace_back(AccessType::CREATE_DICTIONARY, from.database_name, from.table_name);
+        }
+        moved[to] = from_is_dictionary;
+        moved[from] = to_kind; /// nullopt after a rename: the name is empty now.
     }
     return required_access;
 }

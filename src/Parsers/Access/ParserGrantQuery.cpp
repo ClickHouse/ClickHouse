@@ -585,7 +585,7 @@ By default, a user account or a role has no privileges.
 
 If a user or a role has no privileges, it is displayed as [NONE](#none) privilege.
 
-Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](/reference/statements/optimize) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
+Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](/reference/statements/rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`. Renaming or exchanging a dictionary also requires `DROP DICTIONARY` on its old name and `CREATE DICTIONARY` on its new name.
 
 ### SELECT {#select}
 
