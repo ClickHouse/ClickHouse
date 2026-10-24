@@ -1,4 +1,5 @@
 #include <zlib.h>
+#include <base/unaligned.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
@@ -10,7 +11,7 @@ namespace
 template <class T>
 struct CRCBase
 {
-    T tab[256];
+    T tab[8][256];
     explicit CRCBase(T polynomial)
     {
         for (size_t i = 0; i < 256; ++i)
@@ -18,8 +19,11 @@ struct CRCBase
             T c = static_cast<T>(i);
             for (size_t j = 0; j < 8; ++j)
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
-            tab[i] = c;
+            tab[0][i] = c;
         }
+        for (size_t k = 1; k < 8; ++k)
+            for (size_t i = 0; i < 256; ++i)
+                tab[k][i] = (tab[k - 1][i] >> 8) ^ tab[0][tab[k - 1][i] & 0xff];
     }
 };
 
@@ -33,8 +37,25 @@ struct CRCImpl
         static CRCBase<ReturnType> base(polynomial);
 
         T crc = 0;
-        for (size_t i = 0; i < size; ++i)
-            crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
+        while (size >= 8)
+        {
+            /// Low byte of n is the next input byte. A native load is big-endian on s390x.
+            UInt64 n = static_cast<UInt64>(crc) ^ unalignedLoadLittleEndian<UInt64>(buf);
+            crc = base.tab[7][n & 0xff]
+                ^ base.tab[6][(n >> 8) & 0xff]
+                ^ base.tab[5][(n >> 16) & 0xff]
+                ^ base.tab[4][(n >> 24) & 0xff]
+                ^ base.tab[3][(n >> 32) & 0xff]
+                ^ base.tab[2][(n >> 40) & 0xff]
+                ^ base.tab[1][(n >> 48) & 0xff]
+                ^ base.tab[0][(n >> 56) & 0xff];
+            buf += sizeof(UInt64);
+            size -= sizeof(UInt64);
+        }
+
+        while (size--)
+            crc = base.tab[0][(crc ^ *(buf++)) & 0xff] ^ (crc >> 8);
+
         return crc;
     }
 };
