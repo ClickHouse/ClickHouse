@@ -186,15 +186,13 @@ String unescapePrometheusLabelName(const String & name)
 }
 
 /// Writes a metric or label name with the "underscores" escaping, the default of the Prometheus text format:
-/// each character not allowed in a legacy name becomes '_'.
-/// A legacy metric name matches [a-zA-Z_:][a-zA-Z0-9_:]*, but a legacy label name must not contain ':',
-/// so `allow_colon` is true for metric names and false for label names.
-void writeFederateName(std::string_view name, bool allow_colon, WriteBuffer & out)
+/// like Prometheus, each character not allowed in a legacy metric name ([a-zA-Z_:][a-zA-Z0-9_:]*) becomes '_'.
+void writeFederateName(std::string_view name, WriteBuffer & out)
 {
     for (size_t pos = 0; pos < name.size();)
     {
         char c = name[pos];
-        bool valid = isAlphaASCII(c) || (c == '_') || (allow_colon && c == ':') || (isNumericASCII(c) && pos > 0);
+        bool valid = isAlphaASCII(c) || (c == '_') || (c == ':') || (isNumericASCII(c) && pos > 0);
         writeChar(valid ? c : '_', out);
         pos += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(c)), name.size() - pos);
     }
@@ -1154,12 +1152,12 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
                 if (metric_name != last_metric_name)
                 {
                     writeString("# TYPE ", response);
-                    writeFederateName(metric_name, /* allow_colon = */ true, response);
+                    writeFederateName(metric_name, response);
                     writeString(" untyped\n", response);
                     last_metric_name = metric_name;
                 }
 
-                writeFederateName(metric_name, /* allow_colon = */ true, response);
+                writeFederateName(metric_name, response);
                 char separator = '{';
                 bool has_instance = false;
                 for (size_t j = start; j < offsets[row]; ++j)
@@ -1170,7 +1168,7 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
                         continue;
                     writeChar(separator, response);
                     separator = ',';
-                    writeFederateName(name, /* allow_colon = */ false, response);
+                    writeFederateName(name, response);
                     writeChar('=', response);
                     writeFederateLabelValue(value, response);
                     has_instance |= (name == "instance");

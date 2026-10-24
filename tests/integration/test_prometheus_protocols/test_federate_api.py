@@ -47,7 +47,7 @@ def setup():
             ({"__name__": "fed_old", "host": "a"}, {now - 900: 1.0}),
             ({"__name__": "fed_stale", "host": "a"}, {now - 90: 5.0, now - 30: STALE_NAN}),
             ({"__name__": "fed.dotted", "label.name": 'a"b\\c\nd'}, {now - 20: -3.0}),
-            ({"__name__": "colon_metric", "a:b": "x"}, {now - 15: 7.0}),
+            ({"__name__": "colon_metric", "a:b": "x", "c.d": "y"}, {now - 15: 7.0}),
         ]
         send_protobuf_to_remote_write(
             node.ip_address, 9093, "/write", convert_time_series_to_protobuf(time_series)
@@ -106,10 +106,10 @@ def test_federate_ignores_request_dialect_and_parser_limits():
         assert federate({"match[]": "fed_cpu", **params}).text == expected
 
 
-# ':' is allowed in legacy metric names but not in legacy label names, so it is escaped in a label name.
+# Like Prometheus 3.5.0, ':' passes the legacy name check in a label name too, while '.' becomes '_'.
 def test_federate_label_name_with_colon():
     assert federate({"match[]": "colon_metric"}).text == (
-        "# TYPE colon_metric untyped\n" f'colon_metric{{a_b="x",instance=""}} 7 {ms(15)}\n'
+        "# TYPE colon_metric untyped\n" f'colon_metric{{a:b="x",c_d="y",instance=""}} 7 {ms(15)}\n'
     )
 
 
