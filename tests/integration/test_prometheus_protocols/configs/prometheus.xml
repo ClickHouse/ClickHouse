@@ -129,6 +129,14 @@
                 </handler>
             </my_rule_16>
 
+            <!-- The rules, alerts and query_exemplars endpoints always return an empty result, so their handler needs no table. -->
+            <my_rule_18>
+                <url>regex:/api/v1/(rules|alerts|query_exemplars)</url>
+                <handler>
+                    <type>query</type>
+                </handler>
+            </my_rule_18>
+
             <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
             <my_rule_12>
                 <url_prefix>/no_bounds</url_prefix>
