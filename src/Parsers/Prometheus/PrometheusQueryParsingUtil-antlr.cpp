@@ -835,10 +835,17 @@ namespace
                 }
                 return makeFunction(function_name, arguments);
             }
-            if (ctx->START())
-                return makeFunction("start", arguments);
-            if (ctx->END())
-                return makeFunction("end", arguments);
+            if (auto * function_name_ctx = ctx->START() ? ctx->START() : ctx->END())
+            {
+                const auto function_name = getText(function_name_ctx);
+                /// START and END are case-insensitive keywords for @ modifiers, but standalone function names are case-sensitive.
+                if (function_name != "start" && function_name != "end")
+                {
+                    error_listener.setError(fmt::format("Unknown function '{}'", function_name), getStartPos(function_name_ctx));
+                    return nullptr;
+                }
+                return makeFunction(function_name, arguments);
+            }
             throwInconsistentSchema("Function", ctx->getText());
         }
 

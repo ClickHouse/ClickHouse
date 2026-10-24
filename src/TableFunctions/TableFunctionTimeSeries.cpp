@@ -292,13 +292,15 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
+| Other | `time`, `start`, `end`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `start()` and `end()` take no arguments and return the outer query's requested start and end timestamps as scalar seconds since the Unix epoch. In an instant query, both return the evaluation timestamp. Subqueries and offsets do not change these values. `end()` uses the requested end even when it falls between evaluation steps. The existing `@ start()` and `@ end()` modifiers are unchanged. Standalone function names are case-sensitive.
+
+**Note**: `start`, `end`, `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -373,13 +375,15 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `step`, `range`, `pi`, `absent`, `timestamp` |
+| Other | `time`, `start`, `end`, `step`, `range`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
 **Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
 
-**Note**: `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `start()` and `end()` take no arguments and return the outer query's requested start and end timestamps as scalar seconds since the Unix epoch. In an instant query, both return the evaluation timestamp. Subqueries and offsets do not change these values. `end()` uses the requested end even when it falls between evaluation steps. The existing `@ start()` and `@ end()` modifiers are unchanged. Standalone function names are case-sensitive.
+
+**Note**: `start`, `end`, `step`, `range`, `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
