@@ -34,6 +34,7 @@ using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
+template <typename TMutex>
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
@@ -41,13 +42,14 @@ class ParallelReplicasReadingCoordinator;
 using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
-class RemoteQueryExecutor
+template <typename TMutex>
+class RemoteQueryExecutorImpl
 {
 public:
-    using ReadContext = RemoteQueryExecutorReadContext;
+    using ReadContext = RemoteQueryExecutorReadContext<TMutex>;
 
     /// To avoid deadlock in case of OOM and timeout in CancellationChecker
-    using LockAndBlocker = LockAndOverCommitTrackerBlocker<std::lock_guard, std::mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<std::lock_guard, TMutex>;
 
     /// We can provide additional logic for RemoteQueryExecutor
     /// For example for s3Cluster table function we provide an Iterator over tasks to do.
@@ -74,7 +76,7 @@ public:
     };
 
     /// Takes a connection pool for a node (not cluster)
-    RemoteQueryExecutor(
+    RemoteQueryExecutorImpl(
         ConnectionPoolPtr pool,
         const String & query_,
         SharedHeader header_,
@@ -88,7 +90,7 @@ public:
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     /// Takes already set connection.
-    RemoteQueryExecutor(
+    RemoteQueryExecutorImpl(
         Connection & connection,
         const String & query_,
         SharedHeader header_,
@@ -103,7 +105,7 @@ public:
     /// Accepts several connections already taken from pool.
     /// The optional `pool` parameter keeps the connection pool alive while entries are in use,
     /// preventing use-after-free when the pool would otherwise be destroyed before the entries.
-    RemoteQueryExecutor(
+    RemoteQueryExecutorImpl(
         ConnectionPoolEntries && connections_,
         const String & query_,
         SharedHeader header_,
@@ -117,7 +119,7 @@ public:
         ConnectionPoolWithFailoverPtr pool = nullptr);
 
     /// Takes a pool and gets one or several connections from it.
-    RemoteQueryExecutor(
+    RemoteQueryExecutorImpl(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_,
         SharedHeader header_,
@@ -130,7 +132,7 @@ public:
         std::optional<Extension> extension_ = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
-    ~RemoteQueryExecutor();
+    ~RemoteQueryExecutorImpl();
 
     /// Create connection and send query, external tables and scalars.
     ///
@@ -263,7 +265,7 @@ public:
     bool isCancelled() const { LockAndBlocker lock(was_cancelled_mutex); return was_cancelled; }
 
 private:
-    RemoteQueryExecutor(
+    RemoteQueryExecutorImpl(
         const String & query_,
         SharedHeader header_,
         ContextPtr context_,
@@ -315,7 +317,7 @@ private:
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
     std::vector<ExternalTablesData> external_tables_data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    std::mutex external_tables_mutex;
+    TMutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
     bool established = false;
@@ -335,7 +337,7 @@ private:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    mutable std::mutex was_cancelled_mutex;
+    mutable TMutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
     /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
@@ -344,7 +346,7 @@ private:
     /// set. A counter because `work` and `onUpdatePorts` can enter `finish` on different threads.
     /// Lock order is this mutex before `was_cancelled_mutex`; only the `cancel_in_finish_drain`
     /// failpoint reverses it, and there the counter is non-zero so `cancel` returns without locking.
-    mutable std::mutex finish_gate_mutex;
+    mutable TMutex finish_gate_mutex;
     size_t finish_in_progress TSA_GUARDED_BY(finish_gate_mutex) = 0;
 
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
@@ -457,6 +459,8 @@ private:
     /// Takes the lock itself: declare the `SCOPE_FAIL` before the `LockAndBlocker` of the entry point.
     void failFragmentSpan() noexcept;
 };
+
+using RemoteQueryExecutor = RemoteQueryExecutorImpl<std::mutex>;
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
 }
