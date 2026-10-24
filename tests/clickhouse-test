@@ -135,10 +135,12 @@ def forget_test_process_group(pgid: int) -> None:
 
 # Exit code returned by `clickhouse-test` when the run was aborted early via
 # `stop_testing` and no more specific cause was claimed - an observed server death
-# or a generic catastrophic abort; a failed liveness probe uses
-# `HUNG_CHECK_EXIT_CODE` instead. Distinct from the generic failure code 1 so the
-# job side can populate the synthetic "Server died" leaf without fragile log-line
-# matching. Kept in sync with `ci/jobs/scripts/functional_tests_results.py`.
+# (a `<Fatal>` line, or a failed liveness probe with nothing listening on the
+# probed port any more) or a generic catastrophic abort; any other failed
+# liveness probe uses `HUNG_CHECK_EXIT_CODE`. Distinct from the generic failure
+# code 1 so the job side can populate the synthetic "Server died" leaf without
+# fragile log-line matching. Kept in sync with
+# `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
 # Exit code returned when the run stopped *gracefully* because the global time
@@ -159,7 +161,8 @@ GLOBAL_TIME_LIMIT_EXIT_CODE = 3
 MAX_FAILURES_EXIT_CODE = 4
 
 # Exit code returned when the run stopped because a `check_server_liveness`
-# probe failed. The probe establishes only that the check failed - it also fails
+# probe failed while the probed listener was still held or its state could not
+# be told. The probe establishes only that the check failed - it also fails
 # on a non-200 *response* - so this must NOT be conflated with
 # `STOP_TESTING_EXIT_CODE`, which the job side reports as "Server died". Kept in
 # sync with `HUNG_CHECK_EXIT_CODE` in
@@ -3972,11 +3975,10 @@ class TestCase:
                         or "Attempt to read after eof" in stderr
                     )
                     and "Received exception from server" not in stderr
+                ):
                     # Only a server that is really gone stops the whole run: a
                     # stalled but live server keeps the plain exit-code failure.
-                    and probed_server_is_gone(self.args)
-                ):
-                    reason = FailureReason.LIVENESS_CHECK_FAILED
+                    reason = probed_server_failure(self.args) or reason
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
@@ -4480,13 +4482,16 @@ class TestCase:
                     # A server that is unresponsive but still holds its
                     # listening socket is stalled, not dead - do not stop the
                     # run for it; the parent hung check owns that verdict.
-                    if probed_server_is_gone(self.args):
+                    reason = probed_server_failure(self.args)
+                    if reason is not None:
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
-                            FailureReason.LIVENESS_CHECK_FAILED,
+                            reason,
                             0.0,
-                            "\nServer liveness check failed\n",
+                            "\nServer died\n"
+                            if reason == FailureReason.SERVER_DIED
+                            else "\nServer liveness check failed\n",
                         )
 
             self.runs_count += 1
@@ -4624,20 +4629,13 @@ class TestCase:
             exc_description = self.add_info_about_settings(
                 self.get_description_from_exception_info(sys.exc_info())
             )
-            if probed_server_is_gone(self.args):
-                return TestResult(
-                    self.name,
-                    TestStatus.FAIL,
-                    FailureReason.LIVENESS_CHECK_FAILED,
-                    total_time,
-                    exc_description,
-                )
-            # Server is alive (answering, or silent but still holding its
-            # listening socket) - this was a transient network error or a stall.
+            reason = probed_server_failure(self.args)
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.CONNECTION_ERROR,
+                # Server is alive (answering, or silent but still holding its
+                # listening socket) - this was a transient network error or a stall.
+                reason or FailureReason.CONNECTION_ERROR,
                 total_time,
                 exc_description,
             )
@@ -4678,7 +4676,7 @@ class TestCase:
             # outer handler in run() classifies it as CONNECTION_ERROR — a
             # silent swallow would let a test stay OK while leaving its
             # database behind, hiding the bug.
-            if not probed_server_is_gone(args):
+            if probed_server_failure(args) is None:
                 raise
             # Server died between the test finishing and cleanup running.
             # The test's database is moot; the hung-check or the next test
@@ -5186,7 +5184,7 @@ class StopTesting(Exception):
     benign, expected stop after the time budget was reached,
     `MAX_FAILURES_EXIT_CODE` means too many tests failed (real failures, server
     still alive) so the run stopped early, and `HUNG_CHECK_EXIT_CODE` means a
-    `check_server_liveness` probe failed.
+    `check_server_liveness` probe failed and the server was not shown to be gone.
     """
 
     def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
@@ -5903,21 +5901,19 @@ def probed_server_process(
     return True, _pid_owning_sockets(inodes), inodes
 
 
-def probed_server_is_gone(args, max_retries=10) -> bool:
-    """Did the liveness probe fail *and* is the server it talks to really gone?
+def probed_server_failure(args, max_retries=10) -> Optional[FailureReason]:
+    """Why the run must stop for a server that does not answer, or None while it is there.
 
-    The same live-vs-gone split `HungCheckMonitor` makes in the parent loop, for
-    the worker side.  A failed probe alone only says the server is not
-    answering, and a sanitizer build can stop the world for minutes and then
-    carry on; turning every failed probe into a global abort would keep killing
-    such runs at the old `~165 s` latency no matter what the parent monitor
-    decides.  Without positive evidence of a live listener (no `/proc`, a
-    server on another host) the answer is "gone", as in the parent monitor.
+    `SERVER_DIED` when nothing listens on the probed endpoint any more, `LIVENESS_CHECK_FAILED`
+    when that cannot be told (no `/proc`, a server on another host), None when the probe answers
+    or the listener is still held (a stall, which the parent hung check owns).
     """
     if check_server_liveness(args, max_retries=max_retries):
-        return False
+        return None
     alive, _, _ = probed_server_process(args)
-    return alive is not True
+    if alive is True:
+        return None
+    return FailureReason.SERVER_DIED if alive is False else FailureReason.LIVENESS_CHECK_FAILED
 
 
 class HungCheckMonitor:
@@ -5934,7 +5930,7 @@ class HungCheckMonitor:
     So the verdict is split by the evidence that is actually available:
 
       * the server process is gone: abort on the first failed probe, at the
-        same latency as before;
+        same latency as before, and report it as a death (`server_gone`);
       * the process is still there: keep probing, and only call it a hang once
         the server has stayed silent for `GRACE_WITH_LIVE_PROCESS`.
 
@@ -5989,6 +5985,8 @@ class HungCheckMonitor:
         # answered, and a restart answering inside that lag would then read as
         # an unseen swap on the next failed probe.
         self.answering_holder_inodes = None
+        # Set when `is_hung` returns True because the probed server is gone rather than silent.
+        self.server_gone = False
 
     @staticmethod
     def _listener_changed(
@@ -6035,6 +6033,7 @@ class HungCheckMonitor:
                         "during the silence - the original server is gone and "
                         "was replaced; reporting it dead."
                     )
+                    self.server_gone = True
                     return True
                 print(
                     "Server answered the liveness check again after "
@@ -6058,7 +6057,10 @@ class HungCheckMonitor:
         unresponsive_for = time() - self.unresponsive_since
 
         alive, server_pid, inodes = probed_server_process(self.args)
-        if not alive or self._grace_holder_replaced(inodes):
+        if alive is False or self._grace_holder_replaced(inodes):
+            self.server_gone = True
+            return True
+        if alive is None:
             return True
         if self.grace_holder_inodes is None:
             # First failed probe of this silent stretch.  The probe itself
@@ -6073,6 +6075,7 @@ class HungCheckMonitor:
                     "hands since it last answered - the server the tests were "
                     "talking to is gone and was replaced; reporting it dead."
                 )
+                self.server_gone = True
                 return True
             # Pin the grace to the listener it is being granted for.
             self.grace_holder_inodes = inodes
@@ -6790,10 +6793,15 @@ def do_run_tests(
                 # conclude, so it is not started once a stop is already pending.
                 if args.hung_check and not stop_testing.is_set():
                     if hung_check_monitor.is_hung():
-                        print("Hung check failed: server liveness check failed")
+                        if hung_check_monitor.server_gone:
+                            print("Hung check failed: the server is gone")
+                            stop_cause = STOP_TESTING_EXIT_CODE
+                        else:
+                            print("Hung check failed: server liveness check failed")
+                            stop_cause = HUNG_CHECK_EXIT_CODE
                         # Claim before collecting: the sweep below can block for the
                         # whole lldb budget.
-                        try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
+                        try_claim_stop_cause(stop_exit_code, stop_cause)
                         print_sql_stacktraces(args)
                         print_c_stacktraces(args)
                         stop_testing.set()
