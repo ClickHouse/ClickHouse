@@ -1,0 +1,7 @@
+-- non-adaptive index granularity of UInt64 max
+1
+-- the number of processing units of parallel parsing and formatting
+1
+1
+-- POLYGON_INDEX_EACH dictionary with an empty multipolygon
+0
