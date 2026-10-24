@@ -50,7 +50,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int DUPLICATE_COLUMN;
 }
 
 namespace
@@ -435,14 +434,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
             geo_it != arrow_schema->custom_metadata.end() ? &geo_it->second : nullptr);
     }
 
-    /// Reject duplicate column names, matching the Apache Arrow library based reader.
-    UnorderedSetWithMemoryTracking<String> seen_names;
-    for (const auto & field : arrow_schema->fields)
-    {
-        if (!seen_names.insert(field.name).second)
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column '{}' in the Arrow schema", field.name);
-    }
-
+    /// Repeated column names were made unique by `parseSchema`.
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
