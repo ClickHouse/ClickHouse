@@ -14,7 +14,8 @@ set(SRCS
     "${LIBUCONTEXT_SOURCE_DIR}/arch/${MUSL_ARCH}/setcontext.S"
     "${LIBUCONTEXT_SOURCE_DIR}/arch/${MUSL_ARCH}/swapcontext.S"
     "${LIBUCONTEXT_SOURCE_DIR}/arch/${MUSL_ARCH}/makecontext.c"
-    "${LIBUCONTEXT_SOURCE_DIR}/arch/${MUSL_ARCH}/trampoline.c"
+    # Instead of `arch/${MUSL_ARCH}/trampoline.c`: marks the outermost frame for unwinders, see the file.
+    "${CMAKE_CURRENT_SOURCE_DIR}/trampoline-${MUSL_ARCH}.S"
 )
 
 add_library(_ucontext ${SRCS})

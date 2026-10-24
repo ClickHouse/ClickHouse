@@ -4,14 +4,13 @@ macro(set_rust_target)
     if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED Rust_CARGO_TARGET)
         if(CMAKE_TOOLCHAIN_FILE MATCHES "ppc64le")
             set(Rust_CARGO_TARGET "powerpc64le-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
-            set(Rust_CARGO_TARGET "x86_64-unknown-linux-musl" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64")
-            set(Rust_CARGO_TARGET "x86_64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
-        elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
-            set(Rust_CARGO_TARGET "aarch64-unknown-linux-musl" CACHE INTERNAL "Rust config")
-        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64")
-            set(Rust_CARGO_TARGET "aarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-(x86_64|aarch64)")
+            # These toolchain files serve both libcs (see USE_MUSL there), and Rust has to follow.
+            if (USE_MUSL)
+                set(Rust_CARGO_TARGET "${CMAKE_MATCH_1}-unknown-linux-musl" CACHE INTERNAL "Rust config")
+            else()
+                set(Rust_CARGO_TARGET "${CMAKE_MATCH_1}-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+            endif()
         elseif((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "x86_64"))
             set(Rust_CARGO_TARGET "x86_64-apple-darwin" CACHE INTERNAL "Rust config")
         elseif((CMAKE_TOOLCHAIN_FILE MATCHES "darwin") AND (CMAKE_TOOLCHAIN_FILE MATCHES "aarch64"))
@@ -27,6 +26,16 @@ macro(set_rust_target)
         endif()
         message(STATUS "Set Rust target to ${Rust_CARGO_TARGET}")
     endif ()
+
+    # Rust's libc crate hardcodes the ABI of its target's libc, and the layouts differ between musl
+    # and glibc (on aarch64, pthread_attr_t is 56 bytes in musl and 64 in glibc, so a Rust thread
+    # would hand a short buffer to the linked pthread_attr_init). The Rust target has to use the same
+    # libc as the C toolchain, also when Rust_CARGO_TARGET is given on the command line.
+    if (CMAKE_C_COMPILER_TARGET MATCHES "linux-musl$" AND NOT Rust_CARGO_TARGET MATCHES "linux-musl$")
+        message(FATAL_ERROR "Rust target ${Rust_CARGO_TARGET} does not match the musl C toolchain target ${CMAKE_C_COMPILER_TARGET}")
+    elseif (CMAKE_C_COMPILER_TARGET MATCHES "linux-gnu$" AND NOT Rust_CARGO_TARGET MATCHES "linux-gnu$")
+        message(FATAL_ERROR "Rust target ${Rust_CARGO_TARGET} does not match the glibc C toolchain target ${CMAKE_C_COMPILER_TARGET}")
+    endif()
 
     # FindRust.cmake
     set(RUST_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
@@ -82,20 +91,12 @@ if (USE_MUSL)
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_C_FLAGS_STRIPPED "${CMAKE_C_FLAGS}")
     string(REGEX REPLACE "-isystem [^ ]*musl[^ ]*" "" CMAKE_CXX_FLAGS_STRIPPED "${CMAKE_CXX_FLAGS}")
 
-    set(MUSL_STUB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl-cmake/include")
-    set(MUSL_GENERATED_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
-    set(MUSL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/include")
     set(MUSL_ARCH_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/${MUSL_ARCH}")
     set(MUSL_GENERIC_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/arch/generic")
-    set(MUSL_KERNEL_HEADERS_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
+    set(MUSL_GENERATED_DIR "${ClickHouse_BINARY_DIR}/contrib/musl-cmake/include")
+    set(MUSL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl/include")
 
-    # The regex above strips every "-isystem ...musl..." entry, so we must reconstruct the full
-    # musl header surface that cmake/linux/toolchain-*-musl.cmake puts into CMAKE_*_FLAGS via
-    # MUSL_INCLUDE_FLAGS. Keep this in sync with that toolchain: the stub headers (e.g.
-    # execinfo.h) and the kernel-headers directory are part of the set and must not be dropped,
-    # otherwise Cargo cc/cxx builds compile against a narrower header surface than the rest of
-    # the tree. The order matches the toolchain's -isystem order.
-    set(MUSL_C_INCLUDES "-isystem ${MUSL_STUB_INCLUDE_DIR} -isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_INCLUDE_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_KERNEL_HEADERS_DIR}")
+    set(MUSL_C_INCLUDES "-isystem ${MUSL_GENERATED_DIR} -isystem ${MUSL_ARCH_DIR} -isystem ${MUSL_GENERIC_DIR} -isystem ${MUSL_INCLUDE_DIR}")
 
     set(MUSL_CXX_INCLUDES "-isystem ${CXX_INCLUDE_DIR} -nostdinc++ ${MUSL_C_INCLUDES} -D_LIBCPP_HAS_MUSL_LIBC=1")
 

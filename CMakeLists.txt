@@ -657,7 +657,9 @@ option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 # Increase stack size on Musl. We need big stack for our recursive-descend parser
 # and for analyzer passes that recurse on deeply-nested join trees (e.g.
 # 1000-join queries). Match glibc's 8 MiB default; musl reads this from
-# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB). Our musl fork,
+# like glibc, uses a finite RLIMIT_STACK soft limit instead, so this only
+# applies when the limit is unlimited.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
@@ -753,8 +755,8 @@ endif ()
 
 # Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
 # then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
-# Resolving everything at startup costs nothing here because we link dynamically only against libc
-# and we forbid dlopen (see programs/main.cpp).
+# Resolving everything at startup costs nothing here because we link statically (musl) or dynamically
+# only against libc, and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
 # The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
 if (NOT OS_DARWIN)
@@ -936,9 +938,9 @@ if (FUZZER)
                 # Targets compiled with -fno-sanitize=all must never be instrumented:
                 # a later -fsanitize=fuzzer-no-link overrides it and re-enables
                 # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
-                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
-                # runs before any coverage runtime exists, so every executable would
-                # crash at startup.
+                # runtimes (musl, clang_rt_*): their startup code (rcrt1 self-relocation,
+                # __init_libc) runs before relocations are applied and before any
+                # coverage runtime exists, so every executable would crash at startup.
                 #
                 # The PC table that -fsanitize=fuzzer-no-link implies is left out. `clickhouse_fuzzer`
                 # links every `src/` library into a single image that keeps outgrowing the 2 GiB reach of
@@ -1000,7 +1002,6 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")
