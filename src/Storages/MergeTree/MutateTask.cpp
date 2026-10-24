@@ -66,6 +66,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 #include <span>
 
@@ -533,7 +534,7 @@ static bool rewritesAllPartColumns(
     return haveMutationsOfDynamicColumns(source_part, commands_for_part)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
         || !isWidePart(source_part)
-        || !isFullPartStorage(source_part->getDataPartStorage())
+        || !isPerFilePartStorage(source_part->getDataPartStorage())
         /// Per-file hardlink reuse needs source and result to share the storage format; a differing
         /// format (e.g. the packing threshold changed) needs a full rewrite.
         || source_part->getDataPartStorage().getType() != future_storage_type
@@ -816,6 +817,7 @@ static void splitAndModifyMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
     bool suitable_for_ttl_optimization,
+    MergeTreeDataPartStorageType future_storage_type,
     size_t & num_for_file_renames_from_commands,
     LoggerPtr log,
     const ContextPtr & context)
@@ -838,7 +840,8 @@ static void splitAndModifyMutationCommands(
     };
 
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
-        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+        || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
+        || part->getDataPartStorage().getType() != future_storage_type)
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -1149,6 +1152,7 @@ static void splitAndModifyMutationCommands(
                 });
             }
         }
+
         for (const auto & column_name : extra_columns_for_indices_and_projections)
         {
             if (mutated_columns.contains(column_name))
@@ -1397,7 +1401,8 @@ getColumnsForNewDataPart(
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes,
-    bool rewrites_all_columns)
+    bool rewrites_all_columns,
+    bool changes_storage_type)
 {
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
@@ -1409,7 +1414,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool affects_all_columns = false;
+    bool affects_all_columns = changes_storage_type;
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -1634,7 +1639,7 @@ getColumnsForNewDataPart(
     }
 
     /// In compact parts we read all columns, because they all stored in a single file
-    if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
+    if (!isWidePart(source_part) || !isPerFilePartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
 
     const auto & source_columns = source_part->getColumns();
@@ -1825,13 +1830,13 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     const NameSet & materialized_projections)
 {
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+    bool is_per_file_part_storage = isPerFilePartStorage(source_part->getDataPartStorage());
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage
+            || (!is_per_file_part_storage
                 && (source_part->hasProjection(projection.name) || source_part->hasUnloadedProjection(projection.name))
                 && !source_part->hasBrokenProjection(projection.name));
 
@@ -2571,7 +2576,7 @@ static void processStatisticsChanges(
     /// Remove old statistics files.
     if (isFullPartStorage(source_part.getDataPartStorage()))
     {
-        /// File with statistics is always written during mutation.bgf
+        /// File with statistics is always written during mutation.
         files_to_skip.emplace(statistics_file_name);
         const auto & source_checksums = source_part.checksums;
 
@@ -2805,6 +2810,7 @@ static void finalizeMutatedPart(
 
 }
 
+
 struct MutationContext
 {
     MergeTreeData * data{};
@@ -2908,6 +2914,7 @@ struct MutationContext
     NameToNameVector files_to_rename;
 
     bool need_sync{};
+    bool changes_storage_type{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
     MergeTreeTransactionPtr txn;
@@ -2957,7 +2964,6 @@ using MutationContextPtr = std::shared_ptr<MutationContext>;
 class PartMergerWriter
 {
 public:
-
     explicit PartMergerWriter(MutationContextPtr ctx_)
         : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
     {
@@ -2999,6 +3005,11 @@ public:
         return false;
     }
 
+    void cancel() noexcept
+    {
+        tryCleanupTemporaryFiles();
+    }
+
 private:
     void prepare();
     bool mutateOriginalPartAndPrepareProjections();
@@ -3008,6 +3019,7 @@ private:
     void finalizeTempProjectionsAndIndexes();
     bool iterateThroughAllMergeSubtasks();
     void finalize();
+    void tryCleanupTemporaryFiles() const noexcept;
 
     enum class State : uint8_t
     {
@@ -3270,6 +3282,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->context);
 
     tmp_part->finalize();
+    /// FIXME (alesapin) we should use some temporary storage for this,
+    /// not commit each subprojection part
     tmp_part->part->getDataPartStorage().commitTransaction();
     projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
 }
@@ -3490,6 +3504,27 @@ static bool hasAnyIndexFileOnDisk(
     return false;
 }
 
+void PartMergerWriter::tryCleanupTemporaryFiles() const noexcept
+{
+    try
+    {
+        /// Remove transactional supported only for smt.
+        if (!ctx->data->isSharedStorage())
+            return;
+
+        MergeTreeData::MutableDataPartsVector temporary_parts;
+        for (const auto & merge_task : merge_subtasks)
+            temporary_parts.append_range(merge_task->extractTemporaryParts());
+
+        for (auto & part : temporary_parts)
+            part.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("PartMergerWriter"), "Failed to remove tmp files");
+    }
+}
+
 /// Materializes the skip index expressions collected for this mutation into the block. Must run
 /// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
 /// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
@@ -3555,9 +3590,10 @@ public:
     void cancel() noexcept override
     {
         if (ctx->out)
-        {
             ctx->out->cancel();
-        }
+
+        if (part_merger_writer_task)
+            part_merger_writer_task->cancel();
     }
 
 private:
@@ -3585,7 +3621,12 @@ private:
         NameSet removed_indices;
         NameSet removed_projections;
 
-        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
+        /// Reusing index and projection files via hardlinks additionally requires the new part to
+        /// keep the source's storage format: a format migration (e.g. `Full` -> `Packed` after
+        /// crossing `min_bytes_for_full_part_storage`) cannot hardlink anything into the new part,
+        /// so indices and projections must be rebuilt below.
+        bool is_per_file_compatible_part_storage = isPerFilePartStorage(ctx->source_part->getDataPartStorage())
+            && ctx->source_part->getDataPartStorage().getType() == ctx->new_data_part->getDataPartStorage().getType();
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -3599,7 +3640,7 @@ private:
             }
         }
 
-        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->source_part);
+        bool is_full_wide_part = is_per_file_compatible_part_storage && isWidePart(ctx->source_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         /// Source skp_idx.packed bundles several indices into one file: hardlinking it would
@@ -3687,7 +3728,7 @@ private:
 
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage
+                || (!is_per_file_compatible_part_storage
                     && (ctx->source_part->hasProjection(projection.name) || ctx->source_part->hasUnloadedProjection(projection.name))
                     && !ctx->source_part->hasBrokenProjection(projection.name)))
                 && !lightweight_delete_drop;
@@ -3794,7 +3835,7 @@ private:
             builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
         }
 
-        bool affects_all_columns = false;
+        bool affects_all_columns = ctx->changes_storage_type;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
         {
@@ -3948,9 +3989,10 @@ public:
     void cancel() noexcept override
     {
         if (ctx->out)
-        {
             ctx->out->cancel();
-        }
+
+        if (part_merger_writer_task)
+            part_merger_writer_task->cancel();
     }
 
 private:
@@ -4701,7 +4743,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     const auto & index_factory = MergeTreeIndexFactory::instance();
     ASTPtr indices_recalc_expr_list = make_intrusive<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
-    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+    bool is_per_file_part_storage = isPerFilePartStorage(source_part->getDataPartStorage());
 
     /// DROP INDEX commands do not go through the mutations interpreter (they live in
     /// for_file_renames), so ctx->indices_to_drop_names (normally filled by the interpreter) is
@@ -4723,7 +4765,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
 
         bool need_recalculate = ctx->materialized_indices.contains(index.name)
-            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
+            || (!is_per_file_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
 
         if (need_recalculate)
         {
@@ -4754,7 +4796,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// bug (on disk, missing from `checksums.txt`) instead of hardlinking them forward: the
     /// some-columns / `DROP INDEX` path cannot rebuild the index, so the index becomes absent here
     /// (valid; `MATERIALIZE INDEX` rebuilds it). Only full (non-packed) Wide storage holds orphans.
-    if (is_full_part_storage && isWidePart(source_part))
+    if (isFullPartStorage(source_part->getDataPartStorage()) && isWidePart(source_part))
     {
         for (const auto & index : indices)
         {
@@ -5076,7 +5118,11 @@ bool MutateTask::prepare()
         [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); }
     );
 
-    if (!is_storage_touched.any_rows_affected)
+    ctx->changes_storage_type = ctx->source_part->getDataPartStorage().getType() != ctx->future_part->part_format.storage_type;
+
+    /// The no-op fast path clones every file by hardlink/path-share, which only works within one storage type;
+    /// a storage-type change must fall through to the full rewrite.
+    if (!is_storage_touched.any_rows_affected && !ctx->changes_storage_type)
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -5176,6 +5222,7 @@ bool MutateTask::prepare()
         ctx->for_interpreter,
         ctx->for_file_renames,
         suitable_for_ttl_optimization,
+        ctx->future_part->part_format.storage_type,
         ctx->num_for_file_renames_from_commands,
         ctx->log,
         ctx->context);
@@ -5193,6 +5240,7 @@ bool MutateTask::prepare()
             ctx->for_interpreter,
             unused_file_renames,
             suitable_for_ttl_optimization,
+            ctx->future_part->part_format.storage_type,
             unused_num_file_renames_from_commands,
             ctx->log,
             ctx->context);
@@ -5208,6 +5256,10 @@ bool MutateTask::prepare()
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
         settings.apply_deleted_mask = false;
+        /// A storage-type change forces a full rewrite (no cross-storage hardlinks), so the interpreter
+        /// must emit every column, not just the updated ones (else the writer fails with "Not found column").
+        if (ctx->changes_storage_type)
+            settings.return_all_columns = true;
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
             *ctx->data, ctx->source_part, alter_conversions,
@@ -5287,7 +5339,7 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns, ctx->changes_storage_type);
 
     /// A part cannot be left with no columns: it could not be loaded or read.
     if (new_columns.empty())
@@ -5326,8 +5378,9 @@ bool MutateTask::prepare()
     {
         ctx->count_lightweight_deleted_rows = false;
 
-        /// No need to count deleted rows, copy existing_rows_count from source part
-        ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
+        /// Only if storage type does not change we can be sure that number of rows will not be changed.
+        if (!ctx->changes_storage_type)
+            ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
     }
 
     /// All columns from part are changed and may be some more that were missing before in part
