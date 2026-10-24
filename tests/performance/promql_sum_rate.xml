@@ -1,0 +1,26 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+    </settings>
+
+    <!-- Benchmarks PromQL range queries of rate and sum of rate over a day of counters. -->
+
+    <create_query>
+        CREATE TABLE promql_sum_rate_ts ENGINE = TimeSeries
+    </create_query>
+
+    <!-- 2000 increasing counters in 10 jobs, one sample every 15s over [1000000, 1086385]: 11.5M samples. -->
+    <fill_query>
+        INSERT INTO promql_sum_rate_ts (metric_name, tags, samples)
+        SELECT
+            'requests_total',
+            map('job', toString(number % 10), 'instance', toString(number)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64(step * 10 + sipHash64(number, step) % 10)), range(5760))
+        FROM numbers_mt(2000)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQueryRange('promql_sum_rate_ts', 'sum by (job) (rate(requests_total[5m]))', 1000000, 1086385, 15) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_sum_rate_ts', 'rate(requests_total[5m])', 1000000, 1086385, 15) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_sum_rate_ts</drop_query>
+</test>
