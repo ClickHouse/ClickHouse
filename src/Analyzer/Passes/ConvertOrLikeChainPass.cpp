@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <unordered_map>
@@ -26,6 +27,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ListNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/ValidationUtils.h>
 
 #include <Core/Settings.h>
 
@@ -35,6 +39,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_hyperscan;
+    extern const SettingsBool group_by_use_nulls;
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool optimize_or_like_chain;
@@ -77,6 +82,109 @@ bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
             return true;
 
     return false;
+}
+
+bool isPatternFunction(const QueryTreeNodePtr & node)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return false;
+
+    const auto & function_name = function_node->getFunctionName();
+    return function_name == "like" || function_name == "ilike" || function_name == "match";
+}
+
+/// The `like`/`ilike`/`match` nodes of the query, outside of its subqueries, that are `GROUP BY` keys, collected before
+/// any of them is rewritten. With `group_by_use_nulls` and a modifier, a key after `GROUP BY` is a copy converted to `Nullable`.
+std::unordered_set<QueryTreeNodePtr> collectGroupByKeyPatternNodes(const QueryNode & query_node, bool group_by_use_nulls)
+{
+    std::unordered_set<QueryTreeNodePtr> result;
+    if (!query_node.hasGroupBy())
+        return result;
+
+    const bool add_nullable_shape = group_by_use_nulls
+        && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
+
+    QueryTreeNodes keys;
+    auto add_key = [&](const QueryTreeNodePtr & key)
+    {
+        if (!isPatternFunction(key))
+            return;
+
+        keys.push_back(key);
+        if (add_nullable_shape)
+        {
+            auto nullable_key = key->clone();
+            nullable_key->convertToNullable();
+            keys.push_back(std::move(nullable_key));
+        }
+    };
+
+    for (const auto & node : query_node.getGroupBy().getNodes())
+    {
+        if (query_node.isGroupByWithGroupingSets())
+        {
+            for (const auto & key : node->as<ListNode &>().getNodes())
+                add_key(key);
+        }
+        else
+        {
+            add_key(node);
+        }
+    }
+
+    if (keys.empty())
+        return result;
+
+    std::vector<const IQueryTreeNode *> nodes{&query_node};
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.back();
+        nodes.pop_back();
+        for (const auto & child : node->getChildren())
+        {
+            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION)
+                continue;
+
+            if (isPatternFunction(child) && std::ranges::any_of(keys, [&](const auto & key) { return compareGroupByKeys(child, key); }))
+                result.insert(child);
+
+            nodes.push_back(child.get());
+        }
+    }
+
+    return result;
+}
+
+/// `copy` is `original->clone()`, so their children have the same layout. Adds to `nodes` the copy of each node of
+/// `original`, outside of its subqueries, that is in `nodes`.
+void addCopiesOfNodes(const IQueryTreeNode & original, const IQueryTreeNode & copy, std::unordered_set<QueryTreeNodePtr> & nodes)
+{
+    if (nodes.empty())
+        return;
+
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> pairs{{&original, &copy}};
+    while (!pairs.empty())
+    {
+        const auto [original_node, copy_node] = pairs.back();
+        pairs.pop_back();
+
+        const auto & original_children = original_node->getChildren();
+        const auto & copy_children = copy_node->getChildren();
+        chassert(original_children.size() == copy_children.size());
+        for (size_t i = 0; i < original_children.size(); ++i)
+        {
+            const auto & original_child = original_children[i];
+            if (!original_child || original_child->getNodeType() == QueryTreeNodeType::QUERY
+                || original_child->getNodeType() == QueryTreeNodeType::UNION)
+                continue;
+
+            if (nodes.contains(original_child))
+                nodes.insert(copy_children[i]);
+
+            pairs.emplace_back(original_child.get(), copy_children[i].get());
+        }
+    }
 }
 
 /// Stores information about a single LIKE/ILIKE/match pattern
@@ -259,7 +367,9 @@ public:
         : Base(std::move(context))
         , or_function_resolver(std::move(or_function_resolver_))
         , and_function_resolver(std::move(and_function_resolver_))
-    {}
+    {
+        group_by_key_pattern_nodes_stack.emplace_back();
+    }
 
     bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
     {
@@ -279,6 +389,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            group_by_key_pattern_nodes_stack.push_back(getSettings()[Setting::optimize_or_like_chain]
+                ? collectGroupByKeyPatternNodes(*query_node, getSettings()[Setting::group_by_use_nulls])
+                : std::unordered_set<QueryTreeNodePtr>{});
+            return;
+        }
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "or")
             return;
@@ -322,6 +440,13 @@ public:
 
             /// Not {i}like or match -> keep as-is.
             if (!is_like && !is_ilike && !is_match)
+            {
+                slots.push_back({argument});
+                continue;
+            }
+
+            /// A `GROUP BY` key is read from the aggregation result, where its arguments may not exist.
+            if (group_by_key_pattern_nodes_stack.back().contains(argument))
             {
                 slots.push_back({argument});
                 continue;
@@ -594,6 +719,8 @@ public:
 
         /// Clone the optimized OR node
         auto optimized_or_clone = node->clone();
+        /// The visitor continues into the clone, so the `GROUP BY` key nodes it copies must stay recognizable.
+        addCopiesOfNodes(*node, *optimized_or_clone, group_by_key_pattern_nodes_stack.back());
 
         /// Mark the cloned OR as processed to prevent re-visiting
         processed_nodes.insert(optimized_or_clone->as<FunctionNode>());
@@ -602,10 +729,18 @@ public:
         function_node->getArguments().getNodes() = {std::move(optimized_or_clone), std::move(index_hint_node)};
         function_node->resolveAsFunction(and_function_resolver);
     }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            group_by_key_pattern_nodes_stack.pop_back();
+    }
 private:
     const FunctionOverloadResolverPtr or_function_resolver;
     const FunctionOverloadResolverPtr and_function_resolver;
     std::unordered_set<const FunctionNode *> processed_nodes;
+    /// For each enclosing query, its nodes from `collectGroupByKeyPatternNodes`, and their copies from `addCopiesOfNodes`.
+    std::vector<std::unordered_set<QueryTreeNodePtr>> group_by_key_pattern_nodes_stack;
 };
 
 }
