@@ -115,6 +115,14 @@ private:
     /// Milliseconds since monotonic clock epoch, or 0 if this node is not a leader.
     std::atomic<UInt64> leader_since_ms = 0;
 
+    /// Set after the session expiry queue has been refreshed for the current leadership term.
+    std::atomic_bool session_expiry_queue_refreshed_for_leadership = false;
+
+    /// Sessions that received local reads while this server was a follower.
+    /// They are sent to the leader in Raft response metadata.
+    std::mutex session_touches_mutex;
+    std::unordered_set<int64_t> pending_session_touches TSA_GUARDED_BY(session_touches_mutex);
+
     mutable std::mutex leader_unavailable_metrics_mutex;
     UInt64 leader_unavailable_since_ms = 0;
     UInt64 election_since_ms = 0;
@@ -160,6 +168,9 @@ private:
     void stopLeaderMetricsPolling();
     void collectLeaderMetrics();
     void finishLeaderElectionMetrics();
+
+    std::string takeSessionTouches();
+    void applySessionTouches(std::string_view metadata);
 
     std::atomic_bool is_recovering = false;
 
