@@ -3482,10 +3482,7 @@ void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
-        if (deduplication_log)
-        {
-            deduplication_log->dropPart(part->info);
-        }
+        dropDeduplicationLogParts({part});
 
         /// Need to destroy part objects before clearing them from filesystem.
         part.reset();
@@ -3721,11 +3718,18 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
     for (auto & part : removed_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
 
-    if (deduplication_log)
-        for (const auto & part : removed_parts)
-            deduplication_log->dropPart(part->info);
+    dropDeduplicationLogParts(removed_parts);
 
     return removed_parts;
+}
+
+void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
+{
+    if (!deduplication_log)
+        return;
+
+    for (const auto & part : parts)
+        deduplication_log->dropPart(part->info);
 }
 
 void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context)
@@ -3757,10 +3761,13 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
-            auto data_parts_lock = lockParts();
-            auto parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
-            removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
-            LOG_INFO(log, "Removed {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
+            DataPartsVector parts_to_remove;
+            {
+                auto data_parts_lock = lockParts();
+                parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
+                removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
+            }
+            dropPartsImpl(std::move(parts_to_remove), /*detach=*/ false, query_context);
         }
         else
         {
@@ -3995,11 +4002,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         clonePartsToDetached(parts_to_remove, query_context);
     }
 
-    if (deduplication_log)
-    {
-        for (const auto & part : parts_to_remove)
-            deduplication_log->dropPart(part->info);
-    }
+    dropDeduplicationLogParts(parts_to_remove);
 
     if (detach)
         LOG_INFO(log, "Detached {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
@@ -4253,6 +4256,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// Atomically add new parts and remove old ones
     try
     {
+        DataPartsVector replaced_parts;
         {
             /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
             ///  and we should be able to rollback already added (Precomitted) parts
@@ -4294,8 +4298,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
-                removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
+                replaced_parts = removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
         }
+
+        dropDeduplicationLogParts(replaced_parts);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -4450,6 +4456,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Transaction dest_transaction(*dest_table_storage, txn.get());
         Transaction src_transaction(*this, txn.get());
 
+        DataPartsVector moved_out_parts;
         bool src_empty_parts_renaming = false;
         try
         {
@@ -4491,7 +4498,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after renaming empty parts");
             });
 
-            src_transaction.commit(src_data_parts_lock);
+            moved_out_parts = src_transaction.commit(src_data_parts_lock);
         }
         catch (...)
         {
@@ -4501,6 +4508,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 removeRolledBackEmptyPartsAndRethrow(new_empty_covering_src_parts, src_transaction);
             throw;
         }
+
+        dropDeduplicationLogParts(moved_out_parts);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
