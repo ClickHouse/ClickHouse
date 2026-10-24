@@ -1,6 +1,7 @@
 <test>
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
+        <optimize_uniq_exact_radix_partitioning>1</optimize_uniq_exact_radix_partitioning>
     </settings>
 
     <substitutions>
