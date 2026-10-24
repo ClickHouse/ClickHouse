@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
+#include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <filesystem>
 
@@ -245,6 +246,66 @@ void renameExchange(const std::string & old_path, const std::string & new_path)
 bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
 {
     return renameat2(old_path, new_path, RENAME_EXCHANGE);
+}
+
+void renameExchangeNonAtomic(const std::string & old_path, const std::string & new_path)
+{
+    if (!fs::exists(new_path))
+    {
+        fs::rename(old_path, new_path);
+        return;
+    }
+
+    /// Emulate the atomic exchange with three renames through a temporary name. This is not
+    /// atomic, so if a rename fails partway we roll back to leave both paths where they were --
+    /// otherwise one of the files would be stranded under the temporary name, which is exactly
+    /// the kind of corruption this whole code path exists to avoid. A hard crash between the
+    /// renames still leaves such an artifact; that is unavoidable without an atomic exchange.
+    const std::string temp_path = old_path + ".tmp_rename_exchange";
+    fs::rename(old_path, temp_path); /// old_path -> temp_path
+
+    try
+    {
+        fs::rename(new_path, old_path); /// new_path -> old_path
+    }
+    catch (...)
+    {
+        try
+        {
+            fs::rename(temp_path, old_path); /// undo: temp_path -> old_path
+        }
+        catch (...)
+        {
+            LOG_ERROR(
+                getLogger("renameExchangeNonAtomic"),
+                "Could not roll back a failed non-atomic exchange of {} and {}. The original {} is "
+                "left as {}; move it back manually to recover.",
+                old_path, new_path, old_path, temp_path);
+        }
+        throw;
+    }
+
+    try
+    {
+        fs::rename(temp_path, new_path); /// temp_path -> new_path
+    }
+    catch (...)
+    {
+        try
+        {
+            fs::rename(old_path, new_path); /// undo second rename: old_path -> new_path
+            fs::rename(temp_path, old_path); /// undo first rename: temp_path -> old_path
+        }
+        catch (...)
+        {
+            LOG_ERROR(
+                getLogger("renameExchangeNonAtomic"),
+                "Could not roll back a failed non-atomic exchange of {} and {}. The original {} is "
+                "left as {}; move it back manually to recover.",
+                old_path, new_path, old_path, temp_path);
+        }
+        throw;
+    }
 }
 
 }

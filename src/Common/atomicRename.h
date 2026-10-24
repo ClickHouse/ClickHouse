@@ -17,4 +17,10 @@ void renameExchange(const std::string & old_path, const std::string & new_path);
 /// Returns false instead of throwing exception if renameat2 is not supported
 bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path);
 
+/// Non-atomic emulation of renameExchange for filesystems that do not support the atomic
+/// exchange (renameat2 with RENAME_EXCHANGE returns EINVAL, e.g. some FUSE filesystems and
+/// Docker Desktop bind mounts on macOS). Swaps the two files via a temporary name, or, if
+/// new_path does not exist, just moves old_path to new_path. NOTE it's not crash-safe.
+void renameExchangeNonAtomic(const std::string & old_path, const std::string & new_path);
+
 }
