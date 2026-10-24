@@ -44,7 +44,7 @@ class Writer
 public:
     /// `column_types` are the ClickHouse types (without `LowCardinality`) of the columns of the file,
     /// which are the fields of `schema` (a struct). The values are converted as follows:
-    /// the unsigned integers (and `Date`) are written as the signed ones of the same width;
+    /// the unsigned integers are written as the signed ones of the same width (but `Date` as is);
     /// `DateTime` and `DateTime64` as TIMESTAMP; `FixedString`, `IPv6` and the big integers
     /// as their raw bytes; `Variant` as UNION with the branches in the order of its variants.
     Writer(const Type & schema_, const DataTypes & column_types, OutputStream & out_, const WriterOptions & options_);

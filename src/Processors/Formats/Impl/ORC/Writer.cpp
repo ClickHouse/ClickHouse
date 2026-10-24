@@ -733,7 +733,7 @@ public:
     void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
         ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
-        /// The unsigned values (and `Date`) are written as signed ones of the same width.
+        /// The unsigned values are written as signed ones of the same width (except `Date`).
         const size_t width = column.sizeOfValueIfFixed();
         if (width != 2 && width != 4 && width != 8)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} for ORC integer", column.getName());
@@ -742,7 +742,11 @@ public:
         {
             if (null_map && null_map[i])
                 continue;
-            Int64 value = readSignedValue(data, width, offset + i);
+            /// `Date` is the unsigned number of days (up to 2149), which must not wrap around
+            /// to the negative ones after 2059. `Date32` is signed, as the other integers.
+            Int64 value = (is_date && width == 2)
+                ? unalignedLoad<UInt16>(data + (offset + i) * sizeof(UInt16))
+                : readSignedValue(data, width, offset + i);
             encoder.write(value);
             if (is_date)
                 index_statistics.updateDate(static_cast<Int32>(value));
