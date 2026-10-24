@@ -3003,7 +3003,7 @@ The commands are counted in the order they are applied, and the counts are the s
 
 The counts of the commands applied to a part together can differ from the counts when they are applied one by one:
 - If consecutive lightweight deletes are coalesced into one command (see the `enable_row_mask_update_coalescing` MergeTree setting), all the rows they delete are counted for the first of them, and the others show `0`.
-- If a command with a constant condition deletes all rows (for example, `DELETE WHERE 1`), the part is not read, so this command and the commands applied before it show `0` for that part.
+- If a command with a constant condition deletes all rows (for example, `DELETE WHERE 1`), and it is applied together with an `UPDATE` command, the part is not read, so this command and the commands applied before it show `0` for that part.
 </Note>
 
 .see_also

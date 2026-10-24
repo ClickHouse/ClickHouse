@@ -191,8 +191,8 @@ ALTER TABLE t_all_rows_batch DELETE WHERE 0 SETTINGS mutations_sync = 1;
 SELECT 'all rows batch', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_all_rows_batch' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
 DROP TABLE t_all_rows_batch;
 
--- 19. A known limitation: a constant condition that deletes all rows, applied together with other commands, reports 0.
--- The filter of the stage is folded to a constant false, so the pipeline stops before reading the part and counting its rows.
+-- 19. A constant condition that deletes all rows, applied together with another command: the part is replaced by an empty one,
+-- and the rows are counted for the first command that deletes them
 DROP TABLE IF EXISTS t_constant_batch;
 CREATE TABLE t_constant_batch (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_constant_batch SELECT number FROM numbers(10);
@@ -208,3 +208,39 @@ ALTER TABLE t_constant_separate DELETE WHERE 1 SETTINGS mutations_sync = 1;
 ALTER TABLE t_constant_separate DELETE WHERE 0 SETTINGS mutations_sync = 1;
 SELECT 'constant separate', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_constant_separate' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
 DROP TABLE t_constant_separate;
+
+-- 21. All rows of the part are deleted by several commands: the part is replaced by an empty one without reading the
+-- columns the commands do not use, and the rows are counted for the first command that deletes them
+DROP TABLE IF EXISTS t_all_rows_commands;
+CREATE TABLE t_all_rows_commands (id UInt64, payload String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_all_rows_commands SELECT number, randomString(100) FROM numbers(10);
+ALTER TABLE t_all_rows_commands DELETE WHERE id < 6, DELETE WHERE id >= 4 SETTINGS mutations_sync = 1;
+SELECT 'all rows commands', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_all_rows_commands';
+SYSTEM FLUSH LOGS part_log;
+SELECT 'all rows commands empty part', ProfileEvents['MutationCreatedEmptyParts'] FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_all_rows_commands' AND event_type = 'MutatePart';
+DROP TABLE t_all_rows_commands;
+
+-- 22. The rows of a part with a lightweight delete are deleted by several commands: the check of the affected rows reads the
+-- part, so it counts only the rows not deleted yet, the part is mutated, and the rows deleted by the lightweight delete are not
+-- counted again
+DROP TABLE IF EXISTS t_all_rows_lightweight;
+CREATE TABLE t_all_rows_lightweight (id UInt64, payload String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_all_rows_lightweight SELECT number, randomString(100) FROM numbers(10);
+DELETE FROM t_all_rows_lightweight WHERE id < 3;
+ALTER TABLE t_all_rows_lightweight DELETE WHERE id < 6, DELETE WHERE id >= 4 SETTINGS mutations_sync = 1;
+SELECT 'all rows lightweight', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_all_rows_lightweight' ORDER BY toUInt64(extract(mutation_id, '\\d+')), command;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'all rows lightweight empty part', sum(ProfileEvents['MutationCreatedEmptyParts']) FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_all_rows_lightweight' AND event_type = 'MutatePart';
+DROP TABLE t_all_rows_lightweight;
+
+-- 23. All rows of a part with a lightweight delete are deleted by one command whose condition covers the whole part by the
+-- primary key: the part is replaced by an empty one, and the rows deleted by the lightweight delete are not counted again
+DROP TABLE IF EXISTS t_all_rows_lightweight_key;
+CREATE TABLE t_all_rows_lightweight_key (id UInt64, payload String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_all_rows_lightweight_key SELECT number, randomString(100) FROM numbers(10);
+DELETE FROM t_all_rows_lightweight_key WHERE id < 5;
+ALTER TABLE t_all_rows_lightweight_key DELETE WHERE id >= 0 SETTINGS mutations_sync = 1;
+SELECT 'all rows lightweight key', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_all_rows_lightweight_key' ORDER BY toUInt64(extract(mutation_id, '\\d+')), command;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'all rows lightweight key empty part', sum(ProfileEvents['MutationCreatedEmptyParts']) FROM system.part_log WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 't_all_rows_lightweight_key' AND event_type = 'MutatePart';
+DROP TABLE t_all_rows_lightweight_key;

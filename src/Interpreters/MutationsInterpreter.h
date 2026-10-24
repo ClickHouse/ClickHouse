@@ -43,6 +43,16 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
+/// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row
+/// as in `MutationsInterpreter`. Only the columns of the conditions are read, and the rows already deleted by a lightweight
+/// delete are not counted. It is used when the commands delete all rows of the part, which is then replaced by an empty part.
+std::vector<UInt64> countDeletedRowsByCommands(
+    MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    const std::vector<MutationCommand> & commands,
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled);
+
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
 /// other accesses; the function does not call `MutationCommand::ast` itself.

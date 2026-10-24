@@ -2514,9 +2514,8 @@ struct MutationContext
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
-    /// The command that deletes all rows of the part, if the part is replaced by an empty one without `interpreter`.
-    /// This is required for count the number of affected rows in case the part is replaced by an empty one without `interpreter`.
-    std::optional<MutationCommandIdentifier> fully_deleting_command_identifier;
+    /// The rows deleted by each command, if the part is replaced by an empty one without `interpreter`.
+    AffectedRowsByMutationCommandsMap affected_rows_of_empty_part;
     UInt64 watch_prev_elapsed = 0;
     std::unique_ptr<MergeStageProgress> stage_progress;
 
@@ -4808,18 +4807,34 @@ bool MutateTask::prepare()
             return command.type == MutationCommand::DELETE;
         });
 
-        /// To count the rows deleted by each command, all the rows can be attributed without executing
-        /// the commands only to a single command. Otherwise the part is mutated as usual and the rows are counted.
-        const auto & first_command = ctx->commands_for_part.front();
-        bool count_affected_rows = first_command.command_identifier.has_value();
-        if (count_affected_rows && (ctx->commands_for_part.size() != 1 || ctx->source_part->hasLightweightDelete()))
-            has_only_delete_commands = false;
+        /// Whether the rows affected by each command are counted
+        const bool count_affected_rows = std::ranges::all_of(ctx->commands_for_part, [](const auto & command)
+        {
+            return command.command_identifier.has_value();
+        });
 
         if (has_only_delete_commands)
         {
-            /// If the part is fully deleted, we need to count the number of affected rows for the command that deletes all rows.
+            /// The part is not read by `MutationsInterpreter`, so the rows deleted by each command are counted by a separate
+            /// query that reads only the columns of the conditions. It is not done by `isStorageTouchedByMutations`, because
+            /// any other aggregate in its query prevents counting the rows by the primary key without reading them.
             if (count_affected_rows)
-                ctx->fully_deleting_command_identifier = first_command.command_identifier;
+            {
+                const auto deleted_rows_by_command = countDeletedRowsByCommands(
+                    ctx->source_part,
+                    mutations_snapshot,
+                    *commands_for_execution,
+                    context_for_reading,
+                    [&my_ctx = *ctx](const Progress &) { my_ctx.checkOperationIsNotCanceled(); });
+
+                for (size_t i = 0; i < deleted_rows_by_command.size(); ++i)
+                {
+                    const auto & [mutation_version, command_index] = *(*commands_for_execution)[i].command_identifier;
+                    auto & rows_by_command = ctx->affected_rows_of_empty_part[mutation_version];
+                    rows_by_command.resize(command_index + 1);
+                    rows_by_command[command_index] += deleted_rows_by_command[i];
+                }
+            }
 
             LOG_TRACE(ctx->log,
                 "Part {} is fully deleted, creating empty part with mutation version {}",
@@ -5157,30 +5172,17 @@ const HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 
 AffectedRowsByMutationCommandsMap MutateTask::getAffectedRows() const
 {
-    /// The number of rows of the part in cases where the mutation is executed with/without `MutationsInterpreter`.
-    /// Without mutation interpreter `fully_deleting_command_identifier` is set to the command that deletes all rows of the part.
+    /// The rows affected by each command in cases where the mutation is executed with/without the mutation interpreter
     ///
-    ///   How the part is mutated                 | `interpreter` | `fully_deleting_command_identifier` | Result
+    ///   How the part is mutated                 | `interpreter` | `affected_rows_of_empty_part`       | Result
     ///   ----------------------------------------+---------------+-------------------------------------+------------------------------
-    ///   No rows affected, the part is cloned    | null          | unset                               | empty
-    ///   All rows deleted by one command,        | null          | set                                 | `rows_count` of the part
-    ///   the part is replaced by an empty one    |               |                                     | for this command
-    ///   Only metadata or files are changed      | null          | unset                               | empty
-    ///   Otherwise                               | set           | unset                               | counted by `interpreter`
+    ///   No rows affected, the part is cloned    | null          | empty                               | empty
+    ///   All rows deleted by `DELETE` commands,  | null          | counted by                          | `affected_rows_of_empty_part`
+    ///   the part is replaced by an empty one    |               | `countDeletedRowsByCommands`        |
+    ///   Only metadata or files are changed      | null          | empty                               | empty
+    ///   Otherwise                               | set           | empty                               | counted by `interpreter`
     if (ctx->interpreter)
         return ctx->interpreter->getAffectedRows();
-    else
-    {
-        /// The part is replaced with an empty part without `interpreter`.
-        AffectedRowsByMutationCommandsMap result;
-        if (ctx->fully_deleting_command_identifier)
-        {
-            const auto & [mutation_version, command_index] = *ctx->fully_deleting_command_identifier;
-            auto & rows_by_command = result[mutation_version];
-            rows_by_command.resize(command_index + 1);
-            rows_by_command[command_index] = ctx->source_part->rows_count;
-        }
-        return result;
-    }
+    return ctx->affected_rows_of_empty_part;
 }
 }

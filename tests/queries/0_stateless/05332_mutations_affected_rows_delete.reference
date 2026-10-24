@@ -34,7 +34,17 @@ all rows	10
 all rows batch	6
 all rows batch	4
 all rows batch	0
-constant batch	(DELETE WHERE 1)	0
+constant batch	(DELETE WHERE 1)	10
 constant batch	(DELETE WHERE 0)	0
 constant separate	(DELETE WHERE 1)	10
 constant separate	(DELETE WHERE 0)	0
+all rows commands	(DELETE WHERE id < 6)	6
+all rows commands	(DELETE WHERE id >= 4)	4
+all rows commands empty part	1
+all rows lightweight	(UPDATE _row_exists = 0 WHERE id < 3)	3
+all rows lightweight	(DELETE WHERE id < 6)	3
+all rows lightweight	(DELETE WHERE id >= 4)	4
+all rows lightweight empty part	0
+all rows lightweight key	(UPDATE _row_exists = 0 WHERE id < 5)	5
+all rows lightweight key	(DELETE WHERE id >= 0)	5
+all rows lightweight key empty part	1
