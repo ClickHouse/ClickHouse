@@ -39,10 +39,10 @@ echo "multi-file File table"
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_file_multi;
     DROP TABLE IF EXISTS t_file_single;
-    CREATE TABLE t_file_multi (x UInt64) ENGINE = File(Parquet);
+    CREATE TABLE t_file_multi (x UInt64) ENGINE = File(JSON);
     INSERT INTO t_file_multi VALUES (1);
     INSERT INTO t_file_multi SETTINGS engine_file_allow_create_multiple_files = 1 VALUES (2);
-    CREATE TABLE t_file_single (x UInt64) ENGINE = File(Parquet);
+    CREATE TABLE t_file_single (x UInt64) ENGINE = File(JSON);
     INSERT INTO t_file_single VALUES (1);
 "
 check_if_not_detached "SELECT count() FROM t_file_multi" t_file_multi
