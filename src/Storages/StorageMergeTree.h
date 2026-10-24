@@ -167,8 +167,8 @@ private:
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
-    /// The maximum version of a finished mutation removed from `current_mutations_by_version`.
-    /// Updated under `currently_processing_in_background_mutex` before the removal.
+    /// The maximum version of a mutation removed from `current_mutations_by_version` by `clearOldMutations`
+    /// or `killMutation`. Updated under `currently_processing_in_background_mutex` before the removal.
     std::atomic<Int64> max_removed_mutation_version = 0;
 
     CommittingBlocksSet committing_blocks;

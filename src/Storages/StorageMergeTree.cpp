@@ -1834,6 +1834,12 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
             if (!it->second.is_done)
                 decrementMutationsCounters(mutation_counters, *it->second.commands);
 
+            /// The commands of the killed mutation are no longer known, while a part captured by a running query
+            /// may still need them (see `getColumnDefaultnessStats`). This is so even if it is not marked as done yet,
+            /// because it may be applied to every active part already.
+            if (static_cast<Int64>(it->first) > max_removed_mutation_version.load())
+                max_removed_mutation_version.store(static_cast<Int64>(it->first));
+
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
         }
