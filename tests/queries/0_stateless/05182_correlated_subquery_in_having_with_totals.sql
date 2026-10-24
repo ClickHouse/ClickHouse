@@ -4,7 +4,6 @@
 -- `HAVING` expression.
 
 -- Correlated subqueries are a feature of the analyzer, so this test is skipped without it.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_correlated_having_totals;
 CREATE TABLE t_correlated_having_totals (id UInt32, v Int64) ENGINE = MergeTree ORDER BY id;

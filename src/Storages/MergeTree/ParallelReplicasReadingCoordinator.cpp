@@ -1275,6 +1275,8 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     }
 
     const bool first_announcement_for_stream = !stream_to_coordinator.contains(announcement.stream_id);
+    /// A `Default` mode replica discards the parts list unless it asked for the analyzed ranges.
+    const bool needs_parts = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     auto coordinator = getOrCreateCoordinator(announcement.stream_id, announcement.mode);
 
@@ -1290,6 +1292,9 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     /// of any future per-stream coordinator that may post-process its input.
     if (first_announcement_for_stream)
         stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
+
+    if (!needs_parts)
+        return response;
 
     if (auto it = stream_to_registered_parts.find(response.stream_id); it != stream_to_registered_parts.end())
         response.parts = it->second;
