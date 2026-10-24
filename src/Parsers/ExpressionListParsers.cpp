@@ -20,6 +20,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNamedArgument.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -605,6 +606,13 @@ static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&.
     return ast_function;
 }
 
+/// A named argument `name => value` of a function: its name and the position of its value in `Layer::elements`.
+struct NamedArgument
+{
+    size_t index;
+    String name;
+};
+
 enum class Checkpoint : uint8_t
 {
     None,
@@ -828,11 +836,19 @@ public:
             pushOperand(std::move(elements.back()));
             elements.pop_back();
         }
-        /// 3. Put all elements in a single tuple
+        /// 3. Put all elements in a single tuple, starting after the last named argument
         else
         {
-            auto function = makeASTOperator("tuple", std::move(elements));
-            elements.clear();
+            size_t first = 0;
+            if (!named_arguments.empty())
+            {
+                size_t last = named_arguments.back().index;
+                /// Unless the lambda is its value: `f(fn => x -> x)`.
+                first = last + 1 == elements.size() ? last : last + 1;
+            }
+            ASTs lambda_arguments(std::make_move_iterator(elements.begin() + first), std::make_move_iterator(elements.end()));
+            elements.resize(first);
+            auto function = makeASTOperator("tuple", std::move(lambda_arguments));
             pushOperand(function);
         }
 
@@ -849,6 +865,25 @@ public:
         }
 
         return true;
+    }
+
+    /// The next element is the value of a named argument `name => value`.
+    void addNamedArgument(String name)
+    {
+        named_arguments.push_back({elements.size(), std::move(name)});
+    }
+
+    void wrapNamedArguments()
+    {
+        for (auto & [index, name] : named_arguments)
+        {
+            chassert(index < elements.size());
+            auto named_argument = make_intrusive<ASTNamedArgument>();
+            named_argument->name = std::move(name);
+            named_argument->children.push_back(std::move(elements[index]));
+            elements[index] = std::move(named_argument);
+        }
+        named_arguments.clear();
     }
 
     /// Put 'node' identifier into the last operand as its alias
@@ -899,6 +934,7 @@ protected:
     std::vector<Operator> operators;
     ASTs operands;
     ASTs elements;
+    std::vector<NamedArgument> named_arguments;
     bool finished = false;
     int state = 0;
 };
@@ -1236,6 +1272,10 @@ public:
 
                 if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
+                    /// Parameters of parametric functions cannot be named.
+                    if (!named_arguments.empty())
+                        return false;
+
                     parameters = make_intrusive<ASTExpressionList>();
                     std::swap(parameters->children, elements);
                     action = Action::OPERAND;
@@ -1284,6 +1324,8 @@ public:
         {
             if (has_distinct)
                 function_name += "Distinct";
+
+            wrapNamedArguments();
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
             function_node->setIsCompoundName(is_compound_name);
@@ -3717,6 +3759,15 @@ bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
     return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
 }
 
+/// An identifier followed by `=>`.
+static bool isNamedArgumentStart(IParser::Pos pos)
+{
+    if (pos->type != TokenType::BareWord && pos->type != TokenType::QuotedIdentifier)
+        return false;
+    ++pos;
+    return pos->type == TokenType::FatArrow;
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -3752,6 +3803,16 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 pos = old_pos;
             }
         }
+    }
+
+    /// Named argument of a function: `name => value`
+    if (auto * function_layer = typeid_cast<FunctionLayer *>(layers.back().get());
+        function_layer && function_layer->isCurrentElementEmpty() && isNamedArgumentStart(pos))
+    {
+        if (!ParserIdentifier().parse(pos, tmp, expected))
+            return Action::NONE;
+        ++pos;
+        function_layer->addNamedArgument(getIdentifierName(tmp));
     }
 
     /// Special case for cast expression

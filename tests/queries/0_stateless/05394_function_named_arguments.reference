@@ -1,0 +1,8 @@
+-- format
+SELECT f(1, `my arg` => 2, b => 3)
+SELECT f(a => (x AS y))
+SELECT f(arr => [1], fn => (x -> (x + 1)), g => ((x, y) -> x))
+SELECT f(a => g(b => 1))
+SELECT f(a => 1, (x -> x), b => y, ((z, w) -> w))
+SELECT f(b => x, a => \'y\')
+-- errors

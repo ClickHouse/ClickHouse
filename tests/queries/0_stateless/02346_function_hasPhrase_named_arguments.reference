@@ -1,0 +1,25 @@
+-- errors
+-- bind
+1
+1
+0
+1
+1
+1
+0
+0
+1
+0
+-- column name
+hasPhrase(\'a b c\', \'b c\')
+1
+-- distributed
+1
+1
+-- view
+1
+-- default expression
+a b c	1
+c b a	0
+-- text index
+[1]

@@ -42,6 +42,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTNamedArgument.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTPartition.h>
@@ -227,6 +228,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"RefreshStrategy", [] { return make_intrusive<ASTRefreshStrategy>(); }},
         {"TimeInterval", [] { return make_intrusive<ASTTimeInterval>(); }},
         {"Assignment", [] { return make_intrusive<ASTAssignment>(); }},
+        {"NamedArgument", [] { return make_intrusive<ASTNamedArgument>(); }},
         {"TableOverride", [] { return make_intrusive<ASTTableOverride>(); }},
         {"TableOverrideList", [] { return make_intrusive<ASTTableOverrideList>(); }},
         {"IdentifierTypePair", [] { return make_intrusive<ASTIdentifierTypePair>(); }},

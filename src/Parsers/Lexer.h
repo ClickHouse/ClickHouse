@@ -47,6 +47,7 @@ namespace DB
     M(Slash) \
     M(Percent) \
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
+    M(FatArrow)               /** =>. Binds a named function argument: f(name => value). */ \
     M(QuestionMark) \
     M(Colon) \
     M(Caret) \

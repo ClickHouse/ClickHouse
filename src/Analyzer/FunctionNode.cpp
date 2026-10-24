@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTNamedArgument.h>
 
 #include <Functions/IFunction.h>
 
@@ -150,6 +151,13 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
             buffer << ", is_spatial_predicate: true";
     }
 
+    if (!argument_names.empty())
+    {
+        buffer << ", argument_names: ";
+        for (size_t i = 0; i < argument_names.size(); ++i)
+            buffer << (i ? ", " : "") << argument_names[i];
+    }
+
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
     {
@@ -176,7 +184,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
         || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
-        || nulls_action != rhs_typed.nulls_action)
+        || nulls_action != rhs_typed.nulls_action || argument_names != rhs_typed.argument_names)
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
@@ -212,6 +220,17 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
+    /// Skipped for positional arguments to keep their hash: some passes order arguments by it.
+    if (!argument_names.empty())
+    {
+        hash_state.update(argument_names.size());
+        for (const auto & argument_name : argument_names)
+        {
+            hash_state.update(argument_name.size());
+            hash_state.update(argument_name);
+        }
+    }
+
     /// is_operator is ignored here because it affects only AST formatting, except for the function
     /// composition operator, see `isEqualImpl`.
     if (function_name == function_composition_name)
@@ -236,6 +255,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
     result_function->is_operator = is_operator;
+    result_function->argument_names = argument_names;
 
     return result_function;
 }
@@ -289,6 +309,21 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         function_ast->children.push_back(arguments.toAST(new_options));
 
     function_ast->arguments = function_ast->children.back();
+
+    if (!argument_names.empty())
+    {
+        auto & argument_asts = function_ast->arguments->children;
+        chassert(argument_asts.size() == argument_names.size());
+        for (size_t i = 0; i < argument_asts.size(); ++i)
+        {
+            if (argument_names[i].empty())
+                continue;
+            auto named_argument = make_intrusive<ASTNamedArgument>();
+            named_argument->name = argument_names[i];
+            named_argument->children.push_back(std::move(argument_asts[i]));
+            argument_asts[i] = std::move(named_argument);
+        }
+    }
 
     auto window_node = getWindowNode();
     if (window_node)

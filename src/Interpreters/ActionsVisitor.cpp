@@ -45,6 +45,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNamedArgument.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -1007,6 +1009,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "lambda")
         throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
+
+    if (node.arguments && std::ranges::any_of(node.arguments->children, [](const auto & argument) { return argument->template as<ASTNamedArgument>(); }))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Named arguments of function {} are not supported in this context", node.name);
 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")

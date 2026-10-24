@@ -68,6 +68,10 @@ public:
 
     void markAsOperator(bool val = true) { this->is_operator = val; }
 
+    /// Names from `f(name => value)`, empty for positional arguments; cleared when the function is resolved.
+    const std::vector<String> & getArgumentNames() const { return argument_names; }
+    void setArgumentNames(std::vector<String> argument_names_) { argument_names = std::move(argument_names_); }
+
     /// Whether the parser saw operator syntax for this call, e.g. `a + b` rather than `plus(a, b)`.
     /// It normally affects only formatting, but it also tells an operator apart from an ordinary
     /// call to a function of the same name, which matters for an operator whose internal name is
@@ -231,6 +235,7 @@ private:
     bool wrap_with_nullable = false;
     /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
     bool is_operator = false;
+    std::vector<String> argument_names;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
