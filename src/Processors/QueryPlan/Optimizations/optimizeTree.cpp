@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromSealedViewStep.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -1013,6 +1014,13 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// The plan of a sealed view is optimized last, so the passes above clone it while it is still clonable.
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        if (auto * read_from_sealed_view = typeid_cast<ReadFromSealedViewStep *>(frame_node.step.get()))
+            read_from_sealed_view->optimize();
+    });
 }
 
 void addStepsToBuildSets(
