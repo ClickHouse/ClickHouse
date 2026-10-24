@@ -37,10 +37,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorMinMax(
-        const String & index_name_,
-        const Block & index_sample_block,
-        std::shared_ptr<const std::vector<UInt8>> needs_total_order_extremes_);
+    MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
     bool empty() const override { return hyperrectangle.empty(); }
@@ -50,7 +47,6 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
     String index_name;
     Block index_sample_block;
     Ranges hyperrectangle;
-    std::shared_ptr<const std::vector<UInt8>> needs_total_order_extremes;
 };
 
 
@@ -78,7 +74,9 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_);
+    MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
+    {}
 
     ~MergeTreeIndexMinMax() override = default;
 
@@ -99,9 +97,6 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
         const std::string & relative_path_prefix) const override;
-
-private:
-    std::shared_ptr<const std::vector<UInt8>> needs_total_order_extremes;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
