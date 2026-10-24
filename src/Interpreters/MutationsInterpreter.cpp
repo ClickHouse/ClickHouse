@@ -49,6 +49,7 @@
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
@@ -2119,15 +2120,13 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 ? actions_chain.getLastStepAvailableOutputColumns()
                 : input_columns;
 
-            /// Build a combined expression list for all update expressions.
-            auto update_expr_list = make_intrusive<ASTExpressionList>();
-            for (const auto & kv : stage.column_to_updated)
-                update_expr_list->children.push_back(kv.second);
-
-            auto update_tree = buildQueryTree(update_expr_list, execution_context);
-            QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
-            update_analyzer.resolve(update_tree, table_node, execution_context);
-            collectSetsAndSourceColumns(update_tree, planner_context, true);
+            /// Reuse the resolved expressions whose sets were collected above. Resolving the ASTs
+            /// again produces unaliased subqueries with different set keys, registering and building
+            /// a second copy of each set. The update expressions follow the filters in `expression`.
+            const auto & expression_nodes = expression->getChildren();
+            auto updates_begin = expression_nodes.begin() + num_filters;
+            auto update_tree = std::make_shared<ListNode>(QueryTreeNodes(
+                updates_begin, updates_begin + stage.column_to_updated.size()));
 
             auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
             update_actions->dag = ActionsDAG(available_columns_for_step);
@@ -2519,6 +2518,9 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
+    /// Only the mutation stages need to keep their original plan shape. Their set subqueries are
+    /// ordinary reads and need the first optimization pass to expose filters for `PREWHERE`.
+    do_not_optimize_plan_settings.optimize_plan_for_sets = do_not_optimize_plan_settings.optimize_plan;
     do_not_optimize_plan_settings.optimize_plan = false;
 
     auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
