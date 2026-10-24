@@ -1,0 +1,29 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>codec</name>
+            <values>
+                <value>Delta, LZ4</value>
+                <value>Delta, ZSTD(1)</value>
+                <value>DoubleDelta, ZSTD(1)</value>
+                <value>T64, LZ4</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE IF NOT EXISTS `codec_chain_{codec}` (n UInt64 CODEC({codec}))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>INSERT INTO `codec_chain_{codec}` SELECT number * 512 + intHash64(number) % 512 FROM numbers(50000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE `codec_chain_{codec}` FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+
+    <query>SELECT count(n) FROM `codec_chain_{codec}` WHERE ignore(n) == 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS `codec_chain_{codec}`</drop_query>
+</test>

@@ -46,6 +46,7 @@ private:
     UInt32 compressBody(size_t completed_stages, const char * input, UInt32 input_size, UInt32 dest_size, char * dest) const;
 
     std::optional<Codecs> codecs;
+    mutable Codecs decompression_codecs_cache;
 };
 
 }
