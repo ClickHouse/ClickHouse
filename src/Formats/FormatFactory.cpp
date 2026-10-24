@@ -680,6 +680,8 @@ InputFormatPtr FormatFactory::getInputImpl(
     else
     {
         format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
 
     if (owned_buf)
