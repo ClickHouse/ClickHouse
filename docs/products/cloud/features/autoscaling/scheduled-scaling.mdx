@@ -31,6 +31,41 @@ Each rule requires:
 
 Multiple rules can be combined to form a full weekly schedule, as long as their windows do not overlap. For example, a single rule covering Monday to Friday from 06:00 to 20:00 UTC can hold your service at a larger size through the working day, with your default configuration applying outside that window.
 
+### Using clickhousectl {#using-clickhousectl}
+
+You can also manage the schedule with [clickhousectl](/concepts/features/interfaces/cli). Reading it works with OAuth; setting or deleting it needs an API key: run `clickhousectl cloud auth login --interactive` first.
+
+The schedule is a JSON file with an `entries` array, one entry per rule. Weekdays run from `0` (Sunday) to `6` (Saturday), and hours are UTC. `endHourUtc` is exclusive and can be `24` for midnight. Memory is in GB; set `minReplicaMemoryGb` and `maxReplicaMemoryGb` together. This entry holds the service at three replicas of 32 to 64 GB from Monday to Friday, 06:00 to 20:00 UTC. Save it as `schedule.json`:
+
+```json
+{
+  "entries": [
+    {
+      "name": "Business hours",
+      "weekdays": [1, 2, 3, 4, 5],
+      "startHourUtc": 6,
+      "endHourUtc": 20,
+      "numReplicas": 3,
+      "minReplicaMemoryGb": 32,
+      "maxReplicaMemoryGb": 64,
+      "idleScaling": false
+    }
+  ]
+}
+```
+
+```bash
+clickhousectl cloud service scaling-schedule set <service-id> --file schedule.json
+clickhousectl cloud service scaling-schedule get <service-id>
+clickhousectl cloud service scaling-schedule delete <service-id>
+```
+
+<Warning>
+`scaling-schedule set` replaces every existing entry. To change one rule, run `get --json`, keep every entry you want, and remove the response-only `id`, `isActiveNow`, `activeEntryId`, and `baseConfig` fields before you run `set`.
+</Warning>
+
+`delete` removes every entry; `get` then reports `NOT_FOUND` and exits 1. The default configuration that applies outside the windows comes from `cloud service scale`, described in [Vertical autoscaling](/products/cloud/features/autoscaling/vertical#using-clickhousectl).
+
 ## Use cases {#use-cases}
 
 **Batch and ETL workloads:** Scale up before a nightly ingest job runs and scale back down once it completes, avoiding over-provisioning during idle daytime hours.
@@ -48,7 +83,8 @@ A scheduled scaling action and a concurrent autoscaling recommendation may inter
 ## Handling spikes in workload {#handling-bursty-workloads}
 
 If you have an upcoming expected spike in your workload, you can use the
-[ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview) to
+[ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview), or
+[`clickhousectl cloud service scale`](/products/cloud/features/autoscaling/vertical#using-clickhousectl), to
 preemptively scale up your service to handle the spike and scale it down once
 the demand subsides.
 
