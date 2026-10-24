@@ -423,6 +423,14 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
     }) != nullptr;
 }
 
+bool StorageMerge::mayReadViewSource(const ContextPtr & query_context) const
+{
+    return hasChildTable([&](const StoragePtr & table)
+    {
+        return hiddenFilterMayReadTable(*table, "", query_context) || table->mayReadViewSource(query_context);
+    });
+}
+
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;

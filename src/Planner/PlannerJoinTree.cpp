@@ -42,7 +42,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -68,8 +67,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -128,7 +125,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
@@ -151,9 +147,6 @@ namespace Setting
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
@@ -379,51 +372,6 @@ bool containsSubqueryNode(const QueryTreeNodePtr & node)
         if (child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION)
             return true;
         if (containsSubqueryNode(child))
-            return true;
-    }
-    return false;
-}
-
-/// AST-level subquery detector, the counterpart of containsSubqueryNode for the predicates the
-/// pushdown injects as shard-side filters (the view's row policy and view-keyed
-/// additional_table_filters), which are not part of the outer query tree. They are coordinator-side
-/// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
-/// the optimization fires, with the same divergence risk described above, so suppress the
-/// optimization when present. Mirrors hasSubquery in StorageView.cpp.
-///
-/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
-/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
-/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
-/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
-/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
-/// into the shipped query. Only the right-hand side of an IN is inspected.
-bool astContainsSubquery(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-
-    if (ast->as<ASTSubquery>())
-        return true;
-
-    if (const auto * function = ast->as<ASTFunction>();
-        function && function->arguments && isNameOfInFunction(function->name))
-    {
-        const auto & arguments = function->arguments->children;
-        if (arguments.size() >= 2)
-        {
-            const auto & right = arguments[1];
-            if (right->as<ASTIdentifier>())
-                return true;
-
-            if (const auto * right_function = right->as<ASTFunction>();
-                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
-                return true;
-        }
-    }
-
-    for (const auto & child : ast->children)
-    {
-        if (astContainsSubquery(child))
             return true;
     }
     return false;
@@ -1062,41 +1010,8 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     const ContextPtr & query_context)
 {
-    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
-    /// so the filters keyed by that name must not be applied to it.
-    if (storage->isSyntheticDataSource())
-        return;
-
-    const auto & settings = query_context->getSettingsRef();
-
-    auto const & additional_filters = settings[Setting::additional_table_filters].value;
-    if (additional_filters.empty())
-        return;
-
-    auto const & storage_id = storage->getStorageID();
-
-    for (const auto & additional_filter : additional_filters)
-    {
-        const auto & tuple = additional_filter.safeGet<Tuple>();
-        auto const & table = tuple.at(0).safeGet<String>();
-        auto const & filter = tuple.at(1).safeGet<String>();
-
-        if (table == table_expression_alias ||
-            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
-            (table == storage_id.getFullNameNotQuoted()))
-        {
-            ParserExpression parser;
-            table_expression_query_info.additional_filter_ast = parseQuery(
-                parser,
-                filter.data(),
-                filter.data() + filter.size(),
-                "additional filter",
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
-            return;
-        }
-    }
+    if (auto additional_filter_ast = parseAdditionalTableFilter(*storage, table_expression_alias, query_context))
+        table_expression_query_info.additional_filter_ast = std::move(additional_filter_ast);
 }
 
 /// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
