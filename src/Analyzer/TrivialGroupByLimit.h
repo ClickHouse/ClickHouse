@@ -15,7 +15,7 @@ struct Settings;
 /// a plain GROUP BY with a constant non-negative LIMIT and nothing that consumes or
 /// filters the groups between the aggregation and the LIMIT (HAVING, ORDER BY, WINDOW,
 /// QUALIFY, LIMIT BY, LIMIT AFTER / LIMIT UNTIL, DISTINCT, GROUP BY modifiers, window
-/// functions or `arrayJoin` in the projection).
+/// functions or `arrayJoin` in the projection), and the query is not a correlated subquery.
 ///
 /// For such queries the aggregation may keep only the first `LIMIT + OFFSET` distinct
 /// keys: an unspecified subset of the groups is a valid result for LIMIT without ORDER BY.

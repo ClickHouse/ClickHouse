@@ -1119,27 +1119,24 @@ QueryPlan decorrelateQueryPlan(
         /// The correlated columns are hidden keys: the user's `max_rows_to_group_by` would count groups over all
         /// outer rows at once instead of within one evaluation of the subquery.
         /// Without user keys one evaluation has exactly one group, so the limit can never be exceeded there and is
-        /// dropped: a `LATERAL` subquery without `GROUP BY` must not throw or be truncated because of the outer rows.
+        /// dropped: a correlated subquery without `GROUP BY` must not throw or be truncated because of the outer rows.
         /// With a user `GROUP BY` the limit is not enforced per correlated-key partition. With `throw` it bounds the
         /// total number of groups of all evaluations, which can only throw earlier than a per-evaluation limit and
         /// never changes the result. `any` / `break` would silently drop groups of unrelated outer rows, so they are
         /// rejected.
-        if (context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN)
+        if (original_aggregator_params.keys.empty())
         {
-            if (original_aggregator_params.keys.empty())
-            {
-                new_aggregator_params.max_rows_to_group_by = 0;
-                new_aggregator_params.group_by_overflow_mode = OverflowMode::THROW;
-            }
-            else if (original_aggregator_params.max_rows_to_group_by != 0
-                && original_aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
-            {
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "`group_by_overflow_mode` other than `throw` with a nonzero `max_rows_to_group_by` is not supported "
-                    "for a `LATERAL` subquery with `GROUP BY`, because the limit cannot be applied within one evaluation "
-                    "of the subquery");
-            }
+            new_aggregator_params.max_rows_to_group_by = 0;
+            new_aggregator_params.group_by_overflow_mode = OverflowMode::THROW;
+        }
+        else if (original_aggregator_params.max_rows_to_group_by != 0
+            && original_aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "`group_by_overflow_mode` other than `throw` with a nonzero `max_rows_to_group_by` is not supported "
+                "for `GROUP BY` in a correlated subquery, because the limit cannot be applied within one evaluation "
+                "of the subquery");
         }
 
         auto result_step = std::make_unique<AggregatingStep>(
