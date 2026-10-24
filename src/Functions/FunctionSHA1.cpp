@@ -119,14 +119,14 @@ public:
 /// ============================================================
 /// Multi-buffer SHA-1, templated on Ops.
 ///
-/// Template functions go inside DECLARE_MULTITARGET_CODE so each
+/// Template functions go inside DECLARE_X86_64_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
 /// The Ops struct (AVX512SHA1Ops) is in its own DECLARE block
 /// and found via same-namespace lookup.
 /// ============================================================
 
 /// One SHA-1 round step for a single group of N lanes.
-/// Defined outside DECLARE_MULTITARGET_CODE because preprocessor
+/// Defined outside DECLARE_X86_64_MULTITARGET_CODE because preprocessor
 /// directives inside macro arguments are undefined behavior.
 #define SHA1_STEP(func, a, b, c, d, e, wi, k) \
     { \
@@ -152,7 +152,7 @@ public:
     SHA1_EXPAND(w, i) \
     SHA1_STEP(func, a, b, c, d, e, w[(i) & 15], k)
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
     template <typename Ops> struct SHA1State { typename Ops::Vec a, b, c, d, e; };
 
@@ -462,7 +462,7 @@ DECLARE_MULTITARGET_CODE(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function SHA1", arguments[0].column->getName());
     }
 
-    ) // DECLARE_MULTITARGET_CODE
+    ) // DECLARE_X86_64_MULTITARGET_CODE
 
 #undef SHA1_STEP
 #undef SHA1_EXPAND

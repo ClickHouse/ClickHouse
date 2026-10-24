@@ -123,14 +123,14 @@ public:
 /// ============================================================
 /// Multi-buffer MD5, templated on Ops.
 ///
-/// Template functions go inside DECLARE_MULTITARGET_CODE so each
+/// Template functions go inside DECLARE_X86_64_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
 /// The Ops structs (ScalarMD5Ops, AVX2MD5Ops, AVX512MD5Ops) are
 /// in their own DECLARE blocks and found via same-namespace lookup.
 /// ============================================================
 
 /// One interleaved MD5 round step for two independent groups.
-/// Defined outside DECLARE_MULTITARGET_CODE because preprocessor
+/// Defined outside DECLARE_X86_64_MULTITARGET_CODE because preprocessor
 /// directives inside macro arguments are undefined behavior.
 #define MD5_STEP_X2(func, w1, x1, y1, z1, w2, x2, y2, z2, g, s, ti) \
     { \
