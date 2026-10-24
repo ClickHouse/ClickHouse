@@ -171,6 +171,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
 
+    /// An empty format consumes no argument.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     String getSignatureString() const override
     {
         /// format string + 0+ substitution args (numbers or strings).

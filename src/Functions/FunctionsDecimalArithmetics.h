@@ -246,6 +246,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
+    bool canBeExecutedOnDefaultArguments() const override { return Transform::valid_on_default_arguments; }
 
     /// Documentation-only — arithmetic on two `Decimal` operands; the optional
     /// third argument is a const-`UInt8` scale for the result. The output is

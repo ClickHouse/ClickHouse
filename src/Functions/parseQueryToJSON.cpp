@@ -56,6 +56,8 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty string is not a query.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
