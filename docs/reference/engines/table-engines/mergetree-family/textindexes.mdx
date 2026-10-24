@@ -577,6 +577,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasTokenStartingWith](/reference/functions/regular-functions/string-search-functions#hasTokenStartingWith) | no (the prefix is matched as-is) | all⁶ | yes⁶ |
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
 | [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
@@ -606,6 +607,11 @@ The latter is instead evaluated by a dictionary scan (`use_text_index_like_evalu
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 ⁵ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
+
+⁶ `hasTokenStartingWith` is evaluated by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`) that seeks the sorted dictionary to the tokens with the given prefix, with any tokenizer.
+It requires an index without a postprocessor and a prefix of at least `text_index_like_min_pattern_length` characters.
+Otherwise the function is evaluated on the column data, still with the tokenizer and preprocessor of the index.
+See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -870,6 +876,32 @@ SELECT count() FROM table WHERE hasAllTokens(comment, 'clickhouse olap');
 -- Search tokens passed as Array(String)
 SELECT count() FROM table WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
+```
+
+#### `hasTokenStartingWith` {#functions-example-hastokenstartingwith}
+
+Function [hasTokenStartingWith](/reference/functions/regular-functions/string-search-functions#hasTokenStartingWith) matches rows in which at least one token starts with the given prefix, for example the `fa*` of a search box.
+Unlike `startsWith`, the prefix may begin at any token, not only at the start of the value.
+The prefix is matched as-is, it is not tokenized.
+The index seeks its sorted dictionary to the tokens with that prefix, so the query reads only the posting lists of the matching tokens.
+
+Example:
+
+```sql
+-- One token per field: the fields are joined with a separator that never occurs in the data.
+CREATE TABLE table
+(
+    user_name String,
+    email String,
+    search String MATERIALIZED lowerUTF8(concatWithSeparator('|', '', user_name, email)),
+    INDEX idx(search) TYPE text(tokenizer = splitByString(['|']))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- Rows in which some field starts with 'fa'.
+-- The dictionary scan requires at least text_index_like_min_pattern_length (default: 4) characters.
+SELECT count() FROM table WHERE hasTokenStartingWith(search, 'fa') SETTINGS text_index_like_min_pattern_length = 2;
 ```
 
 #### `hasPhrase` {#functions-example-hasphrase}
@@ -1517,6 +1549,10 @@ How the result of the dictionary scan is used depends on where the needle is anc
 The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'value')` when the needle has no complete token to search.
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
+
+The same dictionary scan serves [hasTokenStartingWith](/reference/functions/regular-functions/string-search-functions#hasTokenStartingWith) with any tokenizer, and there the index decides the query on its own: a row matches if and only if one of its tokens starts with the prefix, so the scan is a direct read without hint.
+It seeks the sorted dictionary to the key range of the prefix instead of scanning every block.
+A prefix shorter than `text_index_like_min_pattern_length`, or an index with a postprocessor, leaves the function to the column scan.
 
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 

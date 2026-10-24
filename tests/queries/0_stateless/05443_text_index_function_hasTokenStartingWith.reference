@@ -1,0 +1,69 @@
+Negative tests
+Without an index, tokens are split by non-alphanumeric characters
+1
+1
+0
+0
+1
+0
+1
+1
+1
+1
+0
+0
+1
+A custom tokenizer via the 3rd argument
+1
+0
+0
+1
+0
+Text index with the splitByNonAlpha tokenizer
+[1,4,5]
+[1,4,5]
+[5]
+[1,2,4]
+[]
+[]
+[1,4,5]
+[1,2,3,4,5,6]
+[2,3,6]
+[1,4]
+[2,3]
+[1,4,5]
+[1,4,5]
+[1,4,5]
+[1,4,5]
+[1,4,5]
+The index decides the query on its own, so the original condition is removed
+prefix	1	0
+index tokenizer	1	0
+The function is left to the column scan, with the tokenizer of the index
+too short	0	1	1
+scan disabled	0	1	1
+other tokenizer	0	1
+Text index with a preprocessor: it is applied to the haystack and to the prefix
+[1,3]
+[1,3]
+[1,3]
+preprocessor	1	0
+Text index with a postprocessor: the index is not used, the function sees the tokens before postprocessing
+[1]
+[]
+postprocessor	0	1
+Array column with the array tokenizer: every element is a token
+[1]
+[1]
+[2]
+[1]
+[2]
+array	1	0
+Fields joined with a separator and the splitByString tokenizer: prefix search over all fields
+[1,4]
+[1]
+[3]
+[2]
+[]
+[]
+splitByString	1	0
