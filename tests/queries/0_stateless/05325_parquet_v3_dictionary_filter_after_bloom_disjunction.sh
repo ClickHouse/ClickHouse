@@ -24,7 +24,8 @@ ${CLICKHOUSE_CLIENT} --query="
 "
 
 # Disable the min/max and page filters so pruning happens only via the dictionary or the bloom filter.
-CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0 --input_format_parquet_dictionary_filter_push_down=100000000"
+# Disable the query condition cache too: a query that hits it skips the file without reading anything.
+CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0 --input_format_parquet_dictionary_filter_push_down=100000000 --use_query_condition_cache=0"
 
 # An `IN` set larger than the bloom filter set-size cap (100) is checked against the dictionary only,
 # so the bloom filter of `b` cannot rule the row group out, while its dictionary can.

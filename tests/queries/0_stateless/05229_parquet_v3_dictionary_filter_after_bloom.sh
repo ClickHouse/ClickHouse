@@ -35,7 +35,8 @@ write_file "${DATA_FILE_NO_BLOOM}" 0
 
 # Disable the min/max and page filters so pruning happens only via the dictionary or the bloom filter,
 # and keep a generous dictionary-page eligibility limit so the dictionary filter is always applicable.
-CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0"
+# Disable the query condition cache too: a query that hits it skips the file without reading anything.
+CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0 --use_query_condition_cache=0"
 
 # `no_such_value` is in no row group, so the bloom filters alone rule out the whole file.
 QUERY_ABSENT="select count() from file('${DATA_FILE}', Parquet) where category = 'no_such_value'"
