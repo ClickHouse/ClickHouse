@@ -1,0 +1,13 @@
+--- dictionary-encoded strings without size statistics, mostly the longest value of the dictionary: not cached
+[false]
+65536	133957903
+65536	133957903
+--- a wide cached chunk among narrow ones
+1048576	33554432
+s	16	1048576
+7017442613245325312
+7017442613245325312
+--- a large dictionary page of a column that PREWHERE does not need
+[false,false]
+0	0
+0	0
