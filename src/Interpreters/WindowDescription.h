@@ -5,6 +5,7 @@
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Core/Types.h>
+#include <Common/IntervalKind.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -46,12 +47,15 @@ struct WindowFrame
     // but the offset value must be positive.
     BoundaryType begin_type = BoundaryType::Unbounded;
     Field begin_offset = 0;
+    /// Set when the offset is an INTERVAL constant; the Field then holds the count of units.
+    std::optional<IntervalKind> begin_offset_interval_kind;
     bool begin_preceding = true;
 
     // Here as well, Unbounded can only be UNBOUNDED FOLLOWING, and end_preceding
     // must be false.
     BoundaryType end_type = BoundaryType::Current;
     Field end_offset = 0;
+    std::optional<IntervalKind> end_offset_interval_kind;
     bool end_preceding = false;
 
 
@@ -69,9 +73,11 @@ struct WindowFrame
         return other.type == type
             && other.begin_type == begin_type
             && other.begin_offset == begin_offset
+            && other.begin_offset_interval_kind == begin_offset_interval_kind
             && other.begin_preceding == begin_preceding
             && other.end_type == end_type
             && other.end_offset == end_offset
+            && other.end_offset_interval_kind == end_offset_interval_kind
             && other.end_preceding == end_preceding
             ;
     }

@@ -232,6 +232,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First global query-plan version that writes version 1 of `Window`, which carries the `IntervalKind`
+/// of INTERVAL window frame offsets. A frame with an INTERVAL offset cannot be shipped to a peer below
+/// this version: the peer would read the count of units as a plain offset, so `WindowStep::serialize`
+/// rejects it instead.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
