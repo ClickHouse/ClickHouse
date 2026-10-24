@@ -355,7 +355,9 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
-        db_disk->removeFileIfExists(detached_permanently_flag);
+        /// unlink() of an absent file can fail with an errno other than ENOENT (e.g. EROFS).
+        if (db_disk->existsFile(detached_permanently_flag))
+            db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
     {
