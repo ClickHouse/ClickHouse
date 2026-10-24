@@ -7,6 +7,8 @@
 #if USE_AWS_S3
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -22,6 +24,7 @@
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
+#include <aws/core/internal/AWSHttpResourceClient.h>
 
 #include <Common/RemoteHostFilter.h>
 #include <IO/ReadBufferFromS3.h>
@@ -52,17 +55,32 @@ namespace DB::S3RequestSetting
  * */
 [[maybe_unused]] static Poco::Util::ServerApplication app;
 
-static void restoreEnvVarForAwsS3ClientTests(const char * name, bool had_value, const std::string & saved_value)
+/// Sets an environment variable for the lifetime of the object and restores the previous state afterwards.
+class ScopedEnvVarForAwsS3ClientTests
 {
-    if (had_value)
+    const char * name;
+    bool had_value;
+    std::string saved_value;
+
+public:
+    ScopedEnvVarForAwsS3ClientTests(const char * name_, const std::string & value)
+        : name(name_)
     {
-        (void)::setenv(name, saved_value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        const char * prev = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+        had_value = prev != nullptr;
+        if (had_value)
+            saved_value = prev;
+        (void)::setenv(name, value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
     }
-    else
+
+    ~ScopedEnvVarForAwsS3ClientTests()
     {
-        (void)::unsetenv(name); // NOLINT(concurrency-mt-unsafe)
+        if (had_value)
+            (void)::setenv(name, saved_value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        else
+            (void)::unsetenv(name); // NOLINT(concurrency-mt-unsafe)
     }
-}
+};
 
 static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
@@ -755,44 +773,120 @@ TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
     EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
 }
 
+TEST(IOTestAwsS3Client, StsCredentialsClientEndpoint)
+{
+    DB::S3::ClientFactory::instance();
+    const auto endpoint_for = [](const std::string & region, const std::string & endpoint_override = "")
+    {
+        Aws::Client::ClientConfiguration configuration;
+        configuration.region = region;
+        configuration.endpointOverride = endpoint_override;
+        return Aws::Internal::STSCredentialsClient(configuration).GetEndpoint();
+    };
+
+    /// Without an override the SDK derives the endpoint from the region, including the partition suffix.
+    EXPECT_EQ(endpoint_for("eu-west-1"), "https://sts.eu-west-1.amazonaws.com");
+    EXPECT_EQ(endpoint_for("cn-north-1"), "https://sts.cn-north-1.amazonaws.com.cn");
+    EXPECT_EQ(endpoint_for("eusc-de-east-1"), "https://sts.eusc-de-east-1.amazonaws.eu");
+    /// An explicit override wins over the derived endpoint.
+    EXPECT_EQ(endpoint_for("eusc-de-east-1", "http://localhost:1234"), "http://localhost:1234");
+}
+
+/// The configuration keeps a reference to the filter, so the caller owns it.
+static DB::S3::PocoHTTPClientConfiguration createWebIdentityClientConfiguration(const DB::RemoteHostFilter & remote_host_filter)
+{
+    return DB::S3::ClientFactory::instance().createClientConfiguration(
+        "eu-west-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {});
+}
+
+TEST(IOTestAwsS3Client, WebIdentityUsesStsEndpointFromEnvironment)
+{
+    static constexpr std::string_view role_access_key = "web_identity_access_key";
+    static constexpr std::string_view role_secret_key = "web_identity_secret_key";
+    static constexpr std::string_view role_arn = "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_endpoint";
+    static constexpr std::string_view token = "web-identity-token-for-gtest";
+
+    /// A fake STS server that answers every request with the keys above.
+    TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
+
+    const std::string token_file = std::filesystem::temp_directory_path() / "clickhouse_web_identity_token_for_gtest";
+    {
+        std::ofstream out(token_file);
+        out << token;
+    }
+    SCOPE_EXIT({ std::filesystem::remove(token_file); });
+
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", std::string{role_arn});
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", token_file);
+    /// Point the STS endpoint override at the fake server.
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", sts_http.getUrl());
+
+    DB::RemoteHostFilter remote_host_filter;
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+
+    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
+    ASSERT_TRUE(provider);
+
+    /// Getting the fake keys back proves the request went to the fake server and not to AWS.
+    const auto credentials = provider->GetAWSCredentials();
+    ASSERT_EQ(credentials.GetAWSAccessKeyId(), role_access_key);
+    ASSERT_EQ(credentials.GetAWSSecretKey(), role_secret_key);
+
+    /// The request carries the web identity action, role, and token.
+    ASSERT_TRUE(sts_http.hasLastRequest());
+    for (const auto & [param, value] : sts_http.getLastQueryParams())
+    {
+        if (param == "Action")
+            ASSERT_EQ(value, "AssumeRoleWithWebIdentity");
+        else if (param == "RoleArn")
+            ASSERT_EQ(value, role_arn);
+        else if (param == "WebIdentityToken")
+            ASSERT_EQ(value, token);
+    }
+}
+
+TEST(IOTestAwsS3Client, WebIdentityIgnoresGlobalEndpointFromEnvironment)
+{
+    /// The token file is only read on the first request, which this test does not make.
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_global_endpoint");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_global_endpoint");
+    /// Only the STS-specific variable is honored. On-prem setups point the global one at MinIO.
+    ScopedEnvVarForAwsS3ClientTests global_endpoint_env("AWS_ENDPOINT_URL", "http://localhost:1234");
+    (void)::unsetenv("AWS_ENDPOINT_URL_STS"); // NOLINT(concurrency-mt-unsafe)
+
+    DB::RemoteHostFilter remote_host_filter;
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+
+    /// The provider writes the resolved endpoint into the configuration, so no request is needed.
+    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
+    ASSERT_TRUE(provider);
+
+    EXPECT_TRUE(client_configuration.endpointOverride.empty());
+}
+
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
 {
-    constexpr const char * k_role = "AWS_ROLE_ARN";
-    constexpr const char * k_token = "AWS_WEB_IDENTITY_TOKEN_FILE";
-
-    const char * prev_role = std::getenv(k_role); // NOLINT(concurrency-mt-unsafe)
-    const char * prev_token = std::getenv(k_token); // NOLINT(concurrency-mt-unsafe)
-    const bool had_role = prev_role != nullptr;
-    const bool had_token = prev_token != nullptr;
-    const std::string saved_role = had_role ? std::string(prev_role) : std::string();
-    const std::string saved_token = had_token ? std::string(prev_token) : std::string();
-
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_role, had_role, saved_role); });
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_token, had_token, saved_token); });
-
-    ASSERT_EQ(0, ::setenv(k_role, "arn:aws:iam::123456789012:role/clickhouse_unit_test_role", 1)); // NOLINT(concurrency-mt-unsafe)
-    ASSERT_EQ(0, ::setenv(k_token, "/tmp/clickhouse_web_identity_token_path_for_gtest", 1)); // NOLINT(concurrency-mt-unsafe)
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_unit_test_role");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_path_for_gtest");
 
     EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured({}));
 }
 
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
 {
-    constexpr const char * k_role = "AWS_ROLE_ARN";
-    constexpr const char * k_token = "AWS_WEB_IDENTITY_TOKEN_FILE";
-
-    const char * prev_role = std::getenv(k_role); // NOLINT(concurrency-mt-unsafe)
-    const char * prev_token = std::getenv(k_token); // NOLINT(concurrency-mt-unsafe)
-    const bool had_role = prev_role != nullptr;
-    const bool had_token = prev_token != nullptr;
-    const std::string saved_role = had_role ? std::string(prev_role) : std::string();
-    const std::string saved_token = had_token ? std::string(prev_token) : std::string();
-
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_role, had_role, saved_role); });
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_token, had_token, saved_token); });
-
-    ASSERT_EQ(0, ::setenv(k_role, "", 1)); // NOLINT(concurrency-mt-unsafe)
-    ASSERT_EQ(0, ::setenv(k_token, "/tmp/clickhouse_web_identity_token_path_for_gtest_override", 1)); // NOLINT(concurrency-mt-unsafe)
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_path_for_gtest_override");
 
     EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(
         "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
