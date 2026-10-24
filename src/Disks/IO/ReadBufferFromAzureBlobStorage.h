@@ -7,6 +7,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/MultiVersion.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
@@ -116,7 +117,7 @@ private:
     size_t max_single_read_retries;
     size_t max_single_download_retries;
     ReadSettings read_settings;
-    std::vector<char> tmp_buffer;
+    Memory<> tmp_buffer;
     size_t tmp_buffer_size;
     bool use_external_buffer;
 
