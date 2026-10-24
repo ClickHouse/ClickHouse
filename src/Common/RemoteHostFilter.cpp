@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/maskURIPassword.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <IO/WriteHelpers.h>
 
@@ -18,8 +19,26 @@ namespace ErrorCodes
     extern const int UNACCEPTABLE_URL;
 }
 
+namespace
+{
+
+/// Name resolution stops at a NUL, so it would connect to a prefix of the checked host.
+bool checkHostHasNoNul(const std::string & host, bool throw_on_error)
+{
+    if (!host.contains('\0'))
+        return true;
+    if (!throw_on_error)
+        return false;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected NUL character in host {}", quoteString(host));
+}
+
+}
+
 bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) const
 {
+    if (!checkHostHasNoNul(uri.getHost(), throw_on_error))
+        return false;
+
     if (checkForDirectEntry(uri.getHost()) || checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
         return true;
     if (!throw_on_error)
@@ -39,8 +58,11 @@ bool RemoteHostFilter::checkURL(const Poco::URI & uri, bool throw_on_error) cons
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
+    const std::string host_and_port = host + ":" + port;
+    checkHostHasNoNul(host_and_port, /*throw_on_error=*/ true);
+
     if (!checkForDirectEntry(host) &&
-        !checkForDirectEntry(host + ":" + port))
+        !checkForDirectEntry(host_and_port))
         throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}:{}\" is not allowed in configuration file, "
                                                       "see <remote_url_allow_hosts>", host, port);
 }
