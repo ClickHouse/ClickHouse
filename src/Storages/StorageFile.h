@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/ArchiveEntryPositions.h>
@@ -33,6 +35,31 @@ class PullingPipelineExecutor;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
+/// Splits an absolute user-files path into (disk, disk-relative-path) by matching the
+/// configured disk path prefix with the longest matching root. Returns {nullptr, ""}
+/// if no disk matches.
+std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_path, const Disks & disks);
+
+/// Returns true if the given absolute user-files path resolves to an existing file
+/// or directory on one of the disks of the user-files volume.
+bool userFilesPathExists(const String & absolute_path, const Disks & disks);
+
+/// Returns whether the disk-relative path stays inside the disk root after symlink
+/// resolution, including a dangling symlink. For object-storage disks with no
+/// user-visible symlinks this trivially returns true (a `local_blob_storage` disk
+/// with `plain` metadata follows symlinks, so it is checked like a local disk). Use as a symlink-aware access boundary check before reading or
+/// writing through `IDisk` when the absolute path was supplied by the user.
+bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path);
+
+/// Adjusts read settings for reading a user file through a `user_files_policy` disk. User files
+/// are mutable: `file` and `File` rewrite them in place, and so can anyone with access to the disk.
+/// The userspace page cache identifies a local file only by its path, so it would return stale bytes
+/// after a rewrite, and a concurrent truncation of a file read with `mmap` raises `SIGBUS`. Hence the
+/// page cache is disabled and `mmap` is replaced by `pread`, as the legacy local-file path does. The
+/// filesystem cache of a `cache` disk is keyed by the object path only, and a rewrite by another server
+/// sharing the disk would not invalidate it, so it is disabled too.
+ReadSettings getUserFilesDiskReadSettings(ReadSettings settings);
 
 struct ParquetCachedStatisticsFilter;
 
@@ -71,6 +98,7 @@ public:
         String path_for_partitioned_write;
         std::optional<String> format_from_filenames; /// Set if we managed to figure out which file format is used from the names of the file(s).
         std::optional<ArchiveInfo> archive_info; /// Set if the archive syntax is used.
+        VolumePtr user_files_volume; /// When set, `paths` holds absolute paths of the form `<disk_path>/<relative>` and I/O goes through the volume's disks.
 
         static FileSource parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax = {});
     };
@@ -154,16 +182,22 @@ public:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        VolumePtr user_files_volume = {});
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFile(
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        VolumePtr user_files_volume = {});
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    /// Translates an internal `<disk_path>/<relative>` path produced with `user_files_policy`
+    /// into the user-visible path: the one exposed as `_path` and parsed for hive partitioning.
+    static String getUserFilesVirtualPath(const String & path, const VolumePtr & volume);
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
@@ -194,7 +228,8 @@ private:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        VolumePtr user_files_volume = {});
 
     void setStorageMetadata(CommonArguments args);
 
@@ -214,6 +249,7 @@ private:
     /// Grows when a writer creates an extra file (`engine_file_allow_create_multiple_files`).
     /// Mutations hold `rwlock` exclusively and `paths_mutex`; plan-time readers hold `paths_mutex`.
     std::vector<std::string> paths;
+    VolumePtr user_files_volume; /// When set, `paths` holds absolute paths of the form `<disk_path>/<relative>` and I/O goes through the volume's disks.
 
     std::optional<ArchiveInfo> archive_info;
 
@@ -270,7 +306,8 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            VolumePtr user_files_volume_ = {});
 
         String next();
 
@@ -312,6 +349,9 @@ private:
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
+        /// With `user_files_policy`, the volume `files` live on: the `_path` / `_file` and hive
+        /// filters see the user-visible path, as returned by `StorageFile::getUserFilesVirtualPath`.
+        const VolumePtr user_files_volume;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;

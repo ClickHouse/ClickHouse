@@ -1780,6 +1780,59 @@ The directory with user files. Used in the table function [file()](/reference/fu
 ```xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
+
+If [`user_files_policy`](#user_files_policy) is set, this is a path inside the disk of that policy rather than a path in the local filesystem.
+)", 0) \
+    DECLARE(String, user_files_policy, "", R"(
+Storage policy for user files directory. When set, user files reside on the disk configured in the specified policy.
+The policy must have exactly one volume containing exactly one disk.
+
+When this is set, [`user_files_path`](#user_files_path) is interpreted as a path inside that disk, with `/` denoting the root of the disk:
+both `/user_files/` and `user_files` refer to the directory `user_files` on the disk, and the default configuration value `/var/lib/clickhouse/user_files/`
+refers to the directory `var/lib/clickhouse/user_files` on the disk. The path must not point outside the disk. If `user_files_path` is not configured, user files are stored at the root of the disk.
+
+:::note
+Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/sql-reference/table-functions/file) table function and the `File` table engine.
+
+Features that require a local filesystem path — for example the [filesystem()](/sql-reference/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, dictionary sources with the `FILE` type defined via DDL, `SQLite`, and reading `file()` / `File` with `format = 'Distributed'` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
+
+The following `file()` and `File` modes are not supported with `user_files_policy` at all, on any disk type, and throw an exception:
+- archive syntax (`file('archive.zip :: data.csv')`);
+- `INSERT ... PARTITION BY` into `file()` and partitioned writes with the `File` engine.
+
+The `rename_files_after_processing` setting additionally requires the policy's disk to be a plain local disk.
+
+A plain object storage disk (such as `s3_plain`) used for user files must not set `object_metadata_cache_size`: the cache is not invalidated by changes made by other servers sharing the disk.
+:::
+
+**Example**
+
+```xml
+<clickhouse>
+<storage_configuration>
+    <disks>
+        <user_files_s3>
+            <type>s3_plain</type>
+            <endpoint>https://example.s3.amazonaws.com/user_files/</endpoint>
+            <access_key_id>...</access_key_id>
+            <secret_access_key>...</secret_access_key>
+        </user_files_s3>
+    </disks>
+    <policies>
+        <user_files_remote>
+            <volumes>
+                <main>
+                    <disk>user_files_s3</disk>
+                </main>
+            </volumes>
+        </user_files_remote>
+    </policies>
+</storage_configuration>
+
+<user_files_policy>user_files_remote</user_files_policy>
+<user_files_path>/</user_files_path>
+</clickhouse>
+```
 )", 0) \
     DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(The directory with shared libraries for the `library` dictionary source. The setting is deprecated: the `library` dictionary source was removed.)", SettingsTierType::OBSOLETE) \
     DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(

@@ -993,7 +993,12 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// Extract all relevant paths from the config.
     std::string data_dir = extractConfigValue(config_file, "path");
     std::string tmp_dir = extractConfigValue(config_file, "tmp_path");
-    std::string user_files_path = extractConfigValue(config_file, "user_files_path");
+    /// With a configured `user_files_policy`, `user_files_path` is a directory inside the disk of
+    /// that policy (prepared below with the other `storage_configuration` disks) and not a local
+    /// path, so it must not be created or chowned here.
+    std::string user_files_path;
+    if (extractConfigValue(config_file, "user_files_policy").empty())
+        user_files_path = extractConfigValue(config_file, "user_files_path");
     std::string format_schema_path = extractConfigValue(config_file, "format_schema_path");
 
     std::string log_dir;

@@ -24,6 +24,7 @@
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Throttler.h>
 #include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
@@ -75,8 +76,10 @@
 #include <IO/SharedThreadPools.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Disks/SubdirectoryDiskWrapper.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
@@ -678,6 +681,7 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
+    VolumePtr user_files_volume TSA_GUARDED_BY(mutex);       /// Volume for user files (from policy, or nullptr).
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
@@ -1823,6 +1827,20 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
+VolumePtr Context::getUserFilesVolume() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->user_files_volume;
+}
+
+bool Context::isUserFilesPath(const String & path) const
+{
+    const auto user_files_path = getUserFilesPath();
+    if (getUserFilesVolume())
+        return weaklyCanonicalPathStartsWith(path, user_files_path);
+    return fileOrSymlinkPathStartsWith(path, user_files_path);
+}
+
 String Context::getUserScriptsPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -2314,6 +2332,72 @@ void Context::setUserFilesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
     shared->user_files_path = path;
+}
+
+void Context::setUserFilesPolicy(const String & policy_name, const String & path_inside_disk)
+{
+    /// `path_inside_disk` is rooted at the root of the disk: both `/user_files/` and `user_files`
+    /// denote the directory `user_files` on the disk, and an empty path denotes the disk root.
+    String sub_path = fs::path(path_inside_disk).lexically_normal().generic_string();
+    while (sub_path.starts_with('/'))
+        sub_path.erase(0, 1);
+    while (sub_path.ends_with('/'))
+        sub_path.pop_back();
+    if (sub_path == ".")
+        sub_path.clear();
+    if (sub_path == ".." || sub_path.starts_with("../"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The user files path `{}` must not point outside the disk of the user files policy `{}`", path_inside_disk, policy_name);
+
+    StoragePolicyPtr policy;
+    {
+        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
+        policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
+    }
+
+    if (policy->getVolumes().size() != 1)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Policy '{}' is used for user files, such policy should have exactly one volume", policy_name);
+
+    VolumePtr volume = policy->getVolume(0);
+
+    /// `user_files` does not benefit from striping across multiple disks (unlike
+    /// `tmp_policy`, where data can be large), so require exactly one disk. This
+    /// keeps the resolution rule for relative paths unambiguous and avoids the
+    /// complexity of multi-root scanning.
+    if (volume->getDisks().size() != 1)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Policy '{}' is used for user files, its volume must contain exactly one disk", policy_name);
+
+    DiskPtr disk = volume->getDisks().front();
+    if (!disk)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "User files disk is null");
+
+    /// User files are mutable and the disk may be shared by several servers. The object metadata
+    /// cache of a plain disk is invalidated only by the writes of this server, so another server
+    /// would keep using a stale size and modification time: return no rows for a file that is no
+    /// longer empty, or choose to rewrite a file instead of rejecting an append.
+    if (disk->isPlain() && disk->getMetadataStorage()->cachesObjectMetadata())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Disk `{}` of the user files policy `{}` caches the object metadata (`object_metadata_cache_size`), "
+            "which is not supported for user files", disk->getName(), policy_name);
+
+    if (!sub_path.empty())
+    {
+        disk = std::make_shared<SubdirectoryDiskWrapper>(disk, sub_path);
+        volume = std::make_shared<SingleDiskVolume>(volume->getName(), disk);
+    }
+
+    String disk_path = disk->getPath();
+    if (!disk_path.ends_with('/'))
+        disk_path += '/';
+
+    if (!disk->existsDirectory(""))
+        disk->createDirectories("");
+
+    std::lock_guard lock(shared->mutex);
+    shared->user_files_volume = volume;
+    shared->user_files_path = disk_path;
 }
 
 void Context::setUserScriptsPath(const String & path)

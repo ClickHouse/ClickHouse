@@ -51,5 +51,27 @@
             </handler>
         </rule>
 
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_get_symlink_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://link/index.html</response_content>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_get_escape_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://../escape_static_handler.html</response_content>
+            </handler>
+        </rule>
+
     </http_handlers>
 </clickhouse>

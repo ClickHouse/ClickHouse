@@ -330,6 +330,13 @@ public:
         return false;
     }
 
+    /// Whether the sizes and modification times of objects are cached in memory. Such a cache
+    /// is not invalidated by changes made through another server sharing the same storage.
+    virtual bool cachesObjectMetadata() const
+    {
+        return false;
+    }
+
     /// Whether a hard link created by `createHardLink` really shares the blob between the two files,
     /// instead of copying it. The write-once (`plain`) metadata cannot represent hard links at all,
     /// and `plain_rewritable` does it only when the disk is configured for it.

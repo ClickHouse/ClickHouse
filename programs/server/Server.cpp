@@ -478,6 +478,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
+    extern const ServerSettingsString user_files_policy;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -2131,11 +2132,17 @@ try
     /** Directory with user provided files that are usable by 'file' table function.
       */
     {
-        const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
-        std::string user_files_path = user_files_path_setting.changed
-            ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
-        global_context->setUserFilesPath(user_files_path);
-        fs::create_directories(user_files_path);
+        /// With `user_files_policy`, `user_files_path` is a directory inside the disk of the policy
+        /// (possibly on remote storage such as `s3_plain`), installed below via `setUserFilesPolicy`.
+        /// In that case it is not a local path, so do not canonicalize or create it here.
+        if (server_settings[ServerSetting::user_files_policy].value.empty())
+        {
+            const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
+            std::string user_files_path = user_files_path_setting.changed
+                ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
+            global_context->setUserFilesPath(user_files_path);
+            fs::create_directories(user_files_path);
+        }
     }
 
     {
@@ -3396,6 +3403,16 @@ try
         std::string temporary_path = tmp_path_setting.changed
             ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
+    }
+
+    /// Storage policy for user files directory.
+    if (!server_settings[ServerSetting::user_files_policy].value.empty())
+    {
+        /// If `user_files_path` is not configured, the user files are at the root of the disk.
+        const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
+        global_context->setUserFilesPolicy(
+            server_settings[ServerSetting::user_files_policy],
+            user_files_path_setting.changed ? String(user_files_path_setting.value) : String{});
     }
 
     /// Initialize access storages.

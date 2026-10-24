@@ -21,6 +21,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         bool local_mode_,
+        bool user_files_policy_,
         String path_,
         String user_files_absolute_path_string_);
 
@@ -40,6 +41,7 @@ public:
 
 private:
     bool local_mode;
+    bool user_files_policy;
     String path;
     String user_files_absolute_path_string;
 };

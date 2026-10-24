@@ -100,7 +100,13 @@ Poco::Timestamp MetadataStorageFromPlainObjectStorage::getLastModified(const std
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastModifiedIfExists(const std::string & path) const
 {
-    /// Since the plain object storage is used for backups only, return the current time.
+    {
+        Expect404ResponseScope scope;  // 404 is not an error
+        if (auto res = getObjectMetadataEntryWithCache(path))
+            return Poco::Timestamp::fromEpochTime(res->last_modified);
+    }
+
+    /// Directories are not stored as objects and have no modification time, return the current time.
     if (existsFileOrDirectory(path))
         return Poco::Timestamp{};
     return std::nullopt;
@@ -200,7 +206,7 @@ TransactionCommitOutcomeVariant MetadataStorageFromPlainObjectStorageTransaction
     return true;
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path, bool /*if_exists*/, bool /*should_remove_objects*/)
+void MetadataStorageFromPlainObjectStorageTransaction::invalidateObjectMetadataCache(const std::string & path)
 {
     if (metadata_storage.object_metadata_cache)
     {
@@ -209,6 +215,16 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
         hash.update(object_key.serialize());
         metadata_storage.object_metadata_cache->remove(hash.get128());
     }
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & /* objects */)
+{
+    invalidateObjectMetadataCache(path);
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path, bool /*if_exists*/, bool /*should_remove_objects*/)
+{
+    invalidateObjectMetadataCache(path);
 
     auto object_key = getKeyForPath(object_storage->getCommonKeyPrefix(), path);
     metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
