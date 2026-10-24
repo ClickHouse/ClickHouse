@@ -5,11 +5,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # A `direct` dictionary reads through the source's own pipeline, and `merge` wraps every child in
-# `materialize`, which rejects a header that carries rows.
+# `materialize`, which rejects a header that carries rows. The `DEFAULT` makes such a row visible as
+# an extra result row.
 $CLICKHOUSE_CLIENT -q "
-    CREATE DICTIONARY dict (word String, counter UInt32)
+    CREATE DICTIONARY dict (word String, counter UInt32 DEFAULT 999)
     PRIMARY KEY word
     SOURCE(HTTP(url '${CLICKHOUSE_URL}&query=SELECT+%27Hello%27,1+FORMAT+CSV' format 'CSV'))
     LAYOUT(DIRECT())"
 
+$CLICKHOUSE_CLIENT -q "SELECT * FROM dict"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM merge(currentDatabase(), '^dict\$')"
