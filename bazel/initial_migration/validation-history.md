@@ -1595,3 +1595,33 @@ DWYU ran for the following selection. A compiled target counts as clean only whe
 `negative_duplicate_i_system` reported exactly one unused implementation dependency, `@@//bazel/initial_migration/dwyu_regressions/guarded_toolchain:shadow`.
 
 Distinct failed `DwyuCompilerPreprocess` outputs in each selected strict run: x86-64: 545 (previous selection: 602); ARM64: 545 (previous selection: 602). The configured PostgreSQL report identified all five public headers; it did not execute a separate compiler action per header. The two commits select different targets. These counts do not measure the entire repository. Nonselected labels remain unverified.
+
+## 93d4235b8
+
+[93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a): `Reduce ClickHouse compile dependencies and ISA-L assembler inputs`. The raw ClickHouse and `unit_tests_dbms` executables matched [e10eaf426](https://github.com/dzbarsky/clickhouse/commit/e10eaf426d559c60ad5be706011e95fe97be5d6f). Each CPU passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. The hashes and sizes come from BuildBuddy output metadata.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/7d1bb0b6-8913-4a93-bd56-99ad65359abe) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | Raw ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | `unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/e57fb26c-484f-4cd1-bcd1-d8fa7eb2b312) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | Raw ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | `unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795,060,896 |
+
+Native Bazel targets built: x86-64: 60, ARM64: 60. Both normalized binaries matched native CMake. Both embedded CcInfo comparisons matched all 17 ordered fields and their source constraints. The Boost report matched its 12 fields, and CRoaring passed the 4,096-byte alignment check on each CPU.
+
+x86-64: 51 independent translation units produced objects, one per selected public header. Original compiler action metadata was not collected for these translation units.
+
+ARM64: 51 independent translation units produced objects, one per selected public header. Original compiler action metadata was not collected for these translation units.
+
+| CPU | Ordinary DWYU | Strict DWYU | Selected | Omitted | Production outcomes | Failed preprocessing outputs |
+| --- | --- | --- | --- | --- | --- | --- |
+| x86-64 ([parent Failed](https://app.buildbuddy.io/invocation/fc1bc8f6-d3c3-49e9-90fb-179e3b3f3e4a)) | [exit 0](https://app.buildbuddy.io/invocation/029d81a9-3aac-4bbe-a1a0-5a68e89dfd48) | [exit 1](https://app.buildbuddy.io/invocation/690b0944-5804-4b70-8717-f55df8f0f364) | 36 | 746 | 9 `clean`, 4 `failed`, 9 `findings`, 1 `unchecked_link_inputs`, 13 `unverified_link_deps` | 499 |
+| ARM64 ([parent Failed](https://app.buildbuddy.io/invocation/68cd08a8-43f9-4f59-973c-db5cb643966e)) | [exit 0](https://app.buildbuddy.io/invocation/21845cc6-3485-4b59-85fe-d6bb87fc3ee3) | [exit 1](https://app.buildbuddy.io/invocation/76e30117-b659-4b13-ace3-37bb310b68ad) | 32 | 750 | 9 `clean`, 4 `failed`, 7 `findings`, 12 `unverified_link_deps` | 499 |
+
+Each CPU ran the expected negative fixture and reported exactly its unused implementation dependency. Nonselected labels are unverified. A configured header declaration alone does not verify a compiler's include resolution.
+
+DWYU checked the selected declarations in `cmake_match` and `cmake_match_aarch64`. Includes from textual consumer contexts were outside this selection.
+
+The unpublished `a392b4c0f` build failed on `h24_SetSerialization.cpp` on both CPUs ([x86-64](https://app.buildbuddy.io/invocation/deefa67c-7403-471e-af16-6b02d4ab4184), [ARM64](https://app.buildbuddy.io/invocation/980bccf1-e776-4c61-bb99-6008c72f8804)). [src/Interpreters/SetSerialization.h](https://github.com/ClickHouse/ClickHouse/blob/6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da/src/Interpreters/SetSerialization.h) uses `std::list` without including `<list>`. The correction kept `src/Interpreters/SetSerialization.h` on `//src:headers`. The current 51 downstream checks omit that unsolved header. The failed sibling sets the BuildBuddy submission interval; the published [e10eaf426](https://github.com/dzbarsky/clickhouse/commit/e10eaf426d559c60ad5be706011e95fe97be5d6f) supplies all three ELF references on each CPU.
