@@ -15,6 +15,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Columns/ColumnsNumber.h>
@@ -540,8 +542,20 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t fallback_offset = 0;
     std::optional<size_t> last_processed_mark;
 
+    /// One call reads every mark of the requested block, and query limits are otherwise only
+    /// enforced between blocks. With a small index_granularity a single block spans tens of
+    /// thousands of marks, so without a check here a cancelled query keeps reading to completion.
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
+        /// Throws QUERY_WAS_CANCELLED on a cancelled query and TIMEOUT_EXCEEDED past
+        /// max_execution_time in throw mode.
+        if (query_status)
+            query_status->checkTimeLimit();
+
         /// Postings are addressed per mark: rows past a mark's last row belong to the next mark
         /// and would resolve against the wrong posting lists.
         size_t mark_begin_row = index_granularity.getMarkStartingRow(from_mark);
