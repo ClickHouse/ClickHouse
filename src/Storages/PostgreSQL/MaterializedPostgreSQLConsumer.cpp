@@ -791,7 +791,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
     {
         case 'B': // Begin
         {
-            readInt64(replication_message, pos, size); /// Int64 transaction end lsn
+            transaction_commit_lsn = readInt64(replication_message, pos, size); /// Int64 lsn of the commit record
             readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
             break;
         }
@@ -944,7 +944,16 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            if (!isSyncAllowed(relation_id, relation_name))
+            /// See `pending_relation_messages`.
+            if (auto waiting_it = waiting_list.find(table_name);
+                waiting_it != waiting_list.end() && transaction_commit_lsn < getLSNValue(waiting_it->second))
+            {
+                pending_relation_messages[table_name] = String(replication_message, size);
+                return;
+            }
+            pending_relation_messages.erase(table_name);
+
+            if (!isSyncAllowed(relation_id, table_name, /* is_relation_message */ true))
                 return;
 
             auto storage_iter = storages.find(table_name);
@@ -1221,7 +1230,9 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 /// 2. There is no storage for this table. (As a result of some exception or incorrect pg_publication)
 /// 3. A new table was added to replication, it was loaded via snapshot, but consumer has not yet
 ///    read wal up to the lsn position of snapshot, from which table was loaded.
-bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const String & relation_name)
+/// A snapshot contains the transactions that committed before its position, so the decision is made by the commit
+/// position of the transaction (see `transaction_commit_lsn`), not by the position of the change.
+bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const String & relation_name, bool is_relation_message)
 {
     if (deleted_tables.contains(relation_name))
         return false;
@@ -1233,12 +1244,32 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
         auto table_start_lsn = new_table_with_lsn->second;
         chassert(!table_start_lsn.empty());
 
-        if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
+        if (transaction_commit_lsn >= getLSNValue(table_start_lsn))
         {
             LOG_TRACE(log, "Synchronization is started for table: {} (start_lsn: {})", relation_name, table_start_lsn);
             waiting_list.erase(new_table_with_lsn);
-            return true;
+
+            /// A `Relation` message at or after the start position supersedes the pending one, and the processing
+            /// of the message itself checks the storage.
+            if (is_relation_message)
+                return true;
+
+            /// Install the column layout of the changes after the start position, validating it against the nested
+            /// table. It may mark the table as skipped, which removes its storage.
+            if (auto pending_it = pending_relation_messages.find(relation_name); pending_it != pending_relation_messages.end())
+            {
+                const String relation_message = std::move(pending_it->second);
+                pending_relation_messages.erase(pending_it);
+                processReplicationMessage(relation_message.data(), relation_message.size());
+            }
+            return storages.contains(relation_name);
         }
+
+        /// The snapshot of the table already contains the transactions committed before its start position. Applying
+        /// them again would be wrong: for example, an update of a row deleted later cannot restore its unchanged TOAST
+        /// values from the snapshot, and the table would be skipped. (A `Relation` message of such a transaction
+        /// does not reach here, see `pending_relation_messages`.)
+        return false;
     }
 
     auto skipped_table_with_lsn = skip_list.find(relation_id);
@@ -1258,7 +1289,7 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     /// Table has received a valid lsn, but it is not yet at a position, from which synchronization is
     /// allowed. It is allowed only after lsn position, returned with snapshot, from which
     /// table was reloaded.
-    if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
+    if (transaction_commit_lsn >= getLSNValue(table_start_lsn))
     {
         LOG_TRACE(log, "Synchronization is resumed for table: {} (start_lsn: {})",
                 relation_id_to_name[relation_id], table_start_lsn);
@@ -1295,6 +1326,9 @@ void MaterializedPostgreSQLConsumer::addNested(
     auto it = deleted_tables.find(postgres_table_name);
     if (it != deleted_tables.end())
         deleted_tables.erase(it);
+
+    /// A layout received before an earlier snapshot of this table is superseded by the new snapshot.
+    pending_relation_messages.erase(postgres_table_name);
 
     /// The table might already be in the skip list - for example, it was skipped at startup because
     /// its structure did not match the nested table and then received WAL (the `Relation` message
@@ -1334,6 +1368,7 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
     /// this table must be dropped so `syncTables` does not look up (and dereference) a missing storage
     /// (https://github.com/ClickHouse/ClickHouse/issues/68032).
     tables_to_sync.erase(postgres_table_name);
+    pending_relation_messages.erase(postgres_table_name);
     deleted_tables.insert(postgres_table_name);
 }
 

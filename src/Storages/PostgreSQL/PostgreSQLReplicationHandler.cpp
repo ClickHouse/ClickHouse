@@ -1,8 +1,11 @@
+#include <optional>
 #include <random>
+#include <unordered_set>
 #include <base/sort.h>
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -22,10 +25,17 @@
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Interpreters/getTableOverride.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabasesCommon.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -66,6 +76,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char materialized_postgresql_fail_after_snapshot_on_attach[];
+    extern const char materialized_postgresql_pause_before_attach_table_snapshot[];
 }
 
 class TemporaryReplicationSlot
@@ -258,11 +275,13 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const postgres::ConnectionInfo & connection_info_,
     ContextPtr context_,
     bool is_attach_,
+    bool is_fresh_definition_,
     const MaterializedPostgreSQLSettings & replication_settings,
     bool is_materialized_postgresql_database_)
     : WithContext(context_->getGlobalContext())
     , log(getLogger("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
+    , is_fresh_definition(is_fresh_definition_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema])
     , current_database_name(clickhouse_database_)
@@ -270,6 +289,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , max_block_size(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_max_block_size])
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list])
+    , has_configured_tables_list(!tables_list.empty())
     , schema_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list])
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
     , use_extended_date_and_time_types(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types])
@@ -293,6 +313,52 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and common schema at the same time");
 
     checkReplicationSlot(replication_slot);
+
+    /// `table(col1, col2), table2, ...`: commas separate the elements, except inside a column list. The
+    /// single-table engine carries its raw remote table name in `tables_list`, which never has a column list.
+    if (is_materialized_postgresql_database && !tables_list.empty())
+    {
+        String element;
+        std::optional<std::set<String>> columns;
+        String column;
+        auto add_column = [&]
+        {
+            boost::trim(column);
+            if (!column.empty())
+                columns->insert(column);
+            column.clear();
+        };
+        auto add_element = [&]
+        {
+            boost::trim(element);
+            if (columns && !element.empty())
+                configured_column_lists[getNormalizedSchemaAndTableName(element)] = std::move(*columns);
+            element.clear();
+            columns.reset();
+        };
+        bool in_columns = false;
+        for (const char c : tables_list)
+        {
+            if (in_columns)
+            {
+                if (c == ',' || c == ')')
+                    add_column();
+                else
+                    column += c;
+                in_columns = c != ')';
+            }
+            else if (c == '(')
+            {
+                in_columns = true;
+                columns.emplace();
+            }
+            else if (c == ',')
+                add_element();
+            else if (!columns)
+                element += c;
+        }
+        add_element();
+    }
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
@@ -336,6 +402,150 @@ std::pair<String, String> PostgreSQLReplicationHandler::getSchemaAndTableName(co
         return std::make_pair(table_name.substr(0, pos), table_name.substr(pos + 1));
 
     return std::make_pair("", table_name);
+}
+
+
+std::pair<String, String> PostgreSQLReplicationHandler::getNormalizedSchemaAndTableName(const String & table_name) const
+{
+    auto [schema, table] = getSchemaAndTableName(table_name);
+    return std::make_pair(isDefaultPostgreSQLSchema(schema) ? "public" : schema, table);
+}
+
+
+String PostgreSQLReplicationHandler::collidingForeignPublishedTables(
+    const std::set<std::pair<String, String>> & expected,
+    const std::set<std::pair<String, String>> & published) const
+{
+    /// In the multi-schema modes the replication consumer identifies relations by "schema.table",
+    /// so a table from another schema never collides with a replicated table.
+    if (schema_as_a_part_of_table_name)
+        return {};
+
+    std::unordered_set<String> expected_bare_names;
+    for (const auto & [schema, table] : expected)
+        expected_bare_names.insert(table);
+
+    String colliding;
+    for (const auto & [schema, table] : published)
+    {
+        if (expected.contains(std::make_pair(schema, table)) || !expected_bare_names.contains(table))
+            continue;
+        if (!colliding.empty())
+            colliding += ", ";
+        colliding += schema + '.' + table;
+    }
+    return colliding;
+}
+
+
+void PostgreSQLReplicationHandler::setSnapshotPositionsFile(DiskPtr disk, const String & path)
+{
+    snapshot_positions_disk = std::move(disk);
+    snapshot_positions_path = path;
+}
+
+
+PostgreSQLReplicationHandler::SnapshotPositions PostgreSQLReplicationHandler::loadSnapshotPositions() const
+{
+    SnapshotPositions positions;
+    if (!snapshot_positions_disk || !snapshot_positions_disk->existsFile(snapshot_positions_path))
+        return positions;
+
+    const String content = readMetadataFile(snapshot_positions_disk, snapshot_positions_path);
+    ReadBufferFromString in(content);
+    while (!in.eof())
+    {
+        String table_name;
+        SnapshotPosition position;
+        readEscapedString(table_name, in);
+        assertChar('\t', in);
+        readEscapedString(position.start_lsn, in);
+        assertChar('\t', in);
+        readBoolText(position.completed, in);
+        assertChar('\t', in);
+        readBoolText(position.owns_publication_entry, in);
+        assertChar('\n', in);
+        positions.emplace(std::move(table_name), std::move(position));
+    }
+    return positions;
+}
+
+
+void PostgreSQLReplicationHandler::saveSnapshotPositions(const SnapshotPositions & positions) const
+{
+    if (!snapshot_positions_disk)
+        return;
+
+    if (positions.empty())
+    {
+        snapshot_positions_disk->removeFileIfExists(snapshot_positions_path);
+        return;
+    }
+
+    WriteBufferFromOwnString out;
+    for (const auto & [table_name, position] : positions)
+    {
+        writeEscapedString(table_name, out);
+        writeChar('\t', out);
+        writeEscapedString(position.start_lsn, out);
+        writeChar('\t', out);
+        writeBoolText(position.completed, out);
+        writeChar('\t', out);
+        writeBoolText(position.owns_publication_entry, out);
+        writeChar('\n', out);
+    }
+
+    const String tmp_path = snapshot_positions_path + ".tmp";
+    writeMetadataFile(snapshot_positions_disk, tmp_path, out.str(), /* fsync_metadata */ true);
+    snapshot_positions_disk->replaceFile(tmp_path, snapshot_positions_path);
+}
+
+
+void PostgreSQLReplicationHandler::markSnapshotCompleted(const String & table_name) const
+{
+    auto positions = loadSnapshotPositions();
+    auto it = positions.find(table_name);
+    if (it == positions.end() || it->second.completed)
+        return;
+
+    it->second.completed = true;
+    saveSnapshotPositions(positions);
+}
+
+
+void PostgreSQLReplicationHandler::markPublicationEntryOwned(const String & table_name) const
+{
+    auto positions = loadSnapshotPositions();
+    auto it = positions.find(table_name);
+    if (it == positions.end() || it->second.owns_publication_entry)
+        return;
+
+    it->second.owns_publication_entry = true;
+    saveSnapshotPositions(positions);
+}
+
+
+void PostgreSQLReplicationHandler::dropNestedTable(StorageMaterializedPostgreSQL * materialized_storage) const
+{
+    if (materialized_storage->tryGetNested())
+        InterpreterDropQuery::executeDropQuery(
+            ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
+            materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+
+    /// The wrapper may stay without a nested table if its replacement snapshot fails: it must not be counted as
+    /// a materialized table by the last-table check of `DETACH TABLE ... PERMANENTLY` or by a database backup.
+    materialized_storage->resetNested();
+}
+
+
+bool PostgreSQLReplicationHandler::hasNestedStorage() const
+{
+    for (const auto & [table_name, storage] : materialized_storages)
+    {
+        if (storage->tryGetNested())
+            return true;
+    }
+    return false;
 }
 
 
@@ -553,15 +763,155 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 }
 
 
+/// On attach, replication resumes from the existing replication slot, through the existing publication, without
+/// a new snapshot. Several states of the PostgreSQL side cannot be resumed from without silently losing changes:
+///
+/// 1. The replication slot exists, but the publication does not. Changes committed while the publication did
+///    not exist are skipped by `pgoutput` even after the publication is recreated, because it resolves publication
+///    membership from the historic catalog snapshot at the LSN of each change.
+///
+/// 2. The replication slot does not exist (for example, after `pg_upgrade`, which keeps publications but not
+///    replication slots), while this replica already holds data. A new snapshot into the existing nested tables
+///    would leave the replica stale: the snapshot rows are materialized with `_sign = 1` and `_version = 1`, so they
+///    neither delete the rows deleted in PostgreSQL in the meantime nor override the rows with a higher version.
+///
+/// 3. The publication no longer publishes a replicated table (`ALTER PUBLICATION ... DROP TABLE`), publishes a table
+///    from another schema with the same bare name as a replicated table, or its definition is altered (for example,
+///    `publish = 'insert'`, or a row filter). The changes filtered out in the meantime cannot be recovered.
+///
+/// In these cases the attach fails, and startup keeps retrying until an operator resolves the conflict or recreates
+/// the object, which takes a fresh snapshot.
+///
+/// A replica that did not materialize any table yet (for example, the first synchronization was interrupted)
+/// has nothing that could become stale. If its replication slot survived, it is dropped, and the initial
+/// synchronization runs from scratch, otherwise resuming from that slot would skip the initial snapshot.
+bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransaction & tx)
+{
+    String slot_lsn;
+    const bool slot_exists = isReplicationSlotExist(tx, slot_lsn, /* temporary */ false);
+    const bool publication_exists = isPublicationExist(tx);
+
+    /// The database engine holds data from a previous run if it has nested tables. The single-table engine is kept
+    /// in the metadata only after its initial synchronization succeeded, so a replay of its stored definition implies
+    /// that it holds data. A full-definition `ATTACH TABLE` introduces a new object, unless its nested table exists.
+    const bool has_previously_replicated_data = hasNestedStorage() || (!is_materialized_postgresql_database && !is_fresh_definition);
+
+    if (!has_previously_replicated_data)
+    {
+        if (!slot_exists)
+            return false;
+
+        if (user_managed_slot)
+            throw Exception(
+                ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot start MaterializedPostgreSQL replication on attach: the user-managed replication slot {} exists, "
+                "but this replica never finished its initial synchronization. Resuming from this slot would skip the initial "
+                "snapshot, and a user-managed replication slot cannot be recreated by ClickHouse. Recreate this object with a "
+                "new replication slot and the snapshot exported for it (`materialized_postgresql_snapshot`)",
+                replication_slot);
+
+        LOG_INFO(
+            log,
+            "Replication slot {} exists, but no table has been materialized yet: the previous run did not finish its "
+            "initial synchronization. The replication slot will be dropped, and the initial synchronization will start "
+            "from scratch",
+            replication_slot);
+        return true;
+    }
+
+    if (slot_exists && !publication_exists)
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: replication slot {} exists, but publication {} "
+            "does not. Resuming from the replication slot through a recreated publication would silently lose every change "
+            "written while the publication did not exist. Recreate this object to replicate from a fresh snapshot. "
+            "Startup will be retried",
+            replication_slot, doubleQuoteString(publication_name));
+
+    if (!slot_exists)
+    {
+        /// A missing user-managed replication slot is reported as a configuration error in startSynchronization.
+        if (user_managed_slot)
+            return false;
+
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: replication slot {} does not exist{}, but this "
+            "replica already holds data from a previous run. A new snapshot into the existing nested tables would silently "
+            "leave the replica stale, because it neither deletes the rows that were deleted in PostgreSQL nor overrides "
+            "the rows with a higher version. Recreate this object to replicate from a fresh snapshot. Startup will be "
+            "retried",
+            replication_slot,
+            publication_exists ? "" : fmt::format(", and publication {} does not exist either", doubleQuoteString(publication_name)));
+    }
+
+    /// In the single-schema modes the comparison is by exact (schema, table) pair rather than by bare name,
+    /// so that a publication rewritten from `foo.a` to `bar.a` is not taken for the same table.
+    std::set<std::pair<String, String>> expected;
+    for (const auto & [table_name, storage] : materialized_storages)
+    {
+        if (has_configured_tables_list || storage->tryGetNested())
+            expected.insert(getNormalizedSchemaAndTableName(table_name));
+    }
+
+    const auto published = fetchPublishedTablePairs(tx);
+
+    String missing;
+    for (const auto & [schema, table] : expected)
+    {
+        if (published.contains(std::make_pair(schema, table)))
+            continue;
+        if (!missing.empty())
+            missing += ", ";
+        missing += schema + '.' + table;
+    }
+
+    if (!missing.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: publication {} no longer publishes the following "
+            "replicated tables: {}. Resuming through this publication would silently skip the changes of these tables, "
+            "and the changes committed while they were not published cannot be recovered. Recreate this object to "
+            "replicate from a fresh snapshot. Startup will be retried",
+            doubleQuoteString(publication_name), missing);
+
+    const String colliding = collidingForeignPublishedTables(expected, published);
+    if (!colliding.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: publication {} publishes the following tables "
+            "from other schemas with the same names as replicated tables: {}. Their changes would be applied to the "
+            "replicated tables. Remove them from the publication, or recreate this object. Startup will be retried",
+            doubleQuoteString(publication_name), colliding);
+
+    const String definition_conflict = publicationDefinitionConflict(tx);
+    if (!definition_conflict.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: {}. Resuming through this publication would "
+            "silently filter the replication stream, and the filtered-out changes cannot be recovered. Recreate this "
+            "object to replicate from a fresh snapshot. Startup will be retried",
+            definition_conflict);
+
+    return false;
+}
+
+
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
     adoptLegacyReplicationIdentityIfNeeded(tx);
+    const bool bootstrap_after_never_synchronized_run = is_attach && checkReplicationStateOnAttach(tx);
     createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
     std::unordered_map<String, StorageInfo> nested_storages;
+
+    /// Tables whose snapshot position is ahead of the existing replication slot on resume, with that position:
+    /// the consumer applies their changes only after it. These are the tables that take their first snapshot now,
+    /// and the ones that took it in a previous run, which the replication slot has not passed yet.
+    std::unordered_map<String, std::pair<StorageInfo, String>> tables_after_snapshot_position;
 
     /// snapshot_name is initialized only if a new replication slot is created.
     /// start_lsn is initialized in two places:
@@ -580,6 +930,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     {
         LOG_DEBUG(log, "Starting tables sync load");
 
+        /// All tables are loaded from the snapshot of the new replication slot.
+        saveSnapshotPositions({});
+
         if (user_managed_slot)
         {
             if (user_provided_snapshot.empty())
@@ -591,6 +944,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         }
         else
         {
+            /// On attach, the publication may survive from a previous run that did not materialize any table, and miss
+            /// some of the tables to replicate. Add them before the replication slot is created, so that all changes
+            /// after the snapshot are streamed for them.
+            if (is_attach)
+            {
+                for (const auto & storage_data : materialized_storages)
+                    addTableToPublication(tx, storage_data.first);
+            }
+
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
@@ -623,8 +985,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
         initial_sync();
     }
-    /// Always drop replication slot if it is CREATE query and not ATTACH.
-    else if (!is_attach)
+    /// Always drop replication slot if it is CREATE query and not ATTACH, or if the previous run
+    /// did not materialize any table (see checkReplicationStateOnAttach).
+    else if (!is_attach || bootstrap_after_never_synchronized_run)
     {
         if (!user_managed_slot)
             dropReplicationSlot(tx);
@@ -636,16 +999,117 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// and pass them to replication consumer.
     else
     {
+        /// A published table may have no nested table: in `materialized_postgresql_tables_list` mode, a table whose
+        /// first snapshot failed (for example, it had no primary key) is skipped by the initial synchronization, while
+        /// the other tables are materialized. Take its first snapshot now from a temporary replication slot, as
+        /// `ATTACH TABLE` does. Otherwise every attach would fail on the missing nested table.
+        std::vector<std::pair<String, StorageMaterializedPostgreSQL *>> tables_without_nested;
+        std::optional<std::set<std::pair<String, String>>> published;
+
+        auto snapshot_positions = loadSnapshotPositions();
+
+        /// A snapshot position of a table that is not replicated is left by an `ATTACH TABLE` that did not complete (the
+        /// server was terminated before `materialized_postgresql_tables_list` was updated), or by a `DETACH TABLE ...
+        /// PERMANENTLY` that did not complete after it was updated. Finish the rollback, or the detach: the nested table
+        /// would otherwise hide the table from a retried `ATTACH TABLE`, and the publication would stream its changes.
+        for (const auto & [table_name, position] : snapshot_positions)
+        {
+            if (materialized_storages.contains(table_name))
+                continue;
+
+            auto nested_context = StorageMaterializedPostgreSQL::makeNestedTableContext(getContext()->getGlobalContext());
+            const StorageID nested_table_id(current_database_name, table_name);
+            if (DatabaseCatalog::instance().tryGetTable(nested_table_id, nested_context))
+            {
+                LOG_INFO(log, "Table {}.{} is not replicated, but has a nested table left by an interrupted `ATTACH TABLE` "
+                         "or `DETACH TABLE ... PERMANENTLY`, it will be dropped", postgres_database, table_name);
+                /// The drop query is executed in a copy of the first context, which must be internal too: otherwise the
+                /// database does not find the nested table of a table that it does not replicate.
+                InterpreterDropQuery::executeDropQuery(
+                    ASTDropQuery::Kind::Drop, nested_context, nested_context, nested_table_id,
+                    /* sync */ true, /* ignore_sync_setting */ true);
+            }
+
+            /// A publication entry that the interrupted `ATTACH TABLE` reused is kept, as the rollback of a failed
+            /// `ATTACH TABLE` does: other consumers of the publication may rely on it.
+            if (!position.owns_publication_entry)
+            {
+                LOG_INFO(log, "The publication entry of table {}.{} existed before the interrupted `ATTACH TABLE`, it is kept",
+                         postgres_database, table_name);
+                continue;
+            }
+
+            if (!published)
+                published = fetchPublishedTablePairs(tx);
+            if (published->contains(getNormalizedSchemaAndTableName(table_name)))
+            {
+                removeTableFromPublication(tx, table_name);
+                published->erase(getNormalizedSchemaAndTableName(table_name));
+            }
+        }
+
+        /// Forget the snapshot positions of the completed snapshots that the replication slot has durably passed
+        /// (`start_lsn` is its `confirmed_flush_lsn`), and the ones of the tables that are not replicated anymore.
+        /// The position of an interrupted snapshot is kept regardless of the replication slot: its table is loaded again.
+        if (std::erase_if(snapshot_positions, [&](const auto & position)
+            {
+                return (position.second.completed
+                        && MaterializedPostgreSQLConsumer::getLSNValue(position.second.start_lsn)
+                            <= MaterializedPostgreSQLConsumer::getLSNValue(start_lsn))
+                    || !materialized_storages.contains(position.first);
+            }))
+            saveSnapshotPositions(snapshot_positions);
+
         for (const auto & [table_name, storage] : materialized_storages)
         {
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
+
+            /// The server was terminated while this table was being loaded from a snapshot, so the cleanup after
+            /// a failed snapshot did not run. Its nested table holds only a part of the rows: drop it, and take
+            /// a new snapshot below, as for a table without a nested table.
+            if (auto position = snapshot_positions.find(table_name);
+                position != snapshot_positions.end() && !position->second.completed && materialized_storage->tryGetNested())
+            {
+                LOG_INFO(log, "The snapshot of table {}.{} did not complete in a previous run, its nested table will be "
+                         "dropped and loaded again", postgres_database, table_name);
+                dropNestedTable(materialized_storage);
+            }
+
+            if (!materialized_storage->tryGetNested())
+            {
+                if (!published)
+                    published = fetchPublishedTablePairs(tx);
+                if (published->contains(getNormalizedSchemaAndTableName(table_name)))
+                {
+                    tables_without_nested.emplace_back(table_name, materialized_storage);
+                    continue;
+                }
+
+                /// Without `materialized_postgresql_tables_list` the tables are discovered from the replicated schemas
+                /// (a configured tables list is validated against the publication in checkReplicationStateOnAttach).
+                /// A table that is neither materialized nor published was removed from replication by
+                /// `DETACH TABLE ... PERMANENTLY`, or was created in PostgreSQL later. It is not replicated.
+                LOG_INFO(log, "Table {}.{} has no nested table and is not in publication {}, it is not replicated",
+                         postgres_database, table_name, doubleQuoteString(publication_name));
+                tables_skipped_on_attach.insert(table_name);
+                continue;
+            }
+
             try
             {
                 auto table_structure = fetchTableStructure(tx, table_name);
                 if (!table_structure->physical_columns)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns");
                 auto storage_info = StorageInfo(materialized_storage->getNested(), table_structure->physical_columns->attributes);
-                nested_storages.emplace(table_name, std::move(storage_info));
+                if (auto position = snapshot_positions.find(table_name); position != snapshot_positions.end())
+                {
+                    LOG_INFO(log, "Table {}.{} was loaded from a snapshot at position {}, which replication slot {} has not "
+                             "passed yet: its earlier changes will be skipped",
+                             postgres_database, table_name, position->second.start_lsn, replication_slot);
+                    tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), position->second.start_lsn));
+                }
+                else
+                    nested_storages.emplace(table_name, std::move(storage_info));
             }
             catch (Exception & e)
             {
@@ -656,7 +1120,76 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     throw;
             }
         }
-        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
+
+        if (!tables_without_nested.empty())
+        {
+            postgres::Connection snapshot_replication_connection(connection_info, /* replication */true);
+            auto snapshot_tx = std::make_shared<pqxx::nontransaction>(snapshot_replication_connection.getRef());
+
+            String temporary_snapshot_name;
+            String temporary_start_lsn;
+            if (isReplicationSlotExist(*snapshot_tx, temporary_start_lsn, /* temporary */true))
+                dropReplicationSlot(*snapshot_tx, /* temporary */true);
+
+            TemporaryReplicationSlot temporary_slot(this, snapshot_tx, temporary_start_lsn, temporary_snapshot_name);
+
+            /// Record the snapshot position before the snapshot is loaded, so that a restart at any moment after it
+            /// cannot apply the changes before the snapshot position to the loaded table.
+            if (is_materialized_postgresql_database)
+            {
+                for (const auto & [table_name, materialized_storage] : tables_without_nested)
+                    snapshot_positions[table_name] = SnapshotPosition{
+                        .start_lsn = temporary_start_lsn, .completed = false, .owns_publication_entry = false};
+                saveSnapshotPositions(snapshot_positions);
+            }
+            else
+            {
+                /// The replication slot of the single-table engine streams only this table, so nothing needs
+                /// the changes before the snapshot position.
+                tx.exec(fmt::format(
+                    "SELECT pg_replication_slot_advance({}, {})",
+                    quoteStringPostgreSQL(replication_slot), quoteStringPostgreSQL(temporary_start_lsn)));
+                LOG_DEBUG(log, "Advanced replication slot {} to the snapshot position {}", replication_slot, temporary_start_lsn);
+            }
+
+            for (const auto & [table_name, materialized_storage] : tables_without_nested)
+            {
+                LOG_INFO(log, "Table {}.{} has no nested table yet, loading it from a new snapshot", postgres_database, table_name);
+                try
+                {
+                    auto storage_info = loadFromSnapshot(*tmp_connection, temporary_snapshot_name, table_name, materialized_storage);
+                    markSnapshotCompleted(table_name);
+                    tables_after_snapshot_position.emplace(table_name, std::make_pair(std::move(storage_info), temporary_start_lsn));
+                }
+                catch (...)
+                {
+                    /// Not only `DB::Exception`: a lost connection during the snapshot throws `pqxx::failure`.
+                    tryLogCurrentException(log, fmt::format("while loading table `{}`.`{}`", postgres_database, table_name));
+
+                    /// A partially loaded nested table must not stay. The next attach would also drop it, because
+                    /// its snapshot is not marked completed, but dropping it now frees the space at once.
+                    try
+                    {
+                        dropNestedTable(materialized_storage);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to drop the nested table of a table whose snapshot failed");
+                    }
+
+                    /// Like the initial synchronization, the database engine keeps replicating the other tables.
+                    if (throw_on_error && !is_materialized_postgresql_database)
+                        throw;
+                }
+            }
+
+            fiu_do_on(FailPoints::materialized_postgresql_fail_after_snapshot_on_attach,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint materialized_postgresql_fail_after_snapshot_on_attach");
+            });
+        }
+
+        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size() + tables_after_snapshot_position.size());
     }
 
     tx.commit();
@@ -675,6 +1208,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             schema_as_a_part_of_table_name,
             nested_storages,
             (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+
+    for (auto & [table_name, storage_info_and_position] : tables_after_snapshot_position)
+        consumer->addNested(table_name, std::move(storage_info_and_position.first), storage_info_and_position.second);
 
     replication_handler_initialized = true;
 
@@ -1012,11 +1548,38 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 }
 
 
-void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
+bool PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
+    const String definition_conflict = publicationDefinitionConflict(ntx);
+    if (!definition_conflict.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot add table {} to MaterializedPostgreSQL replication: {}. Replicating the table through this publication "
+            "would silently filter its replication stream",
+            doubleQuoteWithSchema(table_name), definition_conflict);
+
+    const auto published = fetchPublishedTablePairs(ntx);
+    const auto table = getNormalizedSchemaAndTableName(table_name);
+
+    const String colliding = collidingForeignPublishedTables({table}, published);
+    if (!colliding.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot add table {} to MaterializedPostgreSQL replication: publication {} already publishes the following "
+            "tables from other schemas with the same name: {}. Their changes would be applied to this table",
+            doubleQuoteWithSchema(table_name), doubleQuoteString(publication_name), colliding);
+
+    /// A publication cannot contain the same table twice.
+    if (published.contains(table))
+    {
+        LOG_TRACE(log, "Table {} is already in publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
+        return false;
+    }
+
     std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
+    return true;
 }
 
 
@@ -1431,6 +1994,89 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 }
 
 
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::nontransaction & tx) const
+{
+    pqxx::result result{tx.exec(fmt::format(
+        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name)))};
+    std::set<std::pair<String, String>> tables;
+    for (const auto & row : result)
+    {
+        const auto schema = row[0].as<std::string>();
+        tables.emplace(isDefaultPostgreSQLSchema(schema) ? "public" : schema, row[1].as<std::string>());
+    }
+    return tables;
+}
+
+
+String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontransaction & tx) const
+{
+    const String name = doubleQuoteString(publication_name);
+    const String quoted_name = quoteStringPostgreSQL(publication_name);
+
+    pqxx::result flags{tx.exec(fmt::format(
+        "SELECT pubinsert AND pubupdate AND pubdelete AND pubtruncate, puballtables FROM pg_publication WHERE pubname = {}",
+        quoted_name))};
+    if (flags.empty())
+        return fmt::format("publication {} does not exist", name);
+    if (!flags[0][0].as<bool>())
+        return fmt::format(
+            "publication {} does not publish all operation types (ClickHouse creates it with the default "
+            "`publish = 'insert, update, delete, truncate'`)", name);
+    if (flags[0][1].as<bool>())
+        return fmt::format("publication {} publishes all tables (ClickHouse creates it with a list of tables)", name);
+
+    /// Row filters, column lists and schema-level membership exist since PostgreSQL 15. Schema-level membership
+    /// extends the publication with every table created in that schema later.
+    if (tx.conn().server_version() < 150000)
+        return {};
+
+    pqxx::result filtered{tx.exec(fmt::format(
+        "SELECT count(*) FROM pg_publication_rel r JOIN pg_publication p ON r.prpubid = p.oid "
+        "WHERE p.pubname = {} AND r.prqual IS NOT NULL", quoted_name))};
+    if (filtered[0][0].as<Int64>() > 0)
+        return fmt::format("publication {} applies a row filter to a published table (ClickHouse creates it without one)", name);
+
+    std::map<std::pair<String, String>, std::set<String>> published_column_lists;
+    pqxx::result column_lists{tx.exec(fmt::format(
+        "SELECT n.nspname, c.relname, a.attname FROM pg_publication_rel r "
+        "JOIN pg_publication p ON r.prpubid = p.oid "
+        "JOIN pg_class c ON c.oid = r.prrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_attribute a ON a.attrelid = r.prrelid AND a.attnum = ANY(r.prattrs) "
+        "WHERE p.pubname = {} AND r.prattrs IS NOT NULL", quoted_name))};
+    for (const auto & row : column_lists)
+        published_column_lists[{row[0].as<String>(), row[1].as<String>()}].insert(row[2].as<String>());
+
+    for (const auto & [table, columns] : published_column_lists)
+    {
+        auto it = configured_column_lists.find(table);
+        if (it == configured_column_lists.end() || it->second != columns)
+            return fmt::format(
+                "publication {} applies a column list to the published table {}.{} that "
+                "`materialized_postgresql_tables_list` does not request", name, table.first, table.second);
+    }
+
+    /// The reverse: a table restricted to a subset of columns is published with all columns. The consumer would
+    /// skip the table after its first `Relation` message, which carries more columns than the nested table.
+    const auto published_tables = fetchPublishedTablePairs(tx);
+    for (const auto & [table, columns] : configured_column_lists)
+    {
+        if (published_tables.contains(table) && !published_column_lists.contains(table))
+            return fmt::format(
+                "publication {} publishes all columns of the table {}.{}, but `materialized_postgresql_tables_list` "
+                "requests only a subset of them", name, table.first, table.second);
+    }
+
+    pqxx::result schema_membership{tx.exec(fmt::format(
+        "SELECT count(*) FROM pg_publication_namespace n JOIN pg_publication p ON n.pnpubid = p.oid "
+        "WHERE p.pubname = {}", quoted_name))};
+    if (schema_membership[0][0].as<Int64>() > 0)
+        return fmt::format("publication {} includes tables by schema (ClickHouse creates it with a list of tables)", name);
+
+    return {};
+}
+
+
 std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
     std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name));
@@ -1506,12 +2152,13 @@ template
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::nontransaction & tx, const std::string & table_name) const;
 
-void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
+bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
     assertInitialized();
 
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
     /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in losing data.
+    bool publication_added = false;
     consumer_task->deactivate();
     try
     {
@@ -1521,6 +2168,28 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         String start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
+        /// See `snapshot_positions_path`. The snapshot is marked incomplete before the table is published: otherwise, after
+        /// a restart in between, a published table with an empty nested table would be resumed. The snapshot position is
+        /// not known until the temporary replication slot is created. An entry left by a failure is dropped on the next
+        /// attach if the table is not replicated then, together with its nested table and publication entry. Otherwise
+        /// (it is discovered from `materialized_postgresql_schema_list`), the nested table is loaded again, because its
+        /// snapshot is not marked completed.
+        /// Whether this query creates the publication entry is persisted too, so that a restart in between keeps
+        /// a publication entry that existed before, as the rollback below does. It is recorded before
+        /// `ALTER PUBLICATION`, so that a restart right after it still removes the entry that it created.
+        auto snapshot_positions = loadSnapshotPositions();
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            const bool already_published = fetchPublishedTablePairs(tx).contains(getNormalizedSchemaAndTableName(postgres_table_name));
+            snapshot_positions[postgres_table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = !already_published};
+            saveSnapshotPositions(snapshot_positions);
+
+            /// The table must be in the publication before the snapshot is taken: `pgoutput` decides publication membership
+            /// by the catalog at the LSN of each change, so the changes between the snapshot and `ALTER PUBLICATION`
+            /// would be neither in the snapshot nor in the replication stream.
+            publication_added = addTableToPublication(tx, postgres_table_name);
+        }
+
         {
             auto tx = std::make_shared<pqxx::nontransaction>(replication_connection.getRef());
 
@@ -1529,19 +2198,21 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
             TemporaryReplicationSlot temporary_slot(this, tx, start_lsn, snapshot_name);
 
+            snapshot_positions[postgres_table_name] = SnapshotPosition{
+                .start_lsn = start_lsn, .completed = false, .owns_publication_entry = publication_added};
+            saveSnapshotPositions(snapshot_positions);
+
             /// Protect against deadlock.
             auto nested = DatabaseCatalog::instance().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
             if (!nested)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
 
+            FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_attach_table_snapshot);
+
             postgres::Connection tmp_connection(connection_info);
             nested_storage_info = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
+            markSnapshotCompleted(postgres_table_name);
             materialized_storage->set(nested_storage_info.storage);
-        }
-
-        {
-            pqxx::nontransaction tx(replication_connection.getRef());
-            addTableToPublication(tx, postgres_table_name);
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
@@ -1550,6 +2221,22 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     }
     catch (...)
     {
+        /// Do not leave the table published while nothing replicates it. A publication entry that existed
+        /// before is kept: removing it would make the publication drift from the replicated tables.
+        if (publication_added)
+        {
+            try
+            {
+                postgres::Connection replication_connection(connection_info, /* replication */true);
+                pqxx::nontransaction tx(replication_connection.getRef());
+                removeTableFromPublication(tx, postgres_table_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove table from publication after a failed add to replication");
+            }
+        }
+
         consumer_task->activate();
         consumer_task->scheduleAfter(milliseconds_to_wait);
 
@@ -1558,25 +2245,31 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
                         "Failed to add table `{}` to replication. Info: {}", postgres_table_name, error_message);
     }
     consumer_task->activateAndSchedule();
+    return publication_added;
 }
 
 
-void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
+void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name, bool remove_from_publication)
 {
     assertInitialized();
 
     consumer_task->deactivate();
     try
     {
-        postgres::Connection replication_connection(connection_info, /* replication */true);
-
+        /// `remove_from_publication` is false when undoing an `ATTACH TABLE` that reused an existing publication entry.
+        if (remove_from_publication)
         {
+            postgres::Connection replication_connection(connection_info, /* replication */true);
             pqxx::nontransaction tx(replication_connection.getRef());
             removeTableFromPublication(tx, postgres_table_name);
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
         getConsumer()->removeNested(postgres_table_name);
+
+        auto snapshot_positions = loadSnapshotPositions();
+        if (snapshot_positions.erase(postgres_table_name))
+            saveSnapshotPositions(snapshot_positions);
     }
     catch (...)
     {

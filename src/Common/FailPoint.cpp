@@ -488,6 +488,8 @@ static struct InitFiu
     ONCE(aggregating_in_order_transform_cancel_mid_loop) \
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
+    ONCE(materialized_postgresql_fail_after_snapshot_on_attach) \
+    PAUSEABLE_ONCE(materialized_postgresql_pause_before_attach_table_snapshot) \
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(stored_columns_index_throw_on_add) \

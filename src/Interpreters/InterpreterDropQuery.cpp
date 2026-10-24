@@ -307,6 +307,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (query.permanently)
             {
                 /// Check dependencies before `flushAndShutdown` so a failed check leaves the storage untouched.
+                database->checkTableCanBeDetachedPermanently(context_, table_id.table_name);
                 check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
