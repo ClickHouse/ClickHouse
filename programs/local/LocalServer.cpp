@@ -1429,6 +1429,10 @@ void LocalServer::executeInitialTableQuery(const String & initial_query, bool pr
         processQueryText(initial_query);
 }
 
+/// Mixed --queries-file/--query mode has three phases for inferred stdin:
+/// initialize before query-file settings can change schema detection, hide
+/// the table while query files run, then expose its name to command-line
+/// queries only when it cannot shadow a user table.
 void LocalServer::connectAndInitializeInputTable()
 {
     auto [table_name, initial_query] = getInitialCreateTableQuery();
@@ -1496,8 +1500,10 @@ void LocalServer::beforeExecutingCommandLineQueries()
     /// SETTINGS database can change that database within the same -q argument.
     /// Query contexts copy the session's external-table map when sendQuery starts.
     /// Update both copies so a database collision cannot leave a stale alias in the current query.
-    /// Remember when the alias was visible: an unexpected removal is an explicit DROP,
-    /// whereas removal for a database collision must remain reversible.
+    /// Remember why the public alias disappeared: collision-driven hiding can
+    /// be undone when the database changes, but a user DROP/replacement cannot.
+    /// Keep only one name registered for the inferred table to avoid counting
+    /// it twice against max_temporary_tables.
     local_connection.setBeforeQueryCallback(
         [session_context, inferred_table, public_name, private_name, alias_was_exposed = false, alias_overridden_by_user = false, inferred_alias_retired = false]
         (ContextMutablePtr query_context) mutable
@@ -1507,9 +1513,9 @@ void LocalServer::beforeExecutingCommandLineQueries()
             database_name = query_context->getCurrentDatabase();
 
         const auto public_alias = session_context->findExternalTable(public_name);
-        /// A table created by the prelude must not change implicit stdin SELECTs.
-        /// Only retire the implicit source after our public alias was exposed
-        /// and then explicitly dropped or replaced.
+        /// After exposure, a missing or replaced alias belongs to user DDL.
+        /// Collision handling below resets alias_was_exposed, allowing a
+        /// later statement in another database to restore our public name.
         if (alias_was_exposed && public_alias != inferred_table)
             inferred_alias_retired = true;
         if ((alias_was_exposed && !public_alias) || (public_alias && public_alias != inferred_table))

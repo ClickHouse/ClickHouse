@@ -184,6 +184,8 @@ using String = std::string;
 
 namespace
 {
+/// Restrict special stdin inference bookkeeping to the synthetic local table.
+/// Normal File tables and standalone --query must keep their reader behavior.
 thread_local bool local_file_descriptor_inference = false;
 thread_local bool preserve_inherited_file_descriptor_offset = false;
 }
@@ -1306,8 +1308,8 @@ void StorageFile::discardInferredFileDescriptorReadBuffer()
     if (!inferred_fd_reader_is_positional)
         return;
 
-    /// The deferred table has not been exposed to any query yet. Always open
-    /// a fresh positional reader so writes from the query files are visible.
+    /// Query files may rewrite stdin after schema inference. Drop the cached
+    /// positional reader so the first -q query sees the updated bytes too.
     has_peekable_read_buffer_from_fd = false;
     peekable_read_buffer_from_fd.reset();
     read_buffer_from_fd.reset();
@@ -1324,6 +1326,9 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     /// schema inference.
     auto file_stat = getFileStat("", true, table_fd, getName());
     const auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
+    /// Only mixed-mode inferred stdin tables track how their reader was opened.
+    /// When inference temporarily uses pread, save the inherited offset so
+    /// subsequent positional reads start from the same boundary.
     inferred_fd_reader_is_positional = local_file_descriptor_inference
         && S_ISREG(file_stat.st_mode)
         && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);

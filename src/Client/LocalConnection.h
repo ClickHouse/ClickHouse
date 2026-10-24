@@ -119,7 +119,9 @@ public:
     /// Used by clickhouse-local to hide its inferred stdin table until query files finish.
     ContextMutablePtr getSessionContext() { return session->sessionContext(); }
 
-    /// Used only by clickhouse-local's deferred inferred-stdin table.
+    /// Runs after query-context creation but before each statement executes.
+    /// Local uses it to reconcile stdin aliases with per-query database settings
+    /// and explicit table DROP/replacement across statements.
     void setBeforeQueryCallback(std::function<void(ContextMutablePtr)> callback) { before_query_callback = std::move(callback); }
 
     static ServerConnectionPtr createConnection(
