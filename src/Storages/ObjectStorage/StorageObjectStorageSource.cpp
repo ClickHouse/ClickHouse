@@ -1994,7 +1994,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             row_level_outputs.insert(row_level_outputs.end(), row_level_dag.getInputs().begin(), row_level_dag.getInputs().end());
 
-            auto row_level_actions = std::make_shared<ExpressionActions>(std::move(row_level_dag));
+            auto row_level_actions = std::make_shared<ExpressionActions>(std::move(row_level_dag), ExpressionActionsSettings(context_));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
@@ -2008,7 +2008,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (stripped_prewhere_info)
         {
-            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
+            auto prewhere_actions = std::make_shared<ExpressionActions>(
+                stripped_prewhere_info->prewhere_actions.clone(), ExpressionActionsSettings(context_));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(

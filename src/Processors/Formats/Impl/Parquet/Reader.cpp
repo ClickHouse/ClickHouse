@@ -1780,13 +1780,14 @@ void Reader::preparePrewhere()
     ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
 
     /// Convert ActionsDAG to ExpressionActions.
-    std::optional<ExpressionActionsSettings> actions_settings;
+    /// Query settings, so that the steps honor e.g. short_circuit_function_evaluation.
+    ExpressionActionsSettings actions_settings;
+    if (auto context = format_filter_info->context.lock())
+        actions_settings = ExpressionActionsSettings(context);
 
     auto add_single_step = [&] (const ActionsDAG & dag, const String & filter_column_name, bool needs_filter, size_t step_idx)
     {
-        if (!actions_settings.has_value())
-            actions_settings.emplace();
-        Step step { .actions = ExpressionActions(dag.clone(), actions_settings.value()) };
+        Step step { .actions = ExpressionActions(dag.clone(), actions_settings) };
         if (needs_filter)
             step.filter_column_name = filter_column_name;
 
@@ -1834,9 +1835,6 @@ void Reader::preparePrewhere()
 
     auto add_step = [&](const ActionsDAG & dag, const String & filter_column_name, bool needs_filter)
     {
-        if (!actions_settings.has_value())
-            actions_settings.emplace();
-
         PrewhereExprInfo prewhere_expr_info;
         bool success = false;
 
@@ -1849,7 +1847,7 @@ void Reader::preparePrewhere()
 
             success = tryBuildPrewhereSteps(
                 prewhere_info_patched,
-                *actions_settings,
+                actions_settings,
                 prewhere_expr_info,
                 /*force_short_circuit_execution*/ false);
 
