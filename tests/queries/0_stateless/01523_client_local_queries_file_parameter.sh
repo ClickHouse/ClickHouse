@@ -289,3 +289,21 @@ echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --max_temporary_tables=2 --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'CREATE TEMPORARY TABLE limit_01523 (a UInt8); SELECT count() FROM limit_01523; SELECT sum(c1); SELECT sum(c1) FROM table' \
     < "$STDIN_DATA_FILE_NAME"
+
+# Query files can read stdin with an explicit format even if automatic stdin
+# format detection fails. The trailing explicit query does not need inferred input.
+printf 'INFO startup\nERROR request, code=500\tworker=1\nINFO shutdown\n' > "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE TABLE format_01523 (s String) ENGINE=File(LineAsString, stdin);' \
+    'SELECT count() FROM format_01523;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME"
+
+# If no inferred table exists, an implicit SELECT must not silently use system.one.
+if $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' \
+    < "$STDIN_DATA_FILE_NAME" > /dev/null 2>&1; then
+    echo 'missing inferred stdin table unexpectedly succeeded'
+else
+    echo 'missing inferred stdin table rejected implicit query'
+fi
