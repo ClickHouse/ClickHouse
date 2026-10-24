@@ -12,6 +12,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
+#include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
@@ -146,7 +147,8 @@ size_t convertedBlockSize(size_t table_size, size_t max_block_size, size_t max_r
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    if (params.top_k)
+    /// A collated heap leaves the table to grow as without the optimization until it starts, so it takes the same size hint.
+    if (params.top_k && !params.top_k->hasCollators())
     {
         result.init(method_chosen);
         ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
@@ -186,6 +188,11 @@ void initDataVariantsWithSizeHint(
         result.init(method_chosen);
     }
     ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+}
+
+bool topKHeapWaits(const DB::Aggregator::Params & params, const DB::TopKAggregationHeapBase & heap)
+{
+    return params.top_k && params.top_k->hasCollators() && !heap.heap_column && !heap.frozen && !heap.start_allowed;
 }
 
 /// Collection and use of the statistics should be enabled.
@@ -601,6 +608,15 @@ static Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Colu
     return aggregate_columns;
 }
 
+static Strings topKCollationLocales(const Aggregator::Params::TopKParams & top_k)
+{
+    Strings locales;
+    locales.reserve(top_k.collators.size());
+    for (const auto & collator : top_k.collators)
+        locales.push_back(collator ? collator->getLocale() : String{});
+    return locales;
+}
+
 void Aggregator::Params::explain(ExplainFormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -639,8 +655,13 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
     }
 
     if (top_k)
+    {
         out << fmt::format(
-            "{}Top-K: limit={}, columns={}, directions=[{}]\n", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
+            "{}Top-K: limit={}, columns={}, directions=[{}]", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
+        if (top_k->hasCollators())
+            out << fmt::format(", collations=[{}]", fmt::join(topKCollationLocales(*top_k), ","));
+        out << '\n';
+    }
 }
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
@@ -675,6 +696,13 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         for (int direction : top_k->directions)
             directions->add(direction);
         top_k_map->add("Directions", std::move(directions));
+        if (top_k->hasCollators())
+        {
+            auto collations = std::make_unique<JSONBuilder::JSONArray>();
+            for (const auto & locale : topKCollationLocales(*top_k))
+                collations->add(locale);
+            top_k_map->add("Collations", std::move(collations));
+        }
         map.add("Top-K", std::move(top_k_map));
     }
 }
@@ -1211,13 +1239,16 @@ void Aggregator::executeImpl(
             state.skipRowsBefore(row_begin);
     }
 
-    if (params.top_k && !method.top_k_heap.frozen)
+    const bool top_k_waits = topKHeapWaits(params, method.top_k_heap);
+
+    if (params.top_k && !method.top_k_heap.frozen && !top_k_waits)
     {
         method.top_k_heap.initIfNeeded(
             key_columns, params.top_k->key_columns,
             params.keys.size(),
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
+            params.top_k->collators,
             params.top_k->observation_rows,
             params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr,
             params.top_k->threshold_tracker);
@@ -1225,14 +1256,15 @@ void Aggregator::executeImpl(
         /// Before the freeze check, which must judge the heap against the latest shared boundary.
         method.top_k_heap.exchangeSharedBoundary();
 
-        if (method.top_k_heap.shouldFreeze())
+        if (method.top_k_heap.shouldFreeze()
+            || (!all_keys_are_const && method.top_k_heap.collatedSkipsRepeat(key_columns, row_begin, row_end)))
         {
             method.top_k_heap.freeze();
             ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
         }
     }
 
-    const bool top_k = params.top_k && !method.top_k_heap.frozen;
+    const bool top_k = params.top_k && !method.top_k_heap.frozen && !top_k_waits;
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
@@ -2406,7 +2438,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// certainly will not rank the block: it errs towards "active" when the shared-boundary
     /// exchange in `executeImpl` may still restart the profitability window and keep the heap
     /// running, so an active heap never sees key columns in a representation it cannot rank.
-    const bool top_k_active = params.top_k && !result.topKHeapInactive();
+    /// A waiting heap cannot start inside the block, so it ranks nothing in it.
+    const auto * top_k_heap = params.top_k ? result.topKHeap() : nullptr;
+    const bool top_k_waits = top_k_heap && topKHeapWaits(params, *top_k_heap);
+    const bool top_k_active = params.top_k && !result.topKHeapInactive() && !top_k_waits;
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
@@ -2455,6 +2490,8 @@ bool Aggregator::executeOnBlock(Columns columns,
         createAggregateStates(place);
         result.without_key = place;
     }
+
+    const size_t keys_before_block = top_k_waits ? result.sizeWithoutOverflowRow() : 0;
 
     /// We select one of the aggregation methods and call it.
 
@@ -2539,6 +2576,19 @@ bool Aggregator::executeOnBlock(Columns columns,
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
+
+    /// A collated heap tests every row with a locale comparison, which costs more than the hash-table work it saves
+    /// unless the rows keep inserting new keys. So it starts only once the table holds `collated_top_k_min_keys` keys
+    /// and the last block inserted new keys for at least `collated_top_k_min_new_key_share` of its rows, re-checked
+    /// after every block until it starts or gives up at the adaptive freeze. Measured on 20M rows, `LIMIT 10`, 'en':
+    /// a heap started at 1M or 3M keys is 1.5x or 1.2x slower with 1 thread; at 12.6M keys it is 1.6x faster.
+    static constexpr size_t collated_top_k_min_keys = 32768;
+    static constexpr double collated_top_k_min_new_key_share = 0.995;
+    if (top_k_waits && result_size >= collated_top_k_min_keys && row_end > row_begin
+        && static_cast<double>(result_size - keys_before_block)
+            >= collated_top_k_min_new_key_share * static_cast<double>(row_end - row_begin))
+        result.topKHeap()->start_allowed = true;
+
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
@@ -2577,7 +2627,14 @@ bool Aggregator::executeOnBlock(Columns columns,
                     && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
                 if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
                     && result.isConvertibleToTwoLevel())
+                {
+                    if (auto * heap = params.top_k ? result.topKHeap() : nullptr; heap && topKHeapWaits(params, *heap))
+                    {
+                        heap->frozen = true;
+                        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+                    }
                     freezeAdaptive(result, *adaptive);
+                }
             }
 
             if (adaptive->isFrozen())

@@ -29,6 +29,9 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
 /// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
+/// Whether the top-K heap can rank `key_type` as `description` sorts it (not a `COLLATE` the sort rejects with `BAD_COLLATION`).
+bool canTopKRankSortKey(const SortColumnDescription & description, const IDataType & key_type);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.

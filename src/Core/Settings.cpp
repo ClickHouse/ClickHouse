@@ -2312,7 +2312,9 @@ When enabled, the aggregator maintains a bounded heap of the top `K` keys seen s
 
 The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the requested `LIMIT`.
 
-The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, a `COLLATE` on any of the matched `GROUP BY` keys (a `COLLATE` on a later `ORDER BY` column past the full key prefix cannot affect which groups qualify, so it does not disable the optimization), `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+
+With `COLLATE` on a ranked key, each aggregation stream starts the heap only once its hash table is large and a block still inserts mostly new keys, and gives it up when it stops keeping new keys out of the hash table, because otherwise the comparisons under the collation cost more than they save.
 
 Possible values:
 
@@ -2321,9 +2323,9 @@ Possible values:
 )", 0, \
         {"26.8", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."}) \
     DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
-For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity. A frozen heap means aggregation continues as if the optimization were disabled.
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity, if the heap is full or has a `COLLATE` key. A frozen heap means aggregation continues as if the optimization were disabled.
 
-The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
+The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze and the one of a heap with a `COLLATE` key that stops keeping new keys out of the hash table (the heap still freezes when a boundary tie-set overgrows it).
 
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL, \

@@ -902,8 +902,10 @@ void applyTopKPushdownToPartialAggregation(
 
     std::vector<int> directions;
     std::vector<int> nulls_directions;
+    std::vector<std::shared_ptr<Collator>> collators;
     directions.reserve(sort_description.size());
     nulls_directions.reserve(sort_description.size());
+    collators.reserve(sort_description.size());
 
     for (size_t i = 0; i < sort_description.size(); ++i)
     {
@@ -916,11 +918,15 @@ void applyTopKPushdownToPartialAggregation(
         if (before_order_by_dag && !isSortKeyPassThrough(*before_order_by_dag, params.keys[i]))
             return;
 
-        if (sort_description[i].collator || sort_description[i].with_fill)
+        if (sort_description[i].with_fill)
+            return;
+
+        if (!canTopKRankSortKey(sort_description[i], *aggregating_step.getInputHeaders().front()->getByName(params.keys[i]).type))
             return;
 
         directions.push_back(sort_description[i].direction);
         nulls_directions.push_back(sort_description[i].nulls_direction);
+        collators.push_back(sort_description[i].collator);
     }
 
     aggregating_step.applyTopKOptimization(
@@ -928,6 +934,7 @@ void applyTopKPushdownToPartialAggregation(
             .k = limit,
             .directions = std::move(directions),
             .nulls_directions = std::move(nulls_directions),
+            .collators = std::move(collators),
             .key_columns = sort_description.size(),
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
             .shared_boundary = settings[Setting::group_by_top_k_optimization_shared_boundary],

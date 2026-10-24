@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include "config.h"
+
+#include <Columns/Collator.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +31,7 @@ namespace ErrorCodes
 
 using namespace DB;
 
-/// Pins the wire format of the `GROUP BY` top-K parameters carried by `Aggregating` step version 1:
+/// Pins the wire format of the `GROUP BY` top-K parameters carried by `Aggregating` step versions 1 and 2:
 /// every field survives `serialize -> deserialize -> serialize`, and a stream written for a peer
 /// below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K` omits them entirely.
 
@@ -143,6 +146,16 @@ std::unique_ptr<AggregatingStep> deserializeStep(const String & bytes, UInt64 ve
     return std::unique_ptr<AggregatingStep>(assert_cast<AggregatingStep *>(step.release()));
 }
 
+/// The `COLLATE` locale of each ranked key, empty for a key without one.
+std::vector<String> collationLocales(const Aggregator::Params::TopKParams & top_k)
+{
+    std::vector<String> locales(top_k.directions.size());
+    for (size_t i = 0; i < locales.size() && i < top_k.collators.size(); ++i)
+        if (top_k.collators[i])
+            locales[i] = top_k.collators[i]->getLocale();
+    return locales;
+}
+
 void expectSameTopK(const Aggregator::Params::TopKParams & expected, const Aggregator::Params::TopKParams & actual)
 {
     EXPECT_EQ(actual.k, expected.k);
@@ -150,6 +163,7 @@ void expectSameTopK(const Aggregator::Params::TopKParams & expected, const Aggre
     EXPECT_EQ(actual.observation_rows, expected.observation_rows);
     EXPECT_EQ(actual.directions, expected.directions);
     EXPECT_EQ(actual.nulls_directions, expected.nulls_directions);
+    EXPECT_EQ(collationLocales(actual), collationLocales(expected));
 }
 
 }
@@ -261,3 +275,51 @@ TEST(AggregatingStepTopKSerialization, TopKOnInOrderAggregationIsRejected)
         EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
     }
 }
+
+#if USE_ICU
+
+/// `ORDER BY a COLLATE 'en', b` over `GROUP BY a, b`: the locale of each ranked key survives the round trip.
+TEST(AggregatingStepTopKSerialization, CollatedKeysRoundTrip)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto top_k = makeTopK(2, {1, -1}, {1, 1});
+    top_k.collators = {std::make_shared<Collator>("en"), nullptr};
+    const UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+
+    const String bytes = serializeStep(*makeStep(top_k), version);
+    auto restored = deserializeStep(bytes, version);
+
+    ASSERT_TRUE(restored->getParams().top_k.has_value());
+    expectSameTopK(top_k, *restored->getParams().top_k);
+    EXPECT_EQ(collationLocales(*restored->getParams().top_k), (std::vector<String>{"en", ""}));
+    EXPECT_EQ(serializeStep(*restored, version), bytes);
+}
+
+/// A peer that reads `Aggregating` version 1 would rank a collated key in byte order, so a collated top-K is
+/// omitted towards it, while a top-K without collation is still sent.
+TEST(AggregatingStepTopKSerialization, OlderPeerOmitsCollatedTopK)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const UInt64 version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION - 1;
+    ASSERT_EQ(stepRegistry().versionToWrite(step_name, version), 1u);
+    ASSERT_EQ(stepRegistry().versionToWrite(step_name, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K_COLLATION), 2u);
+
+    auto collated = makeTopK(2, {1, -1}, {1, 1});
+    collated.collators = {nullptr, std::make_shared<Collator>("en")};
+
+    const String with_collated_top_k = serializeStep(*makeStep(collated), version);
+    const String without_top_k = serializeStep(*makeStep(std::nullopt), version);
+    EXPECT_EQ(with_collated_top_k, without_top_k);
+    EXPECT_FALSE(deserializeStep(with_collated_top_k, version)->getParams().top_k.has_value());
+
+    const auto plain = makeTopK(2, {1, -1}, {1, 1});
+    auto restored = deserializeStep(serializeStep(*makeStep(plain), version), version);
+    ASSERT_TRUE(restored->getParams().top_k.has_value());
+    expectSameTopK(plain, *restored->getParams().top_k);
+}
+
+#endif
