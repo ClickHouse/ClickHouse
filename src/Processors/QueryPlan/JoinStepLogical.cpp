@@ -1935,7 +1935,7 @@ static bool joinInputCanBeReadInJoinKeyOrder(
     return QueryPlanOptimizations::getInputOrderIfReadInOrderIsUseful(probe_sorting_step, sorting_key, input) != nullptr;
 }
 
-bool JoinStepLogical::collectMergeJoinKeys(Names & left_keys, Names & right_keys) const
+bool JoinStepLogical::collectMergeJoinKeys(Names & left_keys, Names & right_keys, bool allow_converted_keys) const
 {
     /// The shape of the join must be one a merge join can actually execute, otherwise the physical
     /// selection declines the sorted-merge algorithms (`FullSortingMergeJoin::isSupported`) and falls
@@ -1951,7 +1951,11 @@ bool JoinStepLogical::collectMergeJoinKeys(Names & left_keys, Names & right_keys
     /// conversion can change the input order (for example, `Enum` to `String`), so do not predict an
     /// in-order read if the operands do not already have equal types. This is deliberately conservative:
     /// it can make a monotonic conversion fall through, but it cannot select `sorted_merge` when the
-    /// physical sort needs a full re-sort. The null-safe `tuple` wrapping is different:
+    /// physical sort needs a full re-sort. With `allow_converted_keys` (used to predict the output order of
+    /// `full_sorting_merge`, which sorts the converted keys itself) a pair of unequal types is accepted
+    /// instead, and the name of a side that the conversion rewrites is left empty: it is sorted, but under a
+    /// name that does not exist yet, so only the unconverted side can carry the order to the output.
+    /// The null-safe `tuple` wrapping is different:
     /// it applies to every nullable `<=>` key, so those joins are excluded below outright.
     ///
     /// Anything that is not such a two-sided key predicate makes the join unsupported by the merge
@@ -1983,19 +1987,31 @@ bool JoinStepLogical::collectMergeJoinKeys(Names & left_keys, Names & right_keys
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
             return false;
+        String left_key = lhs.getColumnName();
+        String right_key = rhs.getColumnName();
         if (!lhs.getType()->equals(*rhs.getType()))
-            return false;
+        {
+            if (!allow_converted_keys)
+                return false;
+            /// Mirror `predicateOperandsToCommonType`: an operand keeps its name only if its type already is
+            /// the least supertype. Without a supertype both operands are converted to a common subtype.
+            auto common_type = tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+            if (!common_type || !lhs.getType()->equals(*common_type))
+                left_key.clear();
+            if (!common_type || !rhs.getType()->equals(*common_type))
+                right_key.clear();
+        }
         if (is_asof_inequality)
         {
             /// Physicalization rejects a second inequality (`ASOF join does not support multiple
             /// inequality predicates in JOIN ON expression`), so there is no order to predict.
             if (asof_key)
                 return false;
-            asof_key.emplace(lhs.getColumnName(), rhs.getColumnName());
+            asof_key.emplace(std::move(left_key), std::move(right_key));
             continue;
         }
-        left_keys.push_back(lhs.getColumnName());
-        right_keys.push_back(rhs.getColumnName());
+        left_keys.push_back(std::move(left_key));
+        right_keys.push_back(std::move(right_key));
     }
 
     /// The `ASOF` inequality key is appended to the clause only after every equality key of it
@@ -2041,9 +2057,12 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
     if (node.children.size() != 2 || node.step.get() != this || !getOutputHeader())
         return {};
 
+    /// The keys are collected with their conversions allowed: `full_sorting_merge` sorts the converted keys
+    /// and still orders its output by the unconverted ones. The sorted-merge algorithms do not need this
+    /// relaxation, `inputsCanBeReadInJoinKeyOrder` collects the keys on its own and declines a conversion.
     Names left_keys;
     Names right_keys;
-    if (!collectMergeJoinKeys(left_keys, right_keys))
+    if (!collectMergeJoinKeys(left_keys, right_keys, /*allow_converted_keys=*/ true))
         return {};
 
     /// Replay the selection of `chooseJoinAlgorithm`: the first algorithm of the list that applies wins.

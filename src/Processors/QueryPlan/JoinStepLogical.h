@@ -335,8 +335,9 @@ protected:
     /// The join key pairs a merge join would sort its inputs by, in the order of its sort description
     /// (equality keys first, the `ASOF` inequality key last), as the raw operand column names. Returns
     /// false when the join has a shape a merge join cannot execute (kind, strictness, a one-sided or
-    /// disjunctive condition, differently typed or null-safe nullable keys).
-    bool collectMergeJoinKeys(Names & left_keys, Names & right_keys) const;
+    /// disjunctive condition, differently typed or null-safe nullable keys). With `allow_converted_keys`,
+    /// differently typed keys are accepted, and the name of a side that the type conversion rewrites is empty.
+    bool collectMergeJoinKeys(Names & left_keys, Names & right_keys, bool allow_converted_keys = false) const;
 
     /// Memoized result of `inputsCanBeReadInJoinKeyOrder`.
     std::optional<bool> inputs_can_be_read_in_join_key_order;
