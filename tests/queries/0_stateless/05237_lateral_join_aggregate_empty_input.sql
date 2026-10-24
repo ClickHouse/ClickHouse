@@ -1,7 +1,6 @@
 -- A LATERAL subquery that aggregates without GROUP BY yields one row per outer row,
 -- also when its filtered input is empty for that outer row (the empty-set aggregate result).
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 SET join_use_nulls = 1;
 

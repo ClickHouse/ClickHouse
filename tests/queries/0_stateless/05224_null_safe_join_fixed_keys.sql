@@ -2,7 +2,6 @@
 -- and `isNull(x)`, instead of a serialized `tuple(x)`, if all keys of the clause still pack into the 32 bytes of a
 -- fixed-width hash key. The value key goes first, so that merge joins can skip runs of rows by it.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_join_swap_table = 0;
 SET allow_suspicious_low_cardinality_types = 1;
