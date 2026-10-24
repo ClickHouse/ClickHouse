@@ -2584,3 +2584,117 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_rename_with_different_local_database_names(started_cluster):
+    zk_path = "/clickhouse/databases/rename_local_names"
+    mounts = [(main_node, "rename_local_a"), (dummy_node, "rename_local_b")]
+    for node, db in mounts:
+        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    main_node.query(
+        f"CREATE DATABASE rename_local_a ENGINE = Replicated('{zk_path}', 'shard1', 'replica1')"
+    )
+    dummy_node.query(
+        f"CREATE DATABASE rename_local_b ENGINE = Replicated('{zk_path}', 'shard1', 'replica2')"
+    )
+
+    main_node.query(
+        "CREATE TABLE rename_local_a.t (x UInt8) ENGINE = MergeTree ORDER BY ()"
+    )
+    main_node.query(
+        "CREATE TABLE rename_local_a.a (a UInt8) ENGINE = MergeTree ORDER BY ()"
+    )
+    main_node.query(
+        "CREATE TABLE rename_local_a.b (b UInt8) ENGINE = MergeTree ORDER BY ()"
+    )
+    main_node.query(
+        "CREATE DICTIONARY rename_local_a.d (k UInt64, v String) PRIMARY KEY k "
+        "SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA rename_local_b")
+    # Not replicated: it is kept only if the replica applies the rename itself.
+    dummy_node.query("INSERT INTO rename_local_b.t VALUES (42)")
+
+    # The session database is `default`, so every name below is qualified with the initiator's mount.
+    query_id = f"rename_local_names_{generate_random_string(10)}"
+    main_node.query(
+        "RENAME TABLE rename_local_a.t TO rename_local_a.u", query_id=query_id
+    )
+    main_node.query("EXCHANGE TABLES rename_local_a.a AND rename_local_a.b")
+    main_node.query("RENAME DICTIONARY rename_local_a.d TO rename_local_a.d2")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA rename_local_b")
+
+    for node, db in mounts:
+        assert (
+            node.query(
+                f"SELECT name FROM system.tables WHERE database = '{db}' ORDER BY name"
+            )
+            == "a\nb\nd2\nu\n"
+        )
+        assert (
+            node.query(
+                f"SELECT table, name FROM system.columns WHERE database = '{db}' "
+                "AND table IN ('a', 'b', 'u') ORDER BY table"
+            )
+            == "a\tb\nb\ta\nu\tx\n"
+        )
+    assert dummy_node.query("SELECT x FROM rename_local_b.u") == "42\n"
+
+    assert (
+        main_node.query(
+            "SELECT extract(value, 'query: ([^\\n]*)') FROM system.zookeeper "
+            f"WHERE path = '{zk_path}/log' AND (value LIKE '%RENAME %' OR value LIKE '%EXCHANGE %') "
+            "ORDER BY name"
+        )
+        == "RENAME TABLE t TO u\nEXCHANGE TABLES a AND b\nRENAME DICTIONARY d TO d2\n"
+    )
+
+    main_node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        main_node.query(
+            f"SELECT tables FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        == "['rename_local_a.t','rename_local_a.u']\n"
+    )
+
+    # An unqualified target means the session database, so both are moves out of the database.
+    for target in ["default.u2", "u3"]:
+        assert (
+            "Moving tables between databases is not supported for Replicated engine"
+            in main_node.query_and_get_error(
+                f"RENAME TABLE rename_local_a.u TO {target}"
+            )
+        )
+    assert (
+        main_node.query(
+            "SELECT database, name FROM system.tables WHERE name IN ('u', 'u2', 'u3') "
+            "AND database IN ('default', 'rename_local_a')"
+        )
+        == "rename_local_a\tu\n"
+    )
+
+    # A refresh enqueues its EXCHANGE with the refreshing replica's database name.
+    main_node.query(
+        "CREATE MATERIALIZED VIEW rename_local_a.mv REFRESH EVERY 1 YEAR (x UInt8) "
+        "ENGINE = ReplicatedMergeTree ORDER BY () EMPTY AS SELECT 1 AS x"
+    )
+    main_node.query("SYSTEM REFRESH VIEW rename_local_a.mv")
+    main_node.query("SYSTEM WAIT VIEW rename_local_a.mv")
+    for node, db in mounts:
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+    exchange = main_node.query(
+        "SELECT extract(value, 'query: ([^\\n]*)') FROM system.zookeeper "
+        f"WHERE path = '{zk_path}/log' AND value LIKE '%EXCHANGE TABLES%inner_id%'"
+    )
+    assert exchange.startswith(
+        ("EXCHANGE TABLES rename_local_a.", "EXCHANGE TABLES rename_local_b.")
+    ), exchange
+    inner_uuid = "SELECT uuid FROM system.tables WHERE database = '{}' AND name LIKE '.inner_id.%'"
+    assert main_node.query(inner_uuid.format("rename_local_a")) == dummy_node.query(
+        inner_uuid.format("rename_local_b")
+    )
+    for node, db in mounts:
+        assert not node.contains_in_log(f"DDLWorker({db}): Unexpected error")
+
+    for node, db in mounts:
+        node.query(f"DROP DATABASE {db} SYNC")
