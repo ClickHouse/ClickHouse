@@ -1679,3 +1679,42 @@ First attempt at the same commit ([x86-64](https://app.buildbuddy.io/invocation/
 The retry kept the same source tree. It removed `@clickhouse_openldap//:_api` from the requested targets and required `@clickhouse_openldap//:_lber` to export four public headers and `@clickhouse_openldap//:_ldap` to export two more and provide the four BER headers. Bazel compared their direct public, private and textual headers. The four downstream C and C++ checks used header guards to test what their public includes actually introduced. All eight SDK object files were present on each CPU. Local Bazel controls also rejected a private header promoted to public and a public header hidden from its owner.
 
 The ordinary DWYU invocations passed; both strict invocations failed. On each CPU, the 24 optional targets were withheld because the configured analyzer inputs did not match. DWYU ran on 21 of 782 production targets on x86-64 and 19 on ARM64. Four compiled targets were clean on both: `//base/poco/JSON:_poco_json`, `//src:dbms__compile_1`, `@clickhouse_openldap//:_lber`, `@clickhouse_openldap//:_ldap`. The selected headers produced 486 failed preprocessing actions per CPU. Of the 499 header failures at [93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a), 495 were in the current selection. 466 had identical stderr, 20 had a different first diagnostic, and nine no longer appeared as failures. The last count does not establish nine successful compiles.
+
+## 39d0c249f
+
+[39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761): `Declare ClickHouse header owners and private include files`. [39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761) built every requested native Bazel target (x86-64: 61, ARM64: 61). Both normalized ClickHouse hashes and sizes matched native CMake.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/7b078ad5-8ffa-47df-bce0-330909ee3c91) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | Raw ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | `unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/4995c47c-87e6-4d6f-b030-baf6f52c35a5) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | Raw ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | `unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795,060,896 |
+
+The raw ClickHouse and `unit_tests_dbms` executables matched [a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04). On each CPU, 38 GoogleTests, six SQL cases and 16 Decimal boundary checks passed. BuildBuddy recorded 51 public-header objects, eight existing SDK objects and 18 new SDK objects. `src/Interpreters/SetSerialization.h` remains outside the public-header fixtures; see the [earlier compiler failure](bazel/initial_migration/validation-history.md#93d4235b8). The hashes and sizes come from output metadata.
+
+Both embedded CcInfo reports matched all 17 ordered fields and their expected counts. Each exposed 52 fewer transitive headers. The 16-field Boost report matched the declared 60 private, nine textual and six ordinary SDK headers. CRoaring passed the 4,096-byte alignment check.
+
+| CPU | CcInfo target | Previous headers | Current headers |
+| --- | --- | --- | --- |
+| x86-64 | `//src:clickhouse_common_io_embedded` | 24368 | 24316 |
+| x86-64 | `//src:dbms_embedded` | 29695 | 29643 |
+| ARM64 | `//src:clickhouse_common_io_embedded` | 24365 | 24313 |
+| ARM64 | `//src:dbms_embedded` | 29692 | 29640 |
+
+All ten benchmark archive hashes and sizes matched [a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04), including `//src:benchmark_runtime_filter_objects`. The archives do not establish individual object equality.
+
+| CPU | Ordinary DWYU | Strict DWYU | Graded production | Unverified production | Production outcomes | Failed standalone headers | Negative fixture |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 ([parent Failed](https://app.buildbuddy.io/invocation/c5a454e0-acb2-42b7-b1c3-bb25d5b2198f)) | [exit 0](https://app.buildbuddy.io/invocation/0b052e34-0717-4162-88b0-7967ff6c5830) | Not observed | 0/782 | 782 | Unverified | Unverified | Unverified |
+| ARM64 ([parent Failed](https://app.buildbuddy.io/invocation/f28e38a0-0819-4abc-adf0-4249c7ad0683)) | [exit 0](https://app.buildbuddy.io/invocation/a6782066-6caa-40ea-98eb-e249a7301999) | Not observed | 0/782 | 782 | Unverified | Unverified | Unverified |
+
+x86-64: The workload decision was `denied`. ValueError: ValueError: unknown public observation in //src/Compression:clickhouse_compression No owner or negative-fixture pass is recorded.
+
+ARM64: The workload decision was `denied`. ValueError: ValueError: unknown public observation in //src/Compression:clickhouse_compression No owner or negative-fixture pass is recorded.
+
+The 18 SDK objects verify downstream compilation. They do not establish that a DWYU standalone action executed.
+
+The native builds and the ordinary DWYU builds each succeeded, but both parent workflows ended in failure because strict DWYU was withheld. The nine production targets and negative fixture appeared in the ordinary command on each CPU. The workload check reported `unknown public observation in //src/Compression:clickhouse_compression` and did not start either strict command. The previous strict build recorded 486 standalone failures on each CPU. 453 of those headers remain on the same selected owner; 33 no longer have that declaration. No current strict failure count or negative-fixture result is available. The 51 original and 18 new native public-header consumers compiled independently; neither of their declared owners was among these nine DWYU targets.
