@@ -34,6 +34,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
@@ -439,6 +440,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         {
             table->drop();
             table->is_dropped = true;
+            /// Also mark the storage behind a materialized lazy-load stand-in, which the database iterator hands out directly.
+            unwrapMaterializedLazyTable(table)->is_dropped = true;
         }
         std::lock_guard lock(mutex);
         snapshot_detached_tables.erase(table_name);
@@ -571,6 +574,11 @@ void DatabaseOnDisk::renameTable(
             target_db->checkTablesLimit(getNumberOfTablesToMove(table, local_context));
         }
     }
+
+    /// `rename` below moves the data of the table, which only the real storage can do, while the temporary
+    /// `detachTable` before it forbids a lazy-load stand-in to materialize the real storage from then on.
+    /// So materialize it beforehand.
+    resolveStorageProxyLoading(table);
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 

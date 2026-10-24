@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Storages/StorageTableProxy.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
@@ -581,19 +582,20 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
-    if (!filter_by_table_name)
+    /// Consumers of this iterator - the `system.parts` / `system.replicas` family, the `SYSTEM` commands,
+    /// the asynchronous metrics - recognize an engine by downcasting the storage they get, which the
+    /// lazy-load stand-in defeats, so such a table stayed invisible to them even after it had been loaded.
+    /// `mutex` is held here, so never wait for a materialization that is in flight in another thread: it
+    /// would stall every query on this database for the duration of the load.
+    Tables snapshot_tables;
+    for (const auto & [table_name, storage] : tables)
     {
-        ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+        if (!filter_by_table_name || filter_by_table_name(table_name))
+            snapshot_tables.emplace(table_name, unwrapMaterializedLazyTable(storage, /* wait_for_materialization= */ false));
     }
 
-    Tables filtered_tables;
-    for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
-            filtered_tables.emplace(table_name, storage);
-
-    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, filtered_tables.size());
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables), database_name);
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, snapshot_tables.size());
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(snapshot_tables), database_name);
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
@@ -655,6 +657,10 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
     tables.erase(it);
     table_storage->is_detached = true;
+    /// The database iterator hands out the storage behind a materialized lazy-load stand-in directly, and a reader
+    /// such as `system.parts` keeps it and locks it later, so mark that storage detached as well. `mutex` is held,
+    /// so do not wait for a load in flight: none can be, see `DatabaseOrdinary::detachTable`.
+    unwrapMaterializedLazyTable(table_storage, /* wait_for_materialization= */ false)->is_detached = true;
 
     if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
@@ -704,6 +710,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
+    unwrapMaterializedLazyTable(table, /* wait_for_materialization= */ false)->is_detached = false;
 
     if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {

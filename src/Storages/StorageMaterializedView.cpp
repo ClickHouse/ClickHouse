@@ -539,9 +539,10 @@ void StorageMaterializedView::readImpl(
     /// before reading. Without this call the storage snapshot will lack the
     /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
     /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
-    /// on the outermost storage, but for materialized views that is the view itself
-    /// (which is a no-op), not the target table.
-    storage->updateExternalDynamicMetadataIfExists(context);
+    /// on the outermost storage (the view, which forwards it to the target), but some paths
+    /// reach `read` without it. The view does not materialize a lazy-load target in that hook (see
+    /// `updateExternalDynamicMetadataIfExists` below), but reading it does in any case, so resolve it here.
+    resolveStorageProxyLoading(storage)->updateExternalDynamicMetadataIfExists(context);
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
@@ -1064,7 +1065,27 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    /// The external metadata of the target has already been refreshed through
+    /// `updateExternalDynamicMetadataIfExists` before the mutation was validated, see `StorageObjectStorage::mutate`.
     getTargetTable()->mutate(commands, local_context);
+}
+
+void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
+{
+    /// The analyzer and the interpreters refresh the external metadata of the outermost storage, which is the
+    /// view itself, so forward the refresh to the target (e.g. `IcebergLocal`). In particular, `ALTER ... UPDATE/DELETE`
+    /// has to validate the mutation against the same state of the target that `mutate` executes it against.
+    /// A lazy-load target is not materialized here: the refresh is also asked for by `DESCRIBE`, which must not
+    /// load it, and the stand-in forwards the refresh only to a table that is already materialized. The paths that
+    /// need the target (`read`, `InterpreterAlterQuery` before a mutation) materialize it themselves.
+    /// The target is accessed on behalf of the view, so use the same `SQL SECURITY` context as `read` does:
+    /// e.g. the definer may be allowed to use server credentials for an `IcebergS3` target while the invoker is not.
+    if (auto target = tryGetTargetTable())
+    {
+        auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+        auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
+        target->updateExternalDynamicMetadataIfExists(context);
+    }
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)

@@ -287,7 +287,7 @@ bool StorageObjectStorageCluster::optimize(
 
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    updateExternalDynamicMetadataIfExists(context);
+    /// The external metadata has already been refreshed by the caller, see `StorageObjectStorage::mutate`.
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     /// The mutation's read query has no table expression, which `IStorageCluster::read` cannot distribute, so read locally.
     auto read_storage = std::make_shared<StorageObjectStorage>(

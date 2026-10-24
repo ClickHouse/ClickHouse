@@ -534,6 +534,10 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /* async_insert */ false);
 
     auto table = interpreter.getTable(insert_query);
+    /// The refresh below may load the storage, so reject a user with no `INSERT` grant on the table at all before it,
+    /// as `InterpreterInsertQuery::execute` does. The full check with the columns follows.
+    if (insert_query.table_id)
+        query_context->checkAccess(AccessType::INSERT, insert_query.table_id, Strings{});
     /// Refresh any external dynamic metadata before taking the snapshot used to parse the incoming data,
     /// mirroring the synchronous insert path (`InterpreterInsertQuery::execute`). Otherwise a storage whose
     /// schema is derived from an external source (e.g. a `SQLite` table repairing a generated-column

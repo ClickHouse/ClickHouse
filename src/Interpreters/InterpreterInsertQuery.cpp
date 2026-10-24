@@ -1539,6 +1539,13 @@ BlockIO InterpreterInsertQuery::execute()
     /// that is why the queue route is refused below for a SELECT that may read the destination.
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
+    /// The refresh below may load the storage, e.g. the target of an `Alias` or of a materialized view that is a
+    /// lazy-load stand-in, so a user with no `INSERT` grant on the table at all must be rejected before it, and must
+    /// not see the errors of its initialization. The columns are known only after the refresh, so this checks that
+    /// `INSERT` is granted on at least some column of the table, and the full check below follows.
+    if (!query.table_function && !skip_target_insert_access_check)
+        context->checkAccess(AccessType::INSERT, query.table_id, Strings{});
+
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
