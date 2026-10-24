@@ -608,7 +608,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         return;
 
     auto * reader = range_reader.getReader();
-    auto columns_to_reevaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, columns_patched_after_defaults);
 
     NameSet columns_patched_in_step = columns_patched_before_defaults;
     columns_patched_in_step.insert(columns_patched_after_defaults.begin(), columns_patched_after_defaults.end());
@@ -620,8 +619,15 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             candidates_filled_before_patches.insert(name);
     }
 
-    auto columns_filled_before_to_reevaluate = reader->getDefaultsDependingOn(candidates_filled_before_patches, columns_patched_in_step);
-    columns_to_reevaluate.insert(columns_filled_before_to_reevaluate.begin(), columns_filled_before_to_reevaluate.end());
+    auto columns_to_reevaluate = reader->getDefaultsDependingOn(candidates_filled_before_patches, columns_patched_in_step);
+
+    /// The pass above evaluated the other `DEFAULT` columns from the stale values of the sort-key columns
+    /// evaluated again here, so the columns that read one of them, directly or not, are evaluated again too.
+    NameSet columns_changed_after_defaults = columns_patched_after_defaults;
+    columns_changed_after_defaults.insert(columns_to_reevaluate.begin(), columns_to_reevaluate.end());
+
+    auto dependents_to_reevaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, columns_changed_after_defaults);
+    columns_to_reevaluate.insert(dependents_to_reevaluate.begin(), dependents_to_reevaluate.end());
 
     if (columns_to_reevaluate.empty())
         return;
@@ -716,9 +722,18 @@ void MergeTreeReadersChain::forgetPatchedRows(ReadResult & result, const Block &
 void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     const IMergeTreeReader & reader, const ReadResult & result, Block & block, const NamesAndTypesList & columns_to_evaluate)
 {
-    std::list<NameAndTypePair> remaining(columns_to_evaluate.begin(), columns_to_evaluate.end());
+    /// Evaluating each column separately, `evaluateDefaults` would evaluate anew the missing columns its expression
+    /// reads through, so that two columns reading the same `b DEFAULT a + rand()` would no longer agree in a row.
+    /// They are evaluated once, as columns of their own, and removed from the block afterwards.
+    auto intermediates = reader.getMissingDefaultInputs(columns_to_evaluate, block);
+    size_t num_rows = block.rows();
+    for (const auto & column : intermediates)
+        block.insert({column.type->createColumnConstWithDefaultValue(num_rows), column.type, column.name});
+
+    std::list<NameAndTypePair> remaining(intermediates.begin(), intermediates.end());
+    remaining.insert(remaining.end(), columns_to_evaluate.begin(), columns_to_evaluate.end());
     NameSet remaining_names;
-    for (const auto & column : columns_to_evaluate)
+    for (const auto & column : remaining)
         remaining_names.insert(column.name);
 
     while (!remaining.empty())
@@ -786,6 +801,9 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
         remaining_names.erase(it->name);
         remaining.erase(it);
     }
+
+    for (const auto & column : intermediates)
+        block.erase(column.name);
 }
 
 void MergeTreeReadersChain::forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader)

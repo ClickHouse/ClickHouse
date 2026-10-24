@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <functional>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
@@ -450,6 +451,42 @@ NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, con
         if (depending.contains(get_name_in_storage(name)))
             result.insert(name);
     }
+
+    return result;
+}
+
+NamesAndTypesList IMergeTreeReader::getMissingDefaultInputs(const NamesAndTypesList & columns, const Block & block) const
+{
+    NamesAndTypesList result;
+    auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+
+    NameSet visited;
+    for (const auto & column : columns)
+        visited.insert(column.name);
+
+    /// The same columns `evaluateMissingDefaults` would add to the expressions: the ones the expressions read,
+    /// directly or not, that have a `DEFAULT` and are absent in the block. Each goes after the ones it reads.
+    std::function<void(const String &)> add_inputs = [&](const String & name)
+    {
+        auto column_default = combined_columns.getDefault(name);
+        if (!column_default || !column_default->expression)
+            return;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = column_default->expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & identifier : columns_context.requiredColumns())
+        {
+            if (block.has(identifier) || !combined_columns.getDefault(identifier) || !visited.emplace(identifier).second)
+                continue;
+
+            add_inputs(identifier);
+            result.emplace_back(identifier, combined_columns.get(identifier).type);
+        }
+    };
+
+    for (const auto & column : columns)
+        add_inputs(column.getNameInStorage());
 
     return result;
 }

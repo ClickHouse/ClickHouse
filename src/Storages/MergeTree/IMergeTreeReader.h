@@ -96,6 +96,11 @@ public:
     /// any other one again would change the value of a non-deterministic `DEFAULT` such as `rand()`.
     NameSet getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const;
 
+    /// Returns the columns absent in `block` whose `DEFAULT` the expressions of `columns` read, directly or
+    /// through another such column, ordered so that a column goes after the ones its expression reads.
+    /// `evaluateDefaults` would evaluate them anew for each column it is called for.
+    NamesAndTypesList getMissingDefaultInputs(const NamesAndTypesList & columns, const Block & block) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
