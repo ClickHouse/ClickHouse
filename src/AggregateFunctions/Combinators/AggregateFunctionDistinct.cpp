@@ -31,7 +31,7 @@ public:
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
-        const AggregateFunctionProperties &,
+        const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
         const Array & params) const override
     {
@@ -40,7 +40,7 @@ public:
         {
             res.reset(createWithNumericType<
                 AggregateFunctionDistinct,
-                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments, params));
+                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments, params, properties.is_order_dependent));
 
             if (res)
                 return res;
@@ -48,12 +48,13 @@ public:
             if (arguments[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
                 return std::make_shared<
                     AggregateFunctionDistinct<
-                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments, params);
+                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments, params, properties.is_order_dependent);
             return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericData<false>>>(
-                nested_function, arguments, params);
+                nested_function, arguments, params, properties.is_order_dependent);
         }
 
-        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(
+            nested_function, arguments, params, properties.is_order_dependent);
     }
 };
 
