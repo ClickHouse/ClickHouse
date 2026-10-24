@@ -3,7 +3,6 @@
 -- to a CROSS join, silently dropping ANY strictness and returning a full cartesian product.
 -- The correct plan is an inner ANY join on the injected constant key (`1 = 1`).
 
-SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;

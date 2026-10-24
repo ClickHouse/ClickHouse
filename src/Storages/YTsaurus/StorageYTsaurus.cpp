@@ -168,9 +168,15 @@ void registerStorageYTsaurus(StorageFactory & factory)
         if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
+        auto configuration = StorageYTsaurus::getConfiguration(
+            args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id);
+        /// Skipped for a stored definition so that a forbidden header does not block server startup;
+        /// the client still checks it.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            YTsaurusClient::checkHeaders(args.getLocalContext(), configuration.oauth_token);
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
+            std::move(configuration),
             args.columns,
             args.constraints,
             args.comment);
