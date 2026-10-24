@@ -3058,9 +3058,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     };
 
     /// A persistent I/O error cannot be told from a damaged disk, so only the last attempt marks the part broken on it.
+    /// Same for a not-found, which cannot be told from a deleted object, but only for an Active part: the other states'
+    /// callers handle a throw their own way (`loadOutdatedDataParts` terminates the server).
     auto should_rethrow = [&](std::exception_ptr exception_ptr)
     {
-        return isRetryableException(exception_ptr) || (!is_last_attempt && isIOErrorException(exception_ptr));
+        return isRetryableException(exception_ptr) || (!is_last_attempt && isIOErrorException(exception_ptr))
+            || (!is_last_attempt && to_state == DataPartState::Active && isObjectStorageNotFoundException(exception_ptr));
     };
 
     try
@@ -3199,7 +3202,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()) || isIOErrorException(std::current_exception()))
+            if (isRetryableException(std::current_exception()) || isIOErrorException(std::current_exception())
+                || (to_state == DataPartState::Active && isObjectStorageNotFoundException(std::current_exception())))
                 handle_exception(std::current_exception(),try_no);
             else
                 throw;
