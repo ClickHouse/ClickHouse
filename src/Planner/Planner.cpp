@@ -72,6 +72,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -3088,7 +3089,8 @@ void Planner::buildPlanForQueryNode()
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
         && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
         && !settings[Setting::parallel_replicas_plan_based]
-        && !select_query_options.build_logical_plan)
+        && !select_query_options.build_logical_plan
+        && canShipJoinsToParallelReplicas(query_tree, planner_context->getQueryContext()))
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
