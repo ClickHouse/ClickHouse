@@ -76,3 +76,17 @@ SELECT pointInPolygon((1., 1.), CAST([], 'Array(Tuple(Float64, Float64))'));
 SELECT 'MultiPolygon: Empty Ring';
 SELECT pointInPolygon((1., 1.), CAST([[[]]], 'Array(Array(Array(Tuple(Float64, Float64))))'));
 SELECT pointInPolygon((1.7976931348623157e308, 1.), CAST([[[]]], 'Array(Array(Array(Tuple(Float64, Float64))))'));
+
+SET validate_polygons = 1;
+
+SELECT 'Polygon: No Rings (non-const)';
+SELECT pointInPolygon((0., 0.), materialize(CAST([], 'Polygon')));
+SELECT pointInPolygon((100., 100.), materialize(CAST([], 'Polygon')));
+
+SELECT 'MultiPolygon: Polygon With No Rings (non-const)';
+SELECT pointInPolygon((0., 0.), materialize(CAST([[]], 'MultiPolygon')));
+SELECT pointInPolygon((100., 100.), materialize(CAST([[]], 'MultiPolygon')));
+
+SELECT 'MultiPolygon: Empty Then Valid Polygon (non-const)';
+SELECT pointInPolygon((1., 1.), materialize(CAST([[], [[(0., 0.), (2., 0.), (2., 2.), (0., 2.)]]], 'MultiPolygon')));
+SELECT pointInPolygon((5., 5.), materialize(CAST([[], [[(0., 0.), (2., 0.), (2., 2.), (0., 2.)]]], 'MultiPolygon')));
