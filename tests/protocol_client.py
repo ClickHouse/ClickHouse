@@ -205,9 +205,13 @@ def match_insert_format(text, begin, pos):
     statement = text[begin:pos]
     if not INSERT_RE.match(strip_comments(statement)):
         return None
+    # Only the format of an `INSERT` (possibly explained) starts the data, not the format of a nested
+    # query, like in `EXPLAIN AST (SELECT 1 FORMAT TSV)` or `EXPLAIN SELECT 1 FORMAT TSV`.
+    words = set(top_level_words(statement))
+    if "INSERT" not in words or not is_top_level_end(statement):
+        return None
     # The rows of `INSERT ... FROM INFILE` and of `INSERT ... SELECT` do not follow the format name,
     # unless the `SELECT` reads them with the `input` table function.
-    words = set(top_level_words(statement))
     if "INFILE" in words or ("SELECT" in words and not reads_input(statement)):
         return None
     return insert_format.end()
@@ -217,15 +221,57 @@ def finish_query(text, begin, pos, queries, has_tokens):
     """Record the query that ends with the semicolon at `pos`, return where the next one begins."""
     query = text[begin:pos].strip()
     end = pos + 1
-    newline = text.find("\n", end)
-    line_rest = text[end : len(text) if newline == -1 else newline]
-    hint = ""
-    if HINT_RE.search(line_rest):
-        hint = line_rest
-        end += len(line_rest)
+    hint_end = trailing_hint_end(text, end)
+    if hint_end is not None and HINT_RE.search(text, end, hint_end):
+        hint = text[end:hint_end]
+        end = hint_end
+    else:
+        hint = ""
     if has_tokens:
         queries.append((query, hint))
     return end
+
+
+def trailing_hint_end(text, pos):
+    """Like `ClientBase::adjustQueryEnd`: the rest of the line after the semicolon, together with
+    more semicolons, belongs to the query if no next query starts on this line. Return its end, or
+    `None` if the next query starts on this line, like in `SELECT 1; SELECT throwIf(1); -- { serverError
+    FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }`, where the hint belongs to the second query."""
+    newline = text.find("\n", pos)
+    line_end = len(text) if newline == -1 else newline
+    while pos < len(text):
+        if text[pos].isspace() or text[pos] == ";":
+            pos += 1
+        elif text.startswith("/*", pos):
+            comment_end = skip_block_comment(text, pos)
+            # A comment that continues on the next lines belongs to the query as a whole.
+            if pos < line_end < comment_end:
+                line_end = comment_end
+            pos = comment_end
+        elif is_line_comment(text, pos):
+            newline = text.find("\n", pos)
+            pos = len(text) if newline == -1 else newline
+        else:
+            break
+    return line_end if pos >= line_end else None
+
+
+def is_top_level_end(statement):
+    """Whether the end of the statement is outside of parentheses."""
+    query = strip_comments(statement)
+    depth = 0
+    pos = 0
+    while pos < len(query):
+        char = query[pos]
+        if char in "'\"`":
+            pos = skip_quoted(query, pos, char)
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        pos += 1
+    return depth == 0
 
 
 def strip_comments(query):
