@@ -1604,6 +1604,9 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
     NamesAndTypes projection_columns;
+    /// The projection is replaced with the required columns under their own names, so the alias list
+    /// of `(SELECT ...) AS t(a, b)`, which renames the original projection positionally, does not apply.
+    query_node->setProjectionAliasesToOverride({});
 
     // Select only required columns from the table, because projection list may contain:
     // 1. aggregate functions

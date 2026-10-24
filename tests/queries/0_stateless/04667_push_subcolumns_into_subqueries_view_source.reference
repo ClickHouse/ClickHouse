@@ -1,0 +1,8 @@
+materialized view over a subquery
+1	10	ten
+2	20	twenty
+the source table itself
+1	10	ten
+2	20	twenty
+JSON subcolumn in a materialized view over a CTE
+3	3	thirty

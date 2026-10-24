@@ -49,7 +49,7 @@ SETTINGS join_algorithm = 'parallel_hash', max_threads = 1, max_block_size = 20,
 
 SELECT groupArray(b) FROM (
     SELECT blockSize() AS b, rowNumberInBlock() AS n, t_r3.s AS s FROM numbers(180) AS l JOIN t_r3 ON l.number = t_r3.k)
-WHERE n = 0 AND length(s) = 1000
+WHERE n = 0 AND s = repeat('x', 1000)
 SETTINGS join_algorithm = 'parallel_hash', max_threads = 1, max_block_size = 20, enable_join_runtime_filters = 0,
     min_joined_block_size_rows = 10, min_joined_block_size_bytes = 0,
     max_joined_block_size_rows = 65409, max_joined_block_size_bytes = 16000;
