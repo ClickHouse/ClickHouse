@@ -1635,7 +1635,7 @@ Possible values:
     \
     DECLARE(Bool, group_by_use_nulls, false, R"(
 Changes the way the [GROUP BY clause](/reference/statements/select/group-by) treats the types of aggregation keys.
-When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
+When the `ROLLUP`, `CUBE`, `GROUPING SETS`, or `WITH TOTALS` modifiers are used, some aggregation keys may not be used to produce some result rows (for example, the `WITH TOTALS` summary row).
 Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
 
 Possible values:
@@ -1643,10 +1643,27 @@ Possible values:
 - 0 — The default value for the aggregation key type is used to produce missing values.
 - 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/reference/data-types/nullable). Columns for corresponding aggregation keys are filled with [NULL](/reference/syntax#null) for rows that didn't use it.
 
+With `WITH TOTALS` and `group_by_use_nulls = 1`, real `GROUP BY` keys whose types can be wrapped in `Nullable` are reported as `NULL` in the summary row. Keys whose types cannot be made `Nullable` (for example `Array` or `Map`) keep their default value. A constant key that is folded away before aggregation is not a real key column, so it also keeps its constant value in the summary row. This applies only when `group_by_use_nulls_with_totals` is enabled.
+
 See also:
 
 - [GROUP BY clause](/reference/statements/select/group-by)
+- [group_by_use_nulls_with_totals](#group_by_use_nulls_with_totals)
 )", 0) \
+    \
+    DECLARE(Bool, group_by_use_nulls_with_totals, true, R"(
+When enabled together with [group_by_use_nulls](#group_by_use_nulls), the `GROUP BY` keys of a query with the `WITH TOTALS` modifier are converted to [Nullable](/reference/data-types/nullable) and are reported as `NULL` in the totals row, like for `ROLLUP`, `CUBE`, and `GROUPING SETS`.
+
+When disabled, `group_by_use_nulls` does not affect `WITH TOTALS`: the totals row contains the default values of the keys, and the keys keep their types unless `ROLLUP`, `CUBE`, or `GROUPING SETS` makes them `Nullable`.
+
+Disable this setting (or use `compatibility` with a version before 26.11) during a rolling upgrade of a cluster that runs distributed `GROUP BY ... WITH TOTALS` queries with `group_by_use_nulls = 1`, because older servers expect non-`Nullable` keys in the totals row.
+
+Possible values:
+
+- 0 — `group_by_use_nulls` is not applied to `WITH TOTALS`.
+- 1 — `group_by_use_nulls` is applied to `WITH TOTALS`.
+)", 0, \
+        {"26.11", false, true, "`group_by_use_nulls` now also applies to `WITH TOTALS`: the keys become `Nullable` and are `NULL` in the totals row. `compatibility` with versions before 26.11 restores the previous behavior."}) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
 Enables or disables silently skipping of unavailable shards.
