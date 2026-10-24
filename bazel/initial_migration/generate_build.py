@@ -49,6 +49,7 @@ LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
 # Public headers use deps so consumers receive the same CcInfo.
 SYSTEM_TABLE_REGISTRATION = "//src/Storages/System:clickhouse_storages_system__compile_1"
 FIRST_PARTY_HEADER_DEPS = {
+    ("src", "clickhouse_common_io__compile_0", "implementation_deps"): ["//src/Parsers:parser_api"],
     ("src", "unit_tests_dbms", "deps"): [
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Dictionaries:clickhouse_dictionaries__compile_0",
@@ -61,7 +62,8 @@ FIRST_PARTY_HEADER_DEPS = {
         "//src/Parsers:parser_api", "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION,
     ],
     ("programs/install", "clickhouse-install-lib", "implementation_deps"): ["//src/Access/Common:headers"],
-    ("programs/keeper-utils", "clickhouse-keeper-utils-lib", "implementation_deps"): ["//src:headers"],
+    **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): ["//src:headers"]
+        for name in ("keeper-converter", "keeper-utils", "packed-io")},
     **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): [
         "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION,
     ] for name in ("local", "server")},
@@ -74,6 +76,7 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src/Functions", "clickhouse_functions_obj__compile_0", "implementation_deps"): [
         ":headers", "//src/Access/Common:headers", "//src/Functions/GatherUtils:headers",
     ],
+    ("src/Functions/GatherUtils", "clickhouse_functions_gatherutils", "implementation_deps"): ["//src:headers"],
     ("src/Functions/TimeSeries", "clickhouse_functions_time_series", "implementation_deps"): ["//src:headers"],
     ("src/Functions/UniqTheta", "clickhouse_functions_uniqtheta", "implementation_deps"): [
         "//src/Functions:headers", "//src:headers",
@@ -89,7 +92,8 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src/Storages/System", "clickhouse_storages_system__compile_1", "deps"): [
         "//bazel:clickhouse_config_headers", "//src:with_context",
     ],
-    ("src/Storages/System", "headers", "deps"): ["//bazel:clickhouse_config_headers"],
+    ("src/Storages/System", "clickhouse_storages_system_information_schema", "implementation_deps"): ["//src/Parsers:parser_api"],
+    ("src/TableFunctions", "clickhouse_table_functions", "implementation_deps"): ["//src/Access/Common:headers"],
 }
 
 
@@ -152,6 +156,8 @@ def declare_common_header_owners(root, rules):
         add(common.source, headers, "DateLUTImpl.h", "DateLUT.h")
         add(common.source, headers, "LocalDate.h", "Logger.h", before=True)
         add(common.source, headers, "LocalDateTime.h", "Logger.h", before=True)
+        add(common.source, headers, "LocalTime.h", "Logger.h", before=True)
+        add(common.source, headers, "Logger_fwd.h", "Logger.h")
         add(common.source, headers, "ShellCommandSettings.h", "SipHash.h", before=True)
         add(common.source, headers, "exp10_i32.h", "logger_useful.h", before=True)
         parser = "//src/Common:parser_support_api"
@@ -274,6 +280,13 @@ def declare_first_party_header_deps(root):
         if not missing:
             continue
         literal = common_list(node)
+        if literal is not None and package.startswith("programs/") and missing == ["//src:headers"]:
+            # The DBMS libraries share LinkerInputs with //src:headers. Preserve their link order.
+            dbms = next((item for item in literal.elts if getattr(item, "value", None) == "//src:dbms"), None)
+            if dbms is not None:
+                start = doc.source.span(dbms)[0]
+                path.write_text(doc.source.rewrite([(start, start, json.dumps(missing[0]) + ", ")]))
+                continue
         if literal is not None:
             start, end = doc.source.span(literal)
             text = doc.source.text(literal)[:-1].rstrip()

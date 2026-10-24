@@ -124,26 +124,56 @@ def inspect(data, consumer, imported):
     }
 
 
+def strings(items):
+    return all(isinstance(item, str) and item for item in items)
+
+
+def string_list(value):
+    return isinstance(value, list) and strings(value)
+
+
 def check_headers(owned, report, imported):
-    if (set(owned) != {"public", "private", "required", "unchecked_link_inputs", "raw_assembly", "raw_link_candidates"} or
-            not isinstance(owned["public"], dict) or not isinstance(owned["private"], dict) or
-            not isinstance(owned["required"], list)):
+    lists = ("required", "unchecked_link_inputs", "raw_assembly", "raw_link_candidates")
+    if (not isinstance(owned, dict) or set(owned) != {"public", "private", *lists} or
+            any(not string_list(owned[k]) for k in lists) or
+            any(not isinstance(owned[k], dict) or not strings(owned[k]) or not strings(owned[k].values())
+                for k in ("public", "private"))):
         raise ValueError("incomplete imported header ownership")
-    if (report.get("analyzed_target") != imported or
-            any(not isinstance(report.get(k), typ) for k, typ in FIELDS.items()) or
-            any(not isinstance(report.get(k), list) for k in
-                ("unentered_owned_files", "unverified_compilation_deps", "unverified_link_deps"))):
+    if (not isinstance(report, dict) or not isinstance(imported, str) or not imported or
+            report.get("analyzed_target") != imported):
         raise ValueError("incomplete DWYU imported-header report")
     exported = set(owned["public"].values()) | set(owned["private"].values())
     if exported != set(owned["required"]):
         raise ValueError("required headers do not cover every actual import-owned header")
+    for name, kind in FIELDS.items():
+        value = report.get(name)
+        if kind is list:
+            valid = string_list(value)
+        else:
+            valid = (isinstance(value, dict) and strings(value) and
+                     all(string_list(includes) and includes for includes in value.values()))
+        if not valid:
+            raise ValueError("invalid DWYU imported-header finding: " + name)
+    unentered = report.get("unentered_owned_files")
+    # The analyzer records the physical filename and its configured visibility.
+    visibility = dict.fromkeys(owned["private"], "private")
+    visibility.update(dict.fromkeys(owned["public"], "public"))
+    if (not isinstance(unentered, dict) or
+            any(h not in exported or h not in visibility or visibility[h] != v for h, v in unentered.items())):
+        raise ValueError("invalid DWYU unentered imported headers")
+    # Result::toJson omits unverified_link_deps only when the list is empty.
+    link_deps = report.get("unverified_link_deps", [])
+    if not string_list(report.get("unverified_compilation_deps")) or not string_list(link_deps):
+        raise ValueError("invalid DWYU unverified imported dependencies")
+    if report.get("unverified_compiler_inputs", []) != []:
+        raise ValueError("cc_import cannot qualify unverified compiler inputs")
     return {
         "headers_applicable": bool(exported),
         "import_headers": sorted(owned["public"]),
         "findings": {k: report[k] for k in FIELDS},
-        "unentered_owned_files": report["unentered_owned_files"],
+        "unentered_owned_files": unentered,
         "unverified_compilation_deps": report["unverified_compilation_deps"],
-        "unverified_link_deps": report["unverified_link_deps"],
+        "unverified_link_deps": link_deps,
     }
 
 

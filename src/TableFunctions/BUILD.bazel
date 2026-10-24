@@ -28,7 +28,7 @@ _PRIVATE_TABLE_FUNCTIONS_HEADERS = [
 
 ch_cc_library(
     name = "clickhouse_table_functions",
-    srcs = ([
+    srcs = [
         "ITableFunctionFileLike.cpp",
         "ITableFunctionXDBC.cpp",
         "TableFunctionArrowFlight.cpp",
@@ -74,7 +74,7 @@ ch_cc_library(
         "TableFunctionZeros.cpp",
         "registerTableFunctions.cpp",
         "Hive/TableFunctionHive.cpp",
-    ] + _PRIVATE_TABLE_FUNCTIONS_HEADERS),
+    ] + _PRIVATE_TABLE_FUNCTIONS_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
@@ -136,6 +136,7 @@ ch_cc_library(
         "//src/Parsers:parser_api",
         "//src:column_types",
         "//src:headers",
+        "//src/Access/Common:headers",
     ],
     link_runtime = True,
     local_defines = DBMS_CONSUMER_DEFINES,

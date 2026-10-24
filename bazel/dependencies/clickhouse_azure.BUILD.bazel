@@ -56,7 +56,6 @@ ch_cc_library(
     ],
     implementation_deps = [
         "@clickhouse_libxml2//:_libxml2",
-        "@clickhouse//contrib/libxml2-cmake:libxml2_config_headers",
         "@clickhouse_openssl//:crypto",
     ],
     includes = [

@@ -208,6 +208,7 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
+        "//src:dbms__compile_0",
         "//base:pcg_random",
         "//base/poco/Foundation:_poco_foundation",
         "//contrib/pdqsort:headers",
@@ -233,7 +234,6 @@ ch_cc_library(
     source_headers = True,
     deps = [
         "//base/glibc-compatibility",
-        "//src:dbms__compile_0",
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",

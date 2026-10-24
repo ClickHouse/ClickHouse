@@ -32,6 +32,7 @@ ch_cc_library(
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
         "//src/Common:Common",
         "//src/Functions/GatherUtils:headers",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = DBMS_CONSUMER_DEFINES,

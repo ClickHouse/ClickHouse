@@ -12,6 +12,7 @@ ch_cc_library(
         "//base/poco/Foundation:_poco_foundation",
         "//src/Common",
         "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src:headers",
         "//src:dbms",
         "//src/Common:parser_support_api",
     ],

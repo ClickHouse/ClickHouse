@@ -12,6 +12,7 @@ ch_cc_library(
         "//src:dbms__compile_0",
         "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common",
+        "//src:headers",
         "//src:dbms",
         "//src/Common:string_utils",
     ],

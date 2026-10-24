@@ -316,7 +316,7 @@ ch_cc_library(
     ] + _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
     hdrs = ["attachSystemTables.h"],
     clickhouse_code = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["clickhouse_code"],
-    implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [
+    implementation_deps = [":headers"] + _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [
         ":clickhouse_storages_system_information_schema",
         "//src/Common:current_metrics",
         "//src/Common:exception_api",
@@ -334,7 +334,6 @@ ch_cc_library(
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     source_headers = True,
     deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"] + [
-        ":headers",
         "//bazel:clickhouse_config_headers",
         "//src:with_context",
     ],
@@ -380,6 +379,7 @@ ch_cc_library(
         "//src/Parsers:headers",
         "//src/Access/Common:clickhouse_common_access",
         "//src:headers",
+        "//src/Parsers:parser_api",
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     source_headers = True,
@@ -641,6 +641,5 @@ cc_library(
         "//src/Common",
         "//src:column_types",
         "//src:with_context",
-        "//bazel:clickhouse_config_headers",
     ],
 )

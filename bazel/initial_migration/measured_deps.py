@@ -4,7 +4,7 @@ import ast
 from collections import Counter
 import json
 
-from initial_migration.first_party_packages import Build, CPUS, canonical_dependency
+from initial_migration.first_party_packages import Build, CPUS, attributes, call_name, canonical_dependency
 from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
@@ -18,10 +18,11 @@ UNIT_TEST_FUNCTION_DEPS = [
 
 # Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
 DEPENDENCIES = {
+    ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
-    ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], [], []),
+    ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
     ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA], [], []),
     ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt'], [], []),
     ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
@@ -54,10 +55,13 @@ DEPENDENCIES = {
         '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv', '@clickhouse_mongo_cxx_driver//:_mongocxx',
         '@clickhouse_openssl//:crypto', '@clickhouse_openssl//:ssl', '@clickhouse_sparsehash_c11//:sparsehash_c11',
         '@clickhouse_sqlite_amalgamation//:_sqlite', '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
-    ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api']),
+    ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
+        '@clickhouse_libhdfs3//:_hdfs3', '//src/Common:string_utils']),
     ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
+    ('src/Functions/array', 'clickhouse_functions_array__compile_0'): ([], ['//src:dbms__compile_0'], []),
+    ('src/Storages/System', 'headers'): (['//bazel:clickhouse_config_headers'], [], []),
     ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
-        [], ['//base:common', '//src:headers', '//src/Common', TZDATA], []),
+        [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
     ('src', 'unit_tests_dbms'): (['@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid'], [], [TZDATA]),
 }
@@ -193,6 +197,15 @@ def editable_dependency_lists(build, node, drop, canonical):
 
 def apply(root):
     """Set the declared visibility of each dependency without changing select conditions."""
+    # Older CMake imports declare cc_library wrappers at these labels instead of aliases.
+    aliases = {}
+    for pkg in ('contrib/libxml2-cmake', 'contrib/lz4-cmake'):
+        path = root / pkg / 'BUILD.bazel'
+        if path.is_file():
+            for _, rule in Build(root, path, (), ()).source.rules():
+                attrs = attributes(rule)
+                if call_name(rule) == 'alias' and isinstance(attrs['actual'], ast.Constant):
+                    aliases[canonical_dependency(attrs['name'].value, pkg, '@clickhouse')] = attrs['actual'].value
     for package in sorted({package for package, _ in DEPENDENCIES}):
         repository = package if package.startswith('@') else '@clickhouse'
         local_package = '' if package.startswith('@') else package
@@ -244,6 +257,8 @@ def apply(root):
                 node = Field().visit(node)
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
                 omit = {canonical(v) for v in discard}
+                if (package, name) == ('@clickhouse_azure', '_azure_sdk'):
+                    omit = {alias for alias in omit if all(aliases.get(alias) in existing for existing in values)}
                 missing = [v for v in add if not all(canonical(v) in existing for existing in values)]
                 if (package, name, field) == ('src', 'unit_tests_dbms', 'deps'):
                     # These owners are already reachable through clickhouse_functions_obj.
@@ -255,6 +270,11 @@ def apply(root):
                         if cpu == 'x86_64':
                             drop.add(canonical('@clickhouse_fastops//:_fastops'))
                         ordered = missing + [v for v in before if canonical(v) not in drop]
+                        lz4_frame = aliases.get(canonical('//contrib/lz4-cmake:_lz4'))
+                        if lz4_frame in ordered:
+                            # Preserve the first LZ4 dependency for the ordered direct module maps.
+                            ordered = list(dict.fromkeys(
+                                lz4_frame if dep == '//contrib/lz4-cmake:_lz4' else dep for dep in ordered))
                         i = ordered.index('//src/Functions:clickhouse_functions_obj')
                         ordered[i:i] = UNIT_TEST_FUNCTION_DEPS
                         branches['@platforms//cpu:' + cpu] = ordered
