@@ -78,6 +78,10 @@ public:
     /// is metered before a client key can exist, so only the query path calls this.
     void checkClientKeySupplied() const;
 
+    /// Whether a governing quota is keyed by the client address / by the `X-Forwarded-For` address.
+    bool isKeyedByClientAddress() const;
+    bool isKeyedByForwardedAddress() const;
+
     /// Same as `checkExceeded(quota_type)`, but for `NORMALIZED_QUERY_HASH` quotas the check is
     /// performed against the intervals resolved for `normalized_query_hash`.
     void checkExceededForQuery(UInt64 normalized_query_hash, QuotaType quota_type) const;
@@ -151,6 +155,9 @@ private:
         /// Published with the set, so it is refreshed in place whenever quota definitions change;
         /// see `checkClientKeySupplied`.
         bool requires_client_key = false;
+
+        bool keyed_by_client_address = false;
+        bool keyed_by_forwarded_address = false;
 
         /// Cache of resolved intervals per normalized query hash.
         mutable std::mutex resolved_intervals_mutex;
