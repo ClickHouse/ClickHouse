@@ -31,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -5013,6 +5014,11 @@ Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) 
         if (!columns_to_keep.contains(column_name) && !virtuals.has(column_name))
             columns_to_remove.push_back(column_name);
 
+    /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
+    /// computed from it have.
+    const auto non_deterministic = getNonDeterministicDefaults(
+        columns_to_remove, storage_snapshot->metadata->getColumns(), makeIsColumnMissingInSomePart(), context);
+    std::erase_if(columns_to_remove, [&](const String & column_name) { return non_deterministic.contains(column_name); });
     return columns_to_remove;
 }
 
@@ -7104,19 +7110,70 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     return applyColumnPruning(pruneColumns(unneeded_output_positions));
 }
 
+std::function<bool(const String &)> ReadFromMergeTree::makeIsColumnMissingInSomePart() const
+{
+    /// As the reader resolves a column in a part: a pending `RENAME COLUMN` leaves the old name in the part, and a pending
+    /// `DROP COLUMN` leaves stale data, which the reader does not read - that of a column dropped and added again.
+    const bool has_metadata_mutations = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    const bool share_nested = (*data.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    std::vector<std::pair<DataPartPtr, AlterConversionsPtr>> parts_with_conversions;
+    for (const auto & part : getParts())
+    {
+        AlterConversionsPtr alter_conversions;
+        /// A projection part carries a fake data version, which makes every mutation look pending.
+        if (has_metadata_mutations && !part.data_part->isProjectionPart())
+            alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+        parts_with_conversions.emplace_back(part.data_part, std::move(alter_conversions));
+    }
+
+    return [parts = std::move(parts_with_conversions), share_nested](const String & column_name)
+    {
+        return std::ranges::any_of(parts, [&](const auto & part)
+        {
+            const auto & [data_part, alter_conversions] = part;
+            if (!alter_conversions)
+                return !data_part->getColumnsDescription().has(column_name);
+
+            const auto name_in_part
+                = alter_conversions->isColumnRenamed(column_name) ? alter_conversions->getColumnOldName(column_name) : column_name;
+            return !data_part->getColumnsDescription().has(name_in_part) || alter_conversions->isColumnDropped(name_in_part, share_nested);
+        });
+    };
+}
+
 std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
 {
     const auto & virtuals = getStorageMetadata()->virtuals;
 
     std::vector<size_t> positions;
+    Names column_names;
     for (size_t position : pruning.dropped_output_positions)
     {
         const auto storage_position = pruning.storage_position_of_output.at(position);
         if (storage_position && std::ranges::binary_search(pruning.dropped_storage_positions, *storage_position)
             && !virtuals.has(all_column_names.at(*storage_position)))
+        {
             positions.push_back(position);
+            column_names.push_back(all_column_names.at(*storage_position));
+        }
     }
-    return positions;
+
+    /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
+    /// computed from it have.
+    const auto non_deterministic = getNonDeterministicDefaults(
+        column_names, storage_snapshot->metadata->getColumns(), makeIsColumnMissingInSomePart(), context);
+    std::vector<size_t> readable_positions;
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        if (!non_deterministic.contains(column_names[i]))
+            readable_positions.push_back(positions[i]);
+    }
+    return readable_positions;
 }
 
 std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const

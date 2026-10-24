@@ -6,6 +6,7 @@
 #include <Common/COW.h>
 #include <Storages/ColumnDefault.h>
 
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -49,6 +50,17 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 /// Tries to convert columns in block to required_columns
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
     const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+
+/// Of `column_names`, the ones a read can fill from a `DEFAULT` that calls a non-deterministic function, such as `rand64`,
+/// itself or through the defaults of the columns it reads. Two reads of a part that lacks such a column fill it with
+/// different values. A subcolumn is filled together with its column. A read fills a column from its default only where a
+/// part lacks it, which `is_missing_in_some_part` tells for a column of storage: the defaults of the others are not
+/// looked at, so that reading the stored values does not need what their defaults need, such as privileges.
+NameSet getNonDeterministicDefaults(
+    const Names & column_names,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_missing_in_some_part,
+    ContextPtr context);
 
 void fillMissingColumns(
     Columns & res_columns,

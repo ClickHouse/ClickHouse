@@ -1,0 +1,12 @@
+join
+20	20	20	20
+20	20	20	20
+order by
+20	20	20	20
+20	20	20	20
+prewhere
+20	20	20	20
+lazily read
+Lazily read columns: k, d
+Lazily read columns: d
+Lazily read columns: payload

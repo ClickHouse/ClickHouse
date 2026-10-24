@@ -1,5 +1,6 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <functional>
 #include <utility>
 
 #include <Core/Block.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
 #include <Columns/ColumnArray.h>
@@ -38,6 +40,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Functions/FunctionFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
@@ -729,6 +732,69 @@ void fillMissingColumns(
             res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }
+}
+
+/// Whether `ast` calls a function whose result its arguments do not determine. A function that is not known here, such
+/// as a user-defined one, is taken as one, and a subquery as well.
+static bool callsNonDeterministicFunction(const IAST & ast, const ContextPtr & context)
+{
+    if (ast.as<ASTSubquery>())
+        return true;
+
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name != "lambda")
+    {
+        /// These are as deterministic as the aggregate function their arguments name, such as an unseeded
+        /// `groupArraySample`, which is known only with the types of its arguments.
+        static const NameSet functions_of_aggregate_functions{"arrayReduce", "arrayReduceInRanges", "initializeAggregation"};
+        const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministic() || functions_of_aggregate_functions.contains(resolver->getName()))
+            return true;
+    }
+
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return callsNonDeterministicFunction(*child, context); });
+}
+
+NameSet getNonDeterministicDefaults(
+    const Names & column_names,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_missing_in_some_part,
+    ContextPtr context)
+{
+    const auto defaults = columns.getDefaults();
+
+    /// For each column with a default visited, whether its default is non-deterministic. A subcolumn, which a default
+    /// can read as well, is filled together with its column.
+    std::unordered_map<String, bool> visited;
+    std::function<bool(const String &)> is_non_deterministic = [&](const String & name)
+    {
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (!column)
+            return false;
+
+        const auto it = defaults.find(column->getNameInStorage());
+        if (it == defaults.end() || !is_missing_in_some_part(it->first))
+            return false;
+
+        if (const auto visited_it = visited.find(it->first); visited_it != visited.end())
+            return visited_it->second;
+
+        RequiredSourceColumnsVisitor::Data required_columns;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(expression);
+
+        const bool result = callsNonDeterministicFunction(*it->second.expression, context)
+            || std::ranges::any_of(required_columns.requiredColumns(), is_non_deterministic);
+        visited.emplace(it->first, result);
+        return result;
+    };
+
+    NameSet result;
+    for (const auto & name : column_names)
+    {
+        if (is_non_deterministic(name))
+            result.insert(name);
+    }
+    return result;
 }
 
 }
