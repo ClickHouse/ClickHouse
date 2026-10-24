@@ -8,7 +8,9 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/DiskLocal.h>
@@ -18,6 +20,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
+
+namespace ProfileEvents
+{
+    extern const Event KeeperDiskMoves;
+    extern const Event KeeperDiskMoveMicroseconds;
+    extern const Event KeeperDiskMoveFailedAttempts;
+    extern const Event KeeperDiskMovesAbandoned;
+}
 
 namespace DB
 {
@@ -25,6 +36,7 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_after_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
@@ -64,7 +76,7 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
     return static_cast<int32_t>(value);
 }
 
-void moveFileBetweenDisks(
+bool moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
@@ -78,6 +90,10 @@ void moveFileBetweenDisks(
     /// that pressure into a full disk and a fail-stop abort, so it is exempt too.
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
+    ProfileEvents::increment(ProfileEvents::KeeperDiskMoves);
+    Stopwatch move_watch;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::KeeperDiskMoveMicroseconds, move_watch.elapsedMicroseconds()); });
+
     LOG_TRACE(logger, "Moving {} to {} from disk {} to disk {}", path_from, path_to, disk_from->getName(), disk_to->getName());
     /// we use empty file with prefix tmp_ to detect incomplete copies
     /// if a copy is complete we don't care from which disk we use the same file
@@ -87,11 +103,14 @@ void moveFileBetweenDisks(
     auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
 
     const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-    auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto max_retries_during_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto max_retries_after_init = coordination_settings[CoordinationSetting::disk_move_retries_after_init].value;
     auto retries_sleep = std::chrono::milliseconds(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
+
     auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
         size_t retry_num = 0;
+        std::string_view give_up_reason = "shutdown was requested";
         do
         {
             try
@@ -109,19 +128,34 @@ void moveFileBetweenDisks(
             }
 
             ++retry_num;
-            if (keeper_context->getServerState() == KeeperContext::Phase::INIT && retry_num == max_retries_on_init)
+            ProfileEvents::increment(ProfileEvents::KeeperDiskMoveFailedAttempts);
+
+            /// The limit follows the phase we are in right now, not the one the move
+            /// started in: a move that outlives initialization becomes a runtime move.
+            const bool during_init = keeper_context->getServerState() == KeeperContext::Phase::INIT;
+            const auto max_retries = during_init ? max_retries_during_init : max_retries_after_init;
+
+            /// 0 means no limit.
+            if (max_retries != 0 && retry_num >= max_retries)
             {
-                LOG_ERROR(logger, "Operation '{}' failed too many times", operation_description);
+                if (during_init)
+                    give_up_reason = "the limit of disk_move_retries_during_init was reached";
+                else
+                    give_up_reason = "the limit of disk_move_retries_after_init was reached";
                 break;
             }
         } while (!keeper_context->isShutdownCalled());
 
+        ProfileEvents::increment(ProfileEvents::KeeperDiskMovesAbandoned);
+
         LOG_ERROR(
             logger,
-            "Failed to run '{}' while moving file {} to disk {}",
-            operation_description,
+            "Abandoning the move of file {} to disk {}: '{}' failed {} times and {}",
             path_from,
-            disk_to->getName());
+            disk_to->getName(),
+            operation_description,
+            retry_num,
+            give_up_reason);
         return false;
     };
 
@@ -132,22 +166,26 @@ void moveFileBetweenDisks(
                 buf->finalize();
             },
             "creating temporary file"))
-        return;
+        return false;
 
     if (!run_with_retries([&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"))
-        return;
+        return false;
 
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
-        return;
+        return false;
 
     if (before_file_remove_op && !before_file_remove_op())
     {
         LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
-        return;
+        return false;
     }
 
-    if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
-        return;
+    /// Deliberately not part of the result: `before_file_remove_op` already repointed the
+    /// caller's metadata at `disk_to`, so the move is done as far as every caller is concerned.
+    /// An abandoned source removal leaves an untracked copy on `disk_from`, which is logged and
+    /// counted but does not make the move a failure.
+    run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk");
+    return true;
 }
 
 /// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
