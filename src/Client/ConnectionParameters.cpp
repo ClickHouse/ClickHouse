@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
+#include <Core/SettingsFields.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -394,6 +395,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     compression = config.getBool("compression", host != "localhost" && !isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
                   ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
+    SettingFieldSeconds sync_request_timeout;
+    sync_request_timeout.parseFromString(config.getString("sync_request_timeout", std::to_string(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC)));
+
     timeouts = ConnectionTimeouts()
             .withConnectionTimeout(
                 Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0))
@@ -405,8 +409,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 Poco::Timespan(config.getInt("tcp_keep_alive_timeout", DEFAULT_TCP_KEEP_ALIVE_TIMEOUT), 0))
             .withHandshakeTimeout(
                 Poco::Timespan(config.getInt("handshake_timeout_ms", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000) * 1000))
-            .withSyncRequestTimeout(
-                Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0));
+            .withSyncRequestTimeout(sync_request_timeout);
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config_, const Host & host_, const Database & database_)
