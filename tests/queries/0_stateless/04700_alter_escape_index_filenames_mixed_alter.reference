@@ -1,0 +1,8 @@
+MergeTree, escaped filenames
+['idx_ESPAÑA']
+MergeTree, after the mixed ALTER
+[]
+ReplicatedMergeTree, escaped filenames
+['idx_ESPAÑA']
+ReplicatedMergeTree, after the mixed ALTER
+[]
