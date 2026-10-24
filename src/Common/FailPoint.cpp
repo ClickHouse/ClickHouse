@@ -41,7 +41,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
+    REGULAR(rmt_dedup_conflict_node_missing) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(rmt_delay_dedup_conflict_resolution) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(smt_blobs_list_split_file_writes) \
     REGULAR(smt_blobs_list_split_file_writes_small) \
