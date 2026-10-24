@@ -201,6 +201,11 @@ private:
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
     void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
+    /// Positions in `columns_to_read` that must not be read from this part. Computed in the constructor
+    /// before any stream is created, so that no loop opens, prefixes or enumerates a stream that the
+    /// read loop then skips.
+    std::vector<bool> columns_skipped_from_part;
+
     /// Read up to `max_rows_to_read` rows of the selected columns from the part, appending them to
     /// `res_columns`, and return how many rows were read (zero if no selected column is in the part).
     /// A column in `shared_columns` is moved to `res_columns` as a copy first.
@@ -265,8 +270,8 @@ private:
     /// so it has to be read from the part even when the rest of the granule is served from cache.
     bool isColumnPartiallyRead(size_t pos) const;
 
-    /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
-    /// system column. Both paths leave it null.
+    /// The column at `pos` is not read at all: dropped by a pending mutation, an invalidated
+    /// system column, or a subcolumn that the part's type of the column does not have. All paths leave it null.
     bool isColumnSkipped(size_t pos) const;
 
     /// The columns cache.
