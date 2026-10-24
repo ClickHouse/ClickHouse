@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -3374,6 +3375,127 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
     return result;
 }
 
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool plain_column)
+{
+    auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
+    auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
+
+    auto key_which = WhichDataType(key_unwrapped);
+    auto set_which = WhichDataType(set_unwrapped);
+
+    /// `Bool` takes every nonzero value to `true`, and `equals` does not tell it from `UInt8`.
+    if (isBool(set_unwrapped) && !isBool(key_unwrapped))
+        return true;
+
+    /// An all-NULL element names no value.
+    if (set_which.isNothing() || key_unwrapped->equals(*set_unwrapped))
+        return false;
+
+    /// The lookup cast ignores query settings: `Dynamic` keeps the value as is, a `Variant` only as one of its alternatives, else throws.
+    if (set_which.isDynamic())
+        return false;
+    if (set_which.isVariant())
+        return !assert_cast<const DataTypeVariant &>(*set_unwrapped).tryGetVariantDiscriminator(key_unwrapped->getName());
+
+    if (key_which.isArray() && set_which.isArray())
+        return keyToSetConversionMayCollapse(
+            assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
+            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType(),
+            /*plain_column=*/ false);
+
+    /// `CAST` turns an array of pairs into a `Map` pair by pair, by position, and keeps repeated keys.
+    if (key_which.isArray() && set_which.isMap())
+    {
+        const auto * pair = typeid_cast<const DataTypeTuple *>(assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType().get());
+        const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
+        return !pair || pair->getElements().size() != 2
+            || keyToSetConversionMayCollapse(pair->getElements()[0], set_map.getKeyType(), /*plain_column=*/ false)
+            || keyToSetConversionMayCollapse(pair->getElements()[1], set_map.getValueType(), /*plain_column=*/ false);
+    }
+
+    if (key_which.isTuple() && set_which.isTuple())
+    {
+        const auto & key_tuple = assert_cast<const DataTypeTuple &>(*key_unwrapped);
+        const auto & set_tuple = assert_cast<const DataTypeTuple &>(*set_unwrapped);
+        const auto & key_elements = key_tuple.getElements();
+        const auto & set_elements = set_tuple.getElements();
+
+        /// Named tuples sharing a name are cast by name; a key element without a counterpart is dropped, merging keys.
+        if (key_tuple.hasExplicitNames() && set_tuple.hasExplicitNames())
+        {
+            const auto & key_names = key_tuple.getElementNames();
+            if (std::ranges::any_of(key_names, [&](const String & name) { return set_tuple.tryGetPositionByName(name).has_value(); }))
+            {
+                for (size_t i = 0; i < key_elements.size(); ++i)
+                {
+                    auto set_position = set_tuple.tryGetPositionByName(key_names[i]);
+                    if (!set_position
+                        || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position], /*plain_column=*/ false))
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        if (key_elements.size() != set_elements.size())
+            return false;
+
+        for (size_t i = 0; i < key_elements.size(); ++i)
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i], /*plain_column=*/ false))
+                return true;
+
+        return false;
+    }
+
+    /// `FixedString` padding and the parse into any other type both merge distinct text keys.
+    if (key_which.isStringOrFixedString())
+        return !set_which.isString();
+
+    /// Integers and floats are cast exactly or not at all, but a number is cast into an `Enum` by `static_cast`.
+    if ((key_which.isInteger() || key_which.isFloat()) && (set_which.isInteger() || set_which.isFloat()))
+        return false;
+
+    /// A value has one spelling, except a local `DateTime` (clocks going back), an out-of-range `Date32`, `Time` or `Time64`
+    /// (saturated) and a `Bool` (every nonzero byte is `true`).
+    if (set_which.isString())
+        return !((key_which.isNumber() && !isBool(key_unwrapped)) || key_which.isEnum() || key_which.isDate() || key_which.isUUID()
+            || key_which.isIPv4() || key_which.isIPv6());
+
+    const auto key_scale = tryGetDecimalScale(*key_unwrapped);
+    const auto set_scale = tryGetDecimalScale(*set_unwrapped);
+
+    if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+    {
+        /// Only widenings keep every key; a day is not its midnight, as a time zone can skip a day (`Pacific/Apia`, 2011-12-30).
+        if (key_which.isDate())
+            return !set_which.isDate32();
+        if (key_which.isDateTime())
+            return !set_which.isDateTime64();
+        if (key_which.isTime())
+            return !set_which.isTime64();
+        /// `Set::execute` drops the sub-second keys only of a `plain_column` (non-`Nullable`, not in a composite); it truncates others.
+        if (key_which.isDateTime64() && set_which.isDateTime())
+            return !plain_column && *key_scale > 0;
+        const bool same_family = (key_which.isDateTime64() && set_which.isDateTime64()) || (key_which.isTime64() && set_which.isTime64());
+        return !same_family || *set_scale < *key_scale;
+    }
+
+    if (key_scale)
+    {
+        if (set_scale)
+            return *set_scale < *key_scale;
+        if (set_which.isInteger())
+            return *key_scale > 0;
+        /// A numeric `CAST` bounds a stored decimal by its backing integer, not by its precision; only `Float64` holds every `Int32`.
+        if (set_which.isFloat())
+            return !(key_which.isDecimal32() && set_which.isFloat64());
+    }
+
+    return !conversionPreservesOrder(*key_unwrapped, *set_unwrapped);
+}
+
 bool KeyCondition::tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -3385,6 +3507,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
     Columns new_columns;
     DataTypes new_types;
+    const bool set_is_packed = set_columns.size() < candidate.args_count;
     while (set_columns.size() < candidate.args_count) /// If we have a packed tuple inside, we unpack it
     {
         bool has_tuple = false;
@@ -3463,12 +3586,18 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
         if (membership_compares_carriers)
         {
-            const DataTypePtr predicate_column_type
-                = removeLowCardinalityAndNullable(mapping.set_transform ? mapping.set_transform->input_type : key_column_type);
+            const DataTypePtr predicate_input_type = mapping.set_transform ? mapping.set_transform->input_type : key_column_type;
+            const DataTypePtr predicate_column_type = removeLowCardinalityAndNullable(predicate_input_type);
             const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
 
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
                 && !element_type->equals(*predicate_column_type))
+                return false;
+
+            if (keyToSetConversionMayCollapse(
+                    predicate_column_type,
+                    element_type,
+                    /*plain_column=*/ !set_is_packed && !isNullableOrLowCardinalityNullable(predicate_input_type)))
                 return false;
         }
 
