@@ -46,7 +46,7 @@ namespace ErrorCodes
 }
 
 /// Reads the posting lists of the tokens of a part a dictionary block at a time, segment by segment of each posting list,
-/// with the positions of the token in the rows if they are requested.
+/// with the weights and the positions of the token in the rows if they are requested.
 struct SimplePostingsCursor
 {
     /// Reads the posting lists of a part from its files. `positions_buf_` is null if the positions are not read.
@@ -54,11 +54,13 @@ struct SimplePostingsCursor
         PostingsSerialization postings_serialization_,
         std::unique_ptr<ReadBufferFromFileBase> postings_buf_,
         std::unique_ptr<ReadBufferFromFileBase> positions_buf_,
-        size_t positions_file_size_)
+        size_t positions_file_size_,
+        bool read_weights_)
         : postings_serialization(std::move(postings_serialization_))
         , postings_buf(std::move(postings_buf_))
         , positions_buf(std::move(positions_buf_))
         , positions_file_size(positions_file_size_)
+        , read_weights(read_weights_)
     {
     }
 
@@ -72,7 +74,8 @@ struct SimplePostingsCursor
         segment_rank = 0;
     }
 
-    /// Reads the next segment of a posting list of the block into `row_ids`, and into `positions` if they are read.
+    /// Reads the next segment of a posting list of the block into `row_ids`, and into `weights`
+    /// and `positions` if they are read.
     /// Returns false if all posting lists of the block are read.
     bool readNextSegment()
     {
@@ -101,6 +104,7 @@ struct SimplePostingsCursor
 
     /// Data of the last read segment of a posting list.
     PaddedPODArray<UInt32> row_ids;
+    PaddedPODArray<UInt32> weights;
     PaddedPODArray<UInt32> position_offsets;
     PaddedPODArray<UInt32> positions;
 
@@ -109,17 +113,28 @@ private:
     void readSegment(const TokenPostingsInfo & token_info)
     {
         row_ids.clear();
+        weights.clear();
         position_offsets.clear();
         positions.clear();
 
         if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         {
             row_ids.insert(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
+
+            if (read_weights)
+            {
+                /// Embedded postings without stored weights imply `weight == 1` for every row.
+                if (token_info.embedded_weights.empty())
+                    weights.resize_fill(row_ids.size(), 1u);
+                else
+                    weights.insert(token_info.embedded_weights.begin(), token_info.embedded_weights.end());
+            }
         }
         else
         {
             postings_buf->seek(static_cast<off_t>(token_info.offsets[segment_index]), SEEK_SET);
-            postings_serialization.deserializeToArray(*postings_buf, token_info, segment_index, row_ids);
+            postings_serialization.deserializeToArray(
+                *postings_buf, token_info, segment_index, row_ids, read_weights ? &weights : nullptr);
         }
 
         if (positions_buf)
@@ -168,6 +183,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> postings_buf;
     std::unique_ptr<ReadBufferFromFileBase> positions_buf;
     size_t positions_file_size = 0;
+    bool read_weights = false;
 
     /// The next segment of the posting list of the current token, and the rank of its first posting in the list.
     size_t segment_index = 0;
@@ -212,10 +228,13 @@ public:
         if (header->has("row_id"))
             row_id_pos = header->getPositionByName("row_id");
 
+        if (header->has("weight"))
+            weight_pos = header->getPositionByName("weight");
+
         if (header->has("positions"))
             positions_pos = header->getPositionByName("positions");
 
-        read_postings = row_id_pos || positions_pos;
+        read_postings = row_id_pos || weight_pos || positions_pos;
     }
 
     String getName() const override { return "MergeTreeTextIndex"; }
@@ -287,6 +306,11 @@ private:
                     auto & row_id_data = assert_cast<ColumnUInt32 &>(*result_columns[pos]).getData();
                     row_id_data.insert(row_ids.begin(), row_ids.end());
                 }
+                else if (pos == weight_pos)
+                {
+                    auto & weight_data = assert_cast<ColumnUInt32 &>(*result_columns[pos]).getData();
+                    weight_data.insert(postings_cursor->weights.begin(), postings_cursor->weights.end());
+                }
                 else if (pos == positions_pos)
                 {
                     auto & array_column = assert_cast<ColumnArray &>(*result_columns[pos]);
@@ -327,7 +351,7 @@ private:
             const auto & col_with_type = header->getByPosition(pos);
             const auto & column_name = col_with_type.name;
 
-            if (pos == row_id_pos || pos == positions_pos || pos == token_key_pos || pos == token_value_pos)
+            if (pos == row_id_pos || pos == weight_pos || pos == positions_pos || pos == token_key_pos || pos == token_value_pos)
             {
                 /// These columns are filled separately.
                 continue;
@@ -468,6 +492,14 @@ private:
     /// whose index must store the data of the requested columns.
     void initPostingsCursor(const IMergeTreeDataPart & part)
     {
+        if (weight_pos && index_header.scoring == TextIndexScoringKind::None)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot read the weights: the text index '{}' in part '{}' was written without scoring data. "
+                "Run `ALTER TABLE ... MATERIALIZE INDEX {}` to rebuild it",
+                index_name, part.name, index_name);
+        }
+
         if (positions_pos && !index_header.has_positions)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -490,8 +522,10 @@ private:
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Text index '{}' in part '{}' has no file with positions", index_name, part.name);
         }
 
-        PostingsSerialization postings_serialization(PostingListCodecFactory::createPostingListCodec(index_header.codec_type), index_header.version);
-        postings_cursor.emplace(std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size);
+        PostingsSerialization postings_serialization(
+            PostingListCodecFactory::createPostingListCodec(index_header.codec_type), index_header.version, index_header.scoring);
+        postings_cursor.emplace(
+            std::move(postings_serialization), std::move(postings_buf), std::move(positions_buf), positions_file_size, weight_pos.has_value());
     }
 
     /// Loads the header of the index in `part` if it is needed, and finds the dictionary blocks matching the token condition.
@@ -597,6 +631,7 @@ private:
 
     /// Positions of the columns of the posting lists in the header, if requested.
     std::optional<size_t> row_id_pos;
+    std::optional<size_t> weight_pos;
     std::optional<size_t> positions_pos;
     bool read_postings = false;
 
@@ -748,6 +783,13 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals(const MergeT
     desc.addEphemeral("row_id",
         std::make_shared<DataTypeUInt32>(),
         "Number of the row in the data part from the posting list of the token", VirtualsMaterializationPlace::Reader);
+
+    if (text_index.params.hasScoring())
+    {
+        desc.addEphemeral("weight",
+            std::make_shared<DataTypeUInt32>(),
+            "Weight of the token in the row: the number of occurrences of the token in the row for BM25 scoring", VirtualsMaterializationPlace::Reader);
+    }
 
     if (text_index.params.enable_positions)
     {

@@ -870,6 +870,11 @@ Allow creating text indexes with the experimental `support_phrase_search` argume
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting"}) \
+    DECLARE(Bool, allow_experimental_text_index_scoring, false, R"(
+Allow creating text indexes with the experimental `scoring = 'bm25'` argument
+which stores the per-row weights of the tokens (term frequencies) and document lengths to support BM25 relevance scoring.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to gate the experimental `scoring = 'bm25'` text index argument that stores BM25 scoring data in the `v3_with_scoring` text index format."}) \
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
@@ -885,6 +890,7 @@ Possible values:
 - `v0_initial` — The original format. Does not persist the posting list codec type.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
 - `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+- `v3_with_scoring` — Persists the per-row weights of the tokens (term frequencies) and document lengths for indexes with `scoring = 'bm25'`.
 )", 0, \
         {"26.8", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."}, \
         {"26.6", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."}) \

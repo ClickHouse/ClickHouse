@@ -269,6 +269,7 @@ UInt64 computeCountForPart(
             cursors.push_back(std::make_shared<PostingListCursor>(
                 *cursor_streams.back(),
                 *token_info,
+                granule->getScoringKind(),
                 resolved.condition->postingsCache().get(),
                 granule->getIndexIdForCaches()));
         }
@@ -285,7 +286,8 @@ UInt64 computeCountForPart(
 
     auto postings_serialization = PostingsSerialization(
         PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
-        granule->getSerializationVersion());
+        granule->getSerializationVersion(),
+        granule->getScoringKind());
 
     /// The blocks of a list are read one by one after a seek each, so the buffer fits the largest segment among the lists.
     size_t largest_segment_bytes = 0;
