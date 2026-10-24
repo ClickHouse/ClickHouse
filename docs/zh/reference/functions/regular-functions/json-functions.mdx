@@ -1253,6 +1253,48 @@ SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 └───────────────────────┘
 ```
 
+## JSONRemove {#JSONRemove}
+
+引入版本：v26.10.0
+
+使用 JSONPath 从 JSON 字符串中删除一个或多个对象成员或数组元素。
+每个路径必须解析为单个对象成员名称或单个数组位置。路径按从左到右的顺序依次应用。
+如果 JSONPath 范围只解析为单个数组位置 (例如 `$[1 to 2]`) ，则会将其视为该位置，与 `$[1]` 等价。
+对象成员步骤会匹配所有名称相同的成员，包括重复的成员。
+如果最后一个步骤是对象成员步骤，则会删除所有匹配的成员。不存在的路径不会删除任何值。
+结果会以紧凑格式输出。无效的 JSON 会引发异常。
+
+**语法**
+
+```sql
+JSONRemove(json, path[, path ...])
+```
+
+**别名**：`JSON_REMOVE`
+
+**参数**
+
+* `json` — 包含有效 JSON 的字符串。[`String`](/zh/reference/data-types/string)
+* `path[, path ...]` — 一个或多个包含 JSONPath 表达式的常量字符串。每个路径都必须解析为单个对象成员名称或单个数组位置。若某个范围解析为单个数组位置 (例如 $[1 to 2]) ，则会按 $[1] 处理。[`String`](/zh/reference/data-types/string)
+
+**返回值**
+
+以紧凑字符串形式返回 JSON 文档。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+SELECT JSONRemove('{"a":1,"b":2}', '$.a');
+SELECT JSON_REMOVE('[0,1,2]', '$[0]', '$[1]');
+```
+
+```response title=Response
+{"b":2}
+[1]
+```
+
 ## JSONSharedDataPaths {#JSONSharedDataPaths}
 
 引入版本：v24.8.0

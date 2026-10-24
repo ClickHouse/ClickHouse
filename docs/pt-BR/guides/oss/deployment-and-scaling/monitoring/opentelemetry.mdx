@@ -39,6 +39,16 @@ O `status_code` desse tipo de span indica como o fragmento terminou:
 
 Consultas `INSERT` em uma tabela `Distributed` produzem spans análogos em `DistributedSink`, com as mesmas chaves de atributo `clickhouse.cluster` e `clickhouse.shard_num`.
 
+### Spans de tarefas do plano distribuído {#spans-of-distributed-plan-tasks}
+
+Com a configuração experimental `make_distributed_plan`, uma consulta é dividida em um plano de etapas, e cada etapa, em tarefas que são encaminhadas a workers sem estado via HTTP. A requisição de encaminhamento transporta o contexto de rastreamento nos cabeçalhos `traceparent` e `tracestate`, de modo que os spans no worker passam a integrar o trace do iniciador:
+
+* `StatelessWorkerClient::sendTask` (tipo `CLIENT`) — um span por tarefa encaminhada no iniciador, abrangendo apenas a requisição de início; a tarefa em si é executada de forma assíncrona no worker, que é consultado periodicamente até sua conclusão. Atributos: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id` e `clickhouse.target_host`, além de `clickhouse.exception` quando o encaminhamento falha;
+* `InterserverIOHTTPHandler` (tipo `SERVER`) — o lado do worker de uma requisição que transporta um contexto de rastreamento, com `clickhouse.uri`, `http.method` e `clickhouse.http_status`. Uma requisição que falha antes de sua tarefa ser iniciada (por uma falha de autenticação ou uma exceção no endpoint) registra `clickhouse.exception` e `clickhouse.exception_code` neste span, que passa a ser o único registro do encaminhamento no lado do worker. Requisições sem o cabeçalho `traceparent` (por exemplo, operações de fetch de partes entre réplicas) não são rastreadas;
+* `DistributedPlanTask::execute` (tipo `SERVER`) — a execução de uma tarefa no worker, equivalente ao span `query` de uma consulta comum: inclui `db.statement`, `clickhouse.query_id` e `clickhouse.query_status` ou a exceção da mesma forma, além da identidade da tarefa: `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash` (o hash do fragmento de plano serializado), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally` e os fluxos `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` que a tarefa lê e grava.
+
+O span da tarefa dura mais do que o span da requisição que a iniciou. Com `distributed_plan_execute_locally = 1`, nenhuma requisição é enviada: as tarefas são executadas nas threads do iniciador, e seus spans `DistributedPlanTask::execute` são anexados diretamente ao trace do iniciador.
+
 ## Rastreamento de solicitações do ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 
 O ClickHouse oferece rastreamento com OpenTelemetry para solicitações do [ClickHouse Keeper](/pt-BR/guides/oss/deployment-and-scaling/keeper/index) (serviço de coordenação compatível com ZooKeeper). Esse recurso oferece visibilidade detalhada do ciclo de vida das operações do Keeper, desde o envio da solicitação pelo cliente até o processamento no servidor.

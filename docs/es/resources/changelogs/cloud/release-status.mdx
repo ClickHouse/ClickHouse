@@ -34,13 +34,14 @@ Las ventanas de actualización programadas están disponibles para todos los can
 ## Calendario de lanzamientos {#release-schedule}
 
 <Warning>
-  **Cómo interpretar las fechas de lanzamiento**
+  **Cómo interpretar las fechas de las versiones**
 
-  Las fechas que se muestran a continuación indican cuándo ClickHouse **inicia el despliegue** en cada canal de lanzamiento, no cuándo se actualizará tu servicio en particular.
+  Las fechas que se muestran a continuación indican cuándo ClickHouse **inicia el despliegue** en cada canal de versiones, no cuándo se actualizará tu servicio en particular.
 
   * Los despliegues son automáticos y se realizan de forma gradual a lo largo de varias semanas
   * Los servicios con ventanas de actualización programadas configuradas se actualizan durante su ventana programada en la semana siguiente a la finalización del despliegue del canal (a partir del lunes a las 00:00 UTC)
   * La finalización del despliegue puede retrasarse debido a pausas en el despliegue (por ejemplo, bloqueos por festivos) o a la supervisión del estado del sistema
+  * La [fecha de fin de su vida útil (EOL)](https://clickhouse.com/legal/support-services-policy) se fija, como mínimo, 60 días después de que finalice el despliegue en el canal Slow. Para las versiones cuya fecha de finalización en el canal Slow aún no se ha programado, la fecha de EOL es `Por determinar`.
 
   Para realizar pruebas por adelantado antes de las actualizaciones de producción, usa el canal Fast o Regular para los servicios que no sean de producción y el canal Slow para los servicios de producción.
 </Warning>
@@ -50,7 +51,7 @@ Las ventanas de actualización programadas están disponibles para todos los can
 {
 changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
 version: '26.8',
-fast_start_date: '2026-10-12',
+fast_start_date: '2026-10-19',
 fast_end_date: 'Por determinar',
 regular_start_date: 'Por determinar',
 regular_end_date: 'Por determinar',
@@ -84,7 +85,7 @@ regular_start_date: '2026-08-03',
 regular_end_date: '2026-09-21',
 slow_start_date: '2026-09-28',
 slow_end_date: '2026-09-28',
-eol_date: '2026-11-27',
+eol_date: '2026-11-27 (estimada)',
 fast_progress: 'green',
 regular_progress: 'green',
 slow_progress: 'green',
@@ -98,7 +99,7 @@ regular_start_date: 'Completado',
 regular_end_date: 'Completado',
 slow_start_date: 'Completado',
 slow_end_date: 'Completado',
-eol_date: '2026-09-20',
+eol_date: '2026-10-04',
 fast_progress: 'green',
 regular_progress: 'green',
 slow_progress: 'green',
@@ -119,3 +120,14 @@ slow_progress: 'green',
 },
 ]}
 />
+
+## Fechas de fin de su vida útil de ClickHouse Private y ClickHouse Government {#private-and-government-eol}
+
+En la siguiente tabla se indican las fechas de fin de su vida útil (EOL) de las versiones principales de ClickHouse incluidas en ClickHouse Private y ClickHouse Government.
+
+| Versión | Publicada  | Fecha de EOL          | Estado           |
+| ------- | ---------- | --------------------- | ---------------- |
+| 26.4    | 2026-10-09 | 2026-11-27 (estimada) | Con soporte      |
+| 26.2    | 2026-08-07 | 2026-10-04            | Fin de su vida útil |
+
+Las versiones anteriores ya han llegado al fin de su vida útil. Las fechas de EOL marcadas como estimadas pueden cambiar.

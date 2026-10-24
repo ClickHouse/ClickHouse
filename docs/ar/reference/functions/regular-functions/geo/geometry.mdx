@@ -6,15 +6,11 @@ title: 'دوال للتعامل مع Geometry'
 doc_type: 'reference'
 ---
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 تتيح لك دوال Geometry حساب المحيط والمساحة للأنواع الهندسية مثل POLYGON وLINESTRING وMULTIPOLYGON وMULTILINESTRING وRING وPOINT. استخدم الأشكال الهندسية ضمن النوع Geometry. إذا كانت قيمة الإدخال هي `NULL`، فستُرجع جميع الدوال أدناه القيمة 0.
 
-<div id="perimetercartesian">
-  ## perimeterCartesian
-</div>
+## perimeterCartesian {#perimetercartesian}
 
 يحسب محيط كائن من نوع Geometry المحدد في نظام الإحداثيات الديكارتي (المسطح).
 
@@ -46,9 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-<div id="areacartesian">
-  ## areaCartesian
-</div>
+## areaCartesian {#areacartesian}
 
 تحسب مساحة كائن من نوع Geometry المُعطى في نظام الإحداثيات الديكارتية.
 
@@ -80,9 +74,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-<div id="perimeterspherical">
-  ## perimeterSpherical
-</div>
+## perimeterSpherical {#perimeterspherical}
 
 يحسب محيط كائن من نوع Geometry على سطح كرة.
 
@@ -92,13 +84,13 @@ SELECT areaCartesian(geom) FROM geo_dst;
 perimeterSpherical(geom)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `geom` — كائن من نوع Geometry. [Geometry](/ar/reference/data-types/geo).
 
 **القيم المُعادة**
 
-* عدد — المحيط. [Float64](/ar/reference/data-types/float).
+* عدد — المحيط على كرة نصف قطرها 1، بوحدة الراديان (الإحداثيات هي خط الطول وخط العرض بالدرجات). للحصول على الطول، اضرب الناتج في نصف قطر الكرة؛ فمثلًا اضربه في 6371 للحصول على الطول بالكيلومترات على سطح الأرض. [Float64](/ar/reference/data-types/float).
 
 **مثال**
 
@@ -110,13 +102,11 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
-<div id="areaspherical">
-  ## areaSpherical
-</div>
+## areaSpherical {#areaspherical}
 
 يحسب مساحة كائن من نوع Geometry على سطح كرة.
 
@@ -132,7 +122,7 @@ areaSpherical(geom)
 
 **القيم المُعادة**
 
-* عدد — المساحة. [Float64](/ar/reference/data-types/float).
+* عدد — المساحة على كرة نصف قطرها 1، مقيسةً بوحدة الستراديان (الإحداثيات هي خط الطول وخط العرض بالدرجات). اضرب الناتج في مربع نصف قطر الكرة للحصول على المساحة. [Float64](/ar/reference/data-types/float).
 
 **مثال**
 

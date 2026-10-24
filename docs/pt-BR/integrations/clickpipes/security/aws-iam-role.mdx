@@ -1,0 +1,58 @@
+---
+title: 'Autenticação por IAM role da AWS para ClickPipes'
+sidebarTitle: 'Funções do IAM da AWS'
+slug: /integrations/clickpipes/security/aws-iam-role
+description: 'Use Funções do IAM da AWS para conceder ao ClickPipes acesso a fontes de dados sem armazenar chaves de acesso da AWS.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'aws', 'iam role', 'acesso baseado em funções', 'autenticação']
+---
+
+A autenticação por IAM role da AWS permite que o ClickPipes acesse fontes de dados compatíveis da AWS sem armazenar chaves de acesso da AWS. Basta criar uma função na sua Conta AWS, permitir que o seu Serviço do ClickHouse Cloud a assuma e conceder à função as permissões necessárias para acessar a fonte de dados.
+
+## Antes de começar {#before-you-begin}
+
+* Seu Serviço do ClickHouse Cloud precisa ser executado na AWS para usar a autenticação por IAM role.
+* Você precisa de permissão para criar e configurar Funções do IAM na Conta AWS proprietária da origem.
+* Para a autenticação de banco de dados do RDS ou do Aurora, você também precisa de permissão para habilitar a autenticação IAM de banco de dados e configurar um usuário do banco de dados.
+
+## Como funciona {#how-it-works}
+
+1. Encontre o **Service role ID (IAM)** do seu serviço do ClickHouse Cloud em **Settings → Network security information**. Esse ARN identifica a função que o ClickPipes usa para solicitar acesso.
+2. Crie uma função na sua Conta AWS e configure uma relação de confiança para que a função de serviço do ClickHouse possa assumi-la.
+3. Conceda a essa função as permissões exigidas pela sua fonte de dados, conforme o guia de configuração correspondente abaixo.
+4. Configure o ClickPipe para usar o ARN da função que você criou. O ClickPipes assume essa função ao se conectar à fonte de dados.
+
+## Configure a política de confiança {#configure-trust-policy}
+
+Ao criar a função na sua Conta AWS, use esta política de confiança. Substitua `{ClickHouse_IAM_ARN}` pelo ARN do **Service role ID (IAM)** do seu serviço do ClickHouse Cloud:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Para a **autenticação IAM de banco de dados do RDS e do Aurora**, permita tanto `sts:AssumeRole` quanto `sts:TagSession` no campo `Action`. Consulte o [guia de autenticação IAM específico do banco de dados](/pt-BR/integrations/clickpipes/postgres/auth) para ver a configuração completa, incluindo o usuário do banco de dados habilitado para IAM.
+
+A **política de permissões** da função e eventuais requisitos de nomenclatura da função variam conforme a origem. Use o guia específico da origem abaixo para configurá-los.
+
+## Escolha sua fonte {#choose-your-source}
+
+| Fonte ou integração                                                  | Guia de configuração                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Amazon S3                                                            | [Autenticação do S3 com IAM role](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role). Para ingestão contínua com notificações do SQS, siga os [passos de configuração da IAM role no modo unordered](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/unordered-mode#configure-iam-role). |
+| Amazon Kinesis                                                       | [Acesso baseado em funções do Kinesis](/pt-BR/integrations/clickpipes/kinesis/auth#setup).                                                                                                                                                                                                                         |
+| Amazon MSK                                                           | [Permissões do IAM e relação de confiança do MSK](/pt-BR/integrations/clickpipes/kafka/best-practices#iam).                                                                                                                                                                                                        |
+| Amazon RDS (PostgreSQL, MySQL, MariaDB) e Aurora (PostgreSQL, MySQL) | Escolha o [guia de autenticação IAM específico do seu banco de dados](/pt-BR/integrations/clickpipes/postgres/auth). Essas fontes também exigem um usuário do banco de dados com autenticação IAM habilitada e a permissão `rds-db:connect`.                                                                       |
+| AWS Glue Schema Registry                                             | [Reutilize a IAM role do MSK ou configure uma função dedicada para o registro](/pt-BR/integrations/clickpipes/kafka/schema-registries#glue-iam-setup).                                                                                                                                                             |
+
+A autenticação com IAM role controla o acesso à fonte. Se a fonte for privada, configure a [conectividade de rede](/pt-BR/integrations/clickpipes/networking/index) separadamente.

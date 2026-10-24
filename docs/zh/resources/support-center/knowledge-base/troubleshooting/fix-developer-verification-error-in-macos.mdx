@@ -1,6 +1,6 @@
 ---
 title: 修复 MacOS 中的开发者验证错误
-description: 了解如何在运行 ClickHouse 命令时，通过“系统设置”或终端解决 MacOS 开发者验证错误。
+description: 了解如何在运行 ClickHouse 命令时，通过“系统设置”或终端解决 macOS 开发者验证错误。
 date: 2024-01-09
 tags: ['错误与异常']
 keywords: ['开发者验证', 'MacOS']
@@ -8,49 +8,51 @@ keywords: ['开发者验证', 'MacOS']
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-<div id="fix-the-developer-verification-error-in-macos">
-  ## 修复 MacOS 中的开发者验证错误
-</div>
+## 修复 macOS 中的开发者验证错误 {#fix-the-developer-verification-error-in-macos}
 
-如果你使用 `brew` 安装 ClickHouse，可能会遇到 MacOS 报出的错误。
-默认情况下，MacOS 不会运行由无法验证身份的开发者创建的应用或工具。
+默认情况下，对于从互联网下载的应用程序或工具，除非已由经过认证的开发者签名并通过 Apple 公证，否则 macOS 不会运行它们。
 
-尝试运行任何 `clickhouse` 命令时，你可能会看到以下错误：
+从 26.7.4 发行版开始 (以及 26.8 及之后的所有发行版) ，ClickHouse 的 macOS 构建均使用 ClickHouse Inc. 的 Developer ID 签名，并已通过 Apple 公证。这些构建发布在 [GitHub 发行版页面](https://github.com/ClickHouse/ClickHouse/releases)上，文件名分别为 `clickhouse-macos.zip` (Intel) 和 `clickhouse-macos-aarch64.zip` (Apple silicon) ，Homebrew cask 安装的也是这些构建。如果您使用的是其中之一，macOS 会直接运行 `clickhouse`，不会显示任何警告，您也无需执行本文中的任何操作。
+
+如果您运行的是已被 macOS 隔离的未签名二进制文件，仍可能遇到该错误，例如：
+
+* 通过 Homebrew 安装的旧版 ClickHouse 发行版——运行 `brew upgrade --cask clickhouse` 以获取已签名的版本；
+* 使用网页浏览器从 GitHub 发行版页面下载的自解压 `clickhouse-macos` 或 `clickhouse-macos-aarch64` 二进制文件——请改为下载同一发行版的 `.zip` 文件；
+* 使用网页浏览器下载的早于 26.7.4 的发行版。
+
+通过 `curl https://clickhouse.com/ | sh` 安装的二进制文件虽未签名，但 `curl` 不会隔离其下载的文件，因此 macOS 运行它时不会出现此错误。
+
+尝试运行已被隔离的 `clickhouse` 二进制文件时，您可能会看到以下错误：
 
 <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS 开发者验证错误对话框" border />
 
-要解决此验证错误，你需要将该应用从 MacOS 的隔离区中移除；你可以在系统设置窗口中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
+如果无法改用已签名的构建，请通过系统设置或终端解除该二进制文件的隔离。
 
-<div id="system-settings-process">
-  ## 系统设置流程
-</div>
+## 系统设置流程 {#system-settings-process}
 
-将 `clickhouse` 可执行文件从隔离区中移除，最简单的方法是：
+1. 先尝试运行一次 `clickhouse` 二进制文件，让 macOS 显示上述错误并记录被阻止的二进制文件。
 
-1. 打开**系统设置**。
+2. 打开**系统设置**。
 
-2. 前往**隐私与安全**：
+3. 前往**隐私与安全**：
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS 隐私与安全设置默认视图" border />
 
-3. 滚动到窗口底部，找到一条消息：*&quot;clickhouse-macos-aarch64&quot; 因并非来自已识别的开发者而被阻止使用*。
+4. 向下滚动到**安全**部分，找到一条消息：*&quot;clickhouse-macos-aarch64&quot; 因并非来自已识别的开发者而被阻止使用*。
 
-4. 点击**仍要允许**。
+5. 点击**仍要允许** (在较新的 macOS 版本中为**仍要打开**) 。
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS 隐私与安全设置中显示“仍要允许”按钮" border />
 
-5. 输入你的 MacOS 用户密码。
+6. 输入你的 macOS 用户密码。
 
-现在，你应该可以在终端中运行 `clickhouse` 命令了。
+现在，你应该可以在终端中运行 `clickhouse` 命令了。下次运行时，macOS 可能会要求你再确认一次。
 
-<div id="terminal-process">
-  ## 终端操作
-</div>
+## 终端操作 {#terminal-process}
 
-有时点击 `仍要允许` 按钮还是无法解决这个问题，这种情况下，你也可以通过命令行执行这一过程。
-或者你只是更喜欢使用命令行！
+如果点击系统设置中的按钮仍无法解决该问题，或者你更喜欢使用命令行，可以使用 `xattr` 移除该二进制文件上的隔离属性。
 
-首先找出 Homebrew 将 `clickhouse` 可执行文件安装到了哪里：
+如果 `clickhouse` 位于你的 `PATH` 中，请先找出它所在的位置：
 
 ```shell
 which clickhouse
@@ -74,7 +76,7 @@ xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
 clickhouse
 ```
 
-这应该会输出如下类似内容：
+应会输出类似如下内容：
 
 ```shell
 Use one of the following commands:
@@ -82,22 +84,4 @@ clickhouse local [args]
 clickhouse client [args]
 clickhouse benchmark [args]
 ...
-```
-
-<div id="fix-the-issue-by-reinstalling-clickhouse">
-  ## 通过重新安装 ClickHouse 解决此问题
-</div>
-
-Brew 提供了一个命令行选项，可从一开始就避免对已安装的二进制文件进行隔离。
-
-首先，卸载 ClickHouse：
-
-```shell
-brew uninstall clickhouse
-```
-
-现在使用 `--no-quarantine` 重新安装 ClickHouse：
-
-```shell
-brew install --no-quarantine clickhouse
 ```

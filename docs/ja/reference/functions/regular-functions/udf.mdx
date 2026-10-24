@@ -613,6 +613,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 これらのサンプルドライバーは出発点として用意されています。信頼できないユーザーに公開する前に、利用環境に合わせてサンドボックス化の内容を確認し、強化してください。
 
+### サードパーティ製ドライバー {#third-party-drivers}
+
+ClickHouse 以外が提供するドライバーもあります。これらは ClickHouse ではなく各作成者がメンテナンスしているため、信頼できないユーザーに公開する前に、サンプルドライバーと同様にレビューしてください。
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - 独自のカーネルを持つ [Hyperlight](https://github.com/hyperlight-dev/hyperlight) マイクロ VM 内で Python 関数本体を実行します。Hyperlight は [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/) のサンドボックスプロジェクトです。行のBlockごとにゲストのスナップショットから起動するため、コードはネットワークにもサーバーのファイルにもアクセスできず、クエリ間でステートも保持しません。`/dev/kvm` を備えた Linux が必要です。
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## 関連コンテンツ {#related-content}
 
 * [ClickHouse Cloudのユーザー定義関数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

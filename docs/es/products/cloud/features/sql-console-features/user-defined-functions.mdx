@@ -414,7 +414,7 @@ Consulte la [referencia de la API de UDF](/es/products/cloud/api-reference/udf/u
 
 El [proveedor de Terraform de ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) oficial incluye dos recursos para administrar UDFs como infraestructura como código:
 
-* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) administra la función propiamente dicha. Recibe un archivo ZIP con el código fuente de la función y publica una nueva versión cada vez que cambia el hash del archivo, esperando a que finalice la compilación.
+* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) administra la función propiamente dicha. Recibe un archivo ZIP con el código fuente de la función y publica una nueva versión cada vez que cambia el hash del archivo, esperando a que finalice el build.
 * [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) adjunta una versión de una UDF a un servicio. Un servicio puede tener como máximo una versión de una función a la vez. Puede fijar un número de versión o hacer referencia a `clickhouse_udf.<name>.version` para actualizar automáticamente los servicios a la versión más reciente.
 
 <Note>
@@ -445,9 +445,9 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-Además de los atributos obligatorios mostrados anteriormente, el recurso `clickhouse_udf` acepta `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name` y `fail_on_build_error`; consulte la [documentación del recurso](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) para ver el esquema completo.
+Además de los atributos obligatorios mostrados anteriormente, el recurso `clickhouse_udf` acepta `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `return_name` y `fail_on_build_error`; consulte la [documentación del recurso](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) para ver el esquema completo.
 
-Para probar una nueva versión en un servicio de desarrollo antes de que llegue a producción, haga que una vinculación siga la versión más reciente y fije la otra mediante una variable. La vinculación de desarrollo adopta automáticamente cada nueva compilación, mientras que la vinculación de producción solo cambia cuando modifica `var.prod_udf_version`:
+Para probar una nueva versión en un servicio de desarrollo antes de que llegue a producción, haga que una vinculación siga la versión más reciente y fije la otra mediante una variable. La vinculación de desarrollo adopta automáticamente cada nuevo build, mientras que la vinculación de producción solo cambia cuando modifica `var.prod_udf_version`:
 
 ```terraform
 resource "clickhouse_udf_attachment" "dev" {
@@ -464,7 +464,7 @@ resource "clickhouse_udf_attachment" "prod" {
 ```
 
 <Note>
-  El proveedor aún no expone `deterministic` ni el memory limit. Ambos se definen al crear una versión, por lo que las versiones publicadas por el proveedor no pueden incluirlos. Para usarlos, cree esas versiones desde la consola o mediante la API.
+  El proveedor aún no expone `deterministic` ni el límite de memoria. Ambos se definen al crear una versión, por lo que las versiones publicadas por el proveedor no pueden incluirlos. Para usarlos, cree esas versiones desde la consola o mediante la API.
 </Note>
 
 La vinculación solo se realiza correctamente para las versiones que están listas y puede tardar varios minutos; los servicios inactivos se reactivan automáticamente. El proveedor tampoco recarga los grupos: para las UDFs `executable_pool`, ejecute `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` en el servicio cuando una vinculación cambie de versión. Al eliminar un recurso `clickhouse_udf`, se eliminan todas las versiones de la función y se desvincula de todos los servicios.

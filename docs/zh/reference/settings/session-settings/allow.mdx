@@ -191,7 +191,7 @@ Cloud 默认值: `1`。
 
 当分区表达式是 `DISTINCT` 列的确定性函数时，启用在独立线程中按分区计算 `DISTINCT`，从而跳过跨流合并。当分区数接近 CPU 核心数且各分区大小大致相同时，此设置会带来收益；否则，成本启发式策略会跳过此优化。请参阅 [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/zh/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) 和 [force&#95;distinct&#95;partitions&#95;independently](/zh/reference/settings/session-settings/force#force_distinct_partitions_independently)。不适用于 `FINAL` 或并行副本。
 
-设置 [max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 或 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 时，不会应用此设置：这些限制由可见整个合并结果的单个 `DISTINCT` 转换执行，因此会保留跨流合并，以确保其全局语义。
+在各流保持独立期间，[max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 和 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 适用于所有分区集合的合并大小。
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -448,6 +448,20 @@ Cloud 默认值: `1`。
 ClickHouse 使用服务器启动时加载的此设置值。
 通过 `SET` 或查询级 `SETTINGS` 所做的更改不会改变提取子列的行为。
 要更改提取子列的行为，请在启动 profile 配置 (例如 users.xml) 中更新 `allow_nullable_tuple_in_extracted_subcolumns`，然后重启服务器。
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新增设置：使用哈希分区并行执行最终的 `DISTINCT`。"}]}]} />
+
+按 `DISTINCT` 列的哈希值对输入 stream 进行分区，从而在多个线程上执行最终的 `DISTINCT`。相同的键会进入同一个 stream，因此每个分区都可以独立去重。
+
+与 [allow&#95;distinct&#95;partitions&#95;independently](/zh/reference/settings/session-settings/allow#allow_distinct_partitions_independently) 不同，此设置不要求表的分区键与 `DISTINCT` 列之间存在关联。输入 stream 和哈希分区的数量上限与 `max_threads` 相互独立，以控制拆分块和连接 stream 的开销。
+
+对于全局已排序的输入，不会应用哈希分区，因为 `DISTINCT` 会保持该顺序。[max&#95;rows&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct) 和 [max&#95;bytes&#95;in&#95;distinct](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) 针对的是所有哈希分区的合计大小。
+
+不带 `ORDER BY` 的 `DISTINCT` 不保证行顺序，因此启用该优化后，返回的不同值虽然相同，顺序却可能不同。所以，对无序的 `DISTINCT` 结果使用 `LIMIT`、`OFFSET` 或 `LIMIT BY` 时，选出的行子集可能会有所不同。
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

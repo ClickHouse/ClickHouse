@@ -369,7 +369,7 @@ extractAllGroupsHorizontal(s, regexp)
 **参数**
 
 * `s` — 要从中提取内容的输入字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `regexp` — 用于匹配的正则表达式。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
+* `regexp` — 用于匹配的正则表达式。必须包含 1 到 127 个捕获组。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
 
 **返回值**
 
@@ -377,7 +377,7 @@ extractAllGroupsHorizontal(s, regexp)
 
 **示例**
 
-**用法示例**
+**使用示例**
 
 ```sql title=Query
 WITH '< Server: nginx
@@ -394,11 +394,11 @@ SELECT extractAllGroupsHorizontal(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 ## extractGroups {#extractGroups}
 
-Introduced in: v20.5.0
+引入版本： v20.5.0
 
 从正则表达式匹配到的第一个子串中提取捕获组。要从所有匹配结果中提取捕获组，请使用 [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) 或 [`extractAllGroupsVertical`](/zh/reference/functions/regular-functions/splitting-merging-functions#extractAllGroupsVertical)。
 
-**Syntax**
+**语法**
 
 ```sql
 extractGroups(s, regexp)
@@ -407,7 +407,7 @@ extractGroups(s, regexp)
 **参数**
 
 * `s` — 要从中提取内容的输入字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `regexp` — 正则表达式。必须至少包含一个捕获组。常量。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
+* `regexp` — 正则表达式。必须包含 1 到 127 个捕获组。常量。[`const String`](/zh/reference/data-types/string) 或 [`const FixedString`](/zh/reference/data-types/fixedstring)
 
 **返回值**
 
@@ -456,8 +456,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 <Note>
   当文本索引定义了一个[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAllTokens` 会将其应用于 `input`；如果 `needles` 是 [String](/zh/reference/data-types/string)，则也会在标记化之前将其应用于 `needles`。当 `needles` 是 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
-  预处理器仅在文本索引路径上生效，因此，使用文本索引的查询与不使用文本索引的查询，结果可能会有所不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
-  为提高全文检索的易用性，这种不一致是可以接受的。
+  预处理器是索引定义的一部分，因此无论在何处对该函数求值，都会应用预处理器：无论是在 `WHERE`/`PREWHERE` 过滤器中还是在 `SELECT` 列表中，也无论是否读取索引 (例如 `SETTINGS use_skip_indexes = 0`) 。
 </Note>
 
 **语法**
@@ -698,8 +697,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   当文本索引定义了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAnyTokens` 会在标记化前将其应用于 `input`；当 `needles` 为 [String](/zh/reference/data-types/string) 时，也会将其应用于 `needles`。当 `needles` 为 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
-  预处理器仅在文本索引路径上应用，因此，使用文本索引的查询与不使用文本索引的查询之间的结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
-  为了提高全文检索的易用性，可以容忍这种不一致性。
+  预处理器是索引定义的一部分，因此无论该函数在何处求值都会应用它：无论是在 `WHERE`/`PREWHERE` 过滤器中还是在 `SELECT` 列表中，也无论是否读取索引 (例如 `SETTINGS use_skip_indexes = 0`) 。
 </Note>
 
 **语法**
@@ -746,7 +744,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按原样搜索的 needle (不进行分词)&#x20;**
+**在 array 中指定按 AS-IS 方式搜索的 needles (不进行标记化)&#x20;**
 
 ```sql title=Query
 DROP TABLE IF EXISTS doc;
@@ -913,18 +911,17 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   如果未定义 文本索引，该函数会执行穷举列扫描，其速度比索引查找慢几个数量级。
 </Note>
 
-搜索前，该函数会使用为 文本索引 指定的分词器对 `input` 进行分词；当 `phrase` 为 `String` 时，也会对其进行分词。
+搜索前，该函数会使用为 文本索引 指定的分词器对 `input` 进行标记化；当 `phrase` 为 `String` 时，也会对其进行标记化。
 如果该列未定义 文本索引，则改用 `splitByNonAlpha` 分词器——除非通过可选的第三个参数提供了分词器。
 `tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`array`、`ngrams`、`asciiCJK` 或 `icu` 之一。
 
-如果 `input` 是 [Array(String)](/zh/reference/data-types/array)，其元素会像其他输入一样进行分词，且每行的所有标记组成一个序列，因此一个短语可以跨越两个元素。使用 `array` 分词器时，每个元素即为一个标记，可借此搜索由已分词的值组成的列。
+如果 `input` 是 [Array(String)](/zh/reference/data-types/array)，其元素会像其他输入一样进行标记化，且每行的所有标记组成一个序列，因此一个短语可以跨越两个元素。使用 `array` 分词器时，每个元素即为一个标记，可借此搜索由已标记化的值组成的列。
 如果 `phrase` 是 [Array(String)](/zh/reference/data-types/array)，其元素即为要搜索的标记，按顺序匹配且
 包括重复项。空的短语元素会被忽略，因为任何分词器都不会生成空标记。
 
 <Note>
-  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。
-  预处理器仅在 文本索引 路径上生效，因此，使用 文本索引 的查询与不使用 文本索引 的查询，结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
-  为了提高全文检索的易用性，可以容忍这种不一致。
+  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在标记化前将其应用于 `input` 和 `phrase`。
+  预处理器是索引定义的一部分，因此无论在何处对该函数求值，预处理器都会生效：无论是在 `WHERE`/`PREWHERE` 过滤器中还是在 `SELECT` 列表中，也无论是否读取索引 (例如 `SETTINGS use_skip_indexes = 0`) 。
 </Note>
 
 与 [`hasToken`](#hasToken)、[`hasAnyTokens`](#hasAnyTokens) 和 [`hasAllTokens`](#hasAllTokens) 不同，`hasPhrase` 要求这些标记按相同顺序连续出现，
@@ -1549,7 +1546,7 @@ SELECT locate('ca', 'abcabc')
 match(haystack, pattern)
 ```
 
-**别名**: `REGEXP_MATCHES`
+**别名**: `REGEXP_MATCHES`, `REGEXP_LIKE`
 
 **参数**
 

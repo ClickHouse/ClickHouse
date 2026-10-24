@@ -61,7 +61,7 @@ doc_type: 'reference'
 | `where`            | معايير التحديد. اختياري.                                                                                                                                                                                                             |
 | `invalidate_query` | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [تحديث بيانات القاموس باستخدام LIFETIME](/ar/reference/statements/create/dictionary/lifetime).                                                                              |
 | `secure`           | استخدام SSL للاتصال.                                                                                                                                                                                                                 |
-| `query`            | الاستعلام المخصص. اختياري.                                                                                                                                                                                                           |
+| `query`            | الاستعلام المخصص. اختياري. تُطابَق أعمدته مع القاموس حسب الاسم، لذا سمِّ كل عمود باسم السمة التي يملؤها. راجع [ترتيب أعمدة الاستعلام المخصص](/ar/reference/statements/create/dictionary/sources/overview#custom-query-column-order).    |
 
 <Note>
   لا يمكن استخدام الحقل `query` مع الحقلين `table` أو `where` في الوقت نفسه. ويجب التصريح بأحد الحقلين `table` أو `query`.

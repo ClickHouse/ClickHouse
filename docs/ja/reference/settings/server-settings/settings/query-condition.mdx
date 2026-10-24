@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouse serverを構成するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="query_condition_cache_policy">
-  ## query_condition_cache_policy
-</div>
+## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />クエリ条件 cache のポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />クエリ条件 cache のエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="query_condition_cache_size">
-  ## query_condition_cache_size
-</div>
+## query_condition_cache_size {#query_condition_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、すぐに有効になります。
 </Note>
 
-<div id="query_condition_cache_size_ratio">
-  ## query_condition_cache_size_ratio
-</div>
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />クエリ条件 cache における保護キュー (SLRU ポリシーの場合) のサイズを、cache 全体のサイズに対する比率で表したものです。
 

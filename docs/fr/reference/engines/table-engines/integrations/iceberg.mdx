@@ -107,10 +107,11 @@ Le tableau suivant montre comment les types de données Iceberg sont associés a
 
 ## Limites de compatibilité des schémas et des écritures {#schema-and-write-compatibility-limitations}
 
-Les mappages de types de données ci-dessus s’appliquent aux lectures. Les limitations suivantes s’appliquent lorsque ClickHouse crée ou fait évoluer des schémas Iceberg et écrit des données :
+Les mappages de types de données ci-dessus s’appliquent aux lectures. Les limitations suivantes s’appliquent lorsque ClickHouse crée ou fait évoluer des schémas Iceberg et écrit des données :
 
-* ClickHouse ne peut pas créer de schéma Iceberg contenant `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16` ou `UInt16`, ni ajouter ou modifier une colonne pour lui attribuer l’un de ces types. L’opération échoue avec une exception de type non pris en charge. Cela n’empêche pas l’insertion de valeurs `Bool` ou `Decimal` dans des colonnes Iceberg existantes.
-* Lorsque ClickHouse crée ou fait évoluer un schéma Iceberg, il mappe chaque colonne `DateTime` et `DateTime64` vers le type `timestamp` d’Iceberg, qui a une précision à la microseconde et ne comporte pas de fuseau horaire. ClickHouse ne peut pas générer les types de schéma `timestamptz`, `timestamp_ns` ou `timestamptz_ns` ; une précision supérieure et la sémantique des fuseaux horaires ne sont donc pas représentées dans le schéma Iceberg.
+* ClickHouse ne peut pas créer de schéma Iceberg contenant `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time` ou `Time64`, ni ajouter ou modifier une colonne pour lui attribuer l’un de ces types. L’opération échoue avec une exception de type non pris en charge. Cela n’empêche pas l’insertion de valeurs `Bool` dans des colonnes Iceberg existantes.
+* ClickHouse ne peut pas non plus créer de schéma Iceberg contenant `UInt64` : le type entier le plus large d’Iceberg est `long`, un entier signé sur 64 bits, qui ne peut pas représenter toutes les valeurs `UInt64`. Utilisez plutôt `Int64` ou `Decimal(20, 0)`. La création d’une table comportant une colonne `UInt64`, y compris imbriquée, comme `Array(UInt64)`, échoue avec une exception, même si la table Iceberg existe déjà à cet emplacement. Pour la même raison, une colonne `UInt32` est élargie au type `long` d’Iceberg et est donc relue en tant que `Int64`.
+* Lorsque ClickHouse crée ou fait évoluer un schéma Iceberg, il mappe chaque colonne `DateTime` et `DateTime64` vers le type `timestamp` d’Iceberg, qui a une précision à la microseconde et ne comporte pas de fuseau horaire. ClickHouse ne peut pas générer les types de schéma `timestamptz`, `timestamp_ns` ou `timestamptz_ns` ; une précision supérieure et la sémantique des fuseaux horaires ne sont donc pas représentées dans le schéma Iceberg.
 * ClickHouse ne peut pas écrire dans une table Iceberg qui utilise une colonne `decimal`, `fixed`, `timestamp_ns` ou `timestamptz_ns` comme champ de partition direct. L’opération échoue avec une exception de type non pris en charge.
 * Pour les fichiers de données contenant des types dont ClickHouse ne peut pas sérialiser les limites, notamment `Bool` et `Decimal`, ClickHouse omet toutes les limites inférieures et supérieures des colonnes dans l’entrée du manifeste Iceberg. Les tailles des colonnes et le nombre de valeurs nulles sont toujours inclus, et les données restent correctes, mais les lecteurs ne peuvent pas utiliser l’élagage min-max au niveau du manifeste pour ces fichiers.
 
@@ -132,7 +133,7 @@ ClickHouse prend en charge l’élagage des partitions dans les requêtes SELECT
 
 ## `DROP PARTITION` {#drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` supprime tous les fichiers de données appartenant à une partition donnée et crée un nouveau snapshot qui ne les référence plus. Cette opération est actuellement prise en charge pour les tables Iceberg locales et celles hébergées sur un stockage objet, mais pas pour les tables adossées à un catalogue.
+`ALTER TABLE ... DROP PARTITION <value>` supprime tous les fichiers de données appartenant à une partition donnée et crée un nouveau snapshot qui ne les référence plus. Cette opération est prise en charge pour les tables Iceberg locales et celles hébergées sur un stockage objet, ainsi que pour les tables d&#39;une base de données `DataLakeCatalog` dont le type de catalogue est `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables` ou `unity` (avec `use_unity_catalog_v2 = 1`).
 
 Activez `allow_insert_into_iceberg` pour utiliser cette opération.
 
@@ -344,20 +345,21 @@ Lors de l’utilisation du moteur de table `Iceberg` dans ClickHouse, le systèm
 
 ### Recherche des candidats {#candidate-search}
 
-1. **Spécification directe du chemin** :
+1. **Spécification directe du chemin** :
 
 * Si vous définissez `iceberg_metadata_file_path`, le système utilisera ce chemin exact en le combinant avec le chemin du répertoire de la table Iceberg.
 * Lorsque ce paramètre est défini, tous les autres paramètres de résolution sont ignorés.
 
-2. **Correspondance de l’UUID de la table** :
+2. **Correspondance de l’UUID de la table** :
 
-* Si `iceberg_metadata_table_uuid` est spécifié, le système :
+* Si `iceberg_metadata_table_uuid` est spécifié, le système :
   * examinera uniquement les fichiers `.metadata.json` du répertoire `metadata`
   * filtrera les fichiers contenant un champ `table-uuid` correspondant à l’UUID spécifié (sans distinction entre majuscules et minuscules)
 
-3. **Recherche par défaut** :
+3. **Recherche par défaut** :
 
 * Si aucun des paramètres ci-dessus n’est défini, tous les fichiers `.metadata.json` du répertoire `metadata` sont considérés comme des candidats
+* Sur S3 et Azure, lorsque le paramètre au niveau de la requête `iceberg_list_only_v_prefixed_metadata_files` est activé et que `iceberg_use_version_hint` est désactivé, si certains de ces fichiers ont un nom commençant par `v` (convention de nommage utilisée par ClickHouse et les catalogues Hadoop), seuls ces fichiers sont candidats, et seuls eux sont listés (via le préfixe de clé `metadata/v`, si bien que les manifestes stockés dans le même répertoire ne le sont pas). N’activez ce paramètre que pour les tables dont tous les fichiers de métadonnées suivent cette convention : dans un répertoire où coexistent les deux conventions de nommage, les fichiers `<N>-<uuid>.metadata.json` ne sont jamais candidats
 
 ### Sélection du fichier le plus récent {#most-recent-file}
 
@@ -415,6 +417,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **Remarque** : Le préchargement asynchrone des métadonnées s&#39;exécute dans `ICEBERG_SCEDULE_POOL`, le threadpool côté serveur dédié aux opérations en arrière-plan sur les tables `Iceberg` actives. La taille de ce threadpool est contrôlée par le paramètre de configuration du serveur `iceberg_background_schedule_pool_size` (la valeur par défaut est 10).
 
 **Remarque** : On considère actuellement que la taille du cache de métadonnées est suffisante pour contenir intégralement le dernier instantané de métadonnées de toutes les tables actives, si le préchargement asynchrone est activé.
+
+## Modification des paramètres de la table {#modify-settings}
+
+Les paramètres stockés uniquement dans la définition de table, et non dans les métadonnées Iceberg, peuvent être modifiés sur une table existante à l&#39;aide de `ALTER TABLE ... MODIFY SETTING` et `ALTER TABLE ... RESET SETTING` :
+
+* le lookup du fichier de métadonnées : `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` et `iceberg_metadata_async_prefetch_period_ms` ;
+* le compactage en arrière-plan et le nettoyage qui le suit : `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` et `iceberg_data_file_size_upper_threshold_compaction`.
+
+Les nouvelles valeurs s&#39;appliquent aux requêtes suivantes et sont stockées dans la définition de table. Les jobs en arrière-plan de la table sont arrêtés pendant la modification des paramètres, puis relancés avec les nouveaux paramètres : ainsi, désactiver `allow_experimental_iceberg_compaction` arrête le compactage en arrière-plan de la table, et l&#39;activer le démarre. Les autres paramètres ne sont pas modifiables, et une modification de paramètres ne peut pas être combinée à d&#39;autres commandes `ALTER` au sein d&#39;une même requête. Les tables d&#39;une base de données `DataLakeCatalog` ne permettent pas de modifier les paramètres.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
 
 ## Voir aussi {#see-also}
 

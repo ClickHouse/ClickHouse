@@ -59,7 +59,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="BYOC ではどのリージョンがサポートされていますか？">
-  [サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントに記載されているすべての**パブリックリージョン**で、BYOC をデプロイできます。BYOC は 3 つのアベイラビリティゾーンにまたがってプロビジョニングされるため、ゾーンが 3 つ未満のリージョンおよび AWS Local Zones はサポートされていません。必要なリージョンが記載されていない場合は、利用可否について ClickHouse 担当者にお問い合わせください。
+  BYOC は、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントで `BYOC` と記載されているリージョンで利用できます。`Private` も併記されているリージョンは、リクエストに応じて利用できます。BYOC は 3 つのアベイラビリティゾーンにまたがってプロビジョニングされるため、ゾーンが 3 つ未満のリージョンおよび AWS Local Zones はサポートされていません。必要なリージョンが記載されていない場合は、利用可否について ClickHouse 担当者にお問い合わせください。
 </Accordion>
 
 <Accordion title="リソースのオーバーヘッドはありますか？ClickHouse インスタンス以外のサービスを実行するには、どのようなリソースが必要ですか？">
@@ -77,7 +77,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="コストを抑えるために非常に小さいレプリカを実行できますか？">
-  各レプリカは、それぞれ専用ノード上の 1 つの Pod として実行されます。ノードサイズはレプリカサイズに合わせられ、ノードはオンデマンドでプロビジョニングされ、複数のレプリカが 1 つのノードに配置されることはありません。そのため、非常に小さいレプリカは非効率的です。ハードウェアに占めるオーバーヘッドの割合が大きくなり、ネットワークおよびディスク帯域幅はインスタンスサイズに応じて拡張されます。コンソールで提供されるサイズ未満のものは、サポートを通じたカスタムリクエストとなります。
+  各レプリカは、それぞれ専用ノード上の 1 つの ポッド として実行されます。ノードサイズはレプリカサイズに合わせられ、ノードはオンデマンドでプロビジョニングされ、複数のレプリカが 1 つのノードに配置されることはありません。そのため、非常に小さいレプリカは非効率的です。ハードウェアに占めるオーバーヘッドの割合が大きくなり、ネットワークおよびディスク帯域幅はインスタンスサイズに応じて拡張されます。コンソールで提供されるサイズ未満のものは、サポートを通じたカスタムリクエストとなります。
 </Accordion>
 
 <Accordion title="インジェストワークロードとクエリワークロードを分離できますか？">
@@ -109,7 +109,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickHouse コントロールプレーンは、当社アカウント内の Kubernetes API にどのように接続しますか？Tailscale は必要ですか？">
-  デフォルトでは、Kubernetes API エンドポイントはパブリックであり、そのアクセスを制限する仕組みはクラウドごとに異なります。AWS では ClickHouse の NAT IP アドレスのみを含む IP 許可リストで制限されます (このデフォルト設定を使用している間は、コントロールプレーンによるクラスター管理に必要なため、ClickHouse の許可リストエントリを削除しないでください)。GCP と Azure では IP 許可リストではなくクラウド IAM で制限されます ([Kubernetes API server exposure](/ja/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure) を参照)。代わりに、ClickHouse チームと調整のうえ、エンドポイントをプライベートアクセス専用に切り替えることもできます。Tailscale (アウトバウンド専用で、トラブルシューティングアクセスにも使用) または AWS では VPC Lattice (プライベートプレビュー) を使用します。詳細は [configuration](/ja/products/bring-your-own-cloud/configuration/configurations) を参照してください。これは Kubernetes API にのみ適用される点に注意してください。クラウドプロバイダー API 呼び出し (たとえば AWS の EKS や EC2) は、クロスアカウントでのロール引き受けを通じて ClickHouse Cloud のネットワークから発信されるため、Tailscale 経由でルーティングすることはできません。詳細は [cloud provider APIs vs the Kubernetes API](/ja/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api) を参照してください。
+  デフォルトでは、Kubernetes API エンドポイントはパブリックであり、そのアクセスを制限する仕組みはクラウドごとに異なります。AWS では ClickHouse の NAT IP アドレスのみを含む IP 許可リストで制限されます (このデフォルト設定を使用している間は、コントロールプレーンによるクラスター管理に必要なため、ClickHouse の許可リストエントリを削除しないでください)。GCP と Azure では IP 許可リストではなくクラウド IAM で制限されます ([Kubernetes API server exposure](/ja/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure) を参照)。代わりに、ClickHouse チームと調整のうえ、エンドポイントをプライベートアクセス専用に切り替えることもできます。AWS では VPC Lattice を使用し (プライベート EKS アクセス用の Tailscale は非推奨)、Azure では プライベートリンク を使用します。GCP では、パブリック IP エンドポイントを無効にすると、管理アクセスは IAM で認可された DNS ベースのエンドポイント (お客様の VPC ネットワーク外に配置) に移行し、デプロイツール、モニタリング、トラブルシューティングには Tailscale が使用されます。詳細は [configuration](/ja/products/bring-your-own-cloud/configuration/configurations) を参照してください。これは Kubernetes API にのみ適用される点に注意してください。クラウドプロバイダー API 呼び出し (たとえば AWS の EKS や EC2) は、クロスアカウントでのロール引き受けを通じて ClickHouse Cloud のネットワークから発信されるため、Tailscale 経由でルーティングすることはできません。詳細は [cloud provider APIs vs the Kubernetes API](/ja/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api) を参照してください。
 </Accordion>
 
 <Accordion title="BYOC ネットワークとオブジェクトストレージ間のネットワーク通信はどのように行われますか？">
@@ -127,7 +127,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="サービスエンドポイントはパブリックインターネットに公開されますか？プライベート専用にできますか？">
-  ClickHouse 管理 VPC では、各サービスに IP アクセスリストで保護されたパブリックロードバランサーがデフォルトで割り当てられます。お客様のネットワークおよびピアリングされたネットワークから到達可能なプライベートロードバランサーは、ClickHouse Cloud コンソールで追加で有効にできます ([Load Balancers](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers) を参照) 。customer-managed VPC ではデフォルトが逆になり、プライベートロードバランサーのみが有効になります。IP フィルタリングはイングレスプロキシ層で適用されるため、スキャンではロードバランサーのポートが開いているように見える場合がありますが、リストにない送信元からの接続は拒否されます。依存先がなくなれば、パブリックエンドポイントを完全に無効にできます。コンソールの [「Connection via」セレクター](/ja/products/bring-your-own-cloud/configuration/connect#connection-via) には、サービスで有効な各接続経路のエンドポイントが表示されます。[connectivity](/ja/products/bring-your-own-cloud/configuration/connect) を参照してください。
+  ClickHouse 管理 VPC では、各サービスに IP アクセスリストで保護されたパブリックロードバランサーがデフォルトで割り当てられます。お客様のネットワークおよびピアリングされたネットワークから到達可能なプライベートロードバランサーは、ClickHouse Cloud コンソールで追加で有効にできます ([Load Balancers](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers) を参照) 。顧客管理 VPC ではデフォルトが逆になり、プライベートロードバランサーのみが有効になります。IP フィルタリングはイングレスプロキシ層で適用されるため、スキャンではロードバランサーのポートが開いているように見える場合がありますが、リストにない送信元からの接続は拒否されます。依存先がなくなれば、パブリックエンドポイントを完全に無効にできます。コンソールの [「Connection via」セレクター](/ja/products/bring-your-own-cloud/configuration/connect#connection-via) には、サービスで有効な各接続経路のエンドポイントが表示されます。[connectivity](/ja/products/bring-your-own-cloud/configuration/connect) を参照してください。
 </Accordion>
 
 <Accordion title="独自の DNS ドメインを使用したり、独自の TLS 証明書を持ち込んだりできますか？">

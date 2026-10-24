@@ -242,6 +242,39 @@ python -m ci.praktika run "Build (amd_debug)"
 
 Se a abordagem acima não funcionar para você, use as opções do cmake presentes no log de compilação e siga o [processo geral de compilação](/pt-BR/resources/develop-contribute/build/build).
 
+## Verificações do clang-tidy {#clang-tidy-checks}
+
+Dois jobs executam o `clang-tidy` com as verificações configuradas no arquivo `.clang-tidy` na raiz do repositório.
+
+`Build (arm_tidy, i/N)` analisa todas as unidades de tradução da árvore, divididas em shards.
+Ele é minucioso, mas leva horas, e é por isso que não faz parte da merge queue -- e também por isso que um pull request que estava verde isoladamente ainda pode quebrar o `clang-tidy` no `master` depois de ser mesclado sobre alterações que entraram após sua última execução.
+
+`Clang-tidy (changed files)` é o equivalente na merge queue.
+Ele configura a mesma compilação, mas analisa apenas as unidades de tradução afetadas pelo pull request: os arquivos `.cpp` alterados e, no caso de um cabeçalho alterado, o arquivo `.cpp` de mesmo nome ou, quando o cabeçalho não tem um, algumas das unidades de tradução que o incluem, diretamente ou por meio de outros cabeçalhos.
+Um fragmento C++ alterado que é incluído por unidades de tradução, como um arquivo `.inc` ou `.txx`, também é verificado por meio de alguns dos arquivos que o incluem; o `clang-tidy` não reporta nenhum achado localizado nesse tipo de arquivo, portanto, para ele, são reportados apenas os erros de compilação e os achados próprios desses arquivos.
+Assim como o job completo, ele analisa apenas os alvos que habilitam o `clang-tidy`: um arquivo-fonte alterado do Poco, por exemplo, não é analisado, enquanto um cabeçalho alterado do Poco é verificado por meio das unidades de tradução analisadas que o incluem.
+Ele reporta apenas os diagnósticos localizados nos arquivos alterados, de modo que um diagnóstico já presente no `master` não pode causar a falha de um pull request não relacionado; já um erro de compilador é reportado onde quer que ocorra, porque, nesse caso, a unidade de tradução não foi analisada.
+Esse escopo mais restrito é o trade-off: uma alteração em um cabeçalho amplamente incluído é verificada aqui apenas por amostragem, e é o job completo que cobre o restante da árvore.
+Uma alteração em uma entrada de um gerador de código, como um arquivo `.proto`, um schema FlatBuffers `.fbs`, um template de `configure_file` como `config.h.in` ou os recursos da interface web embutida, é verificada por meio de alguns dos arquivos que incluem o cabeçalho gerado, como se esses arquivos tivessem sido alterados.
+Um template de `configure_file` de uma unidade de tradução, como `config_version.cpp.in`, é verificado por meio da análise da unidade de tradução gerada a partir dele.
+Em `contrib`, são cobertos apenas as entradas de geradores e os submódulos listados explicitamente pela verificação: os protocol buffers do Prometheus, por exemplo, por meio de alguns arquivos que incluem os cabeçalhos gerados, e os submódulos Arrow e LLVM e sua configuração CMake por meio de todo arquivo analisado que inclua diretamente um de seus cabeçalhos `<arrow/...>`, `<parquet/...>` ou `<llvm/...>`. Qualquer outra alteração em `contrib` fica a cargo do job completo.
+Uma alteração na configuração do `clang-tidy`, na própria verificação ou na definição do job não afeta nenhuma unidade de tradução; por isso, nesse caso, ele analisa um pequeno conjunto fixo de unidades de tradução e reporta todos os diagnósticos encontrados nelas.
+Uma alteração em um arquivo `.clang-tidy` local de um diretório, como `src/Functions/.clang-tidy`, é verificada da mesma forma em uma unidade de tradução dentro desse diretório.
+Uma alteração na própria verificação também executa um autoteste da forma como ela seleciona unidades de tradução e atribui diagnósticos, além de analisar um cabeçalho alterado representativo e uma entrada de gerador representativa como se o pull request os tivesse alterado.
+
+Ambos os jobs podem ser executados localmente:
+
+```bash
+python -m ci.praktika run "Clang-tidy (changed files)" --workflow MergeQueueCI --pr <PR number>
+```
+
+A verificação limitada é registrada apenas no fluxo de trabalho `MergeQueueCI` e define o que analisar com base nos arquivos alterados pelo pull request indicado em `--pr`; por isso, execute-a a partir do branch desse pull request.
+Também é possível verificar um único arquivo diretamente com base em um diretório de compilação configurado:
+
+```bash
+clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
+```
+
 ## Testes funcionais sem estado {#functional-stateless-tests}
 
 Executa [testes funcionais sem estado](/pt-BR/resources/develop-contribute/contribute/tests#functional-tests) para binários do ClickHouse compilados em várias configurações -- release, debug, com sanitizers etc.
@@ -262,6 +295,7 @@ Executa os [testes de integração](/pt-BR/resources/develop-contribute/contribu
 A cada commit, a branch master executa os testes sem estado, de integração e unitários em uma compilação com instrumentação de cobertura LLVM e publica o relatório de cobertura.
 Os pull requests só executam esses jobs quando têm o rótulo `ci-coverage` (ou quando alteram o código que coleta e reporta a cobertura); adicione-o para obter o relatório de cobertura do pull request e a cobertura das linhas alteradas.
 Sem o rótulo, os pull requests executam as mesmas configurações de testes sem estado e de integração na compilação `arm_binary`; os testes unitários já são executados com sanitizadores.
+Um pull request que apenas adiciona testes sem estado e precisa do relatório de cobertura pode usar, em vez disso, o rótulo `ci-llvm-coverage`: ele executa os jobs de cobertura, os jobs dos testes excluídos da cobertura, as verificações de instabilidade dos testes sem estado alterados, a verificação de estilo e a revisão de código por IA, e pula todos os demais jobs. Um pull request desse tipo pode ser mesclado com o rótulo; já um pull request que altere qualquer outra coisa, não.
 
 ## Verificação de validação de correção de bug {#bugfix-validate-check}
 

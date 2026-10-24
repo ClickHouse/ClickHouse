@@ -1,39 +1,40 @@
 ---
-title: Backups configurables mediante CLI
+title: Copias de seguridad configurables mediante CLI
 ---
 
-Esta página explica cómo consultar y modificar la programación de backups de un servicio de ClickHouse Cloud desde la línea de comandos con la [ClickHouse CLI](/es/products/cloud/features/cli) (`clickhousectl`). Los comandos no son interactivos; `clickhousectl` devuelve JSON con `--json`.
+Esta página explica cómo consultar y modificar la programación de copias de seguridad de un servicio de ClickHouse Cloud desde la línea de comandos con la [CLI de ClickHouse](/es/concepts/features/interfaces/cli) (`clickhousectl`). Salvo el inicio de sesión opcional con `--interactive`, los comandos no son interactivos. `clickhousectl` devuelve JSON con `--json`, y también de forma automática cuando lo ejecuta un agente de programación.
 
-Los backups configurables están disponibles en los planes Scale y Enterprise.
+Las copias de seguridad configurables están disponibles en los planes Scale y Enterprise.
 
 ## Requisitos previos {#prerequisites}
 
 Instale la CLI de ClickHouse:
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
+
+El script instala `~/.local/bin/clickhousectl` y un alias `chctl`. Asegúrese de que `~/.local/bin` esté incluido en su `PATH`.
 
 También necesita `jq`.
 
-Cambiar la configuración de Backup es una operación de escritura y requiere [autenticación mediante API key](/es/products/cloud/features/admin-features/api/openapi); el inicio de sesión con OAuth es de solo lectura:
+Modificar la configuración de copias de seguridad es una operación de escritura y requiere una [clave de API](/es/products/cloud/features/admin-features/api/openapi); el inicio de sesión mediante el navegador (`clickhousectl cloud auth login`) es de solo lectura. Inicie sesión con la clave; `--interactive` le pide la clave y el secreto, de modo que el secreto no quede registrado en el historial de su shell:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-Como alternativa, defina las variables de entorno `CLICKHOUSE_CLOUD_API_KEY` y `CLICKHOUSE_CLOUD_API_SECRET`. Verifique con `clickhousectl cloud auth status`: compruebe que la credencial **activa** sea la que tiene el ámbito `read/write`. Las credenciales guardadas por un `auth login` anterior tienen prioridad sobre las variables de entorno; en ese caso, la fila `Env vars` puede seguir mostrando el ámbito `read/write`, pero aparece marcada como inactiva (`Configured (inactive, outranked by credentials file)`), y los comandos de escritura que se indican a continuación se ejecutan con las credenciales guardadas. Ejecute primero `clickhousectl cloud auth logout` si desea que se utilicen las variables de entorno.
+Como alternativa, pase `--api-key` y `--api-secret`, o defina las variables de entorno `CLICKHOUSE_CLOUD_API_KEY` y `CLICKHOUSE_CLOUD_API_SECRET`; un agente de programación o un script debe usar las variables de entorno. El inicio de sesión verifica la clave y muestra su identity; puede comprobar las credenciales activas en cualquier momento con `clickhousectl cloud auth whoami`. Las credenciales guardadas mediante un `auth login` anterior tienen prioridad sobre las variables de entorno: si `clickhousectl cloud auth status` indica que sus variables de entorno están inactivas, se están usando las credenciales guardadas; en ese caso, ejecute `clickhousectl cloud auth logout --api-keys` para usar las variables.
 
 ## Encontrar el ID del servicio {#find-the-service-id}
 
-La configuración de backup se establece por servicio. Busque el ID del servicio por su nombre:
+La configuración de copia de seguridad se establece por servicio. Busque el ID del servicio por su nombre:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="<service-name>") | .id')
+CH_ID=$(clickhousectl cloud service get --name "<service-name>" --json | jq -r .id)
 ```
 
-Si pertenece a más de una organización, esta no se puede detectar automáticamente y el comando falla con el mensaje `Multiple organizations found. Specify --org-id to choose one.`. Liste sus organizaciones con `clickhousectl cloud org list` y pase `--org-id <org-id>` tanto a este comando como a todos los comandos `backup-config` que se indican a continuación.
+Si pertenece a más de una organización, esta no se puede detectar automáticamente y el comando falla con el mensaje ``Multiple organizations found. Specify --org-id or --org-name to choose one. Use `clickhousectl cloud org list` to see your organizations.`` Liste sus organizaciones con `clickhousectl cloud org list` y pase `--org-id <org-id>` (o `--org-name <name>`) tanto a este comando como a todos los comandos `backup-config` que se indican a continuación.
 
 ## Leer la configuración actual de Backup {#read-the-current-backup-configuration}
 
@@ -54,7 +55,7 @@ Un service que aún utiliza la programación predeterminada informa:
 
 ## Cambiar la retención y la frecuencia {#change-retention-and-frequency}
 
-`backup-config update` admite los mismos ajustes que el formulario de la consola —retención (`--backup-retention-period-hours`), frecuencia (`--backup-period-hours`) y hora de inicio (`--backup-start-time`)— e imprime la configuración resultante. Los indicadores que omitas conservan sus valores actuales:
+`backup-config update` admite los mismos ajustes que el formulario de la consola —retención (`--backup-retention-period-hours`), frecuencia (`--backup-period-hours`) y hora de inicio (`--backup-start-time`)— e imprime la configuración resultante. La API acepta una retención de entre 24 y 1080 horas en días completos (múltiplos de 24) y una frecuencia de 6, 8, 12, 16, 20, 24, 36 o 48 horas. Los indicadores que omitas conservan sus valores actuales:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" \
@@ -85,9 +86,9 @@ clickhousectl cloud service backup-config get "$CH_ID" --json
 }
 ```
 
-## Establecer una hora de inicio del backup {#set-a-backup-start-time}
+## Establecer una hora de inicio de la copia de seguridad {#set-a-backup-start-time}
 
-`--backup-start-time` recibe una hora de inicio diaria en UTC, en punto (`HH:00`). Una hora de inicio restringe la frecuencia: el período del backup debe ser de `24` o `48` horas, ya sea indicado en el mismo comando o ya almacenado en el service. Desde `clickhousectl 0.4.2`, tanto el format como la regla del período se comprueban en el Client, antes de cualquier llamada a la API. Una hora que no sea en punto —o que no lleve ceros a la izquierda, como `2:00`— es rechazada por el parser de argumentos con el código de salida `2`:
+`--backup-start-time` recibe una hora de inicio diaria en UTC, en punto (`HH:00`). Una hora de inicio restringe la frecuencia: el período de la copia de seguridad debe ser de `24` o `48` horas, ya sea indicado en el mismo comando o ya almacenado en el servicio. clickhousectl comprueba tanto el format como la regla del período antes de enviar la actualización. Una hora que no sea en punto —o que no lleve ceros a la izquierda, como `2:00`— es rechazada por el parser de argumentos con el código de salida `2`:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
@@ -103,7 +104,7 @@ Pasar `--backup-start-time` junto con un `--backup-period-hours` distinto de `24
 Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
 ```
 
-`--backup-period-hours` puede omitirse, en cuyo caso el service conserva el período que ya tiene, pero ese período almacenado debe ser `24` o `48`. En un service que todavía usa la programación predeterminada, el período es `24`, por lo que basta con indicar la hora de inicio. El service anterior se estableció en `12` en el paso previo, así que omitir el período falla: `clickhousectl` lee primero la configuración almacenada y rechaza la operación con el código de salida `1`, de nuevo sin llamar a la API:
+`--backup-period-hours` puede omitirse, en cuyo caso el servicio conserva el período que ya tiene, pero ese período almacenado debe ser `24` o `48`. En un servicio que todavía usa la programación predeterminada, el período es `24`, por lo que basta con indicar la hora de inicio. El servicio anterior se estableció en `12` en el paso previo, así que omitir el período falla: `clickhousectl` lee primero la configuración almacenada y rechaza la operación con el código de salida `1`, de nuevo antes de enviar la actualización:
 
 ```bash
 clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json

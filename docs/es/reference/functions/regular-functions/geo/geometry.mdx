@@ -6,15 +6,11 @@ title: 'Funciones para trabajar con Geometry'
 doc_type: 'reference'
 ---
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 Las funciones de Geometry permiten calcular el perímetro y el área de tipos geométricos como POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING y POINT. Utilice geometrías del tipo Geometry. Si el valor de entrada es `NULL`, todas las funciones siguientes devolverán 0.
 
-<div id="perimetercartesian">
-  ## perimeterCartesian
-</div>
+## perimeterCartesian {#perimetercartesian}
 
 Calcula el perímetro del objeto de tipo Geometry especificado en el sistema de coordenadas cartesianas (plano).
 
@@ -46,9 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-<div id="areacartesian">
-  ## areaCartesian
-</div>
+## areaCartesian {#areacartesian}
 
 Calcula el área del objeto Geometry especificado en el sistema de coordenadas cartesianas.
 
@@ -80,9 +74,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-<div id="perimeterspherical">
-  ## perimeterSpherical
-</div>
+## perimeterSpherical {#perimeterspherical}
 
 Calcula el perímetro de un objeto de tipo Geometry sobre la superficie de una esfera.
 
@@ -98,7 +90,7 @@ perimeterSpherical(geom)
 
 **Valores devueltos**
 
-* Número — Perímetro. [Float64](/es/reference/data-types/float).
+* Número — Perímetro sobre una esfera de radio 1, en radianes (las coordenadas son longitud y latitud en grados). Para obtener una longitud, multiplíquelo por el radio de la esfera; por ejemplo, por 6371 para obtener kilómetros en la Tierra. [Float64](/es/reference/data-types/float).
 
 **Ejemplo**
 
@@ -110,13 +102,11 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
-<div id="areaspherical">
-  ## areaSpherical
-</div>
+## areaSpherical {#areaspherical}
 
 Calcula el área de un objeto de tipo Geometry sobre la superficie de una esfera.
 
@@ -132,7 +122,7 @@ areaSpherical(geom)
 
 **Valores devueltos**
 
-* Número — Área. [Float64](/es/reference/data-types/float).
+* Número — Área sobre una esfera de radio 1, en estereorradianes (las coordenadas son longitud y latitud en grados). Multiplique por el cuadrado del radio de la esfera para obtener el área. [Float64](/es/reference/data-types/float).
 
 **Ejemplo**
 

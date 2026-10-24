@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُستخدَم هذه الإعدادات لتهيئة خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="parquet_metadata_cache_max_entries">
-  ## parquet_metadata_cache_max_entries
-</div>
+## parquet_metadata_cache_max_entries {#parquet_metadata_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />الحد الأقصى لذاكرة التخزين المؤقت لملفات البيانات الوصفية الخاصة بـ Parquet، محسوبًا بعدد الإدخالات. الصفر يعني أنها معطلة.
 
-<div id="parquet_metadata_cache_policy">
-  ## parquet_metadata_cache_policy
-</div>
+## parquet_metadata_cache_policy {#parquet_metadata_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة التخزين المؤقت للبيانات الوصفية في Parquet.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت للبيانات الوصفية في Parquet. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="parquet_metadata_cache_size">
-  ## parquet_metadata_cache_size
-</div>
+## parquet_metadata_cache_size {#parquet_metadata_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" changeable_without_restart="Yes" />الحد الأقصى لحجم ذاكرة التخزين المؤقت للبيانات الوصفية في Parquet بالبايت. تشير القيمة صفر إلى أنه معطّل.
 
-<div id="parquet_metadata_cache_size_ratio">
-  ## parquet_metadata_cache_size_ratio
-</div>
+## parquet_metadata_cache_size_ratio {#parquet_metadata_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="لا" />حجم الطابور المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت لبيانات Parquet الوصفية، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 

@@ -72,11 +72,15 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-アダプティブ集約が、メモリ逼迫下でパーツ数の上限に達したために共有ドレインテーブルを書き出した回数。
+適応型集約が、メモリ逼迫時、パーツ数の上限到達時、または明示的なスピルリクエストの受信時に共有ドレインテーブルを書き出した回数。
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 ステージ済みのレコードがまだ残っている状態で、baseline アルゴリズム上のスレッド (thaw によってそこへ戻されたもの、または自ら退いたもの) がスピルしようとしたため、アダプティブ集約がステージ済みのバックログを破棄した回数。
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+適応型集約が、アダプティブパスから外れずに、ステージングされたレコードまたは共有の排出残余データをディスクに書き込むことで対応した、メモリスケジューラからのスピルリクエストの数。
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -153,6 +157,18 @@ HTTP接続での接続エラーにより異常とマークされたアドレス�
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
 トリビアルな GROUP BY LIMIT のカットオフで保持される共有キーの集合に限定されたハッシュテーブルが、external aggregation によって一時ファイルへ flush された後、それらのキーで再シードされた回数です (`optimize_trivial_group_by_limit_query` 設定を参照) 。
+
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+top-K しきい値マージで実際にマージされ、候補としてランク付けされたグループの数。
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+すべてのグループを通常の方法でマージする代わりに、top-K しきい値マージ (Fagin のしきい値アルゴリズム) によってマージされた二段階バケットの数。
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+top-K しきい値マージで一度も参照されなかった、スレッドごとのハッシュテーブルのセルの数。これらのセルに含まれるどのグループも上位 K 件に入り得ないため、参照が省略されます。
 
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
@@ -262,6 +278,10 @@ applyPatchesMergeOnKey のソートキーのマージループ内で費やされ
 
 コンテキスト上で内部的な Replicated データベースの DDL 実行 (生存中の ZooKeeperMetadataTransaction) が進行中だったため、サーバー側 AST fuzzer が fuzzing をスキップした回数。
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+クエリが他のノードから送信されたセカンダリクエリであったために、サーバー側ASTファザーが fuzzing をスキップした回数。
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 非同期読み取り時に無視されたバイト数
@@ -342,9 +362,73 @@ syslog の非同期キューに送信されたメッセージ数 (受け入れ�
 
 text&#95;log の非同期キューに送信されたメッセージ (受け付けられたもの、または破棄されたもの) の総数
 
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+自動並列レプリカが、以前の実行時に記憶した境界に基づき、コスト評価用の候補実行計画を構築せずに並列レプリカを使用しないと判断した回数。判断の理由を示すイベント (`AutoParallelReplicasRejectedByCostModel` など) も併せてカウントされます
+
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-自動並列レプリカが、単一ノードのプランとの比較用に、並列レプリカを使用する候補プランを構築した回数です。こうして構築されたプランが必ず使用されるとは限りません。プランはコスト見積もりのために構築されるものであり、単一ノードのプランが優位と判断された場合は破棄されます
+自動並列レプリカが、並列レプリカを使用する効果があるかどうかを判断するために、並列レプリカを使用する実行計画を構築した回数です
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+自動並列レプリカが、クエリ実行計画を並列レプリカ用のクエリ実行計画に置換した回数
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+自動並列レプリカが見積もった、このクエリの読み取りにおけるレプリカあたりのバイト数です。判定結果にかかわらず記録されるため、この分布には `automatic_parallel_replicas_min_bytes_per_replica` によって除外されたクエリと、除外されずに通過したクエリの両方が含まれます
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+自動並列レプリカがコストモデルによる評価段階に達し、ローカル実行計画と並列レプリカを使用する実行計画を比較した回数
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+自動並列レプリカで統計情報がまだ存在しなかったため、判断を行わずに統計情報の収集を行った回数
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+自動並列レプリカの最適化に費やされた時間 (並列レプリカを使用した実行計画の構築にかかった時間を除く)
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+自動並列レプリカがローカル実行計画との比較に用いる、並列レプリカを使用した実行計画の構築に要した時間
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+自動並列レプリカが、並列レプリカを使用した実行計画の構築後、または以前の構築時に記憶した境界において、その実行計画をローカルの実行計画と十分に対応付けられず、比較や利用ができなかったためにクエリをスキップした回数です。たとえば、両者の読み取りを対応付けられなかった場合や、レプリカがどの読み取りを分割するかを判別できなかった場合が該当します。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+自動並列レプリカが並列レプリカを用いて実行計画を構築したものの、プランナーがその実行計画で並列レプリカを使用しなかったため、クエリをスキップした回数です。たとえば、レプリカあたりの行数が少なすぎる場合や、相関サブクエリが含まれる場合などが該当します。理由は `Planner` ロガーに出力されます
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+コストモデルにより、ローカル実行計画が並列レプリカの実行計画と同等以上に高速であると見積もられたため、自動並列レプリカが並列レプリカの使用を見送った回数
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+コストモデルでは並列レプリカが有利と判断されたにもかかわらず、読み取りバイト数のうち、レプリカ間で分割されずに各レプリカが全量を読み取る部分の割合が `automatic_parallel_replicas_max_duplicated_read_ratio` を超えたため、自動並列レプリカが採用されなかった回数
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+コストモデルでは並列レプリカが有利と判断されたものの、読み取り量が `automatic_parallel_replicas_min_bytes_per_replica` を下回っていたため、自動並列レプリカが適用されなかった回数
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+自動並列レプリカが、並列レプリカを使用した実行計画を構築する前にクエリをスキップした回数です。並列レプリカで読み取れない結合や、統計情報を収集できないステップなど、処理できない機能がクエリに含まれている場合にスキップされます。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+自動並列レプリカが、指定された設定を理由として、並列レプリカを用いた実行計画を構築する前にクエリをスキップした回数です。どのケースに該当したかは `AutoParallelReplicas` ロガーに出力されます。自動並列レプリカそのものを無効にする設定はカウントされません。`enable_parallel_replicas` が無効または強制されている場合や、`parallel_replicas_mode` が `read_tasks` 以外の場合は、`automatic_parallel_replicas_mode = 0` の場合と同様に、この最適化自体が実行されないためです
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+索引解析の時点で、実行計画内で最大の読み取りでもレプリカあたりのデータ量が `automatic_parallel_replicas_min_bytes_per_replica` 未満になると判明したため、自動並列レプリカが並列レプリカを用いた実行計画の構築自体を行わなかった回数
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+ストレージから読み取られた行数がキャッシュされた統計情報と2倍を超えて乖離していたため、自動並列レプリカが判断を行わずに統計情報を再収集した回数
 
 ### AzureClients {#azureclients}
 
@@ -758,6 +842,10 @@ Common executor で処理が完了するまでの待機時間。
 
 CPU のスケールダウンの発生回数
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+ブロッキング I/O や実行するタスクがない場合など、CPU 以外の要因で待機するために、スレッドが CPU スロットを解放 (パーク) した回数の合計。
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 CPUスロット のプリエンプションによってクエリが待機していた合計時間。
@@ -785,6 +873,10 @@ CPUスロット容量の逼迫により遅延したクエリ数。競合の指�
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 各クエリに1スレッドを保証する場合、および setting &#39;use&#95;concurrency&#95;control&#39; = 0 のクエリに対して付与された CPUスロット 数
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+CPU 以外の要因による待機の後に、スレッドが CPU スロットを再取得した合計回数。
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -920,6 +1012,10 @@ ReplicatedMergeTree 内のパーツに対する ミューテーション 用の�
 ### DataAfterMutationDiffersFromReplica {#dataaftermutationdiffersfromreplica}
 
 ミューテーション後のデータが、他のレプリカ上のデータとバイト単位で一致しない回数。&#39;DataAfterMergeDiffersFromReplica&#39; で説明した理由に加え、非決定論的なミューテーションが原因で発生することもあります。
+
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+データベースがテーブルイテレータを通じて返したテーブルの数です。返却先には、`SHOW TABLES`、テーブルを一覧表示するシステムテーブル、その他データベースを走査するすべての処理が含まれます。こうしたシステムテーブルに対するクエリでテーブル名に条件を指定すると列挙対象が絞り込まれます。このカウンターを見ると、どの程度絞り込まれたかがわかります。
 
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
@@ -1319,7 +1415,7 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-クエリのメモリ使用量が外部 `DISTINCT` のしきい値を超えたため、あるいは見込まれるハッシュ用の割り当てがしきい値の残り予算を超過すると予測されたため (`max_bytes_before_external_distinct` を参照) 、事前段階の `DISTINCT` 変換がハッシュテーブルを解放し、すべての行をそのまま通過させるようになった回数です。この場合、重複の解消はディスクへ書き出す (spill する) 最終段の `DISTINCT` が行います。
+クエリのメモリ使用量が後続のオペレーターのスピルしきい値を超えたため、あるいは見込まれるハッシュ用の割り当てがしきい値の残り予算を超過すると予測されたため、事前段階の `DISTINCT` トランスフォームがハッシュテーブルを解放し、すべての行をそのまま通過させるようになった回数です。`DISTINCT` の前段にある場合、しきい値は `max_bytes_before_external_distinct` であり、重複の解消はディスクへ書き出す (spill する) 最終段の `DISTINCT` が代わりに行います。`IN` の集合の前段にある場合、しきい値は集合のスピルしきい値 (`max_bytes_before_external_set` を参照) であり、重複の解消は集合が行います。
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -1489,6 +1585,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 分散キャッシュのレジストリイベント。分散キャッシュのレジストリの更新回数
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+分散キャッシュのレジストリイベント。証明書が信頼されていない、署名が一致しない、または証明書か署名のいずれかが存在しないために無視されたレジストリエントリの数
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 分散キャッシュの接続イベント。プールから古くなった接続を削除するのにかかった時間
@@ -1653,6 +1753,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 
 分散キャッシュの接続イベント。分散キャッシュで作成された一時ファイルの数
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+Distributed Cache 接続イベント。分散キャッシュサーバーが提示した証明書の秘密鍵がレジストリのエントリに登録されているものと一致しなかったため、クライアントが接続を閉じてそのサーバーを除外した回数
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 分散キャッシュの接続イベント。分散キャッシュへの接続試行に失敗した回数
@@ -1680,6 +1784,10 @@ write syscall の待機に費やされた合計時間です。これには page 
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 分散キャッシュのクライアントイベント。既存のバッファを再利用できなかった場合に発生した追加のバッファ割り当て数
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+Distributed Cache 接続イベント。分散キャッシュサーバーが、自身のレジストリエントリに登録されている鍵を含む証明書を提示した回数
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -1865,6 +1973,10 @@ ReplicatedMergeTree テーブルに INSERT されたブロック内で、重複�
 
 *MergeTree テーブルに INSERT されたブロックの重複チェックに費やされた合計時間。
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Elasticsearch の point in time のクローズ試行が失敗した回数。
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 encryption header のバイト列が encryption header cache 内で見つかり、ヘッダーの source read がスキップされた回数。
@@ -1969,6 +2081,18 @@ encryption header cache 内に encryption header のバイト列が見つから�
 
 外部メモリ使用時のJOINで、一時ファイルがディスクに書き込まれた回数。
 
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+書き込み中の packed パーツでバッファリングされたデータが占有するメモリを解放するために、一時ファイルへ書き込まれた圧縮バイト数。
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+書き込み中の packed パーツについて、バッファリングされたデータが占有するメモリを解放するために一時ファイルへ書き込まれたデータ量 (圧縮前の非圧縮サイズ) 。
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+メモリを解放するために、書き込み中の packed データパーツのバッファリングされたデータが一時ファイルへ移動された回数。
+
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
 外部処理 (ソート／集計／JOIN) によって書き込まれた圧縮バイト数
@@ -1980,6 +2104,46 @@ encryption header cache 内に encryption header のバイト列が見つから�
 ### ExternalProcessingUncompressedBytesTotal {#externalprocessinguncompressedbytestotal}
 
 外部処理 (ソート/集約/結合) によって書き込まれたデータ量 (非圧縮、圧縮前)
+
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+外部メモリ上にある `IN` 集合のブルームフィルタによって、ルックアップ時に除外されたキーの数。
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+外部メモリ上の `IN` 集合に対するルックアップで、一時ファイルから読み込まずに集合のキャッシュから取得したブロックの数。
+
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+外部メモリに書き込まれた `IN` 集合の圧縮バイト数。
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+外部メモリ上の `IN` 集合に対するルックアップで検索されたキーの数。
+
+### ExternalSetMerge {#externalsetmerge}
+
+外部メモリを使用する `IN` 集合で、一時ファイルがマージされた回数。
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+キーを検索するために、外部メモリ上の `IN` 集合の一時ファイルから読み取られたブロック数。
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+外部メモリを使用する `IN` 集合の最終マージ用に、メモリ内に保持されたキーの数。
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+外部メモリ上の `IN` 集合の最終マージがスピル threshold 内に収まるよう、最終マージの前にメモリ内から一時ファイルへ書き込まれたキーの数。
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+外部メモリ上の `IN` 集合用に書き込まれたデータ量 (圧縮前の非圧縮サイズ) 。
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+外部メモリを使用する `IN` 集合について、一時ファイルがディスクに書き込まれた回数。
 
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
@@ -2409,9 +2573,45 @@ vertical merge のためのカラム収集に費やされた合計時間
 
 再利用されたサーバーのHTTP接続数
 
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+Iceberg のコンパクションによって不要になったデータファイルの削除が、当該レプリカまたは他のレプリカ上のクエリがそれらのファイルを参照するスナップショットをまだ読み取っていたために延期された回数。
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+Iceberg のコンパクションによって置き換えられたデータファイルの削除が、コンパクション自体またはそれによって置き換えられたスナップショットの経過時間が `iceberg_outdated_snapshot_lifetime_seconds` 未満であったために延期された回数。
+
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Iceberg テーブルの現在の状態の解決に要した合計時間です。これには、現在のメタデータファイルの特定 (バージョンヒントまたは一覧表示による) と、そのファイルの読み取りおよびパースが含まれます。
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Iceberg データイテレーターの同期初期化にかかった合計時間。
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Iceberg のマニフェストファイルをイテレーション用に準備するのに要した合計時間です。この準備には、パーティション spec とスキーマのヘッダーのパース、およびテーブルのメタデータに対するスキーマのチェックが含まれます。このコストはすべてのクエリでマニフェストファイルごとに発生し、マニフェストファイルが Iceberg のメタデータキャッシュから提供される場合も同様に発生します。
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+ストレージから読み込まれた Iceberg マニフェストファイルの数 (Iceberg メタデータキャッシュから取得されたものは含まない) 。
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+ストレージから読み込まれた Iceberg マニフェストファイルの合計サイズ。
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+ストレージから Iceberg のマニフェストファイルを読み取り、デコードするのに要した合計時間。
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+ストレージから読み込まれた Iceberg マニフェストリストの数 (Iceberg メタデータキャッシュから取得されたものは含まない) 。
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+ストレージから Iceberg のマニフェストリストを読み込み、デコードするのに要した合計時間。
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2428,6 +2628,26 @@ Iceberg メタデータファイル が cache 内で見つかったものの、�
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Iceberg メタデータキャッシュから追い出された概算バイト数。
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+パースされた Iceberg の `metadata.json` の内容の合計サイズ (バイト) 。
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Iceberg の `metadata.json` ファイルのパースに要した合計時間。
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Iceberg の `metadata.json` がパースされた回数です。パースはアクセスのたびに実行され、ファイルの内容が Iceberg メタデータキャッシュから提供される場合でも行われます。
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+ストレージから Iceberg の `metadata.json` ファイルを読み取るのに要した合計時間 (解凍処理を含む) 。
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+ストレージから読み取られた Iceberg の `metadata.json` ファイルの数 (Iceberg メタデータキャッシュから取得されたものは含まない) 。
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2464,6 +2684,10 @@ Iceberg のパーティションプルーニングでスキップされたファ
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Iceberg の読み取り時に単純な COUNT 最適化が適用されました
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Iceberg テーブルの `version-hint.text` の読み取りおよび解決に要した合計時間。
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -2628,6 +2852,14 @@ DelayedJoinedBlocksWorkerTransform が出力したブロック数。
 ### JoinDelayedJoinedTransformRowCount {#joindelayedjoinedtransformrowcount}
 
 DelayedJoinedBlocksWorkerTransform によって出力された行数。
+
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+RIGHT または FULL のハッシュ結合で、結合されなかった行を探すためにハッシュテーブルをスキャンした回数。
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+RIGHT または FULL のハッシュ結合で、スキャン対象部分の右側のキーがすべて一致していたために、未結合行を探すハッシュテーブルのスキャンをスキップした回数。
 
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
@@ -3253,6 +3485,10 @@ Keeper がバッチ処理した書き込みリクエストの総数
 
 読み込まれた主キーの行数。
 
+### LoadedStatistics {#loadedstatistics}
+
+選択度推定器向けに、統計キャッシュまたはパーツ自体からカラム STATISTICS が収集されたパーツの数
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 パーツから統計情報を読み込むのに要した時間
@@ -3412,6 +3648,18 @@ OvercommitTracker でメモリが解放されるまでの待機に費やされ�
 ### MemoryReservationKilled {#memoryreservationkilled}
 
 メモリ予約のキルシグナルの総数
+
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+クエリによって回収可能 (スピル可能) になったメモリ量
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+ディスクにスピルされたメモリの合計量
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+スピルに要した時間
 
 ### MemoryWorkerRun {#memoryworkerrun}
 
@@ -3845,6 +4093,18 @@ ReplicatedMergeTree でパーツをマージするためのログエントリは
 
 別のレプリカによってログが同時に更新されたため、ReplicatedMergeTree でパーツにミューテーションを適用するためのログエントリは作成されません。
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+このサーバーがオブジェクトストレージ上で取得した、キーに対する排他的リース (Icebergテーブルのコンパクション用など) の数。
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+オブジェクトストレージで排他的リースの取得を試みたものの、別のレプリカがそのキーの有効なリースを保持していたために断念した回数。
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+オブジェクトストレージから削除された、期限切れのリースオブジェクトおよび廃棄対象マーカーの数。
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 glob または regex パターンに一致せず、一覧取得時にスキップされたオブジェクト。
@@ -3853,9 +4113,25 @@ glob または regex パターンに一致せず、一覧取得時にスキッ�
 
 フィルタリング前に、オブジェクトストレージの一覧取得APIから返されたオブジェクトの総数。
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+オブジェクトの読み取り時に (オブジェクトストレージのソース、そのファイルイテレータ、およびスキーマ推論によって) 発行されたオブジェクトメタデータリクエスト (例: S3 HEAD) の数です。これらのリクエストは、オブジェクトのサイズと ETag が一覧表示の結果やテーブルメタデータから得られなかった場合に発行されます。
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+`ObjectStorageMetadataFetchedForRead` でカウントされるオブジェクトメタデータリクエストに要した合計時間。
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 仮想カラム `_path`/`_file` に対する述語フィルタリングによって除外されたオブジェクト。
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+クエリ条件キャッシュによって、どの行グループもフィルタに一致しないことが判明したため、オブジェクトストレージのソースで丸ごとスキップされたオブジェクトの数。
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+クエリ条件キャッシュによってフィルタに一致しないことが判明したため、オブジェクトストレージのソースがスキップした行グループの数。
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -3969,9 +4245,33 @@ processing リクエストの設定を試みた回数
 
 失敗したKeeperコミット数
 
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+オブジェクトストレージのソースが、バックグラウンドで準備される次のオブジェクト用のリーダーを待機した合計時間。
+
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 オブジェクトストレージで実際に読み取り用として開かれたオブジェクト数。
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+このサーバーのクエリが、まだこのサーバーによってリースされていないキーを取得した際に、オブジェクトストレージに書き込まれたキー (読み取り中の Iceberg スナップショットなど) の共有リースの数。
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+このサーバーのクリーナーがオブジェクトストレージ内で廃棄対象としたキーの数です。廃棄対象とすることで、クリーナーがキーで保護された対象を削除している間、いずれのレプリカもそれらのキーをリースできないようにします。
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+オブジェクトストレージ内のキーに対するリース取得の試行のうち、クリーナーによってそのキーが廃棄対象とされていたために拒否された回数です。たとえば、コンパクション後のクリーンアップで削除される予定の Iceberg スナップショットなどがこれに該当します。
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+このサーバーのクエリがキーを保持している間に、更新タスクによってオブジェクトストレージ上で書き換えられた共有リースの数。
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+取得時または更新時に、共有リースのオブジェクトストレージへの書き込みが失敗した回数。
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4115,7 +4415,7 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-クエリ実行時に並列レプリカを使用して実行された (サブ) クエリ数
+クエリ実行時に並列レプリカを使用して実行されるよう計画された (サブ) クエリ数。自動並列レプリカも、判断のために構築する実行計画についてこの値をインクリメントするため、カウントされたクエリが実際には一度も並列レプリカで実行されていない場合があります。実際に実行された内容については `AutoParallelReplicasApplied` および `ParallelReplicasUsedCount` を参照してください
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4153,6 +4453,10 @@ paimon メタデータcacheから追い出されたおおよそのバイト数�
 
 タスクベースの並列レプリカを使用してクエリを実行する際に使用されるレプリカ数
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+ブルームフィルタによるプルーニングで除外されたParquet行グループの総数。
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 フィルタを通過したカラムの総数
@@ -4165,9 +4469,21 @@ Parquet リーダーがスレッドプールに送るタスクグループ
 
 Parquet リーダーによって生成されるタスク
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Parquet リーダーが伸長した Parquet ページ(データページおよび辞書ページ)の非圧縮サイズの合計。
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+辞書フィルタによってプルーニングされた Parquet の行グループの総数です (辞書が枝刈り用のメモリ割り当て量に収まらないカラムでは、ブルームフィルタにフォールバックします) 。
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 デコードスレッド (prefetching スレッドではなく) による Parquet ファイルの読み取りの待機時間
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Parquet ファイルのフッターの読み取りおよびデシリアライズに費やされた合計時間 (Parquet メタデータキャッシュから取得された分は含みません) 。
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4181,6 +4497,14 @@ Parquet メタデータが Parquet メタデータキャッシュで見つから
 
 Parquetメタデータキャッシュから追い出されたバイト数の概算。
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+PREWHERE でフィルタされて除外された行をスキップするために解凍がトリガーされた Parquet データページの数です (このページは、後で読み取られる行にも使用される場合があります) 。
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+DB::Parquet::Prefetcher によって Parquetファイルから読み取られたバイト数の合計です。最終的に使用されない範囲を含めて読み取りが統合された場合 (たとえば、後からブルームフィルタによってプルーニングされた行グループのカラム chunk など) 、この値は `ParquetPrefetcherUsedBytes` よりも大きくなります。
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 DB::Parquet::Prefetcher によって ReadMode::EntireFileIsInMemory で実行された読み取り回数の総数
@@ -4193,13 +4517,21 @@ DB::Parquet::Prefetcher による ReadMode::RandomRead の読み取り総数
 
 DB::Parquet::Prefetcher において ReadMode::SeekAndRead で行われた読み取りの総回数
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+DB::Parquet::Prefetcher が読み込んだ範囲のうち、Parquet リーダーが実際に使用した範囲の合計バイト数。
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 カラム索引によって Parquet データからプルーニングされた pages の総数
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-Parquetデータからプルーニングにより除外された行グループの総数
+読み取り前に (min/max統計情報および行グループの選択によって) Parquetデータからプルーニングにより除外された行グループの総数。その後の段階でブルームフィルタおよびDictionaryによって除外された行グループは、`ParquetBloomFilterPrunedRowGroups` および `ParquetDictionaryFilterPrunedRowGroups` でカウントされます。
+
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+データを読み取らずに、カラム chunk の統計情報から `min` / `max` を算出した Parquetファイルの数 (`optimize_min_max_from_files` を参照)
 
 ### ParquetReadPages {#parquetreadpages}
 
@@ -4208,6 +4540,10 @@ Parquetデータからプルーニングにより除外された行グループ�
 ### ParquetReadRowGroups {#parquetreadrowgroups}
 
 Parquet データから読み込まれた行グループの総数
+
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+Parquet の PREWHERE 入力カラムのうち、辞書索引として読み取られた行数。これにより、当該カラムに適用される関数は辞書の値ごとに 1 回だけ評価されます
 
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
@@ -4577,6 +4913,10 @@ Azure からの読み取りに要した時間。
 
 Azure からの読み取り時に発生した例外数
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+同期 `pread` によってファイルディスクリプタから読み取られたバイトのうち、OS page cache から返されたと検出されたバイト数です (この検出は、帯域幅スロットラーが設定された読み取りに対してのみ行われます) 。
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 ファイルディスクリプタからの read/pread の回数。ソケットは含まれません。
@@ -4600,6 +4940,10 @@ S3 への接続の初期化に費やされた時間。
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 S3 からの読み取りにかかった時間。
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+ディスクの接続グループが `disk_connections_soft_limit` 以上に達していたため、バッファ 1 回分の充填量に切り詰められた S3ディスクのリクエスト数。
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4917,9 +5261,17 @@ prewhere リーダーによって MergeTree テーブルから読み取られた
 
 クエリを並列レプリカで実行した場合にレプリカが読み取るバイト数に関する収集済みの統計情報
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+自動並列レプリカ用に、各レプリカが読み取るバイト数の統計をクエリ実行中に収集するのに要した時間
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 クエリを並列レプリカで実行した場合に、レプリカからイニシエーターへ送信されるバイト数に関する統計
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+自動並列レプリカ用に、各レプリカがイニシエーターへ送信する予定のバイト数に関する統計情報を、クエリ実行中に収集するのに費やされた時間
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -4933,6 +5285,10 @@ JOINランタイムフィルタによって処理されたブロック数
 
 ハッシュテーブル の statistics に基づくビルド側のキー数から、フィルタが set bits の最大比率を超えると予測されたためにスキップされた JOINランタイムフィルタ の bloom filter ビルドの回数
 
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+受信側が切断された、または読み取りを停止したために破棄されたJOINランタイムフィルタの配信数です。影響を受けた宛先にはフィルタが届かず、その行はフィルタリングされないまま通過します
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 JOINランタイムフィルタ による読み取り時のプルーニングのために検査されたグラニュール数
@@ -4941,9 +5297,25 @@ JOINランタイムフィルタ による読み取り時のプルーニングの
 
 JOINランタイムフィルタ により読み取り時にプルーニングされたグラニュール数
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+読み取り時に JOIN実行時フィルターを使用してグラニュールを除外するよう設定された読み取りの数です。読み取りがディスクリプタを保持した状態でパイプラインに到達し、かつそれらを用いて除外を行うための主キーまたはスキップ索引がある場合に、その後グラニュールが実際に検査されるかどうかにかかわらずカウントされます。したがって、この値は、読み取りステップが再構築されるたびにディスクリプタが失われることなく維持されたことを示します。
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 ビルド側の処理が未完了の状態でJOINランタイムフィルタによりルックアップされたブロックの数。これらのブロックはフィルタされずにそのまま通過します。
+
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+サイズ上限を超えたために使用または送信されなかったJOINランタイムフィルタのステートの数。この場合、行はフィルタされずにそのまま通過します
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+他のタスクからJOINランタイムフィルタを受信できなかったタスクの数です。該当するタスクではフィルタが使用されないため、行はフィルタされずにそのまま通過します。
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+接続の確立後、ストリームの終端に達する前に送信側が切断された JOINランタイムフィルタのストリーム数。送信側のステートが届いていなかった場合、該当するフィルタは使用されず、行はフィルタされないまま通過します
 
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
@@ -4960,6 +5332,22 @@ JOIN ランタイムフィルタによってスキップされたブロック内
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 クエリ内で作成された異なる JOIN ランタイムフィルタ の数
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+分散クエリプランの他のタスクから受信した、シリアル化済みのJOINランタイムフィルタのステートのバイト数
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+分散クエリプラン内の他のタスクへ送信された、シリアル化済みJOINランタイムフィルタのステートのバイト数。宛先ストリームごとに1回ずつカウントされます。
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+分散クエリプラン内の他のタスクから受信した、シリアル化済みのJOINランタイムフィルタのステートの数
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+分散クエリプランの他のタスクへ送信するためにキューに追加された JOINランタイムフィルタのステート数。宛先ストリームごとに 1 つずつカウントされ、後で中止された配信も含まれます
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 
@@ -5252,6 +5640,10 @@ ReplicatedMergeTree テーブルに INSERT されたブロック内で、自己�
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 サブクエリを実行して補完された `IN`/`JOIN` の set の数。準備済み set cache から取得された set や、すでに構築済みで再利用された set はカウントされません。
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+サブクエリからの構築中、またはクエリでの使用中にディスクにスピルされた `IN` 集合の数。
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5577,6 +5969,10 @@ MergeTree テーブルで共有データパーツのロックが取得された�
 
 MergeTree テーブルで共有データパーツのロック待機に費やされた合計時間
 
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+`and` または `or` 関数が、クエリ内の記述順とは異なる順序で引数を評価したブロックの数です。具体的には、コストの低い引数をコストの高い引数より先に評価した場合や、前のブロックで収集した統計情報に基づいて評価順序を決定した場合 (設定 `short_circuit_function_evaluation_reorder_arguments`) が該当します。`WHERE` / `HAVING` における AND チェーンの要素の並べ替えは、`FilterStep` がパイプラインを構築する際に一度だけ決定されるものであり、カウントの対象外です。
+
 ### SleepFunctionCalls {#sleepfunctioncalls}
 
 sleep 関数 (sleep、sleepEachRow) の呼び出し回数。
@@ -5825,6 +6221,14 @@ stateless worker discovery サービスへの update&#95;lease リクエスト�
 
 worker の lease を更新するために stateless worker discovery サービスへ送信された update&#95;lease リクエストの数。
 
+### StatisticsCacheHits {#statisticscachehits}
+
+データパーツのカラムの統計情報が統計キャッシュ内で見つかった回数。
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+データパーツのカラムの統計情報が統計キャッシュ内に見つからず、パーツから読み込む必要があった回数。
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 &#39;Buffer&#39; テーブル内のバッファが、宛先テーブルへの書き込みエラーによりフラッシュできなかった回数。
@@ -5993,6 +6397,10 @@ table functionの呼び出し回数。
 
 テキスト索引において、パターンベースのDictionaryスキャンが、読み込むポスティングリスト数が閾値を超えたために破棄された回数。
 
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+テキスト索引の仮想カラムが、グラニュールごとに構築されたポスティングリストではなく、索引解析中に折り畳まれたポスティングリストから直接、1回の読み取りの全行分まとめて補完された回数。
+
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
 テキスト索引に対して汎用排除検索アルゴリズムが使用された回数。
@@ -6061,6 +6469,14 @@ lazy posting list モードで、出力領域の値がすでに確定してい�
 
 候補駆動型の フレーズ search で検査された候補行 (ポスティングリストの積集合) 。
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+フレーズ検索の候補行の特定に要した合計時間です。具体的には、フレーズを構成するトークンのポスティングリストを読み取り、それらの積集合を求める処理にかかった時間です。
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+ビットマップの積集合ではなく、ポスティングリストのカーソルを使用して候補行を特定したフレーズ検索の回数。
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 フレーズ クエリが、&#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39; を超える行数に一致すると推定されたためにテキスト索引をスキップし、代わりにカラム上で評価された回数。
@@ -6071,7 +6487,7 @@ lazy posting list モードで、出力領域の値がすでに確定してい�
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-テキスト索引に対して実行されたフレーズ検索の回数。同一パーツ内での同一フレーズの再検索はcacheから応答されるため、カウントされません。
+テキスト索引に対して実行されたフレーズ検索の回数。グラニュールのリーダーごとに1回カウントされます。すべてcacheから応答されたリーダーはカウントされません。
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 
@@ -6249,6 +6665,10 @@ TimeSeries テーブルのメトリクスファミリーテーブルに、重複
 
 Poco の TLS 実装を使用するサーバープロトコル (ネイティブ TCP、HTTPS、MySQL、PostgreSQL) において、受信 (サーバー側) 接続で完了した TLS ハンドシェイクの数です。gRPC は独自の TLS スタックを備えているため、カウント対象外です。セッション再開時にもハンドシェイクは実行されるため、このメトリクスにカウントされます。
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+読み取り時にスキップされたグラニュールの数です。対象となるのは、集約 (`enable_group_by_top_k_dynamic_filtering` を参照) またはソート (`use_top_k_dynamic_filtering` を参照) によってパブリッシュされる、実行中に更新される top-K しきい値の範囲外にすべての行が位置することが、プライマリインデックスから判明したグラニュールです。
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 データのブロックが非圧縮cacheで見つかり、解凍を回避できた回数。
@@ -6261,9 +6681,17 @@ Poco の TLS 実装を使用するサーバープロトコル (ネイティブ T
 
 非圧縮 cache から追い出されたデータのバイト数。
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+UNIQUE KEY テーブルにおいて、索引解析時に削除ビットマップによってスキップされた、すべての行が削除済みのグラニュールの数。
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 DeleteBitmapCache でキャッシュミスが発生した際に、UNIQUE KEY の delete-bitmap サイドカーファイルを読み込んでデシリアライズするのに費やされた時間。
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+PREWHERE の前段階で、UNIQUE KEY の削除ビットマップにより row-level で除外された行数。
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
@@ -6420,6 +6848,10 @@ S3への書き込み時に発生した例外の数。
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 現在処理中のリクエスト数が `s3_max_inflight_parts_for_one_file` で定義された上限に達したときに、その一部のリクエストが完了するまでの待機時間。
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+YTsaurus へのルックアップリクエストのうち、スロットリングされたものの数
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

@@ -23,7 +23,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 القيم الممكنة:
 
 * 0 — التحسين معطّل.
-  * 1 — التحسين مفعّل.
+* 1 — التحسين مفعّل.
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -34,7 +34,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 القيم الممكنة:
 
 * 0 — التحسين معطّل.
-  * 1 — التحسين مفعّل.
+* 1 — التحسين مفعّل.
 
 انظر أيضًا:
 
@@ -46,7 +46,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "الترقية إلى BETA والتفعيل افتراضيًا: تقديم `SELECT count() FROM t WHERE <pred>` من العدّادات المحفوظة `num_defaults` \/ `num_rows` لكل عمود عندما يقسم `<pred>` الصفوف إلى قيم افتراضية وغير افتراضية. يتطلب إعداد MergeTree ‏`compute_exact_num_defaults_for_sparse_columns` (المفعّل افتراضيًا الآن أيضًا)."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد (تجريبي) لتقديم `SELECT count() FROM t WHERE <pred>` استنادًا إلى `num_defaults` \/ `num_rows` لكل عمود والمُسجَّلين في `serialization.json` عندما يقسم `<pred>` الصفوف إلى قيم افتراضية وغير افتراضية."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "الترقية إلى BETA والتفعيل افتراضيًا: تقديم `SELECT count() FROM t WHERE <pred>` من العدّادات المحفوظة `num_defaults` \/ `num_rows` لكل عمود عندما يقسم `<pred>` الصفوف إلى قيم افتراضية وغير افتراضية. يتطلب إعداد MergeTree ‏`compute_exact_num_defaults_for_sparse_columns` (المفعّل افتراضيًا الآن أيضًا)."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد (تجريبي) لتقديم `SELECT count() FROM t WHERE <pred>` استنادًا إلى `num_defaults` \/ `num_rows` لكل عمود والمُسجَّلين في `serialization.json` عندما يقسم `<pred>` الصفوف إلى قيم افتراضية وغير افتراضية."}]}]} />
 
 يوسّع تحسين [optimize&#95;trivial&#95;count&#95;query](/ar/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) ليشمل
 الاستعلامات من الشكل `SELECT count() FROM t WHERE col <op> const`، حيث تؤدي `<op> const`
@@ -54,35 +54,35 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 من العدّادات `num_defaults` / `num_rows` لكل عمود التي يحتفظ بها MergeTree بالفعل
 في `serialization.json`، من دون فحص البيانات.
 
-الأنماط المتعرَّف عليها:
+الأنماط المتعرَّف عليها:
 
 * `col = default(col)` / `col != default(col)` لـ `Int*` / `UInt*` و`String` /
   `FixedString` و`Date` / `DateTime` / `DateTime64` و`Decimal*` و`UUID` و`IPv4` / `IPv6`.
 * `IS NULL` / `IS NOT NULL` على الأعمدة `Nullable`.
 * `empty(col)` / `notEmpty(col)` على أعمدة `String`.
 * `col = true` / `col != true` على أعمدة `Bool`.
-* `col > 0` و`col >= 1` و`col < 1` و`col <= 0` على أعمدة الأعداد الصحيحة غير الموقَّعة.
+* `col > 0` و`col >= 1` و`col < 1` و`col <= 0` على أعمدة الأعداد الصحيحة غير الموقَّعة.
 * `col` / `NOT col` مباشرةً على أعمدة `Int*` و`UInt*` و`Bool` (اختبار القيمة المنطقية).
 
-لا تُطبَّق أنماط المساواة على `Float*` أو `Enum*` أو `Nullable` أو `LowCardinality`
+لا تُطبَّق أنماط المساواة على `Float*` أو `Enum*` أو `Date32` أو `Nullable` أو `LowCardinality`
 أو الأنواع المركبة (`Tuple` و`Array` و`Map` و...) — وبالنسبة إلى هذه الأنواع، يُستمدّ العدد من
 مسار الفحص العادي.
 
-لكي يسري ذلك، يجب أن يكون العدّاد `num_defaults` لكل part دقيقًا. فعِّل إعداد الجدول في MergeTree
+لكي يسري ذلك، يجب أن يكون العدّاد `num_defaults` لكل part دقيقًا. فعِّل إعداد الجدول في MergeTree
 `compute_exact_num_defaults_for_sparse_columns` على الجدول الهدف قبل
-عمليات insert وmerges. أمّا الـ parts المكتوبة من دونه فتُستبعَد بصمت من إعادة الكتابة هذه، لذا
+عمليات insert ودمج. أمّا الـ parts المكتوبة من دونه فتُستبعَد بصمت من إعادة الكتابة هذه، لذا
 فإن تفعيل `optimize_trivial_count_with_sparsity_filter` وحده ليس كافيًا.
 
 بالنسبة إلى أنماط `IS NULL` / `IS NOT NULL` على أعمدة `Nullable`، يجب أيضًا أن تكون للعمود
 مدخلة `num_defaults` في `serialization.json`، وهذا لا يحدث إلا عندما يكون إعداد الجدول في MergeTree
 `nullable_serialization_version` مضبوطًا على `allow_sparse` وقت insert /
 merge. مع القيمة الافتراضية `basic`، لا تحصل أعمدة `Nullable` على أي مدخلة لكل عمود، لذلك
-لا يُطبَّق هذا التحسين بصمت.
+لا يُطبَّق هذا التحسين بصمت.
 
 القيم الممكنة:
 
 * 0 — التحسين معطّل.
-  * 1 — التحسين مفعّل.
+* 1 — التحسين مفعّل.
 
 انظر أيضًا:
 

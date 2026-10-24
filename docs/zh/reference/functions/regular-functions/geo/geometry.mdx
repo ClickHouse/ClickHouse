@@ -6,15 +6,11 @@ title: '用于处理 Geometry 的函数'
 doc_type: 'reference'
 ---
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 Geometry 函数可用于计算 POLYGON、LINESTRING、MULTIPOLYGON、MULTILINESTRING、RING 和 POINT 等几何类型的周长和面积。请在 Geometry 类型中使用几何对象。如果输入值为 `NULL`，则以下所有函数都返回 0。
 
-<div id="perimetercartesian">
-  ## perimeterCartesian
-</div>
+## perimeterCartesian {#perimetercartesian}
 
 计算给定 Geometry 对象在笛卡尔 (平面) 坐标系中的周长。
 
@@ -46,9 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-<div id="areacartesian">
-  ## areaCartesian
-</div>
+## areaCartesian {#areacartesian}
 
 计算给定 Geometry 对象在笛卡尔坐标系下的面积。
 
@@ -80,9 +74,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-<div id="perimeterspherical">
-  ## perimeterSpherical
-</div>
+## perimeterSpherical {#perimeterspherical}
 
 计算球面上 Geometry 对象的周长。
 
@@ -98,7 +90,7 @@ perimeterSpherical(geom)
 
 **返回值**
 
-* 数值 — 周长。[Float64](/zh/reference/data-types/float)。
+* 数值 — 半径为 1 的球面上的周长，单位为弧度 (坐标为以度为单位的经度和纬度) 。将其乘以球体半径即可得到实际长度，例如乘以 6371 即可得到地球上以千米为单位的长度。[Float64](/zh/reference/data-types/float)。
 
 **示例**
 
@@ -110,13 +102,11 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
-<div id="areaspherical">
-  ## areaSpherical
-</div>
+## areaSpherical {#areaspherical}
 
 计算球面上 Geometry 对象的面积。
 
@@ -132,7 +122,7 @@ areaSpherical(geom)
 
 **返回值**
 
-* 数值 — 面积。[Float64](/zh/reference/data-types/float)。
+* 数值 — 单位球 (半径为 1) 表面上的面积，单位为球面度 (坐标为以度表示的经度和纬度) 。将其乘以球体半径的平方即可得到实际面积。[Float64](/zh/reference/data-types/float)。
 
 **示例**
 

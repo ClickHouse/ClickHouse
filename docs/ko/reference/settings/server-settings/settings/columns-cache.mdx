@@ -35,7 +35,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 ## columns_cache_policy {#columns_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />컬럼 캐시 정책 이름입니다.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />컬럼 캐시 eviction 정책 이름입니다. 가능한 값: `LRU`, `SLRU`, `SIEVE`.
 
 ## columns_cache_size {#columns_cache_size}
 

@@ -81,9 +81,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 ## apply_string_filters_during_scan {#apply_string_filters_during_scan}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置：将 String 列上的子串搜索条件从 PREWHERE 下推到列扫描中。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：将 `String` 列上的子串搜索条件从 `PREWHERE` 下推到列扫描中，默认启用。将 `compatibility` 设置为 26.10 之前的版本会禁用该设置。"}]}]} />
 
 将 `String` 列上的子串搜索条件从 `PREWHERE` 下推到列扫描中。
 
@@ -93,13 +93,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 可以加快读取速度并降低内存使用量。查询结果不受影响，
 因为包含不匹配值的行必然会被 `PREWHERE` 过滤掉，而此类条件永远不会匹配空字符串。
 
-如果运行时发现该过滤器的选择性不高，则会自适应地将其禁用。
+如果运行时发现该过滤器的选择性不高，或者不匹配的值过短、跳过其数据得不偿失，
+则会自适应地将其禁用。
 
 此外，该设置还允许 `WHERE` 到 `PREWHERE` 优化移动子串搜索条件 (`LIKE`、`position`、`startsWith`、`endsWith`) ，
 即使这些条件用到了查询中的所有列 (通常这样做没有意义，但启用此设置后，扫描本身的开销会降低) 。
 基于同样的原因，与常量字符串的相等比较不会被移动：若它已位于 `PREWHERE` 中，仍会在扫描期间应用。
 
-支持从 `MergeTree` 表以及 `Parquet` 格式读取数据。
+支持从 `MergeTree` 表以及 `Parquet` 格式读取数据。在 `Parquet` 中，该过滤器适用于采用
+`PLAIN`、`DELTA_LENGTH_BYTE_ARRAY`、`DELTA_BYTE_ARRAY` 编码以及字典编码的页。
 
 请注意，为自动决定是否使用并行副本而收集的输入字节数估算值
 (`RuntimeDataflowStatisticsInputBytes`) 基于已读取块在内存中的大小，因此当值被替换为空字符串时，

@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -34,7 +35,9 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-Iceberg compaction 時に古い data files をクリーンアップできるようにします。
+Iceberg コンパクション 時に古い data files をクリーンアップできるようにします。
+
+このクリーンアップでは、コンパクションの完了後に `iceberg_compaction_data_cleanup` が実行されます。これにより、コンパクションによって不要になったスナップショットが `expire_snapshots` と同様の方法で期限切れになります。具体的には、該当するスナップショットをテーブルのメタデータから削除し、他のどのスナップショットからも参照されていないファイルを削除します。フォーマットバージョン 1 のテーブル、またはトランザクション対応のカタログ配下にあるテーブルでは、ファイルの削除のみが行われ、スナップショットはメタデータに残ります。
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -104,13 +107,13 @@ Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるよう�
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Kusto Query Language (KQL) ダイアレクトがベータに移行しました。"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
-SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
+SQL の代替となる Kusto Query Language (KQL) ダイアレクトを有効にします。
 
 ## allow_experimental_lateral_join {#allow_experimental_lateral_join}
 

@@ -34,6 +34,19 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 promql ダイアレクトで使用する評価時刻を、秒単位の Unixタイムスタンプ(小数部は任意)で設定します。`auto` は現在時刻を表します。
 
+## promql_push_down_label_matchers {#promql_push_down_label_matchers}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "PromQL のラベルマッチャーを二項演算子の反対側へコピーする新しい設定。"}]}]} />
+
+PromQL の二項演算子について、演算子が系列の照合に使用するラベルを対象に、一方の側のラベルマッチャーをもう一方の側のセレクターへコピーします。これにより、`b / on(job) a{job="x"}` では `b` のうち `job="x"` を持つ系列のみが読み取られます。
+マッチャーによって除外される系列が原因で Prometheus が重複した系列を報告する可能性がある場合、マッチャーはコピーされません。具体的には、照合ラベルによる集約である場合を除き演算子の「one」側へはコピーされず、`and` および `unless` 以外の 2 つのベクトル間の演算子にもコピーされません。また、範囲に対する関数やスカラーとの演算子を越えたコピーも、その入力が名前で選択された単一のメトリクスである場合を除き行われません。
+`bool` を伴わない比較はメトリクス名を保持するため、マッチャーは常にこれを越えてコピーされます。その他の関数および単項マイナスでは、マッチャーの伝播は止まります。
+マッチャーがコピーされると、メトリクス全体を対象とするセレクターはフィルタ付きのセレクターに変わります。そのため、マッチャーがメトリクスの系列の大部分を残す場合、`id` がメトリクスごとにクラスタ化されている (デフォルト) [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルでは、かえって処理が遅くなる可能性があります。このようなクエリでは、この設定を無効化してください。
+
 ## promql_table {#promql_table}
 
 <PrivatePreviewBadge />

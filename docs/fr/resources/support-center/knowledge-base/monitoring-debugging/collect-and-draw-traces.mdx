@@ -18,7 +18,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   <Step title={<>Vérifiez que la table système <code>opentelemetry_span_log</code> est activée</>} id="enable-system-table">
     Si vous n’avez apporté aucune modification à la section `opentelemetry_span_log` de `config.xml`, vous pouvez ignorer cette étape.
 
-    Ouvrez le fichier `config.xml` par défaut de ClickHouse et repérez la section suivante :
+    Ouvrez le fichier `config.xml` par défaut de ClickHouse et repérez la section suivante :
 
     ```yaml
     <!--
@@ -27,35 +27,22 @@ import { Image } from "/snippets/fr/components/Image.jsx";
         NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
-        <!--
-            The default table creation code is insufficient, this <engine> spec
-            is a workaround. There is no 'event_time' for this log, but two times,
-            start and finish. It is sorted by finish time, to avoid inserting
-            data too far away in the past (probably we can sometimes insert a span
-            that is seconds earlier than the last span in the table, due to a race
-            between several spans inserted in parallel). This gives the spans a
-            global order that we can use to e.g. retry insertion into some external
-            system.
-        -->
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
-        <database>system</database>
-        <table>opentelemetry_span_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <order_by>event_date, finish_time_us</order_by> -->
+        <!-- <database>system</database> -->
+        <!-- <table>opentelemetry_span_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </opentelemetry_span_log>
     ```
 
-    Assurez-vous qu’il n’est pas commenté, sinon vous ne pourrez pas voir `system.opentelemetry_span_log` dans les étapes suivantes.
+    Assurez-vous que l’élément `<opentelemetry_span_log>` lui-même n’est pas commenté, sinon vous ne pourrez pas voir `system.opentelemetry_span_log` dans les étapes suivantes. Les paramètres qu’il contient sont commentés, car ils correspondent aux valeurs par défaut.
     Cela peut aussi arriver si votre serveur ClickHouse n’utilise pas le fichier de configuration par défaut.
 
-    Vérifiez les logs de votre serveur pour y trouver quelque chose comme :
+    Vérifiez les logs de votre serveur pour y trouver quelque chose comme :
 
     ```text
     Processing configuration file 'config.xml'.
@@ -68,19 +55,19 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Activer le traçage OpenTelemetry" id="enable-otel-tracing">
-    Une fois le serveur ClickHouse démarré, ouvrez le client ClickHouse et activez la collecte des traces à l’aide de la requête suivante :
+    Une fois le serveur ClickHouse démarré, ouvrez le client ClickHouse et activez la collecte des traces à l’aide de la requête suivante :
 
     ```bash
     SET opentelemetry_trace_processors=1;
     ```
 
-    Vous devriez maintenant voir la table système `opentelemetry_span_log` en exécutant :
+    Vous devriez maintenant voir la table système `opentelemetry_span_log` en exécutant :
 
     ```sql
     SHOW TABLES IN system
     ```
 
-    Prochaine exécution :
+    Prochaine exécution :
 
     ```
     SET opentelemetry_start_trace_probability=1;
@@ -91,13 +78,13 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Obtenir un identifiant de requête" id="obtain-query-id">
-    Exécutez la requête de test suivante, ou la requête que vous souhaitez tracer :
+    Exécutez la requête de test suivante, ou la requête que vous souhaitez tracer :
 
     ```sql
     SELECT pow(number, 2) FROM numbers(10E4);
     ```
 
-    Copiez l’ID de requête :
+    Copiez l’ID de requête :
 
     ```sql highlight={6}
     :) SELECT pow(number, 2) FROM numbers(10E4);
@@ -110,7 +97,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   </Step>
 
   <Step title="Générer un fichier de trace" id="generate-trace-file">
-    Exécutez la requête suivante en remplaçant l’ID de requête par celui que vous avez obtenu à l’étape précédente :
+    Exécutez la requête suivante en remplaçant l’ID de requête par celui que vous avez obtenu à l’étape précédente :
 
     ```sql
     WITH 'a9241258-a0c4-4776-a00b-e6a1d9bec4a1' AS my_query_id
@@ -156,7 +143,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     Suivez les étapes décrites dans [&quot;Utiliser Grafana et ClickHouse pour l’observabilité&quot;](/fr/guides/use-cases/observability/build-your-own/grafana)
     pour configurer Grafana avec le plugin ClickHouse.
 
-    Depuis l’onglet Explore, vous pouvez ensuite exécuter la requête suivante en remplaçant le `trace_id` par le vôtre :
+    Depuis l’onglet Explore, vous pouvez ensuite exécuter la requête suivante en remplaçant le `trace_id` par le vôtre :
 
     ```sql
     SELECT
@@ -172,11 +159,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     WHERE trace_id = '68a14b27-a61f-596d-3746-2b03d2530e42' ORDER BY startTime ASC
     ```
 
-    Assurez-vous de définir `Query type` sur `Traces` :
+    Assurez-vous de définir `Query type` sur `Traces` :
 
     <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Visualisation des traces ClickHouse dans Grafana" />
 
-    Cliquez sur &quot;Run Query&quot; et examinez le diagramme de traces :
+    Cliquez sur &quot;Run Query&quot; et examinez le diagramme de traces :
 
     <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Visualisation des traces ClickHouse dans Grafana" />
   </Step>

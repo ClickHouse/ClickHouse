@@ -14,6 +14,14 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+## use_aggregation_memory_tracker {#use_aggregation_memory_tracker}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`GROUP BY` の二段階への変換では、専用のメモリトラッカーで計測した集約状態のメモリのみを `group_by_two_level_threshold_bytes` と比較します (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/107490)。26.7 より前は、クエリ全体のメモリ使用量の増加分を使用していました。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "`GROUP BY` の二段階への変換で集約メモリをどのように計測するかを選択する新しい設定です。この設定で制御される変更は 26.7 でリリースされ、それに伴うメモリのリグレッションは 26.9 で修正されています。"}]}]} />
+
+`group_by_two_level_threshold_bytes` と比較する集約状態のサイズを、集約専用のメモリトラッカーで計測します。無効の場合、サイズは集約の作成以降のクエリ全体のメモリ使用量の増加分として計測されるため、状態が小さい集約でも二段階に変換されることがあります。
+
 ## use_async_executor_for_materialized_views {#use_async_executor_for_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -53,6 +61,8 @@ DateTime 文字列の値を解釈する際に、server timezone ではなくク�
 
 1 つのエントリは、1 つのストライプ内の連続したグラニュールの範囲を保持します。グラニュールは最初の行から最後の行まで読み取られて初めてキャッシュに格納され、読み取り時にはグラニュール単位でキャッシュから返されます。また、異なる読み取りによって書き込まれた範囲はマージされるため、パーツを異なるマーク範囲に分割して読み取る場合でも、エントリは共有されます。
 
+このキャッシュは、ローカルファイルシステムから読み取られる `Parquet` ファイル (`file` テーブル関数および `File` テーブルエンジン)、オブジェクトストレージから読み取られる `Parquet` ファイル (`s3`、`azureBlobStorage` およびそれらのテーブルエンジン)、さらにデータレイクテーブルによって読み取られる `Parquet` ファイルにも適用されます。この場合、1 つのエントリは 1 つの行グループのカラム全体を保持し、ファイルのパス、そのバージョン (オブジェクトの場合は ETag、ローカルファイルの場合は最終更新時刻、inode、サイズ)、ファイル内のカラム、および読み取り時の型をキーとします。行グループのカラムがキャッシュに書き込まれるのは、フィルタが適用される前にその行グループのすべての行が読み取られた場合に限られます。`PREWHERE` を使用する場合、これに該当するのはフィルタ条件に使われるカラムで、その他のカラムはフィルタを通過した行についてのみ読み取られます。ローカルファイルは、バージョンによって内容を一意に識別できるよう、数秒間変更がなかった時点で初めてキャッシュされます。
+
 ## use_concurrency_control {#use_concurrency_control}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -60,6 +70,18 @@ DateTime 文字列の値を解釈する際に、server timezone ではなくク�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "デフォルトで同時実行制御を有効化"}]}]} />
 
 サーバーの同時実行制御 (グローバルなサーバー設定 `concurrent_threads_soft_limit_num` および `concurrent_threads_soft_limit_ratio_to_cores` を参照) を適用します。無効にすると、サーバーが過負荷状態でもより多くのスレッドを使用できるようになります (通常の用途では推奨されず、主にテストで必要になります) 。
+
+## use_concurrency_control_for_max_threads {#use_concurrency_control_for_max_threads}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "同時実行制御における CPU スロットの公平な割り当て分に基づいてクエリの並列度を決定するための新しい設定"}]}]} />
+
+クエリの並列度 (クエリの計画時に使用されるストリーム数およびスレッド数) を、CPU コア数ではなく、サーバーの同時実行制御における CPU スロットの公平な割り当て分に基づいて決定します。公平な割り当て分とは、スロットの上限 (グローバルサーバー設定 `concurrent_threads_soft_limit_num` および `concurrent_threads_soft_limit_ratio_to_cores` を参照) を、現在実行中のパイプラインと新しいクエリとで均等に分けた値です。
+
+これにより、多数のクエリが同時に実行されている場合、各クエリはより少ないストリーム数で計画されます。その結果、メモリ使用量が減り、各スレッドの部分結果 (集約状態など) のマージに費やす CPU も少なくなるため、全体のスループットが向上します。サーバーがアイドル状態のときに計画されたクエリは、従来どおりすべての CPU コアを使用します。
+
+この設定は、`max_threads` が `auto` (明示的に設定されていない) で、かつ `use_concurrency_control` が有効な場合にのみ適用されます。
 
 ## use_constant_folding_in_index_analysis {#use_constant_folding_in_index_analysis}
 

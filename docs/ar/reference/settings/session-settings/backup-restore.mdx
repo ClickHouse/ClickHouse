@@ -13,63 +13,49 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="backup_restore_batch_size_for_keeper_multi">
-  ## backup_restore_batch_size_for_keeper_multi
-</div>
+## backup_restore_batch_size_for_keeper_multi {#backup_restore_batch_size_for_keeper_multi}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 الحد الأقصى لحجم الدفعة لطلب multi المُرسَل إلى [Zoo]Keeper أثناء النسخ الاحتياطي أو الاستعادة
 
-<div id="backup_restore_batch_size_for_keeper_multiread">
-  ## backup_restore_batch_size_for_keeper_multiread
-</div>
+## backup_restore_batch_size_for_keeper_multiread {#backup_restore_batch_size_for_keeper_multiread}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 الحد الأقصى لحجم الدفعة في طلب القراءة المتعددة إلى [Zoo]Keeper أثناء النسخ الاحتياطي أو الاستعادة
 
-<div id="backup_restore_failure_after_host_disconnected_for_seconds">
-  ## backup_restore_failure_after_host_disconnected_for_seconds
-</div>
+## backup_restore_failure_after_host_disconnected_for_seconds {#backup_restore_failure_after_host_disconnected_for_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "3600"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "3600"},{"label": "إعداد جديد."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "3600"},{"label": "الإبقاء على القيمة الافتراضية بغض النظر عن `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "3600"},{"label": "إعداد جديد."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "3600"},{"label": "إعداد جديد."}]}]} />
 
 إذا لم يُعِد أي مضيف، أثناء تنفيذ عملية BACKUP ON CLUSTER أو RESTORE ON CLUSTER، إنشاء عقدة &#39;alive&#39; المؤقتة الخاصة به في ZooKeeper خلال هذه المدة، فسيُعتبر النسخ الاحتياطي أو الاستعادة بأكملها قد فشلا.
 يجب أن تكون هذه القيمة أكبر من أي مدة معقولة قد يحتاجها المضيف لإعادة الاتصال بـ ZooKeeper بعد حدوث عطل.
 يعني الصفر عدم وجود حد.
 
-<div id="backup_restore_finish_timeout_after_error_sec">
-  ## backup_restore_finish_timeout_after_error_sec
-</div>
+## backup_restore_finish_timeout_after_error_sec {#backup_restore_finish_timeout_after_error_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="180" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "180"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "180"},{"label": "إعداد جديد."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "180"},{"label": "الإبقاء على القيمة الافتراضية بغض النظر عن `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "180"},{"label": "إعداد جديد."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "180"},{"label": "إعداد جديد."}]}]} />
 
 المدة التي يجب أن تنتظرها العقدة البادئة حتى تستجيب المضيفات الأخرى للعقدة &#39;error&#39; وتتوقف عن العمل في عملية BACKUP ON CLUSTER أو RESTORE ON CLUSTER الحالية.
 
-<div id="backup_restore_keeper_fault_injection_probability">
-  ## backup_restore_keeper_fault_injection_probability
-</div>
+## backup_restore_keeper_fault_injection_probability {#backup_restore_keeper_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
 الاحتمال التقريبي لحدوث فشل في طلب Keeper أثناء النسخ الاحتياطي أو الاستعادة. القيمة الصالحة تكون ضمن النطاق [0.0f, 1.0f]
 
-<div id="backup_restore_keeper_fault_injection_seed">
-  ## backup_restore_keeper_fault_injection_seed
-</div>
+## backup_restore_keeper_fault_injection_seed {#backup_restore_keeper_fault_injection_seed}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - بذرة عشوائية، وإلا فتُستخدم قيمة الإعداد
 
-<div id="backup_restore_keeper_max_retries">
-  ## backup_restore_keeper_max_retries
-</div>
+## backup_restore_keeper_max_retries {#backup_restore_keeper_max_retries}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -78,37 +64,29 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 الحد الأقصى لعدد محاولات إعادة تنفيذ عمليات [Zoo]Keeper أثناء عملية BACKUP أو RESTORE.
 يجب أن تكون القيمة كبيرة بما يكفي حتى لا تفشل العملية بالكامل بسبب عطل مؤقت في [Zoo]Keeper.
 
-<div id="backup_restore_keeper_max_retries_while_handling_error">
-  ## backup_restore_keeper_max_retries_while_handling_error
-</div>
+## backup_restore_keeper_max_retries_while_handling_error {#backup_restore_keeper_max_retries_while_handling_error}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "إعداد جديد."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "الإبقاء على القيمة الافتراضية بغض النظر عن `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "إعداد جديد."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "إعداد جديد."}]}]} />
 
 الحد الأقصى لعدد مرات إعادة المحاولة لعمليات [Zoo]Keeper عند معالجة خطأ في عملية BACKUP ON CLUSTER أو RESTORE ON CLUSTER.
 
-<div id="backup_restore_keeper_max_retries_while_initializing">
-  ## backup_restore_keeper_max_retries_while_initializing
-</div>
+## backup_restore_keeper_max_retries_while_initializing {#backup_restore_keeper_max_retries_while_initializing}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "20"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "20"},{"label": "إعداد جديد."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "20"},{"label": "الإبقاء على القيمة الافتراضية بغض النظر عن `compatibility`."}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "20"},{"label": "إعداد جديد."}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "20"},{"label": "إعداد جديد."}]}]} />
 
 الحد الأقصى لإعادة المحاولة لعمليات [Zoo]Keeper أثناء تهيئة عملية BACKUP ON CLUSTER أو RESTORE ON CLUSTER.
 
-<div id="backup_restore_keeper_retry_initial_backoff_ms">
-  ## backup_restore_keeper_retry_initial_backoff_ms
-</div>
+## backup_restore_keeper_retry_initial_backoff_ms {#backup_restore_keeper_retry_initial_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 مهلة backoff الأولية قبل إعادة المحاولة لعمليات [Zoo]Keeper أثناء النسخ الاحتياطي أو الاستعادة
 
-<div id="backup_restore_keeper_retry_max_backoff_ms">
-  ## backup_restore_keeper_retry_max_backoff_ms
-</div>
+## backup_restore_keeper_retry_max_backoff_ms {#backup_restore_keeper_retry_max_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -116,17 +94,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيمة الافتراضية في Cloud: `60000`.
 
-<div id="backup_restore_keeper_value_max_size">
-  ## backup_restore_keeper_value_max_size
-</div>
+## backup_restore_keeper_value_max_size {#backup_restore_keeper_value_max_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 الحد الأقصى لحجم البيانات في عقدة [Zoo]Keeper أثناء النسخ الاحتياطي
 
-<div id="backup_restore_s3_retry_attempts">
-  ## backup_restore_s3_retry_attempts
-</div>
+## backup_restore_s3_retry_attempts {#backup_restore_s3_retry_attempts}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -134,9 +108,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إعداد خاص بـ Aws::Client::RetryStrategy؛ إذ يتولى Aws::Client إعادة المحاولة بنفسه، وتعني القيمة 0 عدم إجراء أي إعادة محاولة. وينطبق هذا فقط على النسخ الاحتياطي/الاستعادة.
 
-<div id="backup_restore_s3_retry_initial_backoff_ms">
-  ## backup_restore_s3_retry_initial_backoff_ms
-</div>
+## backup_restore_s3_retry_initial_backoff_ms {#backup_restore_s3_retry_initial_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -144,9 +116,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 مهلة backoff الأولية بالمللي ثانية قبل أول إعادة محاولة أثناء النسخ الاحتياطي والاستعادة. ومع كل إعادة محاولة لاحقة، تزداد مهلة backoff أُسِّيًا حتى الحد الأقصى المحدد بواسطة `backup_restore_s3_retry_max_backoff_ms`
 
-<div id="backup_restore_s3_retry_jitter_factor">
-  ## backup_restore_s3_retry_jitter_factor
-</div>
+## backup_restore_s3_retry_jitter_factor {#backup_restore_s3_retry_jitter_factor}
 
 <SettingsInfoBlock type="Float" default_value="0.1" />
 
@@ -154,9 +124,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 معامل التذبذب المطبَّق على مهلة backoff لإعادة المحاولة في Aws::Client::RetryStrategy أثناء عمليات النسخ الاحتياطي والاستعادة. يُضرَب مقدار تأخير backoff المحسوب في معامل عشوائي ضمن النطاق [1.0, 1.0 + jitter]، حتى الحد الأقصى `backup_restore_s3_retry_max_backoff_ms`. يجب أن تكون قيمته ضمن المجال [0.0, 1.0]
 
-<div id="backup_restore_s3_retry_max_backoff_ms">
-  ## backup_restore_s3_retry_max_backoff_ms
-</div>
+## backup_restore_s3_retry_max_backoff_ms {#backup_restore_s3_retry_max_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 

@@ -27,9 +27,9 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `event_date` ([Date](/ru/reference/data-types/date)) — Дата, когда произошло событие.
 * `event_time` ([DateTime](/ru/reference/data-types/datetime)) — Дата и время, когда произошло событие.
 * `event_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Дата и время события с точностью до микросекунд.
-* `id` ([UInt64](/ru/reference/data-types/int-uint)) — ID процессора.
+* `id` ([UInt64](/ru/reference/data-types/int-uint)) — ID процессора, уникальный в пределах запроса. Соответствует числу в `processor_uniq_id`.
 * `parent_ids` ([Array(UInt64)](/ru/reference/data-types/array)) — ID родительских процессоров.
-* `plan_step` ([UInt64](/ru/reference/data-types/int-uint)) — ID шага плана запроса, создавшего этот процессор. Значение равно нулю, если процессор не был добавлен ни одним шагом.
+* `plan_step` ([UInt64](/ru/reference/data-types/int-uint)) — ID шага плана запроса, создавшего этот процессор; уникален в пределах запроса. Равен числу в `step_uniq_id`, увеличенному на единицу. Значение равно нулю, если процессор не был добавлен ни одним шагом.
 * `plan_step_name` ([String](/ru/reference/data-types/string)) — Имя шага плана запроса, создавшего этот процессор. Значение пусто, если процессор не был добавлен ни одним шагом.
 * `plan_step_description` ([String](/ru/reference/data-types/string)) — Описание шага плана запроса, создавшего этот процессор. Значение пусто, если процессор не был добавлен ни одним шагом.
 * `plan_group` ([UInt64](/ru/reference/data-types/int-uint)) — Группа процессора, если он был создан шагом плана запроса. Группа — это логическое разделение процессоров, добавленных одним и тем же шагом плана запроса. Группа используется только для более наглядного отображения результата EXPLAIN PIPELINE.

@@ -16,24 +16,35 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-  Day-2 Kubernetes 작업에는 워크스테이션의 `helm` CLI를 사용합니다. 내장 Helm 클라이언트는 `init`에만 포함되어 있으므로 첫 업그레이드 전에 `helm`을 설치하십시오.
-</Note>
+`connector upgrade`를 사용하려면 v0.50.0 이상의 CLI가 필요합니다. CLI에 자체 Helm 클라이언트가 내장되어 있으므로 별도의 `helm` 바이너리는 필요하지 않습니다.
 
-`init`에서 준비한 values 오버레이를 사용하여 공개 차트 리포지토리의 릴리스를 업그레이드합니다:
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+`context add`는 클러스터마다 한 번만 실행하며, 커넥터가 실행되는 kubeconfig 컨텍스트를 기록합니다. `--use`를 지정하면 해당 컨텍스트가 현재 컨텍스트로 설정되며, 이후에는 `context use <name>`으로 전환할 수 있습니다. `connector upgrade`는 변경 사항을 적용하기 전에 확인을 요청합니다. 사용 가능한 플래그는 [CLI 참조 문서](/ko/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade)를 참고하십시오.
+
+차트 버전은 릴리스 태그에서 맨 앞의 `v`를 뺀 값입니다. 예를 들어 태그 `v0.50.0`은 차트 `0.50.0`에 해당합니다. 실행기는 `Recreate` 전략을 사용하는 단일 레플리카로 실행되므로, 업그레이드하는 동안 연결이 잠시 끊어집니다. 이 시간 동안 명령이 어떻게 처리되는지는 [커넥터가 오프라인일 때](/ko/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)를 참고하십시오.
+
+대신 `helm` CLI로 업그레이드하려면 `init`이 임시 저장한 값 오버레이를 사용하십시오.
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-차트 버전은 앞의 `v`를 제외한 릴리스 태그입니다(차트 `X.Y.Z`는 태그 `vX.Y.Z`에 해당합니다). 게시된 차트는 이미 공개 컨테이너 이미지를 가리키므로 일반 설치 및 업그레이드에는 이미지 values를 지정할 필요가 없습니다. 차트 기본값을 확인하려면 `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`를 실행하십시오. 실행기는 `Recreate` strategy를 사용하는 단일 레플리카로 동작하므로 업그레이드 시 잠시 연결이 끊어집니다. 해당 구간 동안 명령어가 어떻게 처리되는지는 [커넥터가 오프라인일 때](/ko/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)를 참조하십시오.
+게시된 차트는 이미 퍼블릭 컨테이너 이미지를 가리키고 있으므로, 일반적인 설치와 업그레이드에는 image 설정값을 지정할 필요가 없습니다. 차트 기본값을 확인하려면 `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`를 실행하십시오.
 
-직접 차트 참조(`oci://`, URL 또는 로컬 아카이브나 디렉터리)로 설치한 경우에는 확인할 리포지토리가 없습니다. 대신 새 버전에서 `helm upgrade clicklink-connector <same-chart-reference>`를 다시 실행하십시오. 최신 CLI로 `init`를 다시 실행해도 원하는 상태로 수렴하지만, 진입점이 필요합니다. 번들을 보관한 경우에는 `--handoff`를 사용하고, 문서화된 정리 후에는 `--force`와 함께 새 등록 토큰을 사용하십시오. 위의 `helm upgrade`가 일반적인 방법입니다([재실행 및 복구](#re-runs-and-recovery) 참조).
+<Note>
+  v0.50.0 이전 릴리스의 `init`은 `clicklink-values.yaml`에 `image.tag`를 기록하여, 해당 파일을 생성한 릴리스 버전으로 고정했습니다. 이 파일로 다음 `helm upgrade`를 실행하기 전에 `yq -i 'del(.image.tag)' clicklink-values.yaml`로 해당 키를 한 번 제거하십시오. 제거하지 않으면 차트만 업그레이드되고 파드는 이전 이미지를 계속 사용합니다. `connector upgrade`는 오버레이를 읽지 않으며, 릴리스 자체에 남아 있는 오래된 태그를 지웁니다.
+</Note>
+
+`connector upgrade`는 [프라이빗 미러](/ko/products/bring-your-own-cloud/connector/configuration#private-mirrors)에서 이미지를 가져오는 릴리스는 업그레이드하지 않습니다. 이 경우에는 오버레이의 미러 설정이 유지되는 위의 `helm upgrade`를 사용하십시오. 직접 차트 참조(`oci://`, URL, 로컬 아카이브 또는 디렉터리)로 설치했다면 참조할 리포지토리가 없으므로, 새 버전으로 `helm upgrade clicklink-connector <same-chart-reference>`를 다시 실행하십시오. 최신 CLI로 `init`을 다시 실행해도 같은 상태에 도달하지만, 진입점이 필요합니다. bundle을 보관해 두었다면 `--handoff`를, 그렇지 않다면 새 등록 토큰과 함께 `--force`를 사용하십시오([재실행 및 복구](#re-runs-and-recovery) 참고).
 
 ### Linux VM {#upgrades-linux-vm}
 

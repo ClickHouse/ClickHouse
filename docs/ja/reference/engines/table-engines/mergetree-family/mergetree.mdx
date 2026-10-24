@@ -222,9 +222,11 @@ ClickHouse では、一意な主キーは必須ではありません。同じ主
 
 主キーが長いと、挿入性能とメモリ消費に悪影響があります。ただし、主キー内の追加カラムは、`SELECT` クエリ実行時の ClickHouse の性能には影響しません。
 
-`ORDER BY tuple()` 構文を使用すると、主キーなしでテーブルを作成できます。この場合、ClickHouse はデータを挿入順に格納します。`INSERT ... SELECT` クエリでデータを挿入する際にデータの順序を保持したい場合は、[max&#95;insert&#95;threads = 1](/ja/reference/settings/session-settings/max-insert#max_insert_threads) を設定してください。
+`ORDER BY tuple()` 構文を使用すると、主キーなしでテーブルを作成できます。挿入される各ブロック内の行を並べ替えて圧縮効率を高めるには、`optimize_row_order_if_no_order_by` 設定を有効化します。この設定は、`ReplicatedMergeTree` を含む通常の `MergeTree` ファミリーのテーブルに適用されます。`ReplacingMergeTree` や `AggregatingMergeTree` など、ファミリー内の特殊なエンジンでは行の順序の最適化は一切行われず、挿入された行の順序がそのまま維持されます。
 
-初期の順序でデータを選択するには、[single-threaded](/ja/reference/settings/session-settings/max-threads#max_threads) `SELECT` クエリを使用します。
+並べ替えを有効化するには、テーブルの `SETTINGS` 句で `optimize_row_order_if_no_order_by = 1` を設定します。`INSERT ... SELECT` クエリでデータを挿入する場合は、最適化された順序を保持するために [max&#95;insert&#95;threads = 1](/ja/reference/settings/session-settings/max-insert#max_insert_threads) も設定してください。
+
+並べ替えが無効な場合、挿入順でデータを選択するには [シングルスレッド](/ja/reference/settings/session-settings/max-threads#max_threads) `SELECT` クエリを使用します。並べ替えが有効な場合は、シングルスレッドの `SELECT` クエリでディスク上の順序が保持されます。
 
 ### ソートキーと異なる主キーを選択する {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -572,41 +574,43 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 `set` 型の索引は、すべての関数で利用できます。その他の索引型については、以下の関数がサポートされています。
 
-| 関数 (operator)  / 索引                                                                                                                 | 主キー | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
-| ----------------------------------------------------------------------------------------------------------------------------------- | --- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
-| [等しい (=, ==)](/ja/reference/functions/regular-functions/comparison-functions#equals)                                                   | ✔   | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notEquals(!=, &lt;&gt;)](/ja/reference/functions/regular-functions/comparison-functions#notEquals)                                    | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                                                         | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [notLike](/ja/reference/functions/regular-functions/string-search-functions#notLike)                                                   | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                                                       | ✗   | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                                                    | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                                                        | ✗   | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
-| [multiSearchAny](/ja/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                     | ✗   | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
-| [multiSearchAnyUTF8](/ja/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                             | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [multiMatchAny](/ja/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                       | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [in](/ja/reference/functions/regular-functions/in-functions)                                                                           | ✔   | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [notIn](/ja/reference/functions/regular-functions/in-functions)                                                                        | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
-| [less (`<`)](/ja/reference/functions/regular-functions/comparison-functions#less)                                                      | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greater (`>`)](/ja/reference/functions/regular-functions/comparison-functions#greater)                                                | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [lessOrEquals (`<=`)](/ja/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                     | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [greaterOrEquals (`>=`)](/ja/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                               | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [empty](/ja/reference/functions/regular-functions/array-functions#empty)                                                               | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [notEmpty](/ja/reference/functions/regular-functions/array-functions#notEmpty)                                                         | ✗   | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
-| [has](/ja/reference/functions/regular-functions/array-functions#has)                                                                   | ✔   | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
-| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                                             | ✗   | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                                             | ✗   | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
-| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                                                 | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenOrNull](/ja/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                     | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/ja/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)             | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/ja/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull) | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
-| [hasAnyTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                         | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [hasAllTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                         | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [pointInPolygon](/ja/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                             | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
-| [mapContains (mapContainsKey)](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                           | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                 | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                     | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                             | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
-| [mapContainsKeyValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                               | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| 関数 (operator)  / 索引                                                                                                                   | 主キー | minmax | ngrambf&#95;v1 | tokenbf&#95;v1 | bloom&#95;filter | sparse&#95;grams | text |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --- | ------ | -------------- | -------------- | ---------------- | ---------------- | ---- |
+| [等しい (=, ==)](/ja/reference/functions/regular-functions/comparison-functions#equals)                                                     | ✔   | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notEquals(!=, &lt;&gt;)](/ja/reference/functions/regular-functions/comparison-functions#notEquals)                                      | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                                                           | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [notLike](/ja/reference/functions/regular-functions/string-search-functions#notLike)                                                     | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                                                         | ✗   | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                                                      | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                                                          | ✗   | ✗      | ✔              | ✔              | ✗                | ✔                | ✔    |
+| [multiSearchAny](/ja/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                       | ✗   | ✗      | ✔              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyUTF8](/ja/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                               | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitive](/ja/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)         | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/ja/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8) | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [multiMatchAny](/ja/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                         | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [in](/ja/reference/functions/regular-functions/in-functions)                                                                             | ✔   | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [notIn](/ja/reference/functions/regular-functions/in-functions)                                                                          | ✔   | ✔      | ✔              | ✔              | ✗                | ✔                | ✗    |
+| [less (`<`)](/ja/reference/functions/regular-functions/comparison-functions#less)                                                        | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greater (`>`)](/ja/reference/functions/regular-functions/comparison-functions#greater)                                                  | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [lessOrEquals (`<=`)](/ja/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                       | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [greaterOrEquals (`>=`)](/ja/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                                 | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [empty](/ja/reference/functions/regular-functions/array-functions#empty)                                                                 | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [notEmpty](/ja/reference/functions/regular-functions/array-functions#notEmpty)                                                           | ✗   | ✔      | ✗              | ✗              | ✗                | ✔                | ✗    |
+| [has](/ja/reference/functions/regular-functions/array-functions#has)                                                                     | ✔   | ✔      | ✔              | ✔              | ✔                | ✔                | ✔    |
+| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                                               | ✗   | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                                               | ✗   | ✗      | ✔              | ✔              | ✔                | ✔                | ✗    |
+| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                                                   | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenOrNull](/ja/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                       | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/ja/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)               | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/ja/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)   | ✗   | ✗      | ✗              | ✔              | ✗                | ✗                | ✗    |
+| [hasAnyTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                           | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [hasAllTokens](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                           | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [pointInPolygon](/ja/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                               | ✔   | ✔      | ✗              | ✗              | ✗                | ✗                | ✗    |
+| [mapContains (mapContainsKey)](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                             | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                   | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                       | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                               | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
+| [mapContainsKeyValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyValue)                                 | ✗   | ✗      | ✗              | ✗              | ✗                | ✗                | ✔    |
 
 定数の引数が ngram サイズより小さい関数は、`ngrambf_v1` によるクエリ最適化には使用できません。
 
@@ -995,9 +999,10 @@ ClickHouse はデータの有効期限切れを検出すると、通常のスケ
 * `disk` — ボリューム内のディスク。
 * `max_data_part_size_bytes` — ボリューム内の任意のディスクに保存できるパーツの最大サイズ。マージ後のパーツの推定サイズが `max_data_part_size_bytes` を超える場合、そのパーツは次のボリュームに書き込まれます。つまり、この機能を使うと、新しい小さなパーツはホット (SSD) ボリュームに保持し、十分に大きくなったらコールド (HDD) ボリュームに移動できます。ポリシー内のボリュームが 1 つだけの場合、この設定は使用しないでください。
 * `move_factor` — 利用可能な空き容量がこの係数を下回ると、データは自動的に次のボリューム (存在する場合) へ移動し始めます (デフォルトは 0.1)。ClickHouse は既存のパーツをサイズの大きい順 (降順) にソートし、`move_factor` の条件を満たすのに十分な合計サイズとなるパーツを選択します。すべてのパーツの合計サイズでも不足する場合は、すべてのパーツが移動されます。
-* `perform_ttl_move_on_insert` — データパーツの INSERT 時に TTL による移動を無効にします。デフォルトでは (有効時)、TTL move ルールですでに期限切れになっているデータパーツを insert すると、move ルールで指定されたボリューム/ディスクに即座に書き込まれます。宛先のボリューム/ディスクが低速な場合 (たとえば S3)、insert が大幅に遅くなる可能性があります。無効にすると、すでに期限切れのデータパーツはいったんデフォルトのボリュームに書き込まれ、その直後に TTL ボリュームへ移動されます。
+* `backup_metadata_only` — このポリシー上のテーブルのデータを、ストレージ自体が提供することを示します (例: 共有の読み取り専用データセット。デフォルトは `false`)。ポリシーのすべてのボリュームは読み取り専用である必要があります。`BACKUP` はこのようなテーブルの定義のみを保存し、`RESTORE` はデータを復元せずにテーブルを再作成したうえで、バックアップ時の UUID をそのまま引き継ぎます。これにより、テーブルはストレージ上の自身のデータを再び参照できるようになります。このようなテーブルの特定パーティションを対象とした `BACKUP` および `RESTORE` は失敗します。サポートされるのは通常の `MergeTree`ファミリーのみです。replicated または shared の `MergeTree` テーブル、あるいはこのようなポリシー上に内部テーブルを持つ materialized view や `TimeSeries` テーブルは、警告が出たうえで通常どおりバックアップおよび復元されます。
+* `perform_ttl_move_on_insert` — データパーツの INSERT 時に TTLによる移動を無効にします。デフォルトでは (有効時)、TTLによる移動ルールですでに期限切れになっているデータパーツを insert すると、move ルールで指定されたボリューム/ディスクに即座に書き込まれます。宛先のボリューム/ディスクが低速な場合 (たとえば S3)、insert が大幅に遅くなる可能性があります。無効にすると、すでに期限切れのデータパーツはいったんデフォルトのボリュームに書き込まれ、その直後に TTL ボリュームへ移動されます。
 * `load_balancing` - ディスクの負荷分散ポリシー。`round_robin` または `least_used`。
-* `least_used_ttl_ms` - すべてのディスクの利用可能な空き容量を更新する timeout (ミリ秒) を設定します (`0` - 常に更新、`-1` - 更新しない、デフォルトは `60000`)。なお、そのディスクを ClickHouse だけが使用し、オンラインで filesystem の拡張/縮小が行われない場合は `-1` を使用できます。それ以外の場合は推奨されません。最終的に空き容量の配分が不正確になるためです。
+* `least_used_ttl_ms` - すべてのディスクの利用可能な空き容量を更新する timeout (ミリ秒) を設定します (`0` - 常に更新、`-1` - 更新しない、デフォルトは `60000`)。なお、そのディスクを ClickHouse だけが使用し、オンラインで ファイルシステム の拡張/縮小が行われない場合は `-1` を使用できます。それ以外の場合は推奨されません。最終的に空き容量の配分が不正確になるためです。
 * `prefer_not_to_merge` — この設定は使用しないでください。このボリューム上でのデータパーツのマージを無効にします (有害であり、パフォーマンス低下につながります)。この設定を有効にすると (しないでください)、このボリューム上でのデータのマージは許可されなくなります (望ましくありません)。これにより ClickHouse の低速ディスクの扱いを制御できますが、その必要はありません。ClickHouse に任せるべきなので、この設定は使わないでください。
 * `volume_priority` — ボリュームが使用される優先順位 (順序) を定義します。値が小さいほど優先順位は高くなります。パラメータ値は自然数で、1 から N までの範囲を欠番なしで全体としてカバーしている必要があります (N が最も低い優先順位)。
   * *すべての* ボリュームにタグが付いている場合、指定された順序で優先されます。
@@ -1011,9 +1016,9 @@ ClickHouse はデータの有効期限切れを検出すると、通常のスケ
 <storage_configuration>
     ...
     <policies>
-        <hdd_in_order> <!-- ポリシー名 -->
+        <hdd_in_order> <!-- policy name -->
             <volumes>
-                <single> <!-- ボリューム名 -->
+                <single> <!-- volume name -->
                     <disk>disk1</disk>
                     <disk>disk2</disk>
                 </single>

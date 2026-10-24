@@ -99,6 +99,11 @@ mark cache をクリアします。
 メモリ内に [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルの主キーを保持しているプライマリインデックスキャッシュをクリアします。
 そのサイズは、サーバーレベルの設定 [`primary_index_cache_size`](/ja/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) で設定します。
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+統計キャッシュをクリアします。統計キャッシュは、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルのデータパーツのカラム統計をメモリ上に保持するもので、データパーツとカラムの組み合わせごとに 1 つのエントリを持ちます。
+キャッシュサイズは、サーバーレベルの設定 `statistics_cache_size` で設定します。
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Iceberg のメタデータキャッシュをクリアします。
@@ -183,7 +188,7 @@ SYSTEM DROP DISK METADATA CACHE <disk_name>
 
 ## SYSTEM CLEAR|DROP TIME SERIES CACHES {#drop-time-series-caches}
 
-`TimeSeries` テーブルのキャッシュをクリアします。これらのキャッシュは、挿入処理の際にターゲットテーブルにすでに存在する行をスキップするために使用されます。対象となるキャッシュは 2 種類あり、metric families テーブルの重複排除キャッシュと、tags テーブルの重複排除キャッシュ (`store_min_time_and_max_time` が無効な場合にのみ使用) です。詳細は、テーブルの設定 `metric_families_deduplication_cache_expiration_seconds` および `tags_deduplication_cache_expiration_seconds` を参照してください。これらのキャッシュはサーバーごとにローカルに保持され、ターゲットテーブルに対して直接行われた変更は検知されません。このような差異はエントリの有効期限が切れると自然に解消されますが、期限切れを待たずに次回の挿入ですべての行を書き込みたい場合 (たとえば metric families テーブルを TRUNCATE した後など) は、このステートメントを使用してください。`TimeSeries` テーブルに対して `TRUNCATE TABLE` を実行しても、クリアされるのは実行したサーバーのキャッシュのみです。そのため、ターゲットテーブルがレプリケートされている場合は、続けてこのステートメントを `ON CLUSTER` 付きで実行し、他のレプリカのキャッシュもクリアしてください。
+`TimeSeries` テーブルのキャッシュをクリアします。これらのキャッシュは、挿入処理の際にターゲットテーブルにすでに存在する行をスキップするために使用されます。対象となるキャッシュは 2 種類あり、metric families テーブルの重複排除キャッシュと、tags テーブルの重複排除キャッシュです。詳細は、テーブルの設定 `metric_families_deduplication_cache_expiration_seconds` および `tags_deduplication_cache_expiration_seconds` を参照してください。これらのキャッシュはサーバーごとにローカルに保持され、ターゲットテーブルに対して直接行われた変更は検知されません。このような差異はエントリの有効期限が切れると自然に解消されますが、期限切れを待たずに次回の挿入ですべての行を書き込みたい場合 (たとえば metric families テーブルを TRUNCATE した後など) は、このステートメントを使用してください。`TimeSeries` テーブルに対して `TRUNCATE TABLE` を実行しても、クリアされるのは実行したサーバーのキャッシュのみです。そのため、ターゲットテーブルがレプリケートされている場合は、続けてこのステートメントを `ON CLUSTER` 付きで実行し、他のレプリカのキャッシュもクリアしてください。
 
 ```sql
 SYSTEM DROP TIME SERIES CACHES [ON CLUSTER cluster_name] [db.]table

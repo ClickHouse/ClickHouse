@@ -21,7 +21,7 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
     `clicklink clctl init` は、作業ディレクトリに `clicklink-values.yaml` という values オーバーレイを作成し、それを使用して `clicklink-connector` チャートをデプロイします。このオーバーレイはデプロイメントの永続的な記録です。`--force` を指定しない限り、`init` を再実行しても保持されるため、編集内容は再実行後や復旧後も維持されます。
 
     <Note>
-      このページおよび[操作](/ja/products/bring-your-own-cloud/connector/operations)の Day 2 コマンドでは、`helm` CLI を使用します。組み込みの Helm クライアントを持つのは `init` のみです。
+      このページの `helm upgrade` ブロックを実行するには、ワークステーションに `helm` CLI が必要です。Helm が組み込まれているのは `init` と `connector upgrade` のみです。
     </Note>
 
     オーバーレイを編集してから適用します。

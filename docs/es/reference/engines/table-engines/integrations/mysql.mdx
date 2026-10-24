@@ -50,11 +50,11 @@ La estructura de la tabla puede diferir de la estructura de la tabla MySQL origi
   Ejemplo: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, donde `on_duplicate_clause` es `UPDATE c2 = c2 + 1`. Consulta la [documentación de MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) para ver qué `on_duplicate_clause` puedes usar con la cláusula `ON DUPLICATE KEY`.
   Para especificar `on_duplicate_clause`, debes pasar `0` al parámetro `replace_query`. Si pasas simultáneamente `replace_query = 1` y `on_duplicate_clause`, ClickHouse genera una excepción.
 
-Los argumentos también se pueden pasar mediante [colección nombrada](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción.
+Los argumentos también se pueden pasar mediante [colección con nombre](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción.
 
 Las cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, se ejecutan en el servidor MySQL.
 
-El resto de las condiciones y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a MySQL.
+El resto de las condiciones se ejecutan en ClickHouse después de que finalice la consulta a MySQL. La restricción de muestreo `LIMIT` se delega a MySQL solo cuando es seguro hacerlo y [external&#95;storage&#95;push&#95;down&#95;limit](/es/reference/settings/session-settings/external-storage#external_storage_push_down_limit) está habilitado; de lo contrario, se ejecuta en ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 

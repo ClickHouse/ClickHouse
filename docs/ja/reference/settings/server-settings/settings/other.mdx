@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />LOGICAL&#95;ERROR 例外が発生すると、サーバーをクラッシュさせます。上級者向けです。
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+AI関数 (`aiGenerate`、`aiEmbed`、`aiSimilarity` など) で、`CREATE NAMED COLLECTION` により作成された名前付きコレクションを使用できるようにします。
+無効にすると、AI関数ではサーバー設定ファイルで定義された名前付きコレクションのみが使用可能となり、それ以外のコレクションを使用すると例外がスローされます。
+これは、`credentials` パラメータと、`ai_function_text_default_credentials` および `ai_function_embedding_default_credentials` 設定の両方に適用されます。
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Iceberg で使用できるディスクの一覧
@@ -95,6 +103,30 @@ ClickHouse は x 秒ごとに組み込みDictionaryを再読み込みします�
 cgroups 内の対応するしきい値に基づいて server の最大許容メモリ消費量を調整する間隔 (秒) 。
 
 cgroup オブザーバーを無効にするには、この値を `0` に設定します。
+
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />`system.connections` テーブル用に接続情報を収集できるようにします。このテーブルには、ネイティブTCP および HTTP のクエリインターフェイスの接続が表示されます。MySQL、PostgreSQL、gRPC などその他のプロトコルの接続は表示されません。
+
+この設定を `true` にすると、サーバーは接続の一覧をメモリ上に保持します。
+
+* ネイティブTCP接続は、認証後に一覧へ追加されます。
+* HTTP 接続は、その接続で最初のクエリを受信した時点で一覧へ追加されます。
+* 接続がクローズされると、その接続は一覧から削除されます。HTTP keep-alive 接続は、リクエスト間ではステータスが `idle` になります。
+
+接続およびクエリごとにわずかな同期コストが発生するため、デフォルト値は `false` です。
+
+`SHOW CONNECTIONS` 権限を持たないユーザーには、自身の接続のみが表示されます。
+
+この設定は再起動なしで変更できます。`false` に変更すると、`system.connections` は空になり、サーバーは新規接続の登録を停止します。`true` に変更すると、既存の接続は次のクエリ実行時に `system.connections` に表示されるようになります。
+
+設定例:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+関連項目: `system.connections`、`system.processes`
 
 ## 圧縮 {#compression}
 
@@ -1167,8 +1199,8 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1556,6 +1588,8 @@ DDL クエリは、同じグループ内のレプリカのみを待機します�
 
 ネームスペースの作成は、どの方法でも拒否されます。`unshare`と`setns`は一切許可されず、フラグでネームスペースの作成を要求する`clone`も拒否されます。`clone3`は、`ENOSYS`を返して全面的に拒否されます。`clone3`の引数はフィルタが読み取れない構造体に格納されるため、ネームスペースの作成とスレッドの作成を区別できないからです。libcは`ENOSYS`を受けると代わりに`clone`を使用するため、スレッドやプロセスの作成は引き続き機能します。`docker`と`systemd`も、それぞれのポリシーで同じ方法により`clone3`を拒否します。
 
+拡張属性のシステムコールも`ENOSYS`を返して拒否されます。ClickHouse自体はこれらを使用しませんが、ホストのNSSモジュールはサーバープロセス内で実行されます。`systemd`の`nss-resolve`は、ソケットに属性でタグを付ける前に、それが可能かどうかを確認します。`nss-resolve`は`ENOSYS`を「不可」と解釈し、タグを付けずに処理を続行します。一方、`trap`モードで`SIGSYS`が送信されると、最初のホスト名の名前解決でサーバーが終了してしまいます。
+
 設定可能な値:
 
 * `trap` - カーネルが違反したスレッドに`SIGSYS`を送信します。ClickHouseはこれをほかの致命的なシグナルと同様に扱い、システムコール番号とスタックトレースをログに記録して、サーバーを終了します。
@@ -1564,7 +1598,7 @@ DDL クエリは、同じグループ内のレプリカのみを待機します�
 * `log` - システムコールを許可し、記録だけを行います。システムコールは一切拒否されないため、このモードではポリシーによる制限はありません。制限を有効にする前に、ポリシーをワークロードに対して検証するために使用してください。このモードでも`PR_SET_NO_NEW_PRIVS`は設定されます。カーネルがフィルタを受け付けるための前提条件だからです。そのため、このモードでも、サーバーが実行するsetuidプログラムは権限を昇格できません。
 * `disabled` - フィルタをインストールしません。
 
-デフォルトは`log`で、ワークロードに対してポリシーを検証するまでは制限を適用しません。このモードでサーバーを実行し、ポリシーが許可対象としていないシステムコールがないかカーネルの監査ログを確認してから、設定を`trap`、`kill`、`errno`のいずれかに切り替えてください。
+デフォルトは`log`で、ワークロードに対してポリシーを検証するまでは制限を適用しません。このモードでサーバーを実行し、ポリシーが許可対象としていないシステムコールがないかカーネルの監査ログを確認してから、設定を`trap`、`kill`、`errno`のいずれかに切り替えてください。なお、サーバーパッケージおよびDocker イメージに同梱される設定ファイルでは、`trap`に設定されています。
 
 カーネルが`log`アクションを使用するフィルタをインストールできない場合があります。Linux 4.14より前のカーネルを使用している場合、`CONFIG_SECCOMP_FILTER`を有効にせずビルドされている場合、またはコンテナーランタイムなど外側のサンドボックスが`seccomp`システムコールを拒否する場合です。このとき`log`モードでは、理由を示す警告をログに記録し、フィルタなしでサーバーを実行します。このモードでは、もともとフィルタによる制限はありません。`PR_SET_NO_NEW_PRIVS`は引き続き設定されます。一方、制限を適用するモードでは、フィルタをインストールできなければサーバーは起動しません。
 
@@ -1572,7 +1606,9 @@ DDL クエリは、同じグループ内のレプリカのみを待機します�
 
 一度インストールしたフィルタは削除も制限の緩和もできず、`fork`と`execve`のどちらでも引き継がれます。そのため、実行可能なDictionaryと実行可能なユーザー定義関数、ライブラリブリッジとODBCブリッジ、OOM canaryにも適用されます。これらが実行するスクリプトにも同じポリシーが適用されるため、通常とは異なる処理を行う場合は注意してください。
 
-このポリシーはアーキテクチャ固有のシステムコール番号のリストであるため、x86-64 と AArch64 でのみ実装されています。それ以外のアーキテクチャでは、サーバーは起動時に警告をログに出力し、フィルタなしで動作します。ただし、アーキテクチャに依存しない `PR_SET_NO_NEW_PRIVS` は、`disabled` 以外のすべてのモードで引き続き設定されます。
+ポリシーはアーキテクチャ固有のシステムコール番号の一覧であるため、x86-64とAArch64でのみ実装されています。その他のアーキテクチャでは、サーバーは起動時に警告をログに記録し、フィルタなしで動作します。ただし、アーキテクチャに依存しない`PR_SET_NO_NEW_PRIVS`は、`disabled`以外のすべてのモードで引き続き設定されます。seccompはLinuxカーネルの機能です。そのため、その他のOSでは、`disabled`以外のモードを指定すると、サーバーは起動時に警告をログに記録し、フィルタなしで動作します。
+
+`system.server_settings`には、設定済みのモードではなく、実際に適用されているフィルタのモードが表示されます。Linux以外のOS上で動作している場合、ポリシーのないアーキテクチャ上で動作している場合、または`log`モードでカーネルがフィルタをインストールできない場合など、サーバーがフィルタなしで動作しているときは`disabled`と表示されます。それ以外の場合は、設定を別の値で再読み込みした後でも、起動時に設定されたモードが表示されます。
 
 **例**
 
@@ -1646,6 +1682,12 @@ true に設定すると、特定のエンジンを使用するテーブルを作
 ```xml
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
+
+## tcp_with_proxy_allow_interserver_mode {#tcp_with_proxy_allow_interserver_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+`tcp_with_proxy_port` 経由で接続したクライアントに対して、ネイティブプロトコルのサーバー間モードの使用を許可します。`tcp_with_proxy_port` がプロキシ経由で信頼できないクライアントに公開されている場合は、この設定を無効化してください。`tcp_port` および `tcp_port_secure` への接続には影響しません。
 
 ## text_log {#text_log}
 

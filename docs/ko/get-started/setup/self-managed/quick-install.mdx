@@ -18,10 +18,19 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    Linux 및 macOS에서는 ClickHouse CLI인 [`clickhousectl`](/ko/get-started/setup/self-managed/clickhousectl)도
-    `~/.local/bin`에 설치되며 (`chctl` 별칭 포함), `clickhousectl`을 사용하면
-    여러 로컬 ClickHouse 버전을 설치하고 관리하고, 서버를 백그라운드에서 실행하며,
-    ClickHouse Cloud를 관리할 수 있습니다. CLI 기반 워크플로는 [clickhousectl 설치 페이지](/ko/get-started/setup/self-managed/clickhousectl)를
+    Linux 및 macOS(x86&#95;64 및 ARM64)에서는 ClickHouse CLI인 [`clickhousectl`](/ko/get-started/setup/self-managed/clickhousectl)도
+    `~/.local/bin`에 설치됩니다 (`chctl` 별칭 포함). 스크립트에서
+    `~/.local/bin`이 `PATH`에 없다고 표시되면 다음과 같이 추가하십시오:
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    `clickhousectl`을 사용하면 여러 로컬 ClickHouse 버전을 설치하고 관리하고,
+    ClickHouse 및 Postgres 서버를 백그라운드에서 실행하며, ClickHouse Cloud를 관리할 수 있습니다.
+
+    대신 `clickhousectl`이 ClickHouse 버전을 설치하고 관리하도록 하려면
+    `clickhousectl local use latest`를 실행하십시오. CLI 기반 워크플로는 [clickhousectl 설치 페이지](/ko/get-started/setup/self-managed/clickhousectl)를
     참조하십시오.
 
     `clickhousectl` 없이 `clickhouse` 바이너리만 설치하려면
@@ -88,7 +97,7 @@ doc_type: 'guide'
     이제 ClickHouse에 SQL 명령을 보낼 준비가 되었습니다!
 
     <Tip>
-      [빠른 시작](/ko/get-started/setup/install)에서는 테이블을 생성하고 데이터를 삽입하는 단계를 안내합니다.
+      [ClickHouse에서 테이블 생성하기](/ko/get-started/quickstarts/creating-tables)에서는 테이블을 생성하고 데이터를 삽입하는 과정을 안내합니다.
     </Tip>
   </Step>
 </Steps>

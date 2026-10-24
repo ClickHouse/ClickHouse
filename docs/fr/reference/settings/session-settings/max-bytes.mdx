@@ -56,6 +56,20 @@ Valeurs possibles :
 
 S&#39;il est défini sur une valeur non nulle et que `join_algorithm` vaut `hash`, `parallel_hash`, `default` ou `auto`, la jointure hash sera automatiquement convertie en jointure grace hash pour permettre le déversement sur disque lorsque les données du côté droit dépassent ce nombre d&#39;octets. Conjointement avec `max_bytes_ratio_before_external_join`, il constitue le déclencheur de déversement basé sur un seuil pour tout `join_algorithm` reposant sur le hachage, y compris `grace_hash`, qui exige que l&#39;un des deux soit non nul. Dès qu&#39;un seuil non nul rend une jointure capable de déverser sur disque, `enable_adaptive_memory_spill_scheduler` peut la forcer à déverser sous pression mémoire avant que le seuil ne soit atteint. Lorsqu&#39;il est défini sur `0` (valeur par défaut), ce seuil absolu en octets est désactivé, mais un déversement sur disque automatique peut toujours se produire via `max_bytes_ratio_before_external_join` (qui vaut par défaut `0.5`). Si les deux paramètres valent `0`, la jointure ne déverse jamais et le scheduler n&#39;a donc rien à déclencher. L&#39;exception est `legacy_join_size_limits_trigger_spilling` : lorsqu&#39;il est activé, un `grace_hash` standalone ignore les deux paramètres et déverse en fonction de `max_rows_in_join` / `max_bytes_in_join` à la place. Cela empêche l&#39;optimisation de lecture `read in order` via jointure. Le seuil limite également le côté droit matérialisé par la [jointure block nested loop](/fr/reference/statements/select/join#join-with-an-arbitrary-on-condition), quelle que soit la valeur de `join_algorithm`.
 
+## max_bytes_before_external_set {#max_bytes_before_external_set}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le seuil indiqué, en octets. Si la valeur est 0, seul `max_bytes_ratio_before_external_set` s’applique."}]}]} />
+
+Seuil de mémoire de la requête, en octets, au-delà duquel le set d’un `IN` avec sous-requête est déversé sur le disque, pendant la construction du set ou pendant son utilisation par la requête. L’utilisation réelle de la mémoire peut dépasser ce seuil. Un set qui occupe
+moins de mémoire que ce seuil ou que 16 Mio (la plus petite de ces deux valeurs étant retenue) reste en mémoire.
+
+`0` désactive ce seuil. Si `max_bytes_ratio_before_external_set` définit également un seuil, la
+plus petite des deux valeurs est utilisée. Définissez les deux paramètres à `0` pour désactiver le déversement sur le disque.
+
+Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory).
+
 ## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -76,6 +90,54 @@ Valeurs possibles :
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 Dans le cas d’un ORDER BY avec LIMIT, lorsque l’utilisation de la mémoire dépasse le seuil spécifié, effectuez des étapes supplémentaires de fusion de blocs avant la fusion finale afin de ne conserver que les LIMIT premières lignes.
+
+## max_bytes_for_external_set_bloom_filter {#max_bytes_for_external_set_bloom_filter}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Le paramètre a été rétroporté vers la 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du filtre de Bloom qu’un set de `IN` sur disque conserve afin d’éviter de lire le disque pour les valeurs absentes du set."}]}]} />
+
+Budget mémoire, en octets, alloué au filtre de Bloom que chaque set de `IN` écrit sur disque conserve en mémoire. Le
+filtre permet aux lookups de valeurs absentes du set d’éviter la lecture du disque. Il n’accélère pas les lookups
+de valeurs présentes dans le set.
+
+Un set consomme pour son filtre environ 1 octet par clé, ou le budget si celui-ci est inférieur, les clés d’un
+set étant ses valeurs distinctes, ou ses tuples distincts pour un `IN` portant sur plusieurs colonnes :
+
+* Si le budget atteint au moins 1 octet par clé, le set dispose du filtre complet, et environ 97 % des lookups de
+  valeurs absentes du set évitent le disque. Par exemple, un set de 1 million de clés occupe environ 1 Mio.
+* Si le budget est inférieur, le set dispose d’un filtre plus faible qui tient dans le budget, et moins de lookups de
+  valeurs absentes du set évitent le disque. Par exemple, avec un quart d’octet par clé, environ 60 % de
+  ces lookups évitent le disque, contre 97 %.
+* Si le budget est inférieur à environ 1/7 d’octet par clé, le set ne dispose d’aucun filtre, car un tel filtre
+  permettrait à trop peu de lookups d’éviter le disque pour justifier le coût de sa construction.
+
+Avec le budget par défaut de 128 Mio, les sets comptant jusqu’à environ 130 millions de clés disposent du filtre complet, et ceux de
+plus d’environ 950 millions de clés n’en ont aucun. Augmentez le budget pour les sets plus volumineux lorsque la plupart des
+valeurs recherchées sont absentes du set. Réduisez-le lorsque la mémoire est limitée, ou lorsque la plupart des valeurs recherchées sont présentes dans le
+set, auquel cas le filtre n’apporte rien. `0` désactive le filtre.
+
+Le filtre est comptabilisé dans l’utilisation de la mémoire de la requête, par exemple `max_memory_usage`, mais pas dans
+`max_bytes_in_set`. Le budget s’applique à chaque set, et non à la requête.
+
+Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory).
+
+## max_bytes_for_external_set_cache {#max_bytes_for_external_set_cache}
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "134217728"},{"label": "Le paramètre a été rétroporté vers la version 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "134217728"},{"label": "Nouveau paramètre permettant de limiter la mémoire du cache de blocs conservé par un set de `IN` sur disque, afin que ses lookups ne relisent pas les mêmes blocs depuis le disque."}]}]} />
+
+Budget mémoire, en octets, alloué au cache de blocs que chaque set de `IN` écrit sur disque conserve en mémoire. Un
+lookup qui a besoin d’un bloc déjà lu par un lookup précédent le récupère dans le cache au lieu de le relire
+depuis le disque. Le cache est utile lorsque les lookups sollicitent de façon répétée les mêmes blocs, par exemple des lookups portant sur quelques
+valeurs fréquentes ou de nombreux lookups dans un set qui tient dans le cache. Il apporte peu lorsque les lookups se répartissent
+uniformément sur un set beaucoup plus volumineux que le cache. `0` désactive le cache.
+
+Le budget s’applique à chaque set. Le cache est comptabilisé dans l’utilisation de la mémoire de la requête, par exemple
+`max_memory_usage`, mais pas dans `max_bytes_in_set`.
+
+Voir [IN en mémoire externe](/fr/reference/statements/in#in-in-external-memory).
 
 ## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
@@ -168,6 +230,21 @@ Par exemple, si cette valeur est définie sur `0.6`, `JOIN` autorise l&#39;utili
 Si `max_bytes_before_external_join` et `max_bytes_ratio_before_external_join` sont tous deux définis, c&#39;est le plus petit seuil obtenu qui est utilisé. Si le ratio vaut `0`, seule la valeur absolue s&#39;applique.
 
 A un effet pour tous les `join_algorithm` basés sur le hachage, y compris `grace_hash`, à condition qu&#39;un chemin de données temporaire soit configuré.
+
+## max_bytes_ratio_before_external_set {#max_bytes_ratio_before_external_set}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0.5"},{"label": "La modification de la valeur par défaut à 0.5 a été rétroportée vers 26.10."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0.5"},{"label": "Nouveau paramètre permettant de déverser sur le disque le set d’un `IN` avec sous-requête lorsque l’utilisation de la mémoire dépasse le ratio spécifié de la mémoire disponible. Si 0, seul `max_bytes_before_external_set` s’applique."}]}]} />
+
+Fraction de la mémoire disponible du serveur ou de l’utilisateur servant à calculer, au début de l’exécution, le seuil à partir duquel le set d’un `IN`
+avec sous-requête est déversé sur le disque. Par exemple, `0.5` correspond à la moitié de la mémoire disponible.
+
+Les valeurs doivent être supérieures ou égales à `0` et strictement inférieures à `1`. `0` désactive ce seuil. En l’absence de
+limite de mémoire applicable au niveau du serveur ou de l’utilisateur, le ratio est sans effet.
+
+`max_memory_usage` n’intervient pas dans ce calcul. Pour configurer le déversement sur le disque en fonction de cette limite,
+utilisez `max_bytes_before_external_set`, en prévoyant une marge pour l’utilisation de mémoire supplémentaire.
 
 ## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 

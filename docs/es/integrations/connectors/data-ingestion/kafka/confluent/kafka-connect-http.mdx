@@ -18,9 +18,7 @@ A continuación describimos una instalación sencilla que extrae mensajes de un 
   El HTTP Connector se distribuye bajo la [Licencia Enterprise de Confluent](https://docs.confluent.io/kafka-connect-http/current/overview.html#license).
 </Note>
 
-<div id="quick-start-steps">
-  ### Pasos de inicio rápido
-</div>
+### Pasos de inicio rápido {#quick-start-steps}
 
 <Steps>
   <Step title="Reúna sus datos de conexión" id="1-gather-your-connection-details">
@@ -106,11 +104,11 @@ A continuación describimos una instalación sencilla que extrae mensajes de un 
 </Steps>
 
 <div id="troubleshooting">
-  ### Solución de problemas
+  ### Solución de problemas {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink no agrupa los mensajes en lotes
+  #### HTTP Sink no agrupa los mensajes en lotes {#http-sink-doesnt-batch-messages}
 </div>
 
 Según la [documentación del sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
@@ -121,11 +119,11 @@ Según la [documentación del sink](https://docs.confluent.io/kafka-connectors/h
 2. Cuando agrega parámetros a la URL de la API HTTP, cada registro puede generar una URL única. Por este motivo, la agrupación en lotes se desactiva cuando se usan parámetros de URL adicionales.
 
 <div id="400-bad-request">
-  #### 400 solicitud incorrecta
+  #### 400 solicitud incorrecta {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 Si HTTP Sink falla y muestra el siguiente mensaje al insertar un objeto JSON en una columna `String`:
@@ -137,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Defina la configuración `input_format_json_read_objects_as_strings=1` en la URL como una cadena codificada: `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Cargar el conjunto de datos de GitHub (opcional)
+  ### Cargar el conjunto de datos de GitHub (opcional) {#load-the-github-dataset-optional}
 </div>
 
 Tenga en cuenta que este ejemplo conserva los campos Array del conjunto de datos de GitHub. Suponemos que dispone de un topic `github` vacío para este ejemplo y que usa [kcat](https://github.com/edenhill/kcat) para insertar mensajes en Kafka.

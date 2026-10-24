@@ -825,6 +825,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads`에 설정된 최대 쿼리 처리 스레드 수
 </Note>
 
+#### 집계, 정렬(sorting), DISTINCT 간격의 스필 {#explain-analyze-spilling}
+
+`GROUP BY`, `ORDER BY` 또는 `DISTINCT` 간격에서 데이터가 임시 저장소로 디스크 유출(spill)되면 다음 정보가 보고됩니다:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+이는 병렬 프로세서를 포함하여 해당 간격 전체에서 기록된 압축된 바이트 수의 누적값입니다.
+이미 소비되었거나 삭제된 임시 파일도 합계에 포함되며, 데이터가 두 번 이상 디스크로 유출된 경우에는 매 기록이 모두 집계됩니다.
+디스크로 유출된 데이터가 없으면 이 줄은 표시되지 않습니다.
+
 #### 조인 단계 {#explain-analyze-join-steps}
 
 조인 단계에서 `EXPLAIN ANALYZE`는 조인 순서 최적화기의 추정치와 실제 결과를 비교하는 행([추정 조인 메트릭과 실제 조인 메트릭 비교](#explain-analyze-join-estimation) 참고)과 각 측의 *참여* 행인 `Left`와 `Right`를 출력한 후, 조인 구현에 특화된 행을 출력합니다. `Left`와 `Right`는 SQL상의 논리적인 측에 해당합니다. 대부분 `Left`는 조인의 프로브(probe) 측이기도 하며, `Right`는 조인의 빌드(build) 측이기도 합니다. 그러나 조인 실행 중에 스왑이 발생할 수 있으므로 항상 그런 것은 아닙니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 모든 값(`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`)이 지원됩니다. 또한 이 설정으로 선택할 수 없는 세 가지 구현, 즉 `CROSS` 또는 `COMMA` 조인, 조인 키를 결정하지 않는 `ON` 절을 사용하는 [블록 중첩 루프 조인(block nested loop join)](/ko/reference/statements/select/join#join-with-an-arbitrary-on-condition), 그리고 [`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진도 지원됩니다. 대부분은 양쪽 모두에 대한 정보를 보고하지만, 일부는 구체화하는 측에 대해서만 보고합니다(예: `direct`는 `Left:`만 출력합니다).
@@ -1100,7 +1112,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 결과가 프로젝션 파트의 구성 방식에 따라 달라지는 경우 `marks_span`에 범위가 표시되며, 어느 쪽으로든 결정될 수 있는 판단은 `too close to call`로 보고됩니다. 대용량 테이블에서는 그래뉼의 표본을 읽어 추정합니다(`projection_scan_budget_rows` 참고).
 
-집계 프로젝션, `WHERE` 절이나 자체 스킵 인덱스가 있는 프로젝션, 커밋 순서 키나 가상 컬럼 키를 사용하거나 `_block_number`를 저장하는 프로젝션, 쿼리가 읽는 컬럼을 모두 포함하지 않는 프로젝션은 `not_applicable`로 보고됩니다. `force_optimize_projection_name`과 `preferred_optimize_projection_name`은 무시되며, `force_optimize_projection`이 설정되어도 SQL 문이 실패하지 않습니다.
+WHATIF는 집계 프로젝션과 자체 스킵 인덱스가 있는 프로젝션을 `not_applicable`로 보고합니다. 커밋 순서 키나 가상 컬럼 키를 사용하거나 `_block_number`를 저장하는 프로젝션도 `not_applicable`로 보고합니다. 쿼리가 읽는 컬럼을 모두 포함하지 않는 프로젝션도 마찬가지입니다. WHATIF는 `force_optimize_projection_name`과 `preferred_optimize_projection_name`을 무시하며, `force_optimize_projection`이 설정되어도 SQL 문이 실패하지 않습니다.
 
 **구문**
 
@@ -1111,7 +1123,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **설정**
 
 * `projection_scan_budget_rows` — 프로젝션을 추정할 때 그래뉼 샘플링으로 전환하기 전까지 읽을 수 있는 최대 행 수입니다. 기본값: `10000000`. `0`은 제한이 없음을 의미하며, `max_rows_to_read`로 이 값을 낮출 수 있습니다. 샘플링 시에는 최소 약 30개의 그래뉼과 파트당 1개의 그래뉼을 읽으며, `max_rows_to_read`가 이를 허용하지 않으면 추정 결과는 `unsupported`가 됩니다.
-* `empirical` — `1`(기본값)은 기준 프루닝 후 남은 그래뉼에 인덱스를 메모리상에서 적용해 스킵 비율의 상한을 측정합니다. `0`은 이 단계를 건너뜁니다. 어느 쪽이든 경험적 평가로 결과를 얻지 못하면(비활성화되었거나 인덱스를 메모리에서 평가할 수 없는 경우) 추정기는 컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)로 폴백합니다. 컬럼 통계도 사용할 수 없으면 적용 가능 여부만 요약합니다.
+* `empirical` — `1`(기본값)은 기본 가지치기 후 남은 그래뉼(Granule)에 인덱스를 메모리상에서 적용해 스킵 비율의 상한을 측정합니다. `0`은 이 단계를 건너뜁니다. 어느 쪽이든 경험적 평가로 결과를 얻지 못하면(비활성화되었거나 인덱스를 메모리에서 평가할 수 없는 경우) 추정기는 컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)로 폴백합니다. 컬럼 통계도 사용할 수 없으면 적용 가능 여부만 요약합니다.
 
 **출력**
 

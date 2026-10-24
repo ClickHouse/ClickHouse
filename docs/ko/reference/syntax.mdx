@@ -9,9 +9,7 @@ doc_type: 'reference'
 이 섹션에서는 ClickHouse의 SQL 구문을 살펴봅니다.
 ClickHouse는 SQL 기반 구문을 사용하지만, 다양한 확장 기능과 최적화도 제공합니다.
 
-<div id="query-parsing">
-  ## 쿼리 파싱
-</div>
+## 쿼리 파싱 {#query-parsing}
 
 ClickHouse에는 두 가지 종류의 파서가 있습니다:
 
@@ -54,16 +52,12 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
   포맷 파서에 관한 자세한 내용은 [포맷](/ko/reference/formats/index) 섹션을 참조하십시오.
 </Note>
 
-<div id="spaces">
-  ## 공백
-</div>
+## 공백 {#spaces}
 
 * 구문 요소 사이에는(쿼리의 시작과 끝을 포함) 공백 문자가 몇 개든 올 수 있습니다.
 * 공백 문자에는 space, tab, line feed, CR, form feed가 포함됩니다.
 
-<div id="comments">
-  ## 주석
-</div>
+## 주석 {#comments}
 
 ClickHouse는 SQL 스타일 주석과 C 스타일 주석을 모두 지원합니다.
 
@@ -87,9 +81,7 @@ SELECT
     # TODO: 시간/분 단위 변형 추가
 ```
 
-<div id="keywords">
-  ## 키워드
-</div>
+## 키워드 {#keywords}
 
 ClickHouse의 키워드는 문맥에 따라 *대소문자를 구분할 수도 있고* *구분하지 않을 수도 있습니다*.
 
@@ -114,9 +106,7 @@ ClickHouse의 키워드는 문맥에 따라 *대소문자를 구분할 수도 �
 SELECT "FROM" FROM table_name
 ```
 
-<div id="identifiers">
-  ## 식별자
-</div>
+## 식별자 {#identifiers}
 
 식별자에는 다음이 포함됩니다.
 
@@ -127,14 +117,22 @@ SELECT "FROM" FROM table_name
 
 식별자는 따옴표로 묶거나 묶지 않고 사용할 수 있지만, 따옴표로 묶지 않는 방식이 권장됩니다.
 
-따옴표로 묶지 않은 식별자는 정규식 `^[a-zA-Z_][0-9a-zA-Z_]*$`와 일치해야 하며, [키워드](#keywords)와 같을 수 없습니다.
+따옴표로 묶지 않은 식별자는 ASCII 문자, 숫자, 밑줄(`_`), 달러 기호(`$`)로 작성하며 다음 규칙을 따릅니다.
+
+* 문자 또는 `_`로 시작하는 식별자는 정규식 `^[a-zA-Z_][0-9a-zA-Z_$]*$`와 일치합니다(예: `xyz`, `a$b`).
+* 바로 뒤에 오는 문자가 문자, 숫자 또는 `_`이면 식별자를 `$`로 시작할 수 있습니다(예: `$doc`, `$1`). `$` 단독으로는 식별자가 될 수 없습니다.
+* 식별자가 [숫자 리터럴](#numeric)이 아니면 숫자로 시작할 수 있습니다. 예를 들어 `1x`나 `2nd_col`은 가능하지만 `1e5`나 `0x1F`는 불가능합니다. 이러한 식별자에는 `$`를 포함할 수 없습니다.
+* 식별자가 `$tag$`로 시작하고(`tag`는 하나 이상의 문자, 숫자 또는 밑줄로 구성됨) 동일한 `$tag$`가 쿼리 뒷부분에 다시 나타나면, 첫 번째 `$tag$`부터 두 번째 `$tag$`까지의 텍스트는 식별자가 아닌 [heredoc](#heredoc)으로 파싱됩니다. 예를 들어 `SELECT 1 AS $a$b, 2 AS $a$c`는 실패합니다. 이러한 식별자는 `` `$a$b` ``처럼 따옴표로 묶으십시오.
+
+이 방식으로 작성한 단어가 항상 식별자로 해석되는 것은 아닙니다. 문맥상 [키워드](#keywords)나 리터럴도 올 수 있는 위치에서는 해당 단어가 키워드나 리터럴로 해석될 수 있습니다. 예를 들어 `SELECT 1 AS from`은 정상 동작하지만, `SELECT 1 from`에서는 `from`이 `FROM` 절의 시작으로 해석되며, 표현식 내에서 `inf`, `nan`, `true`, `false`라는 이름의 컬럼은 리터럴로 해석됩니다. 이러한 식별자는 `"from"` 또는 `` `inf` ``처럼 따옴표로 묶으십시오.
+
 유효한 식별자와 유효하지 않은 식별자의 예시는 아래 표를 참조하십시오.
 
-| 유효한 식별자                                        | 유효하지 않은 식별자                            |
-| ---------------------------------------------- | -------------------------------------- |
-| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+| 유효한 식별자                                                             | 유효하지 않은 식별자                                   |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_`, `a$b`, `$doc`, `1x` | `1a$b`, `$`, `tom@gmail.com`, `äußerst_schön` |
 
-키워드와 동일한 식별자를 사용하거나 식별자에 다른 기호를 사용하려면 `"id"`, `` `id` ``처럼 큰따옴표 또는 backticks로 묶으십시오.
+키워드와 동일한 식별자를 사용하거나 식별자에 다른 기호를 사용하려면 `"id"`, `` `id` ``처럼 큰따옴표 또는 백틱으로 묶으십시오.
 
 <Note>
   따옴표로 묶은 식별자에 적용되는 이스케이프 규칙은 문자열 리터럴에도 동일하게 적용됩니다. 자세한 내용은 [String](#string)을 참조하십시오.
@@ -149,9 +147,7 @@ SELECT "FROM" FROM table_name
   의도적으로 `Nested` 의미 체계가 필요한 경우가 아니라면 컬럼 이름의 점 대신 밑줄(`_`)이나 다른 구분자를 사용하십시오.
 </Tip>
 
-<div id="literals">
-  ## 리터럴
-</div>
+## 리터럴 {#literals}
 
 ClickHouse에서 리터럴은 쿼리에서 직접 표현되는 값입니다.
 즉, 쿼리 실행 중에 변하지 않는 고정된 값입니다.
@@ -166,9 +162,7 @@ ClickHouse에서 리터럴은 쿼리에서 직접 표현되는 값입니다.
 
 아래 섹션에서 각각을 더 자세히 살펴보겠습니다.
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 String 리터럴은 작은따옴표로 묶어야 합니다. 큰따옴표는 지원되지 않습니다.
 
@@ -206,9 +200,7 @@ String 리터럴은 작은따옴표로 묶어야 합니다. 큰따옴표는 지�
   문자열 리터럴에서는 최소한 `'`와 `\`를 이스케이프 코드 `\'`(또는 `''`) 및 `\\`를 사용해 이스케이프해야 합니다.
 </Note>
 
-<div id="numeric">
-  ### 숫자
-</div>
+### 숫자 {#numeric}
 
 숫자 리터럴은 다음과 같이 파싱됩니다.
 
@@ -263,9 +255,7 @@ String 리터럴은 작은따옴표로 묶어야 합니다. 큰따옴표는 지�
   의도치 않은 해석 오류를 방지하기 위해 8진수 리터럴은 지원되지 않습니다.
 </Note>
 
-<div id="compound">
-  ### 복합
-</div>
+### 복합 {#compound}
 
 배열은 `[]`로 만듭니다: `[1, 2, 3]`. 튜플은 `()`로 만듭니다: `(1, 'Hello, world!', 2)`.
 엄밀히 말하면 이들은 리터럴이 아니라, 각각 배열 생성 연산자와 튜플 생성 연산자를 사용하는 표현식입니다.
@@ -276,9 +266,7 @@ String 리터럴은 작은따옴표로 묶어야 합니다. 큰따옴표는 지�
   쿼리 결과에 튜플이 포함될 수는 있지만, 튜플은 데이터베이스에 저장할 수 없습니다([Memory](/ko/reference/engines/table-engines/special/memory) 엔진을 사용하는 테이블은 예외).
 </Note>
 
-<div id="null">
-  ### NULL
-</div>
+### NULL {#null}
 
 `NULL`은 값이 없음을 나타내는 데 사용됩니다.
 테이블 필드에 `NULL`을 저장하려면 해당 필드의 타입이 [널 허용(Nullable)](/ko/reference/data-types/nullable)이어야 합니다.
@@ -291,9 +279,7 @@ String 리터럴은 작은따옴표로 묶어야 합니다. 큰따옴표는 지�
   * 쿼리에서는 [`IS NULL`](/ko/reference/functions/regular-functions/functions-for-nulls#isNull) 및 [`IS NOT NULL`](/ko/reference/functions/regular-functions/functions-for-nulls#isNotNull) 연산자와 관련 함수 `isNull`, `isNotNull`을 사용해 `NULL`인지 확인할 수 있습니다.
 </Note>
 
-<div id="heredoc">
-  ### Heredoc
-</div>
+### Heredoc {#heredoc}
 
 [heredoc](https://en.wikipedia.org/wiki/Here_document)은 원래 포맷을 유지한 채 문자열(대개 여러 줄)을 정의하는 방법입니다.
 heredoc은 두 개의 `$` 기호 사이에 넣는 사용자 정의 문자열 리터럴입니다.
@@ -316,9 +302,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   * heredoc을 사용해 SQL, HTML 또는 XML 코드 등의 스니펫을 삽입할 수 있습니다.
 </Tip>
 
-<div id="defining-and-using-query-parameters">
-  ## 쿼리 매개변수 정의 및 사용
-</div>
+## 쿼리 매개변수 정의 및 사용 {#defining-and-using-query-parameters}
 
 쿼리 매개변수를 사용하면 구체적인 식별자 대신 추상적인 플레이스홀더를 포함한 일반적인 쿼리를 작성할 수 있습니다.
 쿼리 매개변수가 포함된 쿼리가 실행되면
@@ -387,9 +371,7 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
   주로 식별자 또는 리터럴 자리에 사용하는 `SELECT` SQL 문에서 동작하도록 설계되었습니다.
 </Note>
 
-<div id="functions">
-  ## 함수
-</div>
+## 함수 {#functions}
 
 함수 호출은 식별자 뒤에 인수 목록(비어 있을 수 있음)을 `()`로 감싼 형태로 작성합니다.
 표준 SQL과 달리, 인수 목록이 비어 있어도 괄호를 반드시 써야 합니다.
@@ -417,9 +399,7 @@ quantile (0.9)(x)
   매개변수가 없는 집계 함수의 구문은 일반 함수와 같습니다.
 </Note>
 
-<div id="operators">
-  ## 연산자
-</div>
+## 연산자 {#operators}
 
 연산자는 쿼리를 구문 분석할 때 우선순위와 결합 방향을 고려해 해당 함수로 변환됩니다.
 
@@ -435,9 +415,7 @@ quantile (0.9)(x)
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
-<div id="data-types-and-database-table-engines">
-  ## 데이터 타입과 데이터베이스 테이블 엔진
-</div>
+## 데이터 타입과 데이터베이스 테이블 엔진 {#data-types-and-database-table-engines}
 
 `CREATE` 쿼리에서 데이터 타입과 테이블 엔진은 식별자나 함수와 동일한 방식으로 작성됩니다.
 즉, 괄호 안의 인수 목록이 있을 수도 있고 없을 수도 있습니다.
@@ -448,9 +426,7 @@ plus(plus(1, multiply(2, 3)), 4)`
 * [테이블 엔진](/ko/reference/engines/table-engines/index)
 * [CREATE](/ko/reference/statements/create/index).
 
-<div id="expressions">
-  ## 표현식
-</div>
+## 표현식 {#expressions}
 
 표현식은 다음 중 하나일 수 있습니다:
 
@@ -470,9 +446,7 @@ plus(plus(1, multiply(2, 3)), 4)`
 상수 표현식은 쿼리 분석 단계, 즉 실행 전에 결과를 알 수 있는 표현식입니다.
 예를 들어, 리터럴로 이루어진 표현식은 상수 표현식입니다.
 
-<div id="expression-aliases">
-  ## 표현식 별칭
-</div>
+## 표현식 별칭 {#expression-aliases}
 
 별칭은 쿼리의 [표현식](#expressions)에 사용자가 지정한 이름입니다.
 
@@ -488,9 +462,7 @@ expr AS alias
 | `expr`  | ClickHouse에서 지원하는 모든 표현식입니다.                                                     | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                            |
 | `alias` | `expr`에 대한 이름입니다. 별칭은 [식별자](#identifiers) 구문을 따라야 합니다.                           | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                            |
 
-<div id="notes-on-usage">
-  ### 사용 시 참고 사항
-</div>
+### 사용 시 참고 사항 {#notes-on-usage}
 
 * 별칭은 쿼리 또는 하위 쿌리 전체에 전역으로 적용되며, 어떤 표현식이든 쿼리의 어느 부분에서나 별칭으로 정의할 수 있습니다. 예시는 다음과 같습니다:
 
@@ -539,9 +511,7 @@ ClickHouse는 표현식 `argMax(a, b)`의 리터럴 `b`를 표현식 `sum(b)`로
   [prefer&#95;column&#95;name&#95;to&#95;alias](/ko/reference/settings/session-settings/prefer#prefer_column_name_to_alias)를 `1`로 설정하면 이 기본 동작을 변경할 수 있습니다.
 </Note>
 
-<div id="asterisk">
-  ## 애스터리스크
-</div>
+## 애스터리스크 {#asterisk}
 
 `SELECT` 쿼리에서는 애스터리스크(*)를 사용해 표현식을 대체할 수 있습니다.
 자세한 내용은 [SELECT](/ko/reference/statements/select/index#asterisk) 섹션을 참고하십시오.

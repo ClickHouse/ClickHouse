@@ -10,7 +10,7 @@ keywords: ['ClickStack', 'FAQ', 'alertas', 'dashboards', 'drill-downs', 'descobe
 Esta página responde a perguntas frequentes sobre os recursos do ClickStack, incluindo alertas, dashboards, drill-downs e descoberta de métricas.
 
 <div id="alerting">
-  ## Alertas
+  ## Alertas {#alerting}
 </div>
 
 <Accordion title="Quais tipos de alertas o ClickStack oferece?">
@@ -19,7 +19,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
   * [Alertas de busca](/pt-BR/clickstack/features/alerts#search-alerts): acionam notificações quando a contagem de resultados de logs ou traces correspondentes em uma janela de tempo excede ou fica abaixo de um limiar.
   * [Alertas de gráficos do dashboard](/pt-BR/clickstack/features/alerts#dashboard-alerts): acionam notificações quando uma métrica plotada em um tile do dashboard ultrapassa um limiar definido.
 
-  Ambos os tipos de alerta usam condições de limiar estáticas. Para ver todos os detalhes, consulte [Alertas](/pt-BR/clickstack/features/alerts).
+  Por padrão, ambos os tipos de alerta usam condições de limiar estáticas. No Managed ClickStack, eles podem, em vez disso, usar [detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection), que dispara quando um valor sai do intervalo esperado. Para ver todos os detalhes, consulte [Alertas](/pt-BR/clickstack/features/alerts).
 </Accordion>
 
 <Accordion title="Posso criar alertas para condições complexas de métricas, como proporções, p95/p99 ou fórmulas com múltiplas métricas?">
@@ -29,9 +29,8 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
 
   * Alertas em consultas SQL personalizadas para métricas.
   * Regras de alerta com múltiplas condições ou múltiplas métricas combinadas em um único alerta.
-  * Condições de alerta dinâmicas ou baseadas em detecção de anomalias (a detecção de anomalias está planejada).
 
-  Se você precisar criar um alerta para uma métrica complexa, a abordagem recomendada é primeiro criar a visualização como um gráfico no dashboard e, depois, associar um alerta de limiar a esse gráfico.
+  Se você precisar criar um alerta para uma métrica complexa, a abordagem recomendada é primeiro criar a visualização como um gráfico no dashboard e, depois, associar um alerta de limiar a esse gráfico. No Managed ClickStack, você pode, em vez disso, associar ao gráfico um [alerta de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection), para que ele dispare quando o valor sair do intervalo esperado, e não quando ultrapassar um limiar fixo.
 </Accordion>
 
 <Accordion title="Posso usar visões materializadas para casos de uso de alertas?">
@@ -39,7 +38,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
 </Accordion>
 
 <div id="dashboards-and-drill-downs">
-  ## Dashboards e drill-downs
+  ## Dashboards e drill-downs {#dashboards-and-drill-downs}
 </div>
 
 <Accordion title="O ClickStack oferece suporte a dashboards parametrizados ou variáveis de dashboard?">
@@ -62,9 +61,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
   </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## Descoberta de métricas
-</div>
+## Descoberta de métricas {#metrics-discovery}
 
 <Accordion title="Existe uma UI para navegar e pesquisar métricas?">
   ![Metric Attribute Explorer](/images/clickstack/faq/metrics-explorer.webp)
@@ -78,9 +75,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
   Não. Embora consultas SQL possam ser usadas hoje para descobrir métricas, essa não é a abordagem pretendida de longo prazo. Ferramentas aprimoradas para descoberta de métricas estão sendo desenvolvidas ativamente.
 </Accordion>
 
-<div id="further-reading">
-  ## Leitura adicional
-</div>
+## Leitura adicional {#further-reading}
 
 * [Alertas](/pt-BR/clickstack/features/alerts): alertas de busca, alerta de gráfico do dashboard e integrações com webhook.
 * [Dashboards](/pt-BR/clickstack/features/dashboards/overview): criação de visualizações, montagem de dashboards e aplicação de filtros.

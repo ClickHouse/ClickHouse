@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки определяют конфигурацию сервера ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="mark_cache_policy">
-  ## mark_cache_policy
-</div>
+## mark_cache_policy {#mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики кэша меток.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша меток. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="mark_cache_prewarm_ratio">
-  ## mark_cache_prewarm_ratio
-</div>
+## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />Доля общего размера кэша меток, заполняемая при предварительном прогреве.
 
-<div id="mark_cache_size">
-  ## mark_cache_size
-</div>
+## mark_cache_size {#mark_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -36,9 +30,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменять во время работы, и изменения вступают в силу немедленно.
 </Note>
 
-<div id="mark_cache_size_ratio">
-  ## mark_cache_size_ratio
-</div>
+## mark_cache_size_ratio {#mark_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (при политике SLRU) в кэше меток относительно общего размера кэша.
 

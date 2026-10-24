@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="database_replicated_allow_explicit_uuid">
-  ## database_replicated_allow_explicit_uuid
-</div>
+## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 0 - 복제된 데이터베이스의 테이블에 UUID를 명시적으로 지정할 수 없습니다. 1 - 허용합니다. 2 - 허용하지만 지정된 UUID는 무시하고 대신 임의의 UUID를 생성합니다.
 
-<div id="database_replicated_allow_heavy_create">
-  ## database_replicated_allow_heavy_create
-</div>
+## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,19 +29,29 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 Replicated 데이터베이스 엔진에서 시간이 오래 걸리는 DDL 쿼리(CREATE AS SELECT 및 POPULATE)를 허용합니다. 다만 이로 인해 DDL 큐가 오랫동안 차단될 수 있습니다.
 
-<div id="database_replicated_allow_only_replicated_engine">
-  ## database_replicated_allow_only_replicated_engine
-</div>
+## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Replicated 엔진을 사용하는 데이터베이스에서 Replicated 테이블만 생성하도록 허용합니다
+`Replicated` 엔진을 사용하는 데이터베이스에서는 디스크에 저장된 자체 데이터를 복제하거나
+자체 데이터를 디스크에 저장하지 않는 테이블만 생성할 수 있도록 허용합니다.
+
+이 제한은 원격 디스크(Remote Disks)의 데이터를 포함하여 테이블이 소유한 on-disk 데이터에만 적용됩니다. 인메모리 데이터나
+외부 시스템이 관리하는 데이터의 내구성은 보장하지 않습니다.
+
+예를 들어 `ReplicatedMergeTree`, `Memory`나 `Buffer` 같은 인메모리 엔진, `Merge`나 `Alias` 같은 메타데이터 전용 엔진,
+`S3`나 `AzureBlobStorage` 같은 외부 스토리지 엔진 또는 데이터 레이크 엔진은
+허용됩니다. 반면 `MergeTree`, `Log`, `File`, `Set`처럼 테이블 데이터를 디스크에 저장하는 non-replicated 엔진은
+쓰기 가능 스토리지 정책이 원격 디스크를 사용하더라도 거부됩니다. 단, `SETTINGS persistent = 0`으로 생성한 `Set` 및 `Join` 테이블은
+데이터를 메모리에만 보관하므로 허용됩니다.
+
+`Distributed`, `Remote`, `RemoteSecure` 테이블은 허용됩니다. 이러한 테이블에서 선택적으로 사용하는 로컬 백그라운드 `INSERT` 큐는
+일시적인 전송 버퍼일 뿐 테이블 자체의 데이터가 아닙니다. 이 큐는 복제되지 않으며,
+`distributed_foreground_insert = 1`로 설정하면 큐를 거치지 않습니다.
 
 Cloud 기본값: `1`.
 
-<div id="database_replicated_allow_replicated_engine_arguments">
-  ## database_replicated_allow_replicated_engine_arguments
-</div>
+## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,25 +59,19 @@ Cloud 기본값: `1`.
 
 0 - 복제된 데이터베이스의 *MergeTree 테이블에서 ZooKeeper 경로와 레플리카 이름을 명시적으로 지정할 수 없습니다. 1 - 허용합니다. 2 - 허용하지만 지정된 경로는 무시하고 대신 기본 경로를 사용합니다. 3 - 허용하며 경고를 기록하지 않습니다.
 
-<div id="database_replicated_always_detach_permanently">
-  ## database_replicated_always_detach_permanently
-</div>
+## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 데이터베이스 엔진이 Replicated인 경우 DETACH TABLE을 DETACH TABLE PERMANENTLY로 처리합니다
 
-<div id="database_replicated_enforce_synchronous_settings">
-  ## database_replicated_enforce_synchronous_settings
-</div>
+## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 일부 쿼리가 동기적으로 대기하도록 강제합니다(관련 항목: database&#95;atomic&#95;wait&#95;for&#95;drop&#95;and&#95;detach&#95;synchronously, mutations&#95;sync, alter&#95;sync). 이러한 설정은 활성화하지 않는 것이 권장되지 않습니다.
 
-<div id="database_replicated_initial_query_timeout_sec">
-  ## database_replicated_initial_query_timeout_sec
-</div>
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 

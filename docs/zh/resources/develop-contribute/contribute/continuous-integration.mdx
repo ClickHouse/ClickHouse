@@ -242,6 +242,39 @@ python -m ci.praktika run "Build (amd_debug)"
 
 如果上述方法不适合你，请使用构建日志中的 cmake 选项，并遵循[通用构建流程](/zh/resources/develop-contribute/build/build)。
 
+## Clang-tidy 检查 {#clang-tidy-checks}
+
+有两个Job会运行 `clang-tidy`，使用的检查项均配置在仓库根目录下的 `.clang-tidy` 文件中。
+
+`Build (arm_tidy, i/N)` 会分析源码树中的所有翻译单元，并拆分为多个分片执行。
+它的检查很全面，但耗时长达数小时，因此没有纳入合并队列。也正因如此，一个单独运行时全部通过的拉取请求，在合并到其上次运行之后才落地的变更之上后，仍可能导致 `master` 上的 `clang-tidy` 失败。
+
+`Clang-tidy (changed files)` 是与之对应的合并队列Job。
+它配置相同的构建，但只分析拉取请求所涉及的翻译单元：包括已更改的 `.cpp` 文件；对于已更改的头文件，则分析同名的 `.cpp` 文件，若不存在同名 `.cpp` 文件，则分析直接或经由其他头文件间接包含它的少数几个翻译单元。
+被翻译单元包含的 C++ 片段 (例如 `.inc` 或 `.txx` 文件) 发生更改时，同样会通过少数几个包含它的文件进行检查；由于 `clang-tidy` 不会报告位于此类文件中的诊断结果，因此对这类文件只报告其编译错误及其自身的诊断结果。
+与完整Job一样，它只分析启用了 `clang-tidy` 的目标：例如，Poco 中已更改的源文件不会被分析，而已更改的 Poco 头文件则会通过包含它的受分析翻译单元进行检查。
+它只报告位于已更改文件中的诊断结果，因此 `master` 上原本就存在的诊断不会导致无关的拉取请求失败；而编译器错误无论出现在何处都会被报告，因为这意味着该翻译单元未能完成分析。
+这种更窄的作用域正是其权衡所在：对于被广泛包含的头文件，其更改在这里只会被抽查，源码树其余部分则由完整Job覆盖。
+代码生成器的输入发生更改时 (例如 `.proto` 文件、FlatBuffers `.fbs` schema、`config.h.in` 之类的 `configure_file` 模板，或嵌入式网页用户界面资源) ，会通过少数几个包含生成头文件的文件进行检查，视同这些文件本身发生了更改。
+对于翻译单元的 `configure_file` 模板 (例如 `config_version.cpp.in`) ，则通过分析由其生成的翻译单元进行检查。
+在 `contrib` 中，只覆盖该检查明确列出的生成器输入和子模块：例如，Prometheus 协议缓冲区通过少数几个包含生成头文件的文件进行检查；Arrow 和 LLVM 子模块及其 CMake 配置则通过所有直接包含其 `<arrow/...>`、`<parquet/...>` 或 `<llvm/...>` 头文件的受分析文件进行检查。`contrib` 中的其他更改一律交由完整Job处理。
+对 `clang-tidy` 配置、该检查本身或Job定义的更改不涉及任何翻译单元，因此这种情况下会改为分析一小组固定的翻译单元，并报告其中发现的全部诊断结果。
+对目录级 `.clang-tidy` 文件 (例如 `src/Functions/.clang-tidy`) 的更改也按同样方式检查，即分析该目录下的某个翻译单元。
+对该检查本身的更改还会额外运行一项自测，验证其选择翻译单元和归属诊断结果的逻辑，并分析一个有代表性的已更改头文件和一个有代表性的生成器输入，视同拉取请求更改了它们。
+
+这两个Job都可以在本地运行：
+
+```bash
+python -m ci.praktika run "Clang-tidy (changed files)" --workflow MergeQueueCI --pr <PR number>
+```
+
+这项受限检查仅在 `MergeQueueCI` 工作流中注册，它会根据 `--pr` 所指定拉取请求中改动的文件来确定分析范围，因此请在该拉取请求所在的分支上运行。
+也可以基于已配置的构建目录，直接检查单个文件：
+
+```bash
+clang-tidy -p ci/tmp/build src/Common/StringUtils.cpp
+```
+
 ## 无状态功能测试 {#functional-stateless-tests}
 
 运行针对以不同配置构建的 ClickHouse 二进制文件的[无状态功能测试](/zh/resources/develop-contribute/contribute/tests#functional-tests)，包括 release、debug、启用 sanitizers 等。
@@ -262,6 +295,7 @@ python -m ci.praktika run "Build (amd_debug)"
 master 分支在每次提交时，都会基于启用 LLVM 覆盖率插桩的构建版本运行无状态测试、集成测试和单元测试，并发布覆盖率报告。
 拉取请求只有添加了 `ci-coverage` 标签 (或修改了用于收集和报告覆盖率的代码) 时才会运行这些作业；添加该标签后，即可获取该拉取请求的覆盖率报告以及变更代码行的覆盖率。
 未添加该标签时，拉取请求会改为在 `arm_binary` 构建版本上运行相同的无状态测试和集成测试配置；单元测试则本来就已在启用 sanitizer 的情况下运行。
+如果某个拉取请求仅新增了无状态测试，且需要覆盖率报告，则可以改用 `ci-llvm-coverage` 标签：该标签会运行覆盖率作业、被排除在覆盖率统计之外的测试所对应的作业、针对变更测试的无状态不稳定性检查、代码风格检查以及 AI 代码审查，并跳过其余所有作业。此类拉取请求可以带着该标签合并；但如果拉取请求还改动了其他任何内容，则不能合并。
 
 ## Bugfix validate 检查 {#bugfix-validate-check}
 

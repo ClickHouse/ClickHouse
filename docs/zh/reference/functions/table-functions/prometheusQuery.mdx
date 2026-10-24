@@ -59,13 +59,13 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 | 标签   | `label_replace`, `label_join`                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 类型   | `scalar`, `vector`                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 直方图  | `histogram_quantile`                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 其他   | `time`, `pi`, `absent`, `timestamp`                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 其他   | `time`, `step`, `range`, `pi`, `absent`, `timestamp`                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **注意**：`histogram_quantile` 在经典直方图桶 (由 `le` 标签标识) 上使用线性插值。原生直方图不受支持。`phi` (分位数级别) 参数必须是常量标量。像 `histogram_quantile(time() / 1000, ...)` 这样每个时间步都会变化的表达式会因 `NOT_IMPLEMENTED` 异常而被拒绝。
 
 **注意**：`min_of(a, b)` 和 `max_of(a, b)` 分别返回两个标量值中较小或较大的值。两个参数都必须是标量。
 
-**注意**：`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`first_over_time`、`ts_of_first_over_time` 和 `mad_over_time` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
+**注意**：`step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`first_over_time`、`ts_of_first_over_time` 和 `mad_over_time` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
 
 ### 运算符 {#operators}
 

@@ -10,11 +10,9 @@ doc_type: 'reference'
 
 مصفوفة من عناصر من النوع `T`، ويبدأ فهرسها من 1. ويمكن أن يكون `T` أي نوع بيانات، بما في ذلك المصفوفة.
 
-<div id="creating-an-array">
-  ## إنشاء Array
-</div>
+## إنشاء مصفوفة {#creating-an-array}
 
-يمكنك استخدام دالة لإنشاء Array:
+يمكنك استخدام دالة لإنشاء مصفوفة:
 
 ```sql
 array(T)
@@ -25,6 +23,9 @@ array(T)
 ```sql
 []
 ```
+
+صيغة مُنشئ المصفوفة المعتمدة في معيار SQL وPostgreSQL وTrino مدعومة أيضًا: `ARRAY[1, 2]` تكافئ `[1, 2]`.
+ويمكن أيضًا كتابة نوع البيانات بالشكل `ARRAY(T)`.
 
 مثال على إنشاء مصفوفة:
 
@@ -48,9 +49,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-<div id="working-with-data-types">
-  ## العمل مع أنواع البيانات
-</div>
+## العمل مع أنواع البيانات {#working-with-data-types}
 
 عند إنشاء مصفوفة مباشرةً، يحدّد ClickHouse تلقائيًا نوع الوسائط على أنه أضيق نوع بيانات يمكنه تخزين جميع الوسائط المُدرجة. وإذا وُجدت أي قيم [Nullable](/ar/reference/data-types/nullable) أو قيم [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default) حرفية، فإن نوع عنصر المصفوفة يصبح أيضًا [Nullable](/ar/reference/data-types/nullable).
 
@@ -79,9 +78,7 @@ Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
 ```
 
-<div id="array-size">
-  ## حجم المصفوفة
-</div>
+## حجم المصفوفة {#array-size}
 
 يمكن معرفة حجم المصفوفة باستخدام العمود الفرعي `size0` من دون قراءة العمود بالكامل. وبالنسبة إلى المصفوفات متعددة الأبعاد، يمكنك استخدام `sizeN-1`، حيث تمثل `N` البُعد المطلوب.
 
@@ -101,9 +98,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 └───────────┴───────────┴───────────┘
 ```
 
-<div id="reading-nested-subcolumns-from-array">
-  ## قراءة الأعمدة الفرعية المتداخلة من Array
-</div>
+## قراءة الأعمدة الفرعية المتداخلة من Array {#reading-nested-subcolumns-from-array}
 
 إذا كان النوع المتداخل `T` داخل `Array` يحتوي على أعمدة فرعية (على سبيل المثال، إذا كان [Tuple مُسمّى](/ar/reference/data-types/tuple))، فيمكنك قراءة أعمدته الفرعية من نوع `Array(T)` باستخدام أسماء الأعمدة الفرعية نفسها. ويكون نوع العمود الفرعي هو `Array` من نوع العمود الفرعي الأصلي.
 

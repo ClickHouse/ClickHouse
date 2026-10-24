@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="use_query_cache">
-  ## use_query_cache
-</div>
+## use_query_cache {#use_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 - 已禁用
 * 1 - 已启用
 
-<div id="use_query_condition_cache">
-  ## use_query_condition_cache
-</div>
+## use_query_condition_cache {#use_query_condition_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,9 +39,26 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 - 禁用
 * 1 - 启用
 
-<div id="use_query_condition_cache_for_top_k">
-  ## use_query_condition_cache_for_top_k
-</div>
+## use_query_condition_cache_for_time_conditions {#use_query_condition_cache_for_time_conditions}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：通过将时间常量舍入到网格上推导出确定性的条件，使查询条件缓存能够处理涉及当前时间的条件（例如 `WHERE time >= now() - INTERVAL 10 DAY`）；默认启用。previous_value=false，因此当 `compatibility` 设置为更早的版本时，此类条件仍与以前一样不会被缓存。"}]}]} />
+
+从 `MergeTree` 表读取数据时，为涉及当前时间的条件 (例如 `WHERE time >= now() - INTERVAL 10 DAY`) 启用[查询条件缓存](/zh/concepts/features/performance/caches/query-condition-cache)。从文件和对象存储 (`file`、`s3` 等) 读取数据时，查询条件缓存仅用于确定性的条件，不受此设置影响。
+
+此类条件是非确定性的 (会随时钟变化) ，因此无法直接缓存。为此，系统会将折叠后的当前时间常量舍入到时间网格上，从而推导出一个确定性的条件，例如 `WHERE time >= '2026-08-09 12:34:56'` 会变为 `WHERE time >= '2026-08-09 00:00:00'` (读取缓存时向下舍入，写入缓存时向上舍入，以保证缓存结果的正确性) 。网格步长与该常量和当前时间之间的距离成正比 (参见 [`query_condition_cache_time_condition_grid_factor`](/zh/reference/settings/session-settings/other#query_condition_cache_time_condition_grid_factor)) ，并限制在一秒到一天之间。
+
+如果该常量已与网格对齐 (例如 `WHERE time >= today() - 10` 或 `WHERE time >= toStartOfDay(now())`) ，则缓存在整个网格单元内都有效，例如一直到当天结束。否则，只有针对时间下界的条件才能复用缓存，例如 `WHERE time >= now() - INTERVAL 10 DAY`：在某个网格单元内写入的缓存条目会在下一个网格单元内被使用。未对齐的上界 (例如 `WHERE time < now()`) ，无论是单独出现，还是作为滑动窗口的一部分 (如 `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`) ，都无法被后续查询复用，因为后续查询的条件并不包含在先前查询的条件之内。
+
+只有同时启用 `use_query_condition_cache`，此设置才会生效。
+
+可选值：
+
+* 0 - 已禁用
+* 1 - 已启用
+
+## use_query_condition_cache_for_top_k {#use_query_condition_cache_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,9 +66,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 为采用 `ORDER BY <column> LIMIT n` (TopK) 优化 (基于动态过滤或跳过索引) 的查询启用[查询条件缓存](/zh/concepts/features/performance/caches/query-condition-cache)。禁用时，此类读取既不会查找缓存，也不会填充缓存。
 
-此类查询在执行期间可能会根据运行时阈值跳过粒度，因此其缓存条目会按 TopK 执行计划参数和所读取的 parts 集合进行分区。除非同时启用 `use_query_condition_cache`，否则此设置不会生效。
+此类查询在执行期间可能会根据运行时阈值跳过粒度，因此其缓存条目会按 TopK 执行计划参数和所读取的 parts 集合进行分区 (对于 `File` 表，则按所读取的文件集合及其版本进行分区；对于数据湖表，则按其快照进行分区)。除非同时启用 `use_query_condition_cache`，否则此设置不会生效。
 
-可能的值：
+可选值：
 
 * 0 - 已禁用
 * 1 - 已启用

@@ -47,15 +47,15 @@ print(common.get_setting("invalid_setting_action"))
 
 ## 压缩 {#compression}
 
-ClickHouse Connect 支持 `lz4`、`zstd`、`brotli`、`gzip` 和 `deflate` 响应压缩。Native insert 支持 `lz4`、`zstd`、`brotli` 和 `gzip`。压缩以增加 CPU time 开销为代价，减少网络传输量。
+ClickHouse Connect 支持 `lz4`、`zstd`、`brotli`、`gzip` 和 `deflate` 响应压缩。原生插入支持 `lz4`、`zstd`、`brotli` 和 `gzip`。压缩以增加 CPU time 开销为代价，减少网络传输量。
 
-要接收压缩数据，ClickHouse server 的 `enable_http_compression` 必须设置为 1，或者用户必须具有按“每次查询”修改该设置的 permission。
+要接收压缩数据，ClickHouse 服务端的 `enable_http_compression` 必须设置为 1，或者用户必须具有按“每次查询”修改该设置的 permission。
 
-压缩由传给 `get_client` 和 `get_async_client` 的 `compress` argument 控制。默认值 `True` 会声明所有可用的响应编码，并使用 `lz4` 压缩 Native insert 块。将 `compress=False` 可禁用压缩，或者传入 `"lz4"`、`"zstd"`、`"br"` 或 `"gzip"` 之一来请求特定 method。
+压缩由传给 `get_client` 和 `get_async_client` 的 `compress` 参数控制。默认值 `True` 会声明所有可用的响应编码，并使用 `lz4` 压缩原生插入块。将 `compress=False` 可禁用压缩，或者传入 `"lz4"`、`"zstd"`、`"br"` 或 `"gzip"` 之一来请求特定 method。
 
-原始 client methods 不使用 client 级别的 `compress` 设置。`raw_query` 和 `raw_stream` 返回未压缩数据，而 `raw_insert` 使用其自身的 `compression` argument 说明已应用于载荷的压缩方式。
+原始 Client methods 不使用 Client 级别的 `compress` 设置。`raw_query` 和 `raw_stream` 返回未压缩数据，而 `raw_insert` 使用其自身的 `compression` 参数说明已应用于载荷的压缩方式。
 
-ClickHouse Connect 安装时自带 `lz4` 和 `zstd` 支持。在 Python 3.14 上，`zstd` 使用标准库 `compression.zstd` module。Python 3.10 到 3.13 使用 `backports.zstd`。如果是未启用 `zstd` 支持构建的自定义 CPython 3.14+ 解释器，导入仍会成功；`zstd` 会从可用 methods 中移除，并且只有在显式请求 `zstd` 时才会引发 error。`brotli` 是可选项，使用 `compress="br"` 之前必须单独安装。
+ClickHouse Connect 安装时自带 `lz4` 和 `zstd` 支持。在 Python 3.14 及更高版本上，`zstd` 使用标准库 `compression.zstd` module。Python 3.10 到 3.13 使用 `backports.zstd`。如果是未启用 `zstd` 支持构建的自定义 CPython 3.14+ 解释器，导入仍会成功；`zstd` 会从可用 methods 中移除，并且只有在显式请求 `zstd` 时才会引发 error。`brotli` 是可选项，使用 `compress="br"` 之前必须单独安装。
 
 对于 ClickHouse workloads，`gzip` 通常比 `lz4` 或 `zstd` 更慢。
 

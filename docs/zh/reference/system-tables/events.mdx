@@ -72,11 +72,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 ### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
 
-自适应聚合因在内存压力下达到分片上限，而将其共享排空表落盘的次数。
+自适应聚合在内存压力下、达到分片上限时或收到显式落盘请求时，将其共享排出表落盘的次数。
 
 ### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
 
 自适应聚合丢弃暂存积压的次数：当某个运行在基线算法上的线程 (可能是被解冻后重新放回该算法的线程，也可能是自行退出的线程) 即将落盘，而暂存记录仍驻留在内存中时，即会发生此情况。
+
+### AdaptiveAggregationSpillDrains {#adaptiveaggregationspilldrains}
+
+自适应聚合通过将暂存记录或共享排空残留数据写入磁盘 (而非退出自适应路径) 来响应内存调度器落盘请求的次数。
 
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
@@ -153,6 +157,18 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 ### AggregationSharedKeptKeysSpillReseeds {#aggregationsharedkeptkeysspillreseeds}
 
 受简单 GROUP BY LIMIT 截断后共享的保留键集合限制的哈希表，在外部聚合将其刷写到临时 File 后，重新填入这些键的次数 (参见 `optimize_trivial_group_by_limit_query` 设置) 。
+
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+top-K 阈值合并中实际被合并、并作为候选结果参与排名的分组数。
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+通过 top-K 阈值合并 (Fagin 阈值算法) 而非对每个分组进行普通合并的方式所合并的两级桶数量。
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+top-K 阈值合并过程中完全未被访问的各线程哈希表单元数量。这些单元之所以被跳过，是因为其中的任何分组都不可能进入前 K 名。
 
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
@@ -262,6 +278,10 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 服务器端 AST fuzzer 因 Context 上有内部 Replicated 数据库 DDL 执行正在进行中 (存在 live 的 ZooKeeperMetadataTransaction) 而跳过 fuzzing 的次数。
 
+### ASTFuzzerSkippedSecondaryQuery {#astfuzzerskippedsecondaryquery}
+
+服务器端 AST fuzzer 因查询为其他节点发送的次级查询而跳过模糊测试的次数。
+
 ### AsynchronousReaderIgnoredBytes {#asynchronousreaderignoredbytes}
 
 异步读取过程中被忽略的字节数
@@ -342,9 +362,73 @@ DNS 解析结果中发现的 HTTP 连接新地址总数
 
 已发送到 text&#95;log 异步队列的消息总数 (包括已接收和已丢弃的消息)
 
+### AutomaticParallelReplicasDecidedWithoutBuildingPlan {#automaticparallelreplicasdecidedwithoutbuildingplan}
+
+自动并行副本机制依据先前执行时记录的边界，未构建候选执行计划进行成本评估即决定不使用并行副本的次数。说明具体原因的事件 (例如 `AutoParallelReplicasRejectedByCostModel`) 会同时单独计数
+
 ### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
 
-自动并行副本机制构建使用并行副本的候选计划、以便与单节点计划进行比较的次数。此类计划并不一定会被采用：构建它们是为了估算成本，若单节点计划胜出，则会被丢弃
+自动并行副本机制为判断采用并行副本是否划算而构建并行副本执行计划的次数
+
+### AutoParallelReplicasApplied {#autoparallelreplicasapplied}
+
+自动并行副本机制将查询计划替换为并行副本查询计划的次数
+
+### AutoParallelReplicasBytesPerReplica {#autoparallelreplicasbytesperreplica}
+
+按自动并行副本的估算，该查询的读取量分摊到每个副本的字节数。无论最终决策如何，该值都会被记录，因此其分布既涵盖被 `automatic_parallel_replicas_min_bytes_per_replica` 拒绝的查询，也涵盖被其放行的查询
+
+### AutoParallelReplicasCostModelEvaluated {#autoparallelreplicascostmodelevaluated}
+
+自动并行副本机制进入成本模型评估，并将本地执行计划与并行副本执行计划进行比较的次数
+
+### AutoParallelReplicasNoStatistics {#autoparallelreplicasnostatistics}
+
+自动并行副本机制因尚无统计信息而转为收集统计信息、未作出决策的次数
+
+### AutoParallelReplicasOptimizationMicroseconds {#autoparallelreplicasoptimizationmicroseconds}
+
+自动并行副本优化所耗费的时间，不含构建并行副本执行计划的时间
+
+### AutoParallelReplicasPlanBuildMicroseconds {#autoparallelreplicasplanbuildmicroseconds}
+
+构建使用并行副本的执行计划所耗费的时间；自动并行副本功能会将该执行计划与本地执行计划进行对比
+
+### AutoParallelReplicasPlansNotComparable {#autoparallelreplicasplansnotcomparable}
+
+自动并行副本跳过查询的次数：在构建使用并行副本的执行计划之后，或在先前构建时记录的某个边界处，由于无法将该执行计划与本地执行计划充分匹配，以致无法进行比较或使用，因而跳过该查询。例如，无法将两者的读取逐一配对，或无法确定副本将拆分哪一个读取。具体属于哪种情况，可查看 `AutoParallelReplicas` 日志记录器的输出
+
+### AutoParallelReplicasPlanWithoutParallelReplicas {#autoparallelreplicasplanwithoutparallelreplicas}
+
+自动并行副本在启用并行副本构建执行计划后跳过某个查询的次数，原因是查询规划器最终未在该执行计划中使用并行副本，例如每个副本分到的行数过少，或查询中包含关联子查询。具体原因可在 `Planner` 日志记录器中查看
+
+### AutoParallelReplicasRejectedByCostModel {#autoparallelreplicasrejectedbycostmodel}
+
+自动并行副本机制因成本模型估算本地执行计划不慢于并行副本执行计划而决定不使用并行副本的次数
+
+### AutoParallelReplicasRejectedByDuplicatedReads {#autoparallelreplicasrejectedbyduplicatedreads}
+
+尽管成本模型倾向于使用并行副本，但自动并行副本仍拒绝启用的次数。原因是所读取的字节中，由每个副本完整读取 (而非在副本之间拆分) 的部分占比过高，超过了 `automatic_parallel_replicas_max_duplicated_read_ratio`
+
+### AutoParallelReplicasRejectedByThreshold {#autoparallelreplicasrejectedbythreshold}
+
+尽管成本模型倾向于使用并行副本，但因读取量低于 `automatic_parallel_replicas_min_bytes_per_replica`，自动并行副本未予启用的次数
+
+### AutoParallelReplicasSkippedDueToQuery {#autoparallelreplicasskippedduetoquery}
+
+自动并行副本在使用并行副本构建执行计划之前跳过查询的次数。跳过的原因是该查询包含其无法处理的特性，例如无法通过并行副本读取的连接，或无法收集统计信息的步骤。具体属于哪种情况，可查看 `AutoParallelReplicas` 日志记录器的输出
+
+### AutoParallelReplicasSkippedDueToSettings {#autoparallelreplicasskippedduetosettings}
+
+自动并行副本在使用并行副本构建执行计划之前，因所给定的设置而跳过查询的次数。具体属于哪种情况，可查看 `AutoParallelReplicas` 日志记录器的输出。完全关闭自动并行副本的设置不计入此项：当 `enable_parallel_replicas` 被禁用或被强制启用，或 `parallel_replicas_mode` 不为 `read_tasks` 时，该优化根本不会运行，效果与 `automatic_parallel_replicas_mode = 0` 相同
+
+### AutoParallelReplicasSkippedEarly {#autoparallelreplicasskippedearly}
+
+自动并行副本根本未构建使用并行副本的执行计划的次数，原因是索引分析已表明，执行计划中最大的读取操作分摊到每个副本的数据量小于 `automatic_parallel_replicas_min_bytes_per_replica`
+
+### AutoParallelReplicasStatisticsDrifted {#autoparallelreplicasstatisticsdrifted}
+
+从存储中读取的行数与已缓存的统计信息相差超过 2 倍，导致自动并行副本不作决策、转而重新收集统计信息的次数
 
 ### AzureClients {#azureclients}
 
@@ -758,6 +842,10 @@ Common executor 任务在 `executeStep()` 中的耗时。
 
 CPU 缩容事件总数
 
+### ConcurrencyControlParks {#concurrencycontrolparks}
+
+线程因非 CPU 等待 (例如阻塞式 I/O 或没有可运行的任务) 而释放 (挂起) 其 CPU 插槽的总次数。
+
 ### ConcurrencyControlPreemptedMicroseconds {#concurrencycontrolpreemptedmicroseconds}
 
 查询因 CPU 插槽被抢占而等待的总时长。
@@ -785,6 +873,10 @@ CPU 抢占总次数
 ### ConcurrencyControlSlotsGranted {#concurrencycontrolslotsgranted}
 
 按照每个查询保底 1 个线程，以及对设置了 &#39;use&#95;concurrency&#95;control&#39; = 0 的查询所授予的 CPU 插槽 数量
+
+### ConcurrencyControlUnparks {#concurrencycontrolunparks}
+
+线程在非 CPU 等待结束后重新获取其 CPU 插槽的总次数。
 
 ### ConcurrencyControlUpscales {#concurrencycontrolupscales}
 
@@ -920,6 +1012,10 @@ Context 锁等待时长 (微秒)
 ### DataAfterMutationDiffersFromReplica {#dataaftermutationdiffersfromreplica}
 
 变更后数据与其他副本上的数据在字节级别不一致的次数。除了“DataAfterMergeDiffersFromReplica”中所述的原因外，也可能是由非确定性变更导致的。
+
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+数据库通过其表迭代器返回的表数量，返回对象包括 `SHOW TABLES`、用于列出表的系统表，以及其他所有遍历数据库的操作。在查询此类系统表时，对表名添加条件可以缩小枚举范围，此计数器即反映了范围缩小的程度。
 
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
@@ -1319,7 +1415,7 @@ DiskS3 存储上的 POST、DELETE、PUT 和 PATCH 请求中 429 和 503 错误�
 
 ### DistinctTransformsSwitchedToPassThrough {#distincttransformsswitchedtopassthrough}
 
-有多少个预处理 `DISTINCT` 转换因查询内存超出外部 `DISTINCT` 阈值，或预计的哈希分配会超出剩余的阈值预算 (参见 `max_bytes_before_external_distinct`) ，而释放了自身的哈希表并开始将每一行直接透传：此时改由会落盘的最终 `DISTINCT` 来去除重复数据。
+有多少个预备 `DISTINCT` 转换因查询内存超出其后续操作符的落盘阈值，或预计的哈希分配会超出剩余的阈值预算，而释放了自身的哈希表并开始将每一行直接透传。在 `DISTINCT` 之前，该阈值为 `max_bytes_before_external_distinct`，此时改由会落盘的最终 `DISTINCT` 来去除重复数据。在 `IN` 的集合之前，该阈值为集合的落盘阈值 (参见 `max_bytes_before_external_set`) ，此时由集合来去除重复数据。
 
 ### DistrCacheBackgroundWrites {#distrcachebackgroundwrites}
 
@@ -1489,6 +1585,10 @@ Distributed Cache registry 事件。更新分布式缓存 registry 所耗费的�
 
 Distributed Cache registry 事件。分布式缓存 registry 的更新次数
 
+### DistrCacheRejectedRegistryRecords {#distrcacherejectedregistryrecords}
+
+分布式缓存注册表事件。因证书不受信任、签名不匹配，或证书或签名缺失而被忽略的注册表条目数量
+
 ### DistrCacheRemoveOutdatedMicroseconds {#distrcacheremoveoutdatedmicroseconds}
 
 分布式缓存连接事件。表示从连接池中移除过期连接所耗费的时间
@@ -1653,6 +1753,10 @@ Distributed Cache 客户端事件。在请求内部信息系统表 (system.distr
 
 分布式缓存连接事件。分布式缓存中创建的临时 File 的数量
 
+### DistrCacheUnexpectedServerCertificate {#distrcacheunexpectedservercertificate}
+
+分布式缓存连接事件。Distributed Cache 服务器出示的证书私钥与其 registry 条目中记录的私钥不符，导致客户端关闭连接并排除该服务器的次数
+
 ### DistrCacheUnsuccessfulConnectAttempts {#distrcacheunsuccessfulconnectattempts}
 
 分布式缓存连接事件。连接到分布式缓存失败的尝试次数
@@ -1680,6 +1784,10 @@ Distributed Cache 客户端事件。从分布式缓存中跳过的未使用数�
 ### DistrCacheUnusedPacketsBufferAllocations {#distrcacheunusedpacketsbufferallocations}
 
 Distributed Cache 客户端事件。在无法复用现有缓冲区时发生的额外缓冲区分配次数
+
+### DistrCacheVerifiedServerCertificate {#distrcacheverifiedservercertificate}
+
+分布式缓存连接事件。Distributed Cache 服务器出示的证书与其 registry 条目中记录的私钥相匹配的次数
 
 ### DistrCacheWriteBytes {#distrcachewritebytes}
 
@@ -1865,6 +1973,10 @@ DNSReverseRequests 统计的反向 DNS 查询总耗时，包括 DNSReverseError 
 
 检查插入到 *MergeTree 表中的块是否重复所花费的总时间。
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+关闭 Elasticsearch 时间点 (point in time) 失败的次数。
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 在 encryption header cache 中命中 encryption header 字节的次数，此时会跳过对该 header 的源端读取。
@@ -1969,6 +2081,18 @@ JOIN 在外部内存中写入的数据量 (未压缩，即压缩前的大小) �
 
 JOIN 使用外部内存时将临时 File 写入磁盘的次数。
 
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+为释放正在写入的打包式数据分区片段中已缓冲数据所占用的内存，而写入临时 File 的压缩后字节数。
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+为释放正在写入的打包式数据分区片段中已缓冲数据所占用的内存，而写入临时 File 的数据量 (未压缩，即压缩前的大小) 。
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+为释放内存，将正在写入的打包式数据分区片段中已缓冲的数据移至其临时 File 的次数。
+
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
 外部处理 (排序/聚合/连接) 写入的压缩数据字节数
@@ -1980,6 +2104,46 @@ JOIN 使用外部内存时将临时 File 写入磁盘的次数。
 ### ExternalProcessingUncompressedBytesTotal {#externalprocessinguncompressedbytestotal}
 
 外部处理 (排序/聚合/连接) 写入的未压缩数据量 (压缩前)
+
+### ExternalSetBloomFilterSkippedKeys {#externalsetbloomfilterskippedkeys}
+
+在查找过程中，被外部内存中 `IN` 集合的布隆过滤器排除的键数量。
+
+### ExternalSetCacheHits {#externalsetcachehits}
+
+在外部内存中对 `IN` 集合执行查找时，直接从集合缓存中获取 (而非从临时 File读取) 的块数量。
+
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+为 `IN` 集合写入外部内存的压缩后字节数。
+
+### ExternalSetLookupKeys {#externalsetlookupkeys}
+
+在外部内存中的 `IN` 集合内执行查找时搜索的键数量。
+
+### ExternalSetMerge {#externalsetmerge}
+
+在外部内存中为 `IN` 集合合并临时 File 的次数。
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+为查找键，从外部内存中 `IN` 集合的临时 File读取的块数。
+
+### ExternalSetTailKeptKeys {#externalsettailkeptkeys}
+
+使用外部内存对 `IN` 集合执行最终合并时，保留在内存中的键数量。
+
+### ExternalSetTailSpilledKeys {#externalsettailspilledkeys}
+
+在外部内存中对 `IN` 集合进行最终合并之前，从内存写入临时 File的键数量，以确保合并操作不超出落盘阈值。
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+为 `IN` 集合写入外部内存的数据量 (未压缩，即压缩前的大小) 。
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+在外部内存中处理 `IN` 集合时，临时 File 被写入磁盘的次数。
 
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
@@ -2409,9 +2573,45 @@ SQL 常规函数调用次数 (SQL 函数按块调用，因此该数值表示块�
 
 复用的服务器 HTTP 连接数
 
+### IcebergCompactionCleanupDeferredByReaders {#icebergcompactioncleanupdeferredbyreaders}
+
+已被 Iceberg 压实取代的数据文件的移除操作被延后的次数。延后的原因是当前副本或其他副本上的查询仍在读取引用这些数据文件的快照。
+
+### IcebergCompactionCleanupDeferredBySnapshotLifetime {#icebergcompactioncleanupdeferredbysnapshotlifetime}
+
+因 Iceberg 压实操作或其所取代的快照的存在时间短于 `iceberg_outdated_snapshot_lifetime_seconds`，而延后移除已被 Iceberg 压实取代的数据文件的次数。
+
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+确定 Iceberg 表当前状态所花费的总时间，包括查找当前元数据文件 (通过版本提示或列出文件的方式) ，以及随后读取并解析该文件。
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 同步初始化 Iceberg 数据迭代器所花费的总时间。
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+为迭代 Iceberg manifest 文件进行准备所花费的总时间，包括解析其分区规范和 schema 头部，以及将 schema 与表元数据进行比对校验。每个查询都会为其中的每个 manifest 文件产生这部分开销，即使该 manifest 文件来自 Iceberg 元数据缓存也是如此。
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+从存储中读取 (而非从 Iceberg 元数据缓存获取) 的 Iceberg manifest 文件数量。
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+从存储中读取的 Iceberg manifest 文件总大小。
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+从存储中读取并解码 Iceberg manifest 文件所耗费的总时间。
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+从存储中读取 (而非从 Iceberg 元数据缓存中获取) 的 Iceberg 清单列表数量。
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+从存储中读取并解码 Iceberg 清单列表所耗费的总时间。
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2428,6 +2628,26 @@ Iceberg 元数据文件在 Iceberg 元数据缓存中未命中，因此必须从
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 从 Iceberg 元数据缓存中被淘汰的字节数近似值。
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+已解析的 Iceberg `metadata.json` 内容总大小。
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+解析 Iceberg `metadata.json` 文件所耗费的总时间。
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+解析 Iceberg `metadata.json` 的次数。每次访问时都会执行解析，即使文件内容由 Iceberg 元数据缓存提供也不例外。
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+从存储中读取 Iceberg `metadata.json` 文件所耗费的总时间 (含解压缩) 。
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+从存储中读取的 Iceberg `metadata.json` 文件数 (不含命中 Iceberg 元数据缓存的文件) 。
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2464,6 +2684,10 @@ Iceberg 分区剪枝期间跳过的文件数量
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 读取 Iceberg 时应用了简单计数优化
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+读取并解析 Iceberg 表的 `version-hint.text` 文件所花费的总时间。
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -2628,6 +2852,14 @@ DelayedJoinedBlocksWorkerTransform 输出的块数。
 ### JoinDelayedJoinedTransformRowCount {#joindelayedjoinedtransformrowcount}
 
 DelayedJoinedBlocksWorkerTransform 输出的行数。
+
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+RIGHT 或 FULL 哈希连接为查找未匹配行而扫描其哈希表的次数。
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+RIGHT 或 FULL 哈希连接因已扫描 part 中的所有右侧键均已匹配，从而跳过扫描其哈希表以查找未匹配行的次数。
 
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
@@ -3253,6 +3485,10 @@ MergeTree 表在初始化过程中加载数据分区片段所耗费的微秒数�
 
 已加载的主键行数。
 
+### LoadedStatistics {#loadedstatistics}
+
+已为选择性估算器收集列统计信息的数据分区片段数量，这些统计信息来自统计信息缓存或数据分区片段本身
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 加载 parts 中统计信息所耗时间
@@ -3412,6 +3648,18 @@ Trace 级别的日志消息数量
 ### MemoryReservationKilled {#memoryreservationkilled}
 
 内存预留终止信号的总数
+
+### MemoryReservationReclaimableBytes {#memoryreservationreclaimablebytes}
+
+查询中已变为可回收 (可落盘) 的内存
+
+### MemoryReservationSpilledBytes {#memoryreservationspilledbytes}
+
+溢写到磁盘的内存总字节数
+
+### MemoryReservationSpillingMicroseconds {#memoryreservationspillingmicroseconds}
+
+溢写所耗费的时间
 
 ### MemoryWorkerRun {#memoryworkerrun}
 
@@ -3845,6 +4093,18 @@ Move 执行器 任务在 cancel() 中耗费的时间。
 
 由于另一副本并发更新日志，未能创建用于对 ReplicatedMergeTree 中 parts 执行变更的日志条目。
 
+### ObjectStorageExclusiveLeasesAcquired {#objectstorageexclusiveleasesacquired}
+
+此服务器在对象存储中获取的键独占租用数量，例如对 Iceberg 表执行合并整理时获取的租用。
+
+### ObjectStorageExclusiveLeasesRefused {#objectstorageexclusiveleasesrefused}
+
+由于另一个副本持有该键尚未释放的租用，而放弃在对象存储中获取独占租用的尝试次数。
+
+### ObjectStorageExpiredLeasesRemoved {#objectstorageexpiredleasesremoved}
+
+从对象存储中移除的已过期租用对象及废弃标记的数量。
+
 ### ObjectStorageGlobFilteredObjects {#objectstorageglobfilteredobjects}
 
 未匹配 glob 或 regex 模式、因此在列出时被跳过的对象。
@@ -3853,9 +4113,25 @@ Move 执行器 任务在 cancel() 中耗费的时间。
 
 应用任何过滤器之前，对象存储列出 API 返回的对象总数。
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+为读取对象而发出的对象元数据请求 (例如 S3 HEAD) 的数量。这些请求由对象存储源、其文件迭代器以及 schema 推断发出，原因是无法从列出结果或表元数据中获知对象的大小和 ETag。
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+`ObjectStorageMetadataFetchedForRead` 所统计的对象元数据请求的总耗时。
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 因对 &#95;path/&#95;file 应用虚拟列谓词过滤而被排除的对象。
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+对象存储源因查询条件缓存表明其所有行组均不匹配过滤器而整体跳过的对象数量。
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+对象存储源因查询条件缓存表明其不匹配过滤器而跳过的行组数量。
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -3969,9 +4245,33 @@ StorageS3(Azure)Queue 中已处理行数
 
 Keeper 提交失败次数
 
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+对象存储源等待下一个对象的读取器所花费的总时间，该读取器在后台准备。
+
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
 对象存储源中实际打开并读取的对象数。
+
+### ObjectStorageSharedLeasesAcquired {#objectstoragesharedleasesacquired}
+
+当该服务器上的某个查询获取了一个尚未被该服务器租用的键 (例如正在读取的 Iceberg 快照) 时，写入对象存储的键共享租用数量。
+
+### ObjectStorageSharedLeasesCondemned {#objectstoragesharedleasescondemned}
+
+本服务器的清理器在对象存储中标记为废弃的键数量。标记后，在清理器删除这些键所保护的内容期间，任何副本都不会租用这些键。
+
+### ObjectStorageSharedLeasesRefused {#objectstoragesharedleasesrefused}
+
+在对象存储中租用某个键时，因该键已被清理器标记为废弃而遭拒绝的尝试次数。例如，某个 Iceberg 快照在合并整理后即将被清理流程删除。
+
+### ObjectStorageSharedLeasesRenewed {#objectstoragesharedleasesrenewed}
+
+在本服务器的查询持有该键期间，续订任务在对象存储中重写的共享租用数量。
+
+### ObjectStorageSharedLeaseWriteFailures {#objectstoragesharedleasewritefailures}
+
+在获取或续订共享租用时，向对象存储写入共享租用失败的次数。
 
 ### ObsoleteReplicatedParts {#obsoletereplicatedparts}
 
@@ -4115,7 +4415,7 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 ### ParallelReplicasQueryCount {#parallelreplicasquerycount}
 
-一次查询执行过程中使用并行副本执行的 (子) 查询数
+一次查询执行过程中计划使用并行副本执行的 (子) 查询数。自动并行副本在构建用于决策的执行计划时也会递增该计数，因此被计入的查询可能从未真正使用并行副本运行——实际执行情况请参见 `AutoParallelReplicasApplied` 和 `ParallelReplicasUsedCount`
 
 ### ParallelReplicasReadAssignedForStealingMarks {#parallelreplicasreadassignedforstealingmarks}
 
@@ -4153,6 +4453,10 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 使用基于任务的并行副本执行查询时使用的副本数
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+被布隆过滤器裁剪掉的 Parquet 行组总数。
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 经过过滤器的列总数
@@ -4165,9 +4469,21 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 由 Parquet 读取器 发起的任务
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Parquet 读取器解压缩的 Parquet 数据页 (包括数据页和字典页) 的未压缩总大小。
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+通过字典过滤器裁剪的 Parquet 行组总数 (若某列的字典超出裁剪内存预算，则回退为使用布隆过滤器) 。
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 解码线程读取 Parquet 文件时的等待时间 (不包括预取线程)
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+读取并反序列化 Parquet 文件 footer 所花费的总时间 (仅统计未命中 Parquet 元数据缓存的情况) 。
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4181,6 +4497,14 @@ OneLake catalog 通过 Entra ID refresh token 授权发起的访问令牌请求�
 
 从 Parquet 元数据缓存中逐出的字节数估计值。
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+为跳过被 PREWHERE 过滤掉的行而触发解压缩的 Parquet 数据页数量 (这些数据页也可能为后续读取的行提供数据) 。
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+DB::Parquet::Prefetcher 从 Parquet 文件中读取的总字节数。当合并读取覆盖了最终未被使用的范围时 (例如之后被布隆过滤器裁剪掉的行组中的列块) ，该值会大于 `ParquetPrefetcherUsedBytes`。
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 DB::Parquet::Prefetcher 以 ReadMode::EntireFileIsInMemory 模式读取的总次数
@@ -4193,13 +4517,21 @@ DB::Parquet::Prefetcher 使用 ReadMode::RandomRead 的读取总次数
 
 DB::Parquet::Prefetcher 以 ReadMode::SeekAndRead 模式进行读取的总次数
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+DB::Parquet::Prefetcher 所读取的范围中，实际被 Parquet 读取器使用的总字节数。
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 借助列索引从 Parquet 数据中裁剪掉的数据页总数
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-从 Parquet 数据中剪枝掉的行组总数
+在读取之前 (基于 min/max 统计信息和行组选择) 从 Parquet 数据中裁剪掉的行组总数。之后由布隆过滤器和字典裁剪掉的行组分别计入 `ParquetBloomFilterPrunedRowGroups` 和 `ParquetDictionaryFilterPrunedRowGroups`。
+
+### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
+
+直接根据列块统计信息 (而非读取数据) 计算 `min` / `max` 的 Parquet 文件数量 (参见 `optimize_min_max_from_files`)
 
 ### ParquetReadPages {#parquetreadpages}
 
@@ -4208,6 +4540,10 @@ DB::Parquet::Prefetcher 以 ReadMode::SeekAndRead 模式进行读取的总次数
 ### ParquetReadRowGroups {#parquetreadrowgroups}
 
 从 Parquet 数据中读取的行组总数
+
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+以字典索引形式读取的 Parquet PREWHERE 输入列的行数，从而使作用于此类列的函数对每个字典值只需计算一次
 
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
@@ -4577,6 +4913,10 @@ QueryProfiler 的运行次数。
 
 从 Azure 读取时发生的异常次数
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+通过同步 `pread` 从文件描述符读取、且经检测由 OS 页面缓存提供的字节数 (仅对配置了带宽限流器的读取执行此检测) 。
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 从文件描述符读取 (`read`/`pread`) 的次数。不包括套接字。
@@ -4600,6 +4940,10 @@ QueryProfiler 的运行次数。
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 从 S3 读取耗费的时间。
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+由于磁盘所属连接组的连接数已达到或超过 `disk_connections_soft_limit`，而被截断为仅执行一次缓冲区填充的 S3 磁盘请求数。
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -4917,9 +5261,17 @@ prewhere 读取器从 MergeTree 表中总共读取的行数。
 
 统计信息：如果查询以并行副本方式执行，各副本将读取的字节数
 
+### RuntimeDataflowStatisticsInputNanoseconds {#runtimedataflowstatisticsinputnanoseconds}
+
+查询执行期间，为自动并行副本收集各副本预计读取字节数的统计信息所耗费的时间
+
 ### RuntimeDataflowStatisticsOutputBytes {#runtimedataflowstatisticsoutputbytes}
 
 统计在使用并行副本执行查询时，副本将发送给发起节点的字节数
+
+### RuntimeDataflowStatisticsOutputNanoseconds {#runtimedataflowstatisticsoutputnanoseconds}
+
+在查询执行期间，为自动并行副本收集“各副本将向发起服务器发送的字节数”统计信息所耗费的时间
 
 ### RuntimeFilterBlocksProcessed {#runtimefilterblocksprocessed}
 
@@ -4933,6 +5285,10 @@ prewhere 读取器从 MergeTree 表中总共读取的行数。
 
 被跳过的 JOIN 运行时过滤器 Bloom filter 构建次数：根据哈希表统计信息得出的构建端 key 数量预测该过滤器的置位比例会超过最大值，因此跳过构建
 
+### RuntimeFilterDeliveriesAbandoned {#runtimefilterdeliveriesabandoned}
+
+因接收方断开连接或停止读取而放弃投递 JOIN 运行时过滤器的次数；受影响的目标端不会收到过滤器，其行将不经过滤直接通过
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 JOIN 运行时过滤器为进行读取时裁剪而检查的粒度数
@@ -4941,9 +5297,25 @@ JOIN 运行时过滤器为进行读取时裁剪而检查的粒度数
 
 读取时被 JOIN 运行时过滤器裁剪掉的粒度数量
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+已配置为在读取时利用 JOIN 运行时过滤器对粒度进行剪枝的读取次数。当某次读取携带描述符到达其管道，且存在可用于剪枝的主键或跳过索引时即计数，无论之后是否实际检查任何粒度。因此，该计数表明描述符在读取步骤的每次重建后均得以保留。
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 在 JOIN 运行时过滤器的构建端尚未完成时对其执行查找的块数量，这些块将不经过滤直接通过
+
+### RuntimeFilterOversizedStatesRejected {#runtimefilteroversizedstatesrejected}
+
+因超出大小限制而未被使用或未被发送的 JOIN 运行时过滤器状态数量；对应的行将不经过滤直接通过
+
+### RuntimeFilterReceiveBranchFailures {#runtimefilterreceivebranchfailures}
+
+未能从其他任务接收 JOIN 运行时过滤器的任务数；此类任务不会使用该过滤器，所有行将不经过滤直接通过
+
+### RuntimeFilterReceivesAbandoned {#runtimefilterreceivesabandoned}
+
+在连接建立后、到达 stream 末尾前，发送方即断开连接的 JOIN 运行时过滤器 stream 数量；若此时尚未收到发送方的状态，则不会使用受影响的过滤器，行将不经过滤直接通过
 
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
@@ -4960,6 +5332,22 @@ JOIN 运行时过滤器为进行读取时裁剪而检查的粒度数
 ### RuntimeFiltersCreated {#runtimefilterscreated}
 
 单次查询中创建的不同 JOIN 运行时过滤器 数量
+
+### RuntimeFilterStateBytesReceived {#runtimefilterstatebytesreceived}
+
+从分布式查询计划中其他任务接收的已序列化 JOIN 运行时过滤器状态的字节数
+
+### RuntimeFilterStateBytesSent {#runtimefilterstatebytessent}
+
+发送给分布式查询计划中其他任务的已序列化 JOIN 运行时过滤器状态的字节数，按每个目标端 stream 各计一次
+
+### RuntimeFilterStatesReceived {#runtimefilterstatesreceived}
+
+从分布式查询计划中其他任务接收到的已序列化 JOIN 运行时过滤器状态的数量
+
+### RuntimeFilterStatesSent {#runtimefilterstatessent}
+
+已加入发送队列、待发往分布式查询计划中其他任务的 JOIN 运行时过滤器状态数量，每个目标端 stream 各计一个，包括后来被放弃投递的状态
 
 ### RWLockAcquiredReadLocks {#rwlockacquiredreadlocks}
 
@@ -5252,6 +5640,10 @@ SELECT 查询的总耗时。
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 通过运行子查询填充的 `IN`/`JOIN` Set 数量。从预构建 Set 缓存中获取的 Set，以及已构建并被复用的 Set，不计入此项。
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+基于子查询构建 `IN` 集合期间或查询使用这些集合期间溢写到磁盘的集合数量。
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5577,6 +5969,10 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 等待 MergeTree 表中共享数据分区片段锁的总耗时
 
+### ShortCircuitArgumentsReordered {#shortcircuitargumentsreordered}
+
+`and` 或 `or` 函数未按查询中的顺序计算其参数的块数：即先计算开销较小的参数、再计算开销较大的参数，或根据先前块上收集的统计信息调整计算顺序 (由设置 `short_circuit_function_evaluation_reorder_arguments` 控制) 。`WHERE` / `HAVING` 中 AND 链各原子条件的重排序不计入此项，因为该重排序是在 `FilterStep` 构建其管道时一次性确定的。
+
 ### SleepFunctionCalls {#sleepfunctioncalls}
 
 调用 sleep 函数 (sleep、sleepEachRow) 的次数。
@@ -5825,6 +6221,14 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 发送到 无状态工作线程 discovery 服务以续约 worker lease 的 update&#95;lease 请求数。
 
+### StatisticsCacheHits {#statisticscachehits}
+
+在统计信息缓存中命中数据分区片段某列统计信息的次数。
+
+### StatisticsCacheMisses {#statisticscachemisses}
+
+在统计信息缓存中未找到数据分区片段某列的统计信息、因而必须从该数据分区片段加载的次数。
+
 ### StorageBufferErrorOnFlush {#storagebuffererroronflush}
 
 `Buffer` 表中的缓冲区因写入目标表时出错而无法刷新的次数。
@@ -5993,6 +6397,10 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 文本索引中，基于模式的字典扫描因待读取的倒排列表数量超过阈值而被放弃的次数。
 
+### TextIndexFilledFromFoldedPostings {#textindexfilledfromfoldedpostings}
+
+文本索引虚拟列针对一次读取的所有行，直接使用索引分析期间折叠的倒排列表进行填充 (而非使用为每个粒度单独构建的倒排列表) 的次数。
+
 ### TextIndexGenericExclusionSearchAlgorithm {#textindexgenericexclusionsearchalgorithm}
 
 在 文本索引 上使用 generic exclusion search algorithm 的次数。
@@ -6061,6 +6469,14 @@ MergeTree 表中共享数据分区片段锁的获取次数
 
 candidate 驱动的 phrase search 所检查的候选行 (postings 交集) 。
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+查找短语搜索候选行所花费的总时间，即读取短语中各标记的倒排列表并对其求交集所用的时间。
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+通过倒排列表游标 (而非对 bitmap 求交集) 找到候选行的短语搜索次数。
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 phrase 查询跳过 文本索引 的次数：由于预估该 phrase 匹配的行数超过 &#39;text&#95;index&#95;hint&#95;max&#95;selectivity&#39;，因而改为直接在列上求值。
@@ -6071,7 +6487,7 @@ phrase 查询跳过 文本索引 的次数：由于预估该 phrase 匹配的行
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-在 文本索引 上执行的 phrase search 次数。对同一 part 中同一 phrase 的重复搜索直接由 cache 返回结果，不计入此项。
+在 文本索引 上执行的短语搜索次数，每个粒度的每个读取器计一次。完全由 cache 提供数据的读取器不计入此项。
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 
@@ -6249,6 +6665,10 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 使用 Poco TLS 实现的服务器协议 (原生 TCP、HTTPS、MySQL 和 PostgreSQL) 中，传入连接 (服务器端连接) 完成 TLS 握手的次数。gRPC 使用独立的 TLS 技术栈，其握手不计入此项。会话恢复也会执行握手，因此计入此项。
 
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+读取过程中被跳过的粒度数量。跳过这些粒度的原因是：主索引表明其中所有行均超出了当前动态更新的 top-K 阈值。该阈值由聚合 (参见 `enable_group_by_top_k_dynamic_filtering`) 或排序 (参见 `use_top_k_dynamic_filtering`) 发布。
+
 ### UncompressedCacheHits {#uncompressedcachehits}
 
 在未压缩缓存中命中数据块的次数 (从而避免了解压) 。
@@ -6261,9 +6681,17 @@ ThreadPoolReader 内部未从 页缓存 读取、而是转交给线程池处理�
 
 从未压缩缓存中淘汰的字节数。
 
+### UniqueKeyBitmapGranulesSkipped {#uniquekeybitmapgranulesskipped}
+
+在索引分析阶段，借助删除 bitmap 为 UNIQUE KEY 表跳过的、所有行均已删除的粒度数量。
+
 ### UniqueKeyBitmapLoadMicroseconds {#uniquekeybitmaploadmicroseconds}
 
 DeleteBitmapCache 未命中时，读取并反序列化 UNIQUE KEY delete-bitmap 辅助文件所耗费的时间。
+
+### UniqueKeyBitmapRowsSkipped {#uniquekeybitmaprowsskipped}
+
+在 PREWHERE 之前，由 UNIQUE KEY 删除 bitmap 在行级过滤掉的行数。
 
 ### UniqueKeyConflictIgnoredRows {#uniquekeyconflictignoredrows}
 
@@ -6420,6 +6848,10 @@ WriteBufferFromHTTP 发送的 HTTP 请求数
 ### WriteBufferFromS3WaitInflightLimitMicroseconds {#writebufferfroms3waitinflightlimitmicroseconds}
 
 当当前请求数达到 s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file 定义的上限时，等待其中部分请求完成所花费的时间。
+
+### YTsaurusLookupThrottled {#ytsauruslookupthrottled}
+
+发往 YTsaurus 的查找请求中被限流的数量
 
 ### ZooKeeperBytesReceived {#zookeeperbytesreceived}
 

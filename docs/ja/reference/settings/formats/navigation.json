@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "フォーマット設定",
+  "root": "ja/reference/settings/formats",
+  "directory": "none",
   "pages": [
     "ja/reference/settings/formats/bool",
     "ja/reference/settings/formats/date-time",
@@ -19,6 +20,5 @@
     "ja/reference/settings/formats/show-create",
     "ja/reference/settings/formats/type-json",
     "ja/reference/settings/formats/other"
-  ],
-  "root": "ja/reference/settings/formats"
+  ]
 }

@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="unique_key_bitmap_cache_policy">
-  ## unique_key_bitmap_cache_policy
-</div>
+## unique_key_bitmap_cache_policy {#unique_key_bitmap_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de caché del bitmap de eliminación de UNIQUE KEY (SLRU o LRU).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché del bitmap de eliminación de UNIQUE KEY. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="unique_key_bitmap_cache_size_bytes">
-  ## unique_key_bitmap_cache_size_bytes
-</div>
+## unique_key_bitmap_cache_size_bytes {#unique_key_bitmap_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Sí" />Tamaño máximo en bytes de la caché en el mismo proceso para los bitmaps de eliminación por cada parte de UNIQUE KEY. Establézcalo en 0 para deshabilitar la caché.
 
-<div id="unique_key_bitmap_cache_size_ratio">
-  ## unique_key_bitmap_cache_size_ratio
-</div>
+## unique_key_bitmap_cache_size_ratio {#unique_key_bitmap_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />El tamaño de la cola protegida (en el caso de la política SLRU) en la caché de bitmap de eliminación de UNIQUE KEY, en relación con el tamaño total de la caché.
 
-<div id="unique_key_index_cache_policy">
-  ## unique_key_index_cache_policy
-</div>
+## unique_key_index_cache_policy {#unique_key_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de caché para el índice UNIQUE KEY (SLRU o LRU).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché del índice UNIQUE KEY. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="unique_key_index_cache_size_bytes">
-  ## unique_key_index_cache_size_bytes
-</div>
+## unique_key_index_cache_size_bytes {#unique_key_index_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="No" />Tamaño máximo (en bytes) de la caché en el mismo proceso para bloques del índice UNIQUE KEY (SST). Establézcalo en 0 para desactivar la caché.
 
-<div id="unique_key_index_cache_size_ratio">
-  ## unique_key_index_cache_size_ratio
-</div>
+## unique_key_index_cache_size_ratio {#unique_key_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />El tamaño de la cola protegida (en el caso de una política SLRU) en la caché de índices UNIQUE KEY como proporción del tamaño total de la caché.
 

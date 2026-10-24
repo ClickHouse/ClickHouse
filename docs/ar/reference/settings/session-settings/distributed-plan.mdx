@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -36,6 +37,38 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 العدد الافتراضي للحاويات لعملية distributed shuffle-hash-join.
 يستخدمه مخطط موزع قائم على القواعد. يحدد المُحسِّن القائم على التكلفة درجة التشعّب بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
+
+## distributed_plan_exchange_compression_method {#distributed_plan_exchange_compression_method}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="LZ4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "LZ4"},{"label": "إعداد جديد: يضغط التبادل التدفقي لخطة الاستعلام الموزّع البيانات باستخدام `LZ4` بدلًا من مرمِّز `network_compression_method`."}]}]} />
+
+المرمِّز المستخدم لضغط حزم التبادل التدفقي بين مهام خطة الاستعلام الموزّع. أما عمليات التبادل التي تجري عبر الملفات المؤقتة فتستخدم برنامج الترميز `Default` الخاص بالخادم.
+
+القيم الممكنة:
+
+* `''` — استخدام مرمِّز [network&#95;compression&#95;method](/ar/reference/settings/session-settings/network#network_compression_method).
+* `NONE` — دون ضغط.
+* `LZ4` — استخدام المرمِّز LZ4.
+* `LZ4HC` — استخدام المرمِّز LZ4HC بمستواه الافتراضي 9، وهو أبطأ في الضغط من `LZ4` بأضعاف كثيرة.
+* `ZSTD` — استخدام المرمِّز ZSTD بالمستوى المحدد في [distributed&#95;plan&#95;exchange&#95;zstd&#95;compression&#95;level](/ar/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_zstd_compression_level).
+
+## distributed_plan_exchange_zstd_compression_level {#distributed_plan_exchange_zstd_compression_level}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Int64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد جديد لتحديد مستوى ضغط ZSTD للتبادل التدفقي في خطة الاستعلام الموزّع."}]}]} />
+
+مستوى ضغط ZSTD للتبادل التدفقي في خطة الاستعلام الموزّع. لا يُستخدم إلا عند تعيين [distributed&#95;plan&#95;exchange&#95;compression&#95;method](/ar/reference/settings/session-settings/distributed-plan#distributed_plan_exchange_compression_method) إلى `ZSTD`.
+
+القيم الممكنة:
+
+* عدد صحيح من 1 إلى 22. كلما ارتفع المستوى تحسّن الضغط وتباطأ الأداء.
 
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
@@ -63,13 +96,13 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": ""},{"label": "إعداد تجريبي جديد."}]}]} />
 
-افرض نوع عوامل Exchange المحدد بين مراحل الاستعلام الموزّع.
+افرض نوع عوامل التبادل المحدد بين مراحل الاستعلام الموزّع.
 
 القيم الممكنة:
 
-* &#39;&#39; - لا تفرض أي نوع من عوامل Exchange، واترك للمُحسِّن اختيار ذلك،
+* &#39;&#39; - لا تفرض أي نوع من عوامل التبادل، واترك للمُحسِّن اختيار ذلك،
 * &#39;Persisted&#39; - استخدم ملفات مؤقتة في تخزين الكائنات،
-* &#39;Streaming&#39; - بثّ بيانات exchange عبر الشبكة.
+* &#39;Streaming&#39; - بثّ بيانات التبادل عبر الشبكة.
 
 ## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
@@ -81,6 +114,16 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
 يُتجاهل هذا الإعداد عندما لا تستطيع استراتيجية Shuffle إنتاج نتيجة صحيحة، على سبيل المثال مع `GROUPING SETS` أو عندما يجب أن ينتج التجميع نتائج مرتبة حسب حاوية.
+
+## distributed_plan_join_runtime_filters {#distributed_plan_join_runtime_filters}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "إعداد تجريبي جديد."}]}]} />
+
+عند استخدام `make_distributed_plan`، تُرسَل مرشحات JOIN وقت التشغيل التي تُبنى في إحدى المراحل إلى المراحل التي تقرأ جانب الفحص، لكي تُصفّي هذه المراحل الصفوف قبل إرسالها. وفي حال عدم وصول عامل التصفية، تمرّ الصفوف دون تصفية. يتطلب هذا الإعداد تفعيل `enable_join_runtime_filters`.
 
 ## distributed_plan_max_buffered_log_rows {#distributed_plan_max_buffered_log_rows}
 
@@ -111,6 +154,18 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يزيل عمليات التبادل غير الضرورية في خطة الاستعلام الموزعة. عطِّله لأغراض تصحيح الأخطاء.
 
+## distributed_plan_partial_aggregation_before_shuffle {#distributed_plan_partial_aggregation_before_shuffle}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "إعداد تجريبي جديد: يعيد التجميع الموزّع توزيع حالات التجميع الجزئية بدلاً من صفوف الإدخال."}]}]} />
+
+يُجري تجميعاً جزئياً على العُقد التي تقرأ البيانات قبل أن يعيد التجميع الموزّع توزيعها وفقاً لمفاتيح `GROUP BY`، وبذلك ترسل كل عقدة أثناء إعادة التوزيع حالة تجميع واحدة لكل مجموعة بدلاً من إرسال جميع صفوف الإدخال، ثم تدمج كل حاوية حالات المفاتيح التابعة لها.
+يستمر مخطط الاستعلامات القائم على القواعد في إعادة توزيع صفوف الإدخال إذا أظهرت إحصاءات الأعمدة أن التجميع الجزئي لن يقلّص حجم البيانات إلى النصف على الأقل. وعند تفعيل `enable_cascades_optimizer`، يتيح هذا الإعداد لمُحسِّن الاستعلامات اختيار هذا الدمج لكل حاوية على أساس التكلفة.
+لا يسري مفعوله إلا مع `make_distributed_plan = 1`، ولا يسري عند استخدام `distributed_plan_force_shuffle_aggregation` الذي يعيد توزيع صفوف الإدخال.
+
 ## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <PrivatePreviewBadge />
@@ -135,6 +190,14 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 يكون معطّلًا افتراضيًا: إذ تفترض إعادة الكتابة التي توزّع عملية الفرز أن عملية الفرز التي تغلّفها لا تعتمد على كون
 مدخلاتها مرتبة مسبقًا، وقد تُغذّى عملية فرز تعتمد على ذلك بصفوف تمر عبر تبادل لا يحافظ على الترتيب. لا تكون
 آمنة حاليًا إلا البنى التي لا يبقى فيها أي تبادل بين القراءة والفرز.
+
+## distributed_plan_worker_cluster {#distributed_plan_worker_cluster}
+
+<PrivatePreviewBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "إعداد جديد لاختيار عنقود stateless worker الذي تُشغَّل عليه خطة التنفيذ الموزعة."}]}]} />
+
+اسم عنقود stateless-worker الذي ستُنفَّذ عليه خطة التنفيذ الموزعة لهذا الاستعلام. عند ترك القيمة الافتراضية فارغةً، يُختار العنقود الافتراضي المُهيّأ مسبقًا؛ أما العناقيد الأخرى فتُهيّأ ضمن `stateless_worker_client.clusters`.
 
 ## distributed_plan_workers_num {#distributed_plan_workers_num}
 

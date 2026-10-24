@@ -23,7 +23,7 @@ Usa um valor aproximado na otimização de contagem trivial para mecanismos de a
 Valores possíveis:
 
 * 0 — Otimização desabilitada.
-  * 1 — Otimização habilitada.
+* 1 — Otimização habilitada.
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -34,7 +34,7 @@ Ativa ou desativa a otimização da consulta trivial `SELECT count() FROM table`
 Valores possíveis:
 
 * 0 — Otimização desativada.
-  * 1 — Otimização ativada.
+* 1 — Otimização ativada.
 
 Veja também:
 
@@ -64,25 +64,25 @@ Padrões reconhecidos:
 * `col > 0`, `col >= 1`, `col < 1`, `col <= 0` em colunas de inteiros sem sinal.
 * `col` isolada / `NOT col` em colunas `Int*`, `UInt*`, `Bool` (teste de veracidade).
 
-Os padrões de igualdade não se aplicam a `Float*`, `Enum*`, `Nullable`, `LowCardinality`
+Os padrões de igualdade não se aplicam a `Float*`, `Enum*`, `Date32`, `Nullable`, `LowCardinality`
 nem a tipos compostos (`Tuple`, `Array`, `Map`, ...) — nesses casos, a contagem é obtida pelo
 caminho normal de varredura.
 
 Para entrar em vigor, o contador `num_defaults` por parte deve ser exato. Habilite a
 configuração de tabela MergeTree `compute_exact_num_defaults_for_sparse_columns` na tabela de destino antes de
-inserts e merges. Partes gravadas sem isso são silenciosamente excluídas da rewrite, portanto
+inserts e mesclagens. Partes gravadas sem isso são silenciosamente excluídas da rewrite, portanto
 habilitar apenas `optimize_trivial_count_with_sparsity_filter` não é suficiente.
 
 Para os padrões `IS NULL` / `IS NOT NULL` em colunas `Nullable`, a coluna também deve
 ter uma entrada `num_defaults` em `serialization.json`, o que só acontece quando a configuração de tabela MergeTree
 `nullable_serialization_version` é definida como `allow_sparse` no momento do insert /
-merge. Com o valor padrão `basic`, colunas `Nullable` não recebem entrada por coluna, portanto
+mesclagem. Com o valor padrão `basic`, colunas `Nullable` não recebem entrada por coluna, portanto
 a otimização silenciosamente não se aplica.
 
 Valores possíveis:
 
 * 0 — Otimização desabilitada.
-  * 1 — Otimização habilitada.
+* 1 — Otimização habilitada.
 
 Veja também:
 

@@ -38,15 +38,21 @@ metric_name2[...] = ...
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
-[SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
-[RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
-[TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
-[METRIC FAMILIES db.metric_families_table_name | [METRIC FAMILIES INNER COLUMNS (...)] [METRIC FAMILIES INNER ENGINE engine(arguments)]]
+[SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]
+[RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]
+[TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]
+[TIME RANGES INNER COLUMNS (...)] [TIME RANGES INNER ENGINE engine(arguments)]
+[METRIC FAMILIES INNER COLUMNS (...)] [METRIC FAMILIES INNER ENGINE engine(arguments)]
 ```
 
 <Note>
   キーワード `SAMPLES` には `DATA` というエイリアスがあり、キーワード `METRIC FAMILIES` には `METRICS` というエイリアスがあります。いずれも後方互換性のために残されています。
   バージョン 4 より前の[バージョン](#schema-versioning)のテーブル定義は `METRICS` を用いて書き込まれるため、古いサーバーでも読み取ることができます。
+</Note>
+
+<Note>
+  [バージョン](#schema-versioning) 9 以前のテーブルでは、内部テーブルの代わりに、手動で作成したテーブルをターゲットとして使用することができました
+  (例: `TAGS db.tags_table_name`)。このようなテーブルは引き続き動作しますが、最新バージョンで新しく作成するテーブルでは内部ターゲットテーブルしか使用できません。
 </Note>
 
 ## 使い方 {#usage}
@@ -123,8 +129,8 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 これは [materialized view](/ja/reference/statements/create/view#materialized-view) の仕組みに似ていますが、
 materialized view ではターゲットテーブルは 1 つであるのに対し、
 `TimeSeries` テーブルには [samples](#samples-table)、[tags](#tags-table)、[metric families](#metric-families-table) という 3 つの必須のターゲットテーブルと、
-デフォルトで有効になっている任意の [recent samples](#recent-samples-table) ターゲットテーブルがあります
-([recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定を参照してください) 。
+デフォルトで有効になっている 2 つの任意のターゲットテーブル、[recent samples](#recent-samples-table)
+([recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定を参照してください) と [time ranges](#time-ranges-table) ([store&#95;time&#95;ranges](#settings) 設定を参照してください) があります。
 
 ターゲットテーブルは `CREATE TABLE` クエリで明示的に指定することもできますし、
 `TimeSeries` テーブルエンジンが内部ターゲットテーブルを自動生成することもできます。
@@ -162,28 +168,48 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 内部の recent samples テーブルの有効期限 (TTL) は、常に [recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定から導出されます。
 
-### Tags テーブル {#tags-table}
+### タグテーブル {#tags-table}
 
-*tags* テーブルには、メトリクス名とタグの各組み合わせに対して計算された識別子が格納されます。
+*タグ*テーブルには、メトリクス名とタグの各組み合わせに対して計算された識別子が格納されます。
 
-*tags* テーブルには、次のカラムが必要です。
+*タグ*テーブルには、次のカラムが必要です。
 
-| 名前                   | 必須? | デフォルト型                                | 使用可能な型                                                                                                                    | 説明                                                                                                                                                                                          |
+| 名前                   | 必須? | デフォルトの型                               | 指定可能な型                                                                                                                    | 説明                                                                                                                                                                                          |
 | -------------------- | --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                 | [x] | `Tuple(UInt64, LowCardinality(UUID))` | 任意 ([samples](#samples-table) テーブルの `id` の型と一致している必要があります)                                                                | `id` は、メトリクス名とタグの組み合わせを識別します。DEFAULT 式は、この識別子の計算方法を指定します                                                                                                                                    |
 | `metric_name`        | [x] | `LowCardinality(String)`              | `String` または `LowCardinality(String)`                                                                                     | メトリクス名                                                                                                                                                                                      |
 | `<tag_value_column>` | [ ] | `String`                              | `String` または `LowCardinality(String)` または `LowCardinality(Nullable(String))`                                              | 特定のタグの値。タグ名と対応するカラム名は、[tags&#95;to&#95;columns](#settings) 設定で指定します                                                                                                                         |
 | `tags`               | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` または `Map(LowCardinality(String), String)` または `Map(LowCardinality(String), LowCardinality(String))` | メトリクス名を含むタグ `__name__` および [tags&#95;to&#95;columns](#settings) 設定で列挙された名前のタグを含む、すべてのタグのマップ。古いバージョンの ClickHouse で作成されたテーブルでは、このカラムには専用カラムを持たずメトリクス名も含まないタグのみが格納されていました。読み取り時にはどちらの場合も処理されます |
-| `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` または `Nullable(DateTime64(X))`                                                                             | その `id` を持つ時系列の最小タイムスタンプ。このカラムは [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) が `true` の場合に作成されます                                                                            |
-| `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` または `Nullable(DateTime64(X))`                                                                             | その `id` を持つ時系列の最大タイムスタンプ。このカラムは [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) が `true` の場合に作成されます                                                                            |
 
-[バージョン](#schema-versioning) 5 以降で新しく作成され、`MergeTree` ファミリーのエンジンを使用する内部 tags テーブルには、`tags` に対する転置テキスト索引が作成されます:
-`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')`。これは、キーと値をまとめて検索することで、PromQL における
-`{job="api"}` のような完全一致のラベル照合を高速化します。空文字列との比較は欠落しているラベルにも
+[バージョン](#schema-versioning) 5 以降で新規作成される内部タグテーブルのうち、`MergeTree`ファミリーのエンジンを使用するものには、`tags` に対する転置テキスト索引
+`INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs')` が作成されます。この索引はキーと値をまとめて検索することで、PromQL における
+`{job="api"}` のようなラベルの完全一致を高速化します。なお、空文字列との比較は欠損しているラベルにも
 一致するため、この索引は使用されません。
 
-`TAGS INNER COLUMNS` で明示的に宣言された索引は、デフォルトの索引を置き換えます。既存のテーブルおよび外部の
-tags テーブルは、それぞれの索引をそのまま保持します。有効にするには、その tags ターゲットテーブルに索引を追加してマテリアライズしてください。
+`TAGS INNER COLUMNS` で明示的に宣言した索引は、デフォルトの索引に置き換わります。既存のテーブルでは現在の索引がそのまま維持されます。
+この索引を有効にするには、対象のタグテーブルに索引を追加してマテリアライズしてください。
+
+<Note>
+  [バージョン](#schema-versioning) 7 以前のテーブルでは、各時系列の時間範囲を、別個の [time ranges](#time-ranges-table) テーブルではなく、*タグ*テーブルの `min_time` および `max_time` カラムに格納します
+  (設定 `store_min_time_and_max_time`、`aggregate_min_time_and_max_time`、`filter_by_min_time_and_max_time` を参照してください)。
+</Note>
+
+### 時間範囲テーブル {#time-ranges-table}
+
+*time ranges* テーブルは任意で、デフォルトで有効になっています ([store&#95;time&#95;ranges](#settings) 設定を参照してください。`false` に設定するとこのテーブルは無効になります) 。
+このテーブルには各時系列の時間範囲 (最小タイムスタンプと最大タイムスタンプ) が格納され、時系列を時間でフィルタリングするために使用されます。
+ある時間範囲を対象とするクエリは、その範囲内にサンプルを持つ時系列のみを読み取ります。
+
+*time ranges* テーブルには、次のカラムが必要です。
+
+| 名前         | 必須? | デフォルトの型                                       | 指定可能な型                                                                                            | 説明                       |
+| ---------- | --- | --------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------ |
+| `id`       | [x] | `Tuple(UInt64, LowCardinality(UUID))`         | 任意 ([samples](#samples-table) テーブルの `id` の型と一致している必要があります)                                        | メトリクス名とタグの組み合わせを識別します    |
+| `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `DateTime64(X)` または `Nullable(DateTime64(X))`。必要に応じて `SimpleAggregateFunction(min, ...)` でラップできます | その `id` を持つ時系列の最小タイムスタンプ |
+| `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `DateTime64(X)` または `Nullable(DateTime64(X))`。必要に応じて `SimpleAggregateFunction(max, ...)` でラップできます | その `id` を持つ時系列の最大タイムスタンプ |
+
+挿入のたびに、挿入されたサンプルの時間範囲が時系列ごとにこのテーブルへ書き込まれます。内部の *time ranges* テーブルは
+[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) エンジンを使用して、それらの範囲を時系列ごとに 1 つにマージします。
 
 ### Metric families テーブル {#metric-families-table}
 
@@ -222,7 +248,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 7, recent_samples_ttl_seconds = 345600
+SETTINGS version = 9, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -236,17 +262,22 @@ RECENT SAMPLES INNER COLUMNS
     `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
     `value` Float64 CODEC(ALP, ZSTD(3))
 )
-RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
     INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
+TAGS INNER ENGINE = ReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192
+TIME RANGES INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+)
+TIME RANGES INNER ENGINE = AggregatingMergeTree ORDER BY id
 METRIC FAMILIES INNER COLUMNS
 (
     `metric_family` String,
@@ -257,11 +288,11 @@ METRIC FAMILIES INNER COLUMNS
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
-このように、カラムは自動的に生成され、さらに `INNER COLUMNS` 句に格納された独自のカラム定義を持つ4つの内部ターゲットテーブルも存在します。`recent_samples_ttl_seconds` 設定はデフォルト値のまま `SETTINGS` 句に書き込まれています。この設定は recent samples テーブルの有効期限 (TTL) を定義するため、その実効値は作成時に固定されます。また、最新のスキーマバージョンが `version` 設定に固定されています ([スキーマのバージョン管理](#schema-versioning) を参照) 。
+このように、カラムは自動的に生成され、さらに `INNER COLUMNS` 句に格納された独自のカラム定義を持つ5つの内部ターゲットテーブルも存在します。`recent_samples_ttl_seconds` 設定はデフォルト値のまま `SETTINGS` 句に書き込まれています。この設定は recent samples テーブルの有効期限 (TTL) を定義するため、その実効値は作成時に固定されます。また、最新のスキーマバージョンが `version` 設定に固定されています ([スキーマのバージョン管理](#schema-versioning) を参照) 。
 
 内部ターゲットテーブルには `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
-`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+`.inner_id.timeranges.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 のような名前が付けられており、各ターゲットテーブルはそれぞれ固有のカラム構成を持ちます:
 
 ```sql
@@ -284,7 +315,7 @@ CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx
     `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
-PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+PARTITION BY toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))
 ORDER BY (id, timestamp)
 TTL toDateTime(timestamp) + toIntervalSecond(345600)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
@@ -296,14 +327,24 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))),
     INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000
 )
-ENGINE = AggregatingMergeTree
+ENGINE = ReplacingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
+SETTINGS index_granularity = 8192
+```
+
+```sql
+CREATE TABLE default.`.inner_id.timeranges.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192
 ```
 
 ```sql
@@ -322,8 +363,7 @@ SETTINGS index_granularity = 8192
 ## 既存テーブルを AS 指定してテーブルを作成する {#create-as}
 
 ステートメント `CREATE TABLE new_table AS existing_table` は、`existing_table` と同じ構成の `TimeSeries` テーブルを作成します。
-`existing_table` は `TimeSeries` テーブルである必要があります。`existing_table` の外部ターゲットはコピーされないため、ステートメントで
-それらのターゲットを明示的に宣言する必要があります。
+`existing_table` は `TimeSeries` テーブルである必要があります。
 
 このステートメントは `existing_table` から次の内容をコピーします。
 
@@ -333,7 +373,7 @@ SETTINGS index_granularity = 8192
 * 各内部テーブルの `INNER COLUMNS` 句および `INNER ENGINE` 句。カスタマイズされたカラム (例: 追加カラム、コーデック または DEFAULT 式を
   持つカラム) とカスタマイズされたエンジン部分 (例: 引数を持つエンジン、カスタムsorting key
   またはエンジン設定) は保持されます。それ以外のカラムとエンジン部分は新しいテーブルの設定に合わせて調整されるため、
-  例えばステートメントに記述された `tags_to_columns`、`aggregate_min_time_and_max_time`、`tags_index_granularity` が有効になります。
+  例えばステートメントに記述された `tags_to_columns`、`store_time_ranges`、`tags_index_granularity` が有効になります。
 
 `id`、timestamp、値のカラムの型、および内部エンジンのレプリケーション種別 (`MergeTree`、
 `ReplicatedMergeTree`、または `SharedMergeTree`) も、ステートメントで明示的に宣言しない限り `existing_table` から取得されます。
@@ -371,27 +411,13 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 `id` カラムには任意の比較可能な非 Nullable 型を使用できます。`samples` および `tags` の内部テーブルで宣言される `id` の型は一致している必要があります。
 
-`id` カラムに `DEFAULT` 式が指定されておらず、かつ `id_generator` SETTINGがされていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、これらと同じ型を `LowCardinality` でラップしたもの、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
+`id` カラムに `DEFAULT` 式が指定されていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、これらと同じ型を `LowCardinality` でラップしたもの、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
 
 `Tuple(UInt64, LowCardinality(UUID))` のような `LowCardinality` の識別子型を使用すると、識別子は辞書エンコードされた状態で保持されます。Samples テーブルは、すべての行に完全な識別子を繰り返して格納する代わりに、ブロックごとの小さな辞書と辞書索引を格納するため、クエリが読み取るデータ量が削減されます。
 
-`id_generator` SETTINGでは、`INNER COLUMNS` 句を使用せずに同じカスタマイズを行えます。
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SETTINGS id_generator = 'sipHash64(tags)'
-```
-
-このSETTINGが有効な場合、カラムの`DEFAULT`に別の式が含まれていても、`id`の生成にはこのSETTINGが使用されます。
-
-`id` カラムの型は、`INNER COLUMNS` 句の代わりに `id_type` SETTINGで指定することもできます。
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
-```
-
-`id_generator` SETTINGが指定されている場合、`id_type` SETTINGは `CREATE` 時に自動的に記録されるため、その式が想定して記述された型が定義に保持されます。
+[バージョン](#schema-versioning) 9 以前のテーブルでは、代わりに `id_type` および `id_generator` 設定で型と式を宣言することもできました
+([以前のバージョンの設定](#settings-of-earlier-versions)を参照) 。このようなテーブルを元に `CREATE TABLE ... AS` を実行しても、これらの設定はコピーされません。
+コピー先のテーブルは `id` の型を継承し、その型に応じて選択された `DEFAULT` 式が設定されます。
 
 ## `tags` カラム {#tags-column}
 
@@ -418,11 +444,13 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 
 * [samples](#samples-table) テーブルでは [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を使用します。
 * [recent samples](#recent-samples-table) テーブルでは、5 時間単位の bucket でパーティション化された ([recent&#95;samples&#95;partition&#95;by](#settings) SETTINGを参照) [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を使用します。この際、[recent&#95;samples&#95;ttl&#95;seconds](#settings) SETTINGから導出された `TTL` が設定され、
-  `ttl_only_drop_parts` が有効になっているため、期限切れのパーツはまとめて drop されます。
-* [tags](#tags-table) テーブルでは [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) を使用します。これは、同じデータがこのテーブルに複数回挿入されることが多いため、重複を除去する手段が必要であり、
-  また、カラム `min_time` と `max_time` の集約にも必要だからです。これらのカラムを保存しない場合
-  (`store_min_time_and_max_time` SETTINGを参照)、重複の大半はそもそもテーブルに到達しません。`TimeSeries` テーブルの重複排除キャッシュによって、
-  最近書き込まれた時系列がスキップされるためです (`tags_deduplication_cache_expiration_seconds` SETTINGを参照)。
+  `ttl_only_drop_parts` が有効になっているため、期限切れのパーツはまとめて削除されます。
+* [tags](#tags-table) テーブルでは [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) を使用します。これは、同じデータがこのテーブルに複数回挿入されることが多いため、重複を除去する手段が必要だからです
+  ([バージョン](#schema-versioning) 7 以前のテーブルでは、このテーブルでカラム `min_time` と `max_time` を集約するため、代わりに [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) を使用します)。
+  重複の大半はそもそもテーブルに到達しません。`TimeSeries` テーブルの重複排除キャッシュによって、最近書き込まれた時系列がスキップされるためです
+  (`tags_deduplication_cache_expiration_seconds` SETTINGを参照。バージョン 7 以前のテーブルでは、`min_time` と `max_time` を保存しない場合にのみこのキャッシュを使用します。`store_min_time_and_max_time` SETTINGを参照)。
+* [time ranges](#time-ranges-table) テーブルでは [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) を使用します。これは、挿入のたびに、挿入されたサンプルの時間範囲が書き込まれるため、
+  同じ時系列の範囲を 1 つにマージする必要があるからです。
 * [metric families](#metric-families-table) テーブルでは [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) を使用します。これは、同じデータがこのテーブルに複数回挿入されることが多いため、重複を除去する手段が必要だからです。
   重複の大半はそもそもテーブルに到達しません。`TimeSeries` テーブルの重複排除キャッシュによって、最近書き込まれた metric families が
   スキップされるためです (`metric_families_deduplication_cache_expiration_seconds` SETTINGを参照)。
@@ -443,16 +471,16 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
 RECENT SAMPLES ENGINE=ReplicatedMergeTree
-TAGS ENGINE=ReplicatedAggregatingMergeTree
+TAGS ENGINE=ReplicatedReplacingMergeTree
+TIME RANGES ENGINE=ReplicatedAggregatingMergeTree
 METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 ```
 
 [tags](#tags-table) テーブルでは、タグのカラム (および `tags` の Map) を sorting key の外に保持します。
 これは `AggregatingMergeTree` ではデフォルトで拒否されます ([`allow_dimensions_outside_sorting_key`](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) を参照) 。
 ここでこれが安全なのは、これらのカラムが sorting key の一部である `id` に関数従属しているためであり、そのため
-バックグラウンドマージでまとめて統合されるすべての行は同じ値を共有します。上記のように内部 tags テーブルが生成される場合、またはその
-エンジンがインラインで指定される場合、`TimeSeries` は自動的にそのテーブルに `allow_dimensions_outside_sorting_key = 1` を設定します。
-手動で作成した[外部](#external-target-tables)の集約 tags テーブルでは、自分でこれを設定する必要があります。
+バックグラウンドマージでまとめて統合されるすべての行は同じ値を共有します。内部 tags テーブルの集約エンジンが自動生成される場合
+(バージョン 7 以前のテーブル) またはインラインで指定される場合、`TimeSeries` は自動的にそのテーブルに `allow_dimensions_outside_sorting_key = 1` を設定します。
 
 ## 保持期間 {#retention}
 
@@ -477,88 +505,70 @@ samples テーブルから既に削除されたサンプルを返す可能性が
 
 デフォルトでは、[tags](#tags-table) テーブルには `TTL` が設定されていません。そのため、時系列のサンプルがすべて削除された後も、その時系列はこのテーブルに残ります。
 
-## 外部ターゲットテーブル {#external-target-tables}
+## 設定の変更 {#altering-settings}
 
-`TimeSeries` テーブルでは、手動で作成したテーブルを使用することもできます:
+以下の設定は、`CREATE` 後でも変更できます。
 
-```sql
-CREATE TABLE samples_for_my_table
-(
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
-)
-ENGINE = MergeTree
-ORDER BY (id, timestamp);
-
-CREATE TABLE tags_for_my_table ...
-
-CREATE TABLE metric_families_for_my_table ...
-
-CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRIC FAMILIES metric_families_for_my_table;
-```
-
-外部テーブルは [recent samples](#recent-samples-table) のターゲット (`RECENT SAMPLES my_recent_samples_table` 句) としても使用できます。
-そのようなテーブルは外部 samples テーブルと同じカラムを持つ必要があり、少なくとも
-[recent&#95;samples&#95;ttl&#95;seconds](#settings) 秒分のデータを保持しなければなりません。これはユーザーの責任です。
-
-外部テーブルのカラム型 (`id`、`timestamp`、`value`、および [`tags_to_columns`](#settings) に記載された `<tag_value_column>`) は、`TimeSeries` テーブルが通常内部的に生成する型と一致している必要があります (型の制約については、[Samples テーブル](#samples-table)、[Tags テーブル](#tags-table)、および [Metric families テーブル](#metric-families-table) を参照してください) 。型の不一致は `CREATE` 時に報告されます。
-
-外部 tags テーブルの `id` カラムの型と、識別子を生成する式は、`CREATE` 時に [`id_type`](#settings) および [`id_generator`](#settings) 設定に記録されます ([バージョン](#schema-versioning) 2 以降) 。そのため `TimeSeries` テーブルの定義がそれらを保持します。たとえば `CREATE TABLE ... AS my_table` では、外部ターゲットテーブルを読み取ることなく `my_table` の定義から `id` 型を読み取ります。`id_generator` 設定が指定されていない場合は、外部テーブルの `id` カラムで宣言された `DEFAULT` (存在する場合) が設定され、それがなければ `id` 型から導出される正規のジェネレーターが設定されます。記録された式は、後で外部テーブルの `DEFAULT` が変更された場合でも `id` の生成に使用されます。詳細は [The `id` column](#id-column) を参照してください。
-
-## SETTINGの変更 {#altering-settings}
-
-`CREATE` 実行後に変更できるSETTINGは、次のとおりです。
-
-* `id_generator`
-* `filter_by_min_time_and_max_time`
 * `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
 * `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
 
 ```sql
-ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
-ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
-ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
+ALTER TABLE my_table RESET SETTING metric_families_deduplication_cache_expiration_seconds;
 ```
 
-データがすでに Tags テーブルに存在する状態で `id_generator` を変更すると、同じメトリクス+タグ の組み合わせに対して異なる ID が生成される可能性がある点に注意してください。古い行は従来の ID のまま残り、新しい行では新しいジェネレーターが使用されます。
-重複排除キャッシュのSETTINGを変更すると、そのキャッシュは空のキャッシュに置き換えられるため、次回の挿入ではすべての行があらためて書き込まれます。
+重複排除キャッシュの設定を変更すると、キャッシュは空のキャッシュに置き換えられるため、次回の挿入ではすべての行が改めて書き込まれます。
 サイズまたは有効期限を 0 に設定すると、キャッシュは無効化されます。
 
-他のSETTINGは、`ALTER ... MODIFY SETTING` では変更できません。大半は `CREATE` 時に内部テーブルのスキーマに組み込まれ、
-`version` SETTINGは `CREATE` 時に自動的に固定され、スキーマ自体を識別します ([スキーマのバージョン管理](#schema-versioning) を参照) 。
+<Note>
+  以前の[バージョン](#schema-versioning)のテーブルでは、それらのバージョンに固有の設定のうち、保存済みデータに影響しないものも変更できます。
+  対象は `id_generator` (バージョン 9 以前) と `filter_by_min_time_and_max_time` (バージョン 7 以前) です。
+  タグテーブルにすでにデータがある状態で `id_generator` を変更すると、同じメトリクスとタグの組み合わせに対して異なる ID が生成される場合があります。既存の行は古い ID のまま残り、新しい行には新しいジェネレーターが使用されます。
+  このような変更を行った後は、Prometheus HTTP API のエンドポイント `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values` が、
+  指定した時間範囲にサンプルが存在しない場合でも、以前のジェネレーターで書き込まれた時系列を返すことがあります。
+</Note>
+
+その他の設定は `ALTER ... MODIFY SETTING` では変更できません。その大半は `CREATE` 時に内部テーブルのスキーマに組み込まれるためです。
+また、`version` 設定は `CREATE` 時に自動的に固定され、スキーマそのものを識別するために使用されます ([スキーマのバージョン管理](#schema-versioning)を参照) 。
 
 ## SETTING {#settings}
 
 以下は、`TimeSeries` テーブルの定義時に指定できるSETTINGの一覧です。
 
-| Name                                                     | Type       | Default                                                       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| -------------------------------------------------------- | ---------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                                                | UInt64     | 7                                                             | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                 |
-| `id_type`                                                | データ型       | `id` カラムに依存                                                   | ターゲットテーブルの `id` カラムの型。通常、型は内部テーブルの `INNER COLUMNS` 句、または[外部](#external-target-tables) tags テーブルで宣言されます。型が定義内に保持されない場合、すなわち tags のターゲットが外部テーブルである場合、または `id_generator` 設定が設定されている場合には、この設定は `CREATE` 時に自動的に記録されます。この設定は `TAGS INNER COLUMNS (id <type>)` の代わりに明示的に指定することもできます。`version` は 2 以上である必要があります                                                                                                                                                                                        |
-| `id_generator`                                           | Expression | `id` 型に依存                                                     | タグから時系列の識別子 (フィンガープリント) を計算する式です。未設定の場合は、`id` カラムのデフォルト式が使用されます。`id` カラムのデフォルト式も未設定であれば、式は自動的に選択されます。外部 tags テーブルの場合、`version` が 2 以上であれば、この設定は `CREATE` 時に自動的に記録されます ([外部ターゲットテーブル](#external-target-tables) を参照)                                                                                                                                                                                                                                                                             |
-| `tags_to_columns`                                        | Map        | {}                                                            | [tags](#tags-table) テーブルで、どのタグを個別のカラムに格納するかを指定する Map。構文: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                                                                                                                                                                          |
-| `use_all_tags_column_to_generate_id`                     | Bool       | false                                                         | 廃止された設定であり、何も行いません                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `store_min_time_and_max_time`                            | Bool       | true                                                          | true に設定すると、テーブルは各時系列の `min_time` と `max_time` を保存します                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `aggregate_min_time_and_max_time`                        | Bool       | true                                                          | 内部ターゲット `tags` テーブルの作成時に、このフラグを有効にすると、`min_time` カラムの型として単なる `Nullable(DateTime64(3))` ではなく `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` を使用し、`max_time` カラムにも同様に適用されます                                                                                                                                                                                                                                                                                                             |
-| `filter_by_min_time_and_max_time`                        | Bool       | true                                                          | true に設定すると、テーブルは時系列のフィルタリングに `min_time` カラムと `max_time` カラムを使用します                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `metric_families_deduplication_cache_size_bytes`         | UInt64     | 10485760                                                      | [メトリクスファミリー](#metric-families-table) テーブルの重複排除キャッシュの最大サイズ (バイト単位)。キャッシュには最近書き込まれたメトリクスファミリーの説明が保持されるため、挿入のたびに書き込む必要はありません。キャッシュがいっぱいになると、1 回しか使用されていないエントリから追い出され、次に最も長い間使用されていないエントリが追い出されます (SLRU)。キャッシュを無効にするには 0 に設定します。`metric_families_deduplication_cache_expiration_seconds` も参照してください                                                                                                                                                                                                 |
-| `metric_families_deduplication_cache_expiration_seconds` | UInt64     | 3600                                                          | [メトリクスファミリー](#metric-families-table) テーブルの重複排除 cache にあるエントリが期限切れになるまでの時間。メトリクスファミリーが書き込まれた時点から計算します。そのため、各メトリクスファミリーはこの期間ごとに少なくとも 1 回再び書き込まれ、cache とテーブルの間に生じる差が抑えられます。cache はサーバーごとに保持され、cache に対して `TRUNCATE TABLE` を実行するか、`SYSTEM DROP TIME SERIES CACHES` を実行すると消去されます。cache を無効にするには 0 に設定します                                                                                                                                                                                            |
-| `tags_deduplication_cache_size_bytes`                    | UInt64     | 104857600                                                     | [tags](#tags-table) テーブルの重複排除キャッシュの最大サイズ (バイト単位) 。このキャッシュは最近書き込まれた時系列を記憶し、挿入のたびにそのタグが再度書き込まれるのを防ぎます。キャッシュがいっぱいになると、1 回しか使用されていないエントリが先に追い出され、次に最後に使用されてから最も時間が経過したエントリが追い出されます (SLRU) 。このキャッシュは `store_min_time_and_max_time` が無効な場合にのみ使用されます。有効な場合は挿入のたびに `min_time` と `max_time` が変更されるため、デフォルト値は無視され、明示的に指定した 0 以外の値は拒否されます。キャッシュを無効にするには 0 に設定します。`tags_deduplication_cache_expiration_seconds` も参照してください                                                                                  |
-| `tags_deduplication_cache_expiration_seconds`            | UInt64     | 3600                                                          | 時系列が書き込まれた時点から、[tags](#tags-table) テーブルの重複排除用キャッシュのエントリが期限切れになるまでの時間。この期間内に各時系列が少なくとも 1 回は再度書き込まれるため、キャッシュとテーブルの差異が抑えられます。キャッシュはサーバーごとに保持され、そのテーブルに対して `TRUNCATE TABLE` を実行するか、`SYSTEM DROP TIME SERIES CACHES` を実行するとクリアされます。`store_min_time_and_max_time` が無効の場合にのみ使用されます。`tags_deduplication_cache_size_bytes` を参照してください。キャッシュを無効にするには 0 に設定します                                                                                                                                             |
-| `samples_index_granularity`                              | UInt64     | 32768                                                         | 内部 [samples](#samples-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 samples テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                  |
-| `recent_samples_ttl_seconds`                             | UInt64     | 345600                                                        | 挿入されたすべてのサンプルも書き込まれる追加の `recent samples` ターゲットテーブルの保持期間。内部 recent samples テーブルには、この設定に基づいて常に `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` が設定されます (エンジン宣言の有効期限 (TTL) はオーバーライドされます) 。外部 recent samples テーブルでは、少なくともこの秒数分のデータを保持する必要があります。時間範囲が有効期限 (TTL) ウィンドウ内に収まるクエリでは、メインの samples テーブルより recent samples テーブルが優先されます (クエリレベルの設定 `time_series_prefer_recent_samples_table` を参照) 。デフォルトは 4 日です。有効な値は CREATE 時にテーブル定義に固定されます。recent samples テーブルを無効にするには 0 に設定します |
-| `recent_samples_partition_by`                            | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` テーブルのパーティションキー。例: `toStartOfHour(timestamp)`。明示的に設定した場合、エンジン宣言のパーティションキーをオーバーライドします。いずれも設定されていない場合は、5 時間ごとに 1 パーティションが使用されます。外部 recent samples テーブルでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                  |
-| `recent_samples_index_granularity`                       | UInt64     | 8192                                                          | 内部 `recent samples` テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 recent samples テーブルおよび MergeTree 以外のエンジンでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                      |
-| `tags_index_granularity`                                 | UInt64     | 8192                                                          | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 tags テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                           |
+| Name                                                     | 型          | Default                                                              | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------- | ---------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                                                | UInt64     | 10                                                                   | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                                  |
+| `tags_to_columns`                                        | Map        | {}                                                                   | [tags](#tags-table) テーブルで、どのタグを個別のカラムに格納するかを指定する Map。構文: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `store_time_ranges`                                      | Bool       | true                                                                 | true に設定すると、テーブルは各時系列の時間範囲を [time ranges](#time-ranges-table) テーブルに保存し、それを使用して時系列を時刻でフィルタします。time ranges テーブルを無効化するには false に設定します。[バージョン](#schema-versioning) 7 以前のテーブルには該当しません。これらのテーブルでは代わりに `store_min_time_and_max_time` が使用されます                                                                                                                                                                                                                                                                           |
+| `metric_families_deduplication_cache_size_bytes`         | UInt64     | 10485760                                                             | [メトリクスファミリー](#metric-families-table) テーブルの重複排除キャッシュの最大サイズ (バイト単位)。キャッシュには最近書き込まれたメトリクスファミリーの説明が保持されるため、挿入のたびに書き込む必要はありません。キャッシュがいっぱいになると、1 回しか使用されていないエントリから追い出され、次に最も長い間使用されていないエントリが追い出されます (SLRU)。キャッシュを無効にするには 0 に設定します。`metric_families_deduplication_cache_expiration_seconds` も参照してください                                                                                                                                                                                                                  |
+| `metric_families_deduplication_cache_expiration_seconds` | UInt64     | 3600                                                                 | [メトリクスファミリー](#metric-families-table) テーブルの重複排除 cache にあるエントリが期限切れになるまでの時間。メトリクスファミリーが書き込まれた時点から計算します。そのため、各メトリクスファミリーはこの期間ごとに少なくとも 1 回再び書き込まれ、cache とテーブルの間に生じる差が抑えられます。cache はサーバーごとに保持され、cache に対して `TRUNCATE TABLE` を実行するか、`SYSTEM DROP TIME SERIES CACHES` を実行すると消去されます。cache を無効にするには 0 に設定します                                                                                                                                                                                                             |
+| `tags_deduplication_cache_size_bytes`                    | UInt64     | 104857600                                                            | [tags](#tags-table) テーブルの重複排除キャッシュの最大サイズ (バイト単位) 。このキャッシュは最近書き込まれた時系列を記憶し、挿入のたびにそのタグが再度書き込まれるのを防ぎます。キャッシュがいっぱいになると、1 回しか使用されていないエントリが先に追い出され、次に最後に使用されてから最も時間が経過したエントリが追い出されます (SLRU) 。このキャッシュは [tags](#tags-table) テーブルが `min_time` と `max_time` を保存しない場合にのみ使用されます ([バージョン](#schema-versioning) 7 以前のテーブルは、`store_min_time_and_max_time` が無効化されていない限りこれらを保存します)。保存する場合は挿入のたびにこれらのカラムが変更されるため、デフォルト値は無視され、明示的に指定した 0 以外の値は拒否されます。キャッシュを無効にするには 0 に設定します。`tags_deduplication_cache_expiration_seconds` も参照してください |
+| `tags_deduplication_cache_expiration_seconds`            | UInt64     | 3600                                                                 | 時系列が書き込まれた時点から、[tags](#tags-table) テーブルの重複排除用キャッシュのエントリが期限切れになるまでの時間。この期間内に各時系列が少なくとも 1 回は再度書き込まれるため、キャッシュとテーブルの差異が抑えられます。キャッシュはサーバーごとに保持され、そのテーブルに対して `TRUNCATE TABLE` を実行するか、`SYSTEM DROP TIME SERIES CACHES` を実行するとクリアされます。[tags](#tags-table) テーブルが `min_time` と `max_time` を保存しない場合にのみ使用されます。`tags_deduplication_cache_size_bytes` を参照してください。キャッシュを無効にするには 0 に設定します                                                                                                                                        |
+| `samples_index_granularity`                              | UInt64     | 32768                                                                | 内部 [samples](#samples-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                                                      |
+| `recent_samples_ttl_seconds`                             | UInt64     | 345600                                                               | 挿入されたすべてのサンプルも書き込まれる追加の `recent samples` ターゲットテーブルの保持期間。内部 recent samples テーブルには、この設定に基づいて常に `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` が設定されます (エンジン宣言の有効期限 (TTL) はオーバーライドされます) 。時間範囲が有効期限 (TTL) ウィンドウ内に収まるクエリでは、メインの samples テーブルより recent samples テーブルが優先されます (クエリレベルの設定 `time_series_prefer_recent_samples_table` を参照) 。デフォルトは 4 日です。有効な値は CREATE 時にテーブル定義に固定されます。recent samples テーブルを無効にするには 0 に設定します                                                                      |
+| `recent_samples_partition_by`                            | Expression | `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))` | 内部 `recent samples` テーブルのパーティションキー。例: `toStartOfHour(timestamp)`。明示的に設定した場合、エンジン宣言のパーティションキーをオーバーライドします。いずれも設定されていない場合は、5 時間ごとに 1 パーティションが使用されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                                                  |
+| `recent_samples_index_granularity`                       | UInt64     | 8192                                                                 | 内部 `recent samples` テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。MergeTree 以外のエンジンでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                                                                 |
+| `tags_index_granularity`                                 | UInt64     | 8192                                                                 | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                                                            |
+
+### 以前のバージョンの設定 {#settings-of-earlier-versions}
+
+以下の設定は以前の[バージョン](#schema-versioning)のテーブルにのみ適用されるため、最新バージョンのテーブルではこれらを使用できません。
+
+| Name                                 | 型          | Default     | 説明                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------ | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id_type`                            | データ型       | `id` カラムに依存 | ターゲットテーブルの `id` カラムの型。バージョン 9 以前のテーブルにのみ適用されます。それより後のバージョンでは、型は `TAGS INNER COLUMNS` で宣言されます。対象となるバージョンでも、型は通常、内部テーブルの `INNER COLUMNS` 句で宣言されます。型が定義内に保持されない場合、すなわち tags のターゲットが外部テーブルである場合、または `id_generator` 設定が設定されている場合には、この設定は `CREATE` 時に自動的に記録されます。`version` は 2 以上である必要があります                                           |
+| `id_generator`                       | 式 | `id` 型に依存   | タグから時系列の識別子 (フィンガープリント) を計算する式です。バージョン 9 以前のテーブルにのみ適用されます。それより後のバージョンでは、この式は `TAGS INNER COLUMNS` 内で `id` カラムの `DEFAULT` 式として宣言されます。設定されている場合、カラムの `DEFAULT` に別の式が含まれていても、`id` の生成にはこの設定が使用されます。未設定の場合は、`id` カラムの `DEFAULT` 式、または `id` 型に応じて自動的に選択される式が使用されます。外部タグテーブルの場合、`version` が 2 以上であれば、この設定は `CREATE` 時に自動的に記録されます |
+| `store_min_time_and_max_time`        | Bool       | true        | true に設定すると、テーブルは [タグ](#tags-table)テーブルに各時系列の `min_time` と `max_time` を保存します。[バージョン](#schema-versioning) 7 以前のテーブルにのみ適用されます。それより後のバージョンでは、代わりに `store_time_ranges` が使用されます                                                                                                                                                  |
+| `aggregate_min_time_and_max_time`    | Bool       | true        | 内部ターゲット `tags` テーブルの作成時に、このフラグを有効にすると、`min_time` カラムの型として単なる `Nullable(DateTime64(3))` ではなく `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` を使用し、`max_time` カラムにも同様に適用されます。バージョン 7 以前のテーブルにのみ適用されます                                                                                                                    |
+| `filter_by_min_time_and_max_time`    | Bool       | true        | true に設定すると、テーブルは時系列のフィルタリングに [タグ](#tags-table)テーブルの `min_time` カラムと `max_time` カラムを使用します。バージョン 7 以前のテーブルにのみ適用されます                                                                                                                                                                                                          |
+| `use_all_tags_column_to_generate_id` | Bool       | false       | 廃止された設定であり、何も行いません                                                                                                                                                                                                                                                                                                             |
 
 ## スキーマのバージョン管理 {#schema-versioning}
 
 `TimeSeries` テーブルエンジンと PromQL 実行レイヤーは現在も活発に開発されています。
 そのため、ターゲットテーブルのセットや構造は ClickHouse のバージョン間で変更される可能性があります。
 このような変更を検出できるよう、各 `TimeSeries` テーブルでは [version](#settings) SETTINGにバージョンを保存します。
-テーブル作成時には、バージョンが `CREATE` クエリに自動的に固定されます。その値はサーバーが認識している最新バージョン (現在は 7) であり、
+テーブル作成時には、バージョンが `CREATE` クエリに自動的に固定されます。その値はサーバーが認識している最新バージョン (現在は 9) であり、
 テーブルのメタデータに永続化され、`ALTER` では変更できません。このSETTINGの導入前に作成されたテーブルは、バージョン 0 と見なされます。
 通常、このSETTINGは `CREATE TABLE` クエリで省略します。省略した場合、テーブルには最新バージョンが設定されます。
 サーバーがそのバージョンをサポートしている場合は、明示的な `version` も指定できます。その場合、テーブルはそのバージョンの定義方法に従って定義されます ([バージョン履歴](#version-history)を参照)。
@@ -577,16 +587,19 @@ Prometheus remote-write プロトコル、PromQL の評価 ([prometheusQuery](/j
 
 ### バージョン履歴 {#version-history}
 
-| バージョン | 変更内容                                                                                                                                                                                                                                                                                                                                              |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | `version` SETTINGが導入される前に作成されたテーブル。「プレアルファ」テーブル (ターゲットテーブルのカラムを[外部カラム](#outer-columns)として宣言していたもの) や、[recent samples](#recent-samples-table) テーブルを持たないテーブルが含まれる                                                                                                                                                                                        |
-| 1     | `version` SETTINGが導入された                                                                                                                                                                                                                                                                                                                                |
-| 2     | [`id_type`](#settings) SETTINGが導入された。外部の tags テーブルを持つテーブルは、`id` カラムの型を `id_type` に、識別子を生成する式を [`id_generator`](#settings) に記録するため、その定義が外部テーブルに依存しなくなる。`id_generator` が設定されている場合にも `id_type` が記録される ([`id` カラム](#id-column)を参照)                                                                                                                         |
-| 3     | 外部カラム `time_series` が `samples` にリネームされた ([外部カラム](#outer-columns)を参照) 。それ以前のバージョンのテーブルはカラムの旧名称をそのまま保持し、[prometheusQuery](/ja/reference/functions/table-functions/prometheusQuery) および [prometheusQueryRange](/ja/reference/functions/table-functions/prometheusQueryRange) テーブル関数は、そのテーブルで使用されている名前でカラムを返す。格納されるデータ自体に変更はない                             |
-| 4     | `metrics` ターゲットテーブルが `metric families` にリネームされた。内部テーブルの名前は `.inner_id.metrics.<uuid>` ではなく `.inner_id.metricfamilies.<uuid>` となり、定義には `METRICS` ではなく `METRIC FAMILIES` キーワードが使用される。格納されるデータ自体に変更はない                                                                                                                                               |
-| 5     | `MergeTree` ファミリーのエンジンを使用する新しい内部 tags テーブルでは、デフォルトで `tags` map に `keyValuePairs` テキスト索引が作成される ([Tags テーブル](#tags-table)を参照)                                                                                                                                                                                                                       |
-| 6     | [metric families](#metric-families-table) テーブルのカラム `metric_family_name` が、対応する外部カラムと同じ名前の `metric_family` にリネームされた。それ以前のバージョンのテーブルはカラムの旧名称をそのまま保持し、[timeSeriesMetricFamilies](/ja/reference/functions/table-functions/timeSeriesMetricFamilies) テーブル関数は、そのテーブルで使用されている名前でカラムを返す。外部の metric families テーブルでは、`TimeSeries` テーブルのバージョンに応じたカラム名を使用する必要がある |
-| 7     | [metric families](#metric-families-table) テーブルおよび [tags](#tags-table) テーブルの重複排除キャッシュが、関連するSETTINGとともに導入された ([`metric_families_deduplication_cache_expiration_seconds`](#settings) および [`tags_deduplication_cache_expiration_seconds`](#settings) を参照) 。それ以前のバージョンのテーブルではこれらのキャッシュは使用されない。格納されるデータ自体に変更はない                                              |
+| バージョン | 変更内容                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0     | `version` SETTINGが導入される前に作成されたテーブル。「プレアルファ」テーブル (ターゲットテーブルのカラムを[外部カラム](#outer-columns)として宣言していたもの) や、[recent samples](#recent-samples-table) テーブルを持たないテーブルが含まれる                                                                                                                                                                                                                                                                                        |
+| 1     | `version` SETTINGが導入された                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 2     | [`id_type`](#settings) SETTINGが導入された。外部のタグテーブルを持つテーブルは、`id` カラムの型を `id_type` に、識別子を生成する式を [`id_generator`](#settings) に記録するため、その定義が外部テーブルに依存しなくなる。`id_generator` が設定されている場合にも `id_type` が記録される ([`id` カラム](#id-column)を参照)                                                                                                                                                                                                                         |
+| 3     | 外部カラム `time_series` が `samples` にリネームされた ([外部カラム](#outer-columns)を参照) 。それ以前のバージョンのテーブルはカラムの旧名称をそのまま保持し、[prometheusQuery](/ja/reference/functions/table-functions/prometheusQuery) および [prometheusQueryRange](/ja/reference/functions/table-functions/prometheusQueryRange) テーブル関数は、そのテーブルで使用されている名前でカラムを返す。格納されるデータ自体に変更はない                                                                                                                                  |
+| 4     | `metrics` ターゲットテーブルが `metric families` にリネームされた。内部テーブルの名前は `.inner_id.metrics.<uuid>` ではなく `.inner_id.metricfamilies.<uuid>` となり、定義には `METRICS` ではなく `METRIC FAMILIES` キーワードが使用される。格納されるデータ自体に変更はない                                                                                                                                                                                                                                                    |
+| 5     | `MergeTree` ファミリーのエンジンを使用する新しい内部タグテーブルでは、デフォルトで `tags` map に `keyValuePairs` テキスト索引が作成される ([タグテーブル](#tags-table)を参照)                                                                                                                                                                                                                                                                                                                            |
+| 6     | [metric families](#metric-families-table) テーブルのカラム `metric_family_name` が、対応する外部カラムと同じ名前の `metric_family` にリネームされた。それ以前のバージョンのテーブルはカラムの旧名称をそのまま保持し、[timeSeriesMetricFamilies](/ja/reference/functions/table-functions/timeSeriesMetricFamilies) テーブル関数は、そのテーブルで使用されている名前でカラムを返す。外部の metric families テーブルでは、`TimeSeries` テーブルのバージョンに応じたカラム名を使用する必要がある                                                                                                      |
+| 7     | [metric families](#metric-families-table) テーブルおよび [タグ](#tags-table)テーブルの重複排除キャッシュが、関連するSETTINGとともに導入された ([`metric_families_deduplication_cache_expiration_seconds`](#settings) および [`tags_deduplication_cache_expiration_seconds`](#settings) を参照) 。それ以前のバージョンのテーブルではこれらのキャッシュは使用されない。格納されるデータ自体に変更はない                                                                                                                                              |
+| 8     | カラム `min_time` と `max_time` が、[タグ](#tags-table)テーブルから、新たに追加された任意の [time ranges](#time-ranges-table) テーブル (内部テーブル `.inner_id.timeranges.<uuid>`、キーワード `TIME RANGES`) に移動された。このテーブルは [`store_time_ranges`](#settings) 設定で有効化される。時間範囲は常に集計され、時系列を時刻でフィルタする際にも常に使用される。設定 `store_min_time_and_max_time`、`aggregate_min_time_and_max_time`、`filter_by_min_time_and_max_time` は、それ以前のバージョンにのみ適用される。新しく作成されるテーブルの内部タグテーブルでは `ReplacingMergeTree` が使用される |
+| 9     | 内部 [recent samples](#recent-samples-table) テーブルのデフォルトのパーティションキーで、タイムゾーンが明示されるようになった (`toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`) 。それ以前のバージョンではタイムゾーンを指定せずにキーが生成され、`toStartOfInterval` はローカル時刻の午前0時を起点に時間を数えるため、サーバーのタイムゾーンを変更すると、書き込み済みのパーティション値の意味がずれてしまう。既存のテーブルは作成時のキーをそのまま保持し、このキーはどの `ALTER` でも変更できない                                                                                                                   |
+| 10    | 新しいテーブルでは外部ターゲットテーブルがサポートされなくなった。このバージョンのテーブルのターゲットはすべて内部テーブルとなる。設定 `id_type` および `id_generator` もサポートされない。`id` カラムの型と識別子を生成する式は `TAGS INNER COLUMNS` で宣言する ([`id` カラム](#id-column)を参照) 。それ以前のバージョンのテーブルは、外部ターゲットテーブルとこれらの設定をそのまま保持する。格納されるデータ自体に変更はない                                                                                                                                                                                                 |
 
 # 関数 {#functions}
 
@@ -594,6 +607,7 @@ Prometheus remote-write プロトコル、PromQL の評価 ([prometheusQuery](/j
 
 * [timeSeriesSamples](/ja/reference/functions/table-functions/timeSeriesSamples)
 * [timeSeriesTags](/ja/reference/functions/table-functions/timeSeriesTags)
+* [timeSeriesTimeRanges](/ja/reference/functions/table-functions/timeSeriesTimeRanges)
 * [timeSeriesMetricFamilies](/ja/reference/functions/table-functions/timeSeriesMetricFamilies)
 
 {/*AUTOGENERATED_END*/}

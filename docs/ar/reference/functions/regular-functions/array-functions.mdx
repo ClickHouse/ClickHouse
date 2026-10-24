@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+أُضيف: v26.10.0
+
+تُعيد جميع التركيبات (اختيارات غير مرتبة دون تكرار الفهارس) ذات الطول `k` من مصفوفة المصدر. يجري التعداد بحسب الفهارس، لذا قد تُنتج القيم المتساوية صفوفًا مكررة في النتيجة. عندما تكون `k = 0`، تُعيد الدالة `[[]]`. يخضع الحجم الإجمالي للنتيجة في كل كتلة للحد الذي يضبطه `function_range_max_elements_in_block`، إذ تُحتسب كل مصفوفة مُولَّدة بحجمها زائد واحد.
+
+**الصيغة**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+* `k` — طول كل تركيبة مُولَّدة. يجب ألا يتجاوز حجم مصفوفة المصدر. يدعم الأنواع `Int8` و`Int16` و`Int32` و`Int64` و`UInt8` و`UInt16` و`UInt32` و`UInt64`. [`(U)Int*`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+جميع التركيبات ذات الطول `k`. [`Array(Array(T))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**مثال `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 أُضيفت في: v20.1.0
@@ -645,21 +688,21 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 
 ## arrayDotProduct {#arrayDotProduct}
 
-ظهر في: v23.5.0
+أُضيف في: v23.5.0
 
 يعيد الجداء النقطي لمصفوفتين.
 
 <Note>
-  يجب أن يكون حجما المتجهين متساويين. كما يمكن أن تحتوي Array وTuple أيضًا على أنواع عناصر مختلطة.
+  يجب أن يكون حجما المتجهين متساويين. كما يمكن أن تحتوي المصفوفات والصفوف المرتبة أيضًا على أنواع عناصر مختلطة.
 </Note>
 
-**البنية**
+**الصيغة**
 
 ```sql
 arrayDotProduct(v1, v2)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `v1` — المتجه الأول. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ar/reference/data-types/array) أو [`Tuple((U)Int* | Float* | Decimal)`](/ar/reference/data-types/tuple)
 * `v2` — المتجه الثاني. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ar/reference/data-types/array) أو [`Tuple((U)Int* | Float* | Decimal)`](/ar/reference/data-types/tuple)
@@ -669,7 +712,7 @@ arrayDotProduct(v1, v2)
 الجداء النقطي للمتجهين.
 
 <Note>
-  يتحدد نوع الإرجاع حسب نوع الوسائط. إذا كانت Arrays أو Tuples تحتوي على أنواع عناصر مختلطة، فسيكون نوع النتيجة هو النوع الفائق.
+  يتحدد نوع الإرجاع حسب نوع الوسيطات. إذا كانت المصفوفات أو الصفوف المرتبة تحتوي على أنواع عناصر مختلطة، فسيكون نوع النتيجة هو النوع الفائق.
   تتراكم مصفوفتا `BFloat16` في `Float32` وتُرجعانه (وهي القاعدة نفسها كما في مصفوفتين من `Float32`).
 </Note>
 
@@ -677,7 +720,7 @@ arrayDotProduct(v1, v2)
 
 **أمثلة**
 
-**مثال على Array**
+**مثال على مصفوفة**
 
 ```sql title=Query
 SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
@@ -687,7 +730,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 32	UInt16
 ```
 
-**مثال على Tuple**
+**مثال على صف مرتب**
 
 ```sql title=Query
 SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);
@@ -2512,6 +2555,272 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+أُضيف في: v26.10.0
+
+تعمل هذه الدالة مثل `arrayPackBitsToFixedString`، غير أن لامبدا تُعيد عددًا صحيحًا تُشكّل بتاته الدنيا البالغ عددها `g` مجموعةً، ثم تُحزَّم المجموعات
+بشكل متتالٍ (بدءًا من البت الأعلى أهمية) في `FixedString(n)`. والنتيجة هي أول `n` بايت من
+`arrayPackBitGroupsToString` (إذ لا تُسهم المجموعة الواقعة على الحدود إلا ببتاتها الأولى)، مُستكملةً بالأصفار حتى `n`
+بايت. ويجب أن يكون كلٌّ من الحجم `n` وحجم المجموعة `g` ثابتًا موجبًا، وألا تتجاوز قيمة `g` العدد 64.
+
+**الصيغة**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**الوسيطات**
+
+* `f` — لامبدا تُنتج قيمة المجموعة لكل عنصر. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — حجم `FixedString` الناتج بالبايتات. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `g` — عدد البتات في كل مجموعة. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — مصفوفة واحدة أو أكثر متساوية الحجم يُراد حزمها. تأخذ لامبدا وسيطة واحدة لكل مصفوفة. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المعادة**
+
+تُعيد البتات المحزَّمة. [`FixedString(n)`](/ar/reference/data-types/fixedstring)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+أُضيف في: v26.10.0
+
+تعمل هذه الدالة مثل `arrayPackBitsToString`، غير أن لامبدا تُعيد عددًا صحيحًا تُشكّل بتاته الدنيا البالغ عددها `g` مجموعةً واحدة، ثم تُحزَّم المجموعات
+متجاورةً (بدءًا بالبت الأعلى أهمية). ويبلغ طول النتيجة `ceil(size_of_array * g / 8)` بايت.
+ويجب أن يكون حجم المجموعة `g` ثابتًا تتراوح قيمته بين 1 و64.
+
+**الصيغة**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**الوسيطات**
+
+* `f` — لامبدا تُنتج قيمة المجموعة لكل عنصر. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — عدد البتات في كل مجموعة. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — مصفوفة واحدة أو أكثر متساوية الحجم المراد حزمها. تأخذ لامبدا وسيطة واحدة لكل مصفوفة. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المُعادة**
+
+تُعيد البتات المحزَّمة. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+أُضيف في: v26.10.0
+
+تعمل مثل `arrayPackBitsToUInt64`، إلا أن لامبدا تُعيد عددًا صحيحًا تُشكّل بتاته الـ `g` الدنيا مجموعةً، وتُحزَّم المجموعات
+بشكل متتالٍ (البت الأعلى أهمية أولاً داخل كل بايت، وتُفسَّر البايتات وفق ترتيب البايت الأقل أهمية أولاً، أي أن
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). تتضمن النتيجة
+أول 64 بتًا من الدفق المحزَّم: فإذا كان 64 لا يقبل القسمة على `g`، فإن المجموعة التي تقع على الحدود
+لا تُسهم إلا ببتاتها الأولى. ويجب أن يكون حجم المجموعة `g` ثابتًا تتراوح قيمته بين 1 و64.
+
+**الصيغة**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**الوسيطات**
+
+* `f` — لامبدا تُنتج قيمة المجموعة لكل عنصر. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — عدد البتات في كل مجموعة. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — مصفوفة واحدة أو أكثر متساوية الحجم ليتم حزمها. تأخذ لامبدا وسيطة واحدة لكل مصفوفة. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المعادة**
+
+تُعيد البتات المحزَّمة. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+أُضيف في: v26.10.0
+
+تطبّق لامبدا على كل عنصر من عناصر المصفوفة، ثم تحزم البتات الناتجة في `FixedString(n)`.
+تُعيد لامبدا لكل عنصر عددًا صحيحًا يُعامَل بوصفه بتًا واحدًا (صفرًا أو قيمة غير صفرية).
+تُكتب البتات بدءًا من البت الأعلى أهمية، ومن ثَمّ تكون النتيجة هي أول `n` بايت من ناتج `arrayPackBitsToString`.
+إذا احتوت المصفوفة على أكثر من `n * 8` عنصرًا، فيُتجاهَل ما زاد عليها؛ وإذا احتوت على عدد أقل، فتُستكمل النتيجة بالحشو بالأصفار حتى تبلغ `n` بايت.
+يجب أن يكون الحجم `n` ثابتًا موجبًا.
+
+**الصيغة**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**الوسيطات**
+
+* `f` — لامبدا تُنتج البت لكل عنصر. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — حجم `FixedString` الناتج بالبايتات. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — مصفوفة واحدة أو أكثر متساوية الحجم المراد حزمها. تأخذ لامبدا وسيطة واحدة لكل مصفوفة. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المعادة**
+
+تُعيد البتات المحزَّمة. [`FixedString(n)`](/ar/reference/data-types/fixedstring)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+أُضيف في: v26.10.0
+
+تُطبِّق لامبدا على كل عنصر من عناصر المصفوفة، ثم تحزم البتات الناتجة في قيمة من نوع `String`.
+تُعيد لامبدا لكل عنصر عددًا صحيحًا يُعامَل على أنه بت واحد (صفر أو غير صفر).
+تُكتب البتات بدءًا من البت الأعلى أهمية، ويبلغ طول النتيجة `ceil(size_of_array / 8)` بايت.
+
+**الصيغة**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**الوسيطات**
+
+* `f` — لامبدا تُنتج البت لكل عنصر. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — مصفوفة واحدة أو أكثر متساوية الحجم يُراد حزمها. تأخذ لامبدا وسيطة واحدة لكل مصفوفة. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المُعادة**
+
+تُعيد البتات المحزَّمة. [`String`](/ar/reference/data-types/string)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+أُضيف في: v26.10.0
+
+تطبّق لامبدا على كل عنصر من عناصر المصفوفة، ثم تحزم البتات الناتجة في قيمة من النوع `UInt64`.
+تُعيد لامبدا لكل عنصر عددًا صحيحًا يُعامَل على أنه بت واحد (صفر أو غير صفر).
+تُوزَّع سلسلة البتات على البايتات بدءًا بالبت الأعلى أهمية (وهي البايتات نفسها التي تنتجها `arrayPackBitsToString`)،
+ثم تُفسَّر البايتات بترتيب البايت الأقل أهمية أولاً، وبذلك يكون
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
+لا يُستخدم سوى أول 64 عنصرًا؛ وإذا قلّ عدد العناصر عن ذلك، كانت البتات المتبقية أصفارًا.
+
+**الصيغة**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**الوسيطات**
+
+* `f` — لامبدا تُنتج البت الخاص بكل عنصر. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — مصفوفة واحدة أو أكثر متساوية الحجم يُراد حزمها. تأخذ لامبدا وسيطة واحدة لكل مصفوفة. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المُعادة**
+
+تُعيد البتات المحزَّمة. [`UInt64`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+أُضيف في: v26.10.0
+
+تُعيد جميع التباديل الجزئية (أي الاختيارات المرتبة التي لا تتكرر فيها الفهارس) ذات الطول `k` من مصفوفة المصدر. يجري التعداد وفقًا للفهارس، ولذلك قد تُنتج القيم المتساوية صفوفًا مكررة في النتيجة. عندما تكون `k = 0`، تُعيد `[[]]`. يُقيِّد الإعداد `function_range_max_elements_in_block` الحجمَ الإجمالي للنتيجة في كل كتلة، إذ تُحتسب كل مصفوفة مُولَّدة بحجمها مضافًا إليه واحد.
+
+**الصيغة**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+* `k` — طول كل تبديل جزئي يُولَّد. يجب ألا يتجاوز حجم مصفوفة المصدر. يدعم الأنواع `Int8` و`Int16` و`Int32` و`Int64` و`UInt8` و`UInt16` و`UInt32` و`UInt64`. [`(U)Int*`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+جميع التبديلات الجزئية التي طولها `k`. [`Array(Array(T))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**مثال `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 أُضيفت في: v23.2.0
@@ -2775,6 +3084,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+أُضيف في: v26.10.0
+
+تُعيد جميع تباديل عناصر مصفوفة المصدر. يجري التعداد بحسب الفهارس، لذا قد تؤدي القيم المتساوية إلى ظهور صفوف مكررة في النتيجة. وإذا كانت مصفوفة المصدر فارغة، تُعيد `[[]]`. يخضع الحجم الإجمالي للنتيجة في كل كتلة للحد الذي يفرضه `function_range_max_elements_in_block`، إذ تُحتسب كل مصفوفة مُولَّدة بحجمها مضافًا إليه واحد.
+
+**الصيغة**
+
+```sql
+arrayPermutations(arr)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+
+**القيمة المعادة**
+
+جميع التباديل الممكنة لمصفوفة المصدر. [`Array(Array(T))`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3221,6 +3562,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+أُضيف في: v26.10.0
+
+يزيل من المصفوفة العنصرَ الموجود عند الفهرس المحدد.
+تبدأ الفهارس من 1، وتُعدّ الفهارس السالبة بدءًا من نهاية المصفوفة.
+إذا كان الفهرس خارج حدود المصفوفة، فتُعاد المصفوفة دون تغيير.
+الفهرس 0 غير صالح.
+
+**الصيغة**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**الوسيطات**
+
+* `arr` — مصفوفة المصدر. [`Array(T)`](/ar/reference/data-types/array)
+* `index` — فهرس العنصر المراد إزالته، وهو عدد صحيح غير Nullable. تُحتسب الفهارس السالبة بدءًا من نهاية المصفوفة. [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تُعيد مصفوفة المصدر بعد حذف العنصر الموجود عند `index`، أو المصفوفة الأصلية كما هي إذا كان `index` خارج الحدود. [`Array(T)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**فهرس موجب**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**فهرس سالب**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**خارج الحدود**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3768,11 +4165,13 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 
 قد تكون الوسيطة الأولى أيضًا [QBit](/ar/reference/data-types/qbit): تكون النتيجة QBit على الأبعاد المحددة (إسقاطًا على مجموعة فرعية من الأبعاد). في هذه الحالة، يجب أن يكون `offset` و`length` ثابتين، لأن بُعد QBit جزء من نوعه، ويجب أن تحدد الشريحة بُعدًا واحدًا على الأقل. تحتفظ الشريحة المحاذاة لحدود مجموعات stride في QBit بالـ stride وتعيد استخدام تدفقات مستويات البت المخزنة دون نسخ.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 arraySlice(arr, offset [, length])
 ```
+
+**الأسماء البديلة**: `slice`
 
 **الوسيطات**
 
@@ -4129,13 +4528,15 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 
 يأخذ عدة مصفوفات ويُرجع مصفوفةً تتضمن جميع العناصر الموجودة في أيٍّ من المصفوفات المصدرية. وتحتوي النتيجة على قيم فريدة فقط.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
-**الوسائط**
+**الأسماء البديلة**: `array_union`
+
+**الوسيطات**
 
 * `arrN` — عدد N من المصفوفات التي تُنشأ منها المصفوفة الجديدة. [`Array(T)`](/ar/reference/data-types/array)
 
@@ -4289,13 +4690,15 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 
 أُضيف في: v20.1.0
 
-يجمع عدة مصفوفات في مصفوفة واحدة، مع دعم المصفوفات غير المتحاذية (أي المصفوفات ذات الأطوال المختلفة). وتحتوي المصفوفة الناتجة على العناصر المناظرة من المصفوفات المصدر، مجمَّعة في Tuples وفق ترتيب الوسيطات المذكور.
+يجمع عدة مصفوفات في مصفوفة واحدة، مع دعم المصفوفات غير المتحاذية (أي المصفوفات ذات الأطوال المختلفة). وتحتوي المصفوفة الناتجة على العناصر المناظرة من المصفوفات المصدر، مجمَّعة في Tuples وفق ترتيب الوسيطات المذكور.
 
-**البنية**
+**الصيغة**
 
 ```sql
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
+
+**الأسماء البديلة**: `zip`
 
 **الوسيطات**
 
@@ -4303,7 +4706,7 @@ arrayZipUnaligned(arr1, arr2, ..., arrN)
 
 **القيمة المعادة**
 
-تعيد مصفوفةً تضم عناصر من مصفوفات المصدر مجمّعةً في قيم Tuple. وتكون أنواع البيانات داخل الـ Tuple مطابقةً لأنواع مصفوفات الإدخال وبالترتيب نفسه الذي تُمرَّر به المصفوفات. [`Array(T)`](/ar/reference/data-types/array) أو [`Tuple(T1, T2, ...)`](/ar/reference/data-types/tuple)
+تعيد مصفوفةً تضم عناصر من مصفوفات المصدر مجمّعةً في قيم Tuple. وتكون أنواع البيانات داخل الـ Tuple مطابقةً لأنواع مصفوفات الإدخال وبالترتيب نفسه الذي تُمرَّر به المصفوفات. [`Array(T)`](/ar/reference/data-types/array) أو [`Tuple(T1, T2, ...)`](/ar/reference/data-types/tuple)
 
 **أمثلة**
 
@@ -4315,6 +4718,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+أُضيف في: v26.8.0
+
+دالة توافق مع PostgreSQL. تُعيد موضع أول ظهور للعنصر في المصفوفة (يبدأ الترقيم من 1)، أو `NULL` إذا لم يكن العنصر موجودًا فيها. وعند تمرير عنصر `NULL`، تبحث الدالة عن أول قيمة `NULL` في المصفوفة، تمامًا كما في PostgreSQL. أما المقابل الأصلي لها في ClickHouse فهو `indexOf`، التي تُعيد 0 بدلًا من `NULL`.
+
+**الصيغة**
+
+```sql
+array_position(array, element)
+```
+
+**الوسيطات**
+
+* `array` — المصفوفة المراد البحث فيها. [`Array(T)`](/ar/reference/data-types/array)
+* `element` — العنصر المراد البحث عنه. [`Any`](/ar/reference/data-types/index)
+
+**القيمة المعادة**
+
+موضع أول ظهور للعنصر (يبدأ العدّ من 1)، أو `NULL` إذا لم يكن العنصر موجودًا. [`Nullable(UInt64)`](/ar/reference/data-types/nullable)
+
+**أمثلة**
+
+**مثال**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -5305,7 +5741,7 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 * بالنسبة إلى وسيطات String أو FixedString: يحسب عدد البايتات في السلسلة النصية.
 * بالنسبة إلى وسيطات Array: يحسب عدد العناصر في المصفوفة.
 * بالنسبة إلى وسيطات QBit: يحسب بُعد المتجه.
-* إذا طُبِّق على وسيطة FixedString أو QBit، فإن الدالة تكون تعبيرًا ثابتًا.
+* إذا طُبِّق على وسيطة FixedString أو QBit، فإن الدالة تكون تعبيرًا ثابتًا.
 
 يرجى ملاحظة أن عدد البايتات في السلسلة النصية لا يساوي عدد
 Unicode &quot;code points&quot;، ولا يساوي عدد Unicode &quot;grapheme clusters&quot;
@@ -5313,13 +5749,13 @@ Unicode &quot;code points&quot;، ولا يساوي عدد Unicode &quot;graphem
 
 لا بأس بوجود بايتات NULL من نوع ASCII في السلاسل النصية، وسيتم احتسابها أيضًا.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 length(x)
 ```
 
-**الأسماء البديلة**: `OCTET_LENGTH`, `CARDINALITY`
+**الأسماء البديلة**: `CARDINALITY`, `OCTET_LENGTH`
 
 **الوسيطات**
 

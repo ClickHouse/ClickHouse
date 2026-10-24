@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 要运行本文中的示例，你需要：
@@ -65,7 +65,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## 通过 HTTP/HTTPS 查询
+  ## 通过 HTTP/HTTPS 查询 {#querying}
 </div>
 
 通过 HTTP/HTTPS 查询有三种方式：
@@ -351,7 +351,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 如果查询中已包含 `FROM` 子句，路径组件仅用于指定下载文件名。
 
 <div id="insert-queries">
-  ## 通过 HTTP/HTTPS 执行插入查询
+  ## 通过 HTTP/HTTPS 执行插入查询 {#insert-queries}
 </div>
 
 执行 `INSERT` 查询时，必须使用 `POST` 方法传输数据。在这种情况下，你可以将查询开头部分写在 URL 参数中，再通过 POST 传递要插入的数据。要插入的数据例如可以是从 MySQL 导出的制表符分隔转储文件。这样，`INSERT` 查询就相当于替代了 MySQL 中的 `LOAD DATA LOCAL INFILE`。
@@ -531,7 +531,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 </Info>
 
 <div id="examples-compression">
-  ## 示例
+  ## 示例 {#examples-compression}
 </div>
 
 要将压缩数据发送到服务器：
@@ -564,7 +564,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## 默认数据库
+  ## 默认数据库 {#default-database}
 </div>
 
 你可以使用 URL 参数 `database` 或 `X-ClickHouse-Database` 请求头来指定默认数据库。
@@ -586,7 +586,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 默认情况下，服务器设置中注册的数据库会被用作默认数据库。开箱即用时，该数据库名为 `default`。或者，你也可以始终在表名前加上点号来指定数据库。
 
 <div id="authentication">
-  ## 身份验证
+  ## 身份验证 {#authentication}
 </div>
 
 可以通过以下三种方式之一提供用户名和密码：
@@ -714,9 +714,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
   使用缓冲可避免这样一种情况：在响应状态码和 HTTP 请求头已发送给客户端之后，才发生查询处理错误。在这种情况下，错误信息会写在响应体末尾，而客户端只能在解析阶段检测到该错误。
 </Tip>
 
-<div id="setting-role-with-query-parameters">
-  ## 使用查询参数设置角色
-</div>
+## 使用查询参数设置角色 {#setting-role-with-query-parameters}
 
 此功能已在 ClickHouse 24.4 中引入。
 
@@ -748,6 +746,8 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 ```
 
 在这种情况下，`?role=my_role&role=my_other_role` 的效果类似于在执行该语句之前先执行 `SET ROLE my_role, my_other_role`。
+
+`role` 查询参数不受 `access_control_improvements.readonly_restricts_set_role` 服务器设置的影响，该设置只会拒绝执行 `SET ROLE` 语句。
 
 ## HTTP 响应码注意事项 {#http_response_codes_caveats}
 
@@ -841,13 +841,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## 带参数的查询
+  ## 带参数的查询 {#cli-queries-with-parameters}
 </div>
 
 您可以创建带参数的查询，并通过相应的 HTTP 请求参数传入参数值。更多信息，请参见[CLI 中的带参数查询](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)。
 
 <div id="examples">
-  ### 示例
+  ### 示例 {#example-3}
 </div>
 
 ```bash
@@ -855,7 +855,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### URL 参数中的制表符
+  ### URL 参数中的制表符 {#tabs-in-url-parameters}
 </div>
 
 查询参数按 &quot;escaped&quot; 格式解析。这样做有一些好处，例如可以将 null 明确解析为 `\N`。这意味着制表符应编码为 `\t` (或 `\` 后跟一个制表符) 。例如，下面的内容在 `abc` 和 `123` 之间包含一个实际的制表符，因此输入字符串会被拆分为两个值：
@@ -885,9 +885,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ['abc','123']
 ```
 
-<div id="predefined_http_interface">
-  ## 预定义 HTTP 接口
-</div>
+## 预定义 HTTP 接口 {#predefined_http_interface}
 
 ClickHouse 支持通过 HTTP 接口执行特定查询。例如，您可以按如下方式将数据写入表中：
 
@@ -896,6 +894,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 ```
 
 ClickHouse 还支持预定义 HTTP 接口，可帮助您更轻松地与 [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter) 等第三方工具集成。下面来看一个示例。
+
+这些处理程序也可以直接通过 SQL 定义，无需编辑服务器配置文件——请参阅 [`CREATE HANDLER`](/zh/reference/statements/create/handler)。
 
 首先，将以下部分添加到您的服务器配置文件中。
 
@@ -939,23 +939,23 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < Keep-Alive: timeout=10
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
 <
-# HELP "Query" "正在执行的查询数量"
+# HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
 "Query" 1
 
-# HELP "Merge" "正在执行的后台合并数量"
+# HELP "Merge" "Number of executing background merges"
 # TYPE "Merge" counter
 "Merge" 0
 
-# HELP "PartMutation" "变更操作数量 (ALTER DELETE/UPDATE)"
+# HELP "PartMutation" "Number of mutations (ALTER DELETE/UPDATE)"
 # TYPE "PartMutation" counter
 "PartMutation" 0
 
-# HELP "ReplicatedFetch" "正在从副本拉取的数据分区片段数量"
+# HELP "ReplicatedFetch" "Number of data parts being fetched from replica"
 # TYPE "ReplicatedFetch" counter
 "ReplicatedFetch" 0
 
-# HELP "ReplicatedSend" "正在发送至副本的数据分区片段数量"
+# HELP "ReplicatedSend" "Number of data parts being sent to replicas"
 # TYPE "ReplicatedSend" counter
 "ReplicatedSend" 0
 
@@ -1056,7 +1056,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### 虚拟参数 `_request_body`
+  #### 虚拟参数 `_request_body` {#virtual-param-request-body}
 </div>
 
 除了 URL 参数、请求头和查询参数外，`predefined_query_handler` 还支持一个特殊的虚拟参数 `_request_body`。
@@ -1125,7 +1125,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static
+  ### static {#static}
 </div>
 
 `static` 可返回 [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)、[status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) 和 `response_content`。其中，`response_content` 用于返回指定的内容。
@@ -1318,7 +1318,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect
+  ### redirect {#redirect}
 </div>
 
 `redirect` 会将请求以 `302` 重定向到 `location`
@@ -1341,7 +1341,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## HTTP 响应头
+  ## HTTP 响应头 {#http-response-headers}
 </div>
 
 ClickHouse 允许你配置自定义 HTTP 响应头，并将其应用于任何可配置的处理程序。这些响应头可通过 `http_response_headers` 设置，该设置接受表示请求头名称及其值的键值对。此功能特别适合在整个 ClickHouse HTTP 接口中实现自定义安全响应头、CORS 策略或任何其他 HTTP 请求头要求。

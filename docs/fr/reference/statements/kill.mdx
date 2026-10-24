@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Cette page décrit les instructions `KILL QUERY` et `KILL MUTATION`.
 
-Par défaut, une correspondance vide se termine sans lever d’exception. Pour que `KILL QUERY` lève une exception lorsque son expression `WHERE` ne laisse aucune ligne éligible dans `system.processes` une fois l’instruction `KILL` en cours exclue, et que `KILL MUTATION` lève une exception lorsque son expression `WHERE` ne correspond à aucune ligne de `system.mutations`, définissez le paramètre [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) sur `true`.
+Par défaut, `KILL QUERY` lève une exception `NOTHING_TO_KILL` lorsque son expression `WHERE` ne laisse aucune ligne éligible dans `system.processes` une fois l’instruction `KILL` en cours exclue, et `KILL MUTATION` lève une exception lorsque son expression `WHERE` ne correspond à aucune ligne de `system.mutations`. Pour autoriser les correspondances vides sans lever d’exception, définissez le paramètre [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) sur `false`.
 L’exécution avec `ON CLUSTER` ne lève pas d’exception en cas de correspondance vide, car les résultats de correspondance ne sont pas agrégés entre les hôtes.
 
 ## KILL QUERY {#kill-query}
@@ -75,9 +75,9 @@ Les utilisateurs en lecture seule ne peuvent arrêter que leurs propres requête
 
 Un utilisateur qui ne dispose pas du privilège `SELECT` sur `system.processes` peut néanmoins annuler sa propre requête en indiquant son identifiant :
 `KILL QUERY WHERE query_id = '<id>'`. Pour un utilisateur qui ne dispose ni de ce privilège ni de `KILL QUERY`, un identifiant correspondant à une requête
-qui ne s’exécute pas sous son compte n’annule aucune requête et ne renvoie aucune ligne, sans signaler d’erreur, sauf si
-[`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) est activé, auquel cas
-l’absence d’effet est signalée par une exception ; un utilisateur qui dispose de `KILL QUERY` mais pas de ce privilège `SELECT` voit sa requête refusée faute de privilège `SELECT`.
+qui ne s’exécute pas sous son compte n’annule aucune requête et lève par défaut une exception `NOTHING_TO_KILL`. Si
+[`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) est défini sur `false`, aucune ligne n’est alors renvoyée ;
+un utilisateur qui dispose de `KILL QUERY` mais pas de ce privilège `SELECT` voit sa requête refusée faute de privilège `SELECT`.
 Toute autre condition `WHERE`, ainsi que `ON CLUSTER`, nécessitent toujours les privilèges décrits ci-dessus.
 
 Par défaut, la version asynchrone des requêtes (`ASYNC`) est utilisée et n’attend pas la confirmation de leur arrêt.

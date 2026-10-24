@@ -1,6 +1,6 @@
 ---
 title: 'Kusto Query Language (KQL) в ClickHouse'
-description: 'Что поддерживает экспериментальный диалект KQL и что он намеренно не поддерживает'
+description: 'Что поддерживает диалект KQL в статусе бета и что он намеренно не поддерживает'
 keywords: ['KQL', 'Kusto', 'диалект']
 sidebarTitle: 'Kusto Query Language (KQL)'
 slug: /guides/kusto-query-language
@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse может разбирать подмножество запросов на [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
-вместо SQL. Этот диалект **экспериментальный** и по умолчанию отключён:
+вместо SQL. Этот диалект находится в статусе **бета** и по умолчанию отключён:
 
 ```sql
 SET allow_experimental_kusto_dialect = 1;

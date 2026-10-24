@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Postgres Query insights'
 description: 'ClickHouse Managed Postgres 的逐语句遥测信息：展示数据库运行的每一种查询模式，按影响排序，并附带说明每条查询为何缓慢的诊断计数器'
-keywords: ['Managed Postgres', 'query insights', 'pg_stat_ch', '慢查询', 'p99 延迟', '查询模式', 'Postgres 性能', '临时块', '并行工作线程', 'wal']
+keywords: ['Managed Postgres', 'query insights', 'pg_stat_ch', '慢查询', 'p99 延迟', '查询模式', 'Postgres 性能', '临时块', '并行工作线程', 'wal', '等待事件', '锁等待', '被阻塞的会话']
 doc_type: 'guide'
 ---
 
@@ -17,24 +17,24 @@ Query Insights 会从你的
 模式进行排序，因此你无需离开 Cloud 控制台，就能从 &quot;p99 正在缓慢上升&quot; 定位到 &quot;这个模式
 正在落盘&quot;。
 
-这些数据来自 [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch)，
+逐语句数据来自 [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch)，
 这是一个开源的 Postgres 扩展，会将每条语句的计数器流式传输到
 ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完成归一化
 —— 字面量会被移除并替换为占位符，因此你查询的
 确切值绝不会进入遥测流。
 
-<div id="open">
-  ## 打开 Query insights
-</div>
+## 打开 Query insights {#open}
 
 在 Cloud 控制台中打开你的 ClickHouse Managed Postgres 实例，然后点击
-左侧边栏中的 **Query insights**。该页面分为四个
+左侧边栏中的 **Query insights**。该页面分为五个
 区域，顺序与实际使用流程一致：
 
 * 一个可在单屏内完成数据库健康检查的 **概览**。
 * 一个 **慢查询模式** 表，对数据库运行过的每种查询模式进行排名，
   并可按你怀疑有问题的维度排序。
 * 一个 **最近查询** 面板，按时间倒序列出每次单独执行的查询。
+* 一个 **Waits** 表，按活跃会话的耗时对各等待事件
+  进行排名。
 * 一个 **详情弹出面板**，汇总单个模式的所有计数器。
 
 使用顶部的 **Time period** 选择器，可在最近 15
@@ -42,11 +42,10 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
 最近 1 天使用 5 分钟桶，最近 1 周或 1 个月使用 1 小时桶——从而让
 图表保持响应流畅。
 
-<div id="overview">
-  ## 概览
-</div>
+## 概览 {#overview}
 
-概览由 6 个面板组成，以 3×2 网格显示：
+概览由 9 个面板组成，以 3×3 网格显示。前两行涵盖
+查询活动：
 
 | 面板                           | 显示内容                                                   |
 | ---------------------------- | ------------------------------------------------------ |
@@ -64,16 +63,29 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
 
 <Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="显示 6 个统计卡片的 Query Insights 概览：每秒查询数、查询延迟百分位、操作分解环形图、返回行数面积图、95.2% 的缓冲区命中率环形图，以及错误柱状图" size="lg" border />
 
-<div id="slow-patterns">
-  ## 慢查询模式
-</div>
+### 等待图表 {#wait-charts}
+
+第三行展示主节点上的活跃会话在等待什么，数据来自[每 30 秒采集一次的样本](#how-waits)：
+
+| 面板                               | 显示内容                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------- |
+| **Active sessions by wait type** | 平均活跃会话数，按等待类型堆叠显示。**CPU** 表示会话处于活跃状态且没有等待事件。将鼠标悬停在条形上，可查看每种类型对应的具体等待事件。 |
+| **Lock wait time**               | 每个时间间隔内采样到的被阻塞会话的锁等待耗时，包括 p50、p95 和最大值。                                 |
+| **Blocked sessions**             | 因等待锁而被阻塞的平均会话数。                                                         |
+
+如果 **Blocked sessions** 持续高于零，同时 **Lock wait
+time** 不断上升，则可能表明存在持续的锁争用。点击任意等待图表即可打开 [Waits](#waits) 表。
+
+<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="等待图表，显示按等待类型堆叠的活跃会话、锁等待时间的 p50、p95 和最大值，以及被阻塞会话数随时间的变化" size="lg" border />
+
+## 慢查询模式 {#slow-patterns}
 
 当概览显示存在问题时，模式表就是调查的起点。每个归一化查询模式各占一行，字面量值已被去除，因此同一语句的多次执行都会归并到同一行。
 
 <Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="慢查询模式表，显示每个归一化查询模式各占一行，并包含 Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned 和 Cache hit 列" size="lg" border />
 
 <div id="sort">
-  ### 按你怀疑的因素排序
+  ### 按你怀疑的因素排序 {#sort}
 </div>
 
 该表默认按 **总运行时间** 降序排序——按这种方式排序时，排在最前面的模式通常就是“什么最耗资源？”这个问题的答案。它不一定是单独来看最慢的模式。一个每天运行八百万次、每次耗时十二毫秒的查询，可能比一个只运行过一次、耗时三秒的查询影响更大。
@@ -93,7 +105,7 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
 缓存命中率以及每个模式的 CPU 时间。
 
 <div id="filters">
-  ### 缩小表的筛选范围
+  ### 缩小表的筛选范围 {#filters}
 </div>
 
 按你要排查的工作负载范围筛选表：
@@ -106,9 +118,7 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
 “只看 orders service 在 `sales` db 上执行了什么操作”
 就对应两个下拉菜单。过滤值会根据你的实例实际运行过的内容自动填充。
 
-<div id="recent-queries">
-  ## 最近查询
-</div>
+## 最近查询 {#recent-queries}
 
 在模式表下方，**最近查询**面板会按时间倒序列出每一次单独的
 执行——每个已执行的
@@ -128,9 +138,24 @@ CPU time 排序。
 点击任意一行，即可打开与模式表相同的详情弹出面板，
 并将范围限定为该次执行对应的单个模式。
 
-<div id="detail">
-  ## 详情弹出面板
-</div>
+## 等待 {#waits}
+
+展开 **Waits**，或点击任一[等待图表](#wait-charts)，即可查看所选时间范围内按平均活跃会话数排序的等待
+事件。
+
+<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="等待表，显示按平均活跃会话数排序的等待事件，包含 Wait event、Wait type、Avg active sessions 和 Share of load 列" size="lg" border />
+
+| 列                       | 显示内容                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| **Wait event**          | 以 `type:event` 格式表示的等待事件，例如 `Lock:relation` 或 `IO:WalSync`。**CPU** 表示会话处于活跃状态且没有等待事件。 |
+| **Wait type**           | 等待事件的类型，颜色与 **Active sessions by wait type** 中的颜色对应。                                  |
+| **Avg active sessions** | 所选时间范围内处于该等待事件的平均会话数。                                                                 |
+| **Share of load**       | 该等待事件在全部平均活跃会话 (含 **CPU**) 中所占的比例。                                                    |
+
+有关各事件的说明，请参阅
+[Postgres 等待事件参考文档](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE)。
+
+## 详情弹出面板 {#detail}
 
 点击模式表或最近查询表中的任意一行，右侧就会打开 **查询
 详情**弹出面板。该弹出面板会汇总所选时间范围内该模式的所有执行，
@@ -154,7 +179,7 @@ CPU time 排序。
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="查询详情弹出面板的后续部分，展示了包含数据库、用户、操作和应用程序的查询上下文部分，以及一个最近执行卡片，其中包含时间戳、OK 状态、服务器角色、主机 ID，以及每次执行的耗时、行数、缓存命中、CPU、共享读取块数和共享命中块数等计数器" size="md" border />
 
 <div id="counters">
-  ### 单次执行计数器
+  ### 单次执行计数器 {#counters}
 </div>
 
 展开最近一次执行后，你就能看到精确指出
@@ -173,26 +198,24 @@ CPU time 排序。
 诊断慢查询模式所需的全部信息，都集中在一个地方、同一
 屏中。
 
-<div id="api">
-  ## Query insights API
-</div>
+## Query insights API {#api}
 
-相同的遥测数据也可以通过
+按语句统计的遥测数据也可以通过
 [ClickHouse Cloud OpenAPI](/zh/products/managed-postgres/openapi#query-insights)
-以编程方式访问。
+获取。
 [慢查询模式](#slow-patterns)表对应
 [list slow query patterns](/zh/products/cloud/api-reference/postgres/slow-query-patterns-get-list)
 端点，而[详情弹出面板](#detail)对应
 [get slow query pattern](/zh/products/cloud/api-reference/postgres/slow-query-pattern-get)
 端点；该端点会返回某个模式的聚合指标及其
-最近执行。
+最近执行记录。
 
 <div id="how-it-works">
-  ## 工作原理
+  ## 工作原理 {#how-it-works}
 </div>
 
 <div id="how-normalized">
-  ### 在 Postgres 中完成归一化，在传输出去之前
+  ### 在 Postgres 中完成归一化，在传输出去之前 {#how-normalized}
 </div>
 
 `pg_stat_ch` 会挂接到 parse-analyze 阶段，把每个字面量替换为
@@ -201,7 +224,7 @@ CPU time 排序。
 缓存的模式。包含具体值的原始语句永远不会离开数据库。
 
 <div id="how-overhead">
-  ### 尽量不影响数据库
+  ### 尽量不影响数据库 {#how-overhead}
 </div>
 
 生产端每条 语句 仅增加约 3% 的开销。入队路径
@@ -209,16 +232,22 @@ CPU time 排序。
 该扩展会丢弃事件并通过计数器记录，而不是对 Postgres
 施加反压。
 
+### 等待数据基于采样 {#how-waits}
+
+[等待图表](#wait-charts)和 [Waits](#waits) 表所用的样本由主节点每 30 秒采集一次。
+短时等待可能恰好发生在两次采样之间，因而不会显示出来，
+所以这些视图最适合用于识别持续性等待和锁争用。
+
 <div id="how-raw-events">
-  ### 原始事件，而非聚合数据
+  ### 原始事件，而非聚合数据 {#how-raw-events}
 </div>
 
 `pg_stat_ch` 会为每条已执行的语句 (包括顶层和
-嵌套语句) 发出一个原始事件，具体取决于采样设置。UI 中的每个百分位数、排名和细分
-都是针对同一事件流的 ClickHouse 查询。
+嵌套语句) 发出一个原始事件，具体取决于采样设置。查询的百分位数、排名和
+细分统计均由 ClickHouse 基于该事件流计算得出。
 
 <div id="how-engine">
-  ### 与客户使用的相同引擎
+  ### 与客户使用的相同引擎 {#how-engine}
 </div>
 
 Insights 后端采用 [ClickHouse Cloud](/zh/products/cloud/getting-started/intro)。
@@ -227,7 +256,7 @@ Insights 后端采用 [ClickHouse Cloud](/zh/products/cloud/getting-started/intr
 而在数十亿行数据上进行亚秒级聚合，则让 UI 在按一周或一个月切片分析时仍保持流畅交互。
 
 <div id="how-open-source">
-  ### 开源
+  ### 开源 {#how-open-source}
 </div>
 
 `pg_stat_ch` 采用 Apache 2.0 许可证。可在任何 Postgres 上运行，并将数据发送到任何
@@ -235,7 +264,7 @@ ClickHouse。源代码和问题跟踪见
 [github.com/clickhouse/pg&#95;stat&#95;ch](https://github.com/clickhouse/pg_stat_ch)。
 
 <div id="related">
-  ## 相关页面
+  ## 相关页面 {#related}
 </div>
 
 * [监控仪表板](/zh/products/managed-postgres/monitoring/dashboard) — 内置资源与活动图表

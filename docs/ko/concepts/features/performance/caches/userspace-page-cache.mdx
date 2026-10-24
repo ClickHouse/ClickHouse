@@ -6,9 +6,7 @@ title: '사용자 공간 페이지 캐시'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## 개요
-</div>
+## 개요 {#overview}
 
 > 사용자 공간 페이지 캐시는 OS 페이지 캐시에 의존하지 않고, 프로세스 내 메모리에 데이터를 캐시할 수 있게 해주는 새로운 캐싱 메커니즘입니다.
 
@@ -24,13 +22,9 @@ ClickHouse는 이미 Amazon S3, Google Cloud Storage (GCS), Azure Blob Storage�
 | 서버의 메모리 사용량에 표시되지 않습니다              | 서버의 메모리 사용량에 표시됩니다    |
 | 디스크 기반과 메모리 기반(OS 페이지 캐시) 모두에 적합합니다 | **디스크가 없는 서버에 적합합니다** |
 
-<div id="configuration-settings-and-usage">
-  ## 구성 설정 및 사용법
-</div>
+## 구성 설정 및 사용법 {#configuration-settings-and-usage}
 
-<div id="usage">
-  ### 사용
-</div>
+### 사용 {#usage}
 
 사용자 공간 페이지 캐시를 활성화하려면 먼저 서버에서 이를 설정하십시오:
 
@@ -51,9 +45,7 @@ page_cache_max_size: 100G
 SET use_page_cache_for_disks_without_file_cache=1;
 ```
 
-<div id="settings">
-  ### 설정
-</div>
+### 설정 {#settings}
 
 | 설정                                                      | 설명                                                                                                                                                                                                                | 기본값         |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -71,9 +63,7 @@ SET use_page_cache_for_disks_without_file_cache=1;
 | `page_cache_lookahead_blocks`                           | 사용자 공간 페이지 캐시 미스가 발생하면, 해당 블록들 역시 캐시에 없을 경우 하위 스토리지에서 최대 이 수만큼의 연속 블록을 한 번에 읽습니다. 각 블록의 크기는 `page_cache_block_size`바이트입니다.                                                                                        | `16`        |
 | `page_cache_shards`                                     | 뮤텍스 경합을 줄이기 위해 사용자 공간 페이지 캐시를 이 수만큼의 세그먼트에 걸쳐 분산합니다. 실험적 기능이며 성능 향상에 도움이 될 가능성은 크지 않습니다.                                                                                                                          | `4`         |
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * [파일 시스템 캐시](/ko/concepts/features/configuration/server-config/storing-data)
 * [ClickHouse v25.3 출시 웨비나](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

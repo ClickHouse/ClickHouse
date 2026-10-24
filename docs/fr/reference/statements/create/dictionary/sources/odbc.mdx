@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Vous pouvez utiliser cette méthode pour vous connecter à n’importe quelle base de données disposant d’un pilote ODBC.
 
-Exemple de paramètres :
+Exemple de paramètres :
 
 <Tabs>
   <Tab title="DDL">
@@ -42,28 +42,26 @@ Exemple de paramètres :
 
 <br />
 
-Champs des paramètres :
+Champs des paramètres :
 
-| Paramètre              | Description                                                                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db`                   | Nom de la base de données. Omettez-le si le nom de la base de données est défini dans les paramètres de `<connection_string>`.                                                                              |
-| `table`                | Nom de la table et du schéma, s’il existe.                                                                                                                                                                  |
-| `connection_string`    | Chaîne de connexion.                                                                                                                                                                                        |
-| `invalidate_query`     | Requête permettant de vérifier l’état du dictionnaire. Facultatif. Pour en savoir plus, consultez la section [Refreshing dictionary data using LIFETIME](/fr/reference/statements/create/dictionary/lifetime). |
-| `background_reconnect` | Se reconnecte à la réplique en arrière-plan si la connexion échoue. Facultatif.                                                                                                                             |
-| `query`                | Requête personnalisée. Facultatif.                                                                                                                                                                          |
+| Paramètre              | Description                                                                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`                   | Nom de la base de données. Omettez-le si le nom de la base de données est défini dans les paramètres de `<connection_string>`.                                                                                                                          |
+| `table`                | Nom de la table et du schéma, s’il existe.                                                                                                                                                                                                              |
+| `connection_string`    | Chaîne de connexion.                                                                                                                                                                                                                                    |
+| `invalidate_query`     | Requête permettant de vérifier l’état du dictionnaire. Facultatif. Pour en savoir plus, consultez la section [Refreshing dictionary data using LIFETIME](/fr/reference/statements/create/dictionary/lifetime).                                             |
+| `background_reconnect` | Se reconnecte à la réplique en arrière-plan si la connexion échoue. Facultatif.                                                                                                                                                                         |
+| `query`                | Requête personnalisée. Facultatif. Ses colonnes sont prises en compte selon leur position ; elle doit donc les renvoyer dans l’[ordre attendu par le dictionnaire](/fr/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 
 <Note>
   Les champs `table` et `query` ne peuvent pas être utilisés ensemble. De plus, l’un des deux champs `table` ou `query` doit obligatoirement être déclaré.
 </Note>
 
-ClickHouse reçoit les caractères de guillemet du pilote ODBC et place tous les paramètres entre guillemets dans les requêtes envoyées au pilote ; il est donc nécessaire de définir le nom de la table en respectant sa casse dans la base de données.
+ClickHouse reçoit les caractères de guillemet du pilote ODBC et place tous les paramètres entre guillemets dans les requêtes envoyées au pilote ; il est donc nécessaire de définir le nom de la table en respectant sa casse dans la base de données.
 
 Si vous rencontrez des problèmes d’encodage lors de l’utilisation d’Oracle, consultez l’article correspondant de la [FAQ](/fr/resources/support-center/knowledge-base/integrations/oracle-odbc).
 
-<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
-  ### Vulnérabilité connue de la fonctionnalité des dictionnaires ODBC
-</div>
+### Vulnérabilité connue de la fonctionnalité des dictionnaires ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 <Note>
   Lors de la connexion à la base de données via le pilote ODBC, le paramètre de connexion `Servername` peut être remplacé. Dans ce cas, les valeurs de `USERNAME` et `PASSWORD` de `odbc.ini` sont envoyées au serveur distant et peuvent être compromises.
@@ -92,9 +90,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 Le pilote ODBC enverra les valeurs de `USERNAME` et `PASSWORD` contenues dans `odbc.ini` à `some-server.com`.
 
-<div id="example-of-connecting-postgresql">
-  ### Exemple de connexion à PostgreSQL
-</div>
+### Exemple de connexion à PostgreSQL {#example-of-connecting-postgresql}
 
 Système d’exploitation Ubuntu.
 
@@ -181,9 +177,7 @@ La configuration du dictionnaire dans ClickHouse :
 
 Vous devrez peut-être modifier `odbc.ini` afin d’indiquer le chemin complet vers la bibliothèque avec le pilote `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-<div id="example-of-connecting-ms-sql-server">
-  ### Exemple de connexion à MS SQL Server
-</div>
+### Exemple de connexion à MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Sous Ubuntu.
 

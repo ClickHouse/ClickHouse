@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="cpu_slot_preemption">
-  ## cpu_slot_preemption
-</div>
+## cpu_slot_parking {#cpu_slot_parking}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+Détermine si un fil d’exécution de requête libère (met en attente) son slot CPU lorsqu’il est bloqué dans une attente non liée au CPU, par exemple lors de certaines opérations d’E/S ou lorsqu’il est inactif faute de tâche disponible. Un fil d’exécution mis en attente n’est pas comptabilisé dans la limite de concurrence CPU, ce qui permet à un autre fil d’exécution d’exploiter le CPU qui resterait autrement inactif ; le slot est réacquis à la fin de l’attente. Ce paramètre ne s’applique que lorsque `cpu_slot_preemption` est activé et qu’une même ressource CPU définit à la fois MASTER THREAD et WORKER THREAD ; dans les autres configurations, il n’a aucun effet. Il peut être modifié sans redémarrer le serveur.
+
+**Exemple**
+
+```xml
+<cpu_slot_parking>true</cpu_slot_parking>
+```
+
+**Voir Aussi**
+
+* [Planification des charges de travail](/fr/concepts/features/configuration/server-config/workload-scheduling)
+
+## cpu_slot_preemption {#cpu_slot_preemption}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Oui" />
 
@@ -33,9 +47,7 @@ Définit comment s’effectue l’ordonnancement des workloads pour les ressourc
 
 * [Ordonnancement des charges de travail](/fr/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_preemption_timeout_ms">
-  ## cpu_slot_preemption_timeout_ms
-</div>
+## cpu_slot_preemption_timeout_ms {#cpu_slot_preemption_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Yes" />
 
@@ -51,9 +63,7 @@ Définit pendant combien de millisecondes un worker thread peut attendre lors de
 
 * [ordonnancement des charges de travail](/fr/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="cpu_slot_quantum_ns">
-  ## cpu_slot_quantum_ns
-</div>
+## cpu_slot_quantum_ns {#cpu_slot_quantum_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="Yes" />
 

@@ -39,6 +39,16 @@ doc_type: 'guide'
 
 أما استعلامات `INSERT` إلى جدول `Distributed` فتُنتج مقاطع مماثلة في `DistributedSink` بمفاتيح السمات ذاتها `clickhouse.cluster` و`clickhouse.shard_num`.
 
+### spans لمهام خطة التنفيذ الموزعة {#spans-of-distributed-plan-tasks}
+
+عند تفعيل الإعداد التجريبي `make_distributed_plan`، يُقسَّم الاستعلام إلى خطة مكوّنة من مراحل، وتُقسَّم كل مرحلة بدورها إلى مهام تُوجَّه إلى stateless worker عبر HTTP. ويحمل طلب التوجيه سياق التتبّع في ترويستَي `traceparent` و`tracestate`، فتنضم spans على العامل إلى تتبّع المُبادِر:
+
+* `StatelessWorkerClient::sendTask` (النوع `CLIENT`) — span واحد على المُبادِر لكل مهمة موجَّهة، ولا يغطي سوى طلب البدء؛ إذ تُنفَّذ المهمة نفسها بشكل غير متزامن على العامل، ويُستطلَع إكمالها دوريًا. السمات: `clickhouse.distributed.task_id` و`clickhouse.initial_query_id` و`clickhouse.target_host`، إضافةً إلى `clickhouse.exception` عند فشل التوجيه؛
+* `InterserverIOHTTPHandler` (النوع `SERVER`) — يمثّل جانب العامل من أي طلب يحمل سياق تتبّع، ويتضمن `clickhouse.uri` و`http.method` و`clickhouse.http_status`. وإذا فشل الطلب قبل بدء مهمته (بسبب فشل في المصادقة، أو استثناء في نقطة النهاية)، يُسجَّل `clickhouse.exception` و`clickhouse.exception_code` على span هذا، ويكون حينئذٍ الأثر الوحيد للتوجيه على جانب العامل. أما الطلبات التي لا تتضمن ترويسة `traceparent` (مثل عمليات جلب الأجزاء بين النسخ المتماثلة) فلا يجري تتبّعها؛
+* `DistributedPlanTask::execute` (النوع `SERVER`) — يمثّل تنفيذ مهمة واحدة على العامل، وهو نظير span `query` في الاستعلام العادي: إذ يحمل `db.statement` و`clickhouse.query_id` و`clickhouse.query_status` أو الاستثناء بالطريقة نفسها، إضافةً إلى هوية المهمة: `clickhouse.distributed.task_id` و`clickhouse.initial_query_id` و`clickhouse.distributed.plan_hash` (تجزئة جزء الخطة المُسلسَل) و`clickhouse.distributed.serialization_version` و`clickhouse.distributed.execute_locally`، وتدفقات `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` التي تقرأ منها المهمة وتكتب إليها.
+
+يبقى span المهمة قائمًا بعد انتهاء span الطلب الذي أطلقها. وعند ضبط `distributed_plan_execute_locally = 1` لا يُرسَل أي طلب، بل تُنفَّذ المهام على خيوط تنفيذ المُبادِر، وتُلحَق spans `DistributedPlanTask::execute` الخاصة بها بتتبّع المُبادِر مباشرةً.
+
 ## تتبّع طلبات ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 
 يدعم ClickHouse تتبّع OpenTelemetry لطلبات [ClickHouse Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index) (خدمة تنسيق متوافقة مع ZooKeeper). تتيح هذه الميزة رؤية تفصيلية لدورة حياة عمليات Keeper، بدءًا من إرسال الطلب من العميل وصولًا إلى معالجته على جهة الخادم.

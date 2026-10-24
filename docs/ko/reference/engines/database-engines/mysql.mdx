@@ -23,9 +23,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 * `CREATE TABLE`
 * `ALTER`
 
-<div id="creating-a-database">
-  ## 데이터베이스 생성
-</div>
+## 데이터베이스 생성 {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -42,9 +40,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **설정**
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 MySQL 프로토콜 connection에 대해 zlib 압축을 활성화합니다. `1`로 설정하면 ClickHouse가 MySQL 서버에 프로토콜 수준의 압축을 요청합니다.
 
@@ -58,9 +54,13 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+### `connection_auto_close` {#connection-auto-close}
+
+쿼리 실행(Query Execution) 후 연결을 자동으로 닫아 연결 재사용을 비활성화합니다. `0`으로 설정하면 데이터베이스의 각 테이블이 다음 쿼리에 사용할 연결을 자체 풀에 유지합니다.
+
+기본값: `1`.
+
+## TLS/SSL {#tls-ssl}
 
 MySQL 암호화 연결의 자격 증명은 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)의 키(또는 키-값 인수)로 전달됩니다.
 
@@ -76,9 +76,7 @@ MySQL 암호화 연결의 자격 증명은 [명명된 컬렉션](/ko/concepts/fe
 
 <a id="data_types-support" />
 
-<div id="data-types-support">
-  ## 데이터 타입 지원
-</div>
+## 데이터 타입 지원 {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 | -------------------------------- | ------------------------------------------------------------ |
@@ -107,9 +105,7 @@ MySQL 암호화 연결의 자격 증명은 [명명된 컬렉션](/ko/concepts/fe
 
 [Nullable](/ko/reference/data-types/nullable)을 지원합니다. 공간 컬럼은 다음 3가지 경우 기하 타입 대신 `String`(널 허용인 경우 `Nullable(String)`)에 매핑됩니다. `GEOMETRYCOLLECTION`으로 선언된 경우, `geometry` 플래그가 비활성화되고 타입이 `POINT`가 아닌 경우, 또는 `Point`만 `Nullable` 내부에 중첩할 수 있으므로 컬럼이 널 허용이고 타입이 `POINT`가 아닌 경우입니다. 세 경우 모두 문자열은 MySQL이 반환하는 값 그대로, 즉 4바이트 SRID 접두사 뒤에 WKB payload가 이어지는 형식으로 저장됩니다. 따라서 WKB 디코더에 전달하기 전에 앞의 4바이트를 제거하십시오.
 
-<div id="global-variables-support">
-  ## 전역 변수 지원
-</div>
+## 전역 변수 지원 {#global-variables-support}
 
 호환성을 높이기 위해 전역 변수는 MySQL 방식인 `@@identifier`로 참조할 수 있습니다.
 
@@ -128,9 +124,7 @@ MySQL 암호화 연결의 자격 증명은 [명명된 컬렉션](/ko/concepts/fe
 SELECT @@version;
 ```
 
-<div id="examples-of-use">
-  ## 사용 예시
-</div>
+## 사용 예시 {#examples-of-use}
 
 MySQL의 테이블:
 

@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes configuran el servidor de ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="parquet_metadata_cache_max_entries">
-  ## parquet_metadata_cache_max_entries
-</div>
+## parquet_metadata_cache_max_entries {#parquet_metadata_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />Tamaño máximo de la caché de metadatos de Parquet, en número de entradas. Cero significa que está deshabilitada.
 
-<div id="parquet_metadata_cache_policy">
-  ## parquet_metadata_cache_policy
-</div>
+## parquet_metadata_cache_policy {#parquet_metadata_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de caché de metadatos de Parquet.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché de metadatos de Parquet. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="parquet_metadata_cache_size">
-  ## parquet_metadata_cache_size
-</div>
+## parquet_metadata_cache_size {#parquet_metadata_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" changeable_without_restart="Sí" />Tamaño máximo de la caché de metadatos de Parquet, en bytes. Cero significa que está deshabilitada.
 
-<div id="parquet_metadata_cache_size_ratio">
-  ## parquet_metadata_cache_size_ratio
-</div>
+## parquet_metadata_cache_size_ratio {#parquet_metadata_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />El tamaño de la cola protegida (en caso de una política SLRU) en la caché de metadatos de Parquet, como proporción del tamaño total de la caché.
 

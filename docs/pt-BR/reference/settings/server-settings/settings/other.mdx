@@ -18,6 +18,14 @@ Essas configurações se aplicam ao servidor ClickHouse e são geradas automatic
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Sim" />Provoca falha no servidor em caso de exceções LOGICAL&#95;ERROR. Somente para especialistas.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+Permite que funções de IA (como `aiGenerate`, `aiEmbed`, `aiSimilarity`) usem coleções nomeadas criadas com `CREATE NAMED COLLECTION`.
+Quando desabilitada, as funções de IA aceitam apenas coleções nomeadas definidas no arquivo de configuração do servidor, e o uso de qualquer outra coleção lança uma exceção.
+Isso vale tanto para o parâmetro `credentials` quanto para as configurações `ai_function_text_default_credentials` e `ai_function_embedding_default_credentials`.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Lista de discos permitidos para uso com Iceberg
@@ -94,6 +102,30 @@ O ClickHouse recarrega os dicionários internos a cada x segundos. Isso permite 
 Intervalo, em segundos, durante o qual o consumo máximo de memória permitido do servidor é ajustado de acordo com o limite correspondente nos cgroups.
 
 Para desativar o observador de cgroups, defina este valor como `0`.
+
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Habilita a coleta de conexões para a tabela `system.connections`. Essa tabela mostra as conexões das interfaces de consulta TCP nativo e HTTP. Ela não mostra conexões de MySQL, PostgreSQL, gRPC ou outros protocolos.
+
+Quando esta configuração é definida como `true`, o servidor mantém uma lista de conexões em memória:
+
+* O servidor adiciona uma conexão TCP nativa à lista após a autenticação.
+* O servidor adiciona uma conexão HTTP à lista quando a conexão recebe sua primeira consulta.
+* O servidor remove uma conexão da lista quando ela é fechada. Entre as requisições, uma conexão HTTP keep-alive fica com o status `idle`.
+
+Cada conexão e cada consulta têm um pequeno custo de sincronização. Por isso, o valor default é `false`.
+
+Um usuário sem o privilégio `SHOW CONNECTIONS` vê apenas as próprias conexões.
+
+É possível alterar esta configuração sem reiniciar o servidor. Ao alterá-la para `false`, `system.connections` fica vazia e o servidor para de registrar novas conexões. Ao alterá-la para `true`, uma conexão já aberta passa a aparecer em `system.connections` na sua próxima consulta.
+
+Exemplo de configuração:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+Veja também: `system.connections`, `system.processes`.
 
 ## compressão {#compression}
 
@@ -1165,8 +1197,8 @@ Exemplo:
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1556,6 +1588,8 @@ Na inicialização, o servidor instala em si mesmo um filtro [`seccomp`](https:/
 
 A criação de espaços de nomes é recusada em todas as suas formas: `unshare` e `setns` não são permitidos de forma alguma, um `clone` que solicite um espaço de nomes entre suas flags é recusado, e `clone3` - cujos argumentos ficam em uma estrutura que um filtro não consegue ler, o que impede distinguir um espaço de nomes de uma thread - é recusado por completo, com `ENOSYS`. É assim que uma libc descobre que precisa usar `clone` no lugar dele, e por isso a criação de threads e processos continua funcionando; `docker` e `systemd` recusam `clone3` da mesma forma em suas próprias políticas.
 
+As chamadas de sistema de atributos estendidos também são recusadas com `ENOSYS`. O ClickHouse não as utiliza, mas os módulos NSS do host são executados dentro do processo do servidor, e o `nss-resolve` do `systemd` verifica se pode marcar seu socket com um atributo antes de fazê-lo; ele interpreta `ENOSYS` como &quot;não&quot; e segue sem a marcação, enquanto `SIGSYS` no modo `trap` encerraria o servidor já na primeira resolução de nome do host.
+
 Valores possíveis:
 
 * `trap` - o kernel envia `SIGSYS` para a thread infratora. O ClickHouse o trata como qualquer outro sinal fatal: o número da chamada de sistema e um stack trace são gravados no log, e o servidor é encerrado.
@@ -1564,7 +1598,7 @@ Valores possíveis:
 * `log` - a chamada de sistema é permitida e apenas registrada. Nenhuma chamada de sistema é recusada, portanto este modo não impõe política alguma; use-o para validar a política com a sua carga de trabalho antes de ativá-la. `PR_SET_NO_NEW_PRIVS` continua sendo definido neste modo, pois o kernel o exige antes de aceitar qualquer filtro; assim, nem mesmo aqui um programa setuid executado pelo servidor consegue elevar privilégios.
 * `disabled` - nenhum filtro é instalado.
 
-O padrão é `log`, para que a política não imponha nada até ser validada com uma carga de trabalho real: execute o servidor com ela, monitore o log de auditoria do kernel em busca de chamadas de sistema não cobertas pela política e só então altere a configuração para `trap`, `kill` ou `errno`.
+O padrão é `log`, para que a política não imponha nada até ser validada com uma carga de trabalho real: execute o servidor com ela, monitore o log de auditoria do kernel em busca de chamadas de sistema não cobertas pela política e só então altere a configuração para `trap`, `kill` ou `errno`. O arquivo de configuração distribuído com os pacotes do servidor e com a imagem Docker a define como `trap`.
 
 Quando o kernel não consegue instalar um filtro com a ação `log` - por ser anterior ao Linux 4.14, por ter sido compilado sem `CONFIG_SECCOMP_FILTER` ou porque um sandbox externo, como um runtime de contêiner, recusa a chamada de sistema `seccomp` - o modo `log` registra um aviso com o motivo e o servidor é executado sem filtro, já que o filtro não teria nada a impor. `PR_SET_NO_NEW_PRIVS` é definido mesmo assim. Os modos de imposição não se comportam assim: se o filtro não puder ser instalado, o servidor não inicia.
 
@@ -1572,7 +1606,9 @@ Em todos os modos, exceto `disabled`, o kernel também registra a chamada de sis
 
 Um filtro não pode ser removido nem flexibilizado depois de instalado e é herdado tanto por `fork` quanto por `execve`; portanto, ele também se aplica a dicionários executáveis e a funções definidas pelo usuário executáveis, às pontes de biblioteca e ODBC e ao canário de OOM. Um script executado por qualquer um deles está sujeito à mesma política, o que vale ter em mente caso ele faça algo incomum.
 
-A política só está implementada para x86-64 e AArch64, pois consiste em uma lista de números de chamadas de sistema específicos de cada arquitetura. Em qualquer outra arquitetura, o servidor registra um aviso na inicialização e é executado sem filtro; ainda assim, `PR_SET_NO_NEW_PRIVS`, que não depende da arquitetura, continua sendo definido em todos os modos, exceto `disabled`.
+A política só está implementada para x86-64 e AArch64, pois consiste em uma lista de números de chamadas de sistema específicos de cada arquitetura. Em qualquer outra arquitetura, o servidor registra um aviso na inicialização e é executado sem filtro, mas `PR_SET_NO_NEW_PRIVS`, que não depende da arquitetura, continua sendo definido em todos os modos, exceto `disabled`. O seccomp é um recurso do kernel do Linux: em outros sistemas operacionais, o servidor registra um aviso na inicialização em qualquer modo, exceto `disabled`, e é executado sem filtro.
+
+`system.server_settings` informa o modo do filtro efetivamente em vigor, e não o configurado: `disabled` sempre que o servidor é executado sem filtro - em um sistema operacional diferente do Linux, em uma arquitetura sem política ou no modo `log` quando o kernel não consegue instalar seu filtro - e, nos demais casos, o modo definido na inicialização, mesmo depois que a configuração é recarregada com outro valor.
 
 **Exemplo**
 
@@ -1647,6 +1683,12 @@ Exemplo:
 ```xml
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
+
+## tcp_with_proxy_allow_interserver_mode {#tcp_with_proxy_allow_interserver_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+Permite que clientes conectados via `tcp_with_proxy_port` usem o modo entre servidores do protocolo nativo. Desative esta configuração quando `tcp_with_proxy_port` estiver exposta a clientes não confiáveis por meio de um proxy. Conexões com `tcp_port` e `tcp_port_secure` não são afetadas.
 
 ## text_log {#text_log}
 

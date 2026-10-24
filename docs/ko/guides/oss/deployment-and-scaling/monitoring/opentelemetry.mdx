@@ -38,6 +38,16 @@ ClickHouse는 [W3C 권고안](https://www.w3.org/TR/trace-context/)에 설명된
 
 Distributed 테이블에 대한 `INSERT` 쿼리는 `DistributedSink`에서 동일한 `clickhouse.cluster` 및 `clickhouse.shard_num` 속성 키를 갖는 유사한 스팬을 생성합니다.
 
+### 분산 실행 계획 작업의 스팬 {#spans-of-distributed-plan-tasks}
+
+실험적 설정인 `make_distributed_plan`을 사용하면 쿼리는 여러 스테이지로 구성된 계획으로 분할되고, 각 스테이지는 다시 여러 작업으로 나뉘어 HTTP를 통해 상태 비저장 워커로 전달됩니다. 디스패치 요청은 `traceparent` 및 `tracestate` 헤더에 추적 컨텍스트를 담아 전송하므로, 워커의 스팬은 initiator의 트레이스에 합류합니다.
+
+* `StatelessWorkerClient::sendTask` (유형 `CLIENT`) — initiator에서 전달된 작업마다 하나씩 생성되는 스팬으로, 시작 요청만 포함합니다. 작업 자체는 워커에서 비동기로 실행되며, 완료 여부는 폴링으로 확인합니다. 속성은 `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.target_host`이며, 디스패치가 실패하면 `clickhouse.exception`이 추가됩니다.
+* `InterserverIOHTTPHandler` (유형 `SERVER`) — 추적 컨텍스트를 포함한 요청의 워커 측 스팬으로, `clickhouse.uri`, `http.method`, `clickhouse.http_status`를 포함합니다. 작업이 시작되기 전에 실패한 요청(인증 실패 또는 엔드포인트에서 발생한 예외)은 이 스팬에 `clickhouse.exception`과 `clickhouse.exception_code`를 기록하며, 이때 이 스팬이 해당 디스패치에 대한 유일한 워커 측 트레이스가 됩니다. `traceparent` 헤더가 없는 요청(예: 레플리카 간 파트 페치)은 추적되지 않습니다.
+* `DistributedPlanTask::execute` (유형 `SERVER`) — 워커에서 하나의 작업이 실행되는 과정을 나타내며, 일반 쿼리의 `query` 스팬에 해당합니다. 이 스팬은 `db.statement`, `clickhouse.query_id`, 그리고 `clickhouse.query_status` 또는 예외를 동일한 방식으로 포함하며, 작업 아이덴티티도 함께 포함합니다. 작업 아이덴티티는 `clickhouse.distributed.task_id`, `clickhouse.initial_query_id`, `clickhouse.distributed.plan_hash`(직렬화된 계획 프래그먼트의 해시), `clickhouse.distributed.serialization_version`, `clickhouse.distributed.execute_locally`, 그리고 작업이 읽고 쓰는 `clickhouse.exchange.inputs` / `clickhouse.exchange.outputs` 스트림으로 구성됩니다.
+
+작업 스팬은 해당 작업을 시작한 요청 스팬보다 오래 유지됩니다. `distributed_plan_execute_locally = 1`로 설정하면 요청이 전송되지 않습니다. 이 경우 작업은 initiator의 스레드에서 실행되며, 해당 `DistributedPlanTask::execute` 스팬은 initiator의 트레이스에 직접 연결됩니다.
+
 ## ClickHouse Keeper 요청 추적 {#tracing-clickhouse-keeper-requests}
 
 ClickHouse는 [ClickHouse Keeper](/ko/guides/oss/deployment-and-scaling/keeper/index) 요청(ZooKeeper와 호환되는 조정 서비스)에 대한 OpenTelemetry 추적을 지원합니다. 이 기능을 사용하면 클라이언트가 요청을 제출하는 시점부터 서버 측에서 처리되는 과정까지 Keeper 작업의 전체 수명 주기를 세부적으로 파악할 수 있습니다.

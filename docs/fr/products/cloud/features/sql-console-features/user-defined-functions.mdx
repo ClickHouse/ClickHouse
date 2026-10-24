@@ -412,13 +412,13 @@ Consultez la [référence de l’API UDF](/fr/products/cloud/api-reference/udf/u
 
 <BetaBadge />
 
-Le [provider Terraform ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) officiel inclut deux ressources pour gérer les UDF en tant qu&#39;infrastructure as code :
+Le [Fournisseur Terraform ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) officiel inclut deux ressources pour gérer les UDF en tant qu&#39;infrastructure as code :
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) gère la fonction elle-même. Cette ressource accepte une archive ZIP contenant le code source de la fonction et publie une nouvelle version chaque fois que le hash de l&#39;archive change, en attendant la fin de la construction.
 * [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) associe une version d&#39;UDF à un service. Un service ne peut utiliser qu&#39;une seule version d&#39;une fonction à la fois. Vous pouvez épingler un numéro de version fixe ou référencer `clickhouse_udf.<name>.version` pour mettre automatiquement à jour les services vers la dernière version.
 
 <Note>
-  Ces ressources sont disponibles à partir de la version 3.24.0 du provider. Elles sont au statut bêta et leur comportement peut changer dans les prochaines versions du provider.
+  Ces ressources sont disponibles à partir de la version 3.24.0 du fournisseur. Elles sont au statut bêta et leur comportement peut changer dans les prochaines versions du fournisseur.
 </Note>
 
 Par exemple, pour déployer avec Terraform l&#39;UDF `isBusinessHours` de l&#39;exemple précédent :
@@ -445,7 +445,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-Outre les attributs obligatoires présentés ci-dessus, la ressource `clickhouse_udf` accepte `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name` et `fail_on_build_error` ; consultez la [documentation de la ressource](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) pour obtenir le schéma complet.
+Outre les attributs obligatoires présentés ci-dessus, la ressource `clickhouse_udf` accepte `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `return_name` et `fail_on_build_error` ; consultez la [documentation de la ressource](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) pour obtenir le schéma complet.
 
 Pour tester une nouvelle version sur un service de développement avant son passage en production, faites en sorte qu&#39;une association suive la dernière version et épinglez l&#39;autre à une variable. L&#39;association de développement suit automatiquement chaque nouvelle construction, tandis que l&#39;association de production n&#39;évolue que lorsque vous modifiez `var.prod_udf_version` :
 
@@ -464,7 +464,7 @@ resource "clickhouse_udf_attachment" "prod" {
 ```
 
 <Note>
-  Le provider n’expose pas encore `deterministic` ni la limite de mémoire. Ces deux paramètres sont définis lors de la création d’une version ; les versions publiées par le provider ne peuvent donc pas en bénéficier. Pour les utiliser, créez plutôt ces versions via la console ou l’API.
+  Le fournisseur n’expose pas encore `deterministic` ni la limite de mémoire. Ces deux paramètres sont définis lors de la création d’une version ; les versions publiées par le fournisseur ne peuvent donc pas en bénéficier. Pour les utiliser, créez plutôt ces versions via la console ou l’API.
 </Note>
 
-L’opération d’association ne réussit que pour les versions prêtes et peut prendre plusieurs minutes ; les services inactifs sont automatiquement réactivés. Le provider ne recharge pas non plus les pools : pour les UDF `executable_pool`, exécutez `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` sur le service après tout changement de version d’une association. La suppression d’une ressource `clickhouse_udf` supprime toutes les versions de la FUNCTION et la détache de tous les services.
+L’opération d’association ne réussit que pour les versions prêtes et peut prendre plusieurs minutes ; les services inactifs sont automatiquement réactivés. Le fournisseur ne recharge pas non plus les pools : pour les UDF `executable_pool`, exécutez `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>` sur le service après tout changement de version d’une association. La suppression d’une ressource `clickhouse_udf` supprime toutes les versions de la fonction et la détache de tous les services.

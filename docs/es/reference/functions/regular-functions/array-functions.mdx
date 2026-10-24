@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+Introducido en: v26.10.0
+
+Devuelve todas las combinaciones (selecciones no ordenadas y sin índices repetidos) de longitud `k` del array de origen. La enumeración se realiza por índices, por lo que los valores iguales pueden generar filas duplicadas en el resultado. Para `k = 0`, devuelve `[[]]`. El tamaño total del resultado por bloque está limitado por `function_range_max_elements_in_block`; cada array generado se contabiliza como su tamaño más uno.
+
+**Sintaxis**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**Argumentos**
+
+* `arr` — Array de origen. [`Array(T)`](/es/reference/data-types/array)
+* `k` — Longitud de cada combinación generada. No debe superar el tamaño del array de origen. Admite `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` y `UInt64`. [`(U)Int*`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+Todas las combinaciones de longitud `k`. [`Array(Array(T))`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**Ejemplo con `k = 0`**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 Introducido en: v20.1.0
@@ -2513,6 +2556,272 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+Introducido en: v26.10.0
+
+Igual que `arrayPackBitsToFixedString`, pero la lambda devuelve un integer cuyos `g` bits menos significativos forman un grupo, y los grupos
+se empaquetan de forma contigua (empezando por el bit más significativo) en un `FixedString(n)`. El resultado son los primeros `n` bytes de
+`arrayPackBitGroupsToString` (un grupo que queda a caballo entre dos bytes solo aporta sus bits iniciales), rellenados con ceros hasta `n`
+bytes. Tanto el tamaño `n` como el tamaño de grupo `g` deben ser constantes positivas, y `g` no puede ser mayor que 64.
+
+**Sintaxis**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**Argumentos**
+
+* `f` — Función lambda que genera el valor de grupo para cada elemento. [`Lambda function`](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — Tamaño en bytes del `FixedString` resultante. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+* `g` — Número de bits por grupo. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Una o más matrices del mismo tamaño que se van a empaquetar. La lambda recibe un argumento por cada matriz. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve los bits empaquetados. [`FixedString(n)`](/es/reference/data-types/fixedstring)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+Introducido en: v26.10.0
+
+Igual que `arrayPackBitsToString`, pero la lambda devuelve un integer cuyos `g` bits menos significativos forman un grupo, y los grupos
+se empaquetan de forma contigua (empezando por el bit más significativo). La longitud del resultado es de `ceil(size_of_array * g / 8)` bytes.
+El tamaño de grupo `g` debe ser una constante entre 1 y 64.
+
+**Sintaxis**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**Argumentos**
+
+* `f` — Función lambda que genera el valor de grupo para cada elemento. [`Lambda function`](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — Número de bits por grupo. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Una o más matrices del mismo tamaño que se van a empaquetar. La lambda recibe un argumento por cada matriz. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve los bits empaquetados. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+Introducido en: v26.10.0
+
+Igual que `arrayPackBitsToUInt64`, pero la lambda devuelve un integer cuyos `g` bits menos significativos forman un grupo, y los grupos
+se empaquetan de forma contigua (con el bit más significativo primero dentro de cada byte y los bytes interpretados en orden little-endian, de modo que
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). El resultado
+contiene los primeros 64 bits del stream empaquetado: si `g` no es divisor de 64, el grupo que queda a caballo del límite
+solo aporta sus bits iniciales. El tamaño de grupo `g` debe ser una constante entre 1 y 64.
+
+**Sintaxis**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**Argumentos**
+
+* `f` — Función lambda que genera el valor de grupo para cada elemento. [`Lambda function`](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — Número de bits por grupo. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Una o más matrices del mismo tamaño que se van a empaquetar. La lambda recibe un argumento por cada matriz. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve los bits empaquetados. [`UInt64`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+Introducido en: v26.10.0
+
+Aplica una función lambda a cada elemento de la matriz y empaqueta los bits resultantes en un `FixedString(n)`.
+Para cada elemento, la lambda devuelve un integer que se interpreta como un único bit (cero o distinto de cero).
+Los bits se escriben empezando por el bit más significativo, de modo que el resultado equivale a los primeros `n` bytes de `arrayPackBitsToString`.
+Si la matriz tiene más de `n * 8` elementos, se ignoran los restantes; si tiene menos, el resultado se rellena con ceros hasta alcanzar `n` bytes.
+El tamaño `n` debe ser una constante positiva.
+
+**Sintaxis**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**Argumentos**
+
+* `f` — Función lambda que genera el bit para cada elemento. [`Lambda function`](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — Tamaño en bytes del `FixedString` resultante. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — Una o más matrices del mismo tamaño que se van a empaquetar. La lambda recibe un argumento por cada matriz. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve los bits empaquetados. [`FixedString(n)`](/es/reference/data-types/fixedstring)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+Introducido en: v26.10.0
+
+Aplica una función lambda a cada elemento de la matriz y empaqueta los bits resultantes en un `String`.
+Para cada elemento, la lambda devuelve un integer que se interpreta como un único bit (cero o distinto de cero).
+Los bits se escriben empezando por el bit más significativo; la longitud del resultado es de `ceil(size_of_array / 8)` bytes.
+
+**Sintaxis**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**Argumentos**
+
+* `f` — Función lambda que genera el bit de cada elemento. [`Lambda function`](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — Una o más matrices del mismo tamaño que se van a empaquetar. La lambda recibe un argumento por cada matriz. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve los bits empaquetados. [`String`](/es/reference/data-types/string)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+Introducido en: v26.10.0
+
+Aplica una función lambda a cada elemento de la matriz y empaqueta los bits resultantes en un `UInt64`.
+Para cada elemento, la lambda devuelve un integer que se trata como un único bit (cero o distinto de cero).
+El flujo de bits se distribuye entre los bytes empezando por el bit más significativo (los mismos bytes que genera `arrayPackBitsToString`),
+y los bytes se interpretan en orden little-endian, de modo que
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
+Solo se utilizan los primeros 64 elementos; si hay menos, los bits restantes se rellenan con ceros.
+
+**Sintaxis**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**Argumentos**
+
+* `f` — Función lambda que genera el bit de cada elemento. [`Lambda function`](/es/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — Una o más matrices del mismo tamaño que se van a empaquetar. La lambda recibe un argumento por cada matriz. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Devuelve los bits empaquetados. [`UInt64`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+Introducido en: v26.10.0
+
+Devuelve todas las permutaciones parciales (selecciones ordenadas sin índices repetidos) de longitud `k` a partir del array de origen. La enumeración se realiza por índices, por lo que los valores iguales pueden generar filas duplicadas en el resultado. Para `k = 0`, devuelve `[[]]`. El tamaño total del resultado por bloque está limitado por `function_range_max_elements_in_block`; cada array generado cuenta como su tamaño más uno.
+
+**Sintaxis**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**Argumentos**
+
+* `arr` — Array de origen. [`Array(T)`](/es/reference/data-types/array)
+* `k` — Longitud de cada permutación parcial generada. No debe superar el tamaño del array de origen. Admite `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32` y `UInt64`. [`(U)Int*`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+Todas las permutaciones parciales de longitud `k`. [`Array(Array(T))`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**Ejemplo con `k = 0`**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 Introducido en: v23.2.0
@@ -2776,6 +3085,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+Introducido en: v26.10.0
+
+Devuelve todas las permutaciones de los elementos del array de origen. La enumeración se realiza por índices, por lo que los valores iguales pueden generar filas duplicadas en el resultado. Si el array de origen está vacío, devuelve `[[]]`. El tamaño total del resultado por bloque está limitado por `function_range_max_elements_in_block`; cada array generado se contabiliza como su tamaño más uno.
+
+**Sintaxis**
+
+```sql
+arrayPermutations(arr)
+```
+
+**Argumentos**
+
+* `arr` — Array de origen. [`Array(T)`](/es/reference/data-types/array)
+
+**Valor devuelto**
+
+Todas las permutaciones del array de origen. [`Array(Array(T))`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3222,6 +3563,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+Introducido en: v26.10.0
+
+Elimina de un array el elemento situado en el índice especificado.
+Los índices están basados en 1. Los índices negativos se cuentan desde el final del array.
+Si el índice está fuera de los límites del array, este se devuelve sin cambios.
+El índice 0 no es válido.
+
+**Sintaxis**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**Argumentos**
+
+* `arr` — Array de origen. [`Array(T)`](/es/reference/data-types/array)
+* `index` — Índice entero no Nullable del elemento que se va a eliminar. Los índices negativos se cuentan desde el final. [`(U)Int8/16/32/64`](/es/reference/data-types/int-uint)
+
+**Valor devuelto**
+
+Devuelve el array de origen sin el elemento situado en `index`, o el array original si `index` está fuera de los límites. [`Array(T)`](/es/reference/data-types/array)
+
+**Ejemplos**
+
+**Índice positivo**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**Índice negativo**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**Fuera de los límites**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3775,6 +4172,8 @@ El primer argumento también puede ser un [QBit](/es/reference/data-types/qbit):
 arraySlice(arr, offset [, length])
 ```
 
+**Alias**: `slice`
+
 **Argumentos**
 
 * `arr` — Array que se va a segmentar. [`Array(T)`](/es/reference/data-types/array) o [`QBit`](/es/reference/data-types/qbit)
@@ -4136,13 +4535,15 @@ Toma varios arrays y devuelve un array que contiene todos los elementos que est�
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**Alias**: `array_union`
+
 **Argumentos**
 
 * `arrN` — N arrays a partir de las cuales se crea el nuevo array. [`Array(T)`](/es/reference/data-types/array)
 
 **Valor devuelto**
 
-Devuelve un array con elementos distintos de los arrays de entrada [`Array(T)`](/es/reference/data-types/array)
+Devuelve un array con elementos distintos de los arrays de origen [`Array(T)`](/es/reference/data-types/array)
 
 **Ejemplos**
 
@@ -4298,6 +4699,8 @@ Combina varios arrays en un único array, lo que permite arrays no alineados (de
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
+**Alias**: `zip`
+
 **Argumentos**
 
 * `arr1, arr2, ..., arrN` — N arrays para combinar en un solo array. [`Array(T)`](/es/reference/data-types/array)
@@ -4316,6 +4719,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+Introducido en: v26.8.0
+
+Función de compatibilidad con PostgreSQL. Devuelve la posición (basada en 1) de la primera aparición del elemento en el array, o `NULL` si el elemento no aparece. Si el elemento es `NULL`, se busca el primer `NULL` del array, como en PostgreSQL. El equivalente nativo de ClickHouse es `indexOf`, que devuelve 0 en lugar de `NULL`.
+
+**Sintaxis**
+
+```sql
+array_position(array, element)
+```
+
+**Argumentos**
+
+* `array` — El array en el que se realiza la búsqueda. [`Array(T)`](/es/reference/data-types/array)
+* `element` — El elemento que se busca. [`Any`](/es/reference/data-types/index)
+
+**Valor devuelto**
+
+La posición (basada en 1) de la primera aparición, o `NULL` si el elemento no aparece. [`Nullable(UInt64)`](/es/reference/data-types/nullable)
+
+**Ejemplos**
+
+**Ejemplo**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -5320,7 +5756,7 @@ Se permite incluir bytes NULL ASCII en las cadenas, y también se contabilizará
 length(x)
 ```
 
-**Aliases**: `OCTET_LENGTH`, `CARDINALITY`
+**Aliases**: `CARDINALITY`, `OCTET_LENGTH`
 
 **Argumentos**
 

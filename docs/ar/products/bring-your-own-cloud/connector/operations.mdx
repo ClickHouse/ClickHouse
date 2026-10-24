@@ -16,24 +16,35 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 ### Kubernetes {#upgrades-kubernetes}
 
-<Note>
-  تستخدم عمليات Kubernetes بعد النشر واجهة سطر الأوامر `helm` على محطة عملك. لا يتضمن عميل Helm مدمجًا سوى `init`، لذا ثبّت `helm` قبل أول ترقية.
-</Note>
+يتطلب الأمر `connector upgrade` واجهة سطر أوامر بالإصدار v0.50.0 أو أحدث، ويأتي مزودًا بعميل Helm خاص به، لذا لا حاجة إلى الملف التنفيذي `helm`:
 
-رقِّ الإصدار من مستودع المخططات العام باستخدام تراكب القيم الذي أعدّه `init`:
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context> --use
+clicklink clctl connector upgrade --version <X.Y.Z>
+```
+
+يُشغَّل الأمر `context add` مرة واحدة لكل عنقود، ويسجّل سياق kubeconfig الذي يعمل فيه الموصل؛ ويجعل الخيار `--use` هذا السياق هو السياق الحالي، بينما يتيح الأمر `context use <name>` التبديل إلى سياق آخر لاحقاً. يطلب الأمر `connector upgrade` التأكيد قبل إجراء أي تغيير، وتجد خيارات سطر الأوامر الخاصة به في [مرجع واجهة سطر الأوامر](/ar/products/bring-your-own-cloud/connector/reference/cli#connector-upgrade).
+
+تطابق إصدارات المخطط وسومَ الإصدارات بعد حذف الحرف `v` في بدايتها، فالوسم `v0.50.0` يقابل المخطط `0.50.0`. يعمل المنفّذ بنسخة متماثلة واحدة وفق الاستراتيجية `Recreate`، لذا ينقطع اتصاله لفترة وجيزة أثناء الترقية. راجع [عندما يكون الموصل غير متصل](/ar/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) لمعرفة ما يحدث للأوامر خلال هذه الفترة.
+
+لإجراء الترقية باستخدام واجهة سطر الأوامر `helm` بدلاً من ذلك، استخدم Overlay القيم الذي جهّزه الأمر `init`:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version <version> \
+  --version <X.Y.Z> \
   -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
-إصدارات مخطط هي وسوم الإصدار من دون بادئة `v` (يتوافق مخطط بالإصدار `X.Y.Z` مع الوسم `vX.Y.Z`). يشير مخطط المنشور مسبقاً إلى image الحاوية العامة، لذا لا تتطلب عمليات التثبيت والترقية العادية قيماً لـ image. وللاطلاع على القيم الافتراضية لـ مخطط، شغّل `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`. يعمل المنفّذ بنسخة replica واحدة باستخدام strategy الخاصة بـ `Recreate`، لذا تؤدي الترقية إلى قطع اتصاله لفترة وجيزة. راجع [عندما يكون موصل غير متصل](/ar/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline) لمعرفة ما يحدث للأوامر خلال تلك المدة.
+يشير المخطط المنشور أصلًا إلى صورة الحاوية العامة، لذا لا تحتاج عمليات التثبيت والترقية العادية إلى تحديد أي قيم للصورة. لعرض القيم الافتراضية للمخطط، شغّل `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`.
 
-لا يتوفر لعملية التثبيت من مرجع مخطط مباشر (`oci://` أو URL أو أرشيف أو دليل محلي) repository يمكن الرجوع إليه لحل المرجع. أعد تشغيل `helm upgrade clicklink-connector <same-chart-reference>` بالإصدار الجديد بدلاً من ذلك. كما أن إعادة تشغيل `init` باستخدام واجهة سطر أوامر أحدث توصل إلى الحالة المطلوبة، لكنها تحتاج إلى نقطة دخول: `--handoff` إذا احتفظت بـ bundle، أو رمز تسجيل جديد مع `--force` بعد التنظيف الموثّق. ويُعد `helm upgrade` المذكور أعلاه المسار المعتاد (راجع [إعادة التشغيل والتعافي](#re-runs-and-recovery)).
+<Note>
+  كان الأمر `init` في الإصدارات السابقة لـ v0.50.0 يكتب `image.tag` في الملف `clicklink-values.yaml`، مثبّتًا إياه على الإصدار الذي جهّزه. احذف هذا المفتاح مرة واحدة باستخدام `yq -i 'del(.image.tag)' clicklink-values.yaml` قبل تنفيذ `helm upgrade` التالي بذلك الملف؛ وإلا فسيُحدَّث المخطط بينما تبقى الـ pod على الصورة القديمة. أما الأمر `connector upgrade` فلا يقرأ Overlay، ويمسح أي وسم متقادم في الإصدار نفسه.
+</Note>
+
+يرفض الأمر `connector upgrade` أي إصدار تأتي صورته من [مرآة خاصة](/ar/products/bring-your-own-cloud/connector/configuration#private-mirrors)؛ لذا استخدم `helm upgrade` المذكور أعلاه، فهو يحتفظ بالمرآة المحددة في Overlay لديك. وإذا ثبّتَّ من مرجع مخطط مباشر (`oci://` أو URL أو أرشيف أو دليل محلي)، فلا يوجد مستودع يمكن الرجوع إليه: أعد تشغيل `helm upgrade clicklink-connector <same-chart-reference>` مع الإصدار الجديد. ويمكن أيضًا الوصول إلى النتيجة نفسها بإعادة تشغيل `init` بإصدار أحدث من واجهة سطر الأوامر، لكن ذلك يتطلب نقطة دخول: `--handoff` إن كنت قد احتفظت بالحزمة، أو رمز تسجيل جديد مع `--force` (راجع [إعادة التشغيل والاسترداد](#re-runs-and-recovery)).
 
 ### Linux VM {#upgrades-linux-vm}
 

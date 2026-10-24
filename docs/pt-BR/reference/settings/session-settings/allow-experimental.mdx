@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -35,6 +36,10 @@ O analisador é a infraestrutura de análise e planejamento de consultas adotada
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
 Permite a limpeza de arquivos de dados antigos durante a compactação do Iceberg.
+
+A limpeza executa `iceberg_compaction_data_cleanup` após uma compactação. Ela expira os snapshots que a compactação tornou obsoletos, da mesma
+forma que `expire_snapshots`: remove-os dos metadados da tabela e exclui os arquivos que não são referenciados por nenhum outro snapshot. Para uma tabela
+com versão do formato 1 ou gerenciada por um catálogo transacional, ela apenas exclui os arquivos, e os snapshots permanecem nos metadados.
 
 ## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
@@ -104,11 +109,11 @@ Permite usar explicitamente &#39;OPTIMIZE&#39; em tabelas Iceberg.
 
 ## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Uma nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "O dialeto Kusto Query Language (KQL) passou para Beta."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Uma nova configuração"}]}]} />
 
 Habilita o dialeto Kusto Query Language (KQL), uma alternativa ao SQL.
 

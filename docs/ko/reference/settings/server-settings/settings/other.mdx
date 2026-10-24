@@ -18,6 +18,14 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />LOGICAL&#95;ERROR 예외가 발생하면 server를 크래시합니다. 전문가만 사용하십시오.
 
+## ai_function_allow_sql_named_collections {#ai_function_allow_sql_named_collections}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+AI 함수(예: `aiGenerate`, `aiEmbed`, `aiSimilarity`)에서 `CREATE NAMED COLLECTION`으로 생성한 이름이 지정된 컬렉션(named collections)을 사용할 수 있도록 허용합니다.
+비활성화하면 AI 함수는 서버 설정 파일에 정의된 이름이 지정된 컬렉션만 허용하며, 그 외의 컬렉션을 사용하면 예외가 발생합니다.
+이 설정은 `credentials` 매개변수뿐만 아니라 `ai_function_text_default_credentials` 및 `ai_function_embedding_default_credentials` 설정에도 적용됩니다.
+
 ## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Iceberg에서 사용할 수 있도록 허용된 디스크 목록
@@ -94,6 +102,30 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 cgroups의 해당 임계값에 맞춰 서버의 최대 허용 메모리 사용량을 조정하는 시간 간격(초)입니다.
 
 cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오.
+
+## collect_connection_metrics {#collect_connection_metrics}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />`system.connections` 테이블에 사용할 연결 정보 수집을 활성화합니다. 이 테이블은 네이티브 TCP 및 HTTP 쿼리 인터페이스의 연결을 표시하며, MySQL, PostgreSQL, gRPC 등 다른 프로토콜의 연결은 표시하지 않습니다.
+
+이 설정을 `true`로 지정하면 서버는 연결 목록을 메모리에 유지합니다.
+
+* 네이티브 TCP 연결은 인증이 완료된 후 목록에 추가됩니다.
+* HTTP 연결은 해당 연결에서 첫 번째 쿼리를 받을 때 목록에 추가됩니다.
+* 연결이 종료되면 해당 연결은 목록에서 제거됩니다. HTTP keep-alive 연결은 요청과 요청 사이에 `idle` 상태가 됩니다.
+
+연결과 쿼리마다 약간의 동기화 비용이 발생하므로 기본값은 `false`입니다.
+
+`SHOW CONNECTIONS` 권한(privilege)이 없는 사용자는 자신의 연결만 볼 수 있습니다.
+
+이 설정은 재시작 없이 변경할 수 있습니다. `false`로 변경하면 `system.connections`가 비워지고 서버는 새 연결을 더 이상 등록하지 않습니다. `true`로 변경하면 이미 열려 있는 연결은 다음 쿼리가 실행될 때 `system.connections`에 표시됩니다.
+
+구성 예시:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+관련 항목: `system.connections`, `system.processes`.
 
 ## 압축 {#compression}
 
@@ -1165,8 +1197,8 @@ SSL 클라이언트/서버 구성.
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1556,6 +1588,8 @@ DDL 쿼리는 동일한 그룹의 레플리카만 기다립니다.
 
 네임스페이스 생성은 방식에 관계없이 거부됩니다. `unshare`와 `setns`는 전혀 허용되지 않으며, 플래그로 네임스페이스 생성을 요청하는 `clone`도 거부됩니다. `clone3`의 인수는 필터가 읽을 수 없는 구조체에 담겨 있어 네임스페이스 생성과 스레드 생성을 구별할 수 없으므로, `clone3` 호출 자체가 `ENOSYS` 오류로 거부됩니다. 그러면 libc는 대신 `clone`을 사용해야 한다는 것을 파악하므로 스레드와 프로세스 생성은 계속 작동합니다. `docker`와 `systemd`도 자체 정책에서 같은 방식으로 `clone3`을 거부합니다.
 
+확장 속성 관련 시스템 호출도 `ENOSYS` 오류로 거부됩니다. ClickHouse는 이 시스템 호출을 사용하지 않습니다. 하지만 호스트의 NSS 모듈은 서버 프로세스 내에서 실행되며, `systemd`의 `nss-resolve`는 소켓에 속성 태그를 지정하기 전에 지정할 수 있는지 먼저 확인합니다. `nss-resolve`는 `ENOSYS`를 &quot;불가&quot;로 받아들이고 태그 없이 계속 진행하지만, `trap` 모드에서 `SIGSYS`가 발생하면 첫 호스트 이름 조회 시점에 서버가 종료됩니다.
+
 가능한 값:
 
 * `trap` - 커널이 위반 시스템 호출을 한 스레드에 `SIGSYS`를 보냅니다. ClickHouse는 이를 다른 치명적인 시그널과 동일하게 처리하여 시스템 호출 번호와 스택 추적을 로그에 기록한 뒤 서버를 종료합니다.
@@ -1564,7 +1598,7 @@ DDL 쿼리는 동일한 그룹의 레플리카만 기다립니다.
 * `log` - 시스템 호출을 허용하고 기록만 합니다. 거부되는 시스템 호출이 없으므로 이 모드에서는 정책에 따른 제한이 전혀 적용되지 않습니다. 정책을 적용하기 전에 워크로드에 적합한지 확인하는 용도로 사용하십시오. 커널이 필터를 허용하려면 `PR_SET_NO_NEW_PRIVS`를 먼저 설정해야 하므로, 이 모드에서도 서버가 실행하는 setuid 프로그램은 권한을 높일 수 없습니다.
 * `disabled` - 필터를 설치하지 않습니다.
 
-기본값은 `log`이며, 워크로드에 대해 정책을 검증하기 전까지는 아무것도 제한하지 않습니다. 이 모드로 서버를 실행하고 커널 감사 로그에서 정책이 허용하지 않는 시스템 호출이 있는지 확인한 뒤, 설정을 `trap`, `kill` 또는 `errno`로 변경하십시오.
+기본값은 `log`이며, 워크로드에 대해 정책을 검증하기 전까지는 아무것도 제한하지 않습니다. 이 모드로 서버를 실행하고 커널 감사 로그에서 정책이 허용하지 않는 시스템 호출이 있는지 확인한 뒤, 설정을 `trap`, `kill` 또는 `errno`로 변경하십시오. 서버 패키지와 Docker 이미지에 포함된 설정 파일에서는 이 값이 `trap`으로 설정되어 있습니다.
 
 Linux 4.14 이전 버전이거나, 커널이 `CONFIG_SECCOMP_FILTER` 없이 빌드되었거나, 컨테이너 런타임 같은 외부 샌드박스가 `seccomp` 시스템 호출을 거부하면 커널이 `log` 동작을 사용하는 필터를 설치할 수 없습니다. 이때 `log` 모드는 원인을 경고로 기록하고 필터 없이 서버를 실행합니다. 이 모드에서는 필터가 제한할 동작이 없기 때문입니다. `PR_SET_NO_NEW_PRIVS`는 그대로 설정됩니다. 반면 제한을 적용하는 모드에서는 필터를 설치할 수 없으면 서버가 시작되지 않습니다.
 
@@ -1572,7 +1606,9 @@ Linux 4.14 이전 버전이거나, 커널이 `CONFIG_SECCOMP_FILTER` 없이 빌�
 
 필터는 설치한 후 제거하거나 제한을 완화할 수 없으며, `fork`와 `execve`를 거쳐도 상속됩니다. 따라서 실행형 딕셔너리와 실행형 사용자 정의 함수, 라이브러리 및 ODBC 브리지, OOM 카나리에도 적용됩니다. 이러한 구성 요소가 실행하는 스크립트에도 동일한 정책이 적용되므로, 스크립트가 특수한 작업을 수행한다면 이 점에 유의하십시오.
 
-이 정책은 아키텍처별 시스템 호출 번호 목록으로 구성되므로 x86-64와 AArch64에서만 구현되어 있습니다. 그 외의 아키텍처에서는 서버가 시작 시 경고를 로그에 기록하고 필터 없이 실행됩니다. 다만 아키텍처와 무관한 `PR_SET_NO_NEW_PRIVS`는 `disabled`를 제외한 모든 모드에서 계속 설정됩니다.
+정책은 아키텍처별 시스템 호출 번호 목록이므로 x86-64와 AArch64에서만 구현되어 있습니다. 그 밖의 아키텍처에서는 서버가 시작할 때 경고를 기록하고 필터 없이 실행됩니다. 다만 아키텍처와 무관한 `PR_SET_NO_NEW_PRIVS`는 `disabled`를 제외한 모든 모드에서 그대로 설정됩니다. seccomp는 Linux 커널의 기능이므로, 다른 운영 체제에서는 `disabled`를 제외한 모든 모드에서 서버가 시작할 때 경고를 기록하고 필터 없이 실행됩니다.
+
+`system.server_settings`는 구성된 모드가 아니라 실제로 적용 중인 필터의 모드를 표시합니다. Linux 이외의 운영 체제, 정책이 없는 아키텍처, 또는 커널이 필터를 설치할 수 없는 `log` 모드처럼 서버가 필터 없이 실행되는 경우에는 `disabled`가 표시됩니다. 그 밖의 경우에는 구성을 다른 값으로 다시 로드하더라도 시작 시 설정된 모드가 표시됩니다.
 
 **예시**
 
@@ -1646,6 +1682,12 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 ```xml
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
+
+## tcp_with_proxy_allow_interserver_mode {#tcp_with_proxy_allow_interserver_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+
+`tcp_with_proxy_port`를 통해 연결된 클라이언트가 native protocol의 서버 간 모드를 사용하도록 허용합니다. `tcp_with_proxy_port`가 프록시를 통해 신뢰할 수 없는 클라이언트에 노출되는 경우 이 설정을 비활성화하십시오. `tcp_port` 및 `tcp_port_secure`에 대한 연결에는 영향을 주지 않습니다.
 
 ## text_log {#text_log}
 

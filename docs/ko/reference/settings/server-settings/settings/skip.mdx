@@ -12,19 +12,18 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하기 위한 것이며, ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="skip_binary_checksum_checks">
-  ## skip_binary_checksum_checks
-</div>
+## skip_binary_checksum_checks {#skip_binary_checksum_checks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />ClickHouse 바이너리의 체크섬 무결성 검사를 건너뜁니다
 
-<div id="skip_check_for_incorrect_settings">
-  ## skip_check_for_incorrect_settings
-</div>
+## skip_check_for_incorrect_settings {#skip_check_for_incorrect_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 true로 설정하면 서버 설정의 올바름을 검사하지 않습니다.
+
+또한 `storage_configuration`의 디스크 정의 검사도 비활성화합니다. 이 검사가 활성화되어 있으면 해당 유형의 디스크가 읽지 않는 요소가
+무시되지 않고 `UNKNOWN_ELEMENT_IN_CONFIG`로 보고됩니다.
 
 **예시**
 

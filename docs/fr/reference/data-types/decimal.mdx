@@ -12,9 +12,7 @@ doc_type: 'reference'
 
 Nombres signés à virgule fixe qui conservent leur précision lors des opérations d’addition, de soustraction et de multiplication. Pour la division, les chiffres les moins significatifs sont supprimés (et non arrondis).
 
-<div id="parameters">
-  ## Paramètres
-</div>
+## Paramètres {#parameters}
 
 * P - précision. Plage valide : [ 1 : 76 ]. Détermine le nombre total de chiffres décimaux qu’un nombre peut avoir (y compris la partie fractionnaire). Par défaut, la précision est de 10.
 * S - échelle. Plage valide : [ 0 : P ]. Détermine le nombre de chiffres décimaux que la partie fractionnaire peut avoir.
@@ -28,9 +26,7 @@ Selon la valeur du paramètre P, Decimal(P, S) est synonyme de :
 * P de [ 19 : 38 ] - pour Decimal128(S)
 * P de [ 39 : 76 ] - pour Decimal256(S)
 
-<div id="decimal-value-ranges">
-  ## Plages de valeurs de Decimal
-</div>
+## Plages de valeurs de Decimal {#decimal-value-ranges}
 
 * Decimal(P, S) - (-1 * 10^(P - S), 1 * 10^(P - S))
 * Decimal32(S) - (-1 * 10^(9 - S), 1 * 10^(9 - S))
@@ -40,17 +36,13 @@ Selon la valeur du paramètre P, Decimal(P, S) est synonyme de :
 
 Par exemple, Decimal32(4) peut contenir des nombres allant de -99999.9999 à 99999.9999, avec un pas de 0.0001.
 
-<div id="internal-representation">
-  ## Représentation interne
-</div>
+## Représentation interne {#internal-representation}
 
 En interne, les données sont représentées sous forme d&#39;entiers signés classiques de la largeur en bits correspondante. Les plages de valeurs réelles pouvant être stockées en mémoire sont légèrement plus étendues que celles indiquées ci-dessus, et elles ne sont vérifiées que lors de la conversion depuis une chaîne.
 
 Comme les CPU modernes ne prennent pas en charge nativement les entiers de 128 et 256 bits, les opérations sur Decimal128 et Decimal256 sont émulées. Ainsi, Decimal128 et Decimal256 sont sensiblement plus lents que Decimal32/Decimal64.
 
-<div id="operations-and-result-type">
-  ## Opérations et type de résultat
-</div>
+## Opérations et type de résultat {#operations-and-result-type}
 
 Les opérations binaires sur `Decimal` produisent un type de résultat plus large (quel que soit l&#39;ordre des arguments).
 
@@ -71,9 +63,7 @@ Les opérations entre `Decimal` et `Float32`/`Float64` ne sont pas définies. Si
 
 Certaines fonctions appliquées à `Decimal` renvoient un résultat de type `Float64` (par exemple, `var` ou `stddev`). Les calculs intermédiaires peuvent toutefois encore être effectués en `Decimal`, ce qui peut entraîner des résultats différents entre des entrées `Float64` et `Decimal` ayant les mêmes valeurs.
 
-<div id="overflow-checks">
-  ## Vérifications de dépassement
-</div>
+## Vérifications de dépassement {#overflow-checks}
 
 Lors des calculs sur des valeurs Decimal, des dépassements d&#39;entier peuvent se produire. Les chiffres en excès dans la partie fractionnaire sont supprimés (sans arrondi). Les chiffres en excès dans la partie entière entraînent une exception.
 
@@ -107,7 +97,7 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 DB::Exception: Decimal math overflow.
 ```
 
-Les vérifications de dépassement ralentissent les opérations. S&#39;il est établi qu&#39;aucun dépassement n&#39;est possible, il est judicieux de désactiver ces vérifications à l&#39;aide du paramètre `decimal_check_overflow`. Lorsque les vérifications sont désactivées et qu&#39;un dépassement se produit, le résultat sera incorrect :
+Les vérifications de dépassement ralentissent les opérations. S&#39;il est établi qu&#39;aucun dépassement n&#39;est possible, il est judicieux de désactiver ces vérifications à l&#39;aide du paramètre `decimal_check_overflow`. Lorsque les vérifications sont désactivées et qu&#39;un dépassement se produit, le résultat sera incorrect :
 
 ```sql
 SET decimal_check_overflow = 0;
@@ -120,14 +110,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-Les vérifications de dépassement ont lieu non seulement lors d’opérations arithmétiques, mais aussi lors de comparaisons de valeurs :
+Lorsque `decimal_check_overflow` est activé (comportement par défaut), la comparaison de valeurs ayant des scales différentes est exacte, même lorsqu&#39;une valeur ne tient pas dans le type à la scale commune :
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-DB::Exception: Can't compare.
+1
 ```
 
 **Voir aussi**

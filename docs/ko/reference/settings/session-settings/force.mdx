@@ -101,6 +101,8 @@ MergeTree 엔진 계열의 테이블에서 작동합니다.
 
 `force_primary_key=1`이면 ClickHouse는 쿼리에 데이터 범위를 제한하는 데 사용할 수 있는 프라이머리 키 조건이 있는지 확인합니다. 적절한 조건이 없으면 예외를 발생시킵니다. 다만, 해당 조건이 읽어야 하는 데이터 양을 실제로 줄이는지는 확인하지 않습니다. MergeTree 테이블의 데이터 범위에 대한 자세한 내용은 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 참조하십시오.
 
+이 검사는 테이블 자체의 프라이머리 키를 대상으로 합니다. 프로젝션(projection)은 쿼리가 해당 프로젝션의 키로도 데이터 범위를 제한하는 경우에만 쿼리 처리에 사용됩니다. 그렇지 않으면 프로젝션을 건너뛰고 테이블을 직접 읽습니다. [force&#95;optimize&#95;projection](/ko/reference/settings/session-settings/force-optimize#force_optimize_projection)으로 프로젝션 사용을 강제했는데 해당 프로젝션의 키가 사용되지 않으면 쿼리에서 예외가 발생합니다.
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />

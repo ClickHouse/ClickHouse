@@ -206,6 +206,8 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
+**別名**: `from_base32`
+
 **引数**
 
 * `encoded` — String 型のカラムまたは定数。[`String`](/ja/reference/data-types/string)
@@ -239,6 +241,8 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
+
+**別名**: `to_base32`
 
 **引数**
 
@@ -416,7 +420,7 @@ SELECT base64Encode('clickhouse')
 
 RFC 4648 に従い、URL セーフなアルファベットを使用した [Base64](https://en.wikipedia.org/wiki/Base64) 表現から文字列をデコードします。
 デコード時には、標準アルファベット (`+` および `/`) も受け付けます。
-バージョン 26.7 以降では、入力内の空白文字である space、tab (`\t`) 、line feed (`\n`) 、carriage return (`\r`) 、および form feed (`\f`) は無視されます (それ以前のバージョンでは、これらを含む入力は拒否されていました) 。Vertical tab (`\v`) および Base64 アルファベットに含まれないその他の文字は拒否されます。
+バージョン 26.7 以降では、入力内の空白文字である space、tab (`\t`) 、改行 (`\n`) 、キャリッジリターン (`\r`) 、および フォームフィード (`\f`) は無視されます (それ以前のバージョンでは、これらを含む入力は拒否されていました) 。垂直タブ (`\v`) および Base64 アルファベットに含まれないその他の文字は拒否されます。
 エラー時には例外をスローします。
 
 **構文**
@@ -424,6 +428,8 @@ RFC 4648 に従い、URL セーフなアルファベットを使用した [Base6
 ```sql
 base64URLDecode(encoded)
 ```
+
+**別名**: `from_base64url`
 
 **引数**
 
@@ -458,6 +464,8 @@ URLセーフなアルファベットを使用して、文字列を [Base64](http
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**別名**: `to_base64url`
 
 **引数**
 
@@ -1098,7 +1106,7 @@ SELECT editDistance('clickhouse', 'mouse')
 editDistanceUTF8(s1, s2)
 ```
 
-**別名**: `levenshteinDistanceUTF8`
+**別名**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **引数**
 
@@ -1170,6 +1178,8 @@ SELECT
 ```sql
 endsWith(s, suffix)
 ```
+
+**別名**: `ends_with`
 
 **引数**
 
@@ -2882,6 +2892,8 @@ SELECT sparseGramsUTF8('алиса', 3)
 ```sql
 startsWith(s, prefix)
 ```
+
+**別名**: `starts_with`
 
 **引数**
 

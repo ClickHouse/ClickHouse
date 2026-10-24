@@ -18,10 +18,10 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   DB 서버와 프로토콜을 통해 통신하기 위한 Java 클라이언트 라이브러리입니다. 현재 구현은 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)만 지원합니다.
   이 라이브러리는 서버에 요청을 전송하기 위한 자체 API를 제공하며, 다양한 바이너리 데이터 포맷(RowBinary* &amp; Native*)을 처리하기 위한 도구도 함께 제공합니다.
 
-  ## Setup
+  ## Setup {#setup}
 
   * Maven Central (프로젝트 웹 페이지): https://mvnrepository.com/artifact/com.clickhouse/client-v2
-  * 나이틀리 빌드(리포지토리 링크): https://central.sonatype.com/repository/maven-snapshots/
+  * 나이틀리 빌드 (리포지토리 링크): https://central.sonatype.com/repository/maven-snapshots/
 
   <br />
 
@@ -53,7 +53,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## 초기화
+  ## 초기화 {#initialization}
 
   Client 객체는 `com.clickhouse.client.api.Client.Builder#build()`를 통해 초기화됩니다. 각 클라이언트는 고유한 Context를 가지며, 클라이언트 간에 객체는 공유되지 않습니다.
   Builder에는 편리한 설정을 위한 구성 메서드가 있습니다.
@@ -70,7 +70,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   `Client`는 `AutoCloseable`이므로 더 이상 필요하지 않을 때 닫아야 합니다.
 
-  ### 인증(Authentication)
+  ### 인증(Authentication) {#authentication}
 
   인증은 초기화 단계에서 클라이언트별로 구성됩니다. 지원되는 인증 방법은 비밀번호, 액세스 토큰, SSL 클라이언트 인증서의 세 가지입니다.
 
@@ -84,12 +84,12 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
           .build();
   ```
 
-  액세스 토큰을 통한 인증(authentication)을 사용하려면 `setAccessToken(String)`을 호출하여 액세스 토큰을 설정해야 합니다:
+  액세스 토큰 또는 Bearer 토큰(예: JWT)을 통한 인증(authentication)을 사용하려면 `useBearerTokenAuth(String)`을 호출하여(원시 액세스 토큰의 경우 `setAccessToken(String)` 호출) 토큰을 설정해야 합니다:
 
   ```java showLineNumbers
    Client client = new Client.Builder()
           .addEndpoint("https://clickhouse-cloud-instance:8443/")
-          .setAccessToken(userAccessToken)
+          .useBearerTokenAuth(userAccessToken)
           .build();
   ```
 
@@ -114,14 +114,43 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
       * 동일한 값이 데이터베이스에 설정되어 있는지 확인: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (`auth_params`에는 ` {"common_names":["some_user"]}`와 같은 값이 출력됩니다)
   </Note>
 
-  ## 구성
+  ### 연결 풀링 {#connection-pooling}
+
+  `Client`는 내부 HTTP 연결 풀을 갖춘 Apache HttpClient 5를 사용합니다. 각 작업은 풀에서 연결을 가져와 요청을 전송하고, 응답을 스트리밍한 뒤 연결을 다시 풀에 반환합니다.
+
+  `Client.Builder`의 주요 연결 풀 설정:
+
+  | 설정              | 빌더 메서드                                                         | 기본값          | 설명                                                             |
+  | --------------- | -------------------------------------------------------------- | ------------ | -------------------------------------------------------------- |
+  | 최대 연결 수         | `setMaxConnections(int)`                                       | `10`         | 서버 엔드포인트당 열어 둘 수 있는 HTTP 연결의 최대 개수입니다.                         |
+  | 연결 TTL          | `setConnectionTTL(long, ChronoUnit)`                           | `-1` (비활성화됨) | 연결의 time-to-live입니다. 이 시간이 지나면 활성 연결이 종료되고 다시 생성됩니다.           |
+  | Keep-Alive 타임아웃 | `setKeepAliveTimeout(long, ChronoUnit)`                        | 서버 기본값       | 유휴 상태의 풀링된 연결(pooled connections)을 유지하는 HTTP Keep-Alive 시간입니다. |
+  | 연결 요청 타임아웃      | `setConnectionRequestTimeout(long, ChronoUnit)`                | `10000ms`    | 스레드가 풀에서 사용 가능한 연결을 얻기 위해 블로킹 상태로 대기하는 최대 시간입니다.               |
+  | 재사용 전략          | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)` | `FIFO`       | 연결 풀 할당 전략(`FIFO` 또는 `LIFO`)입니다.                               |
+  | 연결 풀링           | `enableConnectionPool(boolean enable)`                         | `true`       | HTTP 연결 풀링을 활성화하거나 비활성화합니다.                                    |
+
+  #### 권장 연결 풀 구성 {#recommended-connection-pool-configuration}
+
+  ```java showLineNumbers
+  Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setUsername("default")
+          .setPassword("secret")
+          .setMaxConnections(50)
+          .setConnectionRequestTimeout(5, TimeUnit.SECONDS)
+          .setKeepAliveTimeout(60, TimeUnit.SECONDS)
+          .setConnectionReuseStrategy(ConnectionReuseStrategy.FIFO)
+          .build();
+  ```
+
+  ## 구성 {#configuration}
 
   모든 설정은 인스턴스 메서드(구성 메서드라고도 함)로 정의되며, 각 값의 범위와 Context를 명확하게 나타냅니다.
   주요 구성 매개변수는 하나의 범위(클라이언트 또는 작업)에서 정의되고, 서로 재정의되지 않습니다.
 
   구성은 클라이언트 생성 시 정의됩니다. `com.clickhouse.client.api.Client.Builder`를 참조하십시오.
 
-  ## 클라이언트 구성
+  ## 클라이언트 구성 {#client-configuration}
 
   <Tabs>
     <Tab title="연결 및 엔드포인트">
@@ -203,9 +232,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
       | 메서드                                         | 인수                                         | 설명                                                                                                                                                                        | 기본값     | 키                                        |
       | ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---------------------------------------- |
       | `setHttpCookiesEnabled(boolean enabled)`    | `enabled` - 활성화/비활성화 플래그                   | HTTP 쿠키를 저장하고 서버에 다시 전송할지 설정합니다.                                                                                                                                          | -       | -                                        |
-      | `httpHeader(String key, String value)`      | `key` - HTTP 헤더 키<br />`value` - 문자열 값     | 단일 HTTP 헤더의 값을 설정합니다. 이전 값은 덮어씁니다.                                                                                                                                        | `none`  | `none`                                   |
-      | `httpHeader(String key, Collection values)` | `key` - HTTP 헤더 키<br />`values` - 문자열 값 목록 | 단일 HTTP 헤더의 여러 값을 설정합니다. 이전 값은 덮어씁니다.                                                                                                                                     | `none`  | `none`                                   |
-      | `httpHeaders(Map headers)`                  | `headers` - HTTP headers를 담은 맵             | 여러 HTTP 헤더 값을 한 번에 설정합니다.                                                                                                                                                 | `none`  | `none`                                   |
+      | `httpHeader(String key, String value)`      | `key` - HTTP 헤더 키<br />`value` - 문자열 값     | 단일 HTTP 헤더의 값을 설정합니다. 이전 값은 덮어씁니다.                                                                                                                                        | `none`  | `http_header_*`                          |
+      | `httpHeader(String key, Collection values)` | `key` - HTTP 헤더 키<br />`values` - 문자열 값 목록 | 단일 HTTP 헤더의 여러 값을 설정합니다. 이전 값은 덮어씁니다.                                                                                                                                     | `none`  | `http_header_*`                          |
+      | `httpHeaders(Map headers)`                  | `headers` - HTTP headers를 담은 맵             | 여러 HTTP 헤더 값을 한 번에 설정합니다.                                                                                                                                                 | `none`  | `http_header_*`                          |
       | `useHttpFormDataForQuery(boolean enable)`   | `enable` - 활성화/비활성화 플래그                    | 쿼리 매개변수를 URL 대신 요청 본문(request body)의 HTTP 폼 데이터로 전송할지 설정합니다. 서버 측 압축을 사용할 때만 동작합니다. 클라이언트 수준 압축이 활성화된 경우 각 매개변수가 multipart 콘텐츠로 전송되므로, 매개변수가 포함된 쿼리 요청에서는 해당 압축이 비활성화됩니다. | `false` | `client.http.use_form_request_for_query` |
     </Tab>
 
@@ -244,7 +273,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   <br />
 
-  ### 클라이언트 식별
+  ### 클라이언트 식별 {#client-identification}
 
   쿼리 로그에는 요청을 발생시킨 애플리케이션을 식별하는 두 필드가 있습니다: `client_name`과 `http_user_agent`. 네이티브 TCP 프로토콜은 애플리케이션을 식별하기 위해 `client_name`을 사용하고, HTTP 프로토콜은 `http_user_agent`를 사용합니다. 클라이언트 빌더에는 두 프로토콜에 대해 올바른 값을 설정하는 `setClientName` 메서드가 있습니다.
   `http_user_agent` 필드는 `User-Agent` 헤더의 일반 형식인 `application-name[/version] [(operating-system; architecture; ...)]`에 따라 설정됩니다.
@@ -264,7 +293,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   애플리케이션은 자신을 식별하기 위해 HTTP 헤더 `User-Agent`를 직접 설정할 수 있습니다. 단, `clickhouse-java-v2/0.9.6-SNAPSHOT` 부분이 헤더 끝에 자동으로 추가됩니다.
 
-  ### 작업 식별
+  ### 작업 식별 {#operation-identification}
 
   쿼리 로그에는 작업을 식별하고 쿼리 로그에 추가 정보를 남기는 데 사용할 수 있는 `query_id`와 `log_comment`라는 두 개의 필드가 더 있습니다.
 
@@ -282,7 +311,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   querySettings.logComment("some-comment");
   ```
 
-  ### 서버 설정
+  ### 서버 설정 {#server-settings}
 
   서버 측 설정은 클라이언트 생성 시 클라이언트 수준에서 한 번 지정하거나(`Builder`의 `serverSetting` 메서드 참조), 작업 수준에서도 지정할 수 있습니다(작업 설정 클래스의 `serverSetting` 참조).
 
@@ -309,23 +338,104 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ⚠️ `setOption` 메서드(`Client.Builder` 또는 작업 설정 클래스)를 통해 옵션을 설정하는 경우, 서버 설정 이름 앞에 `clickhouse_setting_`을 접두사로 추가해야 합니다. 이 경우 `com.clickhouse.client.api.ClientConfigProperties#serverSetting()`을 사용하면 편리합니다.
 
-  ### 사용자 지정 HTTP 헤더
+  ### 사용자 지정 HTTP 헤더 {#custom-http-headers}
 
-  사용자 정의 HTTP headers는 모든 작업(클라이언트 수준) 또는 개별 작업(작업 수준)에 설정할 수 있습니다.
+  사용자 정의 HTTP headers는 모든 작업(클라이언트 수준) 또는 개별 작업(작업 수준)에 설정할 수 있습니다. 작업 설정은 이름이 같은 클라이언트 수준 header를 재정의합니다.
 
   ```java showLineNumbers
+  Map<String, String> userHeaders = new HashMap<>();
+  userHeaders.put("X-User-Header1", "value1");
+  userHeaders.put("X-User-Header2", "value2");
 
-  QuerySettings settings = new QuerySettings()
-      .httpHeader(HttpHeaders.REFERER, clientReferer)
-      .setQueryId(qId);
-
+  Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setUsername(user)
+          .setPassword(password)
+          .httpHeader("X-ClickHouse-Quota", "test")
+          .httpHeader("X-Forwarded-For", Arrays.asList("1.2.3.4", "5.6.7.8"))
+          .httpHeaders(userHeaders)
+          .build();
   ```
 
-  `setOption` 메서드(`Client.Builder` 또는 작업 설정 클래스)를 통해 옵션을 설정하는 경우, 사용자 지정 헤더 이름에는 `http_header_` 접두사를 붙여야 합니다. 이 경우 `com.clickhouse.client.api.ClientConfigProperties#httpHeader()` 메서드를 사용하면 편리합니다.
+  **중요**: `Client.Builder` 또는 작업 설정 클래스의 `setOption`을 통해 옵션을 설정할 때는 헤더 이름에 `http_header_` 접두사를 붙이십시오. `ClientConfigProperties.httpHeader(String)`이 해당 키를 생성합니다.
+  헤더 이름은 단순한 String 키이므로 대문자나 소문자 중 하나로 통일해야 합니다. 그렇지 않으면 중복 값으로 인해 정의되지 않은 동작이 발생합니다. `ClientConfigProperties.httpHeader(String)`이 이 문제를 해결합니다.
 
-  ## 공통 정의
+  ```java showLineNumbers
+  clientBuilder.setOption(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
+  // equivalent to:
+  clientBuilder.setOption("http_header_X-CLICKHOUSE-QUOTA", "test");
+  ```
 
-  ### ClickHouseFormat
+  ## ClickHouse Cloud 기능 {#clickhouse-cloud-features}
+
+  [ClickHouse Cloud](https://clickhouse.com/cloud)에 연결할 때 적용되는 기능입니다.
+
+  ### Replica-aware 라우팅 (CLOUD) {#replica-aware-routing}
+
+  ClickHouse Cloud에서는 서로 관련된 HTTP 요청을 동일한 레플리카로 보내도록 고정할 수 있습니다. Cloud 프록시가 같은 태그를 가진 모든 요청을 하나의 레플리카로 라우팅하도록 `X-ClickHouse-Replica-Tag` 헤더를 전송하십시오. 임시 테이블(temporary tables)과 같이 세션 범위에서 사용하는 객체를 처리하거나, 레플리카의 로컬 캐시를 재사용하거나, 쓰기 후 읽기 일관성을 확보할 때 이 기능을 사용하십시오.
+  자세히 알아보기: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **설정할 항목:** HTTP 헤더 `X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). 동일한 레플리카로 전달되어야 하는 모든 요청에는 같은 태그 값을 사용하십시오.
+
+  ```java showLineNumbers
+  String replicaTag = "my-app-session-1";
+
+  try (Client client = new Client.Builder()
+          .addEndpoint("https://your-service.clickhouse.cloud:8443")
+          .setUsername(user)
+          .setPassword(password)
+          .httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG, replicaTag)
+          .build()) {
+      client.query("SELECT hostname()").get();
+  }
+  ```
+
+  작업별로 구성하려면 클라이언트 빌더 대신 `QuerySettings`, `InsertSettings` 또는 `CommandSettings`에 헤더를 설정하십시오.
+
+  ### JWT 인증 (CLOUD) {#jwt-authentication}
+
+  [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt)을 사용하면 ClickHouse Cloud에서 JSON Web Token(JWT)으로 사용자를 인증할 수 있습니다. ClickHouse는 미리 생성된 데이터베이스 사용자(database users) 대신, 각 토큰에 포함된 클레임을 기반으로 **임시 사용자**를 동적으로 생성합니다.
+
+  #### 초기 구성 {#initial-configuration}
+
+  클라이언트에서 초기 JWT 인증을 구성하려면 `Client` 인스턴스를 빌드할 때 `useBearerTokenAuth(token)`을 사용하십시오(이 메서드는 `Bearer_` 접두사를 자동으로 추가합니다.
+  [HTTP 인터페이스 문서](/ko/concepts/features/security/external-authenticators/jwt#http-interface) 참조):
+
+  ```java showLineNumbers
+  import com.clickhouse.client.api.Client;
+
+  public Client createJwtClient(String jwtToken) {
+      return new Client.Builder()
+              .addEndpoint("https://your-service.clickhouse.cloud:8443")
+              .useBearerTokenAuth(jwtToken)
+              .build();
+  }
+  ```
+
+  <Note>
+    `useBearerTokenAuth(token)`은 `Authorization` HTTP 헤더 앞에 `Bearer ` 접두사를 자동으로 붙입니다.
+  </Note>
+
+  #### 런타임에 토큰 갱신 {#updating-token-at-runtime}
+
+  JWT는 수명이 짧고 임시 사용자는 토큰의 수명 동안에만 존재하므로, 작업이 실패하지 않도록 현재 토큰이 만료되기 **전에** 새 JWT 토큰을 설정해야 합니다.
+
+  클라이언트를 다시 생성하지 않고도 런타임에 기존 `Client` 인스턴스의 Bearer 토큰을 업데이트할 수 있습니다:
+
+  ```java showLineNumbers
+  import com.clickhouse.client.api.Client;
+
+  public void refreshJwtToken(Client client, String newJwtToken) {
+      // Set the new JWT before the current token expires
+      client.updateBearerToken(newJwtToken);
+  }
+  ```
+
+  이후 `Client` 인스턴스에서 수행되는 모든 요청에는 갱신된 JWT 토큰이 사용됩니다.
+
+  ## 공통 정의 {#common-definitions}
+
+  ### ClickHouseFormat {#clickhouseformat}
 
   [지원되는 포맷](/ko/reference/formats/index)의 enum입니다. ClickHouse가 지원하는 모든 포맷이 포함됩니다.
 
@@ -419,13 +529,13 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | [Markdown](/ko/reference/formats/Markdown)                                                                          |   -  |  raw |
   | [Form](/ko/reference/formats/Form)                                                                                  |  raw |   -  |
 
-  ## 삽입 API
+  ## 삽입 API {#insert-api}
 
-  ### insert(String tableName, InputStream data, ClickHouseFormat format)
+  ### insert(String tableName, InputStream data, ClickHouseFormat format) {#insertstring-tablename-inputstream-data-clickhouseformat-format}
 
   지정된 포맷으로 바이트의 `InputStream` 형태로 데이터를 받습니다. `data`는 `format`으로 인코딩되어 있어야 합니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   CompletableFuture<InsertResponse> insert(String tableName, InputStream data, ClickHouseFormat format, InsertSettings settings)
@@ -462,11 +572,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ```
 
-  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
+  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings) {#insertstring-tablename-listlt-data-insertsettings-settings}
 
   데이터베이스에 쓰기 요청을 보냅니다. 객체 목록은 효율적인 포맷으로 변환된 후 서버로 전송됩니다. 목록 항목의 클래스는 `register(Class, TableSchema)` 메서드를 사용해 사전에 등록해야 합니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   client.insert(String tableName, List<?> data, InsertSettings settings)
@@ -498,7 +608,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### InsertSettings
+  ### InsertSettings {#insertsettings}
 
   삽입 작업의 구성 옵션입니다.
 
@@ -511,10 +621,13 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | `setInputStreamCopyBufferSize(int size)`        | 복사 버퍼 크기입니다. 이 버퍼는 쓰기 작업 중 사용자가 제공한 입력 스트림에서 출력 스트림으로 데이터를 복사할 때 사용됩니다. 기본값: `8196`. |
   | `serverSetting(String name, String value)`      | 작업에 대한 개별 서버 설정을 지정합니다.                                                              |
   | `serverSetting(String name, Collection values)` | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                          |
+  | `httpHeader(String key, String value)`          | 삽입에 사용할 사용자 정의 HTTP 헤더를 설정합니다.                                                       |
+  | `httpHeader(String key, Collection values)`     | 여러 값을 갖는 사용자 정의 HTTP 헤더를 설정합니다.                                                      |
+  | `httpHeaders(Map headers)`                      | 여러 사용자 정의 HTTP 헤더를 설정합니다.                                                            |
   | `setDBRoles(Collection dbRoles)`                | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                               |
   | `setOption(String option, Object value)`        | 구성 옵션을 원시 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                   |
 
-  ### InsertResponse
+  ### InsertResponse {#insertresponse}
 
   삽입 작업의 결과를 담는 응답 객체입니다. 클라이언트가 서버로부터 응답을 받은 경우에만 사용 가능합니다.
 
@@ -527,13 +640,31 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | `OperationMetrics getMetrics()` | 작업 메트릭이 포함된 객체를 반환합니다.                             |
   | `String getQueryId()`           | 애플리케이션이 작업에 할당한 쿼리 ID(작업 설정을 통해 또는 서버가 할당)를 반환합니다. |
 
-  ## 쿼리 API
+  ## 쿼리 API {#query-api}
 
-  ### query(String sqlQuery)
+  **포맷 선택**
+
+  Client는 서버의 응답 스트림에 직접 접근할 수 있도록 합니다. 요청에서 원하는 ClickHouse 포맷을 자유롭게 선택하고 `QueryResponse` 객체의
+  `InputStream`을 통해 데이터를 읽을 수 있습니다.
+  다음 방법으로 포맷을 요청할 수 있습니다:
+
+  * `QuerySettings#setFormat()` - 요청에 포맷 헤더를 설정합니다.
+  * 쿼리 자체의 `FORMAT` 절에서 지정합니다.
+  * 서버 설정(server settings) `default_format` (/reference/settings/session-settings/default#default&#95;format)
+
+  ClickHouse 및 클라이언트 버전에 따라 동작에 차이가 있습니다:
+
+  * Client &lt; `0.11.0` &amp; ClickHouse &lt; `26.8` - `FORMAT` 절이 요청 포맷 헤더보다 우선합니다.
+  * 클라이언트 &gt; `0.11.0` &amp; ClickHouse &gt; `26.8` - 요청 헤더가 `FORMAT` 절보다 우선합니다.
+    * `QuerySettings`에 포맷이 지정되지 않으면 클라이언트가 헤더를 설정하므로, 쿼리에서 포맷을 재정의할 수 없습니다.
+  * Client는 `0.11.0` 버전부터 `format`의 기본값을 작업 수준이 아닌 클라이언트 수준에서 설정합니다. 따라서 기존 코드는
+    수정 없이 그대로 작동하며, 새 코드에서는 클라이언트의 `format`을 `null`로 설정하여 `FORMAT` 절을 사용할 수 있습니다.
+
+  ### query(String sqlQuery) {#querystring-sqlquery}
 
   `sqlQuery`를 그대로 전송합니다. 응답 포맷은 쿼리 설정에 따라 결정됩니다. `QueryResponse`는 해당 포맷을 지원하는 리더(reader)가 읽어야 하는 응답 스트림에 대한 참조를 보유합니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   CompletableFuture<QueryResponse> query(String sqlQuery, QuerySettings settings)
@@ -578,11 +709,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   // put business logic outside of the reading block to release http connection asap.
   ```
 
-  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
+  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings) {#querystring-sqlquery-mapltstring-object-queryparams-querysettings-settings}
 
   `sqlQuery`를 그대로 전송합니다. 또한 서버가 SQL 표현식을 컴파일할 수 있도록 쿼리 매개변수도 함께 전송합니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   CompletableFuture<QueryResponse> query(String sqlQuery, Map<String, Object> queryParams, QuerySettings settings)
@@ -598,7 +729,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **반환 값**
 
-  `QueryResponse` 유형의 Future로, 결과 데이터셋과 서버 측 메트릭 등의 추가 정보를 포함합니다. Response 객체는 데이터셋을 사용한 후 반드시 닫아야 합니다.
+  `QueryResponse` 유형의 Future로, 결과 데이터셋과 서버 측 메트릭 등의 추가 정보를 포함합니다. 데이터셋을 모두 사용한 후에는 Response 객체를 닫아야 합니다.
 
   **예시**
 
@@ -626,11 +757,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ```
 
-  ### queryAll(String sqlQuery)
+  ### queryAll(String sqlQuery) {#queryallstring-sqlquery}
 
   `RowBinaryWithNamesAndTypes` 포맷으로 데이터를 쿼리합니다. 결과를 컬렉션으로 반환합니다. 읽기 성능은 reader와 동일하지만, 전체 데이터셋을 메모리에 유지해야 하므로 더 많은 메모리가 필요합니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   List<GenericRecord> queryAll(String sqlQuery)
@@ -664,26 +795,29 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### QuerySettings
+  ### QuerySettings {#querysettings}
 
   쿼리 작업에 대한 구성 옵션입니다.
 
   **구성 방법**
 
-  | 메서드                                               | 설명                                                                                                                                       |
-  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | 작업에 할당할 쿼리 ID를 설정합니다.                                                                                                                    |
-  | `setFormat(ClickHouseFormat format)`              | 응답 포맷을 설정합니다. 전체 목록은 `RowBinaryWithNamesAndTypes`를 참조하세요.                                                                                |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | 서버에서의 작업 실행 시간을 설정합니다. 읽기 타임아웃에는 영향을 주지 않습니다.                                                                                            |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | 응답을 보내기 전에 서버가 쿼리가 끝날 때까지 기다리도록 요청합니다.                                                                                                   |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | 연산 결과의 날짜/시간 타입을 파싱할 때 서버 시간대(클라이언트 구성 참조)를 사용합니다. 기본값은 `false`입니다.                                                                      |
-  | `setUseTimeZone(String timeZone)`                 | `timeZone`을 시간 변환에 사용하도록 서버에 요청합니다. 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)을 참조하십시오. |
-  | `serverSetting(String name, String value)`        | 작업에 대한 개별 서버 설정을 지정합니다.                                                                                                                  |
-  | `serverSetting(String name, Collection values)`   | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                              |
-  | `setDBRoles(Collection dbRoles)`                  | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                                   |
-  | `setOption(String option, Object value)`          | 구성 옵션을 원시 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                                                                       |
+  | 메서드                                               | 설명                                                                                                                                 |
+  | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | 작업에 할당할 쿼리 ID를 설정합니다.                                                                                                              |
+  | `setFormat(ClickHouseFormat format)`              | 응답 포맷을 설정합니다. 전체 목록은 `RowBinaryWithNamesAndTypes`를 참조하세요.                                                                          |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | 서버에서의 작업 실행 시간을 설정합니다. 읽기 타임아웃에는 영향을 주지 않습니다.                                                                                      |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | 응답을 보내기 전에 서버가 쿼리가 끝날 때까지 기다리도록 요청합니다.                                                                                             |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | 연산 결과의 날짜/시간 타입을 파싱할 때 서버 시간대(클라이언트 구성 참조)를 사용합니다. 기본값은 `false`입니다.                                                                |
+  | `setUseTimeZone(String timeZone)`                 | `timeZone`을 시간 변환에 사용하도록 서버에 요청합니다. 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)을 참조하십시오. |
+  | `serverSetting(String name, String value)`        | 작업에 대한 개별 서버 설정을 지정합니다.                                                                                                            |
+  | `serverSetting(String name, Collection values)`   | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                        |
+  | `httpHeader(String key, String value)`            | 쿼리에 사용할 사용자 정의 HTTP 헤더를 설정합니다.                                                                                                     |
+  | `httpHeader(String key, Collection values)`       | 여러 값을 갖는 사용자 정의 HTTP 헤더를 설정합니다.                                                                                                    |
+  | `httpHeaders(Map headers)`                        | 여러 사용자 정의 HTTP 헤더를 설정합니다.                                                                                                          |
+  | `setDBRoles(Collection dbRoles)`                  | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                             |
+  | `setOption(String option, Object value)`          | 구성 옵션을 원시 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                                                                 |
 
-  ### QueryResponse
+  ### QueryResponse {#queryresponse}
 
   쿼리 실행 결과를 담는 응답 객체입니다. 클라이언트가 서버로부터 응답을 받은 경우에만 사용할 수 있습니다.
 
@@ -699,18 +833,18 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | `String getQueryId()`           | 애플리케이션이 작업에 할당한 쿼리 ID(작업 설정 또는 서버를 통해 할당됨)를 반환합니다. |
   | `TimeZone getTimeZone()`        | 응답에서 Date/DateTime 타입을 처리할 때 사용해야 하는 시간대를 반환합니다.   |
 
-  ### 예시
+  ### 예시 {#examples}
 
   * 예시 코드는 [repo](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)에서 확인할 수 있습니다
   * Spring 서비스 [구현 예시](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) 참고
 
-  ## 공통 API
+  ## 공통 API {#common-api}
 
-  ### getTableSchema(String table)
+  ### getTableSchema(String table) {#gettableschemastring-table}
 
   `table`의 테이블 스키마(schema)를 가져옵니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   TableSchema getTableSchema(String table)
@@ -727,11 +861,11 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   테이블 컬럼 목록이 포함된 `TableSchema` 객체를 반환합니다.
 
-  ### getTableSchemaFromQuery(String sql)
+  ### getTableSchemaFromQuery(String sql) {#gettableschemafromquerystring-sql}
 
   SQL 구문(statement)에서 스키마(schema)를 가져옵니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   TableSchema getTableSchemaFromQuery(String sql)
@@ -745,14 +879,14 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   `sql` 표현식에 맞는 컬럼이 포함된 `TableSchema` 객체를 반환합니다.
 
-  ### TableSchema
+  ### TableSchema {#tableschema}
 
-  ### register(Class&lt;?&gt; clazz, TableSchema schema)
+  ### register(Class&lt;?&gt; clazz, TableSchema schema) {#registerclasslt-clazz-tableschema-schema}
 
   `schema`를 사용해 데이터를 읽고 쓰는 데 사용할 Java 클래스용 직렬화(serialization) 및 역직렬화(deserialization) 레이어를 컴파일합니다. 이 메서드는 getter/setter 쌍과 이에 대응하는 컬럼에 대한 직렬화기 및 역직렬화기를 생성합니다.
   컬럼 매칭은 메서드 이름에서 컬럼 이름을 추출하여 수행됩니다. 예를 들어 `getFirstName`은 컬럼 `first_name` 또는 `firstname`에 해당합니다.
 
-  **서명**
+  **시그니처**
 
   ```java
   void register(Class<?> clazz, TableSchema schema)
@@ -770,7 +904,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
   ```
 
-  ## 사용 예시
+  ## 사용 예시 {#usage-examples}
 
   전체 예시 코드는 저장소의 &#39;example&#96; [폴더](https://github.com/ClickHouse/clickhouse-java/tree/main/examples)에서 확인할 수 있습니다:
 
@@ -778,7 +912,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) - Spring Boot 애플리케이션에서 클라이언트를 사용하는 방법을 보여주는 예시입니다.
   * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) - Ktor(Kotlin) 애플리케이션에서 클라이언트를 사용하는 방법을 보여주는 예시입니다.
 
-  ## 데이터 읽기
+  ## 데이터 읽기 {#reading-data}
 
   데이터를 읽는 일반적인 방법은 두 가지입니다:
 
@@ -790,7 +924,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **참고:** 스트리밍 방식은 데이터를 네트워크 스트림에서 직접 읽으므로, 읽기 속도가 충분히 빠르지 않으면 서버 쓰기 timeout이 발생할 수 있습니다.
 
-  ### 배열 읽기
+  ### 배열 읽기 {#reading-arrays}
 
   **`ClickHouseBinaryFormatReader` 메서드**
 
@@ -842,14 +976,199 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 마이그레이션 가이드
+  ## 관측성 및 모니터링 {#v2-o11y}
+
+  ClickHouse Java 클라이언트(V2)는 OpenTelemetry 시맨틱 규약과 Micrometer 메트릭을 기반으로 설계된 관측성 기능을 기본으로 제공합니다. 클라이언트를 통해 작업 소요 시간, 처리량, 재시도, 서버 실행 통계, 연결 풀 상태, 분산 추적(distributed tracing) 스팬을 모니터링할 수 있습니다.
+
+  클라이언트 V2 구성, 연결 풀링(Connection Pooling), `@Async` 경계를 넘는 추적 컨텍스트 전파, 완전한 텔레메트리 통합을 보여 주는 운영 환경 수준의 전체 Spring Boot 애플리케이션 예시는 이 리포지토리의 `examples/demo-spring-service` 모듈을 참조하십시오.
+
+  ### Client Builder 관측성 API {#v2-o11y-builder-api}
+
+  `Client.Builder`는 관측성과 메트릭 수집을 구성할 수 있는 주요 메서드 3개를 제공합니다:
+
+  * `setMetricsRecorder(MetricsRecorder recorder)`: 작업 메트릭(소요 시간, 발생 횟수, 재시도, 오류)을 내보내는 메트릭 기록기를 등록합니다. 명시적으로 설정하지 않으면 `DefaultMetricsRecorder.NOOP`가 기본값으로 사용됩니다.
+  * `setSpanRecorder(SpanRecorder recorder)`: 분산 추적(distributed tracing)을 위한 스팬 기록기를 등록합니다(작업 스팬 및 전송 요청 스팬). 명시적으로 설정하지 않으면 `DefaultSpanRecorder.NOOP`가 기본값으로 사용됩니다.
+  * `registerClientMetrics(Object registry, String groupName)`: Apache HttpClient의 연결 풀 메트릭(사용 가능한 연결, 사용 중인 연결, 대기 중인 요청, 연결 생성 시간 등)을 Micrometer `MeterRegistry`에 연결합니다.
+
+  **의존성 요구 사항**
+
+  기본 제공 `OpenTelemetrySpanRecorder` 및 `MicrometerMetricsRecorder` 클래스는 `client-v2` 패키지의 일부로 제공됩니다. 그러나 런타임에 애플리케이션 클래스패스에 OpenTelemetry API(`io.opentelemetry:opentelemetry-api`) 및 Micrometer(`io.micrometer:micrometer-core`) 라이브러리가 있어야 합니다. 기본 클라이언트 빌드 산출물은 이러한 타사 의존성을 포함하지 않으며, 전이적으로 가져오지도 않습니다. OpenTelemetry 추적 또는 Micrometer 메트릭을 사용하는 애플리케이션은 프로젝트 빌드 구성(`pom.xml` 또는 `build.gradle`)에 이러한 의존성을 명시적으로 선언해야 합니다.
+
+  **빌더 구성 예시**
+
+  ```java
+  import com.clickhouse.client.api.Client;
+  import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
+  import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
+
+  import io.micrometer.core.instrument.MeterRegistry;
+  import io.opentelemetry.api.OpenTelemetry;
+
+  public Client createObservedClient(MeterRegistry meterRegistry, OpenTelemetry openTelemetry) {
+      return new Client.Builder()
+          .addEndpoint("http://localhost:8123")
+          .setUsername("default")
+          .setPassword("secret")
+          .setMetricsRecorder(new MicrometerMetricsRecorder(meterRegistry))
+          .setSpanRecorder(new OpenTelemetrySpanRecorder(openTelemetry))
+          .registerClientMetrics(meterRegistry, "clickhouse-client-pool")
+          .build();
+  }
+  ```
+
+  **통합 방식**
+
+  애플리케이션에 관측성을 통합하는 주요 패턴은 두 가지입니다:
+
+  1. **OpenTelemetry 에이전트 및 전역 자동 구성(Autoconfiguration)**:
+     * OpenTelemetry Java 에이전트 또는 전역 SDK 자동 구성을 사용하는 애플리케이션에서는 각 클래스의 인수 없는 기본 생성자를 사용하여 `OpenTelemetrySpanRecorder`와 `MicrometerMetricsRecorder`의 인스턴스를 생성하십시오.
+     * 기본 생성자를 사용하면 `GlobalOpenTelemetry.get()`과 Micrometer의 `Metrics.globalRegistry`에 자동으로 연결됩니다.
+  2. **명시적 클라이언트 수준 통합**:
+     * 명시적으로 생성한 `OpenTelemetry`, `Tracer` 또는 Micrometer `MeterRegistry` 인스턴스를 recorder 생성자에 직접 전달합니다.
+     * 텔레메트리 싱크가 서로 독립된 여러 격리 클라이언트나 멀티 테넌트 서비스를 관리할 때 적합합니다.
+
+  ```java
+  import com.clickhouse.client.api.Client;
+  import com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder;
+  import com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder;
+
+  public Client.Builder configureGlobalTelemetry(Client.Builder builder) {
+      return builder
+          .setMetricsRecorder(new MicrometerMetricsRecorder()) // uses Metrics.globalRegistry
+          .setSpanRecorder(new OpenTelemetrySpanRecorder());    // uses GlobalOpenTelemetry
+  }
+  ```
+
+  ### 보고되는 메트릭 {#v2-o11y-metrics}
+
+  #### 작업 메트릭 {#operational-metrics}
+
+  `MetricsRecorder`를 통해 내보내는 메트릭은 데이터베이스 클라이언트 메트릭에 대한 OpenTelemetry 의미론적 규약(`MetricName` 및 `MetricAttribute`)을 따릅니다:
+
+  | 메트릭 이름                                               | 유형 / 단위             | 설명                                                            |
+  | ---------------------------------------------------- | ------------------- | ------------------------------------------------------------- |
+  | `db.client.operation.duration`                       | 타이머 (`s`)           | ClickHouse 클라이언트 작업(쿼리 및 삽입)의 소요 시간으로, 작업의 성공 여부와 관계없이 기록됩니다. |
+  | `clickhouse.client.operation.serialization.duration` | 타이머 (`s`)           | 직렬화 단계(예: 삽입 시 POJO 직렬화)의 소요 시간입니다.                           |
+  | `clickhouse.client.operation.count`                  | 카운터 (`{operation}`) | 완료된 클라이언트 작업을 결과별로 그룹화하여 집계한 총 작업 수입니다.                       |
+  | `clickhouse.client.operation.retries`                | 카운터 (`{retry}`)     | 전체 클라이언트 작업에서 발생한 재시도 횟수입니다.                                  |
+
+  #### 메트릭 속성 / 태그 {#metric-attributes-tags}
+
+  `MicrometerMetricsRecorder`가 생성하는 미터(Meter)에는 카디널리티(cardinality)가 낮은 태그(`MetricAttribute`)가 포함됩니다:
+
+  | 속성 키                      | 설명                                           | 예시 값                                        |
+  | ------------------------- | -------------------------------------------- | ------------------------------------------- |
+  | `db.system.name`          | 데이터베이스 시스템 식별자입니다.                           | `clickhouse`                                |
+  | `db.namespace`            | 대상 데이터베이스(target database) 이름입니다.            | `default`, `analytics`                      |
+  | `db.operation.name`       | 작업 유형입니다.                                    | `query`, `insert`                           |
+  | `db.collection.name`      | target table의 이름(table name)입니다(삽입 시 기록됩니다). | `events`                                    |
+  | `db.response.status_code` | 실패 시 ClickHouse 서버에서 반환하는 오류 코드입니다.          | `60`                                        |
+  | `error.type`              | 실패 시에는 예외 클래스 이름이고, 성공 시에는 `none`입니다.        | `com.clickhouse.client.api.ServerException` |
+
+  #### 연결 풀 메트릭 {#connection-pool-metrics}
+
+  `registerClientMetrics(meterRegistry, "groupName")`를 호출하면 HTTP 연결 풀 게이지가 Micrometer에 등록됩니다:
+
+  * `httpcomponents.httpclient.pool.total.max`: 구성에서 허용한 지속 연결의 최대 수입니다.
+  * `httpcomponents.httpclient.pool.total.connections` (`state="available"` 또는 `state="leased"` 태그가 지정됨): 풀 내 활성 연결입니다.
+  * `httpcomponents.httpclient.pool.total.pending`: 사용 가능한 연결을 기다리는 연결 요청 수입니다.
+  * `httpcomponents.httpclient.pool.route.max.default`: 구성에 지정된 경로당 최대 연결 수의 기본값입니다.
+  * `httpcomponents.httpclient.connect.time`: 연결 수립에 걸리는 시간의 누적 평균입니다.
+
+  #### 응답 메트릭 API {#response-metrics-api}
+
+  메트릭 기록기 외에도 응답 객체(`QueryResponse`, `InsertResponse`)에서 `OperationMetrics`를 통해 상세 실행 통계를 직접 확인할 수 있습니다:
+
+  ```java
+  import com.clickhouse.client.api.Client;
+  import com.clickhouse.client.api.metrics.ClientMetrics;
+  import com.clickhouse.client.api.metrics.OperationMetrics;
+  import com.clickhouse.client.api.metrics.ServerMetrics;
+  import com.clickhouse.client.api.query.QueryResponse;
+
+  public void inspectResponseMetrics(Client client) throws Exception {
+      try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+          OperationMetrics metrics = response.getMetrics();
+          long readRows = metrics.getMetric(ServerMetrics.NUM_ROWS_READ).getLong();
+          long readBytes = metrics.getMetric(ServerMetrics.NUM_BYTES_READ).getLong();
+          long durationMs = metrics.getMetric(ClientMetrics.OP_DURATION).getLong();
+      }
+  }
+  ```
+
+  ### 보고된 스팬 {#v2-o11y-spans}
+
+  클라이언트 V2의 추적(tracing)은 부모-자식 계층 구조로 이루어진 두 종류의 스팬(span)을 생성합니다:
+
+  1. **작업 스팬(Operation Span)**: 상위 수준의 클라이언트 작업(`QUERY <database>` 또는 `INSERT <database>.<table_name>`)을 나타냅니다. 현재 스레드의 추적 컨텍스트(`Context.current()`) 아래에서 시작되므로, 데이터베이스 작업이 호출자의 활성 트레이스 스팬에 포함됩니다.
+  2. **전송 요청 스팬(Transport Request Span)**: 개별 HTTP 전송 요청 시도(`POST`)를 나타냅니다. 해당 작업 스팬의 자식으로 생성됩니다. 재시도할 때마다 작업 스팬 아래에 새로운 전송 요청 스팬이 생성됩니다.
+
+  #### 스팬 속성 {#v2-o11y-span-attributes}
+
+  스팬에는 표준 OpenTelemetry 속성(`SpanAttribute`)이 기록됩니다:
+
+  | 스팬 속성 키                             | 범위 / 유형           | 기록 시점               | 설명                                                                                           |
+  | ----------------------------------- | ----------------- | ------------------- | -------------------------------------------------------------------------------------------- |
+  | `db.system.name`                    | 모든 연산(Operations) | 요청 시작 전             | 항상 `clickhouse`입니다.                                                                          |
+  | `db.namespace`                      | 모든 연산(Operations) | 요청 시작 전             | 대상 데이터베이스(target database) 이름.                                                               |
+  | `db.query.text`                     | 쿼리                | 요청 시작 전             | 쿼리 또는 명령어의 SQL 문(SQL statement) 텍스트.                                                         |
+  | `db.collection.name`                | 삽입                | 요청 시작 전             | target table 이름.                                                                             |
+  | `db.operation.name`                 | 삽입                | 요청 시작 전             | 작업 유형(`INSERT`)입니다. 삽입 연산(insert operations)에는 설정되지만, 쿼리에는 클라이언트에서 SQL을 파싱하지 않으므로 설정되지 않습니다. |
+  | `db.operation.batch.size`           | 삽입                | 요청 시작 전             | 삽입 배치의 항목 수.                                                                                 |
+  | `db.query.parameter.<name>`         | 쿼리                | 요청 시작 전             | SQL 문의 매개변수 값.                                                                               |
+  | `clickhouse.query_id`               | 모든 연산(Operations) | 요청 시작 전 기록, 완료 시 갱신 | 클라이언트 또는 서버가 할당한 ClickHouse 쿼리 ID(query ID).                                                 |
+  | `db.response.returned_rows`         | 쿼리                | 성공적으로 완료된 시점        | 서버가 반환한 행(rows) 수입니다.                                                                        |
+  | `clickhouse.response.read_rows`     | 쿼리                | 성공적으로 완료된 시점        | 서버가 저장소에서 읽은 행(rows) 수입니다.                                                                   |
+  | `clickhouse.response.read_bytes`    | 쿼리                | 성공적으로 완료된 시점        | 서버가 저장소에서 읽은 바이트 수입니다.                                                                       |
+  | `clickhouse.response.written_rows`  | 삽입                | 성공적으로 완료된 시점        | 서버가 저장소에 기록한 행(rows) 수입니다.                                                                   |
+  | `clickhouse.response.written_bytes` | 삽입                | 성공적으로 완료된 시점        | 서버가 저장소에 기록한 바이트 수입니다.                                                                       |
+  | `server.address`                    | 전송 요청             | 시도 전                | 대상 서버의 호스트명 또는 IP 주소.                                                                        |
+  | `server.port`                       | 전송 요청             | 시도 전                | 대상 서버의 포트.                                                                                   |
+  | `http.request.method`               | 전송 요청             | 시도 전                | HTTP 메서드(항상 `POST`).                                                                         |
+  | `http.response.status_code`         | 전송 요청             | 응답 / 실패 시           | 서버가 반환한 HTTP 상태 코드입니다(예: `200`, `500`).                                                      |
+  | `db.response.status_code`           | 전체 &amp; 전송 요청    | 실패 시                | 실패 시 ClickHouse 서버에서 반환하는 오류 코드입니다.                                                          |
+  | `error.type`                        | 전체 &amp; 전송 요청    | 실패 시                | 오류 발생 시 예외 클래스 이름.                                                                           |
+
+  <Note>
+    **비동기 경계를 넘는 컨텍스트 전파:** 클라이언트 V2는 `Context.current()`를 상속하므로 활성 트레이스 스팬이 있는 스레드에서 시작된 작업은 자동으로 해당 트레이스에 포함됩니다. 스레드 풀 간에 작업을 위임할 때(예: Spring `@Async` 또는 사용자 정의 `ExecutorService`)는 OpenTelemetry 컨텍스트를 명시적으로 전파하십시오:
+
+    ```java
+    import io.opentelemetry.context.Context;
+    import io.opentelemetry.context.Scope;
+    import com.clickhouse.client.api.Client;
+    import com.clickhouse.client.api.insert.InsertResponse;
+
+    public void processBatchAsync(Client client, String table, List<?> data, Context parentContext) throws Exception {
+        try (Scope ignored = parentContext.makeCurrent()) {
+            try (InsertResponse response = client.insert(table, data).get()) {
+                // Background Client V2 span joins parentContext trace
+            }
+        }
+    }
+    ```
+  </Note>
+
+  ### 사용자 정의 레코더 개발 {#v2-o11y-custom-recorders}
+
+  사용자 정의 관측성 백엔드를 사용하는 애플리케이션은 `DefaultMetricsRecorder`(메트릭용) 또는 `DefaultSpanRecorder`(추적용)를 확장하여 사용자 정의 레코더를 구현할 수 있습니다.
+
+  * **`DefaultMetricsRecorder`**: `MetricsRecorder`의 기본 구현입니다. `recordQuerySuccess`, `recordQueryFailure` 등 필요한 콜백을 재정의하여 사용하십시오. `MetricsSupport.DEFAULT`를 사용하면 표준 메트릭 이름(`MetricName`), 단위, 속성 맵(`MetricAttribute`)을 도출할 수 있습니다.
+  * **`DefaultSpanRecorder`**: `SpanRecorder`의 기본 구현입니다. `startQuerySpan`, `startInsertSpan`, `startRequestSpan` 등 스팬 생성 콜백을 재정의하여 사용하십시오. `SpanSupport.DEFAULT`를 사용하면 표준 OpenTelemetry 스팬 이름과 속성(`SpanAttribute`)을 계산할 수 있습니다.
+
+  운영 환경에서 참고할 수 있는 구현 예시는 다음 내장 클라이언트 클래스를 참조하십시오:
+
+  * `com.clickhouse.client.api.observability.otel.OpenTelemetrySpanRecorder` (OpenTelemetry 추적 통합)
+  * `com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder` (Micrometer 메트릭 통합)
+
+  ## 마이그레이션 가이드 {#migration_guide}
 
   이전 클라이언트(V1)는 `com.clickhouse.client.ClickHouseClient#builder`를 시작점으로 사용했습니다. 새 클라이언트(V2)는 `com.clickhouse.client.api.Client.Builder`를 사용하는 유사한 패턴을 따릅니다. 주요 차이점은 다음과 같습니다:
 
   * 구현을 가져오기 위해 service loader를 사용하지 않습니다. `com.clickhouse.client.api.Client`는 향후 다양한 구현을 위한 파사드 클래스입니다.
-  * 구성 소스 수가 더 적습니다. 하나는 빌더에 제공되고, 다른 하나는 작업 설정(`QuerySettings`, `InsertSettings`)에 있습니다. 이전 버전에서는 노드별 구성을 사용했고, 경우에 따라 환경 변수도 불러왔습니다.
+  * 구성 소스 수가 더 적습니다. 하나는 빌더에 제공되고, 다른 하나는 작업 설정(`QuerySettings`, `InsertSettings`)에 있습니다. 이전 버전에서는 노드별 구성을 사용했고, 경우에 따라
+    환경 변수도 불러왔습니다.
 
-  ### 구성 매개변수 일치
+  ### 구성 매개변수 일치 {#migration_from_v1_config}
 
   V1에는 구성과 관련된 enum 클래스가 3개 있습니다:
 
@@ -1048,13 +1367,13 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ### 일반적인 차이점
+  ### 일반적인 차이점 {#general-differences}
 
   * Client V2는 이식성을 높이기 위해 전용 클래스 사용을 줄였습니다. 예를 들어 V2는 서버에 데이터를 쓰는 데 `java.io.InputStream`의 모든 구현을 사용할 수 있습니다.
   * Client V2에서 `async` 설정의 기본값은 `off`입니다. 즉, 추가 스레드가 생성되지 않으며 클라이언트 제어를 애플리케이션에서 더 많이 할 수 있습니다. 이 설정은 대부분의 사용 사례에서 `off`로 유지해야 합니다. `async`를 활성화하면 요청마다 별도의 스레드가 생성됩니다. 이는 애플리케이션에서 제어하는
     실행기를 사용할 때만 의미가 있습니다(참조: `com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor`)
 
-  ### 데이터 쓰기
+  ### 데이터 쓰기 {#writing-data}
 
   * `java.io.InputStream`의 어떤 구현이든 사용할 수 있습니다. V1 `com.clickhouse.data.ClickHouseInputStream`도 지원하지만 권장하지는 않습니다.
   * 입력 스트림의 끝이 감지되면 그에 맞게 처리됩니다. 그에 앞서 요청의 출력 스트림을 닫아야 합니다.
@@ -1106,7 +1425,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * 새로운 저수준 API `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)`를 사용할 수 있습니다. `com.clickhouse.client.api.DataStreamWriter`는 사용자 정의 데이터 쓰기 로직을 구현할 수 있도록 설계되었습니다. 예를 들어,
     큐에서 데이터를 읽는 로직을 구현할 때 사용할 수 있습니다.
 
-  ### 데이터 읽기
+  ### 데이터 읽기 {#reading-data-2}
 
   * 기본적으로 데이터는 `RowBinaryWithNamesAndTypes` 포맷으로 읽어옵니다. 현재 데이터 바인딩이 필요한 경우에는 이 포맷만 지원됩니다.
   * 데이터는 `List<GenericRecord> com.clickhouse.client.api.Client#queryAll(java.lang.String)` 메서드를 사용해 레코드 컬렉션으로 읽을 수 있습니다. 이 메서드는 데이터를 메모리에 읽어 들인 뒤 connection을 해제합니다. 별도의 추가 처리는 필요하지 않습니다. `GenericRecord`는 데이터에 접근할 수 있게 해 주며, 일부 변환 기능도 제공합니다.
@@ -1131,7 +1450,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     이 라이브러리는 곧 지원 중단될 예정입니다. 새 프로젝트에서는 최신 [Java 클라이언트](/ko/integrations/language-clients/java/client)를 사용하세요
   </Warning>
 
-  ## Setup
+  ## Setup {#v1-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1189,7 +1508,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## 초기화
+  ## 초기화 {#v1-initialization}
 
   연결 URL 포맷: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`, 예시:
 
@@ -1210,7 +1529,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
       + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
   ```
 
-  ## 쿼리 API
+  ## 쿼리 API {#v1-query-api}
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1224,7 +1543,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## 스트리밍 쿼리 API
+  ## 스트리밍 쿼리 API {#v1-streaming-query-api}
 
   ```java showLineNumbers
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
@@ -1235,7 +1554,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
           .executeAndWait()) {
               for (ClickHouseRecord r : response.records()) {
               int num = r.getValue(0).asInteger();
-              // 타입 변환
+              // type conversion
               String str = r.getValue(0).asString();
               LocalDate date = r.getValue(0).asDate();
           }
@@ -1244,14 +1563,15 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   [저장소](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client)에서 [전체 코드 예시](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73)를 확인하세요.
 
-  ## 삽입 API
+  ## 삽입 API {#v1-insert-api}
 
   ```java showLineNumbers
+
   try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
        ClickHouseResponse response = client.read(servers).write()
           .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
           .query("insert into my_table select c2, c3 from input('c1 UInt8, c2 String, c3 Int32')")
-          .data(myInputStream) // `myInputStream`는 RowBinary 포맷의 데이터 소스입니다
+          .data(myInputStream) // `myInputStream` is source of data in RowBinary format
           .executeAndWait()) {
               ClickHouseResponseSummary summary = response.getSummary();
               summary.getWrittenRows();
@@ -1266,9 +1586,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   [코드 예시](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622)가 있습니다.
 
-  ## 기능
+  ## 기능 {#v1-features}
 
-  ### 압축(Compression)
+  ### 압축(Compression) {#v1-compression}
 
   클라이언트는 기본적으로 LZ4 압축(Compression)을 사용하며, 이를 위해 다음 의존성이 필요합니다:
 
@@ -1315,7 +1635,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   다양한 압축 옵션에 대한 자세한 내용은 [압축 문서](/ko/guides/clickhouse/data-modelling/compression/compression-modes)를 참조하십시오.
 
-  ### 다중 쿼리
+  ### 다중 쿼리 {#v1-multiple-queries}
 
   동일한 세션 내에서 워커 스레드로 여러 쿼리를 순차적으로 실행합니다:
 
@@ -1331,7 +1651,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   List<ClickHouseResponseSummary> results = future.get();
   ```
 
-  ### 명명된 매개변수
+  ### 명명된 매개변수 {#v1-named-parameters}
 
   매개변수 목록에서의 위치에만 의존하지 않고 이름으로 매개변수를 전달할 수 있습니다. 이 기능은 `params` 함수를 사용해 이용할 수 있습니다.
 
@@ -1383,7 +1703,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
     `Integer`, `UUID`, `Array`, `Enum`과 같은 다른 타입은 `params` 내에서 자동으로 변환됩니다.
   </Info>
 
-  ## 노드 디스커버리
+  ## 노드 디스커버리 {#v1-node-discovery}
 
   Java 클라이언트는 ClickHouse 노드를 자동으로 검색하는 디스커버리 기능을 제공합니다. 자동 디스커버리는 기본적으로 비활성화되어 있습니다. 활성화하려면 `auto_discovery`를 `true`로 설정하십시오:
 
@@ -1407,7 +1727,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | node&#95;discovery&#95;interval | `0`     | 밀리초 단위의 노드 디스커버리 간격이며, 값이 0 이하이면 1회성 디스커버리를 의미합니다.                                      |
   | node&#95;discovery&#95;limit    | `100`   | 한 번에 디스커버리할 수 있는 최대 노드 수입니다. 값이 0 이하이면 제한이 없습니다.                                        |
 
-  ### 로드 밸런싱
+  ### 로드 밸런싱 {#v1-load-balancing}
 
   Java 클라이언트는 로드 밸런싱 정책에 따라 요청을 보낼 ClickHouse 노드를 선택합니다. 일반적으로 로드 밸런싱 정책은 다음 사항을 담당합니다.
 
@@ -1426,30 +1746,59 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | node&#95;check&#95;interval   | `0`                                      | 밀리초 단위의 노드 검사 간격입니다. 음수는 0으로 처리됩니다. 마지막 검사 이후 지정된 시간이 지나면 노드 상태를 검사합니다.<br />`health_check_interval`과 `node_check_interval`의 차이점은 `health_check_interval` 옵션이 노드 목록(전체 또는 장애가 있는 노드)의 상태를 검사하는 백그라운드 작업을 예약하는 반면, `node_check_interval`은 특정 노드의 마지막 검사 이후 얼마나 시간이 지나야 하는지를 지정한다는 점입니다.                              |
   | check&#95;all&#95;nodes       | `false`                                  | 모든 노드에 대해 헬스 체크를 수행할지, 아니면 장애가 있는 노드에 대해서만 수행할지를 지정합니다.                                                                                                                                                                                                                                                             |
 
-  ### 장애 조치 및 재시도
+  ### 장애 조치 및 재시도 {#v1-failover-and-retry}
 
   Java 클라이언트는 실패한 쿼리에 대한 failover 및 retry 동작을 구성할 수 있는 옵션을 제공합니다:
 
   | 속성                                 | 기본값    | 설명                                                                                                                                              |
   | ---------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-  | 장애 조치                              | `0`    | 요청에서 장애 조치가 발생할 수 있는 최대 횟수입니다. 0 또는 음수 값은 장애 조치를 수행하지 않음을 의미합니다. 장애 조치는 실패한 요청을 다른 노드로 전송하여(로드 밸런싱 정책에 따름) 장애를 복구합니다.                           |
-  | 재시도                                | `0`    | 요청에 대해 재시도할 수 있는 최대 횟수입니다. 0 또는 음수 값은 재시도하지 않음을 의미합니다. 재시도는 요청을 동일한 노드로 다시 보내며, ClickHouse 서버가 `NETWORK_ERROR` 오류 코드를 반환한 경우에만 수행됩니다.           |
+  | failover                           | `0`    | 요청에서 장애 조치가 발생할 수 있는 최대 횟수입니다. 0 또는 음수 값은 장애 조치를 수행하지 않음을 의미합니다. 장애 조치는 실패한 요청을 다른 노드로 전송하여(로드 밸런싱 정책에 따름) 장애를 복구합니다.                           |
+  | retry                              | `0`    | 요청에 대해 재시도할 수 있는 최대 횟수입니다. 0 또는 음수 값은 재시도하지 않음을 의미합니다. 재시도는 요청을 동일한 노드로 다시 보내며, ClickHouse 서버가 `NETWORK_ERROR` 오류 코드를 반환한 경우에만 수행됩니다.           |
   | repeat&#95;on&#95;session&#95;lock | `true` | 세션이 잠긴 경우 시간 초과(`session_timeout` 또는 `connect_timeout` 기준)될 때까지 실행을 반복할지 여부입니다. ClickHouse 서버가 `SESSION_IS_LOCKED` 오류 코드를 반환하면 실패한 요청을 다시 시도합니다 |
 
-  ### 사용자 지정 HTTP 헤더 추가하기
+  ### 사용자 지정 HTTP 헤더 추가하기 {#v1-adding-custom-http-headers}
 
-  요청에 사용자 지정 HTTP 헤더를 추가해야 하는 경우 Java 클라이언트는 HTTP/S 전송 계층을 지원합니다.
-  `custom&#95;http&#95;headers` 속성을 사용해야 하며, 헤더는 `,`로 구분되어야 합니다. 헤더의 키/값은 `=`로 구분합니다.
+  HTTP 전송 계층은 `custom_http_headers` 속성(`ClickHouseHttpOption.CUSTOM_HEADERS`)을 통해 추가 요청 헤더를 받습니다. 각 헤더는 `Name=Value` 형식입니다. 여러 헤더는 쉼표로 구분하십시오. 값 내부의 쉼표는 `\,`로 이스케이프하십시오. 값 내부의 `=`는 값의 일부로 유지됩니다.
 
-  ## Java 클라이언트 지원
+  **단일 헤더**
+
+  ```java
+  options.put("custom_http_headers", "X-ClickHouse-Quota=test");
+  // or
+  options.put(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test");
+  ```
+
+  **여러 헤더**
 
   ```java
   options.put("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
   ```
 
-  ## JDBC 드라이버
+  요청에 헤더를 설정할 수도 있습니다:
 
   ```java
-  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+  client.read(server)
+          .option(ClickHouseHttpOption.CUSTOM_HEADERS, "X-ClickHouse-Quota=test, X-ClickHouse-Test=test")
+          .query("SELECT 1")
+          .executeAndWait();
+  ```
+
+  ## ClickHouse Cloud 기능 {#v1-clickhouse-cloud-features}
+
+  [ClickHouse Cloud](https://clickhouse.com/cloud)에 연결할 때 적용되는 기능입니다.
+
+  ### Replica-aware 라우팅 (CLOUD) {#v1-replica-aware-routing}
+
+  ClickHouse Cloud는 서로 관련된 HTTP 요청을 동일한 레플리카에 고정할 수 있습니다. `X-ClickHouse-Replica-Tag` 헤더를 전송하면 Cloud 프록시가 같은 태그를 가진 모든 요청을 하나의 레플리카로 라우팅합니다. 임시 테이블과 같은 세션 범위 객체를 사용하거나, 레플리카 로컬 캐시 재사용 또는 쓰기 후 읽기 일관성이 필요할 때 이 기능을 사용하십시오.
+  자세히 보기: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **설정 항목:** `custom_http_headers`를 통해 HTTP 헤더 `X-ClickHouse-Replica-Tag`(`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`)를 설정합니다. 동일한 레플리카로 계속 전송되어야 하는 모든 요청에는 같은 태그 값을 사용하십시오.
+
+  ```java
+  String replicaTag = "my-app-session-1";
+  options.put("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
+  // or
+  options.put(ClickHouseHttpOption.CUSTOM_HEADERS,
+          ClickHouseHttpOption.HEADER_REPLICA_TAG + "=" + replicaTag);
   ```
 </View>

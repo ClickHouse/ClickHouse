@@ -177,6 +177,13 @@ Cette requête modifie les propriétés de la colonne `name` :
 
 Pour des exemples de modification des CODECS de compression des colonnes, consultez [Codecs de compression des colonnes](/fr/reference/statements/create/table/codec).
 
+Lorsque le paramètre expérimental `enable_subcolumn_codecs` est activé, `name` peut également désigner une sous-colonne, comme `payload.ts`. Seul le `CODEC` peut alors être modifié ou supprimé ; voir [Codecs pour les sous-colonnes](/fr/reference/statements/create/table#subcolumn-codecs) :
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
 Pour des exemples de modification du TTL des colonnes, consultez [TTL des colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
 Pour des exemples de modification des paramètres au niveau des colonnes, consultez [Paramètres au niveau des colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).

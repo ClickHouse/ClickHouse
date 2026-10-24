@@ -6,15 +6,11 @@ title: 'Geometry を扱う関数'
 doc_type: 'reference'
 ---
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 Geometry 関数では、POLYGON、LINESTRING、MULTIPOLYGON、MULTILINESTRING、RING、POINT などの幾何型の周長と面積を計算できます。ジオメトリは Geometry 型で使用します。入力値が `NULL` の場合、以下のすべての関数は 0 を返します。
 
-<div id="perimetercartesian">
-  ## perimeterCartesian
-</div>
+## perimeterCartesian {#perimetercartesian}
 
 デカルト座標系 (平面) における、指定されたGeometryオブジェクトの周長を計算します。
 
@@ -46,9 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-<div id="areacartesian">
-  ## areaCartesian
-</div>
+## areaCartesian {#areacartesian}
 
 指定されたGeometryオブジェクトの面積をデカルト座標系で計算します。
 
@@ -80,9 +74,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-<div id="perimeterspherical">
-  ## perimeterSpherical
-</div>
+## perimeterSpherical {#perimeterspherical}
 
 球面上の Geometry オブジェクトの周長を計算します。
 
@@ -98,7 +90,7 @@ perimeterSpherical(geom)
 
 **戻り値**
 
-* 数値 — 周長。[Float64](/ja/reference/data-types/float)。
+* 数値 — 半径 1 の球面上における周長 (ラジアン単位。座標は度単位の経度・緯度) 。長さに換算するには球の半径を掛けます。たとえば、地球上の長さをキロメートル単位で求める場合は 6371 を掛けます。[Float64](/ja/reference/data-types/float)。
 
 **例**
 
@@ -110,13 +102,11 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
-<div id="areaspherical">
-  ## areaSpherical
-</div>
+## areaSpherical {#areaspherical}
 
 球面上のGeometryオブジェクトの面積を計算します。
 
@@ -132,7 +122,7 @@ areaSpherical(geom)
 
 **戻り値**
 
-* 数値 — 面積。[Float64](/ja/reference/data-types/float)。
+* 数値 — 半径1の球面上における面積 (単位はステラジアン。座標は度単位の経度と緯度) 。実際の面積を求めるには、球の半径の2乗を掛けます。[Float64](/ja/reference/data-types/float)。
 
 **例**
 

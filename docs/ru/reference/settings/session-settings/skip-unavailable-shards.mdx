@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="skip_unavailable_shards">
-  ## skip_unavailable_shards
-</div>
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,15 +25,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * 1 — пропуск включен.
 
-  Если сегмент недоступен, ClickHouse возвращает результат на основе частичных данных и не сообщает о проблемах с доступностью узлов.
+  Если сегмент недоступен, ClickHouse возвращает результат на основе частичных данных и не сообщает о проблемах с доступностью узлов. Если при чтении *все* сегменты были пропущены ещё до получения каких-либо данных, возвращать в качестве частичного результата нечего, поэтому запрос выбрасывает `ALL_CONNECTION_TRIES_FAILED`, а не возвращает пустой результат. Эта проверка распространяется только на чтение; для `INSERT` предусмотрена собственная обработка ситуации, когда кластер назначения полностью недоступен.
 
 * 0 — пропуск отключен.
 
   Если сегмент недоступен, ClickHouse генерирует исключение.
 
-<div id="skip_unavailable_shards_mode">
-  ## skip_unavailable_shards_mode
-</div>
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 

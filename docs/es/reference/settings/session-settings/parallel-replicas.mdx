@@ -111,13 +111,13 @@ Nota: esta configuración no hará que se filtren datos adicionales durante el p
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nueva configuración"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Habilitado de forma predeterminada"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+Traslada una condición situada por encima de la parte de la consulta que ejecutan las réplicas paralelas a esa misma parte y a la consulta que se envía a las réplicas, para que estas también filtren por ella.
 
-Permite trasladar los filtros a la parte de la consulta que ejecutan las réplicas paralelas
+Desactívelo para mantener la condición por encima de la lectura en el initiator, como ocurría en las versiones anteriores a la 26.10. Es la alternativa si el pushdown no se comporta correctamente: el resultado es el mismo en ambos casos; solo cambia cuánto trabajo realizan las réplicas y en qué momento lo hacen.
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ La configuración solo afecta a las consultas con `JOIN`, en las que los lados d
 
 El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel&#95;replicas&#95;local&#95;plan está habilitado
 
+Esto se refiere al análisis de índices que selecciona los rangos de marcas que anuncia una lectura y que constituyen la base a partir de la cual el coordinador realiza las asignaciones. No abarca la poda que se produce durante la lectura de los datos, como la poda de gránulos de `enable_join_runtime_filters_index_analysis`: un filtro en tiempo de ejecución de JOIN solo existe una vez que se ha leído el lado de construcción, por lo que cada réplica evalúa el suyo y descarta su propia parte, y ningún coordinador podría hacerlo por ellas.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,6 +176,8 @@ Las partes se dividen virtualmente en segmentos para distribuirlas entre réplic
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Limita el número de réplicas usadas en una consulta a (filas estimadas por leer / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). El máximo sigue estando limitado por &#39;max&#95;parallel&#95;replicas&#39;
+
+Se ignora cuando `automatic_parallel_replicas_mode` está habilitado: en ese caso, el modo automático decide según su propio modelo de costes.
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 

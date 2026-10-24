@@ -11,17 +11,18 @@ integration:
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
+import { CloudSQLIAMAuthentication } from "/snippets/ko/clickpipes/_cloudsql_iam_authentication.mdx";
 
 이 문서에서는 MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 Cloud SQL for MySQL 인스턴스를 설정하는 방법을 단계별로 안내합니다.
 
 <div id="enable-binlog-retention-gcp">
-  ## 바이너리 로그 보존 활성화
+  ## 바이너리 로그 보존 활성화 {#enable-binlog-retention-gcp}
 </div>
 
 바이너리 로그는 MySQL 서버 인스턴스에서 수행된 데이터 변경 정보를 담고 있는 로그 파일 집합이며, 복제에는 이러한 바이너리 로그 파일이 필요합니다.
 
 <div id="enable-binlog-logging-gcp">
-  ### PITR로 바이너리 로깅 활성화
+  ### PITR로 바이너리 로깅 활성화 {#enable-binlog-logging-gcp}
 </div>
 
 PITR 기능은 Google Cloud에서 MySQL의 바이너리 로깅 사용 여부를 결정합니다. Cloud Console에서 Cloud SQL 인스턴스를 편집한 뒤 아래 섹션으로 스크롤하여 설정할 수 있습니다.
@@ -45,7 +46,7 @@ PITR 기능은 Google Cloud에서 MySQL의 바이너리 로깅 사용 여부를 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="GCP에서 바이너리 로그 플래그 설정" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## 데이터베이스 사용자 구성
+  ## 데이터베이스 사용자 구성 {#configure-database-user-gcp}
 </div>
 
 Cloud SQL MySQL 인스턴스에 루트 사용자로 연결한 다음, 아래 명령을 실행합니다:
@@ -69,18 +70,18 @@ Cloud SQL MySQL 인스턴스에 루트 사용자로 연결한 다음, 아래 명
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-<div id="configure-network-access-gcp-mysql">
-  ## 네트워크 액세스 구성
-</div>
+## IAM 데이터베이스 인증(IAM database authentication) 사용 (선택 사항, 베타) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="mysql" />
+
+## 네트워크 액세스 구성 {#configure-network-access-gcp-mysql}
 
 Cloud SQL 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Cloud SQL MySQL 인스턴스의 허용 목록에 추가하십시오.
 이 작업은 인스턴스를 편집하거나 Cloud Console 사이드바의 `Connections` 탭으로 이동하여 수행할 수 있습니다.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="GCP MySQL에서 IP 허용 목록 설정" size="lg" border />
 
-<div id="download-root-ca-certificate-gcp-mysql">
-  ## 루트 CA 인증서 다운로드 및 사용
-</div>
+## 루트 CA 인증서 다운로드 및 사용 {#download-root-ca-certificate-gcp-mysql}
 
 Cloud SQL 인스턴스에 연결하려면 루트 CA 인증서를 다운로드해야 합니다.
 

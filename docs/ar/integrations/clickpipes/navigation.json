@@ -1,6 +1,7 @@
 {
   "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
+  "root": "ar/integrations/clickpipes/home",
   "pages": [
     "ar/integrations/clickpipes/home",
     {
@@ -204,6 +205,14 @@
       ]
     },
     {
+      "group": "الأمان والوصول",
+      "icon": "shield-check",
+      "pages": [
+        "ar/integrations/clickpipes/security/aws-iam-role",
+        "ar/integrations/clickpipes/security/gcp-workload-identity"
+      ]
+    },
+    {
       "group": "الشبكات",
       "icon": "network-wired",
       "pages": [
@@ -216,6 +225,5 @@
     },
     "ar/integrations/clickpipes/monitoring",
     "ar/integrations/clickpipes/dynamodb"
-  ],
-  "root": "ar/integrations/clickpipes/home"
+  ]
 }

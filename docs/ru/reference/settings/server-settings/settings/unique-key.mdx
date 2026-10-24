@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки относятся к серверу ClickHouse и автоматически сгенерированы из исходного кода ClickHouse.
 
-<div id="unique_key_bitmap_cache_policy">
-  ## unique_key_bitmap_cache_policy
-</div>
+## unique_key_bitmap_cache_policy {#unique_key_bitmap_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="Нет" />Название политики кэширования delete-bitmap для UNIQUE KEY (SLRU или LRU).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики вытеснения для кэша битовых карт удалений UNIQUE KEY. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="unique_key_bitmap_cache_size_bytes">
-  ## unique_key_bitmap_cache_size_bytes
-</div>
+## unique_key_bitmap_cache_size_bytes {#unique_key_bitmap_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Максимальный размер в байтах для внутрипроцессного кэша битмапов удаления UNIQUE KEY для каждой части. Установите значение 0, чтобы отключить кэш.
 
-<div id="unique_key_bitmap_cache_size_ratio">
-  ## unique_key_bitmap_cache_size_ratio
-</div>
+## unique_key_bitmap_cache_size_ratio {#unique_key_bitmap_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (при политике SLRU) в delete-bitmap-кэше для UNIQUE KEY относительно общего размера кэша.
 
-<div id="unique_key_index_cache_policy">
-  ## unique_key_index_cache_policy
-</div>
+## unique_key_index_cache_policy {#unique_key_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики кэша для индекса UNIQUE KEY (SLRU или LRU).
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша для индекса UNIQUE KEY. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="unique_key_index_cache_size_bytes">
-  ## unique_key_index_cache_size_bytes
-</div>
+## unique_key_index_cache_size_bytes {#unique_key_index_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Нет" />Максимальный размер внутрипроцессного кэша (в байтах) для блоков индекса UNIQUE KEY (SST). Установите 0, чтобы отключить кэш.
 
-<div id="unique_key_index_cache_size_ratio">
-  ## unique_key_index_cache_size_ratio
-</div>
+## unique_key_index_cache_size_ratio {#unique_key_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Нет" />Размер защищённой очереди (в случае политики SLRU) в кэше индекса UNIQUE KEY относительно общего размера кэша.
 

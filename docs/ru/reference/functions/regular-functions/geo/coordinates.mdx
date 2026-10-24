@@ -6,9 +6,7 @@ title: 'Функции для работы с географическими к�
 doc_type: 'reference'
 ---
 
-<div id="greatcircledistance">
-  ## greatCircleDistance
-</div>
+## greatCircleDistance {#greatcircledistance}
 
 Вычисляет расстояние между двумя точками на поверхности Земли по [формуле большого круга](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -43,9 +41,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-<div id="geodistance">
-  ## geoDistance
-</div>
+## geoDistance {#geodistance}
 
 Аналогично `greatCircleDistance`, но вычисляет расстояние на эллипсоиде WGS-84, а не на сфере. Это более точное приближение геоида Земли.
 Производительность такая же, как у `greatCircleDistance` (без потери производительности). Для вычисления расстояний на Земле рекомендуется использовать `geoDistance`.
@@ -83,9 +79,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-<div id="greatcircleangle">
-  ## greatCircleAngle
-</div>
+## greatCircleAngle {#greatcircleangle}
 
 Вычисляет центральный угол между двумя точками на земной поверхности по [формуле большого круга](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -116,9 +110,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-<div id="geotoutm">
-  ## geoToUTM
-</div>
+## geoToUTM {#geotoutm}
 
 Преобразует географические координаты WGS84 `(longitude, latitude)` в координаты [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
 
@@ -150,9 +142,7 @@ SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
 (448251.5978370684,5411935.125629659,31,'U')
 ```
 
-<div id="utmtogeo">
-  ## UTMToGeo
-</div>
+## UTMToGeo {#utmtogeo}
 
 Преобразует координаты [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) обратно в географические координаты WGS84 `(longitude, latitude)`. Это функция, обратная [`geoToUTM`](#geotoutm).
 
@@ -181,9 +171,7 @@ SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
 (2.2944970289079203,48.85822204127082)
 ```
 
-<div id="geotomgrs">
-  ## geoToMGRS
-</div>
+## geoToMGRS {#geotomgrs}
 
 Кодирует географические координаты WGS84 `(longitude, latitude)` в строку в формате [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
 
@@ -215,9 +203,7 @@ SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3)
 └─────────────────┴─────────────┘
 ```
 
-<div id="mgrstogeo">
-  ## MGRSToGeo
-</div>
+## MGRSToGeo {#mgrstogeo}
 
 Декодирует строку [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) в географические координаты WGS84 `(долгота, широта)`. Это обратная операция по отношению к [`geoToMGRS`](#geotomgrs).
 
@@ -245,9 +231,7 @@ SELECT MGRSToGeo('31UDQ4825111935') AS coord;
 (2.294495618908297,48.85822536113692)
 ```
 
-<div id="pointinellipses">
-  ## pointInEllipses
-</div>
+## pointInEllipses {#pointinellipses}
 
 Проверяет, принадлежит ли точка хотя бы одному из эллипсов.
 Координаты задаются в декартовой системе координат.
@@ -280,11 +264,9 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-<div id="pointinpolygon">
-  ## pointInPolygon
-</div>
+## pointInPolygon {#pointinpolygon}
 
-Проверяет, принадлежит ли точка многоугольнику на плоскости.
+Проверяет, принадлежит ли точка Polygon на плоскости.
 
 ```sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
@@ -293,17 +275,17 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 **Входные значения**
 
 * `(x, y)` — Координаты точки на плоскости. Тип данных — [Tuple](/ru/reference/data-types/tuple) — кортеж из двух чисел или [Point](/ru/reference/data-types/geo#point).
-* `[(a, b), (c, d) ...]` — Вершины полигона. Тип данных — [Array](/ru/reference/data-types/array) или [Ring](/ru/reference/data-types/geo#ring). Каждая вершина задаётся парой координат `(a, b)`. Вершины следует указывать по часовой стрелке или против часовой стрелки. Минимальное число вершин — 3.
-* Функция поддерживает полигоны с отверстиями (вырезанными областями). Тип данных — [Polygon](/ru/reference/data-types/geo#polygon). Либо передайте весь `Polygon` как второй аргумент, либо сначала передайте внешний Ring, а затем каждое отверстие как отдельный дополнительный аргумент.
-* Функция также поддерживает `MultiPolygon`. Тип данных — [MultiPolygon](/ru/reference/data-types/geo#multipolygon). Либо передайте весь `MultiPolygon` как второй аргумент, либо перечислите каждый входящий в него полигон как отдельный аргумент.
-* Аргумент полигона также может быть столбцом [Geometry](/ru/reference/data-types/geo#geometry), содержащим значения полигональных типов (`Ring`, `Polygon` или `MultiPolygon`).
+* `[(a, b), (c, d) ...]` — Вершины Polygon. Тип данных — [Array](/ru/reference/data-types/array) или [Ring](/ru/reference/data-types/geo#ring). Каждая вершина задаётся парой координат `(a, b)`. Вершины следует указывать по часовой стрелке или против часовой стрелки. Минимальное число вершин — 3.
+* Функция поддерживает Polygon с отверстиями (вырезанными областями). Тип данных — [Polygon](/ru/reference/data-types/geo#polygon). Либо передайте весь `Polygon` как второй аргумент, либо сначала передайте внешний Ring, а затем каждое отверстие как отдельный дополнительный аргумент.
+* Функция также поддерживает `MultiPolygon`. Тип данных — [MultiPolygon](/ru/reference/data-types/geo#multipolygon). Либо передайте весь `MultiPolygon` как второй аргумент, либо перечислите каждый входящий в него Polygon как отдельный аргумент.
+* Аргумент Polygon также может быть столбцом [Geometry](/ru/reference/data-types/geo#geometry), содержащим значения полигональных типов (`Ring`, `Polygon` или `MultiPolygon`).
 
-Полигональные типы ([Ring](/ru/reference/data-types/geo#ring), [Polygon](/ru/reference/data-types/geo#polygon), [MultiPolygon](/ru/reference/data-types/geo#multipolygon) и [Geometry](/ru/reference/data-types/geo#geometry)) можно передавать либо как константы, либо как обычные (неконстантные) столбцы таблицы. Когда полигон передаётся через несколько отдельных аргументов (внешний Ring, за которым следуют отверстия, или несколько полигонов в составе мультиполигона), все эти аргументы должны быть константами.
+Полигональные типы ([Ring](/ru/reference/data-types/geo#ring), [Polygon](/ru/reference/data-types/geo#polygon), [MultiPolygon](/ru/reference/data-types/geo#multipolygon) и [Geometry](/ru/reference/data-types/geo#geometry)) можно передавать либо как константы, либо как обычные (неконстантные) столбцы таблицы. Когда Polygon передаётся через несколько отдельных аргументов (внешний Ring, за которым следуют отверстия, или несколько Polygon в составе мультиполигона), все эти аргументы должны быть константами.
 
 **Возвращаемые значения**
 
-`1`, если точка находится внутри полигона, `0`, если нет.
-Если точка находится на границе полигона, функция может вернуть либо `0`, либо `1`.
+`1`, если точка находится внутри Polygon, `0`, если нет.
+Если точка находится на границе Polygon, функция может вернуть либо `0`, либо `1`.
 
 **Пример**
 
@@ -317,7 +299,7 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
-Полигон также можно задавать с помощью именованных геометрических типов данных, в том числе в виде столбца таблицы:
+Polygon также можно задавать с помощью именованных геометрических типов данных, в том числе в виде столбца таблицы:
 
 ```sql
 CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
@@ -333,5 +315,6 @@ SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
 
 > **Примечание**
 > • Вы можете установить `validate_polygons = 0`, чтобы отключить проверку геометрии.
-> • `pointInPolygon` исходит из того, что каждый полигон сформирован корректно. Если входной полигон самопересекается, содержит кольца в неправильном порядке или перекрывающиеся рёбра, результаты становятся ненадёжными — особенно для точек, которые лежат точно на ребре, в вершине или внутри самопересечения, где невозможно однозначно определить, что считать &quot;внутри&quot;, а что — &quot;снаружи&quot;.
-> • Когда аргумент полигона является константой, а точка задаётся с использованием индексируемых столбцов ключа (например, `pointInPolygon((x, y), constant_polygon)` в таблице, где `x, y` входят в `PRIMARY KEY` или покрываются индексом `minmax`), ClickHouse может использовать и первичный ключ, и индексы пропуска данных `minmax`, чтобы отсечь нерелевантные гранулы.
+> • `pointInPolygon` исходит из того, что каждый Polygon сформирован корректно. Если входной Polygon самопересекается, содержит кольца в неправильном порядке или перекрывающиеся рёбра, результаты становятся ненадёжными — особенно для точек, которые лежат точно на ребре, в вершине или внутри самопересечения, где невозможно однозначно определить, что считать &quot;внутри&quot;, а что — &quot;снаружи&quot;.
+> • Абсолютное значение координат Polygon не должно превышать `1e150`; если в вычислениях потребовалось бы большее значение, функция генерирует исключение.
+> • Когда аргумент Polygon является константой, а точка задаётся с использованием индексируемых столбцов ключа (например, `pointInPolygon((x, y), constant_polygon)` в таблице, где `x, y` входят в `PRIMARY KEY` или покрываются индексом `minmax`), ClickHouse может использовать и первичный ключ, и индексы пропуска данных `minmax`, чтобы отсечь нерелевантные гранулы.

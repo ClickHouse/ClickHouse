@@ -143,6 +143,8 @@ with engine.connect() as conn:
 
 تستخدم الأخطاء التي يُطلقها المشغّل عبر اتصال SQLAlchemy أصنافَ DB-API المُصدَّرة من `clickhouse_connect.dbapi`. وهذه الأصناف هي كائنات الأصناف نفسها المقابلة لها في `clickhouse_connect.driver.exceptions`، ولذلك يغلّفها SQLAlchemy في الفئة الفرعية المطابقة من `sqlalchemy.exc.DBAPIError`. أما `StreamFailureError` فهو من نوع `OperationalError`، ويُغلَّف على هيئة `sqlalchemy.exc.OperationalError`.
 
+إذا لم يكن الجدول موجودًا، فإن فحص الأعمدة واستبطان الجدول يُثيران الاستثناء `sqlalchemy.exc.NoSuchTableError`. ويرث هذا الاستثناء أيضًا من `sqlalchemy.exc.NoResultFound`، لذا تظل معالجات الاستثناءات الحالية قادرة على التقاطه. ونص رسالته هو `Table <database>.<table_name> does not exist`.
+
 يخضع تنفيذ SQL لـ[سياسة إعادة المحاولة عبر HTTP](/ar/integrations/language-clients/python/driver-api#http-retries) الخاصة بالمشغّل، بينما تعتمد عمليات الإدراج المجمّع بتنسيق Native على [سياسة إعادة محاولة الإدراج](/ar/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 إذا كان الإلغاء من جهة المستدعي قد يقاطع استدعاءً صريحًا لـ `AsyncConnection.invalidate()`، فشغّل عملية الإبطال ضمن مهمة تملكها، وانتظر اكتمالها قبل تمرير الإلغاء. يتيح ذلك لـ SQLAlchemy إكمال عمليات تتبّع سجلات الاتصال:
@@ -441,6 +443,8 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 ## DDL واستكشاف البنية {#sqlalchemy-ddl-reflection}
 
 يوفّر ClickHouse Connect أنواع بيانات ClickHouse، ومحركات الجداول، وبُنى القواميس، وDDL لقواعد البيانات، واستكشاف بنية الجداول.
+
+يتضمن `Inspector.get_table_names()` جميع أنواع العروض حفاظًا على التوافق. كما يتضمنها `MetaData.reflect()` افتراضيًا، ويمكن استخدام `only` لاختيار عرض بعينه حسب اسمه. استخدم `Inspector.get_view_names()` للعروض غير المُجسَّدة (non-materialized)، و`Inspector.get_materialized_view_names()` للعروض المُجسَّدة. تقبل كلتا الطريقتين `schema`، وتعملان مع SQLAlchemy 1.4.40 والإصدارات الأحدث، بما فيها 2.x. أما استكشاف تعريف العرض عبر `Inspector.get_view_definition()` فغير مدعوم.
 
 تقبل الدالتان `Nullable()` و`LowCardinality()` من `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` صنف نوع SQLAlchemy خاصًا بـ ClickHouse أو مثيلًا منه، وتحافظان على نوعه الفعلي لكي تتعرّف عليه أدوات التحقق من الأنواع. على سبيل المثال، تُعيد `Nullable(String)` مثيلًا من `String` يمكن تمريره مباشرةً إلى `Column`. وتستنتج أدوات التحقق من الأنواع النوع `list[String]` للتعبير `[Nullable(String)]`. وإذا كانت القائمة تحتوي أيضًا على أنواع ClickHouse أخرى، فحدّد نوعها صراحةً بالتعليق التوضيحي `list[ChSqlaType]` واستورد `ChSqlaType` من `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
 

@@ -7,7 +7,6 @@ keywords: ['prometheus', 'grafana', '监控', '指标', 'exporter']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 此功能支持集成 [Prometheus](https://prometheus.io/)，用于监控 ClickHouse Cloud 服务。Prometheus 指标通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 端点提供，您可以通过该端点安全地连接，并将指标导出到您的 Prometheus 指标收集器中。这些指标还可以集成到仪表盘中，例如 Grafana、Datadog，以便进行可视化。
@@ -19,12 +18,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 如果您要查找 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务的对应端点，请参阅 [ClickHouse Managed Postgres Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus)。
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## 用于获取 ClickHouse Cloud 指标的 Prometheus 端点 API
+  ## 用于获取 ClickHouse Cloud 指标的 Prometheus 端点 API {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
 </div>
 
-<div id="api-reference">
-  ### API 参考文档
-</div>
+### API 参考文档 {#api-reference}
 
 | 方法  | 路径                                                                                                                              | 描述                                                                                               |
 | --- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -47,7 +44,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 这些端点的完整请求和响应 schema 可在 [Cloud API 参考文档](/zh/products/cloud/api-reference/prometheus)中查看。
 
 <div id="authentication">
-  ### 身份验证
+  ### 身份验证 {#authentication}
 </div>
 
 使用您的 ClickHouse Cloud API key 进行基本身份验证：
@@ -69,7 +66,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### 响应示例
+  ### 响应示例 {#sample-response}
 </div>
 
 ```response
@@ -133,7 +130,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### 指标标签
+  ### 指标标签 {#metric-labels}
 </div>
 
 所有指标都带有以下标签：
@@ -153,7 +150,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 | clickpipe&#95;source | ClickPipe 源类型 |
 
 <div id="information-metrics">
-  ### 信息指标
+  ### 信息指标 {#information-metrics}
 </div>
 
 ClickHouse Cloud 提供了一个特殊指标 `ClickHouse_ServiceInfo`，它是一个值始终为 `1` 的 `gauge`。该指标除包含所有**指标标签**外，还包含以下标签：
@@ -174,9 +171,7 @@ ClickHouse Cloud 提供了一个特殊指标 `ClickHouse_ServiceInfo`，它是�
 | ------------------- | ------- |
 | clickpipe&#95;state | 管道的当前状态 |
 
-<div id="configuring-prometheus">
-  ### 配置 Prometheus
-</div>
+### 配置 Prometheus {#configuring-prometheus}
 
 Prometheus 服务器会按照给定的时间间隔从已配置的目标采集指标。下面是一个示例配置，展示如何让 Prometheus 服务器使用 ClickHouse Cloud Prometheus 端点：
 
@@ -194,24 +189,20 @@ scrape_configs:
     scheme: https
     params:
       filtered_metrics: ["true"]
-    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    metrics_path: "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus"
     basic_auth:
       username: <KEY_ID>
       password: <KEY_SECRET>
     honor_labels: true
 ```
 
-请注意，必须将配置参数 `honor_labels` 设为 `true`，实例标记才能被正确填充。另请注意，在上述示例中，`filtered_metrics` 被设置为 `true`，但实际应根据用户偏好进行配置。
+请注意，必须将配置参数 `honor_labels` 设为 `true`，标签才能被正确填充。另请注意，在上述示例中，`filtered_metrics` 被设置为 `true`，但实际应根据用户偏好进行配置。如需抓取组织中的所有服务，请使用[自动服务发现](#automatic-service-discovery)。
 
-<div id="automatic-service-discovery">
-  ### 自动服务发现
-</div>
-
-<BetaBadge />
+### 自动服务发现 {#automatic-service-discovery}
 
 发现端点会以 Prometheus [HTTP 服务发现](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) 格式，为组织中的每个服务返回一个抓取目标。Prometheus 会在每次发现轮询时刷新目标列表，并抓取每个发现到的目标，因此新创建的服务会自动纳入其中，已删除的服务则会从目标列表中移除。仅包含您的 API key 有权查看的服务；正在删除或已删除的服务不会包含在内。
 
-要使用此功能，请将 [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job 配置为指向发现端点：
+要使用此功能，请将 [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) Job 配置为指向发现端点：
 
 ```yaml
 global:
@@ -245,16 +236,31 @@ scrape_configs:
       "__param_filtered_metrics": "true",
       "clickhouse_org_id": "<ORG_ID>",
       "clickhouse_service_id": "<SERVICE_ID>",
-      "clickhouse_discovery_service_name": "my service"
+      "clickhouse_discovery_service_name": "my service",
+      "__meta_clickhouse_region": "us-east-1",
+      "__meta_clickhouse_provider": "aws",
+      "__meta_clickhouse_tag_env": "production",
+      "__meta_clickhouse_tagpresent_env": "true"
     }
   }
 ]
 ```
 
+每个目标还会以 `__meta_clickhouse_region`、`__meta_clickhouse_provider` 和 `__meta_clickhouse_tag_<key>` 标签的形式，附带服务的区域、云服务提供商和标签信息。对于每个标签 (包括没有值的标签) ，`__meta_clickhouse_tagpresent_<key>` 均为 `true`。标签键中除字母、数字和下划线以外的字符都会被替换为 `_`。Prometheus 会在重新标记 (relabeling) 后丢弃 `__meta_` 标签，因此请使用 `relabel_configs` 来过滤目标或保留这些标签：
+
+```yaml
+    relabel_configs:
+      - source_labels: [__meta_clickhouse_tag_env]
+        regex: production
+        action: keep
+      - source_labels: [__meta_clickhouse_region]
+        target_label: region
+```
+
 已发现的目标会使用 `filtered_metrics=true` 抓取指标。若要发现抓取完整指标集的目标，请在服务发现 URL 中添加 `?filtered_metrics=false`。完整端点规范请参阅 [Cloud API 参考文档](/zh/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)。
 
 <div id="integrating-with-grafana">
-  ## 与 Grafana 集成
+  ## 与 Grafana 集成 {#integrating-with-grafana}
 </div>
 
 与 Grafana 集成主要有两种方式：
@@ -264,9 +270,7 @@ scrape_configs:
 
 下面我们将提供这些选项的使用说明，重点说明 ClickHouse Cloud Prometheus 端点相关的特定细节。
 
-<div id="grafana-cloud-with-metrics-endpoint">
-  ### 使用 指标端点 接入 Grafana Cloud
-</div>
+### 使用 指标端点 接入 Grafana Cloud {#grafana-cloud-with-metrics-endpoint}
 
 * 登录你的 Grafana Cloud 账户
 * 选择 **指标端点**，添加新连接
@@ -285,9 +289,7 @@ scrape_configs:
 
 <Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 指标浏览器图表" border />
 
-<div id="grafana-cloud-with-alloy">
-  ### 通过 Alloy 使用 Grafana Cloud
-</div>
+### 通过 Alloy 使用 Grafana Cloud {#grafana-cloud-with-alloy}
 
 如果你使用的是 Grafana Cloud，可以在 Grafana 中打开 Alloy 菜单，并按照屏幕上的说明安装 Alloy：
 
@@ -306,7 +308,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/services/<clickhouse_service_id>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -338,9 +340,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 请注意，必须将 `honor_labels` 配置参数设为 `true`，`instance` 标签才能被正确填充。
 
-<div id="grafana-self-managed-with-alloy">
-  ### 使用 Alloy 的 Grafana 自管理版本
-</div>
+### 使用 Alloy 的 Grafana 自管理版本 {#grafana-self-managed-with-alloy}
 
 使用 Grafana 自管理版本的用户可在[这里](https://grafana.com/docs/alloy/latest/get-started/install/)找到安装 Alloy agent 的说明。我们假定用户已将 Alloy 配置为把 Prometheus 指标发送到所需的目标端。下面的 `prometheus.scrape` 组件会让 Alloy 抓取 ClickHouse Cloud 端点。我们假定 `prometheus.remote_write` 会接收抓取到的指标。如果未配置该项，请将 `forward_to key` 调整为目标端。
 
@@ -353,7 +353,7 @@ prometheus.scrape "clickhouse_cloud" {
   }]
 
   scheme       = "https"
-  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+  metrics_path = "/v1/organizations/<organizationId>/services/<serviceId>/prometheus"
 
   params = {
   "filtered_metrics" = ["true"],
@@ -376,11 +376,9 @@ prometheus.scrape "clickhouse_cloud" {
 
 <br />
 
-请注意，必须将 `honor_labels` 配置参数设为 `true`，实例标签才能正确填充。
+请注意，必须将 `honor_labels` 配置参数设为 `true`，标签才能正确填充。
 
-<div id="integrating-with-datadog">
-  ## 与 Datadog 集成
-</div>
+## 与 Datadog 集成 {#integrating-with-datadog}
 
 你可以使用 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) 和 [OpenMetrics 集成](https://docs.datadoghq.com/integrations/openmetrics/)，从 ClickHouse Cloud 端点收集指标。下面是该 agent 和集成的一个简单配置示例。不过请注意，你可能只需要选择自己最关心的那些指标。下面这个兜底示例会导出成千上万个“指标-实例”组合，Datadog 会将其视为自定义指标。
 
@@ -388,7 +386,7 @@ prometheus.scrape "clickhouse_cloud" {
 init_config:
 
 instances:
-   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/services/12f4a114-9746-4a75-9ce5-161ec3a73c4c/prometheus?filtered_metrics=true'
      namespace: 'clickhouse'
      metrics:
          - '^ClickHouse.*'
@@ -400,9 +398,7 @@ instances:
 
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus 与 Datadog 集成" />
 
-<div id="related">
-  ## 相关页面
-</div>
+## 相关页面 {#related}
 
 * [监控概览](/zh/products/cloud/features/monitoring/overview) — 比较 ClickHouse Cloud 的所有监控方式
 * [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 内置仪表盘，无需外部工具

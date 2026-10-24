@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを設定するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="unique_key_bitmap_cache_policy">
-  ## unique_key_bitmap_cache_policy
-</div>
+## unique_key_bitmap_cache_policy {#unique_key_bitmap_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY 削除ビットマップキャッシュのポリシー名 (SLRU または LRU) 。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY 削除ビットマップcacheのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="unique_key_bitmap_cache_size_bytes">
-  ## unique_key_bitmap_cache_size_bytes
-</div>
+## unique_key_bitmap_cache_size_bytes {#unique_key_bitmap_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />UNIQUE KEY の part ごとの削除 bitmap 用 in-process cache の最大サイズ (バイト単位) 。cache を無効にするには 0 を設定します。
 
-<div id="unique_key_bitmap_cache_size_ratio">
-  ## unique_key_bitmap_cache_size_ratio
-</div>
+## unique_key_bitmap_cache_size_ratio {#unique_key_bitmap_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />UNIQUE KEY の削除ビットマップキャッシュにおける 保護キュー (SLRU policy の場合) のサイズを、キャッシュ全体のサイズに対する比率で表したものです。
 
-<div id="unique_key_index_cache_policy">
-  ## unique_key_index_cache_policy
-</div>
+## unique_key_index_cache_policy {#unique_key_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY 索引キャッシュポリシー名 (SLRU または LRU) 。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY 索引cacheのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="unique_key_index_cache_size_bytes">
-  ## unique_key_index_cache_size_bytes
-</div>
+## unique_key_index_cache_size_bytes {#unique_key_index_cache_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="No" />UNIQUE KEY 索引 (SST) ブロック用の in-process cache の最大サイズ (バイト単位) です。0 に設定すると、この cache は無効になります。
 
-<div id="unique_key_index_cache_size_ratio">
-  ## unique_key_index_cache_size_ratio
-</div>
+## unique_key_index_cache_size_ratio {#unique_key_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />cache 全体のサイズに対する、UNIQUE KEY 索引キャッシュ内の保護キュー (SLRU policy の場合) のサイズの比率。
 

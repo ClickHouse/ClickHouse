@@ -195,9 +195,9 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "允许在查询输出中调整压缩级别"}]}]} />
 
-查询输出被压缩时使用的默认压缩级别。该设置会在 `SELECT` 查询使用 `INTO OUTFILE` 时，或将数据写入表函数 `file`、`url`、`hdfs`、`s3` 或 `azureBlobStorage` 时生效。
+查询输出被压缩时使用的默认压缩级别。该设置会在 `SELECT` 查询使用 `INTO OUTFILE` 时，或将数据写入表函数 `file`、`url`、`hdfs`、`s3` 或 `azureBlobStorage` 时生效。如果 HTTP 请求的响应采用 `gzip` 和 `deflate` 以外的方法压缩，也会应用该设置；`gzip` 和 `deflate` 则使用 [http&#95;zlib&#95;compression&#95;level](/zh/reference/settings/session-settings/http#http_zlib_compression_level)。
 
-可能的取值：从 `1` 到 `22`
+可选值：从 `1` 到 `22`
 
 ## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 
@@ -731,8 +731,8 @@ Parquet 布隆过滤器中每个不同值大致使用的位数。估计的误报
 用于指定在 Parquet 文件中的何处放置布隆过滤器。布隆过滤器将按大致该大小分组写入。具体来说：
 
 * 如果为 0，则每个行组的布隆过滤器会在该行组之后立即写入，
-  * 如果该值大于所有布隆过滤器的总大小，则所有行组的布隆过滤器会先在内存中累积，然后在接近文件末尾处一起写入，
-  * 否则，布隆过滤器会先在内存中累积，并在其总大小超过该值时写出。
+* 如果该值大于所有布隆过滤器的总大小，则所有行组的布隆过滤器会先在内存中累积，然后在接近文件末尾处一起写入，
+* 否则，布隆过滤器会先在内存中累积，并在其总大小超过该值时写出。
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -788,6 +788,14 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 用于在 Parquet 元数据中写入 Geo 列信息，并将列编码为 WKB 格式。
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting"}]}]} />
+
+为以 WKB 形式写入的 Geo 列 (参见 `output_format_parquet_geometadata`) 添加 Parquet `GEOMETRY` 逻辑类型注解，并为这些列写入 `GeospatialStatistics` (包围盒和几何类型) ，以取代 min/max 统计信息。支持该逻辑类型的读取器即使没有 GeoParquet `geo` 元数据，也能将此类列识别为几何对象。若 `output_format_parquet_geometadata` 已禁用，则此设置无效。`Geometry` 列也会在 GeoParquet `geo` 元数据中加以描述，其几何类型列表为空。禁用此设置时，这些列将以 `BYTE_ARRAY` 形式写入，不带地理空间注解，并使用 min/max 统计信息，且 `Geometry` 列不会在 `geo` 元数据中描述。此设置默认禁用，因为不识别该逻辑类型的读取器 (例如 Arrow C++ 以及 20 版本之前的 `pyarrow`) 将无法打开整个文件。
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -822,6 +830,14 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 对 String 列使用 Parquet String 类型，而非 Binary。
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置。"}]}]} />
+
+使用 `ALP` (Adaptive Lossless floating-Point，自适应无损浮点) 编码对 `Float32` 和 `Float64` 列 (即 Parquet 中的 `FLOAT` 和 `DOUBLE`) 进行编码。`ALP` 是一种无损编码，对于类十进制的浮点数据 (如价格、测量值、坐标) ，其压缩效果远优于 `PLAIN`。此类列在写入时不使用字典；如果某个页面采用 `ALP` 编码后反而比 `PLAIN` 更大，则该页面改用 `PLAIN` 写入。该编码是最近才加入 Parquet 格式的，因此并非所有 Parquet 读取器都已支持：仅当读取这些文件的读取器支持该编码时，才应启用此设置。
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -845,6 +861,16 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "新设置。"}]}]} />
 
 在 Parquet 页头中写入 crc32 校验和。
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新增设置，用于将字段为 Parquet `FILE` 逻辑类型字段的命名 `Tuple` 写为带有 `FILE` 注解的 group。"}]}]} />
+
+如果命名 `Tuple` 的元素名称全部是 Parquet `FILE` 逻辑类型的字段 (`uri`、`offset`、`size`、`content_type`、`checksum`、`inline`；可以是任意非空子集，顺序不限) ，则将其写为带有 `FILE` 逻辑类型注解的 group。该 group 表示对某一字节范围的引用，这些字节可以内联存储，也可以存储在外部文件中。`offset` 和 `size` 元素必须为整数 (写为 `INT64`) ，其他元素必须为 `String` 或 `FixedString` (`inline` 写为不带注解的 `BYTE_ARRAY`，其余写为 `STRING`) 。按照规范要求，所有字段均写为 `OPTIONAL`。值按原样写入，不会校验其是否构成有效引用。
+
+读取时，带有 `FILE` 注解的 group 始终会被读取为上述由 `Nullable` 元素组成的 `Tuple`。
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 

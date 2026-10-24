@@ -31,6 +31,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Общее количество адресов, признанных неисправными и заблокированных для создания соединений в пулах соединений
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Приблизительный объём памяти в байтах, занимаемой кэшем разрешённых местоположений в исходном коде (file:line:column), который используется для символизации трассировок стека.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Количество адресов кода в кэше разрешённых местоположений в исходном коде (file:line:column), который используется для символизации трассировок стека в system.trace&#95;log, system.errors и system.error&#95;log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Количество потоков в пуле потоков Aggregator.
@@ -358,6 +366,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### ConcurrencyControlAcquiredNonCompeting {#concurrencycontrolacquirednoncompeting}
 
 Общее количество выделенных слотов CPU, которые не считаются конкурирующими (первый поток, если используется планировщик fair&#95;round&#95;robin)
+
+### ConcurrencyControlParked {#concurrencycontrolparked}
+
+Текущее число потоков, которые «припарковали» (освободили) свой слот CPU на время ожидания, не связанного с CPU, например блокирующего ввода-вывода или отсутствия задач для выполнения
 
 ### ConcurrencyControlPreempted {#concurrencycontrolpreempted}
 
@@ -711,6 +723,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество задач в очереди или активных задач в пуле потоков рукопожатия сервера распределённого обмена.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Общий размер (в байтах) блоков, хранящихся в кэшах множеств `IN` во внешней памяти
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Общее количество блоков, хранящихся в кэшах множеств `IN` во внешней памяти
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Суммарный размер выделенных на данный момент стеков файберов.
@@ -834,6 +854,14 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### GlobalThreadScheduled {#globalthreadscheduled}
 
 Количество задач в очереди или выполняющихся в глобальном пуле потоков.
+
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Размер кэша типов полей текущих схем Iceberg в каталогах Glue (в байтах)
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Количество записей в кэше текущих типов полей схем Iceberg в каталогах Glue
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
@@ -1099,6 +1127,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество запросов в обработке
 
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Количество потоков цикла событий Raft, ожидающих завершения предварительной обработки локальных записей журнала после запуска. В цикле событий Raft также работают прослушивающий обработчик, таймеры выборов и сигналов жизнеспособности, и в нём же обрабатывается завершение каждого RPC-вызова, поэтому значение этой метрики должно оставаться равным нулю или единице.
+
 ### KeeperReadThreads {#keeperreadthreads}
 
 Количество потоков в пуле потоков для операций чтения на сервере Keeper.
@@ -1170,6 +1202,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### Потребность в резервировании памяти {#memoryreservationdemand}
 
 Общее количество байтов в ещё не выполненных запросах на увеличение резервирования памяти
+
+### MemoryReservationReclaimable {#memoryreservationreclaimable}
+
+Общий объём освобождаемой памяти
 
 ### MemoryTracking {#memorytracking}
 
@@ -1363,6 +1399,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество задач в очереди или в работе в пуле потоков AzureObjectStorage.
 
+### ObjectStorageExclusiveLeases {#objectstorageexclusiveleases}
+
+Количество эксклюзивных аренд (leases), например для компакции таблицы Iceberg, которые этот сервер в данный момент удерживает в объектном хранилище.
+
 ### ObjectStorageQueueMetadataCacheSizeBytes {#objectstoragequeuemetadatacachesizebytes}
 
 Размер кэша метаданных ObjectStorageQueue в байтах.
@@ -1399,6 +1439,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество задач в очереди или выполняющихся задач в пуле потоков S3ObjectStorage.
 
+### ObjectStorageSharedLeases {#objectstoragesharedleases}
+
+Количество ключей (например, считываемых снимков Iceberg), на которые запросы этого сервера в данный момент удерживают аренду в объектном хранилище.
+
 ### OpenFileForRead {#openfileforread}
 
 Количество файлов, открытых для чтения
@@ -1430,6 +1474,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Количество задач в очереди или выполняющихся задач в пуле потоков, отвечающем за загрузку устаревших частей данных.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+Объём памяти (в байтах), выделенной под буферизованные данные записываемых упакованных частей данных. Данные, перемещённые во временные файлы, не учитываются.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -1963,6 +2011,14 @@ materialized view Number с периодическим обновлением (R
 
 Количество задач в очереди или выполняющихся задач в пуле потоков воркеров без сохранения состояния.
 
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Общий размер кэша статистики в байтах. Хранит статистику столбцов для частей данных таблиц семейства MergeTree — по одной записи на каждую пару «часть — столбец».
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Общее количество записей в кэше статистики (по одной на каждую пару «часть данных — столбец»)
+
 ### StorageBufferBytes {#storagebufferbytes}
 
 Количество байт в буферах таблиц Buffer
@@ -2127,6 +2183,14 @@ materialized view Number с периодическим обновлением (R
 
 Количество временных файлов для вертикального слияния
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+Количество временных файлов с буферизованными данными записываемых упакованных частей данных
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Количество временных файлов, созданных для множеств `IN` во внешней памяти
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 Количество временных файлов, созданных при внешней сортировке
@@ -2246,6 +2310,10 @@ materialized view Number с периодическим обновлением (R
 ### VersionInteger {#versioninteger}
 
 Версия сервера в виде одного целого числа по основанию 1000. Например, версия 11.22.33 преобразуется в 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Количество запросов, ожидающих завершения асинхронной загрузки или запуска сервера; ограничивается настройкой сервера &#39;max&#95;waiting&#95;queries&#39;
 
 ### Запись {#write}
 

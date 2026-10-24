@@ -13,7 +13,7 @@ El ClickPipe de GCS proporciona una forma totalmente gestionada y resiliente de 
 Los ClickPipes de GCS pueden desplegarse y gestionarse manualmente mediante la UI de ClickPipes, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="supported-formats">
-  ## Formatos compatibles
+  ## Formatos compatibles {#supported-formats}
 </div>
 
 * [JSON](/es/reference/formats/JSON/JSON)
@@ -23,31 +23,29 @@ Los ClickPipes de GCS pueden desplegarse y gestionarse manualmente mediante la U
 * [Avro](/es/reference/formats/Avro/Avro)
 
 <div id="features">
-  ## Características
+  ## Características {#features}
 </div>
 
 <div id="one-time-ingestion">
-  ### Ingestión única
+  ### Ingestión única {#one-time-ingestion}
 </div>
 
 De forma predeterminada, el ClickPipe de GCS cargará en la tabla de destino de ClickHouse todos los archivos del bucket especificado que coincidan con un patrón, en una sola operación por lotes. Una vez completada la tarea de ingestión, el ClickPipe se detiene automáticamente. Este modo de ingestión única ofrece semántica de exactly-once, lo que garantiza que cada archivo se procese de forma fiable y sin duplicados.
 
 <div id="continuous-ingestion">
-  ### Ingestión continua
+  ### Ingestión continua {#continuous-ingestion}
 </div>
 
 Cuando la ingestión continua está activada, ClickPipes realiza la ingestión continua de datos desde la ruta especificada. Para determinar el orden de ingestión, el ClickPipe de GCS se basa, de forma predeterminada, en el [orden lexicográfico](#continuous-ingestion-lexicographical-order) implícito de los archivos. También puede configurarse para ingestar archivos en [cualquier orden](#continuous-ingestion-any-order) mediante una suscripción de [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) [configurada para proporcionar notificaciones del bucket](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line).
 
-<div id="continuous-ingestion-lexicographical-order">
-  #### Orden lexicográfico
-</div>
+#### Orden lexicográfico {#continuous-ingestion-lexicographical-order}
 
 El ClickPipe de GCS asume que los archivos se agregan a un bucket en orden lexicográfico y se basa en ese orden implícito para ingestar los archivos secuencialmente. Esto significa que cualquier archivo nuevo **debe** ser lexicográficamente mayor que el último archivo ingestado. Por ejemplo, los archivos llamados `file1`, `file2` y `file3` se ingestarán secuencialmente, pero si se agrega un nuevo `file 0` al bucket, se **ignorará** porque el nombre del archivo no es lexicográficamente mayor que el del último archivo ingestado.
 
 En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archivos** de la ruta especificada y luego sondea en busca de archivos nuevos a un intervalo configurable (de forma predeterminada, cada 30 segundos). Para iniciar la ingestión continua después de un archivo específico, configure **Start after**. ClickPipes omitirá los archivos que sean lexicográficamente menores o iguales que el valor configurado y continuará ingestando archivos más nuevos a partir de ese punto.
 
 <div id="continuous-ingestion-any-order">
-  #### En cualquier orden
+  #### En cualquier orden {#continuous-ingestion-any-order}
 </div>
 
 <Tip>
@@ -57,19 +55,19 @@ En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archi
 Es posible configurar un ClickPipe de GCS para ingestar archivos que no tengan un orden implícito mediante la configuración de una suscripción de [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) que reciba notificaciones del bucket. Esto permite a ClickPipes detectar eventos de creación de objetos e ingestar cualquier archivo nuevo, independientemente de la convención de nombres.
 
 <Note>
-  El modo no ordenado **no** es compatible con buckets públicos. Requiere autenticación con **Service Account** y una suscripción de [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) conectada al bucket.
+  El modo no ordenado **no** es compatible con buckets públicos. Requiere autenticación mediante cuenta de servicio, ya sea con una clave cargada o con Workload Identity de GCP, y una suscripción de [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) conectada al bucket.
 </Note>
 
-En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archivos** de la ruta seleccionada y, a continuación, escucha notificaciones `OBJECT_FINALIZE` a través de la suscripción de Pub/Sub que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Para ingerir solo los archivos entregados a través de la suscripción, habilita **Skip initial load**. Cuando está habilitado, ClickPipes omite el escaneo inicial de los archivos existentes en la ruta seleccionada y procesa solo los archivos entregados a través de la suscripción de Pub/Sub.
+En este modo, el ClickPipe de GCS realiza una carga inicial de **todos los archivos** de la ruta seleccionada y, a continuación, escucha notificaciones `OBJECT_FINALIZE` a través de la suscripción de Pub/Sub que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Para ingerir solo los archivos entregados a través de la suscripción, habilita **Skip initial load**. Cuando está habilitado, ClickPipes omite la exploración inicial de los archivos existentes en la ruta seleccionada y procesa solo los archivos entregados a través de la suscripción de Pub/Sub.
 
 <div id="file-pattern-matching">
-  ### Coincidencia de patrones de archivos
+  ### Coincidencia de patrones de archivos {#file-pattern-matching}
 </div>
 
 Object Storage ClickPipes siguen el estándar POSIX para la coincidencia de patrones de archivos. Todos los patrones **distinguen entre mayúsculas y minúsculas** y coinciden con la **ruta completa** después del nombre del bucket. Para un mejor rendimiento, use el patrón más específico posible (por ejemplo, `data-2024-*.csv` en lugar de `*.csv`).
 
 <div id="supported-patterns">
-  #### Patrones admitidos
+  #### Patrones admitidos {#supported-patterns}
 </div>
 
 | Patrón                | Descripción                                                                                               | Ejemplo             | Coincide con                                                      |
@@ -86,7 +84,7 @@ Object Storage ClickPipes siguen el estándar POSIX para la coincidencia de patr
 * `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
 
 <div id="unsupported-patterns">
-  #### Patrones no compatibles
+  #### Patrones no compatibles {#unsupported-patterns}
 </div>
 
 | Patrón      | Descripción                        | Ejemplo                | Alternativas                              |
@@ -101,29 +99,29 @@ Object Storage ClickPipes siguen el estándar POSIX para la coincidencia de patr
 * `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
 
 <div id="exactly-once-semantics">
-  ### Semántica de exactly-once
+  ### Semántica de exactly-once {#exactly-once-semantics}
 </div>
 
 Pueden producirse varios tipos de fallos al ingestar un conjunto de datos grande, lo que puede dar lugar a inserciones parciales o datos duplicados. Object Storage ClickPipes es resistente a los fallos de inserción y ofrece semántica de exactly-once. Esto se consigue mediante tablas temporales de &quot;staging&quot;. Los datos se insertan primero en las tablas de staging. Si algo sale mal durante esta inserción, la tabla de staging puede truncarse y la inserción puede reintentarse desde un estado limpio. Solo cuando una inserción se completa correctamente, las particiones de la tabla de staging se mueven a la tabla de destino. Para obtener más información sobre esta estrategia, consulta [esta entrada del blog](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 
 <div id="virtual-columns">
-  ### Columnas virtuales
+  ### Columnas virtuales {#virtual-columns}
 </div>
 
 Para llevar un control de qué archivos se han ingerido, incluye la columna virtual `_file` en la lista de asignación de columnas. La columna virtual `_file` contiene el nombre del archivo del objeto de origen, que puede usarse para consultar qué archivos se han procesado.
 
 <div id="access-control">
-  ## Control de acceso
+  ## Control de acceso {#access-control}
 </div>
 
 <div id="permissions">
-  ### Permisos
+  ### Permisos {#permissions}
 </div>
 
 El ClickPipe de GCS admite buckets públicos y privados. Los buckets de [Requester Pays](https://docs.cloud.google.com/storage/docs/requester-pays) **no** son compatibles.
 
 <div id="gcs-bucket">
-  #### bucket de GCS
+  #### bucket de GCS {#gcs-bucket}
 </div>
 
 La cuenta de servicio que utiliza ClickPipes debe permitir las siguientes acciones a nivel del bucket:
@@ -133,7 +131,7 @@ La cuenta de servicio que utiliza ClickPipes debe permitir las siguientes accion
 Este rol incluye los permisos de IAM [`storage.objects.list`](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/list) y [&#96;storage.objects.get](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get#required-permissions), que permiten a ClickPipes listar y recuperar objetos en el bucket especificado.
 
 <div id="pubsub-subscription">
-  #### Suscripción de Pub/Sub
+  #### Suscripción de Pub/Sub {#pubsub-subscription}
 </div>
 
 Al usar [modo no ordenado](#continuous-ingestion-any-order), la cuenta de servicio debe tener los siguientes roles en la suscripción de Pub/Sub:
@@ -142,18 +140,20 @@ Al usar [modo no ordenado](#continuous-ingestion-any-order), la cuenta de servic
 * [`roles/pubsub.viewer`](https://cloud.google.com/pubsub/docs/access-control#roles) — para obtener los metadatos de la suscripción.
 
 <div id="authentication">
-  ### Autenticación
+  ### Autenticación {#authentication}
 </div>
 
 <div id="service-account">
-  #### Cuenta de servicio
+  #### Cuenta de servicio {#service-account}
 </div>
 
 La autenticación mediante cuenta de servicio es obligatoria cuando se usa el [modo no ordenado](#continuous-ingestion-any-order) con notificaciones de Pub/Sub. Seleccione **Service Account** como método de autenticación y cargue el archivo JSON de la clave de la cuenta de servicio.
 
-<div id="hmac-credentials">
-  #### Credenciales HMAC
-</div>
+#### Workload Identity de GCP (Beta) {#gcp-workload-identity}
+
+Siga la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para obtener la cuenta de servicio administrada a partir del contexto del servicio de ClickPipes. Concédale el rol `roles/storage.objectViewer` en el bucket de origen y cree la canalización con la autenticación `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. Para la ingestión en modo unordered, concédale también los roles `roles/pubsub.subscriber` y `roles/pubsub.viewer` en la suscripción de notificaciones existente y utilice su nombre completo: `projects/<project-id>/subscriptions/<subscription-id>`.
+
+#### Credenciales HMAC {#hmac-credentials}
 
 Para usar [claves HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) para autenticarte, selecciona `Credentials` en **Authentication method** al configurar tu conexión de ClickPipe. Luego, proporciona la clave de acceso (p. ej., `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) y la clave secreta (p. ej., `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) en `Access key` y `Secret key`, respectivamente.
 
@@ -162,7 +162,7 @@ Para usar [claves HMAC](https://docs.cloud.google.com/storage/docs/authenticatio
 Sigue [esta guía](/es/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) para crear una cuenta de servicio con una clave HMAC.
 
 <div id="network-access">
-  ### Acceso de red
+  ### Acceso de red {#network-access}
 </div>
 
 Los ClickPipes de GCS utilizan dos rutas de red distintas para el descubrimiento de metadatos y la ingestión de datos: el servicio ClickPipes y el servicio ClickHouse Cloud, respectivamente. Si desea configurar una capa adicional de seguridad de red (por ejemplo, por motivos de cumplimiento normativo), el acceso de red **debe configurarse para ambas rutas**.
@@ -174,9 +174,7 @@ Los ClickPipes de GCS utilizan dos rutas de red distintas para el descubrimiento
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<div id="advanced-settings">
-  ## Configuración avanzada
-</div>
+## Configuración avanzada {#advanced-settings}
 
 ClickPipes proporciona valores predeterminados adecuados para cubrir los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más fino, puede modificar la siguiente configuración:
 
@@ -198,7 +196,7 @@ ClickPipes proporciona valores predeterminados adecuados para cubrir los requisi
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 
 <div id="scaling">
-  ### Escalado
+  ### Escalado {#scaling}
 </div>
 
 Object Storage ClickPipes se escalan en función del tamaño mínimo del servicio de ClickHouse, determinado por la [configuración de escalado vertical automático](/es/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). El tamaño del ClickPipe se determina cuando se crea el pipe. Los cambios posteriores en la configuración del servicio de ClickHouse no afectarán el tamaño del ClickPipe.
@@ -206,23 +204,23 @@ Object Storage ClickPipes se escalan en función del tamaño mínimo del servici
 Para aumentar el rendimiento en trabajos de ingesta de gran volumen, recomendamos escalar el servicio de ClickHouse antes de crear el ClickPipe.
 
 <div id="known-limitations">
-  ## Limitaciones conocidas
+  ## Limitaciones conocidas {#known-limitations}
 </div>
 
 <div id="file-size">
-  ### Tamaño del archivo
+  ### Tamaño del archivo {#file-size}
 </div>
 
 ClickPipes solo intentará ingestar objetos de **10 GB o menos**. Si un archivo supera los 10 GB, se añadirá un error a la tabla de errores específica de ClickPipes.
 
 <div id="compatibility">
-  ### Compatibilidad
+  ### Compatibilidad {#compatibility}
 </div>
 
 El ClickPipe de GCS utiliza la [API XML](https://docs.cloud.google.com/storage/docs/interoperability) de Cloud Storage para la interoperabilidad, lo que requiere usar el prefijo de bucket `https://storage.googleapis.com/` (en lugar de `gs://`) y [claves HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) para la autenticación.
 
 <div id="view-support">
-  ### Compatibilidad con vistas
+  ### Compatibilidad con vistas {#view-support}
 </div>
 
 También se admiten vistas materializadas en la tabla de destino. ClickPipes creará tablas de staging no solo para la tabla de destino, sino también para cualquier vista materializada que dependa de ella.

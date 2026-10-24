@@ -2,7 +2,7 @@
 title: Paramètres des logs système
 ---
 
-Les paramètres suivants peuvent être configurés à l’aide de sous-balises :
+Les paramètres suivants peuvent être configurés à l’aide de sous-balises :
 
 | Paramètre                          | Description                                                                                                                                                                | Par défaut          | Remarque                                                                                                                            |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,14 +20,18 @@ Les paramètres suivants peuvent être configurés à l’aide de sous-balises 
 | `buffer_size_rows_flush_threshold` | Seuil du nombre de lignes. Si ce seuil est atteint, le vidage des logs sur le disque est lancé en arrière-plan.                                                            | `max_size_rows / 2` |                                                                                                                                     |
 | `flush_on_crash`                   | Définit si les logs doivent être écrits sur le disque en cas de plantage.                                                                                                  | `false`             |                                                                                                                                     |
 
-En outre, le paramètre suivant, au niveau du serveur, contrôle la politique de vidage par défaut pour toutes les tables de logs système :
+Tous les paramètres, à l’exception de `database`, `table` et `engine`, peuvent également être définis une fois pour toutes les tables de logs système dans la section `system_tables`. Un paramètre défini dans la section propre à une table prévaut, et un `engine` défini au niveau d’une table remplace l’intégralité de la définition du moteur, y compris les valeurs globales de `partition_by`, `ttl`, `order_by`, `storage_policy` et `settings` :
 
 ```xml
-<default_system_log_flush_policy>
-    <skip_alias_columns>true</skip_alias_columns>
-</default_system_log_flush_policy>
+<system_tables>
+    <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+</system_tables>
 ```
+
+La section `system_tables` accepte en outre le paramètre suivant, qui s’applique à toutes les tables de logs système et ne peut pas être défini table par table :
 
 | Paramètre            | Description                                                                                                                                           | Par défaut |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | `skip_alias_columns` | Lorsque la valeur est `true`, les colonnes ALIAS sont omises des schémas des tables de logs système. Nécessaire pour les logs système stockés sur S3. | `false`    |
+
+L’ancien emplacement de ce paramètre, `default_system_log_flush_policy.skip_alias_columns`, est déconseillé et n’est pris en compte que si `system_tables.skip_alias_columns` n’est pas défini.

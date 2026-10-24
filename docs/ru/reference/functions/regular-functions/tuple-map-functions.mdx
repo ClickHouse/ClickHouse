@@ -150,7 +150,7 @@ SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
-**Псевдонимы**: `mapFromString`, `str_to_map`
+**Псевдонимы**: `str_to_map`, `mapFromString`
 
 **Аргументы**
 
@@ -843,6 +843,8 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 mapKeys(map)
 ```
 
+**Псевдонимы**: `map_keys`
+
 **Аргументы**
 
 * `map` — Map, из которого извлекаются ключи. [`Map(K, V)`](/ru/reference/data-types/map)
@@ -958,7 +960,7 @@ mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])
 
 **Возвращаемое значение**
 
-Возвращает Map или кортеж из двух массивов, где первый содержит ключи в отсортированном порядке, а второй — значения для соответствующих ключей. [`Map(K, V)`](/ru/reference/data-types/map) или [`Tuple(Array(UInt*), Array(Any))`](/ru/reference/data-types/tuple)
+Возвращает Map или кортеж из двух массивов, где первый содержит ключи в отсортированном порядке, а второй — значения для соответствующих ключей. [`Map(K, V)`](/ru/reference/data-types/map) или [`Tuple(Array(UInt*), Array)`](/ru/reference/data-types/tuple)
 
 **Примеры**
 
@@ -1174,6 +1176,8 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 ```sql
 mapValues(map)
 ```
+
+**Псевдонимы**: `map_values`
 
 **Аргументы**
 

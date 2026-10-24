@@ -27,32 +27,19 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
         NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
-        <!--
-            The default table creation code is insufficient, this <engine> spec
-            is a workaround. There is no 'event_time' for this log, but two times,
-            start and finish. It is sorted by finish time, to avoid inserting
-            data too far away in the past (probably we can sometimes insert a span
-            that is seconds earlier than the last span in the table, due to a race
-            between several spans inserted in parallel). This gives the spans a
-            global order that we can use to e.g. retry insertion into some external
-            system.
-        -->
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
-        </engine>
-        <database>system</database>
-        <table>opentelemetry_span_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <order_by>event_date, finish_time_us</order_by> -->
+        <!-- <database>system</database> -->
+        <!-- <table>opentelemetry_span_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </opentelemetry_span_log>
     ```
 
-    Certifique-se de que isso não esteja comentado; caso contrário, você não poderá ver `system.opentelemetry_span_log` nas próximas etapas.
+    Certifique-se de que o próprio elemento `<opentelemetry_span_log>` não esteja comentado; caso contrário, você não poderá ver `system.opentelemetry_span_log` nas próximas etapas. As configurações dentro dele estão comentadas porque são iguais aos valores padrão.
     Isso também pode acontecer se o seu servidor ClickHouse não estiver usando o arquivo de configuração padrão.
 
     Verifique os logs do servidor em busca de algo como:

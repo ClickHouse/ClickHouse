@@ -2,34 +2,37 @@
 title: رفع ملف CSV عبر سطر الأوامر
 ---
 
-تتناول هذه الصفحة رفع ملف محلي (ملف CSV على سبيل المثال) إلى جدول في ClickHouse Cloud service من سطر الأوامر باستخدام [ClickHouse CLI](/ar/products/cloud/features/cli) (`clickhousectl`). ويحاكي هذا المسار معالج رفع الملفات في Console: فحص schema الملف، وإنشاء destination جدول، ثم إدراج الملف عبر HTTP باستخدام واجهة برمجة تطبيقات الاستعلام — دون الحاجة إلى ملف تنفيذي لـ `clickhouse` أو إلى password الخاص بالـ service.
+تتناول هذه الصفحة رفع ملف محلي (ملف CSV على سبيل المثال) إلى جدول في خدمة ClickHouse Cloud من سطر الأوامر باستخدام [واجهة سطر الأوامر لـ ClickHouse](/ar/concepts/features/interfaces/cli) (`clickhousectl`). ويحاكي هذا المسار معالج رفع الملفات في Console: فحص schema الملف، وإنشاء destination جدول، ثم إدراج الملف عبر HTTP باستخدام واجهة برمجة تطبيقات الاستعلام — دون الحاجة إلى ملف تنفيذي لـ `clickhouse` أو إلى كلمة المرور الخاصة بالخدمة.
 
-## المتطلبات الأساسية {#cli-prerequisites}
+## المتطلبات المسبقة {#cli-prerequisites}
 
-ثبّت ClickHouse CLI:
-
-```bash
-curl https://clickhouse.com/cli | sh
-```
-
-تحتاج أيضًا إلى `jq`.
-
-تتطلب عمليات الكتابة [المصادقة باستخدام مفتاح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi)؛ أما تسجيل الدخول عبر OAuth فهو للقراءة فقط:
+ثبّت واجهة سطر الأوامر لـ ClickHouse:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-تحقّق باستخدام `clickhousectl cloud auth status`؛ ومن المتوقّع أن تجد إدخالاً بنطاق `read/write`.
+يثبّت البرنامج النصي الملف `~/.local/bin/clickhousectl` إضافةً إلى اسم بديل هو `chctl`. تأكّد من إدراج `~/.local/bin` في متغير `PATH` لديك.
 
-## اختر service {#pick-a-service}
+تحتاج أيضاً إلى الأداة `jq`.
 
-يفترض هذا الدليل أن لديك بالفعل service قيد التشغيل. إذا لم يكن الأمر كذلك، فراجع [Cloud quick start](/ar/get-started/setup/cloud) لإنشاء واحدة عبر الـ CLI. ابحث عن الـ ID الخاص بـ service الخاصة بك عن طريق الاسم:
+تتطلّب عمليات الكتابة [مفتاح API](/ar/products/cloud/features/admin-features/api/openapi) يملك دوره صلاحية إدارة نقاط نهاية API للاستعلامات؛ أما تسجيل الدخول عبر المتصفح (`clickhousectl cloud auth login`) فيمنح وصولاً للقراءة فقط. ويعرض الأمر `clickhousectl cloud service query --help` الصلاحيات المطلوبة. سجّل الدخول باستخدام المفتاح؛ إذ يطلب منك الخيار `--interactive` إدخال المفتاح والـ secret، فلا يُحفَظ الـ secret في سجل shell لديك:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="my-service") | .id')
+clickhousectl cloud auth login --interactive
 ```
+
+بدلاً من ذلك، يمكنك تمرير `--api-key` و`--api-secret`، أو تعيين متغيرات البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`؛ ويُفضَّل أن يعتمد وكيل البرمجة أو البرنامج النصي على متغيرات البيئة. يتحقق تسجيل الدخول من صحة المفتاح ويعرض الهوية المرتبطة به، ويمكنك التحقق من بيانات الاعتماد النشطة في أي وقت باستخدام `clickhousectl cloud auth whoami`. إذا كنت تنتمي إلى أكثر من مؤسسة، فأضف `--org-id <org-id>` (أو `--org-name <name>`) إلى كل أمر `cloud service` في هذا الدليل.
+
+## اختر خدمة {#pick-a-service}
+
+يفترض هذا الدليل أن لديك بالفعل خدمة. إذا لم يكن الأمر كذلك، فراجع [Cloud quick start](/ar/get-started/setup/cloud) لإنشاء واحدة عبر واجهة سطر الأوامر. ابحث عن الـ ID الخاص بالخدمة الخاصة بك عن طريق الاسم:
+
+```bash
+CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
+```
+
+تستيقظ الخدمة الخاملة تلقائيًا عند أول استعلام، أما الخدمة المتوقفة فلا: شغّلها باستخدام `clickhousectl cloud service start "$CH_ID"` وانتظر حتى يُعيد الأمر `clickhousectl cloud service get "$CH_ID" --json | jq -r .state` القيمة `running`.
 
 ## تحضير الملف {#prepare-the-file}
 
@@ -46,17 +49,17 @@ user_id,url,visited_at,duration_ms
 
 ## فحص الـ schema {#inspect-the-schema}
 
-بينما يعرض لك معالج الـ Console النوع المُستنتَج لكل حقل من حقول الـ source، فإن ما يكافئ ذلك في الـ CLI هو تنفيذ `DESCRIBE` على دالة جدول [`format`](/ar/reference/functions/table-functions/format) مع تضمين عيّنة من الملف بشكل Inline:
+بينما يعرض لك معالج الـ Console النوع المُستنتَج لكل حقل من حقول الـ source، فإن ما يكافئ ذلك في واجهة سطر الأوامر هو تنفيذ `DESCRIBE` على دالة جدول [`format`](/ar/reference/functions/table-functions/format) مع تضمين عيّنة من الملف بشكل Inline:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
 ```
 
-يقوم أول استدعاء لـ `query` تلقائيًا بتوفير نقطة نهاية واجهة برمجة تطبيقات الاستعلام ومفتاح واجهة برمجة تطبيقات محدود النطاق على مستوى الخدمة:
+عند أول استدعاء لـ `query`، يضيف clickhousectl مفتاح API الخاص بك إلى نقطة نهاية واجهة برمجة تطبيقات الاستعلام الخاصة بالخدمة، وينشئ نقطة النهاية عند الحاجة؛ ولا يُنشأ أي مفتاح جديد. مرّر `--no-auto-enable` لجعل الأمر يفشل بدلًا من ذلك. وعندما تُغيّر واجهة سطر الأوامر نقطة النهاية، فإنها تطبع السطر الأول أدناه إلى stderr:
 
 ```text
-Provisioning Query API endpoint + key for service 'my-service'...
+Binding the authenticated API key to the Query API endpoint for service 'my-service'...
    ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
 2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
@@ -72,7 +75,7 @@ Provisioning Query API endpoint + key for service 'my-service'...
 كل ما تتيحه خطوة &quot;Configure table&quot; في المعالج — من تعديل الأنواع المستنتجة، وقابلية القيم لأن تكون NULL، والقيم الافتراضية، والحقول المستبعدة، ومحرك الجدول، وتعبيرات الفرز والتقسيم والمفتاح الأساسي — ليس سوى عبارة [`CREATE TABLE`](/ar/reference/statements/create/table) عادية هنا. على سبيل المثال، لتضييق الأنواع المستنتجة واختيار مفتاح فرز:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE default.website_visits (
     user_id UInt32,
     url String,
@@ -82,7 +85,7 @@ clickhousectl cloud service query --id "$CH_ID" \
   ORDER BY (user_id, visited_at)"
 ```
 
-يطبع الأمر `OK`. أما إذا كنت تريد التحميل إلى جدول موجود بالفعل، فتخطَّ هذه الخطوة.
+يطبع الأمر `OK` على stderr. أما إذا كنت تريد التحميل إلى جدول موجود بالفعل، فتخطَّ هذه الخطوة.
 
 ## رفع الملف {#upload-the-file}
 
@@ -90,7 +93,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 يطبع الأمر `OK`.
@@ -98,7 +101,7 @@ printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.c
 <Warning>
   **مرّر الاستعلام والبيانات معًا عبر الأنبوب**
 
-  تمرير `INSERT` عبر `--query` مع إعادة توجيه الملف أو تمريره عبر أنبوب إلى stdin (‏`--query "INSERT ..." < data.csv`‎) لا يعمل: فالخيار `--query` لا يقرأ stdin مطلقًا، وبالتالي لن تصل البيانات إلى أي وجهة. يرفض CLI هذا الدمج صراحةً بدلًا من أن يُنهي العملية دون إدراج أي شيء بصمت — إذ يخرج بالرمز `1`، ولا يدرج أي rows، ويطبع:
+  تمرير `INSERT` عبر `--query` مع إعادة توجيه الملف أو تمريره عبر أنبوب إلى stdin (‏`--query "INSERT ..." < data.csv`‎) لا يعمل: فالخيار `--query` لا يقرأ stdin مطلقًا، وبالتالي لن تصل البيانات إلى أي وجهة. ترفض واجهة سطر الأوامر هذا الدمج صراحةً بدلًا من أن تُنهي العملية دون إدراج أي شيء بصمت — إذ تخرج بالرمز `1`، ولا تدرج أي صفوف، وتطبع:
 
   ```text
   Error: --query cannot be combined with SQL or data on stdin. The Query API sends one request body, so redirected data is never read. Pipe the statement and its data together on stdin instead: printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <id>. Or read a whole statement from stdin with --queries-file -.
@@ -107,10 +110,10 @@ printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.c
   أرسل الاستعلام والبيانات دائمًا عبر stdin كتدفق واحد، كما هو موضّح أعلاه. ولا يتعارض مع `--query` سوى stdin الذي يحمل بيانات فعلية، لذا يظل `--query` وحده صالحًا للعمل في البرامج النصية والـ pipelines التي لا يكون فيها stdin هو الـ terminal.
 </Warning>
 
-تحقّق من وصول الـ rows:
+تحقّق من وصول الصفوف:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM default.website_visits"
 ```
 
@@ -119,7 +122,7 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 ```
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "SELECT * FROM default.website_visits ORDER BY visited_at"
 ```
 
@@ -133,13 +136,28 @@ clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
    └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
 ```
 
+## تحميل الملفات الكبيرة {#upload-large-files}
+
+تتوقف واجهة برمجة تطبيقات الاستعلام عن الانتظار بعد نحو 30 ثانية. وقد يكون أمر `INSERT` الذي انتهت مهلته قد نُفِّذ فعلًا، لذا تحقّق من عدد الصفوف قبل إعادة المحاولة. أما الملفات الكبيرة، فنفّذ إدراجها بدلًا من ذلك عبر البروتوكول الأصلي باستخدام [`clickhouse client`](/ar/concepts/features/interfaces/client)، الذي يقرأ البيانات من stdin. يثبّت الأمر `clickhousectl local use latest` أحدث إصدار من ClickHouse وينشئ له رابطًا رمزيًا في `~/.local/bin/clickhouse`. اضبط `CH_PASSWORD` على كلمة مرور المستخدم `default` (وإن فقدتها، فيمكنك إنشاء كلمة مرور جديدة بالأمر `clickhousectl cloud service reset-password "$CH_ID"`)، ثم ابحث عن المضيف `nativesecure`، ونفّذ الإدراج:
+
+```bash
+clickhousectl local use latest
+CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+  | jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host')
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query 'INSERT INTO default.website_visits FORMAT CSVWithNames' < data.csv
+```
+
+يجب أن تتوافق الاتصالات المباشرة مع قائمة الوصول لعناوين IP الخاصة بالخدمة.
+
 ## تنسيقات الملفات الأخرى {#other-file-formats}
 
 ينطبق النمط نفسه على أي [صيغة الإدخال](/ar/reference/formats/index) يدعمه ClickHouse — بما في ذلك جميع التنسيقات التي يقبلها معالج الرفع في Console، مثل `CSV` و`JSONEachRow` و`TabSeparatedWithNames`. ولاستخدام تنسيق آخر، غيّر اسم التنسيق بشكل متسق في كل من خطوة استنتاج الـ schema عبر `DESCRIBE format(...)` وفي عبارة `INSERT ... FORMAT`، واستخدم ملف عينة يطابق ذلك التنسيق (عينة بتنسيق TSV لـ `TabSeparatedWithNames`، وعينة بتنسيق أسطر JSON لـ `JSONEachRow`، وهكذا). على سبيل المثال، تصبح خطوة الرفع لملف TSV كما يلي:
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 ## التنظيف {#cleanup}
@@ -147,6 +165,6 @@ printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat
 إذا كان هذا مجرد تشغيل تجريبي، فاحذف الجدول لإزالة البيانات المستوردة:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "DROP TABLE default.website_visits"
 ```

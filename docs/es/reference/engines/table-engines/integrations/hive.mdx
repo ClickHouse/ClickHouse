@@ -20,9 +20,7 @@ El motor Hive le permite realizar consultas `SELECT` en una tabla de Hive en HDF
 
 * Parquet: admite todos los tipos de columna escalares simples; solo admite tipos complejos como `array`
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -50,39 +48,11 @@ La estructura de la tabla puede diferir de la estructura original de la tabla de
 
 * `table` — Nombre de la tabla remota.
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#usage-example}
 
-<div id="how-to-use-local-cache-for-hdfs-filesystem">
-  ### Cómo usar la caché local para el sistema de archivos HDFS
-</div>
+### Consultar una tabla de Hive con el formato de entrada ORC {#query-hive-table-with-orc-input-format}
 
-Recomendamos encarecidamente habilitar la caché local para los sistemas de archivos remotos. El benchmark muestra que es casi el doble de rápido con caché.
-
-Antes de usar la caché, añádala a `config.xml`
-
-```xml
-<local_cache_for_remote_fs>
-    <enable>true</enable>
-    <root_dir>local_cache</root_dir>
-    <limit_size>559096952</limit_size>
-    <bytes_read_before_flush>1048576</bytes_read_before_flush>
-</local_cache_for_remote_fs>
-```
-
-* enable: ClickHouse mantendrá una caché local para el sistema de archivos remoto (HDFS) después del inicio si es true.
-* root&#95;dir: Obligatorio. El directorio raíz donde se almacenan los archivos de la caché local del sistema de archivos remoto.
-* limit&#95;size: Obligatorio. El tamaño máximo (en bytes) de los archivos de la caché local.
-* bytes&#95;read&#95;before&#95;flush: Controla la cantidad de bytes antes de hacer flush en el sistema de archivos local al descargar un archivo desde el sistema de archivos remoto. El valor predeterminado es 1 MB.
-
-<div id="query-hive-table-with-orc-input-format">
-  ### Consultar una tabla de Hive con el formato de entrada ORC
-</div>
-
-<div id="create-table-in-hive">
-  #### Crear una tabla en Hive
-</div>
+#### Crear una tabla en Hive {#create-table-in-hive}
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
@@ -130,9 +100,7 @@ OK
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### Crear una tabla en ClickHouse
-</div>
+#### Crear una tabla en ClickHouse {#create-table-in-clickhouse}
 
 Tabla en ClickHouse que recupera datos de la tabla de Hive creada anteriormente:
 
@@ -204,13 +172,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-<div id="query-hive-table-with-parquet-input-format">
-  ### Consultar una tabla de Hive con el formato de entrada Parquet
-</div>
+### Consultar una tabla de Hive con el formato de entrada Parquet {#query-hive-table-with-parquet-input-format}
 
-<div id="create-table-in-hive">
-  #### Crear una tabla en Hive
-</div>
+#### Crear una tabla en Hive {#create-table-in-hive-1}
 
 ```text
 hive >
@@ -259,9 +223,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### Crear una tabla en ClickHouse
-</div>
+#### Crear una tabla en ClickHouse {#create-table-in-clickhouse-1}
 
 Tabla en ClickHouse que recupera datos de la tabla de Hive creada anteriormente:
 
@@ -334,13 +296,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-<div id="query-hive-table-with-text-input-format">
-  ### Consultar una tabla de Hive con el formato de entrada Text
-</div>
+### Consultar una tabla de Hive con el formato de entrada Text {#query-hive-table-with-text-input-format}
 
-<div id="create-table-in-hive">
-  #### Crear una tabla en Hive
-</div>
+#### Crear una tabla en Hive {#create-table-in-hive-2}
 
 ```text
 hive >
@@ -388,9 +346,7 @@ OK
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-<div id="create-table-in-clickhouse">
-  #### Crear una tabla en ClickHouse
-</div>
+#### Crear una tabla en ClickHouse {#create-table-in-clickhouse-2}
 
 Tabla en ClickHouse para recuperar datos de la tabla de Hive creada anteriormente:
 

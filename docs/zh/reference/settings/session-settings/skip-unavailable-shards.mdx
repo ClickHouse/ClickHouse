@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="skip_unavailable_shards">
-  ## skip_unavailable_shards
-</div>
+## skip_unavailable_shards {#skip_unavailable_shards}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -27,15 +25,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 * 1 — 启用跳过。
 
-  如果某个分片不可用，ClickHouse 会基于部分数据返回结果，且不会报告节点可用性问题。
+  如果某个分片不可用，ClickHouse 会基于部分数据返回结果，且不会报告节点可用性问题。在读取时，如果在返回任何数据之前*所有*分片都已被跳过，就没有任何部分数据可供返回，因此查询会抛出 `ALL_CONNECTION_TRIES_FAILED`，而不是返回空结果。此检查仅针对读取操作；对于目标端集群完全不可用的情况，`INSERT` 有其单独的处理机制。
 
 * 0 — 禁用跳过。
 
   如果某个分片不可用，ClickHouse 会抛出异常。
 
-<div id="skip_unavailable_shards_mode">
-  ## skip_unavailable_shards_mode
-</div>
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode}
 
 <SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
 

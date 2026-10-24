@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights de Postgres'
 description: 'Telemetría por sentencia para ClickHouse Managed Postgres: todos los patrones de consulta que ejecuta tu base de datos, ordenados por impacto, con los contadores de diagnóstico que explican por qué cada uno es lento'
-keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'consultas lentas', 'latencia p99', 'patrones de consulta', 'rendimiento de postgres', 'bloques temporales', 'workers en paralelo', 'wal']
+keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'consultas lentas', 'latencia p99', 'patrones de consulta', 'rendimiento de postgres', 'bloques temporales', 'workers en paralelo', 'wal', 'eventos de espera', 'esperas por bloqueos', 'sesiones bloqueadas']
 doc_type: 'guide'
 ---
 
@@ -17,37 +17,38 @@ Query Insights captura la telemetría por sentencia de tu instancia de
 según su impacto, para que puedas pasar de &quot;el p99 está aumentando&quot; a &quot;este patrón
 se está volcando a disco&quot; sin salir de la Cloud Console.
 
-Los datos provienen de [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
+Los datos por sentencia provienen de [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
 la extensión de Postgres de código abierto que transmite contadores por sentencia a
 ClickHouse Cloud. La telemetría se normaliza dentro de Postgres antes de salir
 de la base de datos: se eliminan los literales y se sustituyen por marcadores de posición, de modo que los
 valores exactos que consultas nunca entran en el flujo de telemetría.
 
-<div id="open">
-  ## Abra Query insights
-</div>
+## Abra Query insights {#open}
 
 Abra su instancia de ClickHouse Managed Postgres en la Cloud Console y haga clic en
-**Query insights** en la barra lateral izquierda. La página se divide en cuatro
+**Query insights** en la barra lateral izquierda. La página se divide en cinco
 secciones, en el orden en que realmente las usaría:
 
 * Un **Overview** que permite ver el estado general de la base de datos en una sola pantalla.
 * Una tabla de **Slow patterns** que clasifica cada patrón de consulta que su base de datos
   ha ejecutado, ordenada según lo que sospeche.
-* Un panel de **Recent queries** que muestra las ejecuciones individuales en orden cronológico inverso.
+* Un panel de **Consultas recientes** que muestra las ejecuciones individuales en orden cronológico inverso.
+* Una tabla de **Esperas** que clasifica los eventos de espera en los que las sesiones activas
+  pasaron más tiempo.
 * Un **panel lateral de detalles** que agrega todos los contadores de un mismo patrón.
 
-Use el selector de **Time period** en la parte superior para alternar entre los últimos 15
+Use el selector de **Período de tiempo** en la parte superior para alternar entre los últimos 15
 minutos, la última hora, el último día, la última semana o el último mes. El tamaño del bucket de agregación se ajusta
 automáticamente: buckets de 1 minuto para los últimos 15 minutos o la última hora,
 de 5 minutos para el último día y de 1 hora para la última semana o el último mes, para que los
 gráficos sigan respondiendo con fluidez.
 
 <div id="overview">
-  ## Overview
+  ## Overview {#overview}
 </div>
 
-El Overview es una cuadrícula de 3×2 con seis paneles:
+El Overview es una cuadrícula de 3×3 con nueve paneles. Las dos primeras filas cubren
+la actividad de consultas:
 
 | Panel                           | Qué muestra                                                                                                                                                 |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -65,9 +66,24 @@ percentilares que se mantienen muy próximas entre sí.
 
 <Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="Overview de Query Insights que muestra las seis tarjetas de estadísticas: consultas por segundo, percentiles de latencia de consultas, gráfico de anillo del desglose de operaciones, gráfico de áreas de filas devueltas, gráfico de anillo de la tasa de aciertos del búfer al 95,2 % y gráfico de columnas de errores" size="lg" border />
 
-<div id="slow-patterns">
-  ## Slow patterns
-</div>
+### Gráficos de esperas {#wait-charts}
+
+La tercera fila muestra qué esperaban las sesiones activas en la instancia principal,
+a partir de [muestras tomadas cada 30 segundos](#how-waits):
+
+| Panel                            | Qué muestra                                                                                                                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Active sessions by wait type** | Promedio de sesiones activas, apiladas por tipo de espera. **CPU** indica sesiones activas sin ningún evento de espera. Pase el cursor sobre una barra para ver los eventos de espera que componen cada tipo. |
+| **Lock wait time**               | Los valores p50, p95 y máximo del tiempo de espera por bloqueo transcurrido en las sesiones bloqueadas muestreadas en cada intervalo.                                                                         |
+| **Blocked sessions**             | Promedio de sesiones bloqueadas a la espera de un bloqueo.                                                                                                                                                    |
+
+Fíjese en si **Blocked sessions** se mantiene por encima de cero mientras **Lock wait
+time** aumenta: esto puede indicar una contención de bloqueos sostenida. Haga clic en cualquier
+gráfico de esperas para abrir la tabla [Esperas](#waits).
+
+<Image img="/images/managed-postgres/monitoring/query-insights-wait-charts.webp" alt="Gráficos de esperas que muestran las sesiones activas apiladas por tipo de espera, el tiempo de espera por bloqueo en p50, p95 y máximo, y las sesiones bloqueadas a lo largo del tiempo" size="lg" border />
+
+## Slow patterns {#slow-patterns}
 
 Cuando el resumen apunta a problemas, la tabla de patrones es donde
 empieza la investigación. Una fila por cada patrón de consulta normalizado, con los
@@ -77,7 +93,7 @@ la misma fila.
 <Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Tabla de patrones de consultas lentas que muestra una fila por cada consulta normalizada con las columnas Base de datos, Usuario, Operación, Llamadas, Errores, Latencia media, P95, Latencia máxima, Tiempo de ejecución total, Filas devueltas y Aciertos en caché" size="lg" border />
 
 <div id="sort">
-  ### Ordena por lo que sospeches
+  ### Ordena por lo que sospeches {#sort}
 </div>
 
 La tabla se ordena de forma predeterminada por **Tiempo de ejecución total** en orden descendente. Cuando la ordenas de esta
@@ -102,7 +118,7 @@ La tabla de patrones muestra 19 columnas en total, incluido el desglose por perc
 la proporción de aciertos de caché y el tiempo de CPU por patrón.
 
 <div id="filters">
-  ### Limita la tabla
+  ### Limita la tabla {#filters}
 </div>
 
 Filtra la tabla según la parte de tu carga de trabajo que estés
@@ -117,9 +133,7 @@ investigando:
 se convierte en dos menús desplegables. Los valores de filtro se rellenan automáticamente a partir de lo que tu
 instancia ha ejecutado realmente.
 
-<div id="recent-queries">
-  ## Recent queries
-</div>
+## Recent queries {#recent-queries}
 
 Debajo de la tabla de patrones, el panel de **Recent queries** muestra las
 ejecuciones individuales en orden cronológico inverso: una fila por cada
@@ -139,9 +153,24 @@ CPU time.
 Haz clic en cualquier fila para abrir el mismo panel lateral de detalles que en la tabla de patrones,
 acotado al patrón de esa única ejecución.
 
-<div id="detail">
-  ## Panel lateral de detalles
-</div>
+## Esperas {#waits}
+
+Expanda **Esperas** o haga clic en un [gráfico de esperas](#wait-charts) para ver los
+eventos de espera ordenados según el promedio de sesiones activas durante el período de tiempo seleccionado.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-waits.webp" alt="Tabla Waits que muestra los eventos de espera ordenados según el promedio de sesiones activas, con las columnas Wait event, Wait type, Avg active sessions y Share of load" size="lg" border />
+
+| Columna                 | Qué muestra                                                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Wait event**          | El evento de espera con el formato `type:event`, por ejemplo `Lock:relation` o `IO:WalSync`. **CPU** indica que la sesión está activa sin ningún evento de espera. |
+| **Wait type**           | El tipo de evento de espera, que se corresponde con los colores de **Active sessions by wait type**.                                                               |
+| **Avg active sessions** | El número medio de sesiones en este evento de espera durante el período de tiempo seleccionado.                                                                    |
+| **Share of load**       | La proporción que representa este evento de espera sobre el total del promedio de sesiones activas, incluida **CPU**.                                              |
+
+Para consultar la descripción de cada evento, vea la
+[referencia de eventos de espera de Postgres](https://www.postgresql.org/docs/current/monitoring-stats.html#WAIT-EVENT-TABLE).
+
+## Panel lateral de detalles {#detail}
 
 Haz clic en cualquier fila de la tabla de patrones o consultas recientes y el panel lateral de **detalles de la consulta** se abre a la derecha. El panel lateral toma cada ejecución
 de ese patrón dentro del intervalo de tiempo seleccionado y agrega los
@@ -166,7 +195,7 @@ El panel lateral es un único panel desplazable con cinco secciones:
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Continuación del panel lateral de detalles de la consulta, que muestra la sección Contexto de la consulta con base de datos, usuario, operación y aplicación, y una tarjeta de Ejecuciones recientes con timestamp, estado OK, rol del servidor, ID del host y contadores por ejecución de duración, filas, aciertos en caché, CPU, bloques compartidos leídos y bloques compartidos encontrados en caché" size="md" border />
 
 <div id="counters">
-  ### Contadores por ejecución
+  ### Contadores por ejecución {#counters}
 </div>
 
 Al expandir una ejecución reciente, verás los contadores que muestran con precisión en qué
@@ -185,15 +214,13 @@ se fue el tiempo:
 Todo lo necesario para diagnosticar un patrón lento está en un solo lugar, en una sola
 pantalla.
 
-<div id="api">
-  ## API de Query insights
-</div>
+## API de Query insights {#api}
 
-La misma telemetría está disponible mediante programación a través de
+La telemetría por sentencia también está disponible a través de
 [ClickHouse Cloud OpenAPI](/es/products/managed-postgres/openapi#query-insights).
 La tabla [Slow patterns](#slow-patterns) se corresponde con el
 endpoint
-[list slow query patterns](/es/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
+[list patrones de consultas lentas](/es/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
 y el [panel lateral de detalles](#detail) se corresponde con el
 endpoint
 [get slow query pattern](/es/products/cloud/api-reference/postgres/slow-query-pattern-get),
@@ -201,11 +228,11 @@ que devuelve las métricas agregadas de un patrón junto con sus
 ejecuciones recientes.
 
 <div id="how-it-works">
-  ## Cómo funciona
+  ## Cómo funciona {#how-it-works}
 </div>
 
 <div id="how-normalized">
-  ### Normalizado en Postgres, antes de pasar por la red
+  ### Normalizado en Postgres, antes de pasar por la red {#how-normalized}
 </div>
 
 `pg_stat_ch` se engancha a la fase de análisis sintáctico, sustituye cada literal por un
@@ -215,7 +242,7 @@ sentencia, ese patrón almacenado en caché es lo que se adjunta al evento. La
 sentencia exacta con valores nunca sale de la base de datos.
 
 <div id="how-overhead">
-  ### Sin interferir con la base de datos
+  ### Sin interferir con la base de datos {#how-overhead}
 </div>
 
 El productor añade aproximadamente un 3 % de sobrecarga por sentencia. La ruta de encolado
@@ -223,16 +250,23 @@ usa un try-lock no bloqueante sobre un búfer circular en memoria compartida. Ba
 carga, la extensión descarta eventos y los contabiliza con un contador, en lugar de
 aplicar contrapresión a Postgres.
 
+### Las esperas se muestrean {#how-waits}
+
+Los [gráficos de esperas](#wait-charts) y la tabla [Esperas](#waits) utilizan muestras
+recopiladas cada 30 segundos en la instancia principal. Las esperas breves pueden producirse
+íntegramente entre dos muestras y no llegar a registrarse, por lo que estas vistas resultan más
+útiles para identificar esperas prolongadas y contención de bloqueos.
+
 <div id="how-raw-events">
-  ### Eventos sin procesar, no agregados
+  ### Eventos sin procesar, no agregados {#how-raw-events}
 </div>
 
 `pg_stat_ch` emite un evento sin procesar por cada sentencia ejecutada (de nivel superior y
-anidada), según el muestreo aplicado. Cada percentil, ranking y desglose
-en la UI es una consulta de ClickHouse sobre el mismo flujo de eventos.
+anidada), según el muestreo aplicado. Los percentiles de las consultas, las clasificaciones y los
+desgloses se calculan en ClickHouse a partir de este flujo de eventos.
 
 <div id="how-engine">
-  ### El mismo motor que usan nuestros clientes
+  ### El mismo motor que usan nuestros clientes {#how-engine}
 </div>
 
 El backend de Insights es [ClickHouse Cloud](/es/products/cloud/getting-started/intro).
@@ -242,16 +276,14 @@ y las agregaciones en menos de un segundo sobre miles de millones de filas manti
 UI interactiva mientras exploras datos de una semana o de un mes.
 
 <div id="how-open-source">
-  ### Código abierto
+  ### Código abierto {#how-open-source}
 </div>
 
 `pg_stat_ch` se distribuye bajo Apache 2.0. Ejecútalo con cualquier Postgres y envíalo a cualquier
 ClickHouse. El código fuente y los issues están en
 [github.com/clickhouse/pg&#95;stat&#95;ch](https://github.com/clickhouse/pg_stat_ch).
 
-<div id="related">
-  ## Páginas relacionadas
-</div>
+## Páginas relacionadas {#related}
 
 * [Panel de monitoreo](/es/products/managed-postgres/monitoring/dashboard) — gráficos integrados de recursos y actividad
 * [Endpoint de Prometheus](/es/products/managed-postgres/monitoring/prometheus) — recopila métricas a nivel de host en tu propia pila de observabilidad

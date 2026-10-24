@@ -11,18 +11,17 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import { CloudSQLIAMAuthentication } from "/snippets/ja/clickpipes/_cloudsql_iam_authentication.mdx";
 
 これは、MySQL ClickPipe を使用して Cloud SQL for MySQL インスタンスのデータをレプリケートするための設定手順ガイドです。
 
 <div id="enable-binlog-retention-gcp">
-  ## バイナリログの保持を有効にする
+  ## バイナリログの保持を有効にする {#enable-binlog-retention-gcp}
 </div>
 
 バイナリログは、MySQL serverインスタンスで行われたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションにはバイナリログファイルが必要です。
 
-<div id="enable-binlog-logging-gcp">
-  ### PITR によるバイナリログの有効化
-</div>
+### PITR によるバイナリログの有効化 {#enable-binlog-logging-gcp}
 
 PITR 機能によって、Google Cloud 上の MySQL でバイナリログを有効または無効にするかが決まります。これは Cloud コンソールで Cloud SQL インスタンスを編集し、以下のセクションまでスクロールして設定できます。
 
@@ -45,7 +44,7 @@ PITR 機能によって、Google Cloud 上の MySQL でバイナリログを有�
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="GCP で binlog フラグを設定" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## データベースユーザーを設定する
+  ## データベースユーザーを設定する {#configure-database-user-gcp}
 </div>
 
 root ユーザーとして Cloud SQL MySQL インスタンスに接続し、次のコマンドを実行します。
@@ -69,18 +68,18 @@ root ユーザーとして Cloud SQL MySQL インスタンスに接続し、次�
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-<div id="configure-network-access-gcp-mysql">
-  ## ネットワークアクセスを設定する
-</div>
+## IAM データベース認証を使用する (任意、ベータ) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="mysql" />
+
+## ネットワークアクセスを設定する {#configure-network-access-gcp-mysql}
 
 Cloud SQL インスタンスへのトラフィックを制限する場合は、Cloud SQL MySQL インスタンスの許可リストに、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 これは、インスタンスを編集するか、Cloud コンソール のサイドバーにある `Connections` タブから設定できます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="GCP MySQL での IP 許可リスト設定" size="lg" border />
 
-<div id="download-root-ca-certificate-gcp-mysql">
-  ## ルートCA証明書をダウンロードして使用する
-</div>
+## ルートCA証明書をダウンロードして使用する {#download-root-ca-certificate-gcp-mysql}
 
 Cloud SQL インスタンスに接続するには、ルートCA証明書をダウンロードする必要があります。
 

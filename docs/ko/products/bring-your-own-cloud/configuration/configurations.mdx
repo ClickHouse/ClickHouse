@@ -56,38 +56,39 @@ BYOC 배포에서 프라이빗 로드 밸런서를 사용하는 경우, 의도�
 
 ## Kubernetes API 비공개 연결 {#k8s-api-private-connection}
 
-기본적으로 BYOC 클러스터의 Kubernetes API 서버 엔드포인트는 공용 인터넷에서 접근할 수 있습니다. AWS에서는 IP 필터링을 통해 ClickHouse NAT Gateway IP에서만 접근이 허용되며, GCP와 Azure에서는 대신 클라우드 IAM으로 제어됩니다([Kubernetes API 서버 노출](/ko/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure) 참조). 보안을 더욱 강화하려면 Kubernetes API 서버가 프라이빗 네트워크 연결을 통해서만 접근 가능하도록 제한할 수 있습니다.
+기본적으로 BYOC 클러스터의 Kubernetes API 서버 엔드포인트는 공용 인터넷에서 접근할 수 있습니다. AWS에서는 IP 필터링을 통해 ClickHouse NAT Gateway IP에서만 접근이 허용되며, GCP와 Azure에서는 대신 클라우드 IAM으로 제어됩니다([Kubernetes API 서버 노출](/ko/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure) 참조). 보안을 더욱 강화하려면 Kubernetes API 서버를 프라이빗 액세스로 제한할 수 있습니다. 이 경우 AWS와 Azure에서는 프라이빗 네트워크 연결을 통해서만 접근할 수 있습니다. GCP에서는 퍼블릭 IP 엔드포인트가 비활성화되지만, 관리 서비스는 IAM으로 인가된 DNS 기반 엔드포인트를 사용하며, 이 엔드포인트는 사용자 VPC 네트워크 외부에 있습니다.
 
 사용 가능한 비공개 연결 옵션은 클라우드 제공업체에 따라 다릅니다:
 
-### Tailscale (기본값) {#k8s-api-private-connection-tailscale}
-
-비공개 API 엔드포인트가 활성화되면 ClickHouse 관리 서비스는 문제 해결 접근에 사용되는 것과 동일한 Tailscale 제로 트러스트 네트워크를 통해 Kubernetes API 서버에 연결합니다. 이 연결의 작동 방식에 대한 자세한 내용은 [Tailscale Private Network](/ko/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)를 참조하십시오.
-
-<Note>
-  비공개 연결에 Tailscale만 전적으로 의존하는 경우, Tailscale 에이전트를 사용할 수 없게 되면 ClickHouse 지원팀이 해당 환경에 접근하지 못할 위험이 있습니다. 이로 인해 문제 해결이나 지원 응답 시간이 지연될 수 있습니다.
-</Note>
-
 ### AWS VPC Lattice {#k8s-api-private-connection-vpc-lattice}
 
-<Info>
-  VPC Lattice 연결은 현재 비공개 프리뷰 단계입니다. 배포에서 이 기능을 활성화하려면 ClickHouse 지원팀에 문의하십시오.
-</Info>
-
-AWS 배포에서는 타사 구성 요소 없이 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/)를 통해 Kubernetes API 서버에 프라이빗 방식으로 연결할 수도 있습니다:
+AWS 배포에서는 타사 구성 요소 없이 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/)를 통해 Kubernetes API 서버에 프라이빗 방식으로 연결할 수 있습니다:
 
 * ClickHouse Cloud는 BYOC VPC 내부의 EKS API 서버 엔드포인트를 대상으로 하는 VPC Lattice Resource Gateway와 Resource Configuration을 자동으로 프로비저닝하고, AWS Resource Access Manager (RAM)를 통해 해당 Resource Configuration을 ClickHouse Cloud 관리 계정과 공유합니다.
 * ClickHouse 관리 서비스와 Kubernetes API 서버 간의 트래픽은 전부 AWS 프라이빗 네트워크 내에서 유지됩니다.
 * RAM 공유는 계정에서 생성되며 단일 BYOC 클러스터 범위로 한정됩니다. 이를 삭제하면 프라이빗 액세스 경로가 즉시 해제됩니다.
 * 액세스가 Kubernetes 클러스터 내부에서 실행되는 에이전트에 의존하지 않으므로, 클러스터 내 구성 요소를 사용할 수 없는 경우에도 ClickHouse 지원팀은 문제 해결을 위해 계속 액세스할 수 있습니다.
 
+### Tailscale {#k8s-api-private-connection-tailscale}
+
+<Warning>
+  EKS API 서버에 대한 프라이빗 연결로 Tailscale을 사용하는 방식은 사용 중단 권고 상태입니다. AWS에서는 대신 [AWS VPC Lattice](#k8s-api-private-connection-vpc-lattice)를 사용하십시오. 현재 AWS 배포에서 비공개 Kubernetes API 액세스에 Tailscale을 사용하고 있다면 ClickHouse 지원팀에 문의하여 VPC Lattice로 마이그레이션하십시오.
+</Warning>
+
+비공개 API 엔드포인트가 활성화되면 ClickHouse 관리 서비스는 문제 해결을 위한 접근 권한에 사용되는 것과 동일한 Tailscale 제로 트러스트 네트워크를 통해 Kubernetes API 서버에 연결합니다. GCP에서는 Tailscale이 배포 도구, 모니터링, 문제 해결 트래픽을 전달하며, 관리 서비스는 DNS 기반 엔드포인트를 사용합니다([GCP 프라이빗 컨트롤 플레인 엔드포인트](#k8s-api-private-connection-gcp) 참조). 이 연결의 작동 방식에 대한 자세한 내용은 [Tailscale Private Network](/ko/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)를 참조하십시오.
+
+<Note>
+  비공개 연결에 Tailscale만 전적으로 의존하는 경우, Tailscale 에이전트를 사용할 수 없게 되면 ClickHouse 지원팀이 해당 환경에 접근하지 못할 위험이 있습니다. 이로 인해 문제 해결이나 지원 응답 시간이 지연될 수 있습니다.
+</Note>
+
 ### GCP 프라이빗 컨트롤 플레인 엔드포인트 {#k8s-api-private-connection-gcp}
 
-GCP 배포에서는 GKE 클러스터의 IP 기반 컨트롤 플레인 엔드포인트를 비활성화하여 공용 인터넷에서 더 이상 연결할 수 없도록 할 수 있습니다. 이 경우 ClickHouse 관리 서비스는 DNS 기반 엔드포인트(`*.gke.goog`)를 통해 컨트롤 플레인에 연결합니다. 이 엔드포인트에 대한 인가는 소스 IP 허용 목록이 아니라, 사용자 프로젝트에서 ClickHouse가 가장(impersonate)하는 서비스 계정의 `container.clusters.connect` IAM 권한으로 이루어집니다.
+GCP에서 ClickHouse 관리 서비스는 기본적으로 퍼블릭 IP 엔드포인트를 통해 GKE 컨트롤 플레인에 연결합니다. 이 엔드포인트를 비활성화하면 더 이상 퍼블릭 IP 주소로 컨트롤 플레인에 연결할 수 없게 됩니다.
 
-* 액세스는 전적으로 사용자 프로젝트의 클라우드 IAM으로 제어되므로, 해당 권한을 회수하면 이 경로도 차단됩니다.
-* 요청은 사용자 VPC 네트워크 내부가 아니라 Google 프론트엔드에서 종료됩니다. 따라서 이 경로는 네트워크 수준의 프라이빗 링크가 아니라 컨트롤 플레인으로 들어오는 액세스 경로로 보고 검토하십시오.
-* ClickHouse 엔지니어의 문제 해결 접근에는 기존과 같이 Tailscale을 사용합니다.
+* 컨트롤 플레인에는 VPC 네트워크 내부에서만 연결할 수 있는 내부 IP 엔드포인트와 항상 활성화되어 있는 DNS 기반 엔드포인트(`*.gke.goog`)가 그대로 유지됩니다.
+* ClickHouse 관리 서비스는 DNS 기반 엔드포인트를 통해 컨트롤 플레인에 연결합니다. 이 연결은 소스 IP 허용 목록이 아니라, ClickHouse가 프로젝트에서 가장(impersonate)하는 서비스 계정의 `container.clusters.connect` IAM 권한(permission)으로 승인됩니다. 따라서 해당 권한을 철회하면 이 경로도 차단됩니다. 요청은 VPC 네트워크 내부가 아닌 Google 프론트엔드에서 종료되므로, 이 경로는 네트워크 수준의 프라이빗 연결이 아니라 컨트롤 플레인에 대한 액세스 경로로 보고 검토하십시오.
+* 배포 도구, 모니터링, ClickHouse 엔지니어의 문제 해결을 위한 접근 권한은 Tailscale을 통해 내부 IP 엔드포인트에 연결합니다. Tailscale 에이전트는 초기 설정 과정에서 클러스터에 배포되므로, 이 모드는 설정이 완료된 후에만 활성화할 수 있습니다.
+* `container.googleapis.com`을 제한하는 VPC Service Controls 둘레(perimeter)는 DNS 기반 엔드포인트도 함께 제한합니다. ClickHouse 관리 아이덴티티를 허용하는 인그레스 규칙을 추가하십시오. 해당 배포에 사용할 아이덴티티는 ClickHouse 팀에 요청하면 제공받을 수 있습니다.
 
 ### Azure Private Link {#k8s-api-private-connection-azure}
 

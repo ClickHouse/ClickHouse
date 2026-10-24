@@ -1,6 +1,6 @@
 ---
 title: Soluciona el error de verificación del desarrollador en MacOS
-description: Aprende a resolver el error de verificación del desarrollador en MacOS al ejecutar comandos de ClickHouse, ya sea con System Settings o desde la terminal.
+description: Aprende a resolver el error de verificación del desarrollador en MacOS al ejecutar comandos de ClickHouse, ya sea con Ajustes del Sistema o desde la terminal.
 date: 2024-01-09
 tags: ['Errores y excepciones']
 keywords: ['Verificación del desarrollador', 'MacOS']
@@ -8,49 +8,51 @@ keywords: ['Verificación del desarrollador', 'MacOS']
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-<div id="fix-the-developer-verification-error-in-macos">
-  ## Corrige el error de verificación del desarrollador en MacOS
-</div>
+## Solucionar el error de verificación del desarrollador en macOS {#fix-the-developer-verification-error-in-macos}
 
-Si instalas ClickHouse con `brew`, es posible que te aparezca un error de MacOS.
-De forma predeterminada, MacOS no ejecuta aplicaciones ni herramientas creadas por un desarrollador que no se pueda verificar.
+De forma predeterminada, macOS no ejecuta aplicaciones ni herramientas descargadas de Internet a menos que estén firmadas por un desarrollador identificado y notarizadas por Apple.
 
-Al intentar ejecutar cualquier comando de `clickhouse`, es posible que veas este error:
+A partir de la versión 26.7.4 (y en todas las versiones 26.8 y posteriores), las compilaciones de ClickHouse para macOS están firmadas con el Developer ID de ClickHouse Inc. y notarizadas por Apple. Se publican en la [página de versiones de GitHub](https://github.com/ClickHouse/ClickHouse/releases) como `clickhouse-macos.zip` (Intel) y `clickhouse-macos-aarch64.zip` (Apple silicon), y son las que instala el cask de Homebrew. Si utiliza alguna de ellas, macOS ejecuta `clickhouse` sin mostrar ninguna advertencia y no necesita seguir los pasos de este artículo.
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Cuadro de diálogo del error de verificación del desarrollador en MacOS" border />
+Aun así, es posible que vea el error si ejecuta un binary sin firmar que macOS ha puesto en cuarentena, por ejemplo:
 
-Para evitar este error de verificación, debes quitar la aplicación de la cuarentena de MacOS, ya sea buscando la opción correspondiente en la ventana de System Settings, usando la terminal o volviendo a instalar ClickHouse.
+* una versión anterior de ClickHouse instalada con Homebrew: ejecute `brew upgrade --cask clickhouse` para obtener la versión firmada;
+* el binary autoextraíble `clickhouse-macos` o `clickhouse-macos-aarch64` de la página de versiones de GitHub descargado con un navegador web: en su lugar, descargue el archivo `.zip` de la misma versión;
+* una versión anterior a la 26.7.4 descargada con un navegador web.
 
-<div id="system-settings-process">
-  ## Proceso en System Settings
-</div>
+El binary instalado con `curl https://clickhouse.com/ | sh` no está firmado, pero `curl` no pone en cuarentena los archivos que descarga, por lo que macOS lo ejecuta sin mostrar este error.
 
-La forma más sencilla de quitar el ejecutable `clickhouse` de la cuarentena es la siguiente:
+Al intentar ejecutar un binary `clickhouse` en cuarentena, es posible que aparezca este error:
 
-1. Abre **System Settings**.
+<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Cuadro de diálogo del error de verificación del desarrollador de MacOS" border />
 
-2. Ve a **Privacy &amp; Security**:
+Si no puede cambiar a una compilación firmada, saque el binary de la cuarentena, ya sea desde Ajustes del Sistema o desde la terminal.
+
+## Proceso en Ajustes del Sistema {#system-settings-process}
+
+1. Intenta ejecutar el binary `clickhouse` una vez para que macOS muestre el error anterior y registre el binary bloqueado.
+
+2. Abre **Ajustes del Sistema**.
+
+3. Ve a **Privacy &amp; Security**:
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="vista predeterminada de Privacy & Security en MacOS" border />
 
-3. Desplázate hasta la parte inferior de la ventana para encontrar un mensaje que indica que *&quot;clickhouse-macos-aarch64&quot;* fue bloqueado porque no proviene de un desarrollador identificado.
+4. Desplázate hasta la sección **Security** para encontrar un mensaje que indica que *&quot;clickhouse-macos-aarch64&quot; fue bloqueado porque no proviene de un desarrollador identificado*.
 
-4. Haz clic en **Allow Anyway**.
+5. Haz clic en **Allow Anyway** (**Open Anyway** en las versiones recientes de macOS).
 
    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="configuración de Privacy & Security en MacOS que muestra el botón Allow Anyway" border />
 
-5. Introduce la contraseña de tu usuario de MacOS.
+6. Introduce la contraseña de tu usuario de macOS.
 
-Ahora deberías poder ejecutar comandos de `clickhouse` en tu terminal.
+Ahora deberías poder ejecutar comandos de `clickhouse` en tu terminal. Es posible que macOS te pida confirmarlo una vez más la próxima vez que lo ejecutes.
 
-<div id="terminal-process">
-  ## Proceso en la terminal
-</div>
+## Proceso en la terminal {#terminal-process}
 
-A veces, pulsar el botón `Allow Anyway` no soluciona este problema; en ese caso, también puedes realizar este proceso desde la línea de comandos.
-O quizá simplemente prefieras usar la línea de comandos.
+Si el botón de Ajustes del Sistema no soluciona el problema, o si prefieres usar la línea de comandos, elimina el atributo de cuarentena del binary con `xattr`.
 
-Primero, averigua dónde instaló Homebrew el ejecutable `clickhouse`:
+Si `clickhouse` está en tu `PATH`, averigua dónde se encuentra:
 
 ```shell
 which clickhouse
@@ -82,22 +84,4 @@ clickhouse local [args]
 clickhouse client [args]
 clickhouse benchmark [args]
 ...
-```
-
-<div id="fix-the-issue-by-reinstalling-clickhouse">
-  ## Soluciona el problema reinstalando ClickHouse
-</div>
-
-Brew tiene una opción de línea de comandos que evita poner en cuarentena los binarios instalados desde el principio.
-
-Primero, desinstala ClickHouse:
-
-```shell
-brew uninstall clickhouse
-```
-
-Ahora vuelve a instalar ClickHouse con `--no-quarantine`:
-
-```shell
-brew install --no-quarantine clickhouse
 ```

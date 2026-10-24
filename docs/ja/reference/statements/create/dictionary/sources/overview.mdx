@@ -10,9 +10,7 @@ import CloudDetails from '/snippets/ja/_snippet_dictionary_in_cloud.mdx';
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="dictionary-sources">
-  ## 構文
-</div>
+## 構文 {#dictionary-sources}
 
 <CloudDetails />
 
@@ -49,9 +47,7 @@ Dictionary は、さまざまなソースを介して ClickHouse に接続でき
 
 <br />
 
-<div id="supported-dictionary-sources">
-  ## サポートされている Dictionary ソース
-</div>
+## サポートされている Dictionary ソース {#supported-dictionary-sources}
 
 以下のソースタイプ (`SOURCE_TYPE`/`source_type`) を使用できます。
 
@@ -96,3 +92,40 @@ Dictionary は、さまざまなソースを介して ClickHouse に接続でき
     ```
   </Tab>
 </Tabs>
+
+## カスタムクエリのカラム順序 {#custom-query-column-order}
+
+[ClickHouse](/ja/reference/statements/create/dictionary/sources/clickhouse)、
+[MySQL](/ja/reference/statements/create/dictionary/sources/mysql)、
+[PostgreSQL](/ja/reference/statements/create/dictionary/sources/postgresql)、
+[ODBC](/ja/reference/statements/create/dictionary/sources/odbc) の各ソースでは `query` フィールドを指定できます。このフィールドを指定すると、
+ClickHouse が通常 `table` と `where` から組み立てるクエリの代わりに、指定したクエリが使用されます。
+
+辞書 は、クエリ結果のカラムが決まった順序で並んでいることを前提としています。この順序は、
+`CREATE DICTIONARY` ステートメントで属性を記述した順序とは異なります。
+
+1. キー列 (`PRIMARY KEY` の順序)
+2. [`range_hashed`](/ja/reference/statements/create/dictionary/layouts/range-hashed) または
+   `complex_key_range_hashed` の辞書の場合は、`range_min` カラム、続いて `range_max` カラム
+3. 残りの属性 (宣言された順序)
+
+ClickHouse ソースは列名に基づいて結果をこの順序に対応付けます。そのため、各カラムに値の格納先となる属性と同じ名前が付いていれば、
+`query` のカラム順序は問題になりません。一方、
+MySQL、PostgreSQL、ODBC の各ソースはカラムを位置に基づいて取得します。そのため、これらのソースでカラムの順序が上記と異なる `query` を使用すると、値が誤った属性に読み込まれます。関係する型によっては、
+辞書の読み込みが変換エラーで失敗するか、誤った値が格納されてしまいます。
+`query` は必ず上記の順序で記述してください。
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

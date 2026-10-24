@@ -390,6 +390,14 @@ Optimise les prédicats Date et DateTime en transformant les fonctions en compar
 
 Supprime les éléments ORDER BY en fin de clause une fois que toutes les clés GROUP BY sont couvertes par le préfixe ORDER BY.
 
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nouveau paramètre permettant de calculer un seul `uniqExact` ou `count(DISTINCT)` sans `GROUP BY` en partitionnant les valeurs selon leur hachage, au lieu de fusionner les sets de hachage de chaque fil d’exécution."}]}]} />
+
+Calcule un seul `uniqExact` (ainsi que `count(DISTINCT)`, qui l’utilise par défaut) dans une requête sans `GROUP BY` en partitionnant les valeurs selon leur hachage, au lieu de fusionner les sets de hachage de chaque fil d’exécution. Chaque fil d’exécution achemine ses valeurs vers les partitions, puis les partitions sont dédupliquées en parallèle, chacune dans un set de hachage suffisamment petit pour tenir dans le cache du CPU ; le résultat correspond à la somme de leurs tailles. S’applique à un argument unique de type numérique jusqu’à 64 bits, `Date`, `Date32`, `DateTime`, `Enum`, `IPv4`, `IPv6`, `UUID`, entier sur 128 bits, `String`, `FixedString`, ou `Nullable` de ces types, lorsque le résultat est finalisé sur le même serveur. Chaque fil d’exécution continue d’insérer dans son propre petit set, comme le fait l’agrégation ordinaire, jusqu’à ce que ce set dépasse la taille du cache du CPU : le routage n’intervient donc que pour les entrées à high-cardinality, et un fil d’exécution revient à son propre set si la plupart de ses valeurs s’avèrent répétées.
+
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

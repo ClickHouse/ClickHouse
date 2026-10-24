@@ -191,7 +191,7 @@ Habilita o recurso de gravação do delta-kernel.
 
 Habilita a avaliação independente de `DISTINCT` por partição em threads separadas quando a expressão de partição é uma função determinística das colunas de `DISTINCT`, dispensando a mesclagem entre fluxos. É vantajoso quando o número de partições é próximo ao número de núcleos e as partições têm aproximadamente o mesmo tamanho; caso contrário, uma heurística de custo a desativa. Consulte [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/pt-BR/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) e [force&#95;distinct&#95;partitions&#95;independently](/pt-BR/reference/settings/session-settings/force#force_distinct_partitions_independently). Não se aplica com `FINAL` nem com réplicas paralelas.
 
-Não se aplica quando [max&#95;rows&#95;in&#95;distinct](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_distinct) ou [max&#95;bytes&#95;in&#95;distinct](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) está definido: esses limites são aplicados pela única transformada `DISTINCT` que processa todo o resultado mesclado; por isso, a mesclagem entre fluxos é mantida para preservar seu significado global.
+[max&#95;rows&#95;in&#95;distinct](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_distinct) e [max&#95;bytes&#95;in&#95;distinct](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) se aplicam ao tamanho combinado de todos os conjuntos das partições enquanto os fluxos permanecem separados.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -450,6 +450,20 @@ Ela não controla se colunas `Nullable(Tuple(...))` podem ser criadas em tabelas
 O ClickHouse usa o valor dessa configuração carregado na inicialização do servidor.
 Alterações feitas com `SET` ou `SETTINGS` no nível da consulta não mudam o comportamento das subcolunas extraídas.
 Para mudar o comportamento das subcolunas extraídas, atualize `allow_nullable_tuple_in_extracted_subcolumns` na configuração do perfil de inicialização (por exemplo, users.xml) e reinicie o servidor.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para avaliar o `DISTINCT` final em paralelo usando particionamento por hash."}]}]} />
+
+Avalia o `DISTINCT` final em várias threads, particionando os fluxos de entrada pelo hash das colunas do `DISTINCT`. Chaves iguais chegam ao mesmo fluxo, o que permite que cada partição seja desduplicada de forma independente.
+
+Diferentemente de [allow&#95;distinct&#95;partitions&#95;independently](/pt-BR/reference/settings/session-settings/allow#allow_distinct_partitions_independently), esta configuração não exige um relacionamento entre a chave de particionamento da tabela e as colunas do `DISTINCT`. O número de fluxos de entrada e de partições de hash é limitado independentemente de `max_threads`, para restringir o custo de dividir blocos e conectar fluxos.
+
+O particionamento por hash não é aplicado a entradas com ordenação global, pois o `DISTINCT` preserva essa ordem. [max&#95;rows&#95;in&#95;distinct](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_distinct) e [max&#95;bytes&#95;in&#95;distinct](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) se aplicam ao tamanho combinado de todas as partições de hash.
+
+`DISTINCT` sem `ORDER BY` não tem uma ordem de linhas definida; portanto, esta otimização pode retornar os mesmos valores distintos em outra ordem. Consequentemente, `LIMIT`, `OFFSET` ou `LIMIT BY` aplicados a resultados de `DISTINCT` não ordenados podem selecionar um subconjunto diferente de linhas.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

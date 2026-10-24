@@ -367,6 +367,49 @@ SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])
 ['b','c']
 ```
 
+## arrayCombinations {#arrayCombinations}
+
+導入バージョン: v26.10.0
+
+ソース配列から長さ `k` のすべての組み合わせ (同じインデックスを繰り返さない、順序を考慮しない選択) を返します。列挙はインデックスに基づいて行われるため、値が等しい要素があると結果に重複行が含まれることがあります。`k = 0` の場合は `[[]]` を返します。ブロックあたりの結果の合計サイズは `function_range_max_elements_in_block` によって制限されます。生成される各配列は、そのサイズに 1 を加えた数としてカウントされます。
+
+**構文**
+
+```sql
+arrayCombinations(arr, k)
+```
+
+**引数**
+
+* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
+* `k` — 生成する各組み合わせの長さ。ソース配列のサイズ以下である必要があります。`Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32`、`UInt64` に対応しています。[`(U)Int*`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+長さ `k` のすべての組み合わせ。[`Array(Array(T))`](/ja/reference/data-types/array)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,3]]
+```
+
+**`k = 0` の例**
+
+```sql title=Query
+SELECT arrayCombinations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayCompact {#arrayCompact}
 
 導入バージョン: v20.1.0
@@ -2510,6 +2553,272 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 (0.18055555555555558,0.2638888888888889,0.6842105263157896)
 ```
 
+## arrayPackBitGroupsToFixedString {#arrayPackBitGroupsToFixedString}
+
+導入バージョン: v26.10.0
+
+`arrayPackBitsToFixedString` と同様ですが、ラムダは下位 `g` ビットを 1 つのグループとする整数を返し、各グループは
+最上位ビットから順に `FixedString(n)` へ連続して詰め込まれます。結果は
+`arrayPackBitGroupsToString` の先頭 `n` バイト (境界をまたぐグループは先頭側のビットのみが含まれます) であり、`n`
+バイトに満たない部分はゼロでパディングされます。サイズ `n` とグループサイズ `g` はいずれも正の定数でなければならず、`g` は 64 以下である必要があります。
+
+**構文**
+
+```sql
+arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])
+```
+
+**引数**
+
+* `f` — 各要素のグループ値を生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — 結果の `FixedString` のサイズ (バイト単位) 。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+* `g` — 1 グループあたりのビット数。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — パック対象となる、同じサイズの 1 つ以上の配列。ラムダは配列ごとに 1 つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+パックされたビットを返します。[`FixedString(n)`](/ja/reference/data-types/fixedstring)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToString {#arrayPackBitGroupsToString}
+
+導入バージョン: v26.10.0
+
+`arrayPackBitsToString` と同様ですが、ラムダは整数を返し、その下位 `g` ビットが 1 つのグループとなります。各グループは
+隙間なく連続してパックされます (最上位ビットが先頭) 。結果の長さは `ceil(size_of_array * g / 8)` バイトです。
+グループサイズ `g` は 1 から 64 までの定数で指定する必要があります。
+
+**構文**
+
+```sql
+arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])
+```
+
+**引数**
+
+* `f` — 各要素のグループ値を生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — 1グループあたりのビット数。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — パック対象となる、同じサイズの1つ以上の配列。ラムダは配列ごとに1つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+パックされたビットを返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToString(x -> x, 4, [3, 0, 3, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitGroupsToUInt64 {#arrayPackBitGroupsToUInt64}
+
+導入バージョン: v26.10.0
+
+`arrayPackBitsToUInt64` と同様ですが、ラムダは整数を返し、その下位 `g` ビットが 1 つのグループとなります。各グループは
+連続してパックされます (各バイト内では最上位ビットが先頭となり、バイトは little-endian の順序で解釈されます。したがって
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))` となります) 。結果には
+パックされたストリームの先頭 64 ビットが格納されます。`g` で 64 が割り切れない場合、境界をまたぐグループについては
+その先頭側のビットのみが結果に含まれます。グループサイズ `g` は 1 から 64 までの定数でなければなりません。
+
+**構文**
+
+```sql
+arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])
+```
+
+**引数**
+
+* `f` — 各要素のグループ値を生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `g` — グループあたりのビット数。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — パック対象となる、同じサイズの1つ以上の配列。ラムダは配列ごとに1つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+パックされたビットを返します。[`UInt64`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])
+```
+
+```response title=Response
+12306
+```
+
+## arrayPackBitsToFixedString {#arrayPackBitsToFixedString}
+
+導入バージョン: v26.10.0
+
+配列の各要素にラムダ関数を適用し、得られたビットを `FixedString(n)` にパックします。
+ラムダは各要素に対して整数を返し、その値は 1 ビット (ゼロまたは非ゼロ) として扱われます。
+ビットは最上位ビットから順に書き込まれるため、結果は `arrayPackBitsToString` の先頭 `n` バイトと一致します。
+配列の要素数が `n * 8` を超える場合、残りの要素は無視されます。不足する場合は、結果が `n` バイトになるまでゼロでパディングされます。
+サイズ `n` は正の定数でなければなりません。
+
+**構文**
+
+```sql
+arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])
+```
+
+**引数**
+
+* `f` — 各要素に対応するビットを生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `n` — 結果の `FixedString` のサイズ (バイト単位)。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+* `arr1[, arr2, ...]` — パック対象となる、同じサイズの 1 つ以上の配列。ラムダは配列ごとに 1 つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+パックされたビットを返します。[`FixedString(n)`](/ja/reference/data-types/fixedstring)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT arrayPackBitsToFixedString(x -> x, 2, [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1])
+```
+
+```response title=Response
+01
+```
+
+## arrayPackBitsToString {#arrayPackBitsToString}
+
+導入バージョン: v26.10.0
+
+配列の各要素にラムダ関数を適用し、得られたビットを `String` にパックします。
+ラムダは各要素に対して整数を返し、その値は 1 つのビット (ゼロまたは非ゼロ) として扱われます。
+ビットは最上位ビットから順に書き込まれ、結果の長さは `ceil(size_of_array / 8)` バイトになります。
+
+**構文**
+
+```sql
+arrayPackBitsToString(f, arr1[, arr2, ...])
+```
+
+**引数**
+
+* `f` — 各要素に対応するビットを生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — パック対象となる、サイズが等しい 1 つ以上の配列。ラムダ関数は配列ごとに 1 つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+パックされたビットを返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT arrayPackBitsToString(x -> x, [0, 0, 1, 1, 0, 0, 0, 0])
+```
+
+```response title=Response
+0
+```
+
+## arrayPackBitsToUInt64 {#arrayPackBitsToUInt64}
+
+導入バージョン: v26.10.0
+
+配列の各要素にラムダ関数を適用し、得られたビットを `UInt64` にパックします。
+ラムダは各要素に対して整数を返し、その値は 1 つのビット (ゼロまたは非ゼロ) として扱われます。
+ビットストリームは最上位ビットを先頭としてバイト単位に配置され (`arrayPackBitsToString` と同じバイト列) 、
+各バイトは little-endian の順序で解釈されます。つまり、
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))` が成り立ちます。
+使用されるのは先頭の 64 要素のみです。要素数が 64 未満の場合、残りのビットはゼロになります。
+
+**構文**
+
+```sql
+arrayPackBitsToUInt64(f, arr1[, arr2, ...])
+```
+
+**引数**
+
+* `f` — 各要素に対応するビットを生成するラムダ関数。[`ラムダ関数`](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `arr1[, arr2, ...]` — パック対象となる、同じサイズの1つ以上の配列。ラムダは配列ごとに1つの引数を受け取ります。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+パックされたビットを返します。[`UInt64`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])
+```
+
+```response title=Response
+128
+```
+
+## arrayPartialPermutations {#arrayPartialPermutations}
+
+導入バージョン: v26.10.0
+
+ソース配列から長さ `k` のすべての部分順列 (インデックスを重複させずに順序付けして選んだもの) を返します。列挙はインデックス単位で行われるため、等しい値が含まれていると、結果に重複行が生じることがあります。`k = 0` の場合は `[[]]` を返します。ブロックあたりの結果の合計サイズは `function_range_max_elements_in_block` によって制限されます。生成される各配列は、そのサイズに 1 を加えた値としてカウントされます。
+
+**構文**
+
+```sql
+arrayPartialPermutations(arr, k)
+```
+
+**引数**
+
+* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
+* `k` — 生成する各部分順列の長さ。ソース配列のサイズ以下である必要があります。`Int8`、`Int16`、`Int32`、`Int64`、`UInt8`、`UInt16`、`UInt32`、`UInt64` に対応しています。[`(U)Int*`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+長さ `k` のすべての部分順列。[`Array(Array(T))`](/ja/reference/data-types/array)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 2);
+```
+
+```response title=Response
+[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
+```
+
+**`k = 0` の例**
+
+```sql title=Query
+SELECT arrayPartialPermutations([1, 2, 3], 0);
+```
+
+```response title=Response
+[[]]
+```
+
 ## arrayPartialReverseSort {#arrayPartialReverseSort}
 
 導入バージョン: v23.2.0
@@ -2773,6 +3082,38 @@ SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 
 ```response title=Response
 [2,1,0]
+```
+
+## arrayPermutations {#arrayPermutations}
+
+導入バージョン: v26.10.0
+
+ソース配列の要素のすべての順列を返します。列挙は要素の位置 (インデックス) に基づいて行われるため、同じ値の要素が含まれている場合は、結果に重複行が現れることがあります。ソース配列が空の場合は `[[]]` を返します。ブロックあたりの結果の合計サイズは `function_range_max_elements_in_block` によって制限されます。生成される各配列は、そのサイズに 1 を加えた数としてカウントされます。
+
+**構文**
+
+```sql
+arrayPermutations(arr)
+```
+
+**引数**
+
+* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
+
+**戻り値**
+
+ソース配列のすべての順列。[`Array(Array(T))`](/ja/reference/data-types/array)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT arrayPermutations([1, 2, 3]);
+```
+
+```response title=Response
+[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]
 ```
 
 ## arrayPopBack {#arrayPopBack}
@@ -3219,6 +3560,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+導入バージョン: v26.10.0
+
+配列から、指定したインデックス位置にある要素を削除します。
+インデックスは1始まりです。負のインデックスを指定すると、配列の末尾から数えます。
+インデックスが配列の範囲外の場合は、配列が変更されずにそのまま返されます。
+インデックス 0 は無効です。
+
+**構文**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**引数**
+
+* `arr` — ソース配列。[`Array(T)`](/ja/reference/data-types/array)
+* `index` — 削除する要素のインデックス。Nullable ではない整数で指定します。負のインデックスは末尾から数えます。[`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+`index` の位置にある要素を取り除いたソース配列を返します。`index` が範囲外の場合は、元の配列をそのまま返します。[`Array(T)`](/ja/reference/data-types/array)
+
+**例**
+
+**正のインデックス**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**負のインデックス**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**範囲外**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
@@ -3769,6 +4166,8 @@ SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5
 arraySlice(arr, offset [, length])
 ```
 
+**別名**: `slice`
+
 **引数**
 
 * `arr` — スライス対象の Array。[`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
@@ -4130,13 +4529,15 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 arrayUnion(arr1, arr2, ..., arrN)
 ```
 
+**別名**: `array_union`
+
 **引数**
 
 * `arrN` — 新しい配列の作成元となる N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-ソース配列内の一意な要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
+ソース配列内の重複のない要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -4291,6 +4692,8 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayZipUnaligned(arr1, arr2, ..., arrN)
 ```
 
+**別名**: `zip`
+
 **引数**
 
 * `arr1, arr2, ..., arrN` — 1つの配列に結合する N 個の配列。[`Array(T)`](/ja/reference/data-types/array)
@@ -4309,6 +4712,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 
 ```response title=Response
 [('a',1),(NULL,2),(NULL,3)]
+```
+
+## array_position {#array_position}
+
+導入バージョン: v26.8.0
+
+PostgreSQL 互換性関数です。配列内で要素が最初に出現する位置を 1始まりで返し、要素が存在しない場合は `NULL` を返します。要素に `NULL` を指定すると、PostgreSQL と同様に、配列内で最初に現れる `NULL` を検索します。ClickHouse ネイティブで対応する関数は `indexOf` ですが、こちらは `NULL` ではなく 0 を返します。
+
+**構文**
+
+```sql
+array_position(array, element)
+```
+
+**引数**
+
+* `array` — 検索対象の配列。[`Array(T)`](/ja/reference/data-types/array)
+* `element` — 検索する要素。[`Any`](/ja/reference/data-types/index)
+
+**戻り値**
+
+要素が最初に出現する位置 (1始まり) 。要素が存在しない場合は `NULL`。[`Nullable(UInt64)`](/ja/reference/data-types/nullable)
+
+**例**
+
+**例**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
 ```
 
 ## countEqual {#countEqual}
@@ -5294,10 +5730,10 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 導入バージョン: v1.1.0
 
-文字列またはArrayの長さを計算します。
+文字列または配列の長さを計算します。
 
 * String または FixedString 引数の場合: 文字列のバイト数を計算します。
-* Array 引数の場合: Array の要素数を計算します。
+* 配列 引数の場合: 配列 の要素数を計算します。
 * QBit 引数の場合: ベクトルの次元を計算します。
 * FixedString または QBit 引数に適用した場合、この関数は定数式になります。
 
@@ -5313,15 +5749,15 @@ Unicode の &quot;grapheme clusters&quot; の数
 length(x)
 ```
 
-**別名**: `OCTET_LENGTH`, `CARDINALITY`
+**別名**: `CARDINALITY`, `OCTET_LENGTH`
 
 **引数**
 
-* `x` — バイト数 (String/FixedString の場合)、要素数 (Array の場合)、または次元数 (QBit の場合) を計算する値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
+* `x` — バイト数 (String/FixedString の場合)、要素数 (配列 の場合)、または次元数 (QBit の場合) を計算する値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
 
 **戻り値**
 
-String/FixedString `x` のバイト数、Array `x` の要素数、または QBit `x` の次元数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+String/FixedString `x` のバイト数、配列 `x` の要素数、または QBit `x` の次元数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -5335,7 +5771,7 @@ SELECT length('Hello, world!')
 13
 ```
 
-**Arrayの例**
+**配列の例**
 
 ```sql title=Query
 SELECT length(['Hello', 'world'])

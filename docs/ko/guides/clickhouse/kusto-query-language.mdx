@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse의 Kusto Query Language (KQL)'
-description: '실험적 KQL 방언에서 지원하는 기능과 의도적으로 지원하지 않는 기능'
+description: '베타 KQL 방언에서 지원하는 기능과 의도적으로 지원하지 않는 기능'
 keywords: ['KQL', 'Kusto', '방언']
 sidebarTitle: 'Kusto Query Language (KQL)'
 slug: /guides/kusto-query-language
@@ -8,7 +8,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse는 SQL 대신 [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)의 부분 집합을
-구문 분석할 수 있습니다. 이 방언은 **실험적** 기능이며 기본적으로 비활성화되어 있습니다:
+파싱할 수 있습니다. 이 방언은 **베타** 기능이며 기본적으로 비활성화되어 있습니다:
 
 ```sql
 SET allow_experimental_kusto_dialect = 1;

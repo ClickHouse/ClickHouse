@@ -47,7 +47,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
             <a href="/ja/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">低速チャネル</a>
           </th>
-          <th rowSpan={2} scope="col" style={groupStartStyle}>EOL 日</th>
+          <th rowSpan={2} scope="col" style={groupStartStyle}>サポート終了日</th>
         </tr>
         <tr>
           <th scope="col" style={groupStartStyle}>開始</th>

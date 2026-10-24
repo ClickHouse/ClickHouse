@@ -195,7 +195,7 @@ String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "쿼리 출력의 압축 수준을 변경할 수 있도록 허용"}]}]} />
 
-쿼리 출력이 압축될 때 사용되는 기본 압축 수준입니다. 이 설정은 `SELECT` 쿼리에 `INTO OUTFILE`이 있거나 테이블 함수 `file`, `url`, `hdfs`, `s3`, `azureBlobStorage`에 쓸 때 적용됩니다.
+쿼리 출력이 압축될 때 사용되는 기본 압축 수준입니다. 이 설정은 `SELECT` 쿼리에 `INTO OUTFILE`이 있거나 테이블 함수 `file`, `url`, `hdfs`, `s3`, `azureBlobStorage`에 쓸 때 적용됩니다. 또한 HTTP 요청에 대한 응답을 `gzip`, `deflate` 이외의 방식으로 압축할 때도 적용됩니다. `gzip`과 `deflate`에는 [http&#95;zlib&#95;compression&#95;level](/ko/reference/settings/session-settings/http#http_zlib_compression_level)이 사용됩니다.
 
 가능한 값: `1`부터 `22`까지
 
@@ -731,8 +731,8 @@ Parquet 블룸 필터에서 각 고유값에 사용할 비트 수의 대략적�
 Parquet 파일에서 블룸 필터를 배치할 위치를 지정합니다. 블룸 필터는 대략 이 크기 단위로 묶어 기록됩니다. 구체적으로는 다음과 같습니다.
 
 * 0이면 각 row group의 블룸 필터가 해당 row group 바로 뒤에 즉시 기록됩니다.
-  * 이 값이 모든 블룸 필터의 총크기보다 크면, 모든 row group의 블룸 필터를 메모리에 누적한 다음 파일 끝부분 근처에 함께 기록합니다.
-  * 그렇지 않으면 블룸 필터를 메모리에 누적하다가, 총크기가 이 값을 초과할 때마다 기록합니다.
+* 이 값이 모든 블룸 필터의 총크기보다 크면, 모든 row group의 블룸 필터를 메모리에 누적한 다음 파일 끝부분 근처에 함께 기록합니다.
+* 그렇지 않으면 블룸 필터를 메모리에 누적하다가, 총크기가 이 값을 초과할 때마다 기록합니다.
 
 ## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
@@ -788,6 +788,14 @@ FixedString 컬럼에 대해 Binary 대신 Parquet FIXED&#95;LEN&#95;BYTE&#95;AR
 
 Parquet 메타데이터에 Geo 컬럼 정보를 기록하고 컬럼을 WKB 포맷으로 인코딩할 수 있습니다.
 
+## output_format_parquet_geometry_logical_type {#output_format_parquet_geometry_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+WKB로 기록되는 geo 컬럼(`output_format_parquet_geometadata` 참조)에 Parquet `GEOMETRY` 논리 타입 어노테이션을 지정하고, 해당 컬럼에 대해 min/max 통계 대신 `GeospatialStatistics`(경계 상자 및 Geometry 타입)를 기록합니다. 이 논리 타입을 지원하는 리더는 GeoParquet `geo` 메타데이터가 없어도 해당 컬럼을 기하 도형으로 인식합니다. `output_format_parquet_geometadata`가 비활성화되어 있으면 이 설정은 적용되지 않습니다. `Geometry` 컬럼 역시 GeoParquet `geo` 메타데이터에 기술되며, 이때 Geometry 타입 목록은 비어 있습니다. 이 설정을 비활성화하면 해당 컬럼은 지리 공간 어노테이션 없이 `BYTE_ARRAY`로 기록되고 min/max 통계가 함께 기록되며, `Geometry` 컬럼은 `geo` 메타데이터에 기술되지 않습니다. 이 논리 타입을 인식하지 못하는 리더(예: Arrow C++ 및 버전 20 이전의 `pyarrow`)에서는 파일 전체를 열 수 없으므로 기본적으로 비활성화되어 있습니다.
+
 ## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -822,6 +830,14 @@ Parquet 인코딩을 여러 스레드로 수행합니다.
 
 String 컬럼에는 Binary 대신 Parquet String 타입을 사용합니다.
 
+## output_format_parquet_use_alp_encoding {#output_format_parquet_use_alp_encoding}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+`Float32` 및 `Float64` 컬럼(Parquet `FLOAT` 및 `DOUBLE`)을 `ALP`(Adaptive Lossless floating-Point) 인코딩으로 인코딩합니다. `ALP`는 무손실 인코딩이며, 십진수에 가까운 floating-point 데이터(가격, 측정값, 좌표 등)를 `PLAIN`보다 훨씬 효율적으로 압축합니다. 이러한 컬럼은 딕셔너리(dictionary) 없이 기록되며, `ALP`를 적용하면 `PLAIN`보다 크기가 커지는 페이지는 `PLAIN`으로 기록됩니다. 이 인코딩은 Parquet 포맷에 최근 추가되어 아직 모든 Parquet 리더가 지원하지는 않습니다. 따라서 파일을 읽는 리더가 이 인코딩을 지원하는 경우에만 활성화하십시오.
+
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -845,6 +861,16 @@ Parquet 파일에 블룸 필터를 기록합니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
 
 Parquet 페이지 헤더에 crc32 체크섬을 포함합니다.
+
+## output_format_parquet_write_file_logical_type {#output_format_parquet_write_file_logical_type}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Parquet `FILE` 논리 타입의 필드로 구성된 named `Tuple`을 `FILE` 어노테이션이 지정된 그룹으로 기록하는 새로운 설정입니다."}]}]} />
+
+원소 이름이 모두 Parquet `FILE` 논리 타입의 필드(`uri`, `offset`, `size`, `content_type`, `checksum`, `inline` 중 비어 있지 않은 임의의 부분 집합, 순서 무관)로 이루어진 named `Tuple`을 `FILE` 논리 타입 어노테이션이 지정된 그룹으로 기록합니다. 이 그룹은 인라인으로 저장되거나 외부 파일에 저장된 바이트 범위에 대한 참조를 나타냅니다. `offset` 및 `size` 원소는 정수여야 하며(`INT64`로 기록됨), 나머지 원소는 `String` 또는 `FixedString`이어야 합니다(`inline`은 어노테이션 없이 `BYTE_ARRAY`로, 나머지는 `STRING`으로 기록됨). 명세의 요구 사항에 따라 모든 필드는 `OPTIONAL`로 기록됩니다. 값은 유효한 참조인지 검사하지 않고 그대로 기록됩니다.
+
+읽기 시에는 `FILE` 어노테이션이 지정된 그룹이 항상 `Nullable` 원소로 구성된 위와 같은 `Tuple`로 읽힙니다.
 
 ## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
@@ -1041,9 +1067,9 @@ Pretty 형식에 표시할 값의 최대 너비입니다. 이보다 크면 잘�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Pretty 형식에서 이름이 지정된 Tuple을 JSON 객체로 출력할지 제어하는 새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Pretty 형식에서 named tuple을 JSON 객체로 출력할지 제어하는 새로운 설정"}]}]} />
 
-Pretty 형식에서 이름이 지정된 Tuple을 가독성 좋게 포맷된 JSON 객체로 출력할지 제어합니다.
+Pretty 형식에서 named tuple을 가독성 좋게 포맷된 JSON 객체로 출력할지 제어합니다.
 
 이 설정은 named tuple이 하나의 셀 안에 렌더링되는 경우에 적용됩니다. 결과의 컬럼 자체가 named tuple이고 `output_format_pretty_named_tuples_as_subcolumns`가 활성화되어 있으면, 해당 컬럼은 대신 서브컬럼으로 분할되어 표시됩니다.
 

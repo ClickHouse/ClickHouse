@@ -120,6 +120,8 @@ Pour personnaliser une charge de travail, les paramètres suivants peuvent être
 * `max_burst_cpu_seconds` - le nombre maximal de secondes CPU pouvant être consommées par la charge de travail sans être bridée en raison de `max_cpus`.
 * `scheduler` - (partagé dans le temps uniquement) l’algorithme d’ordonnancement appliqué aux requêtes de cette charge de travail : `fifo` (par défaut, premier arrivé, premier servi), `fair` (mise en file d’attente équitable pondérée), `las` (least-attained-service) ou `priority` (ordre strict selon le paramètre de requête `workload_priority`). Consultez [Ordonnancement tenant compte des requêtes](#query_aware_scheduling).
 * `max_memory` - la limite de la mémoire totale réservée à cette charge de travail.
+* `max_memory_before_spill` - la limite souple de mémoire au-delà de laquelle les requêtes de la charge de travail sont invitées à déverser sur le disque leur mémoire récupérable, avant que la limite stricte `max_memory` n’impose l’éviction. Expérimental, voir [Déversement de la mémoire récupérable](#spilling-reclaimable-memory).
+* `max_memory_to_spill_ratio` - la même limite souple que `max_memory_before_spill`, mais normalisée par rapport au `max_memory` de cette charge de travail. Lorsque les deux sont définis, c’est le seuil résultant le plus bas qui l’emporte.
 
 Toutes les limites définies via les paramètres de charge de travail s’appliquent indépendamment à chaque ressource. Par exemple, une charge de travail avec `max_bytes_per_second = '10Mi'` disposera d’une limite de débit de 10 Mo/s pour chaque ressource de lecture et d’écriture, de manière indépendante. Si une limite commune à la lecture et à l’écriture est nécessaire, envisagez d’utiliser la même ressource pour les accès READ et WRITE.
 
@@ -152,21 +154,21 @@ Il est possible d’attribuer un paramètre `workload` aux activités en arrièr
 
 ## Ordonnancement du CPU {#cpu_scheduling}
 
-Pour activer l’ordonnancement du CPU pour les workloads, créez une ressource CPU et définissez une limite pour le nombre de threads concurrents :
+Pour activer l’ordonnancement du CPU pour les charges de travail, créez une ressource CPU et définissez une limite pour le nombre de fils d’exécution concurrents :
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-Lorsque le serveur ClickHouse exécute de nombreuses requêtes concurrentes avec [plusieurs threads](/fr/reference/settings/session-settings/max-threads#max_threads) et que tous les slots CPU sont utilisés, l’état de surcharge est atteint. Dans cet état, chaque slot CPU libéré est réattribué au workload approprié conformément aux politiques d’ordonnancement. Pour les requêtes partageant le même workload, les slots sont alloués en round robin. Pour les requêtes appartenant à des workloads distincts, les slots sont alloués selon les poids, priorités et limites spécifiés pour les workloads.
+Lorsque le serveur ClickHouse exécute de nombreuses requêtes concurrentes avec [plusieurs fils d’exécution](/fr/reference/settings/session-settings/max-threads#max_threads) et que tous les slots CPU sont utilisés, l’état de surcharge est atteint. Dans cet état, chaque slot CPU libéré est réattribué à la charge de travail appropriée conformément aux politiques d’ordonnancement. Pour les requêtes partageant la même charge de travail, les slots sont alloués en round robin. Pour les requêtes appartenant à des charges de travail distinctes, les slots sont alloués selon les poids, priorités et limites spécifiés pour les charges de travail.
 
-Le temps CPU est consommé par les threads lorsqu’ils ne sont pas bloqués et travaillent sur des tâches gourmandes en CPU. À des fins d’ordonnancement, on distingue deux types de threads :
+Le temps CPU est consommé par les fils d’exécution lorsqu’ils ne sont pas bloqués et travaillent sur des tâches gourmandes en CPU. À des fins d’ordonnancement, on distingue deux types de fils d’exécution :
 
-* Master thread — le premier thread qui commence à travailler sur une requête ou une activité en arrière-plan comme une merge ou une mutation.
-* Worker thread — les threads supplémentaires que le master peut créer pour travailler sur des tâches gourmandes en CPU.
+* Master thread — le premier fil d’exécution qui commence à travailler sur une requête ou une activité en arrière-plan comme une merge ou une mutation.
+* Worker thread — les fils d’exécution supplémentaires que le master peut créer pour travailler sur des tâches gourmandes en CPU.
 
-Il peut être souhaitable d’utiliser des ressources distinctes pour les master threads et les worker threads afin d’obtenir une meilleure réactivité. Un grand nombre de worker threads peut facilement monopoliser les ressources CPU lorsque des valeurs élevées du paramètre de requête `max_threads` sont utilisées. Les requêtes entrantes doivent alors se bloquer et attendre qu’un slot CPU se libère pour que leurs master threads puissent commencer l’exécution. Pour éviter cela, la configuration suivante peut être utilisée :
+Il peut être souhaitable d’utiliser des ressources distinctes pour les master thread et les worker thread afin d’obtenir une meilleure réactivité. Un grand nombre de worker thread peut facilement monopoliser les ressources CPU lorsque des valeurs élevées du paramètre de requête `max_threads` sont utilisées. Les requêtes entrantes doivent alors se bloquer et attendre qu’un slot CPU se libère pour que leurs master thread puissent commencer l’exécution. Pour éviter cela, la configuration suivante peut être utilisée :
 
 ```sql
 CREATE RESOURCE worker_cpu (WORKER THREAD)
@@ -174,11 +176,11 @@ CREATE RESOURCE master_cpu (MASTER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
 ```
 
-Cela créera des limites distinctes pour les threads principaux et les threads workers. Même si les 100 slots CPU des workers sont tous occupés, les nouvelles requêtes ne seront pas bloquées tant qu’il restera des slots CPU principaux disponibles. Elles commenceront à s’exécuter avec un seul thread. Ensuite, si des slots CPU workers deviennent disponibles, ces requêtes pourront monter en charge et lancer leurs threads workers. En revanche, une telle approche ne lie pas le nombre total de slots au nombre de processeurs CPU, et l’exécution d’un trop grand nombre de threads concurrents dégradera les performances.
+Cela créera des limites distinctes pour les fils d’exécution principaux et les fils d’exécution workers. Même si les 100 slots CPU des workers sont tous occupés, les nouvelles requêtes ne seront pas bloquées tant qu’il restera des slots CPU principaux disponibles. Elles commenceront à s’exécuter avec un seul fil d’exécution. Ensuite, si des slots CPU workers deviennent disponibles, ces requêtes pourront monter en charge et lancer leurs fils d’exécution workers. En revanche, une telle approche ne lie pas le nombre total de slots au nombre de processeurs CPU, et l’exécution d’un trop grand nombre de fils d’exécution concurrents dégradera les performances.
 
-Limiter la concurrence des threads principaux ne limitera pas le nombre de requêtes concurrentes. Des slots CPU peuvent être libérés en cours d’exécution d’une requête, puis réattribués à d’autres threads. Par exemple, 4 requêtes concurrentes avec une limite de 2 threads principaux concurrents peuvent toutes s’exécuter en parallèle. Dans ce cas, chaque requête recevra 50 % d’un processeur CPU. Il faut utiliser une logique distincte pour limiter le nombre de requêtes concurrentes, et cela n’est pas actuellement pris en charge pour les workloads.
+Limiter la concurrence des fils d’exécution principaux ne limitera pas le nombre de requêtes concurrentes. Des slots CPU peuvent être libérés en cours d’exécution d’une requête, puis réattribués à d’autres fils d’exécution. Par exemple, 4 requêtes concurrentes avec une limite de 2 fils d’exécution principaux concurrents peuvent toutes s’exécuter en parallèle. Dans ce cas, chaque requête recevra 50 % d’un processeur CPU. Il faut utiliser une logique distincte pour limiter le nombre de requêtes concurrentes, et cela n’est pas actuellement pris en charge pour les charges de travail.
 
-Des limites distinctes de concurrence des threads peuvent être utilisées pour les workloads :
+Des limites distinctes de concurrence des fils d’exécution peuvent être utilisées pour les charges de travail :
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
@@ -189,20 +191,22 @@ CREATE WORKLOAD analytics IN production SETTINGS max_concurrent_threads = 60, we
 CREATE WORKLOAD ingestion IN production
 ```
 
-Cet exemple de configuration fournit des pools de slots CPU distincts pour admin et production. Le pool de production est partagé entre l’analytics et l’ingestion. En outre, si le pool de production est surchargé, 9 slots libérés sur 10 seront réattribués aux requêtes analytiques si nécessaire. Les requêtes d’ingestion ne recevraient alors qu’1 slot sur 10 pendant les périodes de surcharge. Cela peut améliorer la latence des requêtes orientées utilisateur. L’analytics a sa propre limite de 60 threads concurrents, ce qui laisse toujours au moins 40 threads pour prendre en charge l’ingestion. En l’absence de surcharge, l’ingestion peut utiliser les 100 threads.
+Cet exemple de configuration fournit des pools de slots CPU distincts pour admin et production. Le pool de production est partagé entre l’analytics et l’ingestion. En outre, si le pool de production est surchargé, 9 slots libérés sur 10 seront réattribués aux requêtes analytiques si nécessaire. Les requêtes d’ingestion ne recevraient alors qu’1 slot sur 10 pendant les périodes de surcharge. Cela peut améliorer la latence des requêtes orientées utilisateur. L’analytics a sa propre limite de 60 fils d’exécution concurrents, ce qui laisse toujours au moins 40 fils d’exécution pour prendre en charge l’ingestion. En l’absence de surcharge, l’ingestion peut utiliser les 100 fils d’exécution.
 
 Pour exclure une requête de l’ordonnancement CPU, définissez le paramètre de requête [use&#95;concurrency&#95;control](/fr/reference/settings/session-settings/use#use_concurrency_control) sur 0.
 
 L’ordonnancement CPU n’est pas encore pris en charge pour les merge et les mutations.
 
-Pour garantir des allocations équitables entre les workloads, il est nécessaire d’effectuer une préemption et une réduction dynamique pendant l’exécution de la requête. La préemption est activée avec le paramètre serveur `cpu_slot_preemption`. S’il est activé, chaque thread renouvelle périodiquement son slot CPU (selon le paramètre serveur `cpu_slot_quantum_ns`). Un tel renouvellement peut bloquer l’exécution si le CPU est surchargé. Lorsque l’exécution reste bloquée pendant une durée prolongée (voir le paramètre serveur `cpu_slot_preemption_timeout_ms`), la requête réduit alors sa capacité, et le nombre de threads exécutés en parallèle diminue dynamiquement. Notez que l’équité du temps CPU est garantie entre les workloads, mais qu’entre les requêtes d’un même workload, elle peut ne pas être respectée dans certains cas limites.
+Pour garantir des allocations équitables entre les charges de travail, il est nécessaire d’effectuer une préemption et une réduction dynamique pendant l’exécution de la requête. La préemption est activée avec le paramètre serveur `cpu_slot_preemption`. S’il est activé, chaque fil d’exécution renouvelle périodiquement son slot CPU (selon le paramètre serveur `cpu_slot_quantum_ns`). Un tel renouvellement peut bloquer l’exécution si le CPU est surchargé. Lorsque l’exécution reste bloquée pendant une durée prolongée (voir le paramètre serveur `cpu_slot_preemption_timeout_ms`), la requête réduit alors sa capacité, et le nombre de fils d’exécution exécutés en parallèle diminue dynamiquement. Notez que l’équité du temps CPU est garantie entre les charges de travail, mais qu’entre les requêtes d’une même charge de travail, elle peut ne pas être respectée dans certains cas limites.
+
+Lorsqu’un fil d’exécution détient un slot CPU, il n’utilise pas toujours le CPU, et par défaut il conserve ce slot même lorsqu’il ne l’utilise pas — si bien que les autres requêtes ne peuvent pas en profiter alors que le CPU est inactif. L’activation du paramètre du serveur `cpu_slot_parking` permet à un fil d’exécution de libérer (« parquer ») son slot CPU lors de certaines attentes pendant lesquelles il n’utilise pas le CPU — un processus de travail inactif sans tâche à exécuter, un fil d’exécution en attente d’une source distante ou asynchrone, une lecture mise en cache en cours de récupération de données depuis le stockage, ou un fil d’exécution mis en pause par la limitation de débit en lecture — puis de réacquérir un slot lorsqu’il reprend son travail sur le CPU. Les attentes hors CPU ne libèrent pas toutes le slot ; une lecture ordinaire de fichier local, par exemple, ne le libère pas. D’autres requêtes peuvent ainsi exploiter la capacité CPU libérée pendant qu’une requête est bloquée, ce qui améliore le taux d’utilisation du CPU et la latence des requêtes en situation de surcharge. Le parcage ne s’applique que lorsque `cpu_slot_preemption` est activé et qu’une seule ressource CPU définit à la fois `MASTER THREAD` et `WORKER THREAD` (comme dans l’exemple `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)` ci-dessus) ; dans les autres configurations, il n’a aucun effet.
 
 <Warning>
-  L’ordonnancement des slots permet de contrôler la [concurrence des requêtes](/fr/reference/settings/session-settings/max-threads#max_threads), mais ne garantit pas une allocation équitable du temps CPU, sauf si le paramètre serveur `cpu_slot_preemption` est défini sur `true` ; sinon, l’équité est assurée en fonction du nombre d’allocations de slots CPU entre les workloads concurrents. Cela n’implique pas une quantité égale de secondes CPU, car sans préemption, un slot CPU peut être conservé indéfiniment. Un thread acquiert un slot au début et le libère une fois le travail terminé.
+  L’ordonnancement par slots permet de contrôler la [concurrence des requêtes](/fr/reference/settings/session-settings/max-threads#max_threads), mais ne garantit pas une répartition équitable du temps CPU, sauf si le paramètre du serveur `cpu_slot_preemption` est défini sur `true` ; dans le cas contraire, l’équité repose sur le nombre d’allocations de slots CPU entre les charges de travail concurrentes. Cela n’implique pas une quantité égale de secondes CPU, car sans préemption un slot CPU peut être détenu indéfiniment. Un fil d’exécution acquiert un slot au début et le libère une fois le travail terminé.
 </Warning>
 
 <Note>
-  La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). À la place, le workload setting `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
+  La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). À la place, le paramètre de charge de travail `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
 </Note>
 
 ## Ordonnancement tenant compte des requêtes {#query_aware_scheduling}
@@ -357,6 +361,28 @@ Dans cet exemple, la mémoire totale réservée par toutes les requêtes et acti
 En cas de pression sur la mémoire, les allocations du workload de test seront évincées en premier. Ensuite, s’il faut libérer davantage de mémoire, les allocations du workload staging seront évincées avant celles du workload production si elles dépassent leurs garanties. Notez que les requêtes en attente dans production et staging peuvent évincer des allocations en cours d’exécution dans le workload de test afin de libérer de la mémoire, mais elles ne peuvent pas s’évincer mutuellement, car elles ont la même préséance. En cas de pression sur la mémoire, elles attendront dans des files d’attente, ce qui permet au système d’éviter les erreurs MEMORY&#95;LIMIT&#95;EXCEEDED dues à un trop grand nombre de requêtes exécutées simultanément.
 
 Notez que le workload système a une préséance de 0 (par défaut), supérieure à celle des workloads production, staging et test, mais qu’il ne s’agit pas de workloads frères. Leur plus proche ancêtre commun est le workload all, dont les deux enfants ont la même préséance. Ainsi, un workload système en attente ne peut en évincer aucun, et inversement. Cela garantit que les activités système ne peuvent pas être facilement évincées.
+
+### Déversement sur le disque de la mémoire récupérable {#spilling-reclaimable-memory}
+
+Outre la limite stricte `max_memory`, une charge de travail peut définir une limite de mémoire *souple*, plus basse, qui déclenche le déversement sur le disque de la mémoire récupérable avant que la limite stricte n&#39;impose une éviction. La mémoire récupérable correspond à la partie de l&#39;allocation d&#39;une requête que ses opérateurs peuvent sérialiser sur le disque et recharger à la demande (par exemple, les séquences triées d&#39;un tri externe ou les états d’agrégation intermédiaires), par opposition à la mémoire non récupérable, qui doit rester en RAM.
+
+La limite souple se configure à l&#39;aide de deux paramètres de charge de travail ; lorsque les deux sont définis, c&#39;est le seuil résultant le plus bas qui s&#39;applique :
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+Lorsque la mémoire allouée dans le sous-arbre d&#39;une charge de travail dépasse sa limite souple, le planificateur demande aux requêtes disposant de mémoire récupérable de la déverser sur le disque. Plusieurs requêtes peuvent effectuer ce déversement de manière concurrente afin de ramener l&#39;utilisation de la mémoire sous la limite souple.
+
+Le franchissement de la limite souple ne bloque ni n&#39;évince en soi les requêtes : ce sont certains opérateurs qui déversent sur le disque pendant l&#39;exécution. Configurez un écart entre les limites souple et stricte afin de laisser une marge de capacité pour le déversement. Si rien n&#39;est récupérable au sein de la charge de travail, aucun déversement n&#39;est demandé et la limite stricte `max_memory` reste l&#39;unique garde-fou. Définissez la limite souple sur une charge de travail englobant toutes les charges de travail que vous souhaitez encadrer. Une limite définie sur la charge de travail racine `all` n&#39;est globale que dans une hiérarchie à racine unique ; les racines sœurs échappent à sa portée. Les charges de travail imbriquées peuvent définir leurs propres limites souples.
+
+:::note
+Le déversement de la mémoire récupérable est expérimental et repose sur la planification des réservations de mémoire (elle-même expérimentale). Parmi les opérateurs pris en charge figurent le tri externe, l&#39;agrégation, les jointures par hachage déversables, le `DISTINCT` externe et les sets `IN` issus de sous-requêtes. Ces sets peuvent être déversés aussi bien pendant leur construction que pendant leur utilisation, même lorsque les seuils de set externe par requête sont désactivés. La quantité de mémoire récupérable dépend de la phase d&#39;exécution en cours de chaque opérateur. Les estimations de mémoire récupérable inférieures au paramètre de requête `min_bytes_to_spill` sont ignorées. Lorsqu&#39;aucune mémoire récupérable n&#39;est signalée, la limite souple n&#39;a aucun effet et le comportement est identique à celui obtenu avec la seule limite stricte `max_memory`.
+:::
 
 ## Ordonnancement des slots de requête {#query_scheduling}
 

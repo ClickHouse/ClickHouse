@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 有符号定点数，在加法、减法和乘法运算中保持 precision。对于除法，小数末位会被截断 (而非四舍五入) 。
 
-<div id="parameters">
-  ## 参数
-</div>
+## 参数 {#parameters}
 
 * P - precision。有效范围：[ 1 : 76 ]。决定该数值可具有的十进制位数 (包括小数部分) 。默认情况下，precision 为 10。
 * S - 标度。有效范围：[ 0 : P ]。决定小数部分可具有的十进制位数。
@@ -27,9 +25,7 @@ Decimal(P) 等价于 Decimal(P, 0)。同样，语法 Decimal 等价于 Decimal(1
 * P 在 [ 19 : 38 ] 范围内 - 对应 Decimal128(S)
 * P 在 [ 39 : 76 ] 范围内 - 对应 Decimal256(S)
 
-<div id="decimal-value-ranges">
-  ## Decimal 值范围
-</div>
+## Decimal 值范围 {#decimal-value-ranges}
 
 * Decimal(P, S) - (-1 * 10^(P - S), 1 * 10^(P - S))
 * Decimal32(S) - (-1 * 10^(9 - S), 1 * 10^(9 - S))
@@ -39,17 +35,13 @@ Decimal(P) 等价于 Decimal(P, 0)。同样，语法 Decimal 等价于 Decimal(1
 
 例如，Decimal32(4) 可表示从 -99999.9999 到 99999.9999 的数值，步长为 0.0001。
 
-<div id="internal-representation">
-  ## 内部表示
-</div>
+## 内部表示 {#internal-representation}
 
 在内部，数据以具有相应位宽的普通有符号整数表示。内存中可存储的实际取值范围比上文所述略大一些，只有在从字符串转换时才会检查这些范围。
 
 由于现代 CPU 不原生支持 128 位和 256 位整数，因此 Decimal128 和 Decimal256 上的运算是通过模拟实现的。因此，Decimal128 和 Decimal256 的运行速度明显慢于 Decimal32/Decimal64。
 
-<div id="operations-and-result-type">
-  ## 运算与结果类型
-</div>
+## 运算与结果类型 {#operations-and-result-type}
 
 Decimal 上的二元运算会得到更宽的结果类型 (与参数顺序无关) 。
 
@@ -70,9 +62,7 @@ Decimal 与 Float32/Float64 之间的运算未定义。如果需要进行这类�
 
 某些针对 Decimal 的函数会返回 Float64 类型的结果 (例如 var 或 stddev) 。中间计算仍可能在 Decimal 中进行，这可能导致对于相同的值，Float64 输入与 Decimal 输入得到不同的结果。
 
-<div id="overflow-checks">
-  ## 溢出检查
-</div>
+## 溢出检查 {#overflow-checks}
 
 在 Decimal 计算过程中，可能会发生整数溢出。小数部分超出的位数会被直接截去 (不做四舍五入) 。整数部分位数超出则会导致异常。
 
@@ -119,14 +109,14 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-溢出检查不仅适用于算术运算，也适用于值比较：
+启用 `decimal_check_overflow` 时 (默认设置) ，即使某个值在公共标度下超出了该类型的表示范围，不同标度的值之间的比较仍然是精确的：
 
 ```sql
 SELECT toDecimal32(1, 8) < 100
 ```
 
 ```text
-DB::Exception: Can't compare.
+1
 ```
 
 **另请参阅**

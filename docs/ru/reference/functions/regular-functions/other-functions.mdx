@@ -859,7 +859,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 currentDatabase()
 ```
 
-**Псевдонимы**: `current_database`, `DATABASE`, `SCHEMA`
+**Псевдонимы**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **Аргументы**
 
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-Добавлено в: v26.6.0
+Добавлено в: v26.8.0
 
 Возвращает имя HTTP-обработчика, определённого в SQL (созданного с помощью `CREATE HANDLER`), который вызвал запрос.
 Возвращает пустую строку, если запрос был вызван не через такой обработчик.
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-Добавлено в: v26.6.0
+Добавлено в: v26.8.0
 
 Возвращает URL HTTP-запроса (путь и строку запроса), которым был вызван запрос.
 Возвращает пустую строку, если запрос был выполнен не через HTTP.
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+Добавлено в: v26.8.0
+
+Функция совместимости с PostgreSQL. Возвращает значение параметра конфигурации времени выполнения. Эмулируется лишь небольшой набор параметров только для чтения, которые используются клиентами для интроспекции.
+
+<Note>
+  Эта функция недетерминирована: при вызове с одними и теми же аргументами она может возвращать разные результаты.
+</Note>
+
+**Синтаксис**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**Аргументы**
+
+* `name` — имя параметра конфигурации. [`String`](/ru/reference/data-types/string)
+* `missing_ok` — возвращать `NULL` для неизвестного параметра вместо генерации исключения. [`UInt8`](/ru/reference/data-types/int-uint)
+
+**Возвращаемое значение**
+
+Значение параметра конфигурации или `NULL` для неизвестного параметра, если `missing_ok` равен true. [`Nullable(String)`](/ru/reference/data-types/nullable)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+Добавлено в: v26.8.0
+
+Функция совместимости с PostgreSQL. Возвращает SQL-имя типа по его OID. Для `numeric` модификатор типа декодируется в точность и масштаб (`numeric(p, s)`); для всех остальных типов модификатор игнорируется. Модификатор типа `NULL`, как и `-1`, означает, что модификатор неизвестен, а для OID типа `NULL` возвращается `NULL`.
+
+**Синтаксис**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**Аргументы**
+
+* `type_oid` — OID типа. [`(U)Int*`](/ru/reference/data-types/int-uint)
+* `typemod` — модификатор типа или `NULL`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`NULL`](/ru/reference/syntax#null)
+
+**Возвращаемое значение**
+
+Имя типа в SQL. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Пример**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -4999,9 +5069,10 @@ SELECT pg_get_userbyid(10)
 
 Добавлено в: v26.8.0
 
-Функция совместимости с протоколом PostgreSQL, аналог `pg_catalog.pg_table_is_visible`.
+Функция совместимости с сетевым протоколом PostgreSQL, аналог `pg_catalog.pg_table_is_visible`.
 Клиенты PostgreSQL (например, команда `\d` в `psql`) используют её для фильтрации таблиц, видимых в пути поиска.
-Поскольку эмулируемое ClickHouse представление `pg_class` содержит только таблицы текущей базы данных, все они видимы, поэтому функция всегда возвращает `1`.
+Вне сеанса сетевого протокола PostgreSQL нет эмулируемого каталога, по которому можно было бы разрешить oid, поэтому функция возвращает `1`.
+Внутри такого сеанса обработчик PostgreSQL переписывает вызов в проверку пути поиска по эмулируемому каталогу, поскольку в нём каждая база данных представлена в виде схемы.
 
 **Синтаксис**
 
@@ -6092,6 +6163,10 @@ ROLLBACK;
   Дополнительные сведения см. на странице [Поддержка транзакций (ACID)](/ru/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты при одних и тех же аргументах.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -6142,6 +6217,10 @@ ROLLBACK;
   ```
 
   Дополнительные сведения см. на странице [Поддержка транзакций (ACID)](/ru/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Эта функция недетерминирована: при одних и тех же аргументах она может возвращать разные результаты.
 </Note>
 
 **Синтаксис**

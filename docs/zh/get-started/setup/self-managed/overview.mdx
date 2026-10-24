@@ -8,19 +8,17 @@ keywords: ['安装', '自管理', 'linux', 'macos', 'windows', 'docker']
 
 在您所使用的平台上安装 ClickHouse。
 
-<div id="local-development">
-  ## 本地开发
-</div>
+## 本地开发 {#local-development}
 
 在本机上运行 ClickHouse，用于构建、测试和实验。
 
 <CardGroup cols={2}>
   <Card title="快速安装" href="/zh/get-started/setup/self-managed/quick-install" icon="bolt">
-    一行 `curl` 脚本，即可下载单个 ClickHouse 可执行文件。
+    一行 `curl` 脚本，即可下载单个 ClickHouse 二进制文件并安装 `clickhousectl`。
   </Card>
 
   <Card title="clickhousectl（CLI）" href="/zh/get-started/setup/self-managed/clickhousectl" icon="terminal">
-    使用 ClickHouse 命令行客户端安装并管理本地 ClickHouse 版本和服务器。
+    使用 ClickHouse 命令行客户端安装 ClickHouse 版本，并运行本地 ClickHouse 和 Postgres 服务器。
   </Card>
 
   <Card title="Docker" href="/zh/get-started/setup/self-managed/docker" icon="docker">
@@ -32,9 +30,7 @@ keywords: ['安装', '自管理', 'linux', 'macos', 'windows', 'docker']
   </Card>
 </CardGroup>
 
-<div id="production-server">
-  ## 生产服务器
-</div>
+## 生产服务器 {#production-server}
 
 通过软件包或二进制文件安装 ClickHouse Server，以用于长期运行的部署。
 

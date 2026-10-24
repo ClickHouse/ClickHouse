@@ -76,6 +76,57 @@ Se o valor for maior que zero e `merge_selector_enable_heuristic_to_remove_small
 desabilita essa heurística para intervalos em que todas as partes tenham sido criadas há pelo menos esse número de segundos. `0` desativa essa verificação.
 Aplica-se aos selectores de mesclagem Simple e StochasticSimple.
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "Limite de idade para a restrição de mesclagem de partes pequenas"}]}]} />
+
+Limite de idade, em segundos, para a restrição de partes pequenas: assim que qualquer parte em um intervalo
+ultrapassar essa idade, a restrição imposta por `merge_selector_small_parts_min_count` deixa de valer,
+de modo que partes pequenas inativas acumuladas ainda possam ser mescladas, mesmo que o intervalo seja menor que
+`merge_selector_small_parts_min_count`. Funciona com os selectores de mesclagem Simple e StochasticSimple,
+e apenas na seleção de mesclagem em segundo plano: a seleção agressiva (`OPTIMIZE` sem `FINAL`)
+ignora as configurações `small_parts_*`.
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Contagem mínima de partes para permitir a mesclagem de partes pequenas e recentes (0 = desabilitado)"}]}]} />
+
+Quando todas as partes em um intervalo de mesclagem são pequenas (abaixo de `merge_selector_small_parts_threshold`)
+e recentes (abaixo de `merge_selector_small_parts_max_age`), exige pelo menos essa quantidade de partes
+para permitir a mesclagem. Reduz o número de operações de mesclagem quando há inserção rápida de partes pequenas.
+0 significa desabilitado. Funciona com os selectores de mesclagem Simple e StochasticSimple.
+
+Essa condição se aplica apenas à seleção de mesclagem em segundo plano. A seleção agressiva (`OPTIMIZE`
+sem `FINAL`) é uma requisição explícita do usuário que desconsidera o quão recentes são as partes; por isso, ela ignora esta
+configuração e mescla partes pequenas e recentes independentemente da quantidade.
+
+O seletor nunca considera candidatos de mesclagem com mais partes que `max_parts_to_merge_at_once`, nem
+candidatos que retrocedem além de `merge_selector_window_size` partes; portanto, definir
+qualquer um deles abaixo desse mínimo gera uma configuração contraditória: nesse caso, partes pequenas e recentes só
+são mescladas após `merge_selector_small_parts_max_age` (ou antes, quando a mesclagem forçada passa a valer por
+`min_age_to_force_merge_seconds` ou `min_partition_age_to_force_merge_seconds`). Mantenha ambos
+iguais ou acima desse mínimo.
+(Se a heurística interna de preenchimento reduzir temporariamente seu limite efetivo para abaixo desse mínimo,
+o seletor ainda considera o primeiro candidato dessa largura composto apenas por partes pequenas e recentes. Candidatos inativos ou
+grandes, bem como candidatos que já se qualificam para mesclagem forçada por
+`min_age_to_force_merge_seconds` ou `min_partition_age_to_force_merge_seconds`, continuam sujeitos ao
+limite reduzido.)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "Limiar de tamanho para a heurística de agrupamento em lote de partes pequenas no selector de mesclagem"}]}]} />
+
+Limiar de tamanho em bytes: um intervalo de mesclagem é considerado &quot;composto apenas por partes pequenas&quot; quando todas as partes
+estão abaixo desse tamanho. Usado em conjunto com `merge_selector_small_parts_min_count`.
+Funciona com os selectores de mesclagem Simple e StochasticSimple, e somente na seleção de mesclagens em segundo plano:
+a seleção agressiva (`OPTIMIZE` sem `FINAL`) ignora as configurações `small_parts_*`.
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

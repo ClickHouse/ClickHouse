@@ -56,6 +56,10 @@ provider "clickhouse" {
 
 السِّمتان `id` و`state` للقراءة فقط، ويجري تعبئتهما بواسطة ClickHouse Cloud بعد الإنشاء.
 
+## Workload Identity في GCP (تجريبي) {#gcp-workload-identity}
+
+قبل استخدام أمثلة Workload Identity أدناه، اتبع [دليل Workload Identity في GCP](/ar/integrations/clickpipes/security/gcp-workload-identity#terraform) للحصول على حساب الخدمة الذي يديره ClickPipes ومنحه صلاحية الوصول إلى المصدر الخاص بك.
+
 ## الوجهة {#destination}
 
 يُستخدم القسم `destination` مع جميع أنواع المصادر:
@@ -92,7 +96,7 @@ destination {
 
 ### Kafka {#kafka}
 
-القيم المدعومة لـ `type`: `kafka`، `confluent`، `msk`، `azureeventhub`، `redpanda`، `warpstream`.
+القيم المدعومة لـ `type`: `kafka`، `confluent`، `msk`، `azureeventhub`، `redpanda`، `warpstream`، و`gcmk` (في المعاينة الخاصة).
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_clickpipe" {
@@ -150,6 +154,58 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
       type = "DateTime"
     }
   }
+}
+```
+
+#### خدمة Google Managed Kafka مع Workload Identity في GCP {#gcmk-workload-identity}
+
+امنح حساب خدمة ClickPipes الدور `roles/managedkafka.client` قبل إنشاء ClickPipe. تشترط خدمة Google Managed Kafka استخدام TLS. كما يجب أن تمنح قوائم التحكم في الوصول (ACLs) في Kafka حسابَ الخدمة (`User:<service-account-email>`) صلاحيتَي الوصول `READ` و`DESCRIBE` إلى الموضوعات ومجموعات المستهلكين المحددة.
+
+```hcl
+resource "google_project_iam_member" "gcmk_client" {
+  project = var.gcp_project_id
+  role    = "roles/managedkafka.client"
+  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
+}
+
+resource "clickhouse_clickpipe" "gcmk_clickpipe" {
+  name       = "My Google Managed Kafka ClickPipe"
+  service_id = var.service_id
+
+  source = {
+    kafka = {
+      type           = "gcmk"
+      format         = "JSONEachRow"
+      brokers        = "bootstrap.kafka.us-central1.managedkafka.example-project.cloud.goog:9092"
+      topics         = "events"
+      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+    }
+  }
+
+  destination = {
+    table         = "events"
+    managed_table = true
+    table_definition = {
+      engine = {
+        type = "MergeTree"
+      }
+    }
+    columns = [
+      {
+        name = "id"
+        type = "String"
+      }
+    ]
+  }
+
+  field_mappings = [
+    {
+      source_field      = "id"
+      destination_field = "id"
+    }
+  ]
+
+  depends_on = [google_project_iam_member.gcmk_client]
 }
 ```
 
@@ -478,6 +534,75 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
+#### GCS باستخدام Workload Identity في GCP {#gcs-workload-identity}
+
+بعد منح حساب خدمة ClickPipes [صلاحيات GCS المطلوبة](/ar/integrations/clickpipes/object-storage/gcs/overview#permissions)، استبدل كتلة `source` الواردة أعلاه بما يلي:
+
+```hcl
+source = {
+  object_storage = {
+    type           = "gcs"
+    url            = "gs://my-bucket/data/*.json"
+    format         = "JSONEachRow"
+    authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+  }
+}
+```
+
+لإدخال البيانات بالوضع غير المرتب، اضبط أيضًا `is_continuous = true` واستخدم قيمة `queue_url` مؤهلة بالكامل بالصيغة `projects/<project-id>/subscriptions/<subscription-id>`.
+
+### Google Cloud Pub/Sub {#pubsub}
+
+يستخدم المثال التالي Workload Identity. امنح حساب خدمة ClickPipes [صلاحيات Pub/Sub المطلوبة](/ar/integrations/clickpipes/pubsub/auth#required-permissions) قبل إنشاء ClickPipe.
+
+```hcl
+resource "google_project_iam_member" "pubsub_access" {
+  project = var.gcp_project_id
+  role    = "roles/pubsub.editor"
+  member  = "serviceAccount:${data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal}"
+}
+
+resource "clickhouse_clickpipe" "pubsub_clickpipe" {
+  name       = "My Pub/Sub ClickPipe"
+  service_id = var.service_id
+
+  source = {
+    pubsub = {
+      format         = "JSONEachRow"
+      project_id     = var.gcp_project_id
+      topic          = "events"
+      authentication = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+      seek_type      = "latest"
+    }
+  }
+
+  destination = {
+    table         = "events"
+    managed_table = true
+    table_definition = {
+      engine = {
+        type = "MergeTree"
+      }
+    }
+    columns = [
+      {
+        name = "id"
+        type = "String"
+      }
+    ]
+  }
+
+  field_mappings = [
+    {
+      source_field      = "id"
+      destination_field = "id"
+    }
+  ]
+
+  depends_on = [google_project_iam_member.pubsub_access]
+}
+```
+
 ### تخزين Azure Blob {#abs}
 
 ```hcl
@@ -766,6 +891,30 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 
   destination {
     database = "default"
+  }
+}
+```
+
+#### BigQuery مع Workload Identity في GCP {#bigquery-workload-identity}
+
+بعد منح حساب خدمة ClickPipes [صلاحيات BigQuery وGCS المطلوبة](/ar/integrations/clickpipes/bigquery/overview#permissions)، استبدل كتلة `source` الواردة أعلاه بما يلي:
+
+```hcl
+source = {
+  bigquery = {
+    authentication        = "SERVICE_ACCOUNT_WORKLOAD_IDENTITY"
+    project_id            = var.gcp_project_id
+    snapshot_staging_path = "gs://my-staging-bucket/staging/"
+
+    settings = {
+      replication_mode = "snapshot"
+    }
+
+    table_mappings = [{
+      source_dataset_name = "my_dataset"
+      source_table        = "my_table"
+      target_table        = "my_bigquery_table"
+    }]
   }
 }
 ```

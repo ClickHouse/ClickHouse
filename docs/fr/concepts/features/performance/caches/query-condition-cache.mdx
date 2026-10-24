@@ -53,11 +53,35 @@ SETTINGS use_query_condition_cache = true;
 stockera des plages de la table qui ne satisfont pas le prédicat.
 Les exécutions suivantes de la même requête, également avec le paramètre `use_query_condition_cache = true`, utiliseront le cache des conditions de requête pour parcourir moins de données.
 
+### Fichiers Parquet {#parquet-files}
+
+Le cache des conditions de requête fonctionne également pour les fichiers Parquet lus via les table engines `File`, `S3`, `AzureBlobStorage`, `URL` et de lac de données (mais pas via les fonctions de table, car les entrées du cache sont rattachées à une table).
+Pour ces fichiers, le cache mémorise des groupes de lignes plutôt que des granules.
+Les entrées d’un fichier sont liées à sa version, de sorte qu’un fichier modifié soit relu : l’ETag pour le stockage d’objet, et la date de modification ainsi que la taille pour les fichiers locaux et pour `URL`.
+Comme un serveur web n’indique la date de modification (`Last-Modified`) qu’à la seconde près, un fichier lu via `URL` n’utilise le cache que s’il a été modifié il y a plus d’une minute selon l’horloge du serveur web (l’en-tête `Date` de sa réponse), et à condition que le serveur indique la date de modification, la taille et la date.
+
+### Conditions impliquant l’heure actuelle {#time-conditions}
+
+Une condition comme `WHERE time >= now() - INTERVAL 10 DAY` est non déterministe : la valeur repliée de `now()` change à chaque requête, si bien que de telles conditions ne peuvent pas être mises en cache directement.
+ClickHouse en dérive donc une condition déterministe en arrondissant la constante de l’heure actuelle sur une grille temporelle ; par exemple, `time >= '2026-08-09 12:34:56'` est mis en cache sous la forme `time >= '2026-08-09 00:00:00'` (arrondi à l’inférieur lors de la lecture du cache et au supérieur lors de son écriture, ce qui garantit l’exactitude des informations mises en cache).
+Le pas de la grille est proportionnel à l’écart entre la constante et l’heure actuelle (un jour pour une condition portant sur les dix derniers jours, une heure pour une condition portant sur les quatre-vingt-dix dernières minutes) et est plafonné à une plage allant d’une seconde à un jour ; le facteur de proportionnalité peut être configuré avec le paramètre `query_condition_cache_time_condition_grid_factor` (valeur par défaut : 1.0).
+
+Si la constante est déjà alignée sur la grille, par exemple dans `WHERE time >= today() - 10` ou `WHERE time >= toStartOfDay(now()) - INTERVAL 10 DAY`, la requête suivante peut immédiatement réutiliser le cache, et celui-ci reste efficace jusqu’à ce que la constante change (par exemple, jusqu’à la fin de la journée).
+Pour une constante non alignée, comme dans `WHERE time >= now() - INTERVAL 10 DAY`, les entrées du cache écrites pendant une cellule de la grille servent aux requêtes de la cellule suivante : les requêtes d’hier alimentent le cache pour celles d’aujourd’hui.
+Cette réutilisation ne fonctionne que pour les bornes inférieures sur le temps. Une borne supérieure comme `WHERE time < now()`, seule ou dans une fenêtre glissante bornée des deux côtés par l’heure actuelle, comme `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, n’est réutilisée que si ses constantes sont alignées sur la grille (par exemple `WHERE time < today()` ou `WHERE time >= today() - 10 AND time < today()`) : avec des constantes non alignées, la condition d’une requête ultérieure n’est pas contenue dans celle d’une requête antérieure, de sorte que les entrées du cache de la requête antérieure ne peuvent pas être appliquées de manière fiable, quelle que soit la grille.
+
+La dérivation peut être désactivée avec le paramètre [`use_query_condition_cache_for_time_conditions`](/fr/reference/settings/session-settings/use-query) (valeur par défaut : activé), qui ne prend effet que si `use_query_condition_cache` est également activé.
+Elle s’applique aux tables `MergeTree` ; les lectures depuis des fichiers et le stockage d’objet (`file`, `s3` et similaires) continuent de n’utiliser le cache des conditions de requête que pour les conditions déterministes.
+Les requêtes de la forme `ORDER BY ... LIMIT N` qui utilisent le filtrage dynamique (`use_top_k_dynamic_filtering`) réutilisent les entrées écrites par d’autres requêtes ayant la même condition.
+Lorsque le filtre dynamique est ajouté à `PREWHERE`, ou que la condition reste dans `WHERE`, ces requêtes n’écrivent pas elles-mêmes d’entrées pour les conditions impliquant l’heure actuelle : les lignes qu’elles ignorent dépendent des `N` premières lignes correspondant à la condition, lesquelles diffèrent entre deux conditions associées au même point de grille.
+Si le filtre dynamique ne peut pas être ajouté à `PREWHERE` (par exemple, pour certains types de colonne de tri), les granules ignorés par un `PREWHERE` comportant une condition impliquant l’heure actuelle ne dépendent pas des `N` premières lignes ; ils sont donc enregistrés sous la condition dérivée, dans des entrées réutilisées uniquement par les requêtes ayant le même plan TopK (voir [ci-dessous](#top-k-queries)).
+
 ### Requêtes `ORDER BY ... LIMIT n` (TopK) {#top-k-queries}
 
 Les requêtes qui utilisent l’optimisation TopK (`ORDER BY <column> LIMIT n`, accélérée par le filtrage dynamique ou par un index d’omission minmax sur la colonne de tri) utilisent également le cache des conditions de requête.
 Les lectures TopK peuvent ignorer des granules en fonction d’un seuil qui évolue pendant l’exécution de la requête. Leurs entrées de cache sont donc partitionnées selon les paramètres du plan TopK et l’ensemble des parts lues : seule une requête ayant le même plan sur les mêmes parts les réutilise.
 Cela vaut également pour les lectures TopK de fichiers Parquet via le table engine `File` : dans ce cas, le cache mémorise les groupes de lignes qui ne contenaient aucune ligne du résultat, et les entrées sont partitionnées selon les paramètres du plan TopK, la condition de filtrage (le cas échéant) et l’ensemble des fichiers lus avec leurs versions, de sorte que toute modification de l’un de ces fichiers entraîne la création d’une nouvelle entrée.
+Il en va de même pour les lectures TopK de tables de lac de données dont les fichiers de données sont au format Parquet (par exemple `Iceberg`, `DeltaLake`, `Paimon`) : leurs entrées sont partitionnées selon les paramètres du plan TopK, la condition de filtrage (le cas échéant) et le snapshot de la table, de sorte que chaque nouveau snapshot entraîne la création d’une nouvelle entrée.
 Contrairement aux autres lectures, une telle lecture TopK utilise le cache même en l’absence de condition de filtrage, par exemple `SELECT * FROM hits ORDER BY EventTime LIMIT 10`.
 Ces lectures peuvent être entièrement exclues du cache avec le paramètre [`use_query_condition_cache_for_top_k`](/fr/reference/settings/session-settings/use-query) (activé par défaut), qui ne prend effet que si `use_query_condition_cache` est également activé.
 

@@ -12,9 +12,7 @@ integration:
 
 تُعد [Apache Kafka](https://kafka.apache.org/) منصة مفتوحة المصدر وموزعة لتدفق الأحداث، وتستخدمها آلاف الشركات لإنشاء خطوط أنابيب بيانات عالية الأداء، وتحليلات البث، وتكامل البيانات، والتطبيقات بالغة الأهمية. يوفّر ClickHouse عدة خيارات **للقراءة من** Kafka و**للكتابة إليه**، وكذلك للتعامل مع الوسطاء الآخرين المتوافقين مع واجهة برمجة تطبيقات Kafka (مثل Redpanda وAmazon MSK).
 
-<div id="available-options">
-  ## الخيارات المتاحة
-</div>
+## الخيارات المتاحة {#available-options}
 
 يعتمد اختيار الخيار الأنسب لحالة استخدامك على عدة عوامل، بما في ذلك نوع نشر ClickHouse لديك، واتجاه تدفق البيانات، والمتطلبات التشغيلية.
 
@@ -26,9 +24,7 @@ integration:
 
 للاطلاع على مقارنة أكثر تفصيلاً بين هذه الخيارات، راجع [اختيار الخيار المناسب](#choosing-an-option).
 
-<div id="clickpipes-for-kafka">
-  ### ClickPipes for Kafka
-</div>
+### ClickPipes for Kafka {#clickpipes-for-kafka}
 
 تُعد [ClickPipes](/ar/integrations/clickpipes/home) منصة تكامل مُدارة تجعل إدخال البيانات من مجموعة متنوعة من المصادر سهلًا للغاية ولا يتطلب سوى بضع نقرات. ولأنها مُدارة بالكامل ومصممة خصيصًا لأعباء العمل في بيئات الإنتاج، فإن ClickPipes تخفّض بشكل كبير تكاليف البنية التحتية والتشغيل، وتُلغي الحاجة إلى أدوات خارجية لبث البيانات وعمليات ETL.
 
@@ -36,9 +32,7 @@ integration:
   هذا هو الخيار الموصى به إذا كنت تستخدم ClickHouse Cloud. ClickPipes **مُدارة بالكامل** ومصممة خصيصًا لتقديم **أفضل أداء** في بيئات Cloud.
 </Tip>
 
-<div id="clickpipes-for-kafka-main-features">
-  #### الميزات الرئيسية
-</div>
+#### الميزات الرئيسية {#clickpipes-for-kafka-main-features}
 
 * مُحسَّن لـ ClickHouse Cloud، ويوفّر أداءً فائق السرعة
 * قابلية التوسع أفقيًا وعموديًا لأحمال العمل ذات معدل النقل المرتفع
@@ -48,15 +42,11 @@ integration:
 * يدعم نطاقًا واسعًا من [مصادر البيانات](/ar/integrations/clickpipes/kafka/reference)، بما في ذلك Confluent Cloud وAmazon MSK وRedpanda Cloud وAzure Event Hubs
 * يدعم أكثر تنسيقات التسلسل شيوعًا (JSON وAvro وProtobuf)
 
-<div id="clickpipes-for-kafka-getting-started">
-  #### البدء
-</div>
+#### البدء {#clickpipes-for-kafka-getting-started}
 
 للبدء باستخدام ClickPipes for Kafka، راجع [الوثائق المرجعية](/ar/integrations/clickpipes/kafka/reference) أو انتقل إلى علامة التبويب `Data Sources` في واجهة ClickHouse Cloud.
 
-<div id="kafka-connect-sink">
-  ### Kafka Connect Sink
-</div>
+### Kafka Connect Sink {#kafka-connect-sink}
 
 Kafka Connect هو إطار عمل مفتوح المصدر يعمل كمحور بيانات مركزي لتكامل البيانات بسهولة بين Kafka وأنظمة البيانات الأخرى. يوفّر موصل [ClickHouse Kafka Connect Sink](https://github.com/ClickHouse/clickhouse-kafka-connect) خيارًا قابلًا للتوسع وعاليَ القابلية للتهيئة لقراءة البيانات من Apache Kafka وغيره من الوسطاء المتوافقين مع واجهة برمجة تطبيقات Kafka.
 
@@ -64,23 +54,17 @@ Kafka Connect هو إطار عمل مفتوح المصدر يعمل كمحور �
   هذا هو الخيار الموصى به إذا كنت تفضّل **قابلية تهيئة عالية** أو كنت تستخدم Kafka Connect بالفعل.
 </Tip>
 
-<div id="clickpipes-for-kafka-main-features">
-  #### الميزات الرئيسية
-</div>
+#### الميزات الرئيسية {#kafka-connect-sink-main-features}
 
 * يمكن تهيئته لدعم exactly-once semantics
 * يدعم أكثر تنسيقات التسلسل شيوعًا (JSON, Avro, Protobuf)
 * يُختبَر باستمرار على ClickHouse Cloud
 
-<div id="clickpipes-for-kafka-getting-started">
-  #### البدء
-</div>
+#### البدء {#kafka-connect-sink-getting-started}
 
 للبدء باستخدام ClickHouse Kafka Connect Sink، راجع [الوثائق المرجعية](/ar/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink).
 
-<div id="kafka-table-engine">
-  ### محرك جدول Kafka
-</div>
+### محرك جدول Kafka {#kafka-table-engine}
 
 يمكن استخدام [محرك جدول Kafka](/ar/integrations/connectors/data-ingestion/kafka/kafka-table-engine) لقراءة البيانات من Apache Kafka ووسطاء آخرين متوافقين مع واجهة برمجة تطبيقات Kafka، وكتابة البيانات إليها. يأتي هذا الخيار مضمّنًا مع ClickHouse مفتوح المصدر، وهو متاح عبر جميع أنواع النشر.
 
@@ -88,23 +72,17 @@ Kafka Connect هو إطار عمل مفتوح المصدر يعمل كمحور �
   هذا هو الخيار الموصى به إذا كنت تستضيف ClickHouse ذاتيًا وتحتاج إلى خيار **سهل البدء**، أو إذا كنت بحاجة إلى **كتابة** البيانات إلى Kafka.
 </Tip>
 
-<div id="clickpipes-for-kafka-main-features">
-  #### الميزات الرئيسية
-</div>
+#### الميزات الرئيسية {#kafka-table-engine-main-features}
 
 * يمكن استخدامه [لقراءة](/ar/integrations/connectors/data-ingestion/kafka/kafka-table-engine#kafka-to-clickhouse) البيانات و[كتابتها](/ar/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)
 * يأتي مضمّنًا مع ClickHouse مفتوح المصدر
 * يدعم معظم تنسيقات التسلسل الشائعة (JSON, Avro, Protobuf)
 
-<div id="clickpipes-for-kafka-getting-started">
-  #### البدء
-</div>
+#### البدء {#kafka-table-engine-getting-started}
 
 للبدء في استخدام محرك جدول Kafka، راجع [الوثائق المرجعية](/ar/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
 
-<div id="choosing-an-option">
-  ### اختيار خيار
-</div>
+### اختيار خيار {#choosing-an-option}
 
 | المنتج                   | نقاط القوة                                                                                                                                                                                                                                                                                          | نقاط الضعف                                                                                                                                                                       |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -112,11 +90,9 @@ Kafka Connect هو إطار عمل مفتوح المصدر يعمل كمحور �
 | **Kafka Connect Sink**   | • دلالات exactly-once<br />• يتيح تحكمًا دقيقًا في تحويل البيانات، والتجميع على دفعات، ومعالجة الأخطاء<br />• يمكن نشره في الشبكات الخاصة<br />• يتيح النسخ المتماثل في الوقت الفعلي من قواعد البيانات غير المدعومة بعد في ClickPipes عبر Debezium                                                  | • لا يدعم دفع البيانات إلى Kafka<br />• معقد تشغيليًا من حيث الإعداد والصيانة<br />• يتطلب خبرة في Kafka وKafka Connect                                                          |
 | **محرك جدول Kafka**   | • يدعم [دفع البيانات إلى Kafka](/ar/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)<br />• بسيط تشغيليًا من حيث الإعداد                                                                                                                                           | • دلالات at-least-once<br />• توسع أفقي محدود للمستهلكين، ولا يمكن توسيعه بشكل مستقل عن خادم ClickHouse<br />• خيارات محدودة لمعالجة الأخطاء وتصحيحها<br />• يتطلب خبرة في Kafka |
 
-<div id="other-options">
-  ### خيارات أخرى
-</div>
+### خيارات أخرى {#other-options}
 
-* [**Confluent Cloud**](/ar/integrations/connectors/data-ingestion/kafka/confluent/index) - يوفّر Confluent Platform خيار تحميل [وتشغيل ClickHouse Connector Sink على Confluent Cloud](/ar/integrations/connectors/data-ingestion/kafka/confluent/custom-connector) أو استخدام [HTTP Sink Connector for Confluent Platform](/ar/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http)، الذي يدمج Apache Kafka مع واجهة برمجة تطبيقات عبر HTTP أو HTTPS.
+* [**Confluent**](/ar/integrations/connectors/data-ingestion/kafka/confluent/index) - على Confluent Cloud، استخدم [وجهة موصل ClickHouse المُدارة بالكامل](/ar/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud) أو حمّلها بنفسك بوصفها [Custom Connector](/ar/integrations/connectors/data-ingestion/kafka/confluent/custom-connector). ويمكنك أيضًا استخدام [HTTP Sink Connector](/ar/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http)، سواء أكان مُدارًا ذاتيًا أم مُدارًا بالكامل على Confluent Cloud، لدمج Apache Kafka مع واجهة برمجة تطبيقات عبر HTTP أو HTTPS.
 
 * [**Vector**](/ar/integrations/connectors/data-ingestion/kafka/kafka-vector) - يُعد Vector خط أنابيب بيانات محايدًا للمورّدين. وبفضل قدرته على القراءة من Kafka وإرسال الأحداث إلى ClickHouse، فإنه يُمثّل خيار تكامل قويًا.
 

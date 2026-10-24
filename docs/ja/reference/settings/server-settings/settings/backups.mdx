@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouse serverを設定するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="backups">
-  ## バックアップ
-</div>
+## バックアップ {#backups}
 
 [`BACKUP` と `RESTORE`](/ja/concepts/features/backup-restore/overview) の実行時に使用するバックアップ用の設定です。
 
@@ -32,8 +30,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
     ('compare_collected_metadata', 'Bool', 'true の場合、バックアップ中に変更されていないことを確認するために、収集したメタデータを既存のメタデータと比較します。', 'true'),
     ('create_table_timeout', 'UInt64', 'リストア中のテーブル作成に対するタイムアウト（ミリ秒）です。', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', '協調バックアップ/リストア中に不正なバージョンエラーが発生した後の最大再試行回数です。', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '次にメタデータ収集を試みるまでの最大待機時間（ミリ秒）です。', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '次にメタデータ収集を試みるまでの最小待機時間（ミリ秒）です。', '5000'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '次にメタデータ収集を試みるまでの最大待機時間（ミリ秒）です。', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', '次にメタデータ収集を試みるまでの最小待機時間（ミリ秒）です。', '100'),
     ('remove_backup_files_after_failure', 'Bool', '`BACKUP` コマンドが失敗した場合、ClickHouse は失敗前にバックアップへコピー済みのファイルの削除を試みます。そうでない場合は、コピー済みのファイルをそのまま残します。', 'true'),
     ('sync_period_ms', 'UInt64', '協調バックアップ/リストアの同期周期（ミリ秒）です。', '5000'),
     ('test_inject_sleep', 'Bool', 'テスト関連の待機', 'false'),
@@ -54,8 +52,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 | `compare_collected_metadata`                        | Bool   | true の場合、バックアップ中に変更が発生していないことを確認するため、収集したメタデータを既存のメタデータと比較します。                              | `true`                |
 | `create_table_timeout`                              | UInt64 | リストア中にテーブルを作成する際のタイムアウト時間 (ミリ秒) です。                                                         | `300000`              |
 | `max_attempts_after_bad_version`                    | UInt64 | 協調バックアップ/リストア中に不正なバージョンのエラーが発生した場合の再試行の最大回数です。                                              | `3`                   |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 次回のメタデータ収集を試行するまでの最大待機時間 (ミリ秒) です。                                                          | `100`                 |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 次回のメタデータ収集を試行するまでの最小待機時間 (ミリ秒) です。                                                          | `5000`                |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 次回のメタデータ収集を試行するまでの最大待機時間 (ミリ秒) です。                                                          | `5000`                |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | 次回のメタデータ収集を試行するまでの最小待機時間 (ミリ秒) です。                                                          | `100`                 |
 | `remove_backup_files_after_failure`                 | Bool   | `BACKUP` コマンドが失敗した場合、ClickHouse は失敗前にバックアップへコピー済みのファイルの削除を試みます。無効な場合は、コピー済みのファイルはそのまま残されます。 | `true`                |
 | `sync_period_ms`                                    | UInt64 | 協調バックアップ/リストアの同期周期 (ミリ秒) です。                                                                | `5000`                |
 | `test_inject_sleep`                                 | Bool   | テスト関連の待機です                                                                                  | `false`               |
@@ -70,9 +68,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 </backups>
 ```
 
-<div id="backups_io_thread_pool_queue_size">
-  ## backups_io_thread_pool_queue_size
-</div>
+## backups_io_thread_pool_queue_size {#backups_io_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 

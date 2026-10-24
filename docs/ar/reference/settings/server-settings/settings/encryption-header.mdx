@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="encryption_header_cache_policy">
-  ## encryption_header_cache_policy
-</div>
+## encryption_header_cache_policy {#encryption_header_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة التخزين المؤقت لترويسة التشفير.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت لترويسات التشفير. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
 
-<div id="encryption_header_cache_size">
-  ## encryption_header_cache_size
-</div>
+## encryption_header_cache_size {#encryption_header_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
@@ -30,9 +26,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق مفعوله فورًا.
 </Note>
 
-<div id="encryption_header_cache_size_ratio">
-  ## encryption_header_cache_size_ratio
-</div>
+## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم قائمة الانتظار المحمية (في حالة استخدام سياسة SLRU) في ذاكرة التخزين المؤقت لترويسات التشفير، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 

@@ -1,0 +1,322 @@
+---
+sidebarTitle: '使用 Entra ID 进行 JWT 身份验证'
+slug: /cloud/security/jwt-authentication-entra-id
+title: '使用 Microsoft Entra ID 进行 JWT 身份验证'
+description: '介绍如何配置 Microsoft Entra ID 为 ClickHouse Cloud 服务签发 JWT，并将 Entra ID 应用角色映射到 ClickHouse 角色'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', '应用角色', '身份验证', '身份提供商']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="使用自定义身份提供商进行 JWT 身份验证" />
+
+本指南介绍如何配置 **Microsoft Entra ID** (前身为 Azure Active Directory) ，使用户和应用程序能够使用 Entra ID 访问令牌 (而非数据库密码) 连接到 ClickHouse Cloud 服务。Entra ID 应用角色会映射到 ClickHouse 角色，因此您只需在 Entra ID 中将用户、组和应用程序分配给相应的应用角色，即可控制访问权限。
+
+<Tip>
+  本指南涵盖 Entra ID 端的配置，以及需要在 ClickHouse Cloud 中填写的值。有关 JWT 提供商的一般信息，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。有关令牌声明以及临时用户的工作原理，请参阅 [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) 参考文档。
+</Tip>
+
+## 开始之前 {#before-you-begin}
+
+您需要准备：
+
+* 一个使用 **Enterprise** 套餐的组织，以及一个运行 **ClickHouse 26.4 或更高版本** 的服务。
+* 一个在该服务上拥有 `control-plane:service:manage` 权限的 ClickHouse Cloud 角色 (例如 **管理员** 或 **服务管理员**) ，用于添加 JWT 提供商。
+* **Microsoft Entra admin center** 的访问权限，且至少具有 **Cloud Application Administrator** 角色。
+* 如果希望将组 (而非单个用户) 分配给应用角色，则需要 Microsoft Entra ID P1 或 P2。
+* [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) 和 [`clickhouse-client`](/zh/concepts/features/interfaces/client)，用于测试配置。
+* 一份计划通过 Entra ID 授予的 ClickHouse 角色列表。每个角色都会对应一个同名的 Entra ID 应用角色。本指南使用以下两个角色：
+
+  | 应用角色值         | ClickHouse 特权                            |
+  | ------------- | ---------------------------------------- |
+  | `ch_analyst`  | 对 `analytics.*` 的 `SELECT` 和 `INSERT` 特权 |
+  | `ch_readonly` | 对 `*.*` 的 `SELECT` 特权                    |
+
+## 工作原理 {#how-it-works}
+
+1. 在 Entra ID 中注册一个代表 ClickHouse Cloud 服务的应用程序，并为每个 ClickHouse 角色分别定义一个应用角色。
+2. 将 Entra ID 用户、组和应用程序分配给这些应用角色。
+3. 用户通过 Azure CLI 或 `clickhouse-client --login` 登录，或由应用程序通过客户端凭证授权流程进行身份验证。随后，Entra ID 签发 v2.0 访问令牌：其 `aud` 声明为应用程序 (客户端) ID，`roles` 声明则列出分配给调用方的应用角色。
+4. ClickHouse Cloud 使用 Entra ID 公钥验证令牌签名，检查 `iss` 和 `aud` 声明，然后创建一个临时用户。该用户拥有 `roles` 声明中所列 ClickHouse 角色的特权，但不会超出 `default` 用户的特权范围。
+
+## 在 Entra ID 中注册 ClickHouse {#register-in-entra-id}
+
+<Steps>
+  <Step title="创建应用注册" id="create-app-registration">
+    在 Microsoft Entra 管理中心中，打开 **App registrations**，然后选择 **New registration**：
+
+    * **Name**：显示名称，例如 `clickhouse-cloud-production`。
+    * **Supported account types**：单租户。根据门户版本不同，此选项显示为 **Single tenant only** 或 **Accounts in this organizational directory only**。
+    * **Redirect URI**：留空。用户通过设备代码流登录，该流程无需重定向 URI。
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Microsoft Entra 管理中心中的应用注册表单，账户类型为单租户且未设置重定向 URI" />
+
+    选择 **Register**。在 **Overview** 页面上，复制以下值：
+
+    * **Application (client) ID**，下文称为 `<CLIENT_ID>`。该值将作为令牌的 `aud` 声明。
+    * **Directory (tenant) ID**，下文称为 `<TENANT_ID>`。该值是签发方和 JWKS URL 的组成部分。
+  </Step>
+
+  <Step title="申请 v2.0 访问令牌" id="request-v2-tokens">
+    默认情况下，Entra ID 签发的是 v1.0 访问令牌，其签发方为 `https://sts.windows.net/<TENANT_ID>/`。请将应用程序改为接收 v2.0 令牌：其签发方为 `https://login.microsoftonline.com/<TENANT_ID>/v2.0`，且 `aud` 声明始终为客户端 ID。
+
+    在应用注册中打开 **Manifest**，将访问令牌版本设置为 `2`，然后选择 **保存**。具体的属性名称取决于编辑器所显示的清单格式：
+
+    * Microsoft Graph 格式：`api` 部分中的 `requestedAccessTokenVersion`。
+    * Azure AD Graph 格式：顶层的 `accessTokenAcceptedVersion`，如下方截图所示。
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="应用程序清单编辑器，其中 accessTokenAcceptedVersion 已设置为 2" />
+  </Step>
+
+  <Step title="公开 API" id="expose-an-api">
+    打开 **Expose an API**：
+
+    1. 在 **Application ID URI** 旁边，选择 **Add**，接受默认值 `api://<CLIENT_ID>` 并保存。客户端通过此 URI 请求用于访问 ClickHouse 的令牌。此操作不会更改 v2.0 令牌的 `aud` 声明，其值仍为客户端 ID。
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Expose an API 页面，其中 Application ID URI 面板显示默认的 api:// 值" />
+
+    2. 选择 **Add a scope** 并填写表单。用户登录时会请求此作用域，而以自身身份进行认证的应用程序则不会使用它。
+
+       | 字段                             | 值                                            |
+       | ------------------------------ | -------------------------------------------- |
+       | **Scope name**                 | `access_as_application`                      |
+       | **Who can consent?**           | **Admins only**                              |
+       | **Admin consent display name** | 例如 `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | 任意描述                                         |
+       | **State**                      | **Enabled**                                  |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Add a scope 面板，其中包含 access_as_application 作用域，仅限管理员授予同意，状态设置为 Enabled" />
+  </Step>
+
+  <Step title="授权客户端应用程序以允许用户登录" id="authorize-client-application">
+    用户通过公共客户端应用程序获取令牌。为该应用程序预先授权 `access_as_application` 作用域后，系统将不再提示用户授予同意。本指南中的 `az` 和 `clickhouse-client --login` 均使用 Azure CLI 作为客户端，其客户端 ID 为 `04b07795-8ddb-461a-bbee-02f9e1bf7b46`。
+
+    在 **Expose an API** 页面的 **Authorized client applications** 下，选择 **Add a client application**。输入 `04b07795-8ddb-461a-bbee-02f9e1bf7b46`，勾选 `api://<CLIENT_ID>/access_as_application` 作用域，然后选择 **Add application**。
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Add a client application 面板，其中已填写 Azure CLI 客户端 ID 并选中 access_as_application 作用域" />
+
+    <Note>
+      如需使用您自己的客户端应用程序代替 Azure CLI，请另行注册一个应用程序，在 **Authentication** 下将 **Allow public client flows** 设置为 **Yes**，然后在此处预先授权其客户端 ID。之后在[使用 clickhouse-client 登录](#sign-in-with-clickhouse-client)时，通过 `--oauth-client-id` 传入该客户端 ID。如果您的 tenant 不允许用户自行授予同意，还需由管理员为该应用程序的 `openid`、`profile` 和 `offline_access` 权限授予同意。
+    </Note>
+  </Step>
+
+  <Step title="创建应用角色" id="create-app-roles">
+    每个应用角色对应一个 ClickHouse 角色。应用角色的 **Value** 就是令牌 `roles` 声明中出现的值，必须与 ClickHouse 角色名称完全一致 (包括大小写) 。
+
+    打开 **App roles**，为每个 ClickHouse 角色选择 **Create app role**：
+
+    | 字段                                       | 值                                                                                                     |
+    | ---------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+    | **Display name**                         | 易于识别的名称，例如 `ClickHouse analyst`                                                                       |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**。如果仅有用户连接，请选择 **Users/Groups**；如果仅有应用程序连接，请选择 **Applications**。 |
+    | **Value**                                | ClickHouse 角色名称，例如 `ch_analyst`                                                                       |
+    | **Description**                          | 任意描述                                                                                                  |
+    | **Do you want to enable this app role?** | 勾选                                                                                                    |
+
+    以下示例定义了三个应用角色，其值均为 ClickHouse 角色名称：
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="App roles 页面，列出 ClickHouse Admin、ClickHouse Analyst DB 和 ClickHouse Read Only，其值分别为 ch_admin、ch_analyst 和 ch_readonly" />
+  </Step>
+
+  <Step title="需要分配" id="require-assignment">
+    默认情况下，tenant 中的任何用户都可以获取该应用程序的令牌。如需仅允许已分配到应用角色的用户、组和应用程序获取令牌，请打开 **Enterprise applications**，选择与应用注册同名的应用程序，打开 **Properties**，将 **Assignment required?** 设置为 **Yes**，然后选择 **Save**。
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="企业应用程序的属性页面，其中 Assignment required 已设置为 Yes" />
+  </Step>
+
+  <Step title="将用户和组分配给应用角色" id="assign-users-and-groups">
+    在同一个企业应用程序中，打开 **Users and groups**，然后选择 **Add user/group**。选择用户或组，再选择应用角色，然后选择 **Assign**。对每个用户或组重复上述操作。
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="企业应用程序的 Users and groups 页面，显示一名已分配到 ClickHouse Read Only 应用角色的用户" />
+
+    如果某个用户被直接分配或通过组分配了多个应用角色，`roles` 声明中会包含所有这些角色。
+
+    <Note>
+      将组分配给应用角色需要 Microsoft Entra ID P1 或 P2。不支持嵌套组：只有已分配组的直接成员才会获得该组的应用角色。
+    </Note>
+  </Step>
+</Steps>
+
+## 在 ClickHouse 中创建对应的角色 {#create-clickhouse-roles}
+
+以 `default` 用户身份连接到您的服务 (例如通过 SQL 控制台) ，然后为每个应用角色值分别创建一个角色：
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+请注意：
+
+* 角色名称区分大小写，且必须与应用角色的值完全一致。
+* 如果 `roles` 声明中的名称与该服务上的任何现有角色都不匹配，ClickHouse 会忽略这些名称。
+* 在 ClickHouse Cloud 中，JWT 提供商的权限上限为 `default` 用户。如果某个角色拥有 `default` 用户所不具备的特权，ClickHouse 会删除这些特权。
+
+## 将 Entra ID 添加为 JWT 提供商 {#add-jwt-provider}
+
+按照[添加 JWT 提供商](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider)中的步骤操作，并填写以下值：
+
+| 字段              | 值                                                                   |
+| --------------- | ------------------------------------------------------------------- |
+| **Name**        | 任意名称，例如 `entra-id`                                                  |
+| **Issuer**      | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                |
+| **Audience**    | `<CLIENT_ID>`，即应用程序 (客户端) ID。请勿使用 `api://<CLIENT_ID>`。              |
+| **JWKS URL**    | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys` |
+| **Roles claim** | `roles`                                                             |
+
+<Warning>
+  请将 **Roles claim** 设置为 `roles`。如果留空，ClickHouse 会从 `clickhouse:roles` 声明中读取角色，而 Entra ID 令牌并不包含该声明，这将导致用户虽能通过身份验证，却不具备任何特权。
+</Warning>
+
+## 以用户身份连接 {#connect-as-a-user}
+
+将应用注册中的各项值以及服务主机名设置为 shell 变量：
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### 传递 Azure CLI 令牌 {#pass-an-azure-cli-token}
+
+使用 Azure CLI 登录，为 ClickHouse 应用程序申请访问令牌，然后通过 `--jwt` 参数将其传递给 `clickhouse-client`：
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+同一令牌同样可用于 HTTP 接口：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Entra ID 访问令牌的默认有效期为 60 到 90 分钟。令牌过期后需重新获取；如需长时间保持会话，可使用 `--login`。
+
+### 使用 ClickHouse 客户端登录 {#sign-in-with-clickhouse-client}
+
+`clickhouse-client` 可以自行完成 OAuth 2.0 设备授权码流程，并在会话期间自动续期令牌：
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+客户端会输出一个 URL 和一个代码。打开该 URL，输入代码，然后使用您的 Entra ID 账户登录。请在作用域中保留 `offline_access`：这样 Entra ID 会返回 refresh token，客户端可借此续期访问令牌。如果不保留，访问令牌过期后您就必须重新登录。
+
+## 以应用程序身份连接 {#connect-as-an-application}
+
+ETL 作业、后端服务等应用程序使用 OAuth 2.0 客户端凭证授权流程，以自身身份进行身份验证。授予应用程序的应用角色必须允许 **Applications** 成员类型。
+
+1. 在 **App registrations** 中，为该工作负载单独注册一个应用程序。在 **Certificates &amp; secrets** 下，创建客户端密码或上传证书。以下命令中，该工作负载的客户端 ID 和密码分别用 `<WORKLOAD_CLIENT_ID>` 和 `<WORKLOAD_CLIENT_SECRET>` 表示。
+2. 在该工作负载的应用注册中，打开 **API permissions**，然后选择 **Add a permission**。在 **APIs my organization uses** 下找到 ClickHouse 应用程序，选择 **Application permissions**，勾选该工作负载所需的应用角色，然后选择 **Add permissions**。
+3. 选择 **Grant admin consent**，将应用角色分配给该工作负载。
+
+从 Entra ID 令牌端点请求令牌，并将其发送到 ClickHouse：
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+在生产环境代码中，请使用 [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) 或适用于您所用编程语言的 Azure Identity 库。这些库会缓存令牌，并在旧令牌过期前自动请求新令牌。
+
+## 验证 {#verify}
+
+连接成功后，检查当前会话的身份和特权：
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| 查询                     | 预期结果                                                                       |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `SELECT currentUser()` | 形如 `JWT::<sub>::<hash>` 的名称，其中 `<sub>` 为令牌的 `sub` 声明                       |
+| `SHOW GRANTS`          | 令牌 `roles` 声明中所列角色的特权，例如 `ch_readonly` 对应的结果为 `GRANT SELECT ON *.* TO ...` |
+| `SHOW CURRENT ROLES`   | 不返回任何行                                                                     |
+
+ClickHouse 不会将这些角色本身授予临时用户，而是收集令牌中所列角色的特权，与 `default` 用户的特权求交集，再将结果直接授予该用户。因此，`SHOW CURRENT ROLES` 不会返回任何行。
+
+对于用户令牌，Entra ID 会将 `sub` 设置为一个不透明标识符，该标识符对每个用户与应用程序的组合都是唯一的。它既不是用户的电子邮件地址，也不是其对象 ID。
+
+## 最佳实践 {#best-practices}
+
+### 分配组，而非单个用户 {#assign-groups}
+
+为每个应用角色分配一个 Entra ID 组，然后通过调整组成员来授予或撤销访问权限。这样，人员加入或离开团队时，无需任何人修改应用程序。
+
+### 为每个环境使用单独的应用注册 {#separate-app-registrations}
+
+令牌的 `aud` 声明中携带其所属应用注册的客户端 ID。如果为生产环境和预发布环境分别使用独立的应用注册，那么为其中一个环境签发的令牌就无法在另一个环境中通过身份验证。
+
+### 角色变更将在下一个令牌中生效 {#role-changes}
+
+Entra ID 会在签发令牌时写入 `roles` 声明。更改用户的应用角色分配后，变更会在该用户获取新令牌时生效。已签发的令牌在过期前仍保留原有角色。如果使用 Azure CLI，可运行 `az logout` 和 `az login` 立即获取新令牌。
+
+## 故障排查 {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="令牌被拒绝，且其签发方以 https://sts.windows.net 开头" id="v1-token">
+    Entra ID 签发的是 v1.0 令牌。请按照[请求 v2.0 访问令牌](#request-v2-tokens)中的说明，在应用程序清单中将 `requestedAccessTokenVersion` 设置为 `2`，然后重新请求令牌。
+  </Accordion>
+
+  <Accordion title="令牌因受众不匹配而被拒绝" id="audience-mismatch">
+    * ClickHouse Cloud 中该提供商的 **Audience** 必须是客户端 ID，而不是 `api://<CLIENT_ID>`。
+    * 请确认您请求的是 ClickHouse 应用程序的令牌。如果未指定 `--resource`，`az account get-access-token` 返回的将是 Azure Resource Manager 的令牌。
+  </Accordion>
+
+  <Accordion title="Entra ID 返回 AADSTS65001 或要求同意授权" id="consent-required">
+    客户端应用程序未获得 `access_as_application` 作用域的预授权。请按照[授权客户端应用程序进行用户登录](#authorize-client-application)中的说明，在 **Expose an API → Authorized client applications** 下添加其客户端 ID。
+  </Accordion>
+
+  <Accordion title="Entra ID 返回 AADSTS50105 或 AADSTS501051" id="not-assigned">
+    该用户或应用程序未分配给 ClickHouse 应用程序，且 **Assignment required?** 设置为 **Yes**。请将该用户、其所属的某个组或该应用程序分配给一个应用角色。如果分配的是组，请确保该用户是该组的直接成员。
+  </Accordion>
+
+  <Accordion title="身份验证成功，但查询因 ACCESS_DENIED 失败" id="no-privileges">
+    临时用户缺少执行该查询所需的特权。请检查以下各项：
+
+    * 提供商的 **Roles claim** 已设置为 `roles`。
+    * 令牌中包含 `roles` 声明。如果调用方被分配给应用程序时未指定应用角色，令牌中就不会有该声明。
+    * `roles` 声明中的每个值都与服务上现有的 ClickHouse 角色完全匹配 (区分大小写) 。
+    * `default` 用户拥有您授予该角色的特权。
+
+    要查看令牌中的声明，可在本地解码其载荷：
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="配置声明映射策略后令牌被拒绝" id="app-signing-key">
+    如果您为应用程序配置了声明映射策略或自定义签名私钥，Entra ID 签发令牌时所用的私钥将不在该 tenant 的 JWKS 中。请将提供商的 **JWKS URL** 设置为 `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`。
+  </Accordion>
+</AccordionGroup>
+
+## 相关内容 {#related}
+
+* [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)：在 Cloud 控制台中添加、更新和删除 JWT 提供商。
+* [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt)：令牌声明、临时用户及客户端使用方法。

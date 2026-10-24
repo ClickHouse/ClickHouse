@@ -400,6 +400,84 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 └────────┘
 ```
 
+## decodeQuotedPrintable {#decodeQuotedPrintable}
+
+도입 버전: v26.10.0
+
+[RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7)에 따라 [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) 형식으로 인코딩된 문자열을 디코딩합니다.
+
+`=XX`(16진수 숫자, 대소문자 무관)는 해당 값이 나타내는 바이트로 대체됩니다.
+`=` 뒤에 `\r` 또는 `\n`이 오면 소프트 줄 바꿈(soft line break)으로 처리되며, 해당 줄의 나머지 부분과 함께 다음 `\n`까지(`\n` 포함) 제거됩니다.
+그 밖의 잘못된 이스케이프 시퀀스(예: `=ZZ` 또는 문자열 끝의 `=4`)는 그대로 유지됩니다. 단, 문자열 맨 끝에 단독으로 있는 `=`는 삭제됩니다.
+이 동작은 Python의 `quopri.decodestring`과 동일합니다.
+
+**구문**
+
+```sql
+decodeQuotedPrintable(s)
+```
+
+**인수**
+
+* `s` — Quoted-Printable로 인코딩된 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+디코딩된 문자열을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT decodeQuotedPrintable('Caf=C3=A9 =3D 3 =E2=82=AC') AS decoded
+```
+
+```response title=Response
+┌─decoded────┐
+│ Café = 3 € │
+└────────────┘
+```
+
+## encodeQuotedPrintable {#encodeQuotedPrintable}
+
+도입 버전: v26.10.0
+
+이메일에서 사용되는 [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7) 규격에 따라 문자열을 [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) 방식으로 인코딩합니다.
+
+`=`를 제외한 출력 가능한 ASCII 문자는 그대로 유지되고, 그 외의 바이트는 대문자 16진수를 사용하여 `=XX` 형식으로 기록됩니다.
+`\r\n` 줄바꿈은 그대로 유지되며, 단독으로 쓰인 `\r` 또는 `\n`은 인코딩됩니다. 공백이나 탭은 줄의 마지막에 오는 경우에만 인코딩됩니다.
+각 줄은 소프트 줄바꿈(`=\r\n`)을 사용하여 최대 76자를 넘지 않도록 유지됩니다.
+`decodeQuotedPrintable(encodeQuotedPrintable(s))`는 어떤 `s`에 대해서도 원래 문자열 `s`를 반환합니다.
+
+**구문**
+
+```sql
+encodeQuotedPrintable(s)
+```
+
+**인수**
+
+* `s` — 인코딩할 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+Quoted-Printable 방식으로 인코딩된 문자열을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT encodeQuotedPrintable('Café = 3 €') AS encoded
+```
+
+```response title=Response
+┌─encoded───────────────────┐
+│ Caf=C3=A9 =3D 3 =E2=82=AC │
+└───────────────────────────┘
+```
+
 ## hex {#hex}
 
 도입 버전: v1.1.0
@@ -421,6 +499,8 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
 ```sql
 hex(arg)
 ```
+
+**별칭(Aliases)**: `to_hex`
 
 **인수**
 
@@ -1064,6 +1144,8 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 ```sql
 unhex(arg)
 ```
+
+**별칭(Aliases)**: `from_hex`
 
 **인수**
 

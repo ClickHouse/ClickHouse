@@ -101,6 +101,8 @@ MergeTree family のテーブルで動作します。
 
 `force_primary_key=1` の場合、ClickHouse はクエリに、データの範囲を絞り込むために使用できる主キー条件があるかどうかを確認します。適切な条件がない場合は、例外をスローします。ただし、その条件によって読み取るデータ量が減るかどうかまでは確認しません。MergeTree テーブルにおけるデータ範囲の詳細については、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を参照してください。
 
+このチェックは、テーブル自体の主キーに対して行われます。プロジェクションがクエリに使用されるのは、クエリがそのプロジェクション自身のキーでもデータ範囲を絞り込んでいる場合に限られます。そうでない場合、プロジェクションはスキップされ、代わりにテーブルが読み取られます。[force&#95;optimize&#95;projection](/ja/reference/settings/session-settings/force-optimize#force_optimize_projection) で強制したプロジェクションのキーが使用されない場合、クエリは例外をスローします。
+
 ## force_read_through_distributed_cache {#force_read_through_distributed_cache}
 
 <CloudOnlyBadge />

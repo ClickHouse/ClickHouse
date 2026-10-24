@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="database_replicated_allow_explicit_uuid">
-  ## database_replicated_allow_explicit_uuid
-</div>
+## database_replicated_allow_explicit_uuid {#database_replicated_allow_explicit_uuid}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 0 - 不允许在 Replicated 数据库中显式指定表 UUID。1 - 允许。2 - 允许，但会忽略指定的 UUID，改为生成一个随机 UUID。
 
-<div id="database_replicated_allow_heavy_create">
-  ## database_replicated_allow_heavy_create
-</div>
+## database_replicated_allow_heavy_create {#database_replicated_allow_heavy_create}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,19 +29,21 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 允许在 Replicated 数据库引擎中执行长时间运行的 DDL 查询 (CREATE AS SELECT 和 POPULATE) 。请注意，这可能会长时间阻塞 DDL 队列。
 
-<div id="database_replicated_allow_only_replicated_engine">
-  ## database_replicated_allow_only_replicated_engine
-</div>
+## database_replicated_allow_only_replicated_engine {#database_replicated_allow_only_replicated_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-仅允许在使用 Replicated 引擎的数据库中创建复制表。
+仅当表会复制其自身存储在磁盘上的数据，或者表本身不在磁盘上存储数据时，才允许在使用 `Replicated` 引擎的数据库中创建该表。
+
+此限制仅适用于表自身拥有的磁盘上的数据，包括远程磁盘上的数据，但不保证 in-memory 数据或由外部系统管理的数据的持久性。
+
+例如，`ReplicatedMergeTree`、`Memory` 和 `Buffer` 等 in-memory 引擎、`Merge` 和 `Alias` 等 metadata-only 引擎，以及 `S3` 和 `AzureBlobStorage` 等外部存储或数据湖引擎均允许使用。在磁盘上存储表数据的非复制引擎 (例如 `MergeTree`、`Log`、`File` 和 `Set`) 则会被拒绝，即使其可写存储策略使用的是远程磁盘也不例外。使用 `SETTINGS persistent = 0` 创建的 `Set` 表和 `Join` 表仅在内存中保存数据，因此允许使用。
+
+`Distributed`、`Remote` 和 `RemoteSecure` 表允许使用。它们可选的本地后台 `INSERT` 队列只是临时的发送缓冲区，并不属于表本身的数据。该队列不会被复制；将 `distributed_foreground_insert` 设置为 `1` 即可避免使用该队列。
 
 Cloud 默认值：`1`。
 
-<div id="database_replicated_allow_replicated_engine_arguments">
-  ## database_replicated_allow_replicated_engine_arguments
-</div>
+## database_replicated_allow_replicated_engine_arguments {#database_replicated_allow_replicated_engine_arguments}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,25 +51,19 @@ Cloud 默认值：`1`。
 
 0 - 不允许在 Replicated 数据库中的 *MergeTree 表上显式指定 ZooKeeper 路径和副本名称。1 - 允许。2 - 允许，但会忽略指定的路径，改用默认路径。3 - 允许且不记录警告。
 
-<div id="database_replicated_always_detach_permanently">
-  ## database_replicated_always_detach_permanently
-</div>
+## database_replicated_always_detach_permanently {#database_replicated_always_detach_permanently}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果数据库引擎为 Replicated，则以 DETACH TABLE PERMANENTLY 的方式执行 DETACH TABLE
 
-<div id="database_replicated_enforce_synchronous_settings">
-  ## database_replicated_enforce_synchronous_settings
-</div>
+## database_replicated_enforce_synchronous_settings {#database_replicated_enforce_synchronous_settings}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 强制某些查询以同步方式等待 (另请参见 database&#95;atomic&#95;wait&#95;for&#95;drop&#95;and&#95;detach&#95;synchronously、mutations&#95;sync、alter&#95;sync) 。不建议启用这些设置。
 
-<div id="database_replicated_initial_query_timeout_sec">
-  ## database_replicated_initial_query_timeout_sec
-</div>
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 

@@ -14,19 +14,16 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="iceberg_metadata_compression_method">
-  ## iceberg_metadata_compression_method
-</div>
+## iceberg_metadata_compression_method {#iceberg_metadata_compression_method}
 
 <ExperimentalBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
 
 Méthode de compression du fichier `.metadata.json`.
+Avec une chaîne vide, le catalogue choisit le codec lors de l&#39;écriture du premier fichier de métadonnées. Définissez `none` pour demander des métadonnées non compressées.
 
-<div id="iceberg_metadata_log_level">
-  ## iceberg_metadata_log_level
-</div>
+## iceberg_metadata_log_level {#iceberg_metadata_log_level}
 
 <SettingsInfoBlock type="IcebergMetadataLogLevel" default_value="none" />
 
@@ -44,9 +41,7 @@ Valeurs possibles :
 * manifest&#95;file&#95;metadata - Tout ce qui précède + les métadonnées des fichiers manifestes Avro parcourus.
 * manifest&#95;file&#95;entry - Tout ce qui précède + les entrées des fichiers manifestes Avro parcourus.
 
-<div id="iceberg_metadata_staleness_ms">
-  ## iceberg_metadata_staleness_ms
-</div>
+## iceberg_metadata_staleness_ms {#iceberg_metadata_staleness_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -35,7 +35,9 @@ Valeurs possibles :
 Active ou désactive l’optimisation automatique de [PREWHERE](/fr/reference/statements/select/prewhere) dans les requêtes [SELECT](/fr/reference/statements/select/index) utilisant le modificateur [FINAL](/fr/reference/statements/select/from#final-modifier).
 
 Seules les conditions qui dépendent exclusivement de la clé de tri et qui sont déterministes au sein de la requête sont déplacées ;
-le résultat de `FINAL` n’est donc pas affecté.
+le résultat de `FINAL` n’est donc pas affecté. Pour [GraphiteMergeTree](/fr/reference/engines/table-engines/mergetree-family/graphitemergetree),
+`FINAL` fusionne en une seule ligne les lignes adjacentes d’un même path. L’optimisation ne déplace donc que les conditions portant sur la colonne path,
+et uniquement si celle-ci est la première colonne de la clé de tri.
 
 Fonctionne uniquement pour les tables [*MergeTree](/fr/reference/engines/table-engines/mergetree-family/index).
 

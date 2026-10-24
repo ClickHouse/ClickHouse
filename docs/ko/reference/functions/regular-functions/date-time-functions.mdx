@@ -970,7 +970,7 @@ age('unit', startdate, enddate[, timezone])
 
 * `startdate` — 뺄 값인 첫 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `enddate` — 여기에서 빼는 대상인 두 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
-* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 startdate와 enddate 모두에 적용됩니다. 지정하지 않으면 startdate와 enddate의 시간대가 사용됩니다. 두 값의 시간대가 같지 않으면 결과는 지정되지 않습니다. [`String`](/ko/reference/data-types/string)
+* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 startdate와 enddate 모두에 적용됩니다. 지정하지 않으면 startdate와 enddate의 시간대가 사용됩니다. 두 값의 시간대가 같지 않으면 결과는 명시되지 않습니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -1225,13 +1225,13 @@ unit으로 `week`를 지정하면 `dateDiff`는 주가 월요일에 시작한다
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**별칭**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
+**별칭**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
 
 **인수**
 
 * `unit` — 결과를 표현할 인터벌 유형입니다.
 
-| Unit        | 가능한 값                                    |
+| 단위          | 가능한 값                                    |
 | ----------- | ---------------------------------------- |
 | nanosecond  | `nanosecond`, `nanoseconds`, `ns`        |
 | microsecond | `microsecond`, `microseconds`, `us`, `u` |
@@ -1247,7 +1247,7 @@ dateDiff(unit, startdate, enddate[, timezone])
 
 * `startdate` — 빼는 값인 첫 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `enddate` — 여기에서 빼기를 수행하는 두 번째 시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
-* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 `startdate`와 `enddate` 모두에 적용됩니다. 지정하지 않으면 `startdate`와 `enddate`의 시간대가 사용됩니다. 두 값의 시간대가 서로 다르면 결과는 정의되지 않습니다. [`String`](/ko/reference/data-types/string)
+* `timezone` — 선택 사항입니다. 시간대 이름입니다. 지정하면 `startdate`와 `enddate` 모두에 적용됩니다. 지정하지 않으면 `startdate`와 `enddate`의 시간대가 사용됩니다. 두 값의 시간대가 서로 다르면 결과는 명시되지 않습니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -1538,7 +1538,7 @@ LIMIT 10
 
 **대체 필드:**
 
-| Placeholder | Description            | Presentation | Examples                   |
+| 자리 표시자 | Description            | Presentation | Examples                   |
 | ----------- | ---------------------- | ------------ | -------------------------- |
 | G           | 연호                     | 텍스트          | AD                         |
 | C           | 연호의 세기 (&gt;=0)        | 숫자           | 20                         |
@@ -1570,10 +1570,12 @@ LIMIT 10
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
 
+**별칭(Aliases)**: `FORMAT_DATETIME`
+
 **인수**
 
 * `datetime` — 포맷할 날짜 또는 날짜-시간 값입니다. [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
-* `format` — Joda 스타일 대체 필드가 포함된 포맷 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `format` — Joda 스타일 대체 필드가 포함된 형식 문자열(format String)입니다. [`String`](/ko/reference/data-types/string)
 * `timezone` — 선택 사항입니다. 포맷된 시간에 사용할 시간대 이름입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -2158,7 +2160,7 @@ SELECT monthName(date_value)
 now([timezone])
 ```
 
-**별칭**: `current_timestamp`, `localtimestamp`
+**별칭**: `localtimestamp`, `current_timestamp`
 
 **인수**
 
@@ -3306,7 +3308,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 timezone()
 ```
 
-**별칭**: `timeZone`
+**별칭**: `current_timezone`, `timeZone`
 
 **인수**
 
@@ -3419,11 +3421,11 @@ timezoneOffset(Time) AS Offset_in_seconds,
 toDayOfMonth(datetime)
 ```
 
-**별칭**: `DAYOFMONTH`, `DAY`
+**별칭**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
 
 **인수**
 
-* `datetime` — 월의 일을 가져올 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 월의 일을 가져올 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
@@ -3465,11 +3467,11 @@ SELECT toDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**별칭**: `DAYOFWEEK`
+**별칭**: `DAYOFWEEK`, `DAY_OF_WEEK`
 
 **인수**
 
-* `datetime` — 요일을 구할 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 요일을 구할 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `mode` — 선택 사항입니다. 주 모드(0-3)를 지정하는 정수입니다. 생략하면 기본값은 0입니다. [`UInt8`](/ko/reference/data-types/int-uint)
 * `timezone` — 선택 사항입니다. 변환에 사용할 시간대입니다. [`String`](/ko/reference/data-types/string)
 
@@ -3482,7 +3484,7 @@ toDayOfWeek(datetime[, mode[, timezone]])
 **사용 예시**
 
 ```sql title=Query
--- 다음 날짜는 2023년 4월 21일이며, 금요일이었습니다:
+-- The following date is April 21, 2023, which was a Friday:
 SELECT
     toDayOfWeek(toDateTime('2023-04-21')),
     toDayOfWeek(toDateTime('2023-04-21'), 1)
@@ -3506,11 +3508,11 @@ SELECT
 toDayOfYear(datetime)
 ```
 
-**별칭**: `DAYOFYEAR`
+**별칭**: `DAYOFYEAR`, `DAY_OF_YEAR`
 
 **인수**
 
-* `datetime` — 해당 연도의 몇 번째 날인지를 구할 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 해당 연도의 몇 번째 날인지를 구할 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
@@ -3646,7 +3648,7 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
 
 도입 버전: v20.1.0
 
-날짜 또는 시간이 포함된 날짜의 ISO 주 번호를 반환합니다.
+날짜 또는 날짜/시간의 ISO 주 번호를 반환합니다.
 
 이 함수는 `toWeek(date, 3)`와 동일한 호환성 함수입니다.
 ISO 주는 월요일에 시작하며, 한 해의 첫 번째 주에는 1월 4일이 포함됩니다.
@@ -3661,9 +3663,11 @@ ISO 8601에 따르면 주 번호의 범위는 1부터 53까지입니다.
 toISOWeek(datetime[, timezone])
 ```
 
+**별칭**: `WEEK_OF_YEAR`
+
 **인수**
 
-* `datetime` — ISO 주 번호를 가져올 날짜 또는 날짜와 시간이 포함된 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — ISO 주 번호를 가져올 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `timezone` — 선택 사항입니다. 시간대입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
@@ -3708,9 +3712,11 @@ SELECT toDate('2025-12-29') AS date, toISOWeek(date) AS isoWeek, toYear(date) AS
 toISOYear(datetime)
 ```
 
+**별칭**: `YEAR_OF_WEEK`
+
 **인수**
 
-* `datetime` — 날짜 또는 시간이 포함된 날짜 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `datetime` — 날짜 또는 날짜/시간 값입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
@@ -3736,7 +3742,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 
 도입 버전: v1.1.0
 
-날짜 또는 날짜와 시간이 포함된 값을 해당 월의 마지막 날로 올림합니다.
+날짜 또는 날짜/시간 값을 해당 월의 마지막 날로 올림합니다.
 
 <Note>
   반환 타입은 [`enable_extended_results_for_datetime_functions`](/ko/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) 설정으로 지정할 수 있습니다.
@@ -3748,15 +3754,15 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 toLastDayOfMonth(value)
 ```
 
-**별칭**: `LAST_DAY`
+**별칭**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
 
 **인수**
 
-* `value` — 해당 월의 마지막 날로 올림할 날짜 또는 시간이 포함된 날짜입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `value` — 해당 월의 마지막 날로 올림할 날짜 또는 날짜/시간입니다. [`Date`](/ko/reference/data-types/date) 또는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-지정된 날짜 또는 시간이 포함된 날짜에 대해 해당 월의 마지막 날에 해당하는 날짜를 반환합니다. [`Date`](/ko/reference/data-types/date)
+지정된 날짜 또는 날짜/시간에 대해 해당 월의 마지막 날에 해당하는 날짜를 반환합니다. [`Date`](/ko/reference/data-types/date)
 
 **예시**
 
@@ -5747,7 +5753,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 today()
 ```
 
-**별칭**: `current_date`, `curdate`
+**별칭**: `curdate`, `current_date`
 
 **인수**
 

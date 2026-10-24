@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <div id="key-concepts">
-  ## Conceitos-chave
+  ## Conceitos-chave {#key-concepts}
 </div>
 
 O diagrama abaixo mostra como as organizações do ClickHouse Cloud, as contas de nuvem e a infraestrutura BYOC se relacionam.
@@ -55,19 +55,19 @@ Os principais recursos de Cloud que o ClickHouse Cloud implantará na sua conta 
 Por padrão, o ClickHouse Cloud provisiona uma VPC nova e dedicada e configura as funções do IAM necessárias para garantir a operação segura dos serviços do Kubernetes. Para organizações com necessidades avançadas de rede ou segurança, também existe a opção de gerenciar a VPC e as funções do IAM por conta própria. Essa abordagem permite maior personalização das configurações de rede e um controle mais preciso sobre as permissões. No entanto, optar por gerenciar esses recursos por conta própria aumentará suas responsabilidades operacionais.
 
 <div id="data-storage">
-  ### Armazenamento de dados
+  ### Armazenamento de dados {#data-storage}
 </div>
 
 Seus dados do ClickHouse, backups, logs e dados de monitoramento permanecem na sua conta de nuvem; os únicos dados exportados para fora são a telemetria limitada de uso e saúde listada em [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#outbound-connections). As partes de dados e os backups são armazenados no seu armazenamento de objetos (por exemplo, Amazon S3), enquanto os logs são armazenados nos volumes de armazenamento anexados aos nós do ClickHouse. Em uma atualização futura, os logs serão gravados no LogHouse, um serviço de logging baseado em ClickHouse que também é executado dentro da sua VPC BYOC. As métricas podem ser armazenadas localmente ou, para retenção de longo prazo, em um bucket dedicado na sua própria conta — o armazenamento de objetos fica fora da VPC/VNet e é acessado pelo caminho da storage API do provedor. A conectividade do plano de controle entre a VPC do ClickHouse e a sua VPC BYOC é usada apenas para operações de gerenciamento, nunca para tráfego de consultas. Por padrão, os serviços de gerenciamento do ClickHouse acessam a API do Kubernetes do seu cluster pelo endpoint público dela, que nunca fica exposto sem proteção: na AWS, o acesso é restrito por allowlist de IPs aos intervalos de saída do ClickHouse; no GCP, é autorizado pelo Google Cloud IAM; e, no Azure, é autorizado pelo Microsoft Entra ID em conjunto com o Azure RBAC. Como alternativa, é possível habilitar uma conexão privada por implantação — AWS VPC Lattice, o endpoint do plano de controle baseado em DNS do GKE no GCP ou Azure Private Link —, como mostrado no diagrama. Em todas as nuvens, o Tailscale transporta o acesso dos engenheiros do ClickHouse para solução de problemas, além de métricas e dashboards, e continua em uso mesmo quando o caminho da API do Kubernetes é privado.
 
 <div id="control-plane-communication">
-  ### Comunicação com o plano de controle
+  ### Comunicação com o plano de controle {#control-plane-communication}
 </div>
 
 A VPC do ClickHouse se comunica com sua VPC BYOC por HTTPS (porta 443) para operações de gerenciamento do serviço, incluindo alterações de configuração, verificações de integridade e comandos de implantação. Esse tráfego transporta apenas dados do plano de controle para orquestração. A telemetria crítica e os alertas fluem da sua VPC BYOC para a VPC do ClickHouse para permitir o monitoramento da utilização de recursos e da integridade.
 
 <div id="key-requirements">
-  ## Principais requisitos para BYOC
+  ## Principais requisitos para BYOC {#key-requirements}
 </div>
 
 O modelo de implantação BYOC exige dois componentes essenciais para garantir operação confiável, facilidade de manutenção e segurança:
@@ -87,7 +87,7 @@ Essas permissões são concedidas por meio de uma função do IAM entre contas (
 Para informações detalhadas sobre as permissões específicas exigidas, consulte a [Referência de Privilégios do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege).
 
 <div id="tailscale-private-network">
-  ### Conexão de rede privada Tailscale
+  ### Conexão de rede privada Tailscale {#tailscale-private-network}
 </div>
 
 O Tailscale fornece uma rede privada segura, com modelo zero trust, entre o ClickHouse Cloud e sua implantação BYOC. Por ela trafegam o acesso dos engenheiros do ClickHouse para solução de problemas e as métricas e dashboards que o ClickHouse usa para monitorar sua implantação, além do tráfego da API do Kubernetes quando um endpoint de API privado está habilitado. Essa conexão permite:
@@ -95,7 +95,7 @@ O Tailscale fornece uma rede privada segura, com modelo zero trust, entre o Clic
 * **Monitoramento contínuo**: engenheiros do ClickHouse podem acessar a stack de monitoramento Prometheus implantada na sua VPC BYOC para acompanhar a saúde e o desempenho do serviço
 * **Manutenção proativa**: engenheiros podem realizar manutenção de rotina, upgrades e operações de solução de problemas
 * **Suporte de emergência**: em caso de problemas no serviço, engenheiros podem acessar rapidamente seu ambiente para diagnosticar e resolver falhas
-* **Gerenciamento de infraestrutura**: quando um endpoint privado da API do Kubernetes está habilitado, os serviços de gerenciamento acessam a API do Kubernetes por meio dessa conexão, e não pelo endpoint público dela
+* **Gerenciamento de infraestrutura**: quando um endpoint privado da API do Kubernetes está habilitado, os serviços de gerenciamento acessam a API do Kubernetes por meio dessa conexão, e não pelo endpoint público dela. No GCP, apenas as ferramentas de implantação e o monitoramento usam essa conexão; já os serviços de gerenciamento usam o endpoint baseado em DNS com autorização via IAM — consulte [Exposição do servidor de API do Kubernetes](/pt-BR/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)
 
 Os agentes Tailscale no seu cluster estabelecem conexões **apenas de saída**: não é necessária nenhuma regra de entrada em security group, firewall ou network security group para o próprio Tailscale, o que reduz sua exposição. Todo acesso é:
 

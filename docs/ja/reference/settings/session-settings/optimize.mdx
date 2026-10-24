@@ -391,6 +391,14 @@ FROM default.fuse_tbl AS __table1
 
 ORDER BY のプレフィックスですべての GROUP BY キーがカバーされている場合、末尾の ORDER BY 要素を削除します。
 
+## optimize_uniq_exact_radix_partitioning {#optimize_uniq_exact_radix_partitioning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "スレッドごとのハッシュセットをマージする代わりに、値をハッシュでパーティション化することで、`GROUP BY` を伴わない単一の `uniqExact` または `count(DISTINCT)` を計算する新しい設定。"}]}]} />
+
+`GROUP BY` を伴わないクエリにおける単一の `uniqExact` (およびデフォルトでこれを使用する `count(DISTINCT)`) を、スレッドごとのハッシュセットをマージするのではなく、値をハッシュでパーティション化して計算します。各スレッドは自身の値を各パーティションに振り分けます。その後、各パーティションは CPU キャッシュに収まる小さなハッシュセット内で並列に重複が排除され、それらのサイズの合計が結果となります。この設定は、64 ビットまでの数値型、`Date`、`Date32`、`DateTime`、`Enum`、`IPv4`、`IPv6`、`UUID`、128 ビット整数、`String`、`FixedString`、またはこれらの `Nullable` である単一の引数に対し、結果が同一サーバー上で完了する場合に適用されます。各スレッドは、通常の集約と同様に、セットが CPU キャッシュのサイズを超えるまでは自身の小さなセットへの挿入を続けます。そのため、振り分けが行われるのは high-cardinality な入力の場合に限られます。また、値の大半が重複していると判明した場合、スレッドは自身のセットへの挿入に戻ります。
+
 ## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

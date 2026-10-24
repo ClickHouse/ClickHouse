@@ -35,7 +35,9 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Включает или отключает автоматическую оптимизацию [PREWHERE](/ru/reference/statements/select/prewhere) в запросах [SELECT](/ru/reference/statements/select/index) с модификатором [FINAL](/ru/reference/statements/select/from#final-modifier).
 
 Переносятся только условия, которые зависят исключительно от ключа сортировки и являются детерминированными в пределах запроса,
-поэтому результат применения `FINAL` не меняется.
+поэтому результат применения `FINAL` не меняется. Для [GraphiteMergeTree](/ru/reference/engines/table-engines/mergetree-family/graphitemergetree)
+`FINAL` объединяет соседние строки одного пути в одну строку. Следовательно, оптимизация переносит только условия по столбцу пути
+и только если путь является первым столбцом ключа сортировки.
 
 Работает только для таблиц семейства [*MergeTree](/ru/reference/engines/table-engines/mergetree-family/index).
 

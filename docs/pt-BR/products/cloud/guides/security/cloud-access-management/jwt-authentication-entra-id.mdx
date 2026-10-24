@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'Autenticação JWT com Entra ID'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'Autenticação JWT com o Microsoft Entra ID'
+description: 'Como configurar o Microsoft Entra ID para emitir JWTs para um serviço do ClickHouse Cloud, mapeando as funções de aplicativo do Entra ID para papéis do ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'funções de aplicativo', 'autenticação', 'provedor de identidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="Autenticação JWT com um provedor de identidade personalizado" />
+
+Este guia mostra como configurar o **Microsoft Entra ID** (antigo Azure Active Directory) para que usuários e aplicações se conectem a um serviço do ClickHouse Cloud usando tokens de acesso do Entra ID em vez de senhas de banco de dados. As funções de aplicativo (funções de aplicativo) do Entra ID são mapeadas para papéis do ClickHouse, de modo que você controla o acesso atribuindo usuários, grupos e aplicações às funções de aplicativo no Entra ID.
+
+<Tip>
+  Este guia aborda a configuração no Entra ID e os valores que devem ser inseridos no ClickHouse Cloud. Para informações gerais sobre provedores JWT, consulte [Configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup). Para saber mais sobre as claims do token e o funcionamento dos usuários efêmeros, consulte a referência [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt).
+</Tip>
+
+## Antes de começar {#before-you-begin}
+
+Você precisará de:
+
+* Uma organização no plano **Enterprise** e um serviço executando o **ClickHouse versão 26.4 ou posterior**.
+* Uma função do ClickHouse Cloud com a permissão `control-plane:service:manage` no serviço (por exemplo, **Administrador** ou **Administrador do serviço**) para adicionar o provedor JWT.
+* Acesso ao **Microsoft Entra admin center** com, no mínimo, a função **Cloud Application Administrator**.
+* Microsoft Entra ID P1 ou P2, caso queira atribuir grupos às funções de aplicativo, em vez de usuários individuais.
+* A [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) e o [`clickhouse-client`](/pt-BR/concepts/features/interfaces/client) para testar a configuração.
+* Uma lista dos papéis do ClickHouse que você deseja conceder por meio do Entra ID. Cada um deles se torna uma função de aplicativo do Entra ID com o mesmo nome. Este guia usa dois:
+
+  | Valor da função de aplicativo | Privilégios do ClickHouse            |
+  | ----------------------------- | ------------------------------------ |
+  | `ch_analyst`                  | `SELECT` e `INSERT` em `analytics.*` |
+  | `ch_readonly`                 | `SELECT` em `*.*`                    |
+
+## Como funciona {#how-it-works}
+
+1. Você registra no Entra ID uma aplicação que representa o seu serviço do ClickHouse Cloud e define uma função de aplicativo (app role) para cada papel do ClickHouse.
+2. Você atribui usuários, grupos e aplicações do Entra ID a essas funções de aplicativo.
+3. Um usuário faz login com a Azure CLI ou com `clickhouse-client --login`, ou uma aplicação usa o fluxo de concessão de credenciais de cliente (client credentials grant). O Entra ID emite um token de acesso v2.0 cuja claim `aud` é o ID da aplicação (cliente) e cuja claim `roles` lista as funções de aplicativo atribuídas ao chamador.
+4. O ClickHouse Cloud verifica a assinatura do token com base nas chaves públicas do Entra ID, valida as claims `iss` e `aud` e cria um usuário efêmero com os privilégios dos papéis do ClickHouse indicados na claim `roles`, limitados aos privilégios do usuário `default`.
+
+## Registre o ClickHouse no Entra ID {#register-in-entra-id}
+
+<Steps>
+  <Step title="Crie o registro do aplicativo" id="create-app-registration">
+    No centro de administração do Microsoft Entra, abra **App registrations** e selecione **New registration**:
+
+    * **Name**: um nome de exibição, por exemplo `clickhouse-cloud-production`.
+    * **Supported account types**: tenant único. Dependendo da versão do portal, essa opção aparece como **Single tenant only** ou **Accounts in this organizational directory only**.
+    * **Redirect URI**: deixe em branco. Os usuários fazem login com o fluxo de código de dispositivo (device code flow), que não usa um URI de redirecionamento.
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Formulário de registro de aplicação no centro de administração do Microsoft Entra com tipo de conta de tenant único e sem URI de redirecionamento" />
+
+    Selecione **Register**. Na página **Overview**, copie os seguintes valores:
+
+    * **Application (client) ID**, chamado a seguir de `<CLIENT_ID>`. Ele se torna a claim `aud` dos tokens.
+    * **Directory (tenant) ID**, chamado a seguir de `<TENANT_ID>`. Ele faz parte do emissor e da URL do JWKS.
+  </Step>
+
+  <Step title="Solicite tokens de acesso v2.0" id="request-v2-tokens">
+    Por padrão, o Entra ID emite tokens de acesso v1.0, cujo emissor é `https://sts.windows.net/<TENANT_ID>/`. Configure a aplicação para receber tokens v2.0, cujo emissor é `https://login.microsoftonline.com/<TENANT_ID>/v2.0` e cuja claim `aud` é sempre o ID do cliente.
+
+    No registro da sua aplicação, abra **Manifest**, defina a versão do token de acesso como `2` e selecione **Save**. O nome da propriedade depende do formato de manifesto exibido no editor:
+
+    * Formato Microsoft Graph: `requestedAccessTokenVersion`, na seção `api`.
+    * Formato Azure AD Graph: `accessTokenAcceptedVersion`, no nível superior, como na captura de tela abaixo.
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Editor de manifesto da aplicação com accessTokenAcceptedVersion definido como 2" />
+  </Step>
+
+  <Step title="Expor uma API" id="expose-an-api">
+    Abra **Expose an API**:
+
+    1. Ao lado de **Application ID URI**, selecione **Add**, aceite o valor default `api://<CLIENT_ID>` e salve. Os clientes usam essa URI para solicitar tokens para o ClickHouse. Ela não altera a claim `aud` dos tokens v2.0, que continua sendo o client ID.
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Página Expose an API com o painel Application ID URI exibindo o valor default api://" />
+
+    2. Selecione **Add a scope** e preencha o formulário. Os usuários solicitam esse escopo ao fazer login. Aplicações que se autenticam com a própria identidade não o utilizam.
+
+       | Campo                          | Valor                                                  |
+       | ------------------------------ | ------------------------------------------------------ |
+       | **Scope name**                 | `access_as_application`                                |
+       | **Who can consent?**           | **Admins only**                                        |
+       | **Admin consent display name** | Por exemplo, `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | Qualquer descrição                                     |
+       | **State**                      | **Enabled**                                            |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Painel Add a scope com o escopo access_as_application, consentimento restrito a administradores e o estado definido como Enabled" />
+  </Step>
+
+  <Step title="Autorize uma aplicação cliente para permitir o login de usuários" id="authorize-client-application">
+    Os usuários obtêm tokens por meio de uma aplicação cliente pública. Ao pré-autorizar essa aplicação para o escopo `access_as_application`, os usuários não precisam dar consentimento. Este guia usa o Azure CLI, cujo ID de cliente é `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, tanto para o `az` quanto para o `clickhouse-client --login`.
+
+    Em **Expose an API**, na seção **Authorized client applications**, selecione **Add a client application**. Insira `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, selecione o escopo `api://<CLIENT_ID>/access_as_application` e clique em **Add application**.
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Painel Add a client application com o ID de cliente do Azure CLI e o escopo access_as_application selecionado" />
+
+    <Note>
+      Para usar sua própria aplicação cliente em vez do Azure CLI, registre uma aplicação separada, defina **Allow public client flows** como **Yes** em **Authentication** e pré-autorize o ID de cliente dela aqui. Em seguida, passe esse ID de cliente em `--oauth-client-id` ao [fazer login com o clickhouse-client](#sign-in-with-clickhouse-client). Se o seu tenant não permitir o consentimento do usuário, um administrador também precisará conceder consentimento para as permissões `openid`, `profile` e `offline_access` dessa aplicação.
+    </Note>
+  </Step>
+
+  <Step title="Criar funções de aplicativo" id="create-app-roles">
+    Cada função de aplicativo corresponde a uma função do ClickHouse. O **Value** da função de aplicativo é o que aparece na claim `roles` do token e deve coincidir exatamente com o nome da função do ClickHouse, inclusive quanto a maiúsculas e minúsculas.
+
+    Abra **App roles** e selecione **Create app role** para cada função do ClickHouse:
+
+    | Campo                                    | Valor                                                                                                                                                             |
+    | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Display name**                         | Um nome legível, por exemplo `ClickHouse analyst`                                                                                                                 |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**. Escolha **Users/Groups** se apenas pessoas forem se conectar, ou **Applications** se apenas aplicações forem se conectar. |
+    | **Value**                                | O nome da função do ClickHouse, por exemplo `ch_analyst`                                                                                                          |
+    | **Description**                          | Qualquer descrição                                                                                                                                                |
+    | **Do you want to enable this app role?** | Marcado                                                                                                                                                           |
+
+    O exemplo a seguir define três funções de aplicativo cujos valores são nomes de funções do ClickHouse:
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="Página App roles listando ClickHouse Admin, ClickHouse Analyst DB e ClickHouse Read Only com os valores ch_admin, ch_analyst e ch_readonly" />
+  </Step>
+
+  <Step title="Exigir atribuição" id="require-assignment">
+    Por padrão, qualquer usuário do seu tenant pode obter um token para o aplicativo. Para restringir os tokens aos usuários, grupos e aplicativos que você atribuir a uma função de aplicativo, abra **Enterprise applications**, selecione o aplicativo com o mesmo nome do seu registro de aplicativo, abra **Properties**, defina **Assignment required?** como **Yes** e selecione **Save**.
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Propriedades do aplicativo empresarial com Assignment required definido como Yes" />
+  </Step>
+
+  <Step title="Atribua usuários e grupos a funções do aplicativo" id="assign-users-and-groups">
+    No mesmo aplicativo empresarial, abra **Users and groups** e selecione **Add user/group**. Escolha um usuário ou grupo, selecione uma função de aplicativo e clique em **Assign**. Repita o processo para cada usuário ou grupo.
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Página Users and groups do aplicativo empresarial mostrando um usuário atribuído à função de aplicativo ClickHouse Read Only" />
+
+    Um usuário que tenha várias funções de aplicativo atribuídas, diretamente ou por meio de grupos, recebe todas elas na claim `roles`.
+
+    <Note>
+      Para atribuir grupos a funções de aplicativo, é necessário o Microsoft Entra ID P1 ou P2. Grupos aninhados não são compatíveis: somente os membros diretos de um grupo atribuído recebem a função de aplicativo correspondente.
+    </Note>
+  </Step>
+</Steps>
+
+## Crie funções correspondentes no ClickHouse {#create-clickhouse-roles}
+
+Conecte-se ao seu serviço como o usuário `default` (por exemplo, pelo SQL Console) e crie uma função para cada valor de função de aplicativo:
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+Tenha em mente:
+
+* Os nomes das funções diferenciam maiúsculas de minúsculas e devem corresponder aos valores de função de aplicativo.
+* O ClickHouse ignora os nomes na claim `roles` que não correspondam a uma função existente no serviço.
+* No ClickHouse Cloud, o limite de permissões para provedores JWT é o usuário `default`. O ClickHouse descarta todos os privilégios de uma função que o usuário `default` não possua.
+
+## Adicionar o Entra ID como provedor JWT {#add-jwt-provider}
+
+Siga as etapas em [Adicionar um provedor JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider) e informe estes valores:
+
+| Campo           | Valor                                                                    |
+| --------------- | ------------------------------------------------------------------------ |
+| **Name**        | Qualquer nome, por exemplo, `entra-id`                                   |
+| **Issuer**      | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                     |
+| **Audience**    | `<CLIENT_ID>`, o ID da aplicação (cliente). Não use `api://<CLIENT_ID>`. |
+| **JWKS URL**    | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys`      |
+| **Roles claim** | `roles`                                                                  |
+
+<Warning>
+  Defina **Roles claim** como `roles`. Se você deixar esse campo vazio, o ClickHouse lerá as funções da claim `clickhouse:roles`, que não existe nos tokens do Entra ID, e os usuários serão autenticados sem nenhum privilégio.
+</Warning>
+
+## Conectar como usuário {#connect-as-a-user}
+
+Defina como variáveis de shell os valores do registro do seu aplicativo e o nome de host do seu serviço:
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### Passar um token da Azure CLI {#pass-an-azure-cli-token}
+
+Faça login com a Azure CLI, solicite um token de acesso para a aplicação ClickHouse e passe-o ao `clickhouse-client` com `--jwt`:
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+O mesmo token também funciona com a interface HTTP:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Por padrão, os tokens de acesso do Entra ID são válidos por 60 a 90 minutos. Solicite um novo token quando ele expirar ou use `--login` em sessões longas.
+
+### Fazer login com o clickhouse-client {#sign-in-with-clickhouse-client}
+
+O `clickhouse-client` pode executar por conta própria o fluxo de código de dispositivo do OAuth 2.0 e renovar o token durante a sessão:
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+O cliente exibe uma URL e um código. Abra a URL, insira o código e faça login com sua conta do Entra ID. Mantenha `offline_access` no escopo: com ele, o Entra ID retorna um token de atualização, que o cliente usa para renovar o token de acesso. Sem ele, você precisará fazer login novamente quando o token de acesso expirar.
+
+## Conectar como aplicação {#connect-as-an-application}
+
+Aplicações como jobs de ETL e serviços de backend se autenticam com a própria identidade por meio do fluxo de concessão de credenciais de cliente (client credentials grant) do OAuth 2.0. As funções de aplicativo (app roles) concedidas a uma aplicação devem permitir o tipo de membro **Applications**.
+
+1. Em **App registrations**, registre uma aplicação separada para a carga de trabalho. Em **Certificates &amp; secrets**, crie um segredo do cliente ou faça o envio de um certificado. Os comandos abaixo se referem ao ID do cliente e ao segredo da carga de trabalho como `<WORKLOAD_CLIENT_ID>` e `<WORKLOAD_CLIENT_SECRET>`.
+2. No registro de aplicativo da carga de trabalho, abra **API permissions** e selecione **Add a permission**. Em **APIs my organization uses**, localize a aplicação ClickHouse, selecione **Application permissions**, marque as funções de aplicativo de que a carga de trabalho precisa e selecione **Add permissions**.
+3. Selecione **Grant admin consent** para atribuir as funções de aplicativo à carga de trabalho.
+
+Solicite um token ao endpoint de token do Entra ID e envie-o ao ClickHouse:
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Em código de produção, use a [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) ou a biblioteca Azure Identity da sua linguagem. Elas armazenam os tokens em cache e solicitam novos tokens antes que os antigos expirem.
+
+## Verificar {#verify}
+
+Após se conectar, verifique a identidade e os privilégios da sessão:
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| Consulta               | Resultado esperado                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `SELECT currentUser()` | Um nome no formato `JWT::<sub>::<hash>`, em que `<sub>` é a claim `sub` do token                                            |
+| `SHOW GRANTS`          | Os privilégios das funções listadas na claim `roles` do token, por exemplo, `GRANT SELECT ON *.* TO ...` para `ch_readonly` |
+| `SHOW CURRENT ROLES`   | Nenhuma linha                                                                                                               |
+
+O ClickHouse não concede as funções em si ao usuário efêmero. Ele reúne os privilégios das funções indicadas no token, faz a interseção deles com os privilégios do usuário `default` e concede o resultado diretamente ao usuário. É por isso que `SHOW CURRENT ROLES` não retorna nenhuma linha.
+
+Para tokens de usuário, o Entra ID define `sub` como um identificador opaco, exclusivo para cada combinação de usuário e aplicação. Esse valor não corresponde ao endereço de e-mail nem ao object ID do usuário.
+
+## Boas práticas {#best-practices}
+
+### Atribua grupos, não usuários individuais {#assign-groups}
+
+Atribua um grupo do Entra ID a cada função de aplicativo e, depois, conceda ou revogue o acesso alterando a composição do grupo. Assim, ninguém precisa editar o aplicativo quando pessoas entram ou saem de uma equipe.
+
+### Use um registro de aplicativo separado para cada ambiente {#separate-app-registrations}
+
+Os tokens trazem, na claim `aud`, o ID do cliente do registro de aplicativo correspondente. Com registros de aplicativo separados para produção e staging, um token emitido para um ambiente não pode ser usado para autenticação no outro.
+
+### Alterações de função só entram em vigor no próximo token {#role-changes}
+
+O Entra ID grava a claim `roles` ao emitir um token. Depois que você altera as atribuições de funções de aplicativo de um usuário, a alteração só entra em vigor quando o usuário obtém um novo token. Os tokens já emitidos mantêm suas funções até expirarem. Com o Azure CLI, execute `az logout` e `az login` para obter um novo token imediatamente.
+
+## Solução de problemas {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="O token é rejeitado e seu emissor começa com https://sts.windows.net" id="v1-token">
+    O Entra ID emitiu um token v1.0. Defina `requestedAccessTokenVersion` como `2` no manifesto da aplicação, conforme descrito em [Solicitar tokens de acesso v2.0](#request-v2-tokens), e solicite um novo token.
+  </Accordion>
+
+  <Accordion title="O token é rejeitado devido à audiência" id="audience-mismatch">
+    * A **Audience** do provedor no ClickHouse Cloud deve ser o ID do cliente, e não `api://<CLIENT_ID>`.
+    * Verifique se você solicitou um token para a aplicação ClickHouse. Sem `--resource`, o `az account get-access-token` retorna um token para o Azure Resource Manager.
+  </Accordion>
+
+  <Accordion title="O Entra ID retorna AADSTS65001 ou solicita consentimento" id="consent-required">
+    A aplicação cliente não está pré-autorizada para o escopo `access_as_application`. Adicione o ID de cliente dela em **Expose an API → Authorized client applications**, conforme descrito em [Autorizar uma aplicação cliente para login de usuários](#authorize-client-application).
+  </Accordion>
+
+  <Accordion title="O Entra ID retorna AADSTS50105 ou AADSTS501051" id="not-assigned">
+    O usuário ou a aplicação não está atribuído à aplicação ClickHouse, e **Assignment required?** está definido como **Yes**. Atribua o usuário, um dos grupos dele ou a aplicação a uma função de aplicativo. Se você atribuiu um grupo, verifique se o usuário é membro direto dele.
+  </Accordion>
+
+  <Accordion title="A autenticação é bem-sucedida, mas as consultas falham com ACCESS_DENIED" id="no-privileges">
+    O usuário efêmero não tem os privilégios necessários para a consulta. Verifique se:
+
+    * O **Roles claim** do provedor está definido como `roles`.
+    * O token contém uma claim `roles`. Ela não é incluída quando o chamador está atribuído à aplicação sem uma função de aplicativo.
+    * Cada valor na claim `roles` corresponde exatamente, inclusive em maiúsculas e minúsculas, a uma função existente do ClickHouse no serviço.
+    * O usuário `default` possui os privilégios que você concedeu à função.
+
+    Para ver as claims de um token, decodifique a carga útil dele localmente:
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="O token é rejeitado após a configuração de uma política de mapeamento de claims" id="app-signing-key">
+    Se você configurou uma política de mapeamento de claims ou uma chave de assinatura personalizada para a aplicação, o Entra ID assina os tokens dela com uma chave que não está no JWKS do tenant. Defina a **JWKS URL** do provedor como `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`.
+  </Accordion>
+</AccordionGroup>
+
+## Relacionados {#related}
+
+* [Configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup): adicione, atualize e remova provedores JWT no Console do Cloud.
+* [Autenticação JWT](/pt-BR/concepts/features/security/external-authenticators/jwt): claims do token, usuários efêmeros e uso em clientes.

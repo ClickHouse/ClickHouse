@@ -34,6 +34,19 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 promql 방언에서 사용할 평가 시간을 초 단위 Unix 타임스탬프(소수부 포함 가능)로 설정합니다. `auto`는 현재 시간을 의미합니다.
 
+## promql_push_down_label_matchers {#promql_push_down_label_matchers}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "PromQL 레이블 매처를 이항 연산자 너머로 복사하는 새로운 설정입니다."}]}]} />
+
+PromQL 이항 연산자가 시계열을 매칭할 때 기준으로 삼는 레이블에 대해, 연산자 한쪽의 레이블 매처를 반대쪽 셀렉터로 복사합니다. 예를 들어 `b / on(job) a{job="x"}`는 `b`의 시계열 중 `job="x"`인 시계열만 읽습니다.
+매처가 걸러내는 시계열 때문에 Prometheus가 중복 시계열을 보고할 수 있는 상황에서는 매처를 복사하지 않습니다. 구체적으로, 매칭된 레이블 기준의 집계가 아니라면 연산자의 &quot;one&quot; 쪽으로는 복사하지 않습니다. 또한 `and`와 `unless`를 제외한 두 벡터 간 연산자로도 복사하지 않으며, 입력이 이름으로 선택된 단일 메트릭이 아니라면 범위 함수나 스칼라와의 연산자도 거치지 않습니다.
+`bool`이 없는 비교 연산은 메트릭 이름을 유지하므로 매처가 항상 이를 통과합니다. 기타 함수와 단항 마이너스에서는 매처 전달이 중단됩니다.
+매처가 복사되면 메트릭 전체를 선택하던 셀렉터가 필터링된 셀렉터로 바뀝니다. 따라서 매처가 해당 메트릭의 시계열 대부분을 그대로 남기는 경우, 메트릭 기준으로 클러스터링된 `id`(기본값)를 사용하는 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블에서는 오히려 더 느려질 수 있습니다. 이러한 쿼리에서는 이 설정을 비활성화하십시오.
+
 ## promql_table {#promql_table}
 
 <PrivatePreviewBadge />

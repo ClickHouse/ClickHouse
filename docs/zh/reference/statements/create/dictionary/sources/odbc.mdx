@@ -44,26 +44,24 @@ doc_type: 'reference'
 
 设置字段：
 
-| Setting                | Description                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `db`                   | 数据库名称。如果数据库名称已在 `<connection_string>` 参数中设置，则可省略。                                                                        |
-| `table`                | 表名称，以及 schema (如果有) 。                                                                                                    |
-| `connection_string`    | connection string。                                                                                                       |
-| `invalidate_query`     | 用于检查字典状态的查询。可选。更多信息请参见 [Refreshing dictionary data using LIFETIME](/zh/reference/statements/create/dictionary/lifetime) 部分。 |
-| `background_reconnect` | 如果 connection 失败，则在后台重新连接到副本。可选。                                                                                         |
-| `query`                | 自定义查询。可选。                                                                                                                |
+| Setting                | Description                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `db`                   | 数据库名称。如果数据库名称已在 `<connection_string>` 参数中设置，则可省略。                                                                             |
+| `table`                | 表名称，以及 schema (如果有) 。                                                                                                         |
+| `connection_string`    | 连接 string。                                                                                                            |
+| `invalidate_query`     | 用于检查字典状态的查询。可选。更多信息请参见 [Refreshing dictionary data using LIFETIME](/zh/reference/statements/create/dictionary/lifetime) 部分。      |
+| `background_reconnect` | 如果 连接 失败，则在后台重新连接到副本。可选。                                                                                              |
+| `query`                | 自定义查询。可选。该查询的列按位置对应，因此必须按照[字典所要求的顺序](/zh/reference/statements/create/dictionary/sources/overview#custom-query-column-order)返回各列。 |
 
 <Note>
   `table` 和 `query` 字段不能同时使用，并且必须声明其中一个。
 </Note>
 
-ClickHouse 会从 ODBC 驱动程序 接收引号符号，并在发送给 driver 的查询中为所有设置加上引号，因此必须按照数据库中的表名大小写正确设置表名。
+ClickHouse 会从 ODBC 驱动程序 接收引号符号，并在发送给 驱动程序 的查询中为所有设置加上引号，因此必须按照数据库中的表名大小写正确设置表名。
 
 如果你在使用 Oracle 时遇到编码问题，请参阅相应的 [FAQ](/zh/resources/support-center/knowledge-base/integrations/oracle-odbc) 条目。
 
-<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
-  ### ODBC 字典功能的已知漏洞
-</div>
+### ODBC 字典功能的已知漏洞 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 <Note>
   通过 ODBC 驱动程序连接到数据库时，可以替换连接参数 `Servername`。在这种情况下，`odbc.ini` 中的 `USERNAME` 和 `PASSWORD` 值会被发送到远程服务器，可能导致泄露。
@@ -92,9 +90,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC 驱动程序会将 `odbc.ini` 中 `USERNAME` 和 `PASSWORD` 的值发送到 `some-server.com`。
 
-<div id="example-of-connecting-postgresql">
-  ### 连接 PostgreSQL 的示例
-</div>
+### 连接 PostgreSQL 的示例 {#example-of-connecting-postgresql}
 
 Ubuntu 操作系统。
 
@@ -181,9 +177,7 @@ ClickHouse 中的字典配置如下：
 
 你可能需要编辑 `odbc.ini`，通过 `DRIVER=/usr/local/lib/psqlodbcw.so` 指定驱动库的完整路径。
 
-<div id="example-of-connecting-ms-sql-server">
-  ### 连接 MS SQL Server 示例
-</div>
+### 连接 MS SQL Server 示例 {#example-of-connecting-ms-sql-server}
 
 Ubuntu 操作系统。
 

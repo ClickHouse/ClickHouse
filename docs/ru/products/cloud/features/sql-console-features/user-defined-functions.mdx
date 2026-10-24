@@ -445,7 +445,7 @@ resource "clickhouse_udf_attachment" "production" {
 }
 ```
 
-Помимо обязательных атрибутов, показанных выше, ресурс `clickhouse_udf` принимает `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `sandbox_version`, `return_name` и `fail_on_build_error`; полное описание схемы см. в [документации ресурса](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md).
+Помимо обязательных атрибутов, показанных выше, ресурс `clickhouse_udf` принимает `format`, `pool_size`, `max_command_execution_time`, `command_read_timeout`, `command_write_timeout`, `send_chunk_header`, `sandbox_type`, `return_name` и `fail_on_build_error`; полное описание схемы см. в [документации ресурса](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md).
 
 Чтобы протестировать новую версию на сервисе для разработки до того, как она попадёт в продакшн, настройте одно подключение на отслеживание последней версии, а для другого закрепите версию с помощью переменной. Подключение на сервисе для разработки автоматически переходит на каждую новую сборку, а подключение в продакшн обновляется только при изменении `var.prod_udf_version`:
 
@@ -464,7 +464,7 @@ resource "clickhouse_udf_attachment" "prod" {
 ```
 
 <Note>
-  Провайдер пока не поддерживает параметр `deterministic` и ограничение памяти. Оба параметра задаются при создании версии, поэтому у версий, опубликованных провайдером, их быть не может. Чтобы использовать эти параметры, создавайте такие версии через консоль или API.
+  Провайдер пока не поддерживает параметр `deterministic` и лимит памяти. Оба параметра задаются при создании версии, поэтому у версий, опубликованных провайдером, их быть не может. Чтобы использовать эти параметры, создавайте такие версии через консоль или API.
 </Note>
 
 Подключение возможно только для версий в состоянии готовности и может занять несколько минут; бездействующие сервисы запускаются автоматически. Пулы провайдер также не перезагружает: для UDF типа `executable_pool` после смены версии в подключении выполните на сервисе `SYSTEM RELOAD FUNCTION ON CLUSTER default <name>`. При удалении ресурса `clickhouse_udf` удаляются все версии функции, и она отключается от всех сервисов.

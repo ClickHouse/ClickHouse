@@ -111,13 +111,13 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 ## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
-<BetaBadge />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "기본적으로 활성화됨"}]}]} />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+병렬 레플리카가 실행하는 쿼리 부분보다 상위에 있는 조건을 해당 부분과 레플리카로 전송되는 쿼리에 푸시다운하여, 레플리카에서도 이 조건으로 필터링하도록 합니다.
 
-병렬 레플리카가 실행하도록 선택한 쿼리 부분에 필터를 푸시다운할 수 있도록 허용합니다
+26.10 이전 버전처럼 조건을 initiator에서 읽기 단계 상위에 그대로 두려면 이 설정을 비활성화하십시오. 푸시다운이 정상적으로 동작하지 않을 때 이 설정으로 문제를 피할 수 있습니다. 설정 여부와 관계없이 결과는 동일하며, 레플리카가 처리하는 작업량과 작업을 수행하는 시점만 달라집니다.
 
 ## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
@@ -153,6 +153,8 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_plan`이 활성화된 경우에만 적용됩니다.
 
+이 설정은 읽기 작업이 알리는 마크 범위를 선택하는 인덱스 분석에 적용되며, 코디네이터는 이렇게 선택된 마크 범위를 기준으로 작업을 할당합니다. `enable_join_runtime_filters_index_analysis`의 그래뉼 가지치기(Granule pruning)처럼 데이터를 읽는 도중에 수행되는 프루닝은 이 설정의 대상이 아닙니다. JOIN 런타임 필터는 빌드 측(build side)을 모두 읽은 후에야 생성되므로 각 레플리카가 자체 필터를 평가하여 자신이 맡은 부분을 직접 프루닝해야 하며, 코디네이터가 이를 대신할 수는 없습니다.
+
 ## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,6 +176,8 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 쿼리에서 사용할 레플리카 수를 (읽을 것으로 예상되는 행 수 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica)로 제한합니다. 최대값은 여전히 &#39;max&#95;parallel&#95;replicas&#39;로 제한됩니다.
+
+`automatic_parallel_replicas_mode`가 활성화되어 있으면 이 설정은 무시됩니다. 자동 모드에서는 자체 비용 모델(Cost Model)에 따라 레플리카 수를 결정합니다.
 
 ## parallel_replicas_mode {#parallel_replicas_mode}
 
