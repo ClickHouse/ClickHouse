@@ -1209,7 +1209,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       *
       * The only term is the exception count, counted rather than extrapolated: each sampled value
       * whose minimal alpha exceeds the candidate (or that no scale can represent) is one distinct
-      * position the candidate has to except. Extrapolating that count to the whole vector is not a
+      * position the candidate has to except. The minimal alpha of a sample is the lower scale of
+      * its near/exact pair, not its vote: a sample that voted an exact scale may still have a near
+      * scale a few steps lower, and at every scale from there on its adjustment can be arbitrarily
+      * narrow, so it does not have to cost the candidate anything. Extrapolating that count to the whole vector is not a
       * bound, because the sample positions are deterministic and a block can put its entire
       * high-precision minority on them. The packed lanes contribute nothing: nothing about their
       * width can be bounded from below from the reference scale's width. Scaling it by log2(10)
@@ -1241,7 +1244,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         {
             UInt32 bound = sampled_unquantizable;
             for (UInt32 i = 0; i < sampled_alpha_count; ++i)
-                bound += sampled_alphas[i] > candidate ? 1 : 0;
+                bound += std::min(sampled_alphas[i], sampled_alternative_alphas[i]) > candidate ? 1 : 0;
             for (Int32 wider = candidate + 1; wider <= Traits::max_alpha; ++wider)
                 bound = std::max(bound, monotone_exceptions_at[alpha_index(wider)]);
             return bound;
