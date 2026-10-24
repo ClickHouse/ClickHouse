@@ -261,6 +261,10 @@ struct IdentifierResolveScope
 
     void popExpressionNode();
 
+    /// Whether the name is bound to a lambda by an alias in this scope or in one of its parents,
+    /// so that a function call with this name resolves to the lambda instead of an ordinary function.
+    bool hasFunctionAlias(const std::string & name) const;
+
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
     /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
     void disableIdentifierCache() { identifier_resolve_cache_enabled = false; }

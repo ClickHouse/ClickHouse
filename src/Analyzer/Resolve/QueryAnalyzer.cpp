@@ -924,6 +924,32 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
         window_node_typed.getOrderByNode() = parent_window_node_typed.getOrderBy().clone();
 }
 
+/** Give the window nodes of a clone of a projection item the snapshots of the named windows taken
+  * for the corresponding window nodes of the original, see `expandMatchersInsideProjectionExpression`.
+  * Returns true if some snapshot was copied.
+  */
+bool QueryAnalyzer::copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node)
+{
+    bool copied = false;
+    if (auto snapshot_it = named_window_snapshots.find(original_node); snapshot_it != named_window_snapshots.end())
+    {
+        named_window_snapshots[cloned_node] = snapshot_it->second->clone();
+        copied = true;
+    }
+
+    const auto & original_children = original_node->getChildren();
+    const auto & cloned_children = cloned_node->getChildren();
+    chassert(original_children.size() == cloned_children.size());
+
+    for (size_t i = 0; i < original_children.size(); ++i)
+    {
+        if (original_children[i] && cloned_children[i])
+            copied |= copyNamedWindowSnapshots(original_children[i], cloned_children[i]);
+    }
+
+    return copied;
+}
+
 /** Replace nodes in node list with positional arguments.
   *
   * Example: SELECT id, value FROM test_table GROUP BY 1, 2;
@@ -991,6 +1017,10 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         {
             resolved_expressions[*node_to_replace] = it->second;
         }
+
+        /// The clone must resolve its named windows from the same definitions as the projection item it is made from.
+        if (!named_window_snapshots.empty())
+            copyNamedWindowSnapshots(projection_nodes[pos], *node_to_replace);
     }
 }
 
@@ -1311,6 +1341,10 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
             continue;
 
         limit_by_nodes.push_back(projection_node->clone());
+
+        /// The clone must resolve its named windows from the same definitions as the projection item it is made from.
+        if (!named_window_snapshots.empty())
+            copyNamedWindowSnapshots(projection_node, limit_by_nodes.back());
     }
 
     if (limit_by_nodes.empty())
@@ -1471,6 +1505,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     {
         alias_node = alias_node->clone();
         scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+
+        /// The clone must resolve its named windows from the same definitions as the aliased expression, see `resolveQuery`.
+        if (!named_window_snapshots.empty())
+            copyNamedWindowSnapshots(*it, alias_node);
     }
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
@@ -2961,6 +2999,77 @@ static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & 
     return false;
 }
 
+/** Replace the identifiers in the expression by the expressions of the `REPLACE` transformers of a matcher,
+  * see `resolveMatcher`. The nodes from `nodes_to_skip` are not rewritten.
+  */
+static void replaceIdentifiersWithTransformerMappings(
+    QueryTreeNodePtr & node,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & mappings,
+    const std::unordered_set<const IQueryTreeNode *> & nodes_to_skip)
+{
+    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
+    {
+        if (!current) return;
+
+        /// See `expandProjectionMatchers`.
+        if (nodes_to_skip.contains(current.get()))
+            return;
+
+        if (auto * identifier = current->as<IdentifierNode>())
+        {
+            auto it = mappings.find(identifier->getIdentifier().getFullName());
+            if (it != mappings.end())
+            {
+                current = it->second->clone();
+                return;
+            }
+        }
+
+        if (auto * function_node = current->as<FunctionNode>())
+        {
+            auto & arguments = function_node->getArguments().getNodes();
+            for (auto & arg : arguments)
+                replace_recursive(arg);
+
+            /// Also process WindowNode for window functions like ROW_NUMBER() OVER (ORDER BY ...)
+            if (function_node->getWindowNode())
+            {
+                auto window_node = function_node->getWindowNode();
+                replace_recursive(window_node);
+                function_node->getWindowNode() = window_node;
+            }
+        }
+        else if (auto * list_node = current->as<ListNode>())
+        {
+            auto & nodes = list_node->getNodes();
+            for (auto & child_node : nodes)
+                replace_recursive(child_node);
+        }
+        else if (auto * sort_node = current->as<SortNode>())
+        {
+            if (auto & expression = sort_node->getExpression())
+                replace_recursive(expression);
+        }
+        else if (auto * window_node = current->as<WindowNode>())
+        {
+            if (window_node->hasOrderBy())
+            {
+                auto order_by_node = window_node->getOrderByNode();
+                replace_recursive(order_by_node);
+                window_node->getOrderByNode() = order_by_node;
+            }
+            if (window_node->hasPartitionBy())
+            {
+                auto partition_by_node = window_node->getPartitionByNode();
+                replace_recursive(partition_by_node);
+                window_node->getPartitionByNode() = partition_by_node;
+            }
+        }
+    };
+
+    replace_recursive(node);
+}
+
 /** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matched expression nodes resolving qualified or unqualified matcher.
@@ -3028,7 +3137,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
     /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
-    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    auto has_aggregate_function_in_tree = [&scope](const IQueryTreeNode * root) -> bool
     {
         if (!root)
             return false;
@@ -3043,7 +3152,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * func = subtree_node->as<FunctionNode>())
             {
-                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                /// The arguments of `grouping` are compared with the GROUP BY keys in their original form as well,
+                /// unless the name is bound to a lambda by an alias, which `resolveFunction` calls instead.
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
+                    || (func->getFunctionName() == "grouping" && !scope.hasFunctionAlias("grouping")))
                     return true;
             }
 
@@ -3118,6 +3230,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             strict_transformer_to_used_column_names.emplace(replace_transformer, std::unordered_set<std::string>());
     }
 
+    /// See `query_with_deferred_transformer_expressions`.
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const bool defer_transformer_expressions = query_with_deferred_transformer_expressions
+        && nearest_query_scope && nearest_query_scope->scope_node.get() == query_with_deferred_transformer_expressions;
+
     ListNodePtr list = std::make_shared<ListNode>();
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
@@ -3156,6 +3273,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
                 apply_transformer_was_used = true;
+
+                if (defer_transformer_expressions)
+                    continue;
+
                 apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
@@ -3255,6 +3376,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
 
                 replace_transformer_mappings[column_name] = replace_expression;
+
+                if (defer_transformer_expressions)
+                {
+                    /** The expression is not resolved, but the matchers inside it register their `REPLACE` mappings
+                      * in the other clauses now, before the mappings of this matcher, as when it is resolved.
+                      * The expanded copy is discarded, and the second expansion does not rewrite the other clauses again.
+                      */
+                    auto replace_expression_copy = replace_expression->clone();
+                    const size_t saved_insertions_size = projection_nodes_before_matcher_insertions.size();
+                    expandMatchersInsideProjectionExpression(replace_expression_copy, scope);
+                    rollbackProjectionNodesBeforeMatcher(saved_insertions_size);
+                    continue;
+                }
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -3474,63 +3608,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 {
                     if (!node) return;
 
-                    std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
-                    {
-                        if (!current) return;
+                    /// The other clauses of a query with the projection matchers expanded for the second time
+                    /// were already rewritten by the first expansion, see `resolveQuery`. The projection and
+                    /// the `WINDOW` clause are restored to their state before the first expansion, so they are rewritten again.
+                    if (query_node == query_with_replaced_clauses
+                        && node != query_node->getProjectionNode()
+                        && node != query_node->getWindowNode())
+                        return;
 
-                        if (auto * identifier = current->as<IdentifierNode>())
-                        {
-                            auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
-                            if (it != replace_transformer_mappings.end())
-                            {
-                                current = it->second->clone();
-                                return;
-                            }
-                        }
+                    /// Without `group_by_use_nulls` the projection is already resolved when the other clauses are,
+                    /// so their matchers do not rewrite it, see `queries_with_deferred_projection`.
+                    if (node == query_node->getProjectionNode() && queries_with_deferred_projection.contains(query_node))
+                        return;
 
-                        if (auto * function_node = current->as<FunctionNode>())
-                        {
-                            auto & arguments = function_node->getArguments().getNodes();
-                            for (auto & arg : arguments)
-                                replace_recursive(arg);
-
-                            /// Also process WindowNode for window functions like ROW_NUMBER() OVER (ORDER BY ...)
-                            if (function_node->getWindowNode())
-                            {
-                                auto window_node = function_node->getWindowNode();
-                                replace_recursive(window_node);
-                                function_node->getWindowNode() = window_node;
-                            }
-                        }
-                        else if (auto * list_node = current->as<ListNode>())
-                        {
-                            auto & nodes = list_node->getNodes();
-                            for (auto & child_node : nodes)
-                                replace_recursive(child_node);
-                        }
-                        else if (auto * sort_node = current->as<SortNode>())
-                        {
-                            if (auto & expression = sort_node->getExpression())
-                                replace_recursive(expression);
-                        }
-                        else if (auto * window_node = current->as<WindowNode>())
-                        {
-                            if (window_node->hasOrderBy())
-                            {
-                                auto order_by_node = window_node->getOrderByNode();
-                                replace_recursive(order_by_node);
-                                window_node->getOrderByNode() = order_by_node;
-                            }
-                            if (window_node->hasPartitionBy())
-                            {
-                                auto partition_by_node = window_node->getPartitionByNode();
-                                replace_recursive(partition_by_node);
-                                window_node->getPartitionByNode() = partition_by_node;
-                            }
-                        }
-                    };
-
-                    replace_recursive(node);
+                    replaceIdentifiersWithTransformerMappings(node, replace_transformer_mappings, projection_nodes_before_matcher);
                 };
 
                 if (query_node->getWhere())
@@ -3594,6 +3685,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto window_node = query_node->getWindowNode();
                     replace_identifiers_in_node(window_node);
                     query_node->getWindowNode() = window_node;
+
+                    /// The `WINDOW` clause will be restored before the second expansion of the projection matchers,
+                    /// so the rewrite is replayed on it afterwards, see `resolveQuery`.
+                    if (auto replay_it = window_rewrites_to_replay.find(query_node); replay_it != window_rewrites_to_replay.end())
+                        replay_it->second.push_back(replace_transformer_mappings);
                 }
 
                 {
@@ -3606,6 +3702,506 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     }
 
     return result_projection_names;
+}
+
+namespace
+{
+
+/** Whether the expression consists only of constants and ordinary functions, as `1 = 1`.
+  * Such an expression does not depend on the GROUP BY keys and can be resolved before them.
+  */
+bool isSelfContainedConstantExpression(const QueryTreeNodePtr & node, const IdentifierResolveScope & scope)
+{
+    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
+        return true;
+
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || function_node->isWindowFunction() || scope.hasFunctionAlias(function_node->getFunctionName()))
+        return false;
+
+    auto is_self_contained = [&](const QueryTreeNodePtr & child) { return isSelfContainedConstantExpression(child, scope); };
+    return std::ranges::all_of(function_node->getParameters().getNodes(), is_self_contained)
+        && std::ranges::all_of(function_node->getArguments().getNodes(), is_self_contained);
+}
+
+/** The order in which `resolveFunction` resolves the arguments of `if` or `multiIf` with constant conditions,
+  * and whether each argument is in an unreachable branch (and may fail to resolve without an error).
+  * The arguments are not resolved yet, so the value of a condition is obtained by `try_extract_constant_condition`.
+  * Returns nothing if the conditions are not constant: then the arguments are resolved from left to right.
+  */
+std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantConditionalResolutionOrder(
+    const FunctionNode & function_node,
+    const std::function<std::optional<bool>(const QueryTreeNodePtr &)> & try_extract_constant_condition)
+{
+    const auto & arguments = function_node.getArguments().getNodes();
+    const size_t arguments_size = arguments.size();
+
+    std::vector<size_t> order;
+    order.reserve(arguments_size);
+    std::vector<bool> unreachable(arguments_size, false);
+
+    if (function_node.getFunctionName() == "if")
+    {
+        if (arguments_size != 3)
+            return {};
+
+        auto constant_condition = try_extract_constant_condition(arguments[0]);
+        if (!constant_condition)
+            return {};
+
+        const size_t live_index = *constant_condition ? 1 : 2;
+        const size_t dead_index = *constant_condition ? 2 : 1;
+        unreachable[dead_index] = true;
+        order = {0, dead_index, live_index};
+        return std::make_pair(std::move(order), std::move(unreachable));
+    }
+
+    if (function_node.getFunctionName() != "multiIf" || arguments_size < 3 || arguments_size % 2 == 0)
+        return {};
+
+    /// See the handling of `multiIf` in `resolveFunction`.
+    const size_t pairs_count = arguments_size / 2;
+    const size_t else_index = arguments_size - 1;
+    size_t live_index = else_index;
+
+    for (size_t pair = 0; pair < pairs_count; ++pair)
+    {
+        auto constant_condition = try_extract_constant_condition(arguments[2 * pair]);
+        if (!constant_condition)
+            return {};
+
+        order.push_back(2 * pair);
+        if (*constant_condition)
+        {
+            live_index = 2 * pair + 1;
+            break;
+        }
+    }
+
+    for (size_t pair = 0; pair < pairs_count; ++pair)
+    {
+        const size_t condition_index = 2 * pair;
+        const size_t value_index = condition_index + 1;
+
+        if (value_index == live_index)
+            continue;
+
+        /// The conditions after the selected one are unreachable as well.
+        if (value_index > live_index)
+        {
+            order.push_back(condition_index);
+            unreachable[condition_index] = true;
+        }
+
+        order.push_back(value_index);
+        unreachable[value_index] = true;
+    }
+
+    if (live_index != else_index)
+    {
+        order.push_back(else_index);
+        unreachable[else_index] = true;
+    }
+
+    order.push_back(live_index);
+    return std::make_pair(std::move(order), std::move(unreachable));
+}
+
+}
+
+/** Expand the matchers nested inside a projection expression, in place.
+  *
+  * A matcher does not have to be the root of a projection item: its output can be consumed by a
+  * function producing a list of columns, as in `SELECT untuple((* REPLACE (-c AS c),))`, or it can
+  * appear in the window definition written in place, as in
+  * `SELECT row_number() OVER (PARTITION BY max(* REPLACE (-c AS c)))`, or in the definition of a named
+  * window referenced by the expression.
+  * Resolving a matcher registers the `REPLACE` mappings in the sibling clauses of the query, so with
+  * `group_by_use_nulls`, where the projection is resolved after them, the nested matchers have to be
+  * expanded in advance, exactly as the ones at the root of a projection item.
+  *
+  * Only the parameters and the arguments of ordinary functions and the window definitions are visited:
+  * matchers of lambdas and of subqueries belong to a different scope.
+  *
+  * Returns true if a matcher was expanded.
+  */
+bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return false;
+
+    bool expanded = false;
+
+    /// As in `resolveFunction`: the matchers in the arguments of an aggregate or `grouping` function
+    /// must see the GROUP BY keys in their original form.
+    scope.pushExpressionNode(node);
+    SCOPE_EXIT({ scope.popExpressionNode(); });
+
+    /** `count` and `countState` (possibly with combinators) drop an unqualified matcher argument instead of
+      * expanding it, see `resolveFunction`. Such an argument is left untouched here, otherwise `count(*)`
+      * would turn into `count(a, b)`. A qualified matcher stays a real argument and is expanded as usual.
+      */
+    /// As in `resolveFunction`: a lambda bound to the function name by an alias disables the special handling
+    /// of the builtin functions, and its arguments are resolved from left to right.
+    const bool is_lambda_call = !function_node->isWindowFunction() && scope.hasFunctionAlias(function_node->getFunctionName());
+
+    const bool drops_unqualified_matchers = !is_lambda_call && functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName());
+
+    /** `resolveFunction` accepts an invalid expression in a statically unreachable branch of `if` and `multiIf`:
+      * it tries to resolve the branch, and if that throws, it replaces the function with its live branch.
+      * An argument that may be unreachable and fails to expand is left as it is, and `resolveFunction` decides
+      * about it. It either drops the argument or reports the same error.
+      */
+    const auto & arguments = function_node->getArguments().getNodes();
+    std::vector<size_t> arguments_order(arguments.size());
+    std::iota(arguments_order.begin(), arguments_order.end(), 0);
+    std::vector<bool> arguments_may_be_unreachable(arguments.size(), false);
+    /// Whether the conditions are constant, so that the arguments marked in `arguments_may_be_unreachable` are certainly unreachable.
+    bool unreachable_arguments_are_known = false;
+
+    if (!is_lambda_call && (function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf"))
+    {
+        /// The conditions are not known here in general, so any argument other than the first one may be unreachable.
+        for (size_t i = 1; i < arguments.size(); ++i)
+            arguments_may_be_unreachable[i] = true;
+
+        /** With constant conditions, `resolveFunction` resolves the conditions up to the selected one,
+          * then the unreachable branches, and the selected branch last. The arguments are visited in the
+          * same order, so that a `REPLACE` transformer in an unreachable branch rewrites the selected one,
+          * as without `group_by_use_nulls`.
+          * A condition that is not a literal, as `1 = 1`, is folded by `resolveFunction` as well. If it consists only of constants,
+          * it is resolved in a copy to obtain its value.
+          */
+        auto try_extract_constant_condition = [&](const QueryTreeNodePtr & condition) -> std::optional<bool>
+        {
+            if (auto constant_condition = tryExtractConstantFromConditionNode(condition))
+                return constant_condition;
+
+            if (!isSelfContainedConstantExpression(condition, scope))
+                return {};
+
+            auto condition_copy = condition->clone();
+            resolveExpressionNode(condition_copy, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            return tryExtractConstantFromConditionNode(condition_copy);
+        };
+
+        if (auto order = getConstantConditionalResolutionOrder(*function_node, try_extract_constant_condition))
+        {
+            arguments_order = std::move(order->first);
+            arguments_may_be_unreachable = std::move(order->second);
+            unreachable_arguments_are_known = true;
+        }
+    }
+
+    auto expand_matchers_in_node = [&](QueryTreeNodePtr & list_node, bool drops_unqualified, QueryTreeNodes & expanded_nodes)
+    {
+        const auto * matcher_node = list_node->as<MatcherNode>();
+
+        if (matcher_node && !(drops_unqualified && matcher_node->isUnqualified()))
+        {
+            resolveExpressionNode(list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto & matched_nodes = list_node->as<ListNode &>().getNodes();
+            /// The nodes produced by the matcher are passed as well, see below.
+            for (const auto & matched_node : matched_nodes)
+                markProjectionNodeBeforeMatcher(matched_node.get());
+            expanded_nodes.insert(expanded_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+            expanded = true;
+            return;
+        }
+
+        if (!matcher_node)
+            expanded |= expandMatchersInsideProjectionExpression(list_node, scope);
+
+        /// The nodes are resolved in order, so the following matchers must not rewrite this one.
+        markProjectionNodeBeforeMatcher(list_node.get());
+        expanded_nodes.push_back(list_node);
+    };
+
+    /// The nodes are visited in `order`, and the expanded ones are put in their original positions.
+    auto expand_matchers_in_list = [&](QueryTreeNodes & nodes, bool drops_unqualified, const std::vector<size_t> & order, const std::vector<bool> & may_be_unreachable)
+    {
+        std::vector<QueryTreeNodes> expanded_nodes_by_position(nodes.size());
+
+        for (size_t i : order)
+        {
+            auto & list_node = nodes[i];
+            auto & expanded_nodes = expanded_nodes_by_position[i];
+
+            if (!may_be_unreachable[i])
+            {
+                expand_matchers_in_node(list_node, drops_unqualified, expanded_nodes);
+                continue;
+            }
+
+            /// The argument is expanded in a copy, so that a failed attempt leaves neither the argument
+            /// nor the guard of the preceding nodes half-rewritten.
+            const size_t saved_insertions_size = projection_nodes_before_matcher_insertions.size();
+            const bool saved_expanded = expanded;
+            /// The failed resolution may leave its expressions on the stack, and an aggregate function among them
+            /// would keep the following GROUP BY keys from being converted to Nullable.
+            const size_t saved_expressions_stack_size = scope.expressions_in_resolve_process_stack.size();
+            auto list_node_copy = list_node->clone();
+
+            /** An unreachable branch is valid only if `resolveFunction` can resolve it, and only then does it register
+              * the `REPLACE` mappings of its matchers, as without `group_by_use_nulls`. So the expressions produced by
+              * the transformers are resolved here, and an invalid branch throws before its mappings rewrite the other clauses.
+              */
+            const auto * previous_query_with_deferred_transformer_expressions = query_with_deferred_transformer_expressions;
+            if (unreachable_arguments_are_known)
+                query_with_deferred_transformer_expressions = nullptr;
+            SCOPE_EXIT({ query_with_deferred_transformer_expressions = previous_query_with_deferred_transformer_expressions; });
+
+            try
+            {
+                expand_matchers_in_node(list_node_copy, drops_unqualified, expanded_nodes);
+            }
+            catch (const Exception &)
+            {
+                while (scope.expressions_in_resolve_process_stack.size() > saved_expressions_stack_size)
+                    scope.popExpressionNode();
+
+                rollbackProjectionNodesBeforeMatcher(saved_insertions_size);
+                expanded = saved_expanded;
+                expanded_nodes.clear();
+                markProjectionNodeBeforeMatcher(list_node.get());
+                expanded_nodes.push_back(list_node);
+            }
+        }
+
+        QueryTreeNodes result_nodes;
+        result_nodes.reserve(nodes.size());
+        for (auto & expanded_nodes : expanded_nodes_by_position)
+            result_nodes.insert(result_nodes.end(), expanded_nodes.begin(), expanded_nodes.end());
+
+        nodes = std::move(result_nodes);
+    };
+
+    /// The parameters are resolved before the arguments, see `resolveFunction`.
+    auto & parameters = function_node->getParameters().getNodes();
+    std::vector<size_t> parameters_order(parameters.size());
+    std::iota(parameters_order.begin(), parameters_order.end(), 0);
+    expand_matchers_in_list(parameters, false /*drops_unqualified*/, parameters_order, std::vector<bool>(parameters.size(), false));
+    expand_matchers_in_list(function_node->getArguments().getNodes(), drops_unqualified_matchers, arguments_order, arguments_may_be_unreachable);
+
+    if (!function_node->hasWindow())
+        return expanded;
+
+    auto & window_node = function_node->getWindowNode();
+
+    /** A named window (`OVER w` or `OVER (w ORDER BY ...)`) is resolved from a copy of its definition
+      * in the `WINDOW` clause, and without `group_by_use_nulls` that happens while the projection is
+      * resolved, before WHERE, GROUP BY and HAVING. So the matchers of the referenced definition are
+      * expanded here as well, in the definition itself, which is what the copy is made from.
+      */
+    String parent_window_name;
+    if (const auto * identifier_node = window_node->as<IdentifierNode>())
+        parent_window_name = identifier_node->getIdentifier().getFullName();
+    else if (const auto * window_node_typed = window_node->as<WindowNode>())
+        parent_window_name = window_node_typed->getParentWindowName();
+
+    if (!parent_window_name.empty())
+    {
+        /// A missing or recursive window is reported by `resolveWindow`.
+        auto & window_name_to_window_node = scope.window_name_to_window_node;
+        auto parent_window_it = window_name_to_window_node.find(parent_window_name);
+        if (parent_window_it != window_name_to_window_node.end()
+            && windows_in_resolve_process.emplace(parent_window_it->second.get()).second)
+        {
+            auto parent_window_node = parent_window_it->second;
+            {
+                SCOPE_EXIT({ windows_in_resolve_process.erase(parent_window_node.get()); });
+                expanded |= expandMatchersInsideWindowDefinition(parent_window_node, scope);
+            }
+
+            /** Without `group_by_use_nulls` the window function copies the definition when it is resolved,
+              * so the `REPLACE` transformers of the following projection items, which rewrite the `WINDOW` clause,
+              * do not affect it. Here it is resolved later, so it gets a copy of the definition as of now.
+              */
+            named_window_snapshots[window_node] = parent_window_node->clone();
+        }
+    }
+
+    expanded |= expandMatchersInsideWindowDefinition(window_node, scope);
+    return expanded;
+}
+
+/** Expand the matchers of a window definition written in place, in place.
+  *
+  * `PARTITION BY` and `ORDER BY` of such a definition are resolved in the scope of the query, exactly as
+  * the projection expression carrying it, so their matchers have to be expanded together with it.
+  * The definition of a named window from the `WINDOW` clause is expanded in the same way, see
+  * `expandMatchersInsideProjectionExpression`.
+  *
+  * Returns true if a matcher was expanded.
+  */
+bool QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    auto * window_node = node->as<WindowNode>();
+    if (!window_node)
+        return false;
+
+    bool expanded = false;
+
+    /** As with the projection items, the entries of the definition are resolved in order, `PARTITION BY` before `ORDER BY`,
+      * so the following matchers must not rewrite the entries already passed. The guard is scoped to this definition:
+      * the following projection items may still rewrite a named window in the `WINDOW` clause, as without `group_by_use_nulls`.
+      * All the entries added while walking the definition are removed, including the nested function arguments,
+      * and the ones that existed before are kept.
+      */
+    const size_t insertions_size_before_window_definition = projection_nodes_before_matcher_insertions.size();
+    SCOPE_EXIT({ rollbackProjectionNodesBeforeMatcher(insertions_size_before_window_definition); });
+
+    auto mark_passed = [&](const QueryTreeNodePtr & passed_node)
+    {
+        markProjectionNodeBeforeMatcher(passed_node.get());
+    };
+
+    if (window_node->hasPartitionBy())
+    {
+        auto & partition_by_nodes = window_node->getPartitionBy().getNodes();
+        QueryTreeNodes expanded_partition_by_nodes;
+        expanded_partition_by_nodes.reserve(partition_by_nodes.size());
+
+        for (auto & partition_by_node : partition_by_nodes)
+        {
+            if (partition_by_node->getNodeType() == QueryTreeNodeType::MATCHER)
+            {
+                resolveExpressionNode(partition_by_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                const auto & matched_nodes = partition_by_node->as<ListNode &>().getNodes();
+                /// The entries produced by the matcher are passed as well.
+                for (const auto & matched_node : matched_nodes)
+                    mark_passed(matched_node);
+                expanded_partition_by_nodes.insert(expanded_partition_by_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+                expanded = true;
+                continue;
+            }
+
+            expanded |= expandMatchersInsideProjectionExpression(partition_by_node, scope);
+            mark_passed(partition_by_node);
+            expanded_partition_by_nodes.push_back(partition_by_node);
+        }
+
+        partition_by_nodes = std::move(expanded_partition_by_nodes);
+    }
+
+    for (auto & order_by_node : window_node->getOrderBy().getNodes())
+    {
+        auto & sort_expression = order_by_node->as<SortNode &>().getExpression();
+
+        if (sort_expression->getNodeType() != QueryTreeNodeType::MATCHER)
+        {
+            expanded |= expandMatchersInsideProjectionExpression(sort_expression, scope);
+            mark_passed(order_by_node);
+            continue;
+        }
+
+        resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        const auto & matched_nodes = sort_expression->as<ListNode &>().getNodes();
+
+        /// The same restriction as in `resolveSortNodeList`, which resolves the matchers not expanded here.
+        if (matched_nodes.size() != 1)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Expression ORDER BY {} is not supported, matcher expression can only contain single column",
+                sort_expression->formatASTForErrorMessage());
+
+        sort_expression = matched_nodes.front();
+        mark_passed(order_by_node);
+        expanded = true;
+    }
+
+    /// The frame offsets are resolved after `PARTITION BY` and `ORDER BY`, see `resolveWindow`.
+    if (window_node->hasFrameBeginOffset())
+    {
+        auto & frame_begin_offset_node = window_node->getFrameBeginOffsetNode();
+        expanded |= expandMatchersInsideProjectionExpression(frame_begin_offset_node, scope);
+        mark_passed(frame_begin_offset_node);
+    }
+
+    if (window_node->hasFrameEndOffset())
+    {
+        auto & frame_end_offset_node = window_node->getFrameEndOffsetNode();
+        expanded |= expandMatchersInsideProjectionExpression(frame_end_offset_node, scope);
+        mark_passed(frame_end_offset_node);
+    }
+
+    return expanded;
+}
+
+void QueryAnalyzer::markProjectionNodeBeforeMatcher(const IQueryTreeNode * node)
+{
+    if (projection_nodes_before_matcher.insert(node).second)
+        projection_nodes_before_matcher_insertions.push_back(node);
+}
+
+/// Remove the entries inserted after the insertion log had the given size, keeping the ones that existed before.
+void QueryAnalyzer::rollbackProjectionNodesBeforeMatcher(size_t insertions_size)
+{
+    while (projection_nodes_before_matcher_insertions.size() > insertions_size)
+    {
+        projection_nodes_before_matcher.erase(projection_nodes_before_matcher_insertions.back());
+        projection_nodes_before_matcher_insertions.pop_back();
+    }
+}
+
+/** Expand the matchers of the projection of the query, at the root of the projection items and nested inside them,
+  * without resolving the rest of the projection. Used with `group_by_use_nulls`, see `resolveQuery`.
+  *
+  * Without `group_by_use_nulls` the projection items are resolved in order, so the `REPLACE` transformer of a matcher
+  * rewrites only the items following it: the preceding ones are already resolved and stay bound to the source columns.
+  * Here the preceding items are not resolved yet, so they are remembered in `projection_nodes_before_matcher`
+  * and `resolveMatcher` does not rewrite them.
+  *
+  * If `defer_transformer_expressions_at_position` is given, it is called with the 0-based position of each projection item
+  * in the expanded projection and whether the item is a matcher, and returns whether the expressions produced by the transformers
+  * of its matchers are not resolved, see `query_with_deferred_transformer_expressions`.
+  *
+  * Returns true if a matcher was expanded.
+  */
+bool QueryAnalyzer::expandProjectionMatchers(
+    QueryNode & query_node,
+    IdentifierResolveScope & scope,
+    const std::function<bool(size_t, bool)> & defer_transformer_expressions_at_position)
+{
+    /// A subquery resolved while expanding a matcher has its own projection.
+    auto saved_projection_nodes_before_matcher = std::exchange(projection_nodes_before_matcher, {});
+    auto saved_projection_nodes_before_matcher_insertions = std::exchange(projection_nodes_before_matcher_insertions, {});
+    SCOPE_EXIT({
+        projection_nodes_before_matcher = std::move(saved_projection_nodes_before_matcher);
+        projection_nodes_before_matcher_insertions = std::move(saved_projection_nodes_before_matcher_insertions);
+    });
+
+    auto & projection_nodes = query_node.getProjection().getNodes();
+    QueryTreeNodes expanded_projection_nodes;
+    bool expanded = false;
+
+    for (const auto & projection_node : projection_nodes)
+    {
+        auto node_to_resolve = projection_node;
+        const bool is_matcher = node_to_resolve->getNodeType() == QueryTreeNodeType::MATCHER;
+
+        const auto * previous_query_with_deferred_transformer_expressions = query_with_deferred_transformer_expressions;
+        if (defer_transformer_expressions_at_position)
+            query_with_deferred_transformer_expressions
+                = defer_transformer_expressions_at_position(expanded_projection_nodes.size(), is_matcher) ? &query_node : nullptr;
+        SCOPE_EXIT({ query_with_deferred_transformer_expressions = previous_query_with_deferred_transformer_expressions; });
+
+        if (!is_matcher)
+        {
+            expanded |= expandMatchersInsideProjectionExpression(node_to_resolve, scope);
+            markProjectionNodeBeforeMatcher(node_to_resolve.get());
+            expanded_projection_nodes.push_back(std::move(node_to_resolve));
+            continue;
+        }
+
+        resolveExpressionNode(node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, false /*ignore_alias*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+        const auto & matched_nodes = node_to_resolve->as<ListNode &>().getNodes();
+        expanded_projection_nodes.insert(expanded_projection_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+        expanded = true;
+    }
+
+    projection_nodes = std::move(expanded_projection_nodes);
+    return expanded;
 }
 
 /** Resolve window function window node.
@@ -3652,6 +4248,13 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 nearest_query_scope->scope_node->formatASTForErrorMessage());
 
         parent_window_node = window_node_it->second;
+
+        /// See `expandMatchersInsideProjectionExpression`.
+        if (auto snapshot_it = named_window_snapshots.find(node); snapshot_it != named_window_snapshots.end())
+        {
+            parent_window_node = snapshot_it->second;
+            named_window_snapshots.erase(snapshot_it);
+        }
 
         auto [_, inserted] = windows_in_resolve_process.emplace(parent_window_node.get());
         if (!inserted)
@@ -4396,7 +4999,26 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
     }
 
-    if (!in_aggregate_or_grouping_function_scope || is_correlated_column_node)
+    /// Inside an aggregate or `grouping` function a GROUP BY key keeps its type. The same node may be shared
+    /// with an expression outside of them (`SELECT * APPLY x -> tuple(sum(x), x)`), where it has to become
+    /// Nullable, so it must not be remembered as resolved.
+    bool is_nullable_group_by_key_in_aggregate_function = false;
+
+    if (in_aggregate_or_grouping_function_scope && !is_correlated_column_node)
+    {
+        for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+        {
+            if (!scope_ptr->nullable_group_by_keys.empty() && scope_ptr->nullable_group_by_keys.contains(node))
+            {
+                is_nullable_group_by_key_in_aggregate_function = true;
+                break;
+            }
+
+            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+                break;
+        }
+    }
+    else
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
@@ -4460,7 +5082,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
     }
 
-    resolved_expressions.emplace(node, result_projection_names);
+    if (!is_nullable_group_by_key_in_aggregate_function)
+        resolved_expressions.emplace(node, result_projection_names);
 
     scope.popExpressionNode();
 
@@ -7641,9 +8264,20 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    /// With `group_by_use_nulls`, the projection and the `WINDOW` clause before the matchers of the projection
+    /// were expanded, see below.
+    QueryTreeNodePtr projection_with_unexpanded_matchers;
+    QueryTreeNodePtr window_with_unexpanded_matchers;
+
     /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
+
+    const IQueryTreeNode * query_node_ptr = query_node.get();
+    SCOPE_EXIT({
+        queries_with_deferred_projection.erase(query_node_ptr);
+        window_rewrites_to_replay.erase(query_node_ptr);
+    });
 
     if (!scope.group_by_use_nulls)
     {
@@ -7653,18 +8287,137 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
     }
-    else if (query_node_typed.isGroupByAll())
+    else
     {
-        /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
-        /// them from a throwaway resolution, then restore the unresolved projection so it is resolved once below,
-        /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
-        auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
-        auto saved_subquery_counter = subquery_counter;
-        resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
-        expandGroupByAll(query_node_typed);
-        query_node_typed.getProjectionNode() = std::move(unresolved_projection);
-        /// The discarded resolution must not consume _subquery_N projection names.
-        subquery_counter = saved_subquery_counter;
+        /** With `group_by_use_nulls` the projection is resolved after GROUP BY (see below), so that
+          * the expressions equal to a GROUP BY key become Nullable. Matchers are nevertheless expanded
+          * right away, as without the setting: `SELECT * REPLACE (expr AS c)` rewrites `c` in the other
+          * clauses while they are still unresolved identifiers, and positional arguments refer to the
+          * expanded columns. The same holds for the matchers nested inside a projection expression,
+          * as in `SELECT untuple((* REPLACE (-c AS c),))`.
+          *
+          * The `APPLY` and `REPLACE` transformers resolve the expressions they produce, before the GROUP BY keys
+          * are known: `* APPLY isNull` would be folded into `0`. So the unexpanded projection is kept, and after
+          * GROUP BY its matchers are expanded for the second time, see below. The same applies to the named
+          * windows referenced by the projection, whose matchers are expanded in place in the `WINDOW` clause.
+          */
+        auto unexpanded_projection = query_node_typed.getProjectionNode()->clone();
+        auto unexpanded_window = query_node_typed.hasWindow() ? query_node_typed.getWindowNode()->clone() : nullptr;
+
+        /** The expressions produced by the transformers in the first expansion are discarded, unless GROUP BY ALL
+          * or a positional argument of GROUP BY refers to them: they are GROUP BY keys and have to be resolved
+          * against the source columns. Otherwise they are not resolved at all, because the types of the source
+          * columns may differ from the Nullable keys they are resolved against in the second expansion:
+          * `* APPLY (x -> getSubcolumn(x, 'null'))` is valid only for the latter.
+          * Only the projection items a positional argument may refer to are resolved. A matcher at the root of a projection
+          * item produces an unknown number of items, so the items following it are positioned only after it is expanded,
+          * and it is resolved if a positional argument refers to it or to any following item.
+          * A key that is an identifier may become a positional argument when a `REPLACE` transformer rewrites it
+          * into a constant, as `c` in `SELECT * REPLACE (1 AS c) ... GROUP BY c`. Such a key, as well as a negative
+          * position, which is counted from the end, may refer to any projection item.
+          */
+        bool group_by_may_refer_to_any_projection_item = query_is_group_by_all;
+        std::unordered_set<UInt64> group_by_positions;
+        UInt64 max_group_by_position = 0;
+
+        if (!group_by_may_refer_to_any_projection_item && query_node_typed.hasGroupBy()
+            && scope.context->getSettingsRef()[Setting::enable_positional_arguments])
+        {
+            std::unordered_set<std::string> replaced_column_names;
+            std::vector<const IQueryTreeNode *> nodes_to_process{query_node_typed.getProjectionNode().get()};
+            while (!nodes_to_process.empty())
+            {
+                const auto * node = nodes_to_process.back();
+                nodes_to_process.pop_back();
+
+                if (const auto * replace_transformer = node->as<ReplaceColumnTransformerNode>())
+                    replaced_column_names.insert(replace_transformer->getReplacementsNames().begin(), replace_transformer->getReplacementsNames().end());
+
+                for (const auto & child : node->getChildren())
+                {
+                    if (child)
+                        nodes_to_process.push_back(child.get());
+                }
+            }
+
+            std::function<void(const QueryTreeNodePtr &)> collect_positional_arguments = [&](const QueryTreeNodePtr & node)
+            {
+                if (const auto * list_node = node->as<ListNode>())
+                {
+                    for (const auto & child : list_node->getNodes())
+                        collect_positional_arguments(child);
+                }
+                else if (const auto * identifier_node = node->as<IdentifierNode>())
+                {
+                    if (replaced_column_names.contains(identifier_node->getIdentifier().getFullName()))
+                        group_by_may_refer_to_any_projection_item = true;
+                }
+                else if (const auto * constant_node = node->as<ConstantNode>())
+                {
+                    const auto & value = constant_node->getValue();
+                    if (value.getType() == Field::Types::UInt64
+                        || (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() >= 0))
+                    {
+                        UInt64 position = value.getType() == Field::Types::UInt64 ? value.safeGet<UInt64>() : static_cast<UInt64>(value.safeGet<Int64>());
+                        group_by_positions.insert(position);
+                        max_group_by_position = std::max(max_group_by_position, position);
+                    }
+                    else if (value.getType() == Field::Types::Int64)
+                    {
+                        group_by_may_refer_to_any_projection_item = true;
+                    }
+                }
+            };
+            collect_positional_arguments(query_node_typed.getGroupByNode());
+        }
+
+        /// The positions of the projection items are 0-based, and the positional arguments are 1-based.
+        auto defer_transformer_expressions_at_position = [&](size_t position, bool is_matcher)
+        {
+            if (group_by_may_refer_to_any_projection_item)
+                return false;
+
+            if (is_matcher)
+                return max_group_by_position <= position;
+
+            return !group_by_positions.contains(position + 1);
+        };
+
+        bool projection_matchers_expanded = expandProjectionMatchers(query_node_typed, scope, defer_transformer_expressions_at_position);
+
+        if (projection_matchers_expanded)
+        {
+            projection_with_unexpanded_matchers = std::move(unexpanded_projection);
+            window_with_unexpanded_matchers = std::move(unexpanded_window);
+
+            /// The matchers of the other clauses rewrite the `WINDOW` clause before it is restored, see below.
+            if (window_with_unexpanded_matchers)
+                window_rewrites_to_replay[query_node_ptr];
+        }
+
+        queries_with_deferred_projection.insert(query_node_ptr);
+
+        if (query_node_typed.isGroupByAll())
+        {
+            /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
+            /// them from a throwaway resolution, then restore the unresolved projection so it is resolved once below,
+            /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
+            auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
+            auto saved_subquery_counter = subquery_counter;
+            resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+            expandGroupByAll(query_node_typed);
+            query_node_typed.getProjectionNode() = std::move(unresolved_projection);
+            /// The discarded resolution must not consume _subquery_N projection names.
+            subquery_counter = saved_subquery_counter;
+
+            /** The discarded resolution also consumed the snapshots of the named windows, which are keyed by the
+              * window nodes of the discarded projection. Take them again for the restored one, before the `WINDOW`
+              * clause is resolved and rewritten by its own `REPLACE` transformers. The projection has no matchers
+              * left, so this only takes the snapshots. With matchers, the second expansion below takes them anyway.
+              */
+            if (!projection_with_unexpanded_matchers)
+                expandProjectionMatchers(query_node_typed, scope);
+        }
     }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
@@ -7723,6 +8476,81 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             scope,
             /* validate_key_types */ !query_is_group_by_all
                 || scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types]);
+
+    /** Now that the GROUP BY keys are registered, expand the matchers of the projection for the second time,
+      * so that the expressions produced by their transformers see the Nullable keys. The positional arguments
+      * of the following clauses refer to the result. The other clauses were already rewritten by the `REPLACE`
+      * transformers in the first expansion and must not be rewritten again.
+      */
+    if (projection_with_unexpanded_matchers)
+    {
+        query_node_typed.getProjectionNode() = std::move(projection_with_unexpanded_matchers);
+
+        /** The `REPLACE` transformers of the matchers in `WHERE` and `GROUP BY` rewrote the `WINDOW` clause after
+          * the copy was made. They are replayed on the restored clause after the second expansion, so that the window
+          * functions of the projection take their snapshots without them, as without `group_by_use_nulls`.
+          */
+        std::vector<std::unordered_map<std::string, QueryTreeNodePtr>> window_rewrites;
+        if (auto replay_it = window_rewrites_to_replay.find(query_node_ptr); replay_it != window_rewrites_to_replay.end())
+        {
+            window_rewrites = std::move(replay_it->second);
+            window_rewrites_to_replay.erase(replay_it);
+        }
+
+        /// The named windows are looked up by name, so the mapping has to point to the restored definitions.
+        if (window_with_unexpanded_matchers)
+        {
+            query_node_typed.getWindowNode() = std::move(window_with_unexpanded_matchers);
+            scope.window_name_to_window_node.clear();
+            for (const auto & window_node : query_node_typed.getWindow().getNodes())
+                scope.window_name_to_window_node.emplace(window_node->getAlias(), window_node);
+        }
+
+        const auto * previous_query_with_replaced_clauses = query_with_replaced_clauses;
+        query_with_replaced_clauses = query_node.get();
+        SCOPE_EXIT({ query_with_replaced_clauses = previous_query_with_replaced_clauses; });
+
+        /// The matchers of the projection itself rewrite its following items.
+        queries_with_deferred_projection.erase(query_node_ptr);
+        expandProjectionMatchers(query_node_typed, scope);
+        queries_with_deferred_projection.insert(query_node_ptr);
+
+        for (const auto & window_rewrite : window_rewrites)
+            replaceIdentifiersWithTransformerMappings(query_node_typed.getWindowNode(), window_rewrite, {} /*nodes_to_skip*/);
+
+        /** The scope aliases hold copies of the projection expressions made before the first expansion, which resolve
+          * their named windows from the `WINDOW` clause as rewritten by the `REPLACE` transformers. Replace the copies
+          * of the expressions that carry snapshots of the named windows with copies of the restored projection items,
+          * so that an alias referred to from the following clauses (`QUALIFY`, `ORDER BY`, `LIMIT BY`) resolves to
+          * the same expression as the projection item. The other aliases are kept as they are.
+          */
+        std::unordered_set<std::string> visited_alias_names;
+        std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
+        {
+            if (node->hasAlias() && visited_alias_names.insert(node->getAlias()).second)
+            {
+                auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
+                if (it != scope.aliases.alias_name_to_expression_node.end())
+                {
+                    auto cloned_node = node->clone();
+                    if (copyNamedWindowSnapshots(node, cloned_node))
+                        it->second = std::move(cloned_node);
+                }
+            }
+
+            /// As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
+            auto node_type = node->getNodeType();
+            if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                return;
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    rebind_projection_aliases(child);
+        };
+
+        if (!named_window_snapshots.empty())
+            rebind_projection_aliases(query_node_typed.getProjectionNode());
+    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7834,6 +8662,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
+        queries_with_deferred_projection.erase(query_node_ptr);
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
