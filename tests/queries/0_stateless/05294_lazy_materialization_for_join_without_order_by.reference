@@ -1,0 +1,58 @@
+-- inner
+300	l300	r300
+303	l303	r303
+306	l306	r306
+309	l309	r309
+312	l312	r312
+2
+-- left, the right side stands at its defaults where nothing matched
+1000	l1000		0
+1001	l1001		0
+1002	l1002	r1002	67
+1003	l1003		0
+1004	l1004		0
+1005	l1005	r1005	68
+1006	l1006		0
+1007	l1007		0
+1008	l1008	r1008	69
+1009	l1009		0
+2
+-- right
+3001	l3001	3000	r3000
+3004	l3004	3003	r3003
+3007	l3007	3006	r3006
+3010	l3010	3009	r3009
+2
+-- three tables, a table joined twice
+600	l600	r600	r603
+603	l603	r603	r606
+606	l606	r606	r609
+609	l609	r609	r612
+3
+-- a filter above the join that is not on the read
+186	151	l186
+189	155	l189
+192	159	l192
+261	154	l261
+264	158	l264
+471	151	l471
+474	155	l474
+477	159	l477
+480	163	l480
+483	167	l483
+756	151	l756
+759	155	l759
+762	159	l762
+765	163	l765
+768	167	l768
+771	171	l771
+774	175	l774
+969	152	l969
+-- a filter above the join guards an expression that would throw below it
+3	1000	l3
+6	500	l6
+9	333	l9
+12	250	l12
+-- every row of the result is consistent with its keys, whichever rows the LIMIT returns
+20	20
+20	20

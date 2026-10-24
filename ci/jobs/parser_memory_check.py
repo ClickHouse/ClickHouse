@@ -732,6 +732,12 @@ def generate_html_report(
         qid = r["num"]
 
         master_b = r["master_bytes"]
+        # The verdict of a row may be based on other measurements than its
+        # deltas; the change columns then show those, labeled.
+        compared_label = r.get("compared_label")
+        if compared_label:
+            master_b = r["compared_master"]
+            change = r["compared_pr"] - master_b
         abs_ch = abs(change)
         base_b = abs(master_b)
         pct_ch = (abs_ch / base_b * 100) if base_b > 0 else (100.0 if abs_ch > 0 else 0)
@@ -756,6 +762,16 @@ def generate_html_report(
         pct_str = f"{pct_ch:+.1f}%" if change != 0 else "0.0%"
         if change < 0:
             pct_str = f"-{pct_ch:.1f}%"
+        change_summary = f"<span>Change: <strong>{change_str}</strong> B ({pct_str})</span>"
+        if compared_label:
+            change_summary = (
+                f"<span>Change: <strong>{r['pr_bytes'] - r['master_bytes']:+,}</strong> B</span>"
+                f"<span>{html_escape(compared_label)}: master <strong>{r['compared_master']:+,}</strong> B, "
+                f"PR <strong>{r['compared_pr']:+,}</strong> B, "
+                f"change <strong>{change_str}</strong> B ({pct_str})</span>"
+            )
+            change_str += " (live)"
+            pct_str += " (live)"
         query_escaped = html_escape(r["query"])
 
         master_profile = format_profile_html(
@@ -801,7 +817,7 @@ def generate_html_report(
             f'<div class="detail-summary">'
             f'<span>Master: <strong>{r["master_bytes"]:,}</strong> B</span>'
             f'<span>PR: <strong>{r["pr_bytes"]:,}</strong> B</span>'
-            f'<span>Change: <strong>{change_str}</strong> B ({pct_str})</span>'
+            f"{change_summary}"
             f"</div>"
             f'<div class="section-label">Cross-version diff (PR &minus; Master)</div>'
             f"{cross_diff_html}"

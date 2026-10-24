@@ -11,7 +11,6 @@
 -- The second (empty) UNION branch keeps the query a real union while making the output
 -- deterministic. The session settings are set right before each union and reset right after,
 -- so that they do not shape the label SELECTs.
-SET enable_analyzer = 1;
 
 SELECT 'query-level limit reset';
 SET limit = 2;

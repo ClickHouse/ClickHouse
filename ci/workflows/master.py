@@ -43,7 +43,7 @@ workflow = Workflow.Config(
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
         *JobConfigs.release_build_jobs_with_examples,
-        *JobConfigs.sccache_warmup_build_jobs,
+        *JobConfigs.performance_reference_build_jobs,
         *[
             job.set_run_after(
                 REGULAR_BUILD_NAMES + [j.name for j in JobConfigs.tidy_build_arm_jobs]
@@ -75,6 +75,7 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *clickhouse_binaries_with_tags,
+        *ArtifactConfigs.clickhouse_performance_reference_binaries,
         *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
