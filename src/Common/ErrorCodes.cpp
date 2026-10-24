@@ -718,6 +718,7 @@
     M(1023, XGBOOST_ERROR) \
     M(1024, BUZZHOUSE_ORACLE) \
     M(1025, GPU_ERROR) \
+    M(1026, CLUSTER_ALREADY_EXISTS) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES

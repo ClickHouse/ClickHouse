@@ -519,6 +519,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int CLUSTER_ALREADY_EXISTS;
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
@@ -7847,6 +7848,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
     /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
     /// the other sources already account for `treat_local_port_as_remote` on construction (see
     /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
+    std::shared_ptr<Cluster> sql_cluster;
     {
         std::lock_guard lock(shared->clusters_mutex);
 
@@ -7855,8 +7857,9 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         if (config.has(config_prefix))
             return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
 
-        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
-            return res;
+        sql_cluster = getClustersImpl(lock)->getCluster(cluster_name);
+        if (sql_cluster && sql_cluster->getSourceId() != Cluster::SourceId::SQL)
+            return sql_cluster;
 
         if (shared->cluster_discovery)
         {
@@ -7865,8 +7868,12 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         }
     }
 
+    /// A SQL-managed cluster never shadows a discovered or a `Replicated` database cluster with the same name.
     if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
         return res;
+
+    if (sql_cluster)
+        return sql_cluster;
 
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
@@ -7875,10 +7882,15 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
+    std::shared_ptr<Cluster> sql_cluster = nullptr;
 
     {
         std::lock_guard lock(shared->clusters_mutex);
         res = getClustersImpl(lock)->getCluster(cluster_name);
+
+        /// A SQL-managed cluster never shadows a discovered or a `Replicated` database cluster with the same name.
+        if (res && res->getSourceId() == Cluster::SourceId::SQL)
+            std::swap(res, sql_cluster);
 
         if (res == nullptr && shared->cluster_discovery)
             res = shared->cluster_discovery->getCluster(cluster_name);
@@ -7886,6 +7898,9 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 
     if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
+    if (res == nullptr)
+        res = std::move(sql_cluster);
 
     return res;
 }
@@ -7904,15 +7919,49 @@ void Context::reloadClusterConfig() const
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
 
+        bool clusters_reloaded = false;
         {
             std::lock_guard lock(shared->clusters_mutex);
             if (shared->clusters_config.get() == cluster_config.get())
             {
+                /// Preserve SQL-managed clusters from the *current* map under the same lock as the
+                /// swap. Copying from a snapshot taken outside this lock races with `DROP CLUSTER`
+                /// and can resurrect a cluster that was already removed (seen as a non-zero
+                /// `system.clusters` count after DROP, then `CLUSTER_ALREADY_EXISTS` on CREATE).
+                if (shared->clusters)
+                {
+                    for (const auto & [name, cluster] : shared->clusters->getContainer())
+                    {
+                        if (cluster->getSourceId() != Cluster::SourceId::SQL)
+                            continue;
+
+                        /// Config and SQL cluster names must not collide. Reject here so a newly
+                        /// added `<remote_servers>` entry cannot silently hide behind an existing
+                        /// SQL cluster (and later vanish from view after `DROP CLUSTER`).
+                        if (new_clusters->getCluster(name))
+                        {
+                            throw Exception(
+                                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                                "Cannot load SQL cluster `{}`: a cluster with the same name already exists in server configuration",
+                                name);
+                        }
+
+                        new_clusters->setCluster(name, cluster);
+                    }
+                }
+
                 shared->clusters = std::move(new_clusters);
-                return;
+                ++shared->clusters_version;
+                clusters_reloaded = true;
             }
 
             // Clusters config has been suddenly changed, recompute clusters
+        }
+
+        if (clusters_reloaded)
+        {
+            notifyDDLWorkerAfterClustersChange();
+            return;
         }
     }
 }
@@ -7938,7 +7987,12 @@ std::map<String, ClusterPtr> Context::getClusters() const
     {
         const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
         for (const auto & [name, cluster] : cluster_discovery_map)
-            clusters.emplace(name, cluster);
+        {
+            /// A discovered cluster takes precedence over a SQL-managed cluster with the same name.
+            auto [it, inserted] = clusters.emplace(name, cluster);
+            if (!inserted && it->second->getSourceId() == Cluster::SourceId::SQL)
+                it->second = cluster;
+        }
     }
     return clusters;
 }
@@ -7992,11 +8046,14 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 
         ++shared->clusters_version;
     }
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (shared->ddl_worker)
-            shared->ddl_worker->notifyHostIDsUpdated();
-    }
+    notifyDDLWorkerAfterClustersChange();
+}
+
+void Context::notifyDDLWorkerAfterClustersChange() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (shared->ddl_worker)
+        shared->ddl_worker->notifyHostIDsUpdated();
 }
 
 size_t Context::getClustersVersion() const
@@ -8008,12 +8065,25 @@ size_t Context::getClustersVersion() const
 
 void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
 {
-    std::lock_guard lock(shared->clusters_mutex);
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        getClustersImpl(lock)->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+}
 
-    if (!shared->clusters)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clusters are not set");
+void Context::removeCluster(const String & cluster_name)
+{
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        if (!shared->clusters)
+            return;
 
-    shared->clusters->setCluster(cluster_name, cluster);
+        shared->clusters->removeCluster(cluster_name);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
 }
 
 

@@ -70,6 +70,15 @@ struct ClusterConnectionParameters
 class Cluster
 {
 public:
+    enum class SourceId : uint8_t
+    {
+        NONE = 0,
+        CONFIG = 1,
+        SQL = 2,
+        DISCOVERY = 3,
+        REPLICATED_DATABASE = 4,
+    };
+
     /// 'treat_local_port_as_remote' - never treat a configured replica as local, even when its address
     /// points to this host. Set for clickhouse-local, which listens on no port of its own: a replica of a
     /// configured cluster always carries a port (explicit or inherited from `tcp_port`), so it is the
@@ -80,7 +89,9 @@ public:
             const Settings & settings,
             const String & config_prefix_,
             const String & cluster_name,
-            bool treat_local_port_as_remote = false);
+            bool treat_local_port_as_remote = false,
+            SourceId source_id_ = SourceId::CONFIG,
+            String create_query_ = {});
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -109,7 +120,8 @@ public:
         const HostsByShard & names,
         const ClusterConnectionParameters & params,
         const Strings & shard_keys = {},
-        const String & shard_scope_key = {});
+        const String & shard_scope_key = {},
+        SourceId source_id_ = SourceId::NONE);
 
 
     /// The shards are renumbered `1..N` here as well, so the shard-scope identity comes from each
@@ -127,7 +139,8 @@ public:
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
         const ClusterConnectionParameters & params,
         bool internal_replication = false,
-        const String & shard_scope_key = {});
+        const String & shard_scope_key = {},
+        SourceId source_id_ = SourceId::NONE);
 
     /// The scope key of a cluster whose shards live in Keeper, for `ClusterDiscovery` and a `Replicated`
     /// database: the Keeper name together with the path. A path is unique only inside one Keeper - two
@@ -335,6 +348,14 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Where the cluster was defined. Subclusters derived from an existing cluster keep the source of the original.
+    SourceId getSourceId() const { return source_id; }
+
+    /// Human-readable `source` value for `system.clusters`. Empty for clusters without a persisted definition (e.g. `remote`).
+    static String formatSourceIdForSystemTable(SourceId source_id);
+
+    String getCreateStatement(bool show_secrets) const;
+
     /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
     /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
     /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
@@ -412,6 +433,9 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+
+    SourceId source_id = SourceId::CONFIG;
+    String create_query;
     String shard_scope_identity;
     bool replicas_as_shards = false;
 };
@@ -429,6 +453,7 @@ public:
 
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
+    void removeCluster(const String & cluster_name);
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
