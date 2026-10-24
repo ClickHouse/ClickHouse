@@ -18,5 +18,12 @@ fsdb2
 1
 --- it is still reachable through a replay on start, and drops ---
 0
+--- a dictionary reads a table of the database ---
+b
+--- the table's file is a symlink to itself: the next start still loads ---
+fsdb3
+--- the directory is a symlink to itself: the next start still loads, and both databases drop ---
+fsdb3
+0
 --- server: a path that stat refuses is rejected as such (1 = BAD_ARGUMENTS) ---
 1
