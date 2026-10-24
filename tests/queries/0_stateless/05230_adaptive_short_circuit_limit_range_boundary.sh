@@ -18,22 +18,31 @@ function check_profile_is_preserved()
 {
     local name="$1"
     local query="$2"
-    local query_id="${CLICKHOUSE_DATABASE}_${name}"
 
     # The result must not depend on the adaptive decisions.
-    local adaptive_result
     local static_result
-    adaptive_result=$(${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "$query $SETTINGS")
     static_result=$(${CLICKHOUSE_CLIENT} --query "$query $STATIC_SETTINGS")
 
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT
-            '$name',
-            $adaptive_result = $static_result,
-            ProfileEvents['AdaptiveShortCircuitEagerExecutions'] > 0
-        FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
+    # The decision is based on wall-clock measurements, so on a heavily loaded machine (e.g. in the flaky
+    # check) an unlucky run can keep every action lazy. Retry a few times: if the profile of the earlier
+    # blocks is lost, no action is ever switched to eager execution, so the check still catches that.
+    local adaptive_result
+    local results_match=1
+    local switched=0
+    for attempt in {1..5}
+    do
+        local query_id="${CLICKHOUSE_DATABASE}_${name}_${attempt}"
+        adaptive_result=$(${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "$query $SETTINGS")
+        [ "$adaptive_result" = "$static_result" ] || results_match=0
+
+        ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+        switched=$(${CLICKHOUSE_CLIENT} --query "
+            SELECT ProfileEvents['AdaptiveShortCircuitEagerExecutions'] > 0
+            FROM system.query_log
+            WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'")
+        [ "$switched" = "1" ] && break
+    done
+    echo -e "$name\t$results_match\t$switched"
 }
 
 # The boundary is reached only near the end of the table, so the condition is evaluated over enough
