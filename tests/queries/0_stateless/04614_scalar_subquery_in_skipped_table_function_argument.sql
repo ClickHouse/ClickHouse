@@ -6,8 +6,6 @@
 -- not a valid scalar fails during CREATE TABLE ... AS SELECT header inference with
 -- the same error as in a plain SELECT.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS dst_single;
 
 SELECT '-- single-row scalar in a skipped sharding-key argument';

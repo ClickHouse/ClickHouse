@@ -37,6 +37,11 @@ public:
     std::string getName() const override { return STEP_NAME; }
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+    const StorageID & getStorageID() const { return storage_id; }
+
+    /// Rows of this read estimated from the data lake metadata, pruned by the step's filter. std::nullopt when the
+    /// storage gives no estimate and with distributed processing.
+    std::optional<DataLakeReadEstimate> estimateReadFromDataLakeMetadata() const;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
@@ -96,6 +101,10 @@ private:
     /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
     /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
     StorageMetadataPtr iterator_metadata;
+
+    /// Memoized `estimateReadFromDataLakeMetadata`, which walks the manifests; reset when the filter changes.
+    /// A storage without an estimate returns nullopt without any work, so nullopt is not memoized.
+    mutable std::optional<DataLakeReadEstimate> data_lake_read_estimate;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;

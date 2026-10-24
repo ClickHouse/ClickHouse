@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-parallel-replicas
 # Tag no-fasttest: needs Parquet and Iceberg (USE_AVRO)
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache,
 # which a parallel sibling test can wipe at any moment (see 05243_query_condition_cache_top_k_parquet).
+# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 # The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads of Iceberg tables. The first run
 # records the row groups that hold no row of the result, a rerun of the same query skips them. The
@@ -20,9 +21,10 @@ rm -rf "${ICEBERG_DIR}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05339"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05339_renamed"
-# The Iceberg sink writes with the format settings the table was created with.
-${CLICKHOUSE_CLIENT} --output_format_parquet_row_group_size 1000 --query "
-    CREATE TABLE t_05339 (k Int64, s String) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')"
+# The Iceberg sink writes with the format settings of the table: those of the server plus its `SETTINGS` clause.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05339 (k Int64, s String) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')
+    SETTINGS output_format_parquet_row_group_size = 1000"
 
 # The first data file holds the largest values, the second one smaller ones; each file keeps its largest
 # values in its first row group. So all row groups but the first one of the first file hold no row of the
