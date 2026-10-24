@@ -845,6 +845,80 @@ using FunctionMapReverseSort = FunctionMapToArrayAdapter<FunctionArrayReverseSor
 using FunctionMapPartialSort = FunctionMapToArrayAdapter<FunctionArrayPartialSort, MapToNestedAdapter<NameMapPartialSort>, NameMapPartialSort>;
 using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPartialReverseSort, MapToNestedAdapter<NameMapPartialReverseSort>, NameMapPartialReverseSort>;
 
+enum class MapKeySelectionMode
+{
+    IncludeMatches,
+    ExcludeMatches,
+};
+
+/// Apply a key comparison to the entry mask for both mapPick and mapRemove.
+/// A common supertype supports Column comparisons, including NaN equality.
+/// isDistinctFrom also handles comparable types without a common supertype.
+template <MapKeySelectionMode mode>
+void updateMapKeySelection(
+    const ColumnPtr & map_keys,
+    const DataTypePtr & key_type,
+    const ColumnWithTypeAndName & requested_key,
+    const ColumnArray & nested_map,
+    const FunctionOverloadResolverPtr & distinct_resolver,
+    PaddedPODArray<UInt8> & keep_data)
+{
+    const auto requested_column = recursiveRemoveLowCardinality(requested_key.column);
+    const auto requested_type = recursiveRemoveLowCardinality(requested_key.type);
+    auto replicated_key = requested_column->replicate(nested_map.getOffsets());
+
+    const auto update = [&keep_data](size_t i, bool matches)
+    {
+        if constexpr (mode == MapKeySelectionMode::IncludeMatches)
+            keep_data[i] |= static_cast<UInt8>(matches);
+        else
+            keep_data[i] &= static_cast<UInt8>(!matches);
+    };
+
+    if (const auto comparison_type = tryGetLeastSupertype(DataTypes{key_type, requested_type}))
+    {
+        const auto comparison_keys = castColumn(
+            ColumnWithTypeAndName{map_keys, key_type, "key"}, comparison_type);
+        replicated_key = castColumn(
+            ColumnWithTypeAndName{replicated_key, requested_type, "requested_key"}, comparison_type);
+
+        if (const auto * constant_key = checkAndGetColumn<ColumnConst>(replicated_key.get()))
+        {
+            PaddedPODArray<Int8> compare_results;
+            comparison_keys->compareColumn(
+                constant_key->getDataColumn(),
+                0,
+                nullptr,
+                compare_results,
+                /* direction = */ 1,
+                /* nan_direction_hint = */ 1);
+
+            for (size_t i = 0; i < keep_data.size(); ++i)
+                update(i, compare_results[i] == 0);
+        }
+        else
+        {
+            for (size_t i = 0; i < keep_data.size(); ++i)
+                update(i, comparison_keys->compareAt(i, i, *replicated_key, 1) == 0);
+        }
+    }
+    else
+    {
+        /// isDistinctFrom compares NULLs as values and treats NaNs as distinct.
+        ColumnsWithTypeAndName comparison_arguments{
+            {map_keys, key_type, "key"},
+            {replicated_key, requested_type, "requested_key"}};
+        auto comparison = distinct_resolver->build(comparison_arguments);
+        auto distinct = comparison->execute(
+            comparison_arguments, comparison->getResultType(), keep_data.size(), /* dry_run = */ false);
+        distinct = distinct->convertToFullColumnIfConst();
+        const auto & distinct_data = assert_cast<const ColumnUInt8 &>(*distinct).getData();
+
+        for (size_t i = 0; i < keep_data.size(); ++i)
+            update(i, distinct_data[i] == 0);
+    }
+}
+
 class FunctionMapRemove final : public IFunction
 {
 public:
@@ -888,67 +962,98 @@ public:
         auto map_column = arguments[0].column->convertToFullColumnIfConst();
         const auto & map = assert_cast<const ColumnMap &>(*map_column);
         const auto & nested_map = map.getNestedColumn();
-        const auto & offsets = nested_map.getOffsets();
 
         if (nested_map.getData().empty())
             return map_column;
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-        auto key_column = recursiveRemoveLowCardinality(map.getNestedData().getColumnPtr(0));
-        auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
+        const auto key_column = recursiveRemoveLowCardinality(map.getNestedData().getColumnPtr(0));
+        const auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
 
-        auto remove_key_column = recursiveRemoveLowCardinality(arguments[1].column);
-        auto remove_key_type = recursiveRemoveLowCardinality(arguments[1].type);
-        auto replicated_remove_key = remove_key_column->replicate(offsets);
+        auto keep = ColumnUInt8::create(key_column->size(), UInt8(1));
+        updateMapKeySelection<MapKeySelectionMode::ExcludeMatches>(
+            key_column, key_type, arguments[1], nested_map, is_distinct_from_resolver, keep->getData());
 
-        const size_t map_elements_count = key_column->size();
-        ColumnPtr filter;
+        auto filtered_nested_map = ArrayFilterImpl::execute(nested_map, std::move(keep));
+        return ColumnMap::create(std::move(filtered_nested_map));
+    }
 
-        if (const auto comparison_type = tryGetLeastSupertype(DataTypes{key_type, remove_key_type}))
+private:
+    FunctionOverloadResolverPtr is_distinct_from_resolver;
+};
+
+class FunctionMapPick final : public IFunction
+{
+public:
+    static constexpr auto name = "mapPick";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionMapPick>(context);
+    }
+
+    explicit FunctionMapPick(const ContextPtr & context)
+        : is_distinct_from_resolver(FunctionFactory::instance().get("isDistinctFrom", context))
+    {
+    }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() < 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least 2 arguments, passed {}",
+                getName(),
+                arguments.size());
+
+        const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+        if (!map_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Map, found {}",
+                getName(),
+                arguments[0]->getName());
+
+        const auto key_type = recursiveRemoveLowCardinality(map_type->getKeyType());
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            key_column = castColumn(ColumnWithTypeAndName{key_column, key_type, "key"}, comparison_type);
-            replicated_remove_key = castColumn(
-                ColumnWithTypeAndName{replicated_remove_key, remove_key_type, "remove_key"}, comparison_type);
-
-            auto keep = ColumnUInt8::create(map_elements_count);
-            auto & keep_data = keep->getData();
-
-            if (const auto * const_remove_key = checkAndGetColumn<ColumnConst>(replicated_remove_key.get()))
-            {
-                PaddedPODArray<Int8> compare_results;
-                key_column->compareColumn(
-                    const_remove_key->getDataColumn(),
-                    0,
-                    nullptr,
-                    compare_results,
-                    /* direction = */ 1,
-                    /* nan_direction_hint = */ 1);
-
-                for (size_t i = 0; i < map_elements_count; ++i)
-                    keep_data[i] = static_cast<UInt8>(compare_results[i] != 0);
-            }
-            else
-            {
-                for (size_t i = 0; i < map_elements_count; ++i)
-                    keep_data[i] = static_cast<UInt8>(key_column->compareAt(i, i, *replicated_remove_key, 1) != 0);
-            }
-
-            filter = std::move(keep);
-        }
-        else
-        {
-            /// Preserve comparison support for types such as mixed signed/unsigned arrays, where
-            /// FunctionComparison has a dedicated path even though no least supertype exists.
-            /// This fallback uses isDistinctFrom semantics, which treat NaN values as distinct.
-            ColumnsWithTypeAndName comparison_arguments{
-                {key_column, key_type, "key"},
-                {replicated_remove_key, remove_key_type, "remove_key"}};
-            auto comparison = is_distinct_from_resolver->build(comparison_arguments);
-            filter = comparison->execute(
-                comparison_arguments, comparison->getResultType(), map_elements_count, /* dry_run = */ false);
+            const auto pick_key_type = recursiveRemoveLowCardinality(arguments[i]);
+            is_distinct_from_resolver->getReturnType({
+                {nullptr, key_type, "key"},
+                {nullptr, pick_key_type, "pick_key"}});
         }
 
-        auto filtered_nested_map = ArrayFilterImpl::execute(nested_map, std::move(filter));
+        return arguments[0];
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        auto map_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto & map = assert_cast<const ColumnMap &>(*map_column);
+        const auto & nested_map = map.getNestedColumn();
+
+        if (nested_map.getData().empty())
+            return map_column;
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
+        const auto key_column = recursiveRemoveLowCardinality(map.getNestedData().getColumnPtr(0));
+        const auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
+
+        auto keep = ColumnUInt8::create(key_column->size(), UInt8(0));
+        for (size_t i = 1; i < arguments.size(); ++i)
+            updateMapKeySelection<MapKeySelectionMode::IncludeMatches>(
+                key_column, key_type, arguments[i], nested_map, is_distinct_from_resolver, keep->getData());
+
+        auto filtered_nested_map = ArrayFilterImpl::execute(nested_map, std::move(keep));
         return ColumnMap::create(std::move(filtered_nested_map));
     }
 
@@ -1142,6 +1247,31 @@ For key types with a common supertype, NaN keys follow map lookup semantics, so 
     FunctionDocumentation::Category category_mapRemove = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapRemove = {description_mapRemove, syntax_mapRemove, arguments_mapRemove, {}, returned_value_mapRemove, examples_mapRemove, introduced_in_mapRemove, category_mapRemove};
     factory.registerFunction<FunctionMapRemove>(documentation_mapRemove);
+
+    FunctionDocumentation::Description description_mapPick = R"(
+Returns a map containing all entries whose key equals at least one of the specified keys.
+Missing keys are ignored, duplicate requested keys have no additional effect, and all matching duplicate entries in the input map are preserved.
+The relative order of entries from the input map is preserved.
+NULLs are compared as values: a NULL requested key does not match a non-NULL key, and NULL components in composite keys match other NULL components.
+For key types with a common supertype, a NaN requested key matches a NaN map key, including NaN components in composite keys.
+)";
+    FunctionDocumentation::Syntax syntax_mapPick = "mapPick(map, key1 [, key2, ...])";
+    FunctionDocumentation::Arguments arguments_mapPick = {
+        {"map", "Map to select matching entries from.", {"Map(K, V)"}},
+        {"key1 [, key2, ...]", "One or more keys to keep. Each key type must be comparable with the key type of the map.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapPick = {"Returns the map with entries whose key matches at least one specified key.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapPick = {
+        {
+            "Usage example",
+            "SELECT mapPick(map('k1', 1, 'k2', 2, 'k3', 3), 'k1', 'k3')",
+            "{'k1':1,'k3':3}"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapPick = {26, 10};
+    FunctionDocumentation::Category category_mapPick = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapPick = {description_mapPick, syntax_mapPick, arguments_mapPick, {}, returned_value_mapPick, examples_mapPick, introduced_in_mapPick, category_mapPick};
+    factory.registerFunction<FunctionMapPick>(documentation_mapPick);
 
     /// mapApply documentation
     FunctionDocumentation::Description description_mapApply = R"(
