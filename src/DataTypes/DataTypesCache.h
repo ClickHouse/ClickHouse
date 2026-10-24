@@ -73,27 +73,6 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// does this between queries of one session); otherwise a stale entry produces
 /// wrong results (e.g. DateTime values rendered in another query's timezone).
 ///
-/// This scoping is also what makes it safe to pool serializations with
-/// `supportsPooling() == false` here, e.g. SerializationJSON: its own contract
-/// (see the comment in SerializationJSON::create) forbids sharing *across queries*,
-/// because its extraction tree accumulates mutable, context-dependent state (its
-/// documented example is exactly the timezone case this cache already invalidates
-/// on). Reuse *within* one query is already an established, trusted pattern for the
-/// very same object (see ColumnDynamic's per-column `serialization_cache`, used
-/// throughout its binary insert/deserialize paths).
-///
-/// IMPORTANT: this safety only holds for the ways SerializationJSON is currently used
-/// through this cache (type resolution, binary serialization, and text *output*) - none
-/// of which touch the mutable extraction-tree caches or the parser choice. A cached
-/// serialization from here must never be used for *text deserialization*: that path is
-/// exactly what SerializationJSON::create's "do NOT pool" comment is about, and two
-/// gaps this cache does not track would then matter. First, `DataTypeObject::doGetSerialization`
-/// reads `allow_simdjson` at construction; a client session that flips it in place would
-/// keep the previously-built parser, and rapidjson (`RAPIDJSON_PARSE_DEFAULT_FLAGS` lacks
-/// `kParseFullPrecisionFlag`) is not a drop-in replacement for simdjson's parsing the way
-/// it is for output - it can round Float64 differently and has no nesting-depth cap. Second,
-/// the extraction tree's caches would then legitimately accumulate per-query state and need
-/// the same cross-query invalidation this cache does not extend to their internals.
 class DataTypesCache
 {
 public:
@@ -104,6 +83,13 @@ public:
     /// constructed `type` instead of parsing `type_name` through DataTypeFactory.
     /// `type_name` must be equal to `type->getName()`.
     SerializationPtr getSerialization(const String & type_name, const DataTypePtr & type);
+
+    /// Returns a number that changes whenever the cache is invalidated, so other thread-local caches
+    /// that depend on the query context can follow the same lifetime.
+    UInt64 getQueryContextVersion();
+
+    /// The value of `allow_simdjson` for the current query context.
+    bool allowSimdJSON() const { return allow_simdjson; }
 
 private:
     /// Sized to cover a full set of Dynamic variants (up to 255) plus types from the
@@ -128,8 +114,8 @@ private:
 
     std::unordered_map<String, Element> cache;
 
-    /// The query context the cached entries were created under (null for threads
-    /// not attached to any query). Holding a weak_ptr keeps the control block alive,
+    /// The query context, or global client context when no query is attached, that
+    /// created the cached entries. Holding a weak_ptr keeps the control block alive,
     /// which makes the owner-based identity comparison immune to address reuse.
     ContextWeakPtr query_context;
 
@@ -138,6 +124,9 @@ private:
     /// long-lived client context for the whole session and mutates the setting
     /// in place between queries (see `ClientBase::onTimezoneUpdate`).
     String session_timezone;
+
+    bool allow_simdjson = true;
+    UInt64 query_context_version = 0;
 };
 
 /// Return instance of a thread local cache.
