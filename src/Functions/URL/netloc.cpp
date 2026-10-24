@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/StringHelpers.h>
+#include <Functions/URL/domain.h>
 
 #include <algorithm>
 
@@ -20,12 +21,20 @@ struct ExtractNetloc
         Pos pos = data;
         Pos end = data + size;
 
+        std::string_view leading_ip_literal;
+        if (size > 1 && data[0] == '[')
+        {
+            const auto host = getURLHostRFC(data, size);
+            if (!host.empty() && host.data() == data + 1 && host.size() < size - 1 && data[host.size() + 1] == ']')
+                leading_ip_literal = host;
+        }
+
         /// Skip scheme.
         if (pos + 2 < end && pos[0] == '/' && pos[1] == '/')
         {
             pos += 2;
         }
-        else
+        else if (leading_ip_literal.empty())
         {
             Pos scheme_end = data + std::min(size, 16UL);
             for (++pos; pos < scheme_end; ++pos)
@@ -70,22 +79,36 @@ struct ExtractNetloc
         /// Now pos points to the first byte after scheme (if there is).
 
         bool has_identification = false;
+        bool has_ip_literal = false;
         Pos hostname_end = end;
         Pos question_mark_pos = end;
         Pos slash_pos = end;
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
+            if (*pos == '[')
+            {
+                /// Recognize only a validated IP-literal at this exact bracket.
+                const auto host = pos == data ? leading_ip_literal : getURLHostRFC(data, size);
+                if (!host.empty() && host.data() == pos + 1 && host.size() < static_cast<size_t>(end - host.data())
+                    && data[static_cast<size_t>(host.data() - data) + host.size()] == ']')
+                {
+                    pos = host.data() + host.size();
+                    has_ip_literal = true;
+                    continue;
+                }
+            }
+
             switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case '/':
-                    if (has_identification)
+                    if (has_identification || has_ip_literal)
                         return std::string_view(start_of_host, pos - start_of_host);
                     else
                         slash_pos = pos;
                     break;
                 case '?':
-                    if (has_identification)
+                    if (has_identification || has_ip_literal)
                         return std::string_view(start_of_host, pos - start_of_host);
                     else
                         question_mark_pos = pos;
