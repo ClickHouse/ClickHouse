@@ -171,8 +171,10 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     {
         /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
         /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
-        /// column falls back to the whole universe.
-        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
+        /// column falls back to the whole universe, as does one whose rows can lie above its bound.
+        if (i < primary_key.data_types.size()
+            && (KeyCondition::typeMayHideNaN(primary_key.data_types[i])
+                || KeyCondition::typeMayHideValueAboveMax(primary_key.data_types[i])))
             continue;
 
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
@@ -3233,6 +3235,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     QueryStatusPtr query_status)
 {
     RangesInDataParts res_parts;
+    const auto columns_may_hide_value_above_max = KeyCondition::getColumnsMayHideValueAboveMax(minmax_columns_types);
 
     for (const auto & prev_part : parts)
     {
@@ -3260,8 +3263,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part_or_projection).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
+        if (minmax_idx_condition)
+        {
+            const auto part_minmax_index = part_or_projection->getMinMaxIndex();
+            const auto & part_bounds = part_minmax_index->hyperrectangle;
+            std::optional<Hyperrectangle> widened_bounds;
+            if (!columns_may_hide_value_above_max.empty())
+                widened_bounds = KeyCondition::widenBoundsMayHideValues(part_bounds, columns_may_hide_value_above_max);
+
+            if (!minmax_idx_condition->generateForPart(part_or_projection)
+                     .checkInHyperrectangle(widened_bounds ? *widened_bounds : part_bounds, minmax_columns_types)
+                     .can_be_true)
+                continue;
+        }
 
         counters.num_parts_after_minmax += 1;
         counters.num_granules_after_minmax += num_granules;

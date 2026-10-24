@@ -1688,6 +1688,49 @@ bool KeyCondition::typeMayHideNaN(const DataTypePtr & type)
     return false;
 }
 
+bool KeyCondition::typeMayHideValueAboveMax(const DataTypePtr & type)
+{
+    if (!type || anyInTypeTree(*type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); }))
+        return false;
+
+    return anyInTypeTree(*type, [](const IDataType & node)
+    {
+        return (isArray(node) || isMap(node)) && anyInTypeTree(node, [](const IDataType & element)
+        {
+            return element.isNullable() || element.isLowCardinalityNullable() || WhichDataType(element).isFloat();
+        });
+    });
+}
+
+std::vector<size_t> KeyCondition::getColumnsMayHideValueAboveMax(const DataTypes & types)
+{
+    std::vector<size_t> columns;
+    for (size_t i = 0; i < types.size(); ++i)
+        if (typeMayHideValueAboveMax(types[i]))
+            columns.push_back(i);
+    return columns;
+}
+
+Hyperrectangle KeyCondition::widenBoundsMayHideValues(const Hyperrectangle & bounds, const std::vector<size_t> & columns)
+{
+    Hyperrectangle widened = bounds;
+    for (size_t i : columns)
+    {
+        if (i >= widened.size())
+            continue;
+
+        Range & range = widened[i];
+        range.right = POSITIVE_INFINITY;
+        range.right_included = true;
+        if (fieldHasNullInside(range.left))
+        {
+            range.left = NEGATIVE_INFINITY;
+            range.left_included = true;
+        }
+    }
+    return widened;
+}
+
 void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
 {
     auto column_may_hide_nan = [&key_types](size_t key_column)

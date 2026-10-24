@@ -1,0 +1,83 @@
+array positive indexed	1
+array positive no index	1
+array positive prunes other granule below	1
+array negated indexed	4
+array negated no index	4
+granularity 2 nan in first mark indexed	1
+granularity 2 nan in first mark no index	1
+granularity 2 nan in first mark prunes finite entry below	1
+granularity 2 nan in second mark indexed	1
+granularity 2 nan in second mark no index	1
+map positive indexed	1
+map positive no index	1
+map still prunes below	1
+nullable element indexed	2
+nullable element no index	2
+finite array still prunes below	1
+finite array indexed	1
+finite array no index	1
+string array still prunes	1
+string array indexed	1
+string array no index	1
+mixed leaves indexed	1
+mixed leaves no index	1
+mixed leaves still prunes below	1
+bool leaf indexed	1
+bool leaf no index	1
+bool leaf still prunes below	1
+skip null indexed	1
+skip null no index	1
+skip lower bound still prunes	1
+skip null merge first indexed	1
+skip null merge first no index	1
+skip null merge second indexed	1
+skip null merge second no index	1
+skip map indexed	1
+skip map no index	1
+skip lc indexed	1
+skip lc no index	1
+skip tuple indexed	1
+skip tuple no index	1
+skip tuple nan indexed	1
+skip tuple nan no index	1
+skip null and nan indexed	2
+skip null and nan no index	2
+skip in merged indexed	1
+skip in merged no index	1
+skip in merged above indexed	1
+skip in merged above no index	1
+skip in merged equal indexed	1
+skip in merged equal no index	1
+skip in merged below a null constant indexed	2
+skip in merged below a null constant no index	2
+skip in merged null constant indexed	1
+skip in merged null constant no index	1
+set null indexed	1
+set null bulk filtering	1
+set null no index	1
+set null still prunes	1
+set nan indexed	1
+set nan no index	1
+part null	1
+part null no partition pruning	1
+part null still prunes below	1
+part nan	1
+part nan no partition pruning	1
+part nan still prunes below	1
+part merge active parts	1
+part merge	1
+part merge no partition pruning	1
+part merge in active parts	1
+part merge in	1
+part merge in no partition pruning	1
+part merge in above	1
+part merge in above no partition pruning	1
+pk partition bound	1
+pk partition bound no partition pruning	1
+pk partition bound no index	1
+minmax_count null uses projection	1
+minmax_count null	['a']	['x','z']
+minmax_count null no projection	['a']	['x','z']
+minmax_count nan uses projection	1
+minmax_count nan	[1]	[150,1]
+minmax_count nan no projection	[1]	[150,1]
