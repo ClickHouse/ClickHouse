@@ -190,8 +190,26 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
     if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
     {
         const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
-        if (!from_tuple || !from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
+        if (!from_tuple)
             return from;
+
+        /// Without names on both sides, `prepareArrowColumnForCast` matches elements by position (e.g. a struct with
+        /// empty or repeated field names, read as an unnamed tuple), so descend the same way: named structs nested
+        /// inside still need their names aligned. The source keeps its own names, or the lack of them.
+        if (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
+        {
+            const auto & from_elems = from_tuple->getElements();
+            const auto & to_elems = to_tuple->getElements();
+            if (from_elems.size() != to_elems.size())
+                return from;
+            DataTypes new_elems;
+            new_elems.reserve(from_elems.size());
+            for (size_t i = 0; i < from_elems.size(); ++i)
+                new_elems.push_back(alignStructFieldNamesCaseInsensitive(from_elems[i], to_elems[i]));
+            return from_tuple->hasExplicitNames()
+                ? std::make_shared<DataTypeTuple>(new_elems, from_tuple->getElementNames())
+                : std::make_shared<DataTypeTuple>(new_elems);
+        }
 
         const auto & from_elems = from_tuple->getElements();
         const auto & from_names = from_tuple->getElementNames();
@@ -747,8 +765,11 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         {
             /// Resolve the element's target exactly as the decoder did when it decoded this element: by
             /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
-            /// for an unnamed one. An element the request does not mention stays as decoded.
-            const DataTypePtr elem_target = ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive);
+            /// for an unnamed one, and also by position for a struct with empty or repeated field names,
+            /// which is decoded as an unnamed Tuple. An element the request does not mention stays as decoded.
+            const DataTypePtr elem_target = from_tup->hasExplicitNames()
+                ? ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive)
+                : ArrowIPC::tupleElementHintByPosition(to_type, i);
             if (elem_target)
             {
                 auto [c, t] = reinterpretRawBytes(
