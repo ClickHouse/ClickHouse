@@ -1,0 +1,112 @@
+ground truth
+1
+subquery set
+2
+2
+literal set
+1
+1
+same-type subquery set still prunes
+1
+1
+0
+1
+map value
+1
+1
+1
+1
+0
+0
+map value from a subquery set
+2
+2
+2
+2
+same-type subquery set over a map still prunes
+0
+1
+absent map key with a FixedString value
+3
+3
+3
+3
+3
+3
+absent map key with an all-zero String constant
+3
+3
+3
+3
+3
+3
+3
+3
+a String value type compares exactly, so a zero byte still prunes
+0
+0
+1
+a non-default FixedString constant still prunes
+0
+1
+absent map key against a set of another type
+3
+3
+3
+3
+0
+1
+unknown enum label against a mapValues index
+0
+0
+1
+nullable subquery or table set against a mapValues index
+0
+1
+1
+1
+1
+1
+absent map key with a Variant or Dynamic FixedString constant
+3
+3
+3
+3
+absent map key over Date32 values
+3
+3
+3
+3
+1
+1
+1
+absent map key with a Dynamic Tuple(FixedString) constant
+3
+3
+3
+3
+map key over Tuple(Enum8) values
+1
+1
+1
+1
+map key over nested Array values
+1
+1
+map key over Tuple values with a set of another Tuple type
+1
+1
+1
+1
+map default against an Enum constant
+3
+3
+3
+1
+1
+FixedString(16) against an IPv6 constant
+1
+1
+1
+1
+1

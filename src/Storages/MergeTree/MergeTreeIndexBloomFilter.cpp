@@ -6,16 +6,22 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/formatIPv6.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/Context.h>
@@ -640,6 +646,110 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// The recipe `equals` uses to hash a constant against an index element: the comparison is
+/// padding-aware for the string family while the hash is over the exact bytes, so a constant that
+/// cannot be brought to the element's exact byte form has to make the index decline instead of
+/// hashing a value no granule can hold. Returns a null `Field` (the `convertFieldToType` convention)
+/// in that case.
+static Field coerceConstantForBloomFilterHash(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type)
+{
+    if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+    {
+        /// A `Variant` or `Dynamic` constant carries the nested padded value under its
+        /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
+        const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+        const bool constant_may_be_fixed_string
+            = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+        const size_t constant_bytes = value_field.safeGet<String>().size();
+        const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+        if (constant_may_be_fixed_string && !fixed_index_type)
+            return {};
+
+        if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+            return {};
+    }
+
+    /// `equals` compares a `FixedString(16)` with an `IPv6` as its binary representation, while
+    /// `convertFieldToType` would give the text form, which no granule holds.
+    if (value_field.getType() == Field::Types::IPv6 && isFixedString(actual_type))
+    {
+        if (assert_cast<const DataTypeFixedString &>(*actual_type).getN() != IPV6_BINARY_LENGTH)
+            return {};
+
+        WriteBufferFromOwnString buf;
+        DataTypeIPv6().getDefaultSerialization()->serializeBinary(value_field, buf, {});
+        return buf.str();
+    }
+
+    return convertFieldToType(value_field, *actual_type, value_type.get());
+}
+
+/// The value `arrayElement` yields for a missing map key: the column default (`insertDefault`), which is
+/// not always `getDefault` of the type (`Date32` has `1900-01-01` as the latter but zero, `1970-01-01`,
+/// as the former). `Enum` keeps `getDefault`, because its zero need not be a valid enum value; the
+/// callers check the zero of an `Enum` separately.
+static ColumnPtr createMissingMapValueColumn(const DataTypePtr & map_value_type)
+{
+    if (isEnum(removeLowCardinalityAndNullable(map_value_type)))
+        return map_value_type->createColumnConstWithDefaultValue(1);
+
+    auto column = map_value_type->createColumn();
+    column->insertDefault();
+    return ColumnConst::create(std::move(column), 1);
+}
+
+/// Whether an `Enum` is nested in a composite map value type, e.g. `Tuple(Enum8('a' = 1))`. Its column
+/// default holds the zero of that `Enum`, which need not be a valid value, so converting the default
+/// to the type of a constant or a set (`'a'`) throws `UNKNOWN_ELEMENT_OF_ENUM`. Nothing can be
+/// concluded about a missing key then, and the callers decline the index.
+static bool hasNestedEnum(const DataTypePtr & map_value_type)
+{
+    const auto nested_type = removeLowCardinalityAndNullable(map_value_type);
+    return !isEnum(nested_type) && anyInTypeTree(*nested_type, [](const IDataType & type) { return isEnum(type); });
+}
+
+/// Whether `equals(<default of the map's value type>, constant)` holds, i.e. whether a row without
+/// the key can satisfy `m['k'] = constant`: `arrayElement` yields the value type's default for a
+/// missing key. The comparison is padding-aware for the string family (`'\0'` equals the
+/// `FixedString(3)` default, and so does any all-zero string of any length) and type-converting
+/// elsewhere, so the question is asked of `equals` itself, with the same argument types the query
+/// has, instead of re-deriving the rules from the constant's own type.
+static bool missingMapKeyMayCompareEqual(
+    const DataTypePtr & map_value_type, const DataTypePtr & value_type, const Field & value_field, const ContextPtr & context)
+{
+    /// A `Variant`, `Dynamic` or `JSON` constant is rebuilt below from its `Field`, which loses its active
+    /// type: a `FixedString` becomes a `String` (`''` equals `toFixedString('', 1)` but not `'\0'`), and a
+    /// `Date32` becomes an `Int16`, which `equals` may even reject. The same holds for such a type nested
+    /// anywhere in the constant, e.g. `Tuple(Dynamic)`. So `equals` would answer for the wrong types;
+    /// assume the worst for every such constant.
+    const bool constant_has_erased_type = anyInTypeTree(*value_type, [](const IDataType & type)
+    {
+        const WhichDataType which(type);
+        return which.isVariant() || which.isDynamic() || which.isObject();
+    });
+    if (constant_has_erased_type || hasNestedEnum(map_value_type))
+        return true;
+
+    ColumnsWithTypeAndName arguments
+    {
+        /// Materialized, so that the comparison is of a column with a constant, as for the map expression at
+        /// runtime: `equals` of two constants parses a `String` default as a literal of the other side's
+        /// type (e.g. `''` as an `Enum` name), unlike a `String` column.
+        {createMissingMapValueColumn(map_value_type)->convertToFullColumnIfConst(), map_value_type, "default"},
+        {value_type->createColumnConst(1, value_field), value_type, "constant"},
+    };
+
+    auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);
+    auto result = equals->execute(arguments, equals->getResultType(), 1, /*dry_run=*/ false)->convertToFullColumnIfConst();
+
+    /// A `Nullable` value type compares as NULL for a missing key, which never selects the row.
+    Field result_field;
+    result->get(0, result_field);
+    return !result_field.isNull() && result_field.safeGet<UInt64>() != 0;
+}
+
 /// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in an index on col
 static String getArrayJoinColumnName(const RPNBuilderTreeNode & node, const Block & header, bool & padded)
 {
@@ -665,6 +775,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
+
+        /// A set coming from a subquery or a table keeps its own element type, and `castColumn` of a
+        /// `FixedString` element to a `String` index strips the trailing zeros the comparison honours,
+        /// so the hash would match no granule and every granule would be pruned. `traverseTreeEquals`
+        /// guards the same way. A literal `IN` list is coerced to the left-hand-side type at set build
+        /// and is byte-exact already.
+        if (!bloomFilterHashDomainMatches(type, index_type))
+            return false;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
@@ -768,13 +886,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (!prepared_set)
             return false;
 
-        auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-        ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, type, ""};
-        ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
-        auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
-        const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
-        bool set_contain_default_value = set_contains_default_value_predicate_column_typed.getData()[0];
-        if (set_contain_default_value)
+        /// A missing key yields the default of the map value type, and `Set::execute` casts it to the
+        /// set's element type before the membership check, exactly as at runtime. So probe the set
+        /// with that default (e.g. `0` of `UInt8` matches the `String` set element `'0'`), and keep
+        /// the probe with the set's own default so nothing that declined before starts using the index.
+        auto set_contains_default_of = [&](const ColumnPtr & default_column, const DataTypePtr & default_type)
+        {
+            ColumnsWithTypeAndName default_columns_with_type_to_check = {{default_column->convertToFullColumnIfConst(), default_type, ""}};
+            auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
+            return assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column).getData()[0] != 0;
+        };
+
+        const auto & map_value_type = key_node.getDAGNode()->result_type;
+        if (hasNestedEnum(map_value_type))
+            return false;
+
+        /// `Set::execute` converts a probe of another type leniently only to a set element type that
+        /// can be inside `Nullable` and is not a `Tuple`; otherwise the cast is strict, so the default
+        /// of `Tuple(String)` (`('')`) throws `CANNOT_PARSE_TEXT` against a `Tuple(UInt8)` set, although
+        /// the stored values are valid. Nothing can be concluded about a missing key then: decline.
+        const auto set_element_type = removeLowCardinalityAndNullable(type);
+        if ((!set_element_type->canBeInsideNullable() || isTuple(set_element_type))
+            && !removeLowCardinalityAndNullable(map_value_type)->equals(*set_element_type))
+            return false;
+
+        if (set_contains_default_of(type->createColumnConstWithDefaultValue(1), type)
+            || set_contains_default_of(createMissingMapValueColumn(map_value_type), map_value_type))
             return false;
 
         /// Over `Enum` map values `arrayElement` returns the zero of the underlying integer for a missing key,
@@ -808,6 +945,19 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+
+            /// Same as for a set over a plain column above: the set keeps its own element type, and
+            /// `castColumn` of a `FixedString` element to the map's `String` value type strips the
+            /// trailing zeros the comparison honours, so the hash would match no granule.
+            if (!bloomFilterHashDomainMatches(type, array_nested_type))
+                return false;
+
+            /// Same as for a set over a plain column above: a NULL of a subquery or table set does not
+            /// cast to a non-`Nullable` value type and matches no stored value.
+            const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+            if (nullable_column && !array_nested_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+                return false;
+
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }
@@ -1199,26 +1349,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = RPNElement::FUNCTION_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
-            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
-            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
-            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
-            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
-            {
-                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
-                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
-                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
-                const bool constant_may_be_fixed_string
-                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
-                const size_t constant_bytes = value_field.safeGet<String>().size();
-                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
-
-                if (constant_may_be_fixed_string && !fixed_index_type)
-                    return false;
-
-                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
-                    return false;
-            }
-
             /// With validation off, `equals` against a name the enum lacks is constant false for every row,
             /// so the conversion below must not throw; `KeyCondition` folds the same way.
             if (function_name == "equals" && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
@@ -1227,7 +1357,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return true;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
+            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
+            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
+            auto converted_field = coerceConstantForBloomFilterHash(value_field, value_type, actual_type);
             if (converted_field.isNull())
                 return false;
 
@@ -1344,9 +1477,38 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where the map key does not exist.
+              *
+              * `getDefault` returns the empty `Field` for `FixedString`, while a missing key
+              * materializes as `N` zero bytes, so the raw default is not the value the comparison
+              * sees. Test the constant against the materialized default the way the `IN` path
+              * above does, and keep the raw default for the types whose two forms coincide.
+              *
+              * Both of those are defaults of the constant's own type, and the comparison happens in
+              * the map's value type instead: `m['absent'] = '\0'` is true over
+              * `Map(String, FixedString(3))` because `equals` zero-pads the shorter `String` side,
+              * although `'\0'` is no default of `String`. So also ask `equals` itself whether the
+              * value type's default can match the constant, and decline the index if it can.
               */
-            if (value_field == value_type->getDefault())
+            auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            Field materialized_default;
+            default_column->get(0, materialized_default);
+
+            if (value_field == materialized_default || value_field == value_type->getDefault())
                 return false;
+
+            const auto & map_value_type = key_node.getDAGNode()->result_type;
+            if (missingMapKeyMayCompareEqual(map_value_type, value_type, value_field, getContext()))
+                return false;
+
+            /// With validation off, `equals` against a name the enum lacks is constant false for every row,
+            /// so the coercion of the constant to the `mapValues` index type below must not throw.
+            /// Only `mapKeys` may be the indexed expression, so the map values need not be a type the index
+            /// supports (e.g. `Array(Array(UInt8))`): strip only the wrappers instead of `getPrimitiveType`.
+            if (!validate_enum_literals_in_operators && isUnknownEnumElement(*removeLowCardinalityAndNullable(map_value_type), value_field))
+            {
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
+            }
 
             /// Over `Enum` map values the constant can be the name of the enum value, a `String`, which has
             /// to be converted to the value of the enum before it is hashed and compared with the default.
@@ -1354,18 +1516,20 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             /// missing key `arrayElement` returns the zero of the underlying integer, which is not necessarily
             /// the default value of the `Enum` (its first value), so decline the index for both.
             Field map_value_field = value_field;
-            if (const auto * dag_node = key_node.getDAGNode())
+            bool map_value_field_is_converted = false;
             {
-                const DataTypePtr map_value_type = removeLowCardinalityAndNullable(dag_node->result_type);
-                if (isEnum(map_value_type))
+                const DataTypePtr nested_map_value_type = removeLowCardinalityAndNullable(map_value_type);
+                if (isEnum(nested_map_value_type))
                 {
-                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
+                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, nested_map_value_type))
                         map_value_field = std::move(*enum_value);
                     else
-                        map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
+                        map_value_field = tryConvertFieldToType(value_field, *nested_map_value_type, value_type.get(), {}, /* strict */ true);
 
-                    if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
+                    if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == nested_map_value_type->getDefault())
                         return false;
+
+                    map_value_field_is_converted = true;
                 }
             }
 
@@ -1391,6 +1555,20 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// The `mapValues` index holds the map's value type, so the constant needs the same
+            /// coercion the `equals`-on-a-column path applies: hashing a 2-byte `String` constant
+            /// against granules that hashed 3-byte `FixedString` values matches nothing and prunes
+            /// every granule. The key of a `mapKeys` index comes from the map type itself and is
+            /// already in its stored form.
+            /// A constant already converted to the `Enum` value type above is in its stored form.
+            if (map_info->has_values_index && !map_info->has_keys_index && !map_value_field_is_converted)
+            {
+                const_value = coerceConstantForBloomFilterHash(const_value, value_type, actual_type);
+                if (const_value.isNull())
+                    return false;
+            }
+
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
 
             return true;
