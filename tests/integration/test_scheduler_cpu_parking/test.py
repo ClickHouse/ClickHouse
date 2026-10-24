@@ -2,6 +2,9 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
+import threading
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -31,6 +34,8 @@ def start_cluster():
 def clear_workloads_and_resources():
     node.query(
         """
+        drop workload if exists a;
+        drop workload if exists b;
         drop workload if exists all;
         drop resource if exists cpu;
     """
@@ -191,3 +196,79 @@ def test_parking_disabled_no_parks(with_custom_config):
     # With cpu_slot_parking disabled the executor never publishes the lease, so the same
     # throttled read must not park at all (zero-overhead-when-off gate).
     assert get_profile_event(query_id, "ConcurrencyControlParks") == 0
+
+
+def test_parked_query_still_renews_cpu_slot():
+    node.query(
+        """
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads = 1;
+        create workload a in all;
+        create workload b in all;
+    """
+    )
+    node.query("drop table if exists parking_set_data sync")
+    node.query(
+        "create table parking_set_data (key UInt64, s String) engine = MergeTree order by key"
+    )
+    node.query(
+        "insert into parking_set_data select number, randomPrintableASCII(100) from numbers(30000)"
+    )
+
+    # Query `a` parks its CPU slot on every throttled read while it builds the set, then runs on CPU for seconds
+    query_a = (
+        "select count() from numbers(600000000) where cityHash64(number) not in (select cityHash64(s) from parking_set_data) "
+        "settings workload = 'a', max_threads = 1, max_local_read_bandwidth = 1000000, "
+        "max_read_buffer_size_local_fs = 4096, min_bytes_to_use_direct_io = 1, local_filesystem_read_method = 'pread'"
+    )
+
+    errors_a = []
+
+    def run_query_a():
+        try:
+            node.query(query_a, query_id="parking_a", timeout=300)
+        except Exception as e:
+            errors_a.append(str(e))
+
+    thread_a = threading.Thread(target=run_query_a)
+    thread_a.start()
+    try:
+        deadline = time.monotonic() + 120
+        while True:
+            rows = node.query(
+                "select read_rows from system.processes where query_id = 'parking_a'"
+            ).strip()
+            if rows and int(rows) > 30000:
+                break
+            assert time.monotonic() < deadline, "query a did not build its set in time"
+            time.sleep(0.05)
+
+        node.query(
+            "select count() from numbers(10000000) where cityHash64(number) % 3 = 0 settings workload = 'b', max_threads = 1",
+            query_id="parking_b",
+        )
+        # `b` must have competed with a running `a`, or its short wait proves nothing
+        assert (
+            node.query("select count() from system.processes where query_id = 'parking_a'").strip() == "1"
+        ), "query a stopped before query b finished"
+    finally:
+        node.query("kill query where query_id = 'parking_a' sync")
+        thread_a.join()
+    assert all("QUERY_WAS_CANCELLED" in e for e in errors_a), errors_a
+    node.query("system flush logs")
+
+    parks = int(
+        node.query(
+            "select ProfileEvents['ConcurrencyControlParks'] from system.query_log where query_id = 'parking_a' and type != 'QueryStart' "
+            "order by query_start_time_microseconds desc limit 1"
+        )
+    )
+    wait_us = get_profile_event("parking_b", "ConcurrencyControlWaitMicroseconds")
+    print(f"parks of a: {parks}, CPU slot wait of b: {wait_us} us")
+
+    assert parks > 100, f"expected parks > 100, got {parks}"
+    # `a` has to renew its slot every 10 ms of CPU, so `b` waits about its own CPU time (up to ~0.5 s under sanitizers),
+    # not a quantum per park of `a` (~5 s)
+    assert (
+        wait_us < 2000000
+    ), f"query in workload b waited {wait_us} us for a CPU slot held by a query that parked {parks} times"
