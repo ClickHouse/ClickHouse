@@ -313,6 +313,12 @@ using Stack = std::vector<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
+
+/// For a plan taken over the wire: keep the key of each build step whose filter its already optimized
+/// join's `__applyFilter` looks up, and make every other build step inert; without `allow_pairing`, make
+/// them all inert. Only the steps read with their key are checked, once: a later optimization of the plan
+/// leaves them and the locally built ones alone. Returns whether any build step kept its key.
+bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool track_key_range);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);

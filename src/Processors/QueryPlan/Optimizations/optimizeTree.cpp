@@ -378,6 +378,10 @@ void optimizeTreeSecondPass(
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
+    /// A plan taken over the wire may already have filters, which the reads still have to register below.
+    /// Called regardless of `add_join_runtime_filters`, so that without it the shipped filters are made inert.
+    const bool has_shipped_join_runtime_filters
+        = pairJoinRuntimeFilters(root, add_join_runtime_filters, optimization_settings.enable_join_runtime_filters_index_analysis);
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -429,14 +433,14 @@ void optimizeTreeSecondPass(
                     && typeid_cast<FilterStep *>(frame_node.step.get()))
                     trySplitFilter(&frame_node, nodes, extra_settings);
             });
-
-        /// After the __applyFilter conjuncts settled, register them on the reading steps
-        /// (both the read-time index analysis and seal-gated reading consume them).
-        if (join_runtime_filters_were_added
-            && (optimization_settings.enable_join_runtime_filters_index_analysis
-                || optimization_settings.join_seal_gated_reading))
-            traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
+
+    /// After the __applyFilter conjuncts settled, register them on the reading steps
+    /// (both the read-time index analysis and seal-gated reading consume them).
+    if ((join_runtime_filters_were_added || has_shipped_join_runtime_filters)
+        && (optimization_settings.enable_join_runtime_filters_index_analysis
+            || optimization_settings.join_seal_gated_reading))
+        traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
 
     /// The runtime `FilterStep`s added and pushed down just above are invisible to the
     /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
