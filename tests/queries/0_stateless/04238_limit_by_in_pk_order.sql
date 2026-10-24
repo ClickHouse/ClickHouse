@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: long, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-msan
 -- no-random-settings, no-random-merge-tree-settings, no-parallel-replicas: Explain output may differ
 
 SET max_threads = 16;

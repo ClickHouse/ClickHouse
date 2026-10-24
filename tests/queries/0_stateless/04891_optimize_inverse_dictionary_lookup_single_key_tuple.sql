@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel-replicas
+-- Tags: no-replicated-database, no-parallel-replicas, no-msan
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 

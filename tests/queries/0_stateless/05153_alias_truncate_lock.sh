@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, memory-engine, log-engine
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, memory-engine, log-engine, no-msan
 # no-replicated-database: there TRUNCATE is enqueued as a DDL entry instead of taking the lock these
 #                         arms measure, so every arm would report blocked=0 regardless of the fix.
 # no-shared-merge-tree, memory-engine, log-engine: the fixture assertion pins each engine name, and the

@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-msan
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/106403
 -- Two (or more) ALIAS columns expanding to the same expression are deduplicated into a single

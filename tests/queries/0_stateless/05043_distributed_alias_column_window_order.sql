@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-msan
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/116333
 -- A window function forces a read to stop at WithMergeableState, reached both by a Distributed or

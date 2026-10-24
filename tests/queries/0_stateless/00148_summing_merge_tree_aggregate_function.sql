@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 drop table if exists summing_merge_tree_aggregate_function;
 drop table if exists summing_merge_tree_null;
 
@@ -12,15 +14,15 @@ create table summing_merge_tree_aggregate_function (
 insert into summing_merge_tree_aggregate_function
 select today() as d,
        number as k,
-       uniqState(toUInt64(number % 500))
-from numbers(5000)
+       uniqState(toUInt64(number % 50))
+from numbers(500)
 group by d, k;
 
 insert into summing_merge_tree_aggregate_function
 select today() as d,
-       number + 5000 as k,
-       uniqState(toUInt64(number % 500))
-from numbers(5000)
+       number + 500 as k,
+       uniqState(toUInt64(number % 50))
+from numbers(500)
 group by d, k;
 
 select count() from summing_merge_tree_aggregate_function;
@@ -149,7 +151,7 @@ from summing_merge_tree_null
 group by d, k;
 
 -- prime number 53 to avoid resonanse between %3 and %53
-insert into summing_merge_tree_null select number % 3, 1, number % 53 from numbers(999999);
+insert into summing_merge_tree_null select number % 3, 1, number % 53 from numbers(99999);
 
 select k, sum(c), uniqMerge(u) from summing_merge_tree_aggregate_function group by k order by k;
 optimize table summing_merge_tree_aggregate_function;

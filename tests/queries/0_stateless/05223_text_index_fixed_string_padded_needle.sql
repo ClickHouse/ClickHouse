@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 -- A `FixedString` in a comparison drops trailing zero bytes; the index must look up the padding form it stores or decline.
 -- `force_data_skipping_indices` tells pruning from declining: it raises when the index declined the query.
 

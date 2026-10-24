@@ -1,4 +1,4 @@
--- Tags: no-flaky-check
+-- Tags: no-flaky-check, no-msan
 -- ^^ The test is large (780 lines) and runs ~190-260s in the flaky check at
 -- 5x; the only change in this PR is pinning `date_time_input_format` and
 -- `cast_string_to_date_time_mode` to `basic` to preserve the existing

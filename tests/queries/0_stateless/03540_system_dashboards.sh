@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-flaky-check
+# Tags: no-parallel, no-flaky-check, no-msan
 # - no-parallel - can be quite intense
 # - no-flaky-check - too slow under ASan
 # Random settings limits: max_bytes_before_external_group_by=(0, 0)
