@@ -14,6 +14,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/retryTransientStoreError.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/TransactionID.h>
@@ -28,6 +29,12 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int NOT_IMPLEMENTED;
+extern const int CANNOT_WRITE_TO_OSTREAM;
+}
+
+namespace FailPoints
+{
+    extern const char transaction_metadata_store_fail[];
 }
 
 namespace FailPoints
@@ -390,13 +397,36 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = TMP_TXN_VERSION_METADATA_FILE_NAME;
 
+    /// A transient storage error is retried here, in the one place that writes the file, when
+    /// the caller is a `noexcept` transaction callback that could only terminate otherwise.
+    /// A failed attempt removes its temporary file below; when that removal fails too, the file
+    /// is this call's own leftover, not the stale one `createFile` guards against, and the next
+    /// attempt removes it first.
+    bool own_tmp_left = false;
+    retryTransientStoreError(
+        mt_data.log.load(),
+        fmt::format("part {} of {}", data_part_storage.getPartDirectory(), mt_data.getStorageID().getNameForLogs()),
+        [&]
+    {
+    /// Fault injection for tests: a transient failure before any I/O, so the old file stays intact.
+    fiu_do_on(FailPoints::transaction_metadata_store_fail,
+    {
+        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Injected transient failure while storing version metadata");
+    });
+
     try
     {
         {
+            if (own_tmp_left)
+            {
+                data_part_storage.removeFileIfExists(tmp_filename);
+                own_tmp_left = false;
+            }
             /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
             /// so we create empty file at first (expecting that createFile throws if file already exists)
             /// and then overwrite it.
             data_part_storage.createFile(tmp_filename);
+            own_tmp_left = true;
             auto write_settings = mt_data.getContext()->getWriteSettings();
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
             new_info.writeToBuffer(*buf, /*one_line=*/false);
@@ -415,6 +445,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         try
         {
             data_part_storage.removeFileIfExists(tmp_filename);
+            own_tmp_left = false;
         }
         catch (...)
         {
@@ -422,5 +453,6 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         }
         throw;
     }
+    });
 }
 }
