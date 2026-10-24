@@ -239,11 +239,19 @@ def _submodule_auth_env(workflow) -> dict:
 def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
-    jobs with needs_submodules=True can restore it."""
+    jobs with needs_submodules=True can restore it.
+
+    The hash covers only the submodules affecting these jobs, so that a bump of a
+    submodule that none of them uses (e.g. test data excluded from their digests)
+    does not invalidate the cache. Such a submodule is still archived at whatever
+    commit it had when the archive was created; a job checking out another commit
+    of it fetches that commit from the remote."""
     stop_watch = Utils.Stopwatch()
     info = ""
     try:
-        submodule_shas = Digest.get_submodule_shas()
+        submodule_shas = Digest.get_submodule_shas_for_jobs(
+            [job for job in workflow.jobs if job.needs_submodules]
+        )
         if not submodule_shas:
             print("WARNING: No submodules found, skipping submodule cache")
             return Result.create_from(

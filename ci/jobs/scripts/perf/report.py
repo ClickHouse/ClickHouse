@@ -361,6 +361,9 @@ def add_errors_explained():
 if args.report == "main":
     print((header_template.format()))
 
+    if os.path.exists("run-warnings.tsv"):
+        addSimpleTable("Warnings", ["Warning"], tsvRows("run-warnings.tsv"))
+
     add_tested_commits()
 
     def print_status(status, message):
@@ -727,7 +730,8 @@ if args.report == "main":
         # embedded here and recomputes the final Praktika status. In
         # `master_head` mode the performance dashboard's per-query verdict is
         # the gate; the "N slower" message below is reparsed only for the
-        # cumulative `release_base` mode, so the effective gate lives there.
+        # cumulative `release_base` mode and for a `master_head` shard the
+        # dashboard could not judge, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")

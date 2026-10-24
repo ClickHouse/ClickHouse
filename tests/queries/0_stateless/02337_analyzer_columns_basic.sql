@@ -1,7 +1,5 @@
 -- Tags: no-parallel
 
-SET enable_analyzer = 1;
-
 -- Empty from section
 
 SELECT 'Empty from section';
