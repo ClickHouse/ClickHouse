@@ -22,6 +22,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_rewrite_aggregate_function_with_if;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace
@@ -65,6 +66,64 @@ bool aggregateFunctionPreservesNullPayload(const AggregateFunctionPtr & function
 
     AggregateFunctionProperties properties;
     return function->getOwnNullAdapter(function, {nullable_argument_type}, function->getParameters(), properties) == function;
+}
+
+/// A branch of `if` runs only on the rows its condition selects when lazy execution picks it up.
+/// A nested short-circuit mask is not assumed to protect the rows the outer condition excluded, so
+/// the walk continues through it.
+bool branchCanBeSkippedByShortCircuit(const QueryTreeNodePtr & branch, bool every_function_is_lazy)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(branch.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        /// A constant is already evaluated when the query tree is built, so it cannot throw per row.
+        if (node->as<ConstantNode>())
+            continue;
+
+        /// A table expression or a subquery in an argument slot is evaluated in its own scope, as a
+        /// set or a scalar, so lazy execution of this expression never reaches inside it.
+        switch (node->getNodeType())
+        {
+            case QueryTreeNodeType::TABLE:
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+                continue;
+            default:
+                break;
+        }
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            if (auto function_base = function_node->getFunction())
+            {
+                if (every_function_is_lazy)
+                    return true;
+
+                /// getArgumentColumns describes each slot the way the resolver did, so the `in`
+                /// right-hand side is reported as a set instead of being asked for a result type.
+                const auto argument_columns = function_node->getArgumentColumns();
+                DataTypesWithConstInfo argument_types;
+                argument_types.reserve(argument_columns.size());
+                for (const auto & argument_column : argument_columns)
+                    argument_types.push_back({argument_column.type, argument_column.column != nullptr});
+
+                if (function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+                    return true;
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    return false;
 }
 
 class RewriteAggregateFunctionWithIfVisitor : public InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>
@@ -115,6 +174,18 @@ public:
         auto if_arguments_nodes = if_node->getArguments().getNodes();
         auto * first_const_node = if_arguments_nodes[1]->as<ConstantNode>();
         auto * second_const_node = if_arguments_nodes[2]->as<ConstantNode>();
+
+        const auto short_circuit = getSettings()[Setting::short_circuit_function_evaluation];
+        if (short_circuit != ShortCircuitFunctionEvaluation::DISABLE && (second_const_node || first_const_node))
+        {
+            /// The -If combinator evaluates its argument for every row, so lifting a branch that lazy
+            /// execution would have skipped makes a throwing expression run on the rows the condition
+            /// excluded.
+            const auto & lifted_branch = second_const_node ? if_arguments_nodes[1] : if_arguments_nodes[2];
+            if (branchCanBeSkippedByShortCircuit(lifted_branch, short_circuit == ShortCircuitFunctionEvaluation::FORCE_ENABLE))
+                return;
+        }
+
         if (second_const_node)
         {
             const auto & second_const_value = second_const_node->getValue();

@@ -33,5 +33,4 @@ FROM
 (
     EXPLAIN QUERY TREE SELECT length(arrayFilter(x -> (x % 2), materialize([1, 2, 3])))
     SETTINGS array_count_legacy_uint32_result = 1, optimize_rewrite_array_filter_length_to_array_count = 1
-)
-SETTINGS enable_analyzer = 1;
+);
