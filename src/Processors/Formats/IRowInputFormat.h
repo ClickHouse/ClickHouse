@@ -53,6 +53,21 @@ public:
 
     Chunk read() override;
 
+    /// Like `read`, but appends the rows to `columns` (which may already hold rows) instead of
+    /// returning a new chunk. Returns the number of appended rows, 0 at the end of input.
+    /// Lets a caller that accumulates many small inputs (e.g. one Kafka message each) avoid
+    /// creating, filling and copying a chunk per input. Only valid if `supportsReadInto`.
+    size_t readInto(MutableColumns & columns);
+
+    /// Whether `readRow` works with columns that already hold rows from earlier inputs, and
+    /// the format needs no per-chunk post-processing (e.g. `finalize`) of the columns.
+    virtual bool supportsReadInto() const { return false; }
+
+    /// `supportsReadInto`, and the format reads with the default serializations, which are what
+    /// the caller's columns (`header.cloneEmptyColumns`) use. Custom ones (`setSerializationHints`)
+    /// would make `read` create e.g. sparse columns instead.
+    bool canReadInto() const;
+
     void resetParser() override;
 
 protected:
@@ -99,6 +114,11 @@ protected:
     Serializations serializations;
 
 private:
+    void readPrefixIfNeeded();
+
+    /// Shared row loop of `read` and `readInto`. Sets `only_count` if it counted rows instead of reading them.
+    size_t readRows(MutableColumns & columns, bool & only_count);
+
     Params params;
 
     size_t total_rows = 0;
