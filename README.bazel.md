@@ -47,14 +47,14 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-Bazel source `4e214b47a` built all 57 requested targets on each CPU. The normalized ClickHouse ELF matched the SHA-256 and size from native CMake:
+See [541b6bcee](https://github.com/dzbarsky/clickhouse/commit/541b6bcee6a6d7e0913765d1aeec12a6cb9dc46c) for the tested source. Both native Bazel builds completed all 57 requested targets; the SHA-256 and size of each normalized ClickHouse ELF matched native CMake.
 
 | Native Bazel build | Normalized SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/50d792e9-3a3b-4916-8844-1a1d563162ce) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
-| [ARM64](https://app.buildbuddy.io/invocation/88071a32-86d0-406b-b5d4-6dcb6ed6702e) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+| [x86-64](https://app.buildbuddy.io/invocation/9ddbebcc-4f7c-4767-9e4c-64391a97d921) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+| [ARM64](https://app.buildbuddy.io/invocation/87d17df9-724a-41c6-9d2c-f6ea5a5ec642) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
 
-Both the raw ClickHouse ELF and `//src:unit_tests_dbms` also matched the [previous published build](https://github.com/dzbarsky/clickhouse/commit/a67536970816be10181b3054b25178ac3d0f026c). Each CPU passed 38 GoogleTests and six SQL cases. The comparison used BuildBuddy output metadata without downloading the executables.
+The raw ClickHouse and `//src:unit_tests_dbms` executables also matched the [previous Bazel build](https://github.com/dzbarsky/clickhouse/commit/963d3f43154b2583088dd0aa5f07ebdbf4c4d567). Each CPU passed 38 GoogleTests and six SQL cases. The SHA-256 and byte counts came from BuildBuddy output metadata; the executables were not downloaded.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -173,4 +173,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-The `4e214b47a` builds did not run DWYU. The two native Bazel builds passed, then their parent workflows failed while reading their output. All 784 declared production targets on each CPU remain unchecked at this revision. See the [validation history](bazel/initial_migration/validation-history.md#4e214b47a) for the parent invocations and earlier findings.
+Both focused DWYU workers stopped before either DWYU build started. No production target received a DWYU verdict at `541b6bcee`; there are 784 declared production targets per architecture. See the [validation history](bazel/initial_migration/validation-history.md#541b6bcee) for the failed check and both BuildBuddy parents.

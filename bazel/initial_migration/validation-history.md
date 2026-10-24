@@ -1418,3 +1418,22 @@ The [x86-64 parent](https://app.buildbuddy.io/invocation/f9488607-2e75-4e91-81d6
 Restoring the JSONPath include order fixed the earlier unit-test ELF mismatch. All seven JSONPath objects on each CPU now match their inputs to the previous published unit-test link. The configured output groups also verified six embedded C++ objects and the Boost.MySQL archive per CPU. The current CcInfo JSON files matched their FileWrite digests. All 17 ordered compilation and linking fields matched when comparing 134 versus 113 direct dependencies for `//src:dbms_embedded` and 44 versus 39 for `//src:clickhouse_common_io_embedded`. The actual source change removed one DBMS dependency (114 to 113); the 134-entry reference separately checks 21 prior removals.
 
 The five original status artifacts per CPU verified 26 prior GoogleTests, seven MergeTree tests, five header-ownership tests, and six SQL cases. The DWYU command never started: zero of 784 declared production owners ran on either CPU, and neither DWYU control ran. Prior standalone-header failures, direct dependency findings, and unverified textual, generated, and Rust dependencies remain outstanding. The generator reproduced the changed owners in two passes and Buildifier accepted all 300 BUILD files; the full dependency replay retains one inherited difference in the unchanged `src/Storages/System/BUILD.bazel`.
+
+## 541b6bcee
+
+Bazel source [541b6bcee](https://github.com/dzbarsky/clickhouse/commit/541b6bcee6a6d7e0913765d1aeec12a6cb9dc46c) moved 197 headers from `//src:headers` to their compiled ClickHouse libraries and removed 104 `llvm/lib/` headers from `@clickhouse_llvm_project//:llvm_headers`. Buildifier accepted 300 BUILD files. Running the dependency rewrites twice left all 300 files unchanged. The ClickHouse and LLVM generators were also replayed against the recorded native CMake inputs for both architectures.
+
+All 57 requested native Bazel targets built on each CPU. The normalized ELF matched native CMake; the raw ClickHouse and unit-test ELFs matched [963d3f431](https://github.com/dzbarsky/clickhouse/commit/963d3f43154b2583088dd0aa5f07ebdbf4c4d567).
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/9ddbebcc-4f7c-4767-9e4c-64391a97d921) | ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+| [x86-64](https://app.buildbuddy.io/invocation/9ddbebcc-4f7c-4767-9e4c-64391a97d921) | ClickHouse, normalized | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+| [x86-64](https://app.buildbuddy.io/invocation/9ddbebcc-4f7c-4767-9e4c-64391a97d921) | unit_tests_dbms | `bc523ef4436f034fe89df4a85f84b6056aa61b54825fe405bc51f7a9f5683398` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/87d17df9-724a-41c6-9d2c-f6ea5a5ec642) | ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+| [ARM64](https://app.buildbuddy.io/invocation/87d17df9-724a-41c6-9d2c-f6ea5a5ec642) | ClickHouse, normalized | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+| [ARM64](https://app.buildbuddy.io/invocation/87d17df9-724a-41c6-9d2c-f6ea5a5ec642) | unit_tests_dbms | `24603ddfc53c3eae1efbcea14eaab78ead22de00f2195aa345c9ec1b9df2f4a8` | 795,060,896 |
+
+BuildBuddy’s configured outputs verified six embedded object files and the Boost.MySQL archive per CPU. For `//src:dbms_embedded` and `//src:clickhouse_common_io_embedded`, all 17 ordered compilation and linking fields of `CcInfo` matched between the reference and reduced dependency lists (134 versus 113 and 44 versus 39, respectively). Each CPU passed 26 selected GoogleTests, seven MergeTree GoogleTests, five header-ownership GoogleTests, and six SQL cases.
+
+The [x86-64 parent](https://app.buildbuddy.io/invocation/e4b548f5-8428-49b8-8678-6dd57c676b13) and [ARM64 parent](https://app.buildbuddy.io/invocation/14a0b6ef-3744-4e63-845a-3f6cbbcb8a8f) both failed after the native builds and all eight native output checks succeeded. The focused DWYU worker exited 2 with `ValueError: ordinary actions refer to unrequested owner/configuration` while mapping Bazel compile actions to the requested targets. Neither the ordinary DWYU build nor the strict DWYU build started. Of the 119 x86-64 and 117 ARM64 production targets selected from 784 per architecture, zero received a DWYU verdict. The workers reported no dependency findings and did not run the controls. Earlier dependency findings remain unresolved.
