@@ -6,8 +6,9 @@ DROP TABLE IF EXISTS execute_on_single_replica_r1 SYNC;
 DROP TABLE IF EXISTS execute_on_single_replica_r2 SYNC;
 
 /* that test requires fixed zookeeper path, so we cannot use ReplicatedMergeTree({database}) */
-CREATE TABLE execute_on_single_replica_r1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r1') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
-CREATE TABLE execute_on_single_replica_r2 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r2') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
+/* max_postpone_time_for_waiting_ms=0 disables wait backoff to preserve original test timing */
+CREATE TABLE execute_on_single_replica_r1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r1') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10, max_postpone_time_for_waiting_ms=0;
+CREATE TABLE execute_on_single_replica_r2 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r2') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10, max_postpone_time_for_waiting_ms=0;
 
 INSERT INTO execute_on_single_replica_r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (1);
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
