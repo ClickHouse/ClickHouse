@@ -29,7 +29,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
-#include <map>
+#include <unordered_map>
 
 namespace DB
 {
@@ -232,9 +232,13 @@ AlternativeKeyExpressionPtr computeAlternativeExpression(
 
 /// The alternative form of a key is determined by the key expression and by the query's settings and
 /// current database, but computing it runs the query tree passes, which is noticeable for short
-/// queries. Cache it by the key expression object, which is rebuilt whenever the key or the types of
-/// its columns change, and a hash of the changed settings. The cache holds the key expression weakly,
-/// so an entry of a dropped key cannot be taken for another key allocated at the same address.
+/// queries. Cache it by the content of the key: its AST, the stored key expression (its types and the
+/// constants folded when the key was built) and the kind of the key, together with a hash of the
+/// changed settings. The content, not the address of the expression object, is the identity, because
+/// some callers get a fresh clone of the expression for every query (the partition key adjusted by
+/// `MergeTreePartition::adjustPartitionKey`, the index description copied into every skip index
+/// helper). An entry of a changed key is not reused: a change of the key or of the types of its
+/// columns changes its content.
 class AlternativeExpressionCache
 {
 public:
@@ -245,44 +249,51 @@ public:
     }
 
     template <typename Compute>
-    AlternativeKeyExpressionPtr getOrCompute(const ExpressionActionsPtr & expression, const ContextPtr & context, Compute && compute)
+    AlternativeKeyExpressionPtr getOrCompute(
+        const ASTPtr & expression_list_ast,
+        const ExpressionActionsPtr & expression,
+        const Names & column_names,
+        const String & key_kind,
+        const ContextPtr & context,
+        Compute && compute)
     {
-        const Key key{expression.get(), getSettingsHash(context)};
+        const UInt128 key = getKey(expression_list_ast, expression, column_names, key_kind, context);
         {
             std::lock_guard lock(mutex);
             if (auto it = entries.find(key); it != entries.end())
-            {
-                if (it->second.expression.lock() == expression)
-                    return it->second.result;
-                entries.erase(it);
-            }
+                return it->second;
         }
 
         auto result = compute();
 
         std::lock_guard lock(mutex);
         if (entries.size() >= max_entries)
-        {
-            std::erase_if(entries, [](const auto & entry) { return entry.second.expression.expired(); });
-            if (entries.size() >= max_entries)
-                entries.clear();
-        }
-        entries.insert_or_assign(key, Entry{expression, result});
+            entries.clear();
+        entries.insert_or_assign(key, result);
         return result;
     }
 
 private:
-    using Key = std::pair<const ExpressionActions *, UInt128>;
-
-    struct Entry
-    {
-        std::weak_ptr<ExpressionActions> expression;
-        AlternativeKeyExpressionPtr result;
-    };
-
-    static UInt128 getSettingsHash(const ContextPtr & context)
+    static UInt128 getKey(
+        const ASTPtr & expression_list_ast,
+        const ExpressionActionsPtr & expression,
+        const Names & column_names,
+        const String & key_kind,
+        const ContextPtr & context)
     {
         SipHash hash;
+        hash.update(key_kind);
+        expression_list_ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
+        expression->getActionsDAG().updateHash(hash);
+        for (const auto & column : expression->getRequiredColumnsWithTypes())
+        {
+            hash.update(column.name);
+            hash.update(column.type->getName());
+        }
+        hash.update(column_names.size());
+        for (const auto & name : column_names)
+            hash.update(name);
+
         for (const auto & change : context->getSettingsRef().changes())
         {
             hash.update(change.name);
@@ -295,7 +306,7 @@ private:
     static constexpr size_t max_entries = 10000;
 
     std::mutex mutex;
-    std::map<Key, Entry> entries;
+    std::unordered_map<UInt128, AlternativeKeyExpressionPtr> entries;
 };
 
 AlternativeKeyExpressionPtr getAlternativeExpression(
@@ -303,6 +314,7 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     const ExpressionActionsPtr & expression,
     const Names & column_names,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
+    const String & key_kind,
     const String & description_for_log,
     const ContextPtr & context)
 {
@@ -327,7 +339,10 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     try
     {
         return AlternativeExpressionCache::instance().getOrCompute(
+            expression_list_ast,
             expression,
+            column_names,
+            key_kind,
             context,
             [&] { return computeAlternativeExpression(expression_list_ast, expression, column_names, register_key, context); });
     }
@@ -355,6 +370,8 @@ AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription
             indices.push_back(index);
             metadata.setSecondaryIndices(std::move(indices));
         },
+        /// The passes see the key as an index of this type.
+        fmt::format("index of type {}", index.type),
         fmt::format("the expression of index {}", index.name),
         context);
 }
@@ -366,6 +383,7 @@ AlternativeKeyExpressionPtr getAlternativeKeyExpression(const KeyDescription & k
         key.expression,
         key.column_names,
         [&](StorageInMemoryMetadata & metadata) { metadata.primary_key = key; },
+        "key",
         "the key expression",
         context);
 }
