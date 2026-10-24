@@ -4,7 +4,6 @@
 -- A cached subquery result must be complete even if the outer query reads only a part of it.
 -- https://github.com/ClickHouse/ClickHouse/issues/124409
 
-SET enable_analyzer = 1;
 
 SYSTEM DROP QUERY CACHE;
 
