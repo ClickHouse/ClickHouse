@@ -724,7 +724,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-    patch_join_cache->init(ranges_in_patch_parts);
+    patch_join_cache->init(ranges_in_patch_parts.getRanges());
 
     /// The ranges of `Join` patches are final only after `optimize`.
     for (size_t i = 0; i < infos.size(); ++i)

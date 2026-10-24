@@ -30,10 +30,9 @@ static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, c
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
 }
 
-void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches)
+void PatchJoinCache::init(const std::unordered_map<String, MarkRanges> & all_ranges)
 {
     std::lock_guard lock(mutex);
-    const auto & all_ranges = ranges_in_patches.getRanges();
 
     /// Spread ranges among buckets.
     /// We assume that ranges are already sorted
@@ -43,20 +42,16 @@ void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches)
         if (ranges.empty())
             continue;
 
-        auto & entries = cache[patch_name];
         auto & buckets = ranges_to_buckets[patch_name];
 
         size_t current_buckets = std::min(num_buckets, ranges.size());
         size_t num_ranges_in_bucket = (ranges.size() + current_buckets - 1) / current_buckets;
-
-        entries.reserve(current_buckets);
-        for (size_t i = 0; i < current_buckets; ++i)
-            entries.push_back(std::make_shared<PatchJoinCache::Entry>());
+        buckets_count[patch_name] = current_buckets;
 
         for (size_t i = 0; i < ranges.size(); ++i)
         {
             size_t idx = i / num_ranges_in_bucket;
-            chassert(idx < entries.size());
+            chassert(idx < current_buckets);
             buckets[ranges[i]] = idx;
         }
     }
@@ -111,9 +106,9 @@ PatchJoinCache::PatchStatsEntryPtr PatchJoinCache::getOrCreatePatchStats(const S
     return entry;
 }
 
-PatchJoinCache::Entries PatchJoinCache::getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader)
+PatchJoinCache::Entries PatchJoinCache::getEntries(const String & patch_name, const String & structure_key, const MarkRanges & ranges, Reader reader)
 {
-    auto [entries, ranges_for_entries] = getEntriesAndRanges(patch_name, ranges);
+    auto [entries, ranges_for_entries] = getEntriesAndRanges(patch_name, structure_key, ranges);
     std::vector<std::shared_future<void>> futures;
 
     for (size_t i = 0; i < entries.size(); ++i)
@@ -128,13 +123,9 @@ PatchJoinCache::Entries PatchJoinCache::getEntries(const String & patch_name, co
     return entries;
 }
 
-std::pair<PatchJoinCache::Entries, std::vector<MarkRanges>> PatchJoinCache::getEntriesAndRanges(const String & patch_name, const MarkRanges & ranges)
+std::pair<PatchJoinCache::Entries, std::vector<MarkRanges>> PatchJoinCache::getEntriesAndRanges(const String & patch_name, const String & structure_key, const MarkRanges & ranges)
 {
     std::lock_guard lock(mutex);
-    const auto & entries = cache.at(patch_name);
-
-    if (entries.empty())
-        return {};
 
     std::map<size_t, MarkRanges> ranges_for_entries;
     const auto & buckets = ranges_to_buckets.at(patch_name);
@@ -143,6 +134,19 @@ std::pair<PatchJoinCache::Entries, std::vector<MarkRanges>> PatchJoinCache::getE
     {
         size_t idx = buckets.at(range);
         ranges_for_entries[idx].push_back(range);
+    }
+
+    if (ranges_for_entries.empty())
+        return {};
+
+    auto & entries = cache[patch_name][structure_key];
+
+    if (entries.empty())
+    {
+        size_t current_buckets = buckets_count.at(patch_name);
+        entries.reserve(current_buckets);
+        for (size_t i = 0; i < current_buckets; ++i)
+            entries.push_back(std::make_shared<Entry>());
     }
 
     Entries result_entries;
