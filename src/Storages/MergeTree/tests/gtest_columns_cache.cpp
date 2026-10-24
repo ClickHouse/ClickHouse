@@ -1,16 +1,27 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
+#include <thread>
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/IMemoryReleasableCache.h>
+#include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 
 namespace CurrentMetrics
 {
     extern const Metric ColumnsCacheBytes;
     extern const Metric ColumnsCacheEntries;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 using namespace DB;
@@ -81,6 +92,42 @@ ColumnsCache makeCache(size_t max_size_in_bytes = 1 << 24)
 {
     return ColumnsCache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
 }
+
+/// Lowers the hard limit of `total_memory_tracker` to 1 byte, so that every tracked allocation exceeds it,
+/// and restores it on destruction. For a thread without a `ThreadStatus`, whose every allocation goes to
+/// `total_memory_tracker` at once.
+struct GlobalMemoryLimitOfOneByte
+{
+    const Int64 saved_hard_limit = total_memory_tracker.getHardLimit();
+    const UInt64 saved_min_allocation_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+
+    GlobalMemoryLimitOfOneByte()
+    {
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        total_memory_tracker.resetCounters();
+        total_memory_tracker.setHardLimit(1);
+    }
+
+    ~GlobalMemoryLimitOfOneByte()
+    {
+        total_memory_tracker.setHardLimit(saved_hard_limit);
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_allocation_to_throw);
+    }
+
+    /// With a sanitizer, `operator new` is the one of the sanitizer and is not tracked.
+    static bool allocationsFail()
+    {
+        try
+        {
+            ::operator delete(::operator new(64));
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+        return false;
+    }
+};
 
 }
 
@@ -551,4 +598,213 @@ TEST(ColumnsCache, AutoResizeYieldsMemoryAndGrowsBack)
     /// reports that it is not enough.
     EXPECT_FALSE(cache.autoResize(static_cast<Int64>(2 * limit), limit));
     EXPECT_EQ(cache.count(), 0u);
+}
+
+TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
+{
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        EXPECT_GT(cache.setMany({makeEntry(c, stripe, stripe * 8, stripe * 8 + 8)}, generation), 0u);
+
+    auto * previous_cache = getMemoryReleasableCache();
+
+    /// The snapshot of `getAllEntriesMetadata` is allocated under the mutex of a shard, which the
+    /// resize takes as well: it must not run then, and the allocation fails instead.
+    bool allocations_tracked = false;
+    int error_code = 0;
+    std::thread([&]
+    {
+        GlobalMemoryLimitOfOneByte limit;
+        allocations_tracked = GlobalMemoryLimitOfOneByte::allocationsFail();
+        if (allocations_tracked)
+        {
+            /// `MemoryTracker` calls `autoResize` of this cache when an allocation exceeds the limit.
+            setMemoryReleasableCache(&cache);
+            try
+            {
+                cache.getAllEntriesMetadata();
+            }
+            catch (const Exception & e)
+            {
+                error_code = e.code();
+            }
+            setMemoryReleasableCache(previous_cache);
+        }
+    }).join();
+
+    if (!allocations_tracked)
+        GTEST_SKIP() << "Allocations with operator new are not tracked in this build";
+
+    EXPECT_EQ(error_code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    /// Nothing was evicted: the resize did not run.
+    EXPECT_EQ(cache.count(), 100u);
+    EXPECT_EQ(cache.getAllEntriesMetadata().size(), 100u);
+}
+
+TEST(ColumnsCache, MemoryLimitDuringInsertionAndEvictionKeepsTheCacheConsistent)
+{
+    /// Part names longer than the inline buffer of a string, so that the eviction callback allocates.
+    TestColumn first(UUIDHelpers::generateV4(), "20260101_1_1000000000_1000000000_1000000000", "col");
+    TestColumn second(UUIDHelpers::generateV4(), "20260101_2_2000000000_2000000000_2000000000", "col");
+    const size_t entry_weight = ColumnsCacheWeightFunction{}(*makeEntry(first, 0, 0, 8));
+    auto cache = makeCache(100 * entry_weight);
+
+    const auto first_generation = cache.getInvalidationGeneration(first.table_uuid);
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        cache.setMany({makeEntry(first, stripe, stripe * 8, stripe * 8 + 8)}, first_generation);
+    const size_t count_before = cache.count();
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        entries.push_back(makeEntry(second, stripe, stripe * 8, stripe * 8 + 8));
+    const auto second_generation = cache.getInvalidationGeneration(second.table_uuid);
+
+    /// The stripes are recorded in the index, then the entries are inserted and evict those of the
+    /// first part, with every allocation over the limit.
+    bool allocations_tracked = false;
+    int error_code = 0;
+    std::thread([&]
+    {
+        {
+            GlobalMemoryLimitOfOneByte probe_limit;
+            allocations_tracked = GlobalMemoryLimitOfOneByte::allocationsFail();
+        }
+        if (!allocations_tracked)
+            return;
+
+        std::optional<GlobalMemoryLimitOfOneByte> limit;
+        cache.on_entries_staged_for_test = [&] { limit.emplace(); };
+        try
+        {
+            cache.setMany(entries, second_generation);
+        }
+        catch (const Exception & e)
+        {
+            error_code = e.code();
+        }
+        limit.reset();
+    }).join();
+    cache.on_entries_staged_for_test = {};
+
+    if (!allocations_tracked)
+        GTEST_SKIP() << "Allocations with operator new are not tracked in this build";
+
+    EXPECT_EQ(error_code, 0);
+    EXPECT_LT(cache.count(), count_before + entries.size());
+
+    /// The accounted size and count are those of the entries the cache holds, and the index knows
+    /// the parts of exactly these entries.
+    const auto metadata = cache.getAllEntriesMetadata();
+    size_t bytes = 0;
+    bool has_first = false;
+    bool has_second = false;
+    for (const auto & entry : metadata)
+    {
+        bytes += entry.bytes;
+        has_first |= entry.part_name == first.part;
+        has_second |= entry.part_name == second.part;
+    }
+    EXPECT_EQ(metadata.size(), cache.count());
+    EXPECT_EQ(bytes, cache.sizeInBytes());
+    EXPECT_LE(cache.sizeInBytes(), 100 * entry_weight);
+    EXPECT_EQ(cache.containsPart(first.table_uuid, first.part), has_first);
+    EXPECT_EQ(cache.containsPart(second.table_uuid, second.part), has_second);
+    EXPECT_TRUE(has_second);
+}
+
+TEST(ColumnsCache, EvictionDuringTheResidencyCheckLeavesNoIndexBehind)
+{
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    for (size_t stripe = 0; stripe < 4; ++stripe)
+        entries.push_back(makeEntry(c, stripe, stripe * 8, stripe * 8 + 8));
+
+    /// After the residency of the first entry is checked, the cache is shrunk to nothing, as a resize
+    /// by another thread would do: every entry is evicted, also those that were found resident.
+    bool shrunk = false;
+    cache.on_residency_checked_for_test = [&]
+    {
+        if (shrunk)
+            return;
+        shrunk = true;
+        cache.setConfiguredMaxSizeInBytes(0);
+    };
+    cache.setMany(entries, generation);
+    cache.on_residency_checked_for_test = nullptr;
+
+    EXPECT_TRUE(shrunk);
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_EQ(cache.sizeInBytes(), 0u);
+    /// No entry of the part is in the cache, so neither is the part in the index.
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, c.part));
+}
+
+TEST(ColumnsCache, WriteDuringClearAllLeavesNoIndexBehind)
+{
+    /// Large enough for several shards; nothing is allocated for the size.
+    const size_t max_size = size_t(1) << 30;
+    auto cache = makeCache(max_size);
+    const size_t num_shards = ColumnsCache::numberOfShards(max_size);
+    ASSERT_GT(num_shards, 1u);
+    TestColumn old_column(UUIDHelpers::generateV4(), "part_1", "col");
+    TestColumn kept(UUIDHelpers::generateV4(), "part_2", "col");
+    TestColumn dropped(UUIDHelpers::generateV4(), "part_3", "col");
+
+    const auto old_generation = cache.getInvalidationGeneration(old_column.table_uuid);
+    for (size_t stripe = 0; stripe < 32; ++stripe)
+        cache.setMany({makeEntry(old_column, stripe, stripe * 8, stripe * 8 + 8)}, old_generation);
+
+    /// The stripes of a column that go to the given shard, or to the other shards.
+    auto stripes = [&](const TestColumn & c, bool in_first_shard)
+    {
+        std::vector<ColumnsCache::MappedPtr> entries;
+        for (size_t stripe = 0; entries.size() < 4; ++stripe)
+            if ((ColumnsCacheKeyHash{}(ColumnsCacheKey{c.identity, stripe}) % num_shards == 0) == in_first_shard)
+                entries.push_back(makeEntry(c, stripe, stripe * 8, stripe * 8 + 8));
+        return entries;
+    };
+
+    /// A write that started after the drop lands after its first shard is cleared: its entries in that
+    /// shard stay, the others are cleared with the rest of the shards, and so must be their stripes.
+    cache.on_shard_cleared_for_test = [&](size_t shard_index)
+    {
+        if (shard_index != 0)
+            return;
+        EXPECT_GT(cache.setMany(stripes(kept, true), cache.getInvalidationGeneration(kept.table_uuid)), 0u);
+        EXPECT_GT(cache.setMany(stripes(dropped, false), cache.getInvalidationGeneration(dropped.table_uuid)), 0u);
+    };
+    cache.clearAll();
+    cache.on_shard_cleared_for_test = nullptr;
+
+    EXPECT_EQ(cache.count(), 4u);
+    EXPECT_FALSE(cache.containsPart(old_column.table_uuid, old_column.part));
+    EXPECT_TRUE(cache.containsPart(kept.table_uuid, kept.part));
+    EXPECT_FALSE(cache.containsPart(dropped.table_uuid, dropped.part));
+}
+
+TEST(ColumnsCache, WriteDuringRemoveTableLeavesNoIndexBehind)
+{
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 4)}, cache.getInvalidationGeneration(c.table_uuid)), 0u);
+
+    /// A reader that started after the invalidation extends the stripe between the erasing of the index
+    /// and the removal from the shards: the removal takes its entry, and must take its stripe too.
+    cache.on_removal_staged_for_test = [&]
+    {
+        EXPECT_GT(cache.setMany({makeEntry(c, 0, 4, 8)}, cache.getInvalidationGeneration(c.table_uuid)), 0u);
+        EXPECT_TRUE(cache.containsPart(c.table_uuid, c.part));
+    };
+    cache.removeTable(c.table_uuid);
+    cache.on_removal_staged_for_test = nullptr;
+
+    cache.setConfiguredMaxSizeInBytes(0);
+    EXPECT_EQ(cache.count(), 0u);
+    EXPECT_EQ(cache.sizeInBytes(), 0u);
+    EXPECT_FALSE(cache.containsPart(c.table_uuid, c.part));
 }

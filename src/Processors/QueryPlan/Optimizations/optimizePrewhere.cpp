@@ -342,10 +342,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
         columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
 
+    /// Only the readers of `MergeTree` tables can write to the columns cache.
+    const bool may_write_to_columns_cache = read_from_merge_tree_step
+        && read_from_merge_tree_step->mayWriteToColumnsCache(use_pruned_parts ? prewhere_parts : read_from_merge_tree_step->getParts());
+
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
+        may_write_to_columns_cache,
         columns_read_before_filter);
 
     if (optimize_result.prewhere_nodes.empty())

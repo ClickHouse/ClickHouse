@@ -26,6 +26,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
@@ -334,6 +335,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsBool use_columns_cache;
+    extern const SettingsBool enable_writes_to_columns_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
@@ -6818,6 +6820,24 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
     return false;
 }
 
+
+bool ReadFromMergeTree::mayWriteToColumnsCache(const RangesInDataParts & parts) const
+{
+    const auto & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::use_columns_cache] || !settings[Setting::enable_writes_to_columns_cache])
+        return false;
+
+    /// The same conditions as in `getColumnsCacheIfEnabled` and `isColumnsCachePossibleForPart`.
+    const auto columns_cache = getContext()->getGlobalContext()->getColumnsCache();
+    if (!columns_cache || columns_cache->maxSizeInBytes() == 0)
+        return false;
+
+    const UUID table_uuid = data.getStorageID().uuid;
+    return std::ranges::any_of(parts, [&](const auto & part)
+    {
+        return part.data_part->getType() == MergeTreeDataPartType::Wide && canUseColumnsCacheForPart(table_uuid);
+    });
+}
 
 RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
 {

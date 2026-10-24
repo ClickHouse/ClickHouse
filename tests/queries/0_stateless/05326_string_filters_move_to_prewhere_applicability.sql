@@ -1,7 +1,7 @@
 -- A substring search condition that uses all queried columns is moved to PREWHERE with
 -- `apply_string_filters_during_scan` only if the reader can apply it as a string filter during the scan.
 -- It cannot, when the column is read by the existing PREWHERE or the row policy,
--- or when the read columns may be written to the columns cache.
+-- or when the read columns may be written to the columns cache, which needs a wide part.
 
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_prewhere_after_pushdown = 1;
 SET apply_string_filters_during_scan = 1;
@@ -12,7 +12,7 @@ DROP ROW POLICY IF EXISTS p_string_filter_applicability ON t_string_filter_appli
 
 CREATE TABLE t_string_filter_applicability (id UInt32, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_string_filter_applicability SELECT number, 'value ' || toString(number) FROM numbers(1000);
 

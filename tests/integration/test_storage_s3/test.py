@@ -1853,14 +1853,15 @@ def test_select_columns(started_cluster):
     instance.query(
         f"INSERT INTO {name} SELECT * FROM generateRandom('{structure}') LIMIT {limit} SETTINGS s3_truncate_on_insert=1"
     )
-    instance.query(f"SELECT value2, '{id}' FROM {name}")
+    # The columns cache is disabled: the second query would get `value2` from it instead of the file.
+    instance.query(f"SELECT value2, '{id}' FROM {name}", settings={"use_columns_cache": 0})
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
         f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name}'"
     )
 
-    instance.query(f"SELECT *, '{id}' FROM {name}")
+    instance.query(f"SELECT *, '{id}' FROM {name}", settings={"use_columns_cache": 0})
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
         f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name}'"

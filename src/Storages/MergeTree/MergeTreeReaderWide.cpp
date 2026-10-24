@@ -97,8 +97,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         requested_column_names.push_back(column.name);
 
     /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
-    const bool cache_possible = columns_cache
-        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
+    const bool cache_possible = isColumnsCachePossibleForPart(columns_cache, *data_part_info_for_read);
 
     /// A part read without marks has streams that cannot seek, so a granule served from the
     /// cache could not be followed by one read from the part. Such a read still populates the

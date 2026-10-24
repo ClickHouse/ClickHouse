@@ -860,6 +860,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
 {
+    /// The extras are taken to create readers, and a reader decides in its constructor whether it may
+    /// write to the columns cache and so has to read the string values in full, without the scan filter.
+    /// Charge the estimate first, so that a reader of a query that is over the budget already sees
+    /// the writes disabled and keeps the scan filter.
+    commitColumnsCacheWriteEstimate();
+
     return
     {
         .uncompressed_cache = owned_uncompressed_cache.get(),

@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
@@ -32,6 +33,24 @@ namespace DB
 {
 
 template class CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
+
+namespace
+{
+
+/// The number of operations of a columns cache in progress in this thread. They allocate under
+/// the mutexes of the shards and `index_mutex`, and an allocation that exceeds the memory limit
+/// calls `autoResize` from `MemoryTracker`, which takes these mutexes again: the shards' for their
+/// sizes and evictions, and `index_mutex` in `onEntryRemoval`. So `autoResize` does nothing while
+/// this is nonzero.
+thread_local size_t operations_in_thread = 0;
+
+struct OperationInThread
+{
+    OperationInThread() { ++operations_in_thread; }
+    ~OperationInThread() { --operations_in_thread; }
+};
+
+}
 
 size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_ram_ratio)
 {
@@ -208,6 +227,8 @@ ColumnsCache::~ColumnsCache() = default;
 
 std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe)
 {
+    OperationInThread operation;
+
     const size_t num_keys = end_stripe - first_stripe;
     std::vector<MappedPtr> result(num_keys);
 
@@ -274,6 +295,8 @@ void ColumnsCache::accountAdmitted(size_t admitted)
 
 UInt64 ColumnsCache::getInvalidationGeneration(const UUID & table_uuid)
 {
+    OperationInThread operation;
+
     std::lock_guard lock(index_mutex);
     return currentGeneration(table_uuid);
 }
@@ -341,6 +364,8 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
 
 size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, std::vector<bool> * entries_resident)
 {
+    OperationInThread operation;
+
     /// What the cache allocates here - merged entries, the index, the cells of the shards - is the
     /// server's. The columns the query read become the server's once admitted, but taking them off
     /// the query has to wait until the blocker is gone: the memory the thread has not flushed to its
@@ -451,6 +476,12 @@ size_t ColumnsCache::setManyImpl(
         return 0;
     }
 
+    /// From here on, the index and the shards are updated in steps that must all happen: an exception
+    /// in between would leave the index with stripes that no shard holds, or a shard with an entry that
+    /// was taken out of its accounted size but not of its queue. The allocations are only for the
+    /// bookkeeping, the columns are allocated already, so they are not allowed to fail the limit.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// Record the stripes before the entries are inserted, so that the eviction callback, which
     /// may run inside the insertion itself, always finds the bit to reset.
     {
@@ -490,29 +521,38 @@ size_t ColumnsCache::setManyImpl(
     if (on_entries_inserted_for_test)
         on_entries_inserted_for_test();
 
+    /// A stale writer of the same stripe, racing this call, releases the bucket of the stripe when
+    /// it takes its own entry back out - see below - and the bucket has to be there for every entry
+    /// the cache holds, or `removePart` would walk past this one and leave it resident for a part
+    /// that is gone. So the stripe of every resident entry is recorded again. Recording it costs a
+    /// lookup in a hash set that holds it already in every other case.
+    ///
+    /// The residency is checked again and the stripe recorded under the mutex of the shard, then
+    /// `index_mutex` - the order `onEntryRemoval` uses: an eviction of the entry by another thread,
+    /// such as a resize, happens either before, and the entry is not resident, or after, and the
+    /// eviction callback resets the bit. Recorded from the residency found at the insertion, the
+    /// bucket of an entry evicted in between would stay in the index with no entry in any shard.
+    ///
     /// An invalidation can have happened between the check above and the insertion. The entries
     /// are then stale and nobody will look them up under this schema identity, but they would
     /// hold their memory until the eviction reaches them, so take them out right away.
     bool stale = false;
+    for (size_t i = 0; i < keys.size() && !stale; ++i)
     {
-        std::lock_guard lock(index_mutex);
-        stale = currentGeneration(table_uuid) != expected_table_generation;
-
-        /// A stale writer of the same stripe, racing this call, releases the bucket of the
-        /// stripe when it takes its own entry back out - see below - and the bucket has to be
-        /// there for every entry the cache holds, or `removePart` would walk past this one and
-        /// leave it resident for a part that is gone. Recording it again costs a lookup in a
-        /// hash set that holds it already in every other case.
-        if (!stale)
+        shardOf(keys[i]).doIfContains(keys[i], [&]
         {
-            for (size_t i = 0; i < keys.size(); ++i)
+            std::lock_guard lock(index_mutex);
+            if (currentGeneration(table_uuid) != expected_table_generation)
             {
-                if (!resident[i])
-                    continue;
-                const auto & entry = *to_store[i];
-                part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity].insert(keys[i].stripe);
+                stale = true;
+                return;
             }
-        }
+            const auto & entry = *to_store[i];
+            part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity].insert(keys[i].stripe);
+        });
+
+        if (on_residency_checked_for_test)
+            on_residency_checked_for_test();
     }
 
     if (stale)
@@ -551,6 +591,10 @@ void ColumnsCache::Shard::onEntryRemoval(size_t weight_loss, const MappedPtr & m
     if (!mapped->used.load(std::memory_order_relaxed))
         parent.recent_evicted_unused.fetch_add(1, std::memory_order_relaxed);
 
+    /// The cache policy has already subtracted the weight of the entry and removes it from its
+    /// queue after this returns: an exception here would leave the entry there, unaccounted.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     /// Runs under the mutex of the shard; `index_mutex` is taken second, see `part_index`.
     std::lock_guard lock(parent.index_mutex);
 
@@ -579,8 +623,23 @@ void ColumnsCache::forgetStripe(const PartIdentifier & part, const UInt128 & col
 
 void ColumnsCache::removeFromShards(const std::vector<Key> & keys)
 {
+    if (on_removal_staged_for_test)
+        on_removal_staged_for_test();
+
+    /// The stripes of these keys are already erased from the index, but a writer that started after
+    /// the invalidation may have written one of the keys again and recorded its stripe. The cache
+    /// policies remove an entry without the eviction callback, so the stripe is forgotten together
+    /// with the entry, under the mutex of the shard and then `index_mutex` - the order
+    /// `onEntryRemoval` uses: otherwise the index would keep it with no entry in any shard.
     for (const auto & key : keys)
-        shardOf(key).remove(key);
+    {
+        shardOf(key).removeIfMatches(key, [&](const MappedPtr & resident)
+        {
+            std::lock_guard lock(index_mutex);
+            forgetStripe(PartIdentifier{resident->table_uuid, resident->part_name}, key.column_identity, key.stripe);
+            return true;
+        });
+    }
 }
 
 void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::vector<MappedPtr> & entries)
@@ -630,6 +689,9 @@ bool ColumnsCache::containsAll(const std::vector<Key> & keys) const
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
+    OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
@@ -684,6 +746,9 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
 
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
+    OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
@@ -708,12 +773,17 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 
 bool ColumnsCache::containsPart(const UUID & table_uuid, const String & part_name) const
 {
+    OperationInThread operation;
+
     std::lock_guard lock(index_mutex);
     return part_index.contains(PartIdentifier{table_uuid, part_name});
 }
 
 void ColumnsCache::clearAll()
 {
+    OperationInThread operation;
+    /// An invalidation must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 
@@ -723,7 +793,6 @@ void ColumnsCache::clearAll()
         /// The new cache-wide stamp already invalidates every token captured so far, so the
         /// per-table stamps can be reclaimed instead of being kept forever.
         table_generations.clear();
-        part_index.clear();
     }
 
     recent_admitted.store(0, std::memory_order_relaxed);
@@ -732,8 +801,41 @@ void ColumnsCache::clearAll()
 
     /// A write that started before the stamp was advanced cannot land after this point:
     /// `setMany` checks the stamp again once its entries are in and removes them if it changed.
-    for (auto & shard : shards)
-        shard->clear();
+    ///
+    /// The cache policies clear a shard without the eviction callback, so the stripes of the shard are
+    /// erased from the index together with it, under the mutex of the shard and then `index_mutex`.
+    /// A write that started after the stamp was advanced may record stripes at any time: those of a
+    /// shard cleared before are kept with their entries, those of a shard cleared after go with them.
+    /// Erased all at once before the shards, the index would keep the stripes recorded in between
+    /// for entries that the clearing of their shards removes.
+    for (size_t shard_index = 0; shard_index < shards.size(); ++shard_index)
+    {
+        shards[shard_index]->clearAndThen([&]
+        {
+            std::lock_guard lock(index_mutex);
+            for (auto part_it = part_index.begin(); part_it != part_index.end();)
+            {
+                for (auto column_it = part_it->second.begin(); column_it != part_it->second.end();)
+                {
+                    std::erase_if(column_it->second, [&](size_t stripe)
+                    {
+                        return shardIndex(Key{column_it->first, stripe}) == shard_index;
+                    });
+                    if (column_it->second.empty())
+                        column_it = part_it->second.erase(column_it);
+                    else
+                        ++column_it;
+                }
+                if (part_it->second.empty())
+                    part_it = part_index.erase(part_it);
+                else
+                    ++part_it;
+            }
+        });
+
+        if (on_shard_cleared_for_test)
+            on_shard_cleared_for_test(shard_index);
+    }
 }
 
 void ColumnsCache::setShardsMaxSize(size_t total_max_size_in_bytes)
@@ -786,6 +888,12 @@ size_t ColumnsCache::count() const
 
 bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
+    /// An allocation of an operation of the cache in this thread, which may hold the mutex the
+    /// resize would take: it is left to the other means of `MemoryTracker`, stopping a query or
+    /// the exception.
+    if (operations_in_thread > 0)
+        return false;
+
     /// This is called from `MemoryTracker` when an allocation is about to exceed the limit;
     /// anything allocated here must not be tracked, or it would end up right back there.
     /// The entries evicted below are the server's, and so is their release: a free under the
@@ -861,6 +969,8 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 
 std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
 {
+    OperationInThread operation;
+
     std::vector<EntryMetadata> result;
     for (auto & shard : shards)
     {

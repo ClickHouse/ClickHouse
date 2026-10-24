@@ -36,8 +36,6 @@ namespace Setting
     extern const SettingsBool allow_reorder_prewhere_conditions;
     extern const SettingsBool use_statistics;
     extern const SettingsBool apply_string_filters_during_scan;
-    extern const SettingsBool use_columns_cache;
-    extern const SettingsBool enable_writes_to_columns_cache;
 }
 
 namespace
@@ -177,6 +175,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final,
+    bool may_write_to_columns_cache,
     const NameSet & columns_read_before_filter)
 {
     const auto & settings = context->getSettingsRef();
@@ -191,7 +190,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
     /// The reader does not apply string value filters when it may write the columns to the columns cache.
     where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
-        && !(settings[Setting::use_columns_cache] && settings[Setting::enable_writes_to_columns_cache]);
+        && !may_write_to_columns_cache;
     /// Resolve the columns to their storage columns: the reader disables the scan filter for a storage column
     /// when anything reads it before the filter, including its subcolumns (e.g. `payload.size0` for `payload`).
     NameSet storage_columns_read_before_filter;

@@ -29,7 +29,8 @@ SET max_threads = 1,
     filesystem_prefetch_max_memory_usage = '100Gi',
     remote_filesystem_read_method = 'threadpool',
     enable_filesystem_cache = 1,
-    use_uncompressed_cache = 0
+    use_uncompressed_cache = 0,
+    use_columns_cache = 0
 ;
 
 SELECT * FROM test_1 FORMAT Null SETTINGS filesystem_cache_prefer_bigger_buffer_size = 1, prefetch_buffer_size = 1_000_000;
