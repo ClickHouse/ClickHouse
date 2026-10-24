@@ -705,6 +705,13 @@ public:
         return projection_columns;
     }
 
+    /// Display names parallel to `getProjectionColumns()` when duplicate names were made internally unique.
+    /// Empty otherwise: then each column's `name` is its display name.
+    const Names & getProjectionColumnDisplayNames() const
+    {
+        return projection_column_display_names;
+    }
+
     /// Returns true if query node is resolved, false otherwise
     bool isResolved() const
     {
@@ -714,10 +721,16 @@ public:
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
 
+    void renameProjectionColumn(size_t index, const String & name)
+    {
+        projection_columns.at(index).name = name;
+    }
+
     /// Clear query node projection columns
     void clearProjectionColumns()
     {
         projection_columns.clear();
+        projection_column_display_names.clear();
     }
 
     /// Remove unused projection columns
@@ -763,9 +776,19 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
+    bool hasProjectionAliasesToOverride() const
+    {
+        return !projection_aliases_to_override.empty();
+    }
+
     const Names & getProjectionAliasesToOverride() const
     {
         return projection_aliases_to_override;
+    }
+
+    void setProjectionColumnDisplayNames(Names display_names)
+    {
+        projection_column_display_names = std::move(display_names);
     }
 
 protected:
@@ -795,6 +818,7 @@ private:
 
     std::string cte_name;
     NamesAndTypes projection_columns;
+    Names projection_column_display_names;
     Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;

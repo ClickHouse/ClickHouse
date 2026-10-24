@@ -210,6 +210,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (table_expression_data.subcolumn_names.contains(column_name))
             continue;
 
+        if (table_expression_data.isHiddenColumnName(column_name))
+            continue;
+
         Identifier column_identifier(column_name);
         IdentifierView suffix(column_identifier);
         size_t prefix_size = identifier.getPartsSize();
@@ -791,7 +794,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    if (auto column_node = table_expression_data.tryGetColumnNode(identifier_full_name))
+    if (auto column_node = !table_expression_data.isHiddenColumnName(identifier_full_name)
+            ? table_expression_data.tryGetColumnNode(identifier_full_name) : nullptr)
     {
         result_expression = std::move(column_node);
     }

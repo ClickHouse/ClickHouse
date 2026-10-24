@@ -24,6 +24,7 @@ struct AnalysisTableExpressionData;
 class QueryExpressionsAliasVisitor ;
 
 class QueryNode;
+class UnionNode;
 class JoinNode;
 class ColumnNode;
 
@@ -278,7 +279,19 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+    NamesAndTypes resolveProjectionExpressionNodeList(
+        QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher = nullptr,
+        std::vector<bool> * projection_has_explicit_alias = nullptr);
+
+    /// Renames later same-named projection columns backed by different expressions to unique internal
+    /// names and returns the original display names, or an empty list if nothing was renamed.
+    static Names disambiguateDuplicateProjectionColumnNames(
+        const QueryNode & query_node,
+        NamesAndTypes & projection_columns,
+        const std::vector<bool> & projection_has_explicit_alias,
+        const std::vector<bool> & projection_from_matcher);
+
+    static void disambiguateDuplicateUnionProjectionColumnNames(UnionNode & union_node);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 

@@ -44,6 +44,9 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
     /// Typo correction is on the error path: build the full map so we can iterate `ColumnNode`s.
     for (const auto & [column_name, column_node] : table_expression_data.getColumnNodeMap())
     {
+        if (table_expression_data.isHiddenColumnName(column_name))
+            continue;
+
         Identifier column_identifier(column_name);
         if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
             valid_identifiers_result.insert(column_identifier);
