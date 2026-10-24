@@ -274,6 +274,19 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 
     ColumnsDescription columns_description(columns_for_dummy);
     auto storage = std::make_shared<StorageDummy>(StorageID{"_analyze_expression_db", "_analyze_expression_table"}, columns_description);
+
+    /// `StorageDummy` adds its own `_table` and `_database` virtual columns.  They are not inputs of
+    /// the expression: the block it is later executed on contains only `available_columns`, so an
+    /// expression such as `INDEX idx length(_table) TYPE minmax` would be accepted here and then fail
+    /// on every `INSERT` with `NOT_FOUND_COLUMN_IN_BLOCK`.  Drop them, so that such an identifier is
+    /// rejected with `UNKNOWN_IDENTIFIER`, as with `ExpressionAnalyzer`.  A caller that does provide
+    /// a virtual column passes it in `available_columns`, which makes it a regular column here.
+    {
+        StorageInMemoryMetadata metadata_without_virtuals;
+        metadata_without_virtuals.setColumns(columns_description);
+        storage->setInMemoryMetadata(metadata_without_virtuals);
+    }
+
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
