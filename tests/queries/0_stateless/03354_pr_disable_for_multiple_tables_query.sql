@@ -2,6 +2,13 @@
 -- part of a multi-table query, by looking for `ReadFromRemoteParallelReplicas` in the query plan.
 -- The probes that cannot be seen in `EXPLAIN` live in `05137_pr_disable_for_multiple_tables_execution`.
 
+-- Pinned to the query-based implementation. With `parallel_replicas_plan_based` the kill switch
+-- below does reach execution - the query runs locally and reports `ParallelReplicasUsedCount = 0`,
+-- and `disableParallelReplicasForMultipleTablesQueryIfNeeded` logs that it fired - but the plan the
+-- optimization builds still carries a parallel-replicas step, so the `EXPLAIN` probes here read it
+-- as distributed.
+set parallel_replicas_plan_based=0;
+
 drop table if exists X;
 drop table if exists Y;
 
