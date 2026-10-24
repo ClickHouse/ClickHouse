@@ -64,6 +64,19 @@ namespace ErrorCodes
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
+bool IdentifierResolver::needToConvertJoinedColumnTypeToNull(
+    const QueryTreeNodePtr & resolved_identifier,
+    const JoinKind & join_kind,
+    std::optional<JoinTableSide> resolved_side,
+    const IdentifierResolveScope & scope)
+{
+    return scope.join_use_nulls
+        && JoinCommon::canBecomeNullable(resolved_identifier->getResultType())
+        && (isFull(join_kind)
+            || (isLeft(join_kind) && resolved_side == JoinTableSide::Right)
+            || (isRight(join_kind) && resolved_side == JoinTableSide::Left));
+}
+
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     const QueryTreeNodePtr & resolved_identifier,
     DataTypePtr result_type,
@@ -71,11 +84,7 @@ QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     std::optional<JoinTableSide> resolved_side,
     IdentifierResolveScope & scope)
 {
-    bool need_nullable = scope.join_use_nulls
-        && JoinCommon::canBecomeNullable(resolved_identifier->getResultType())
-        && (isFull(join_kind)
-            || (isLeft(join_kind) && resolved_side == JoinTableSide::Right)
-            || (isRight(join_kind) && resolved_side == JoinTableSide::Left));
+    bool need_nullable = needToConvertJoinedColumnTypeToNull(resolved_identifier, join_kind, resolved_side, scope);
 
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::FUNCTION)
     {

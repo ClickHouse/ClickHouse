@@ -1,0 +1,33 @@
+-- Random settings limits: query_plan_optimize_join_order_limit=(0, 0)
+-- Matchers over long JOIN chains with `join_use_nulls`: a column is Nullable iff a JOIN above it extends its side with NULLs.
+
+SET join_use_nulls = 1;
+
+{% for kind in ['INNER', 'LEFT', 'RIGHT', 'FULL'] -%}
+SELECT '{{ kind }}', countSubstrings(toTypeName(tuple(*)), 'Nullable('), countSubstrings(toTypeName(tuple(t1.*, t50.*, t100.*)), 'Nullable(')
+FROM (SELECT 1 AS x) AS t1
+{%- for i in range(2, 101) %} {{ kind }} JOIN (SELECT 1 AS x) AS t{{ i }} ON t1.x = t{{ i }}.x{% endfor %};
+{% endfor %}
+DROP TABLE IF EXISTS t_jun_a;
+DROP TABLE IF EXISTS t_jun_b;
+DROP TABLE IF EXISTS t_jun_c;
+DROP TABLE IF EXISTS t_jun_d;
+CREATE TABLE t_jun_a (k UInt8, s LowCardinality(String), arr Array(UInt8)) ENGINE = Memory;
+CREATE TABLE t_jun_b (k UInt8, v Nullable(UInt8)) ENGINE = Memory;
+CREATE TABLE t_jun_c (k UInt8, w String) ENGINE = Memory;
+CREATE TABLE t_jun_d (k UInt8, u UInt16) ENGINE = Memory;
+INSERT INTO t_jun_a VALUES (1, 'a1', [1, 2]), (2, 'a2', []);
+INSERT INTO t_jun_b VALUES (2, 20), (3, NULL);
+INSERT INTO t_jun_c VALUES (3, 'c3'), (4, 'c4');
+INSERT INTO t_jun_d VALUES (1, 100), (4, 400), (5, 500);
+
+SELECT * APPLY toTypeName FROM t_jun_a AS a INNER JOIN t_jun_b AS b ON a.k = b.k LEFT JOIN t_jun_c AS c ON b.k = c.k RIGHT JOIN t_jun_d AS d ON a.k = d.k LIMIT 1;
+SELECT * FROM t_jun_a AS a LEFT JOIN t_jun_b AS b ON a.k = b.k FULL JOIN t_jun_c AS c ON b.k = c.k RIGHT JOIN t_jun_d AS d ON c.k = d.k ORDER BY ALL;
+SELECT * APPLY toTypeName FROM t_jun_a AS a ARRAY JOIN arr LEFT JOIN t_jun_b AS b ON a.k = b.k LIMIT 1;
+SELECT * APPLY toTypeName FROM t_jun_a AS a CROSS JOIN t_jun_b AS b RIGHT JOIN t_jun_c AS c ON a.k = c.k LIMIT 1;
+SELECT b.* APPLY toTypeName, c.* APPLY toTypeName FROM t_jun_a AS a LEFT JOIN t_jun_b AS b ON a.k = b.k RIGHT JOIN t_jun_c AS c ON b.k = c.k LIMIT 1;
+
+DROP TABLE t_jun_a;
+DROP TABLE t_jun_b;
+DROP TABLE t_jun_c;
+DROP TABLE t_jun_d;

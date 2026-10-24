@@ -68,6 +68,13 @@ public:
 
     static QueryTreeNodePtr wrapExpressionNodeInTupleElement(QueryTreeNodePtr expression_node, IdentifierView nested_path, const ContextPtr & context);
 
+    /// Whether `join_use_nulls` makes `resolved_identifier`, coming from `resolved_side` of a JOIN of `join_kind`, Nullable.
+    static bool needToConvertJoinedColumnTypeToNull(
+        const QueryTreeNodePtr & resolved_identifier,
+        const JoinKind & join_kind,
+        std::optional<JoinTableSide> resolved_side,
+        const IdentifierResolveScope & scope);
+
     static QueryTreeNodePtr convertJoinedColumnTypeToNullIfNeeded(
         const QueryTreeNodePtr & resolved_identifier,
         DataTypePtr result_type,
