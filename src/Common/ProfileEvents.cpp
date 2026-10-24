@@ -518,6 +518,10 @@
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByWritePart, "Number of times a temporary file was written to disk for `LIMIT BY` in external memory.", ValueType::Number) \
+    M(ExternalLimitByMerge, "Number of times temporary files were merged for `LIMIT BY` in external memory.", ValueType::Number) \
+    M(ExternalLimitByCompressedBytes, "Number of compressed bytes written for `LIMIT BY` in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByUncompressedBytes, "Amount of data (uncompressed, before compression) written for `LIMIT BY` in external memory.", ValueType::Bytes) \
     M(ExternalPackedPartWriterWritePart, "Number of times the buffered data of a packed data part being written was moved to its temporary file to free memory.", ValueType::Number) \
     M(ExternalPackedPartWriterCompressedBytes, "Number of compressed bytes written to temporary files to free the memory taken by the buffered data of packed data parts being written.", ValueType::Bytes) \
     M(ExternalPackedPartWriterUncompressedBytes, "Amount of data (uncompressed, before compression) written to temporary files to free the memory taken by the buffered data of packed data parts being written.", ValueType::Bytes) \
