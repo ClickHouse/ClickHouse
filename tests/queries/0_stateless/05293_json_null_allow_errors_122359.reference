@@ -1,0 +1,38 @@
+JSONEachRow Int64 num
+1
+3
+JSONEachRow Float64 ratio
+1.5
+3.5
+JSONEachRow Array(Int64) num
+[1]
+[3]
+JSONCompactEachRow Int64 num
+1	1
+3	3
+JSONCompactEachRow Float64 ratio
+1.5	1
+3.5	3
+CustomSeparated Int64 num
+1	1
+3	3
+CustomSeparated Float64 ratio
+1.5	1
+3.5	3
+Nullable(Int64) keeps NULL
+1
+\N
+3
+JSONEachRow Int64 no allowed errors
+(at row 2)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+JSONCompactEachRow Float64 no allowed errors
+(at row 2)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+CustomSeparated Int64 no allowed errors
+(at row 2)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+JSONEachRow Int64 too many errors
+(at row 3)
+Already have 2 errors
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
