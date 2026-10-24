@@ -11519,6 +11519,10 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!predicate_node)
         return std::nullopt;
 
+    /// The analysis also resolves functions written without parentheses (`today`), which the walk above cannot see.
+    if (actions_dag->hasNonDeterministic())
+        return std::nullopt;
+
     ActionsDAGWithInversionPushDown inverted_dag(predicate_node, execution_context, /* boolean_context */ true);
 
     PartitionPruner partition_pruner(
