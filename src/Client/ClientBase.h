@@ -165,10 +165,13 @@ protected:
     /// The other side re-parses the outbound query text using the `dialect` it receives, so that
     /// dialect must be the one the client accepted the text with. Pin the outbound `dialect` (and the
     /// experimental JSON gate) to match the form of `outbound_query` actually being sent — a JSON body,
-    /// SQL produced by a client-side AST rewrite, or the text as it was typed — undoing a query-local
-    /// `SETTINGS dialect = ...` that only applies to the statements that follow. The change is
-    /// temporary (the caller restores the saved settings after the query).
-    void pinOutboundDialect(const String & outbound_query);
+    /// SQL produced by a client-side AST rewrite (which the caller reports in
+    /// `outbound_text_is_serialized_ast`), or the text as it was typed — undoing a query-local
+    /// `SETTINGS dialect = ...` that only applies to the statements that follow. A foreign-dialect
+    /// (e.g. `polyglot`) query sent verbatim is reparsed (transpiled) by the server; when a client-side
+    /// rewrite replaced it with the already transpiled AST, the server is told to parse plain SQL. The
+    /// change is temporary (the caller restores the saved settings after the query).
+    void pinOutboundDialect(const String & outbound_query, bool outbound_text_is_serialized_ast);
 
     /// Settings to pass to `Connection::sendQuery`: a copy of the client settings with `compatibility`-derived
     /// values kept but marked unchanged. They still select the client-side network codec, but they are not
@@ -612,6 +615,17 @@ protected:
     /// before any in-query `SET` is applied, so `pinOutboundDialect` can keep the outbound
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
+
+    /// True when the current query text is sent to the server verbatim to be reparsed (for a foreign
+    /// dialect: transpiled) there — see `processParsedSingleQuery`. Captured together with the parse-time
+    /// dialect, so `pinOutboundDialect` can tell the server to parse plain SQL when a client-side AST
+    /// rewrite replaced that verbatim text with the serialized (already transpiled) AST.
+    bool current_query_sent_verbatim = false;
+
+    /// The client settings just before the parse-time settings of a verbatim query were pinned (see
+    /// `processParsedSingleQuery`). `pinOutboundDialect` restores them when a client-side AST rewrite
+    /// replaced the verbatim text, so the parser-only settings pinned for it are not sent with the query.
+    std::shared_ptr<const Settings> current_query_settings_before_verbatim_pin;
 
     /// The `dialect`, `enable_json_ast_dialect`, `enable_trino_dialect` and `enable_logsql_dialect`
     /// values the current query text was accepted with, kept only when the query's own `SETTINGS` clause changed them.
