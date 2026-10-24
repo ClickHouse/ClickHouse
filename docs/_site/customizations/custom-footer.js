@@ -13,7 +13,6 @@
         ['Managed ClickStack', 'https://clickhouse.com/cloud/clickstack'],
         ['ClickHouse', 'https://clickhouse.com/clickhouse'],
         ['ClickStack', 'https://clickhouse.com/clickstack'],
-        ['Agentic Data Stack', 'https://clickhouse.com/ai'],
         ['ClickHouse Government', 'https://clickhouse.com/government'],
         ['ClickHouse Keeper', 'https://clickhouse.com/clickhouse/keeper'],
         ['ClickPipes', 'https://clickhouse.com/cloud/clickpipes'],
