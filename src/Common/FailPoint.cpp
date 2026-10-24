@@ -412,6 +412,7 @@ static struct InitFiu
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     PAUSEABLE(database_catalog_drop_finally_after_notify) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    PAUSEABLE(storage_merge_tree_abandon_selected_merge) \
     ONCE(mt_skip_scheduling_merge_once) \
     ONCE(mt_drop_selected_ttl_merge_once) \
     ONCE(mt_fail_selected_merge_before_start_once) \
