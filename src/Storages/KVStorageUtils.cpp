@@ -125,10 +125,8 @@ DataTypePtr getConstantValueType(const IColumn * column, const DataTypePtr & typ
     return removeNullable(recursiveRemoveLowCardinality(value_type));
 }
 
-/// Whether the constant converted into the key type is the only key `=` can match. `String` compares with
-/// `FixedString` zero-padded, so such a constant equals every `String` that differs from it in trailing zero
-/// bytes. Composite elements are converted without their own types, so only an element whose conversion
-/// does not depend on its type can be looked up.
+/// Whether the converted constant is the only key `=` can match: `String` equals `FixedString` zero-padded, and
+/// composite elements are converted without their own types, so only a type-independent element conversion is exact.
 bool isCompleteKeyLookup(const DataTypePtr & key_type, const DataTypePtr & value_type, bool is_element)
 {
     const auto key = removeLowCardinalityAndNullable(key_type);
@@ -157,7 +155,6 @@ bool isCompleteKeyLookup(const DataTypePtr & key_type, const DataTypePtr & value
         return key_map && value_map && isCompleteKeyLookup(key_map->getKeyType(), value_map->getKeyType(), true)
             && isCompleteKeyLookup(key_map->getValueType(), value_map->getValueType(), true);
 
-    /// Any other type with subtypes (`QBit`, a `Variant` element) is not walked: fail closed.
     if (key->haveSubtypes() || value->haveSubtypes())
         return false;
 
@@ -218,9 +215,8 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
-        /// The literal is converted with the type of the value it holds, without wrappers: the conversion depends
-        /// on it (a `DateTime` literal against a `Date` key is seconds, not days). For a `Variant` or `Dynamic`
-        /// constant that is the type of its active alternative.
+        /// The literal is converted with the type of the value it holds, without wrappers: a `DateTime` literal
+        /// against a `Date` key is seconds, not days.
         const auto value_type = getConstantValueType(value->column.get(), value->result_type);
         if (!value_type)
             return false;
