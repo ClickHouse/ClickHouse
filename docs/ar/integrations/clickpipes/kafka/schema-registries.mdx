@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز قيم السجلات المُرمَّزة بتنسيقَي Avro وProtobuf و[مفاتيح Kafka المهيكلة](/ar/integrations/clickpipes/kafka/reference#structured-message-keys).
+يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز قيم السجلات المُرمَّزة بتنسيقَي Avro وProtobuf. كما يدعم Kafka ClickPipes [مفاتيح Kafka المهيكلة](/ar/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 بالنسبة إلى قيم السجلات بتنسيق Protobuf، يمكنك أيضًا [رفع مخطط مباشرةً](/ar/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) دون تكوين سجل مخططات.
 
-## سجلات المخططات المدعومة لـ Kafka ClickPipes {#supported-schema-registries}
+## سجلات المخططات المدعومة لـ ClickPipes الخاصة بالدفق {#supported-schema-registries}
 
 يدعم Kafka ClickPipes فئتين من سجلات المخططات:
 
 * [السجلات المتوافقة مع Confluent](#confluent-compatible-registries): أي سجل متوافق مع واجهة برمجة تطبيقات Confluent Schema Registry، مثل Confluent Schema Registry نفسه وRedpanda Schema Registry. يدعم Avro وProtobuf.
 * [AWS Glue Schema Registry](#aws-glue-schema-registry): لبيانات Avro المُسلسلة باستخدام AWS Glue SerDe، والتي تأتي عادةً من Amazon MSK.
+
+يدعم Kinesis ClickPipes سجل المخططات AWS Glue Schema Registry لبيانات Avro وProtobuf.
 
 لا يدعم ClickPipes Azure Schema Registry حتى الآن. إذا كنت بحاجة إلى دعمه، [فتواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
 
@@ -61,17 +63,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
-إذا كانت مكوّنات الإنتاج لديك تُسلسل بيانات Avro باستخدام AWS Glue SerDe (على سبيل المثال، `AWSKafkaAvroSerializer` مع topic في Amazon MSK)، فيمكن لـ ClickPipes حلّ هذه المخططات مباشرةً من AWS Glue Schema Registry. يستخدم Glue تنسيق wire مختلفًا وواجهة برمجة تطبيقات مختلفة عن السجلات المتوافقة مع Confluent، لذا يُهيَّأ بشكل منفصل.
+إذا كان المنتجون لديك يُسلسلون بيانات Avro باستخدام AWS Glue SerDe (على سبيل المثال، `AWSKafkaAvroSerializer` مع topic في Amazon MSK)، فيمكن لـ ClickPipes حلّ هذه المخططات مباشرةً من AWS Glue Schema Registry. يستخدم Glue صيغة wire مختلفة وواجهة برمجة تطبيقات مختلفة عن السجلات المتوافقة مع Confluent، لذا يُهيَّأ بشكل منفصل.
 
-يتوفر إعداد AWS Glue Schema Registry حاليًا عبر ClickHouse Cloud console فقط. ولا يُدعم عبر واجهة برمجة تطبيقات ClickPipes أو Terraform provider.
+يتوفر إعداد AWS Glue Schema Registry عبر ClickHouse Cloud console وواجهة برمجة تطبيقات ClickPipes وTerraform provider.
 
 <Note>
-  **Avro فقط.** تُدعم سجلات AWS Glue لتنسيق Avro فقط. يمكن لـ Glue SerDe أيضًا تأطير JSON وProtobuf، لكن ClickPipes لا يدعمهما، ويُرفضان عند إنشاء pipe.
+  **Kafka:** تدعم سجلات AWS Glue صيغة Avro فقط. **Kinesis:** تدعم سجلات AWS Glue كلًّا من `AvroConfluent` و`Protobuf`. أما JSON فلا يُدعم عبر Glue SerDe.
 </Note>
 
 ### الإعداد {#glue-configuration}
 
-في معالج إنشاء ClickPipe، فعّل **سجل المخططات** في خطوة اتصال Kafka واضبط **نوع السجل** على **AWS Glue**:
+في معالج إنشاء ClickPipe، فعّل **سجل المخططات** في خطوة اتصال Kafka أو Kinesis واضبط **نوع السجل** على **AWS Glue**:
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="لوحة سجل المخططات مع تحديد AWS Glue" size="lg" border />
 
@@ -82,7 +84,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | اسم السجل    | نعم   | اسم سجل Glue. تُرفض المخططات التي يُحلّ مرجعها إلى سجل مختلف، لذا سيظهر أي خطأ مطبعي عند قيام ClickPipes بحل إصدار مخطط. | `my-glue-registry`                                         |
 | ARN لدور IAM | مشروط | دور مخصص للوصول إلى السجل. وهو اختياري إذا كان الوسيط يستخدم مصادقة IAM، ومطلوب في غير ذلك.                              | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-لا يوجد URL لسجل لتكوينه. يحمل كل سجل تنتجه Glue SerDe معرّف إصدار مخططه الخاص، ويحلّه ClickPipes باستخدام `glue:GetSchemaVersion` ويخزّنه مؤقتًا، بإجراء استدعاء واحد لواجهة برمجة التطبيقات لكل إصدار مخطط مميز. يُعالَج تطور المخطط تلقائيًا: فعندما تنتقل السجلات إلى إصدار مخطط جديد أثناء التدفق، يُحلّ عند ظهوره أول مرة.
+لا يوجد URL لسجل لتكوينه. يحمل كل سجل تنتجه Glue SerDe معرّف إصدار مخططه الخاص، ويحلّه ClickPipes باستخدام `glue:GetSchemaVersion` ويخزّنه مؤقتًا، بإجراء استدعاء واحد لواجهة برمجة التطبيقات لكل إصدار مخطط مميز. يُعالَج تطور المخطط تلقائيًا: فعندما تنتقل السجلات إلى إصدار مخطط جديد أثناء التدفق، يُحلّ عند ظهوره أول مرة. أما بالنسبة إلى Kinesis، فهيّئ الحقول نفسها عبر [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) أو [Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
 ### إعداد IAM {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ### القيود {#glue-limitations}
 
-* Avro فقط. لا يُدعم JSON Schema وProtobuf عبر Glue SerDe.
-* مصادر Kafka فقط. لا يمكن لـ ClickPipes في Kinesis استخدام سجل Glue.
+* يدعم Kafka تنسيق Avro فقط. لا يُدعم JSON Schema وProtobuf عبر Glue SerDe.
+* يدعم Kinesis التنسيقين `AvroConfluent` و`Protobuf` عبر AWS Glue Schema Registry. لا يمكن الجمع بين مخطط Protobuf مُحمَّل وسجل مخططات.
 
 ## مواءمة المخطط {#schema-mapping}
 

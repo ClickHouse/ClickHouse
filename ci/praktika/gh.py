@@ -562,7 +562,7 @@ class GH:
             shutil.rmtree(temp_root, ignore_errors=True)
 
     @classmethod
-    def do_command_with_retries(cls, command, verbose=False):
+    def do_command_with_retries(cls, command, verbose=False, strict=False):
         res = False
         retry_count = 0
         out, err = "", ""
@@ -585,13 +585,19 @@ class GH:
                 time.sleep(delay)
 
         if not res:
-            print(
-                f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+            # Field order matters: this message can reach a public report page, so the
+            # fields naming the cause come before the API-controlled output.
+            message = (
+                f"Failed to execute gh command [{command}] "
+                f"after [{retry_count}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
             )
+            print(f"ERROR: {message}")
+            if strict:
+                raise RuntimeError(message)
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False, strict=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False, retries=None):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -606,13 +612,19 @@ class GH:
         ``strict=True`` raises instead, so a caller can report why the
         read failed rather than be handed an empty string that is
         indistinguishable from an empty result.
+
+        ``command`` may be a string or an argv list; a list is joined with
+        ``shlex.join`` (the command runs through the shell).
         """
+        if not isinstance(command, str):
+            command = shlex.join(command)
+        limit = Settings.MAX_RETRIES_GH if retries is None else retries
         retry_count = 0
         # Counted where the subprocess is invoked, so a non-retryable class that breaks out
         # of the loop still reports the attempt it made. retry_count counts retries taken.
         attempts = 0
         out, err, ret_code = "", "", -1
-        while retry_count < Settings.MAX_RETRIES_GH:
+        while retry_count < limit:
             attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
@@ -664,6 +676,39 @@ class GH:
             else:
                 result.append(page)
         return result
+
+    @classmethod
+    def api(
+        cls,
+        endpoint,
+        method="GET",
+        fields=None,
+        jq=None,
+        paginate=False,
+        strict=False,
+        retries=None,
+        verbose=False,
+    ):
+        """Run a REST ``gh api`` call with retries and return its stdout.
+
+        ``method`` is always passed as ``-X`` so ``fields`` stay query params on a
+        ``GET`` (``gh api`` switches to ``POST`` as soon as a field is present).
+        ``fields`` are sent as ``-f`` string params (no typed or ``@file`` forms).
+        Returns trimmed stdout ("" for a no-body response such as DELETE);
+        ``strict=True`` raises on persistent failure instead of returning "".
+        ``retries=1`` disables retrying, e.g. for a best-effort call whose
+        expected failure (a 404) is not transient.
+        """
+        argv = ["gh", "api", "-X", method, endpoint]
+        for key, value in (fields or {}).items():
+            argv += ["-f", f"{key}={value}"]
+        if jq:
+            argv += ["--jq", jq]
+        if paginate:
+            argv.append("--paginate")
+        return cls.get_output_with_retries(
+            argv, verbose=verbose, strict=strict, retries=retries
+        )
 
     @classmethod
     def _gh_graphql_json(cls, query, variables, verbose=False):
