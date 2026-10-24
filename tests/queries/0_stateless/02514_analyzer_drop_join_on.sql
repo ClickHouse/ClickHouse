@@ -17,7 +17,6 @@ INSERT INTO c VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c');
 CREATE TABLE d (k UInt64, d1 UInt64, d2 String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO d VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c');
 
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0;
 SET query_plan_remove_unused_columns = 1; -- unused join-side columns must be pruned for stable EXPLAIN header output

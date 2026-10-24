@@ -38,6 +38,8 @@ class PullingPipelineExecutor;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+struct ParquetCachedStatisticsFilter;
+
 class StorageFile final : public IStorage
 {
 public:
@@ -382,6 +384,7 @@ private:
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
         TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil,
         SplitFilePtr split_file_ = nullptr,
         size_t split_file_bucket_ = 0);
 
@@ -415,6 +418,9 @@ private:
     /// key was made for; `still_holds` is false if the file has changed since it was opened.
     void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
 
+    /// Whether the cached Parquet statistics of the current file version show that no row group can match the filter.
+    bool canSkipFileByCachedStatistics();
+
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
 
@@ -439,6 +445,8 @@ private:
     /// settle check in `generate`). The query condition cache skips data based on the
     /// token, so it must fail close and stay bypassed while this is false.
     bool current_file_version_settled = false;
+    bool cached_statistics_filter_prepared = false;
+    std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
@@ -448,6 +456,8 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     /// A file read by a TopN read, whose query condition cache entry is written only when the source
@@ -553,7 +563,8 @@ private:
     /// stream, and the reader can't keep as many threads busy as independent sources do.
     /// Takes the read lock of the storage into `read_lock` before looking at the file, so that the
     /// caller keeps it until the sources (which take their own read locks) are constructed.
-    StorageFileSource::SplitFilePtr trySplitSingleFile(const FormatFilterInfoPtr & format_filter_info, RWLockImpl::LockHolder & read_lock) const;
+    StorageFileSource::SplitFilePtr trySplitSingleFile(
+        const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;

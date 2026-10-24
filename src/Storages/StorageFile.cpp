@@ -45,6 +45,10 @@
 #include <Disks/IO/getIOUringReader.h>
 
 #include <Formats/FormatFactory.h>
+#include "config.h"
+#if USE_PARQUET
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -134,6 +138,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
@@ -1708,6 +1713,7 @@ StorageFileSource::StorageFileSource(
     FormatFilterInfoPtr format_filter_info_,
     LazyFileRegistryPtr lazy_row_index_registry_,
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
+    const UUID & query_condition_cache_table_id_,
     SplitFilePtr split_file_,
     size_t split_file_bucket_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
@@ -1717,6 +1723,7 @@ StorageFileSource::StorageFileSource(
     , read_buf(std::move(read_buf_))
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
+    , query_condition_cache_table_id(query_condition_cache_table_id_)
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , split_file(std::move(split_file_))
     , split_file_bucket(split_file_bucket_)
@@ -1801,6 +1808,41 @@ StorageFileSource::~StorageFileSource()
     }
 }
 
+bool StorageFileSource::canSkipFileByCachedStatistics()
+{
+#if USE_PARQUET
+    /// Only a settled version token proves that the file was not rewritten since its statistics were kept.
+    if (storage->use_table_fd || storage->archive_info || !current_file_version_settled || !current_file_cache_version
+        || !format_filter_info || !format_filter_info->filter_actions_dag || format_filter_info->column_mapper
+        || !boost::iequals(storage->format_name, "Parquet") || !getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        return false;
+
+    if (!cached_statistics_filter_prepared)
+    {
+        cached_statistics_filter_prepared = true;
+        cached_statistics_filter = ParquetCachedStatisticsFilter::create(
+            format_filter_info, block_for_format, storage->format_settings ? *storage->format_settings : getFormatSettings(getContext()));
+    }
+    if (!cached_statistics_filter)
+        return false;
+
+    auto metadata_cache = getContext()->tryGetParquetMetadataCache();
+    if (!metadata_cache)
+        return false;
+    auto num_row_groups = cached_statistics_filter->canSkipFile(*metadata_cache, current_path, *current_file_cache_version);
+    /// The file may have been rewritten since it was stat-ed; then it is opened, and the read fails close.
+    if (!num_row_groups || !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        return false;
+
+    /// Every source of a split file skips it, count it once.
+    if (!split_file || split_file_bucket == 0)
+        ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    return true;
+#else
+    return false;
+#endif
+}
+
 void StorageFileSource::writePendingTopKQueryConditionCacheEntries()
 {
     /// A file changed during the query: the files read are not the ones the key describes.
@@ -1820,7 +1862,7 @@ void StorageFileSource::writePendingTopKQueryConditionCacheEntries()
                     matched_row_groups.erase(row_group);
 
         writeQueryConditionCacheEntry(
-            storage->getStorageID().uuid,
+            query_condition_cache_table_id,
             entry.cache_file_key,
             top_k_query_condition_cache_key->condition_hash,
             top_k_query_condition_cache_key->condition,
@@ -2056,6 +2098,13 @@ Chunk StorageFileSource::generate()
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
+                if (canSkipFileByCachedStatistics())
+                {
+                    /// As if the reader had skipped every row group of the file by its statistics.
+                    checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
+                    continue;
+                }
+
                 if (is_one_format)
                 {
                     /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
@@ -2150,17 +2199,14 @@ Chunk StorageFileSource::generate()
             std::optional<UInt64> top_k_condition_hash = getTopKConditionHashForCurrentFile();
 
             QueryConditionCachePtr query_condition_cache;
-            /// A table without a UUID (e.g. the one behind the `file` table function) has no cache entries.
             /// For a split file, the cache was consulted once for all buckets (see `ReadFromFile::trySplitSingleFile`).
             if (object_with_metadata.has_value() && current_file_version_settled && (plain_condition_hash || top_k_condition_hash)
-                && storage->getStorageID().uuid != UUIDHelpers::Nil && !split_file)
+                && query_condition_cache_table_id != UUIDHelpers::Nil && !split_file)
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                const auto table_uuid = storage->getStorageID().uuid;
-
                 /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
                 /// however many keys are probed.
                 std::optional<QueryConditionCache::MatchingMarks> matching_marks;
@@ -2176,11 +2222,11 @@ Chunk StorageFileSource::generate()
                 };
                 if (plain_condition_hash)
                     merge_matching_marks(query_condition_cache->read(
-                        table_uuid, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
+                        query_condition_cache_table_id, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
                 if (top_k_condition_hash)
                 {
                     auto marks = query_condition_cache->read(
-                        table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
+                        query_condition_cache_table_id, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
                     /// An entry that skips no row group beyond the plain verdict changes nothing, so it is not
                     /// used at all: a later change of a file then only invalidates the key, rather than failing
                     /// the query for an entry that did not matter.
@@ -2475,7 +2521,7 @@ Chunk StorageFileSource::generate()
                 else if (buckets_opt.has_value() && format_filter_info->condition_hash)
                 {
                     writeQueryConditionCacheEntry(
-                        storage->getStorageID().uuid,
+                        query_condition_cache_table_id,
                         cache_file_key,
                         *format_filter_info->condition_hash,
                         format_filter_info->filter_actions_dag->dumpNames(),
@@ -2483,6 +2529,9 @@ Chunk StorageFileSource::generate()
                         std::unordered_set<size_t>(buckets_opt->first.begin(), buckets_opt->first.end()),
                         getContext());
                 }
+
+                if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+                    input_format->cacheFilterColumnStatistics();
             }
             catch (...)
             {
@@ -2520,7 +2569,8 @@ void StorageFileSource::finishReadingSplitFileBucket()
     /// The other row groups of the file belong to the buckets of other sources, so they must not be
     /// recorded as having no matching rows until those sources have read them too. A row group that was
     /// not assigned to any bucket was skipped by the query condition cache entry for the same condition.
-    bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled;
+    bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
+        && query_condition_cache_table_id != UUIDHelpers::Nil;
     std::optional<std::pair<std::vector<size_t>, size_t>> buckets_opt;
     if (can_write)
     {
@@ -2562,7 +2612,7 @@ void StorageFileSource::finishReadingSplitFileBucket()
     try
     {
         writeQueryConditionCacheEntry(
-            storage->getStorageID().uuid,
+            query_condition_cache_table_id,
             QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version),
             *format_filter_info->condition_hash,
             format_filter_info->filter_actions_dag->dumpNames(),
@@ -2882,10 +2932,11 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
-    /// Only plain local files have version tokens, and only a table with a UUID has cache entries.
+    /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
+    /// `File` table in a database without UUIDs) keeps its entries under a synthetic `table_id`
+    /// (see `QueryConditionCache::getTableIdForFileEntries`), which partitions the TopK entries as well.
     /// With distributed processing the files arrive from the initiator at run time.
-    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing
-        || storage->getStorageID().uuid == UUIDHelpers::Nil)
+    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing)
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
@@ -2907,7 +2958,7 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         key->condition = filter_actions_dag->dumpNames() + ", ";
     }
     else if (!query_info.prewhere_info)
-        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
+        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
     else
         return {};
 
@@ -2933,13 +2984,23 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         key->file_version_tokens.emplace(path, std::move(token));
     }
 
+    /// The filter can depend on `_table`, which is not covered by the `table_id`: tables without a UUID share
+    /// the synthetic `table_id` of their files, and a table with a UUID keeps it on `RENAME`. So the key
+    /// covers the name the reader materializes as `_table`.
+    const String table_name = storage->getStorageID().getTableName();
+    SipHash table_name_hash;
+    table_name_hash.update(table_name.size());
+    table_name_hash.update(table_name);
+
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
     boost::hash_combine(condition_hash, files_hash.get64());
+    boost::hash_combine(condition_hash, table_name_hash.get64());
     key->condition_hash = condition_hash;
     return key;
 }
 
-StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(const FormatFilterInfoPtr & format_filter_info, RWLockImpl::LockHolder & read_lock) const
+StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
+    const FormatFilterInfoPtr & format_filter_info, const UUID & query_condition_cache_table_id, RWLockImpl::LockHolder & read_lock) const
 {
     const auto & context = getContext();
 
@@ -3001,12 +3062,12 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(const FormatFil
 
     /// Consult the query condition cache once for the whole file, rather than in every source, and drop
     /// the row groups it knows to have no matching rows. See the comments in `StorageFileSource::generate`.
-    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && storage->getStorageID().uuid != UUIDHelpers::Nil)
+    if (format_filter_info->condition_hash && isFileCacheVersionTokenSettled(file_stat) && query_condition_cache_table_id != UUIDHelpers::Nil)
     {
         if (auto query_condition_cache = context->getQueryConditionCache())
         {
             auto matching_marks = query_condition_cache->read(
-                storage->getStorageID().uuid,
+                query_condition_cache_table_id,
                 QueryConditionCache::makeFilePartName(path, split_file->file_cache_version),
                 *format_filter_info->condition_hash,
                 /*increment_profile_events=*/ false);
@@ -3069,10 +3130,34 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
+    format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
+        && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
+    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
+    if (top_k_query_condition_cache_key)
+    {
+        /// The verdicts written under the key also cover row groups whose rows were all returned
+        /// before the threshold got tight enough to drop them.
+        auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
+        top_k_filter_tracking_best_values->track_row_group_best_values = true;
+        format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
+    }
+
+    /// Derived from the snapshot the query is planned against, not from the live metadata, so a concurrent
+    /// `ALTER` cannot make this query write entries under the identity of the altered table.
+    /// The format settings of the storage are fixed at `CREATE`.
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
+    if (format_filter_info->condition_hash || top_k_query_condition_cache_key)
+        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
+            storage->getStorageID().uuid,
+            storage->format_name,
+            storage->compression_method,
+            storage_snapshot->metadata->getColumns(),
+            format_filter_info->column_mapper.get(),
+            storage->format_settings ? &*storage->format_settings : nullptr);
 
     /// Held until the sources are constructed, see `trySplitSingleFile`.
     RWLockImpl::LockHolder split_file_read_lock;
-    auto split_file = trySplitSingleFile(format_filter_info, split_file_read_lock);
+    auto split_file = trySplitSingleFile(format_filter_info, query_condition_cache_table_id, split_file_read_lock);
     if (split_file)
         num_streams = split_file->buckets.size();
 
@@ -3085,15 +3170,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     /// is noticeable for short queries), and passing every task of the readers between the threads.
     if (split_file && num_streams >= parser_shared_resources->max_parsing_threads)
         parser_shared_resources = FormatParserSharedResources::singleThreaded(ctx->getSettingsRef(), num_streams);
-    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
-    if (top_k_query_condition_cache_key)
-    {
-        /// The verdicts written under the key also cover row groups whose rows were all returned
-        /// before the threshold got tight enough to drop them.
-        auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
-        top_k_filter_tracking_best_values->track_row_group_best_values = true;
-        format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
-    }
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -3128,6 +3204,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             format_filter_info,
             lazy_row_index_registry,
             top_k_query_condition_cache_key,
+            query_condition_cache_table_id,
             split_file,
             i);
 
