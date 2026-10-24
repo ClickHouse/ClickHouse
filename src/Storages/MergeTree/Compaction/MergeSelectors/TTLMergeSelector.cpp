@@ -233,6 +233,14 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     if (!part.general_ttl_info.has_value())
         return false;
 
+    /// `part_max_ttl` does not summarize rows whose TTL computed to exactly 0 (the epoch): such a
+    /// timestamp means "no TTL" to the rest of the machinery and is excluded from the stored bounds
+    /// (see `MergeTreeDataPartTTLInfo::has_epoch_timestamps`). Dropping such a part as a whole would
+    /// delete rows that a scan of the same TTL expression keeps, so it is not a candidate for a
+    /// `TTLDrop` merge - the regular row-delete path scans it and removes only the expired rows.
+    if (part.general_ttl_info->rows_ttl_has_epoch_timestamps)
+        return false;
+
     return part.general_ttl_info->has_any_non_finished_ttls;
 }
 

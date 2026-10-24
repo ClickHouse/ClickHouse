@@ -4,8 +4,16 @@ namespace DB
 {
 
 TTLDeleteAlgorithm::TTLDeleteAlgorithm(
-    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
+    const TTLExpressions & ttl_expressions_,
+    const TTLDescription & description_,
+    const TTLInfo & old_ttl_info_,
+    String old_ttl_expression_fingerprint_,
+    String old_ttl_timezone_fingerprint_,
+    time_t current_time_,
+    bool force_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    , old_ttl_expression_fingerprint(std::move(old_ttl_expression_fingerprint_))
+    , old_ttl_timezone_fingerprint(std::move(old_ttl_timezone_fingerprint_))
 {
     if (!isMinTTLExpired())
         new_ttl_info = old_ttl_info;
@@ -19,6 +27,7 @@ void TTLDeleteAlgorithm::execute(Block & block)
     if (block.empty() || !isMinTTLExpired())
         return;
 
+    result_column_shadowed |= isResultColumnShadowed(description, block);
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
@@ -49,6 +58,14 @@ void TTLDeleteAlgorithm::execute(Block & block)
             /// Update ttl info only if row passes the filter.
             /// Rows that don't pass the filter should not affect TTL.
             new_ttl_info.update(cur_ttl);
+
+            /// The constructor seeds `ttl_finished` from the old bounds, but a scanned part can still
+            /// hold a row with a live TTL - e.g. a part with epoch timestamps whose old bounds are
+            /// expired, rescanned after `MODIFY TTL`. Such a row has yet to expire, so the TTL is not
+            /// finished, or `updatePartMinMaxTTL` would ignore its bounds and no TTL merge would
+            /// ever remove it.
+            if (cur_ttl)
+                new_ttl_info.ttl_finished = false;
         }
     }
 
@@ -67,7 +84,39 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
         /// Rules sharing a time expression share this slot, so merge instead of overwriting.
         data_part->ttl_infos.rows_where_ttl[description.result_column].update(new_ttl_info);
     else
+    {
         data_part->ttl_infos.table_ttl = new_ttl_info;
+        /// Record the rows-TTL expression and time zone these timestamps were computed under
+        /// (see `MergeTreeDataPartTTLInfos`) - the current metadata fingerprint when this algorithm
+        /// actually recomputed them by scanning the rows. When the min TTL is not expired (and the
+        /// recomputation is not forced), `execute` never looks at the rows and `new_ttl_info` is just
+        /// a copy of the incoming infos, so restore the fingerprint those bounds were computed under -
+        /// `TTLTransform::finalize` cleared `data_part->ttl_infos` wholesale before this call, and
+        /// stamping the current metadata expression instead could mislabel bounds computed under an
+        /// older TTL expression.
+        if (isMinTTLExpired())
+        {
+            /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery and is
+            /// excluded from the stored `min`, so if any surviving row computed to it, the bounds are
+            /// not a complete summary of the part and must not carry a fingerprint. Neither must bounds
+            /// read from a physical column that only shares the name of the TTL expression.
+            if (new_ttl_info.has_epoch_timestamps || result_column_shadowed)
+            {
+                data_part->ttl_infos.table_ttl_expression.clear();
+                data_part->ttl_infos.table_ttl_timezone.clear();
+            }
+            else
+            {
+                data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(description);
+                data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description, date_lut);
+            }
+        }
+        else
+        {
+            data_part->ttl_infos.table_ttl_expression = old_ttl_expression_fingerprint;
+            data_part->ttl_infos.table_ttl_timezone = old_ttl_timezone_fingerprint;
+        }
+    }
 
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
 }

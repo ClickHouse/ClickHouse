@@ -679,14 +679,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         if (columns_without_ttl_info.empty())
         {
-            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos, part->rows_count > 0);
         }
         else
         {
             auto part_ttl_infos = part->ttl_infos;
             for (const auto & column : columns_without_ttl_info)
                 part_ttl_infos.columns_ttl.erase(column);
-            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
+            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos, part->rows_count > 0);
         }
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
@@ -698,10 +698,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,
-    /// so that bound must not decide that all merged rows have expired.
+    /// so that bound must not decide that all merged rows have expired. An epoch-only part has
+    /// zero bounds too, but its rows TTL is calculated: it carries `has_epoch_timestamps`, which
+    /// is propagated to the merged part and already disables the whole-part shortcuts.
     if (global_ctx->metadata_snapshot->hasRowsTTL()
         && std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
-            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
+            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0 && !part->ttl_infos.table_ttl.has_epoch_timestamps; }))
         global_ctx->new_data_part->ttl_infos.table_ttl = {};
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
@@ -810,6 +812,62 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         if (state.has_different_types || state.parts_with_marker != non_empty_parts)
             missing_columns_to_materialize.insert(name);
+    }
+
+    /// The rows-TTL bounds aggregated above are carried over from the source parts unless the merge
+    /// recalculates them, but the merge may write different values of the columns the rows TTL reads
+    /// than the ones those bounds were computed from: it applies patch parts and renames, and fills a
+    /// column a source part does not store from its current DEFAULT. The merged part then physically
+    /// stores the new values with no outstanding conversions, so a later metadata-only `MATERIALIZE TTL`
+    /// could not tell that its bounds are stale. Drop the rows-TTL provenance in that case, so that the
+    /// next materialization rescans the part instead of shifting the bounds.
+    ///
+    /// This must hold even when the bounds were computed under a rows TTL other than the current one,
+    /// or when the table has no rows TTL at all any more (after `REMOVE TTL`, or a `MODIFY TTL` that was
+    /// not materialized): the saved fingerprint still describes the old expression, and a later
+    /// `MODIFY TTL` back to a shift of it would trust the bounds. The source columns of that old
+    /// expression are not known here, so every physical column of the table is checked instead.
+    if (!global_ctx->new_data_part->ttl_infos.table_ttl_expression.empty())
+    {
+        const auto & metadata_snapshot = global_ctx->metadata_snapshot;
+        const bool fingerprint_is_current = metadata_snapshot->hasRowsTTL()
+            && global_ctx->new_data_part->ttl_infos.table_ttl_expression == getRowsTTLExpressionFingerprint(metadata_snapshot->getRowsTTL());
+        const NamesAndTypesList columns_to_check = fingerprint_is_current
+            ? metadata_snapshot->getRowsTTL().expression_source_columns
+            : metadata_snapshot->getColumns().getAllPhysical();
+
+        bool rows_ttl_source_may_change = false;
+        for (size_t i = 0; i < global_ctx->future_part->parts.size() && !rows_ttl_source_may_change; ++i)
+        {
+            const auto & part = global_ctx->future_part->parts[i];
+            if (part->rows_count == 0)
+                continue;
+
+            const auto & conversions = global_ctx->alter_conversions[i];
+            if (conversions->hasPatches() || conversions->hasMutations() || !conversions->getRenameMap().empty())
+            {
+                rows_ttl_source_may_change = true;
+                break;
+            }
+
+            for (const auto & column : columns_to_check)
+            {
+                auto part_column = part->tryGetColumn(column.name);
+                if (!part_column || !part_column->type->equals(*column.type))
+                {
+                    rows_ttl_source_may_change = true;
+                    break;
+                }
+            }
+        }
+
+        if (rows_ttl_source_may_change)
+        {
+            auto & ttl_infos = global_ctx->new_data_part->ttl_infos;
+            ttl_infos.table_ttl_expression.clear();
+            ttl_infos.table_ttl_timezone.clear();
+            ttl_infos.has_unknown_rows_ttl_provenance = true;
+        }
     }
 
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as

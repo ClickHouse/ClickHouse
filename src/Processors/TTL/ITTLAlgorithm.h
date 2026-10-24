@@ -48,6 +48,13 @@ public:
     static ColumnPtr executeExpressionAndGetColumn(
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
+    /// Whether `executeExpressionAndGetColumn` would take the TTL values of `ttl` from a column of `block`
+    /// that merely has the name of the TTL expression (a physical column named e.g. `d + toIntervalDay(1)`)
+    /// instead of evaluating the expression. Such values are not computed by the recorded expression,
+    /// so they must not be certified with a rows-TTL fingerprint (see `MergeTreeDataPartTTLInfos`).
+    /// A bare column TTL (`TTL d`) reads its own column, which is exactly the expression.
+    static bool isResultColumnShadowed(const TTLDescription & ttl, const Block & block);
+
 protected:
     bool isTTLExpired(time_t ttl) const;
 
@@ -67,7 +74,6 @@ protected:
     const bool force;
     TTLInfo new_ttl_info;
 
-private:
     const DateLUTImpl & date_lut;
 };
 

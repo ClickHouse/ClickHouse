@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/TTLDescription.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -57,9 +59,11 @@
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
+#include <Common/DateLUT.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -2279,7 +2283,7 @@ static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
-    ExecuteTTLType execute_ttl_type,
+    bool write_ttl_infos,
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
@@ -2298,7 +2302,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out));
     }
 
-    if (execute_ttl_type != ExecuteTTLType::NONE)
+    if (write_ttl_infos)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
@@ -2595,6 +2599,8 @@ struct MutationContext
     bool need_sync{};
     bool changes_storage_type{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    /// Write `ttl.txt` from `new_data_part->ttl_infos` even though the mutation does not execute TTL.
+    bool rewrite_ttl_infos{false};
 
     MergeTreeTransactionPtr txn;
 
@@ -3703,7 +3709,7 @@ private:
                 ctx->statistics_to_build.emplace(stat_name, it->second);
         }
 
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->new_data_part->getDataPartStorage().createDirectories();
@@ -4102,7 +4108,7 @@ private:
             ctx->source_part,
             ctx->new_data_part,
             ctx->all_gathered_data,
-            ctx->execute_ttl_type,
+            ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos,
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
@@ -4190,8 +4196,10 @@ private:
 
     bool isRowsMaxTTLExpired() const
     {
-        const auto ttl = ctx->new_data_part->ttl_infos.table_ttl;
-        return ttl.max && ttl.max <= ctx->time_of_mutation;
+        const auto & ttl = ctx->new_data_part->ttl_infos.table_ttl;
+        /// A part holding rows whose TTL computed to exactly the epoch is not fully expired even if
+        /// its stored bounds are: those rows are excluded from the bounds and are never expired.
+        return ttl.max && ttl.max <= ctx->time_of_mutation && !ttl.has_epoch_timestamps;
     }
 
     void replacePartWithEmpty()
@@ -4716,6 +4724,279 @@ bool MutateTask::prepare()
     /// disable parallel replicas for mutations
     context_for_reading->setSetting("enable_parallel_replicas", false);
 
+    /// Clone the source part (hardlinking its files) into a new part with the target mutation
+    /// version, without rewriting any data. Used both when a part is untouched by the mutation
+    /// and by the fast `MATERIALIZE TTL` path below.
+    auto clone_part = [&]() -> std::pair<MergeTreeData::MutableDataPartPtr, scope_guard>
+    {
+        NameSet files_to_copy_instead_of_hardlinks;
+        auto settings_ptr = ctx->data->getSettings();
+        /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
+        /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
+        /// Example:
+        ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+        ///                                         ^ part name don't participate in lock path
+        /// In case of full hardlink we will have:
+        ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+        /// So we need to copy to have a new name
+        bool copy_checksumns = ctx->data->supportsReplication() && (*settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
+        if (copy_checksumns)
+            files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
+
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+            .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
+            .keep_metadata_version = true,
+            .temporary_data = ctx->context->getTempDataOnDisk(),
+        };
+
+        return ctx->data->cloneAndLoadDataPart(
+            ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params,
+            ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+    };
+
+    /// Fast path of `MATERIALIZE TTL` (which is also what `MODIFY TTL` materializes): when the part's
+    /// stored expiry timestamps map to the current rows TTL by a single constant shift, the same result
+    /// can be reached without reading or rewriting any data. Per part:
+    ///   * fully expired under the new TTL  -> replace with an empty part;
+    ///   * not yet expired                  -> clone the part and shift its `ttl.txt` in place;
+    ///   * partially expired                -> fall back to the regular `MATERIALIZE TTL` rewrite.
+    /// Anything the shift cannot be proven for falls back as well, so this is a pure optimization of the
+    /// existing command: no new syntax, nothing new persisted in the mutation entry, and the fast path is
+    /// decided independently by every replica when it executes the mutation.
+    /// `canSkipMutationCommandForPart` must be consulted first: `MATERIALIZE TTL IN PARTITION` does not
+    /// apply to a part of another partition at all, and such a part must stay untouched rather than get
+    /// its TTL metadata shifted here.
+    const bool is_single_materialize_ttl = ctx->commands->size() == 1
+        && ctx->commands->front().type == MutationCommand::MATERIALIZE_TTL
+        && !canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, ctx->commands->front(), context_for_reading);
+
+    if (is_single_materialize_ttl)
+    {
+        /// Prove the shift for THIS part against the rows-TTL expression that its stored timestamps were
+        /// actually computed under (its `table_ttl_expression` fingerprint). Doing the proof per part -
+        /// rather than once for the whole table in the ALTER - is what keeps the optimization correct when
+        /// a part is stale w.r.t. the current metadata (for example after an earlier
+        /// `MODIFY TTL ... SETTINGS materialize_ttl_after_modify = 0` that changed the metadata without
+        /// recalculating parts), and it is also what lets a plain `ALTER TABLE ... MATERIALIZE TTL` benefit.
+        /// When the stored expiry times do not map to the current TTL by a single constant shift, or the
+        /// part's fingerprint is unknown, `delta` stays empty and we fall back to a regular
+        /// `MATERIALIZE TTL` rewrite for this part below.
+        ///
+        /// The part must also carry TTL info for the rows TTL and nothing else: its aggregate
+        /// `part_min_ttl`/`part_max_ttl` are the bounds over ALL its TTLs, so any other TTL info (e.g.
+        /// left over from a column TTL that has been dropped since the part was written) would make
+        /// both the expiry decisions and the shift below incorrect.
+        const auto & source_ttl_infos = ctx->source_part->ttl_infos;
+        const bool part_has_only_rows_ttl = source_ttl_infos.table_ttl.min != 0
+            && source_ttl_infos.columns_ttl.empty() && source_ttl_infos.rows_where_ttl.empty()
+            && source_ttl_infos.moves_ttl.empty() && source_ttl_infos.recompression_ttl.empty()
+            && source_ttl_infos.group_by_ttl.empty();
+
+        /// The delta proof below requires the part's stored TTL expression to shift the same column that
+        /// the new TTL reads under the CURRENT column definitions, and then shifts the part's stored TTL
+        /// timestamps by the proven constant. That is only sound when those timestamps were computed under
+        /// the same column semantics: a part can legitimately lag metadata-only alters (its
+        /// `metadata_version` is older than the table's), so with any outstanding on-the-fly conversion -
+        /// a rename, an on-the-fly mutation, or a patch part - the data the TTL reads is not what is
+        /// physically stored, and the fast path must not be attempted.
+        const bool part_lags_conversions = !alter_conversions->getRenameMap().empty()
+            || alter_conversions->hasMutations() || alter_conversions->hasPatches();
+
+        /// The unconditional rows TTL (`TTL <expr>`) must also be the one and only TTL of the table right
+        /// now. The shift only ever touches the part's rows-TTL info, while `MATERIALIZE TTL` is expected
+        /// to (re)compute the info for every TTL of the table - so if the table has a column, WHERE, MOVE,
+        /// RECOMPRESS or GROUP BY TTL, a part written before it was added would silently keep missing its
+        /// info instead of getting it computed.
+        const bool table_has_only_rows_ttl = ctx->metadata_snapshot->hasRowsTTL()
+            && !ctx->metadata_snapshot->hasAnyColumnTTL() && !ctx->metadata_snapshot->hasAnyRowsWhereTTL()
+            && !ctx->metadata_snapshot->hasAnyMoveTTL() && !ctx->metadata_snapshot->hasAnyRecompressionTTL()
+            && !ctx->metadata_snapshot->hasAnyGroupByTTL();
+
+        std::optional<time_t> delta;
+        time_t shifted_min = 0;
+        time_t shifted_max = 0;
+        String new_ttl_expression;
+        String new_ttl_timezone;
+        if (part_has_only_rows_ttl && !part_lags_conversions && table_has_only_rows_ttl)
+        {
+            auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
+            new_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
+            new_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::instance());
+            delta = tryComputeConstantTTLDelta(
+                source_ttl_infos.table_ttl_expression, rows_ttl, DateLUT::instance(),
+                source_ttl_infos.table_ttl.min, source_ttl_infos.table_ttl.max);
+
+            /// A successful proof references exactly one source column (checked inside the proof).
+            /// The part must physically store that column with exactly its current type. Otherwise
+            /// the stored TTL bounds may have been computed under different column semantics than the
+            /// current metadata describes - e.g. the column is synthesized from a DEFAULT that a later
+            /// metadata-only `MODIFY COLUMN` changed, or a metadata-only type change (such as a
+            /// `DateTime` time-zone change) altered the meaning of the stored values - and shifting
+            /// them by a delta proven under the new semantics would expire the wrong rows.
+            if (delta)
+            {
+                const auto & ttl_column = rows_ttl.expression_source_columns.front();
+                auto part_column = ctx->source_part->tryGetColumn(ttl_column.name);
+                if (!part_column || !part_column->type->equals(*ttl_column.type))
+                    delta.reset();
+            }
+
+            /// The regular rewrite reads the new TTL values from a physical column named as the new
+            /// expression, if there is one (see `ITTLAlgorithm::isResultColumnShadowed`), instead of
+            /// evaluating it, so such a column breaks the proven shift as well.
+            if (delta && !rows_ttl.expression_ast->as<ASTIdentifier>()
+                && (ctx->source_part->tryGetColumn(rows_ttl.result_column)
+                    || ctx->metadata_snapshot->getColumns().has(rows_ttl.result_column)))
+            {
+                delta.reset();
+            }
+
+            /// The time zone is not covered by the checks above: `DataTypeDateTime::equals` ignores it,
+            /// `DataTypeDateTime64::equals` compares only the scale, and a `Date`/`Date32` TTL depends on
+            /// the mutation context's time zone, which is not part of the table metadata at all. So the part must also
+            /// have been written under the same zone the delta was proven under; a part written by an older
+            /// server has no recorded zone and therefore never takes the fast path.
+            if (delta
+                && (source_ttl_infos.table_ttl_timezone.empty()
+                    || source_ttl_infos.table_ttl_timezone != new_ttl_timezone))
+            {
+                delta.reset();
+            }
+
+            /// The shifted bounds are used below both for the expiry decisions and as the part's new
+            /// stored bounds, so a shift whose result does not fit in `time_t` cannot be applied at
+            /// all - a new TTL with an absurdly large interval makes the addition overflow (which is
+            /// undefined behavior for signed integers, so it must be checked, not detected after the
+            /// fact). Fall back to the regular rewrite, which evaluates the new expression as is.
+            if (delta
+                && (common::addOverflow(source_ttl_infos.table_ttl.min, *delta, shifted_min)
+                    || common::addOverflow(source_ttl_infos.table_ttl.max, *delta, shifted_max)))
+            {
+                delta.reset();
+            }
+
+            /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery:
+            /// `ITTLAlgorithm::isTTLExpired` never expires it and `MergeTreeDataPartTTLInfo::update`
+            /// excludes it from `min`. A part whose rows computed to it never records a fingerprint
+            /// (see `TTLDeleteAlgorithm::finalize`), so a present fingerprint guarantees every stored
+            /// row timestamp is non-zero and lies in `[min, max]`. It remains to reject a shift that
+            /// could move some row's timestamp ONTO zero - silently flipping it from "expired long ago"
+            /// to "never expires" - which is possible only when the shifted range covers zero.
+            if (delta && shifted_min <= 0 && shifted_max >= 0)
+            {
+                delta.reset();
+            }
+        }
+
+        /// `materialize_ttl_recalculate_only` promises that `MATERIALIZE TTL` only refreshes the parts'
+        /// TTL metadata and never rewrites them, so expired rows survive until the next merge (see
+        /// `drop_expired_parts` in `MutateTask::prepare`). Replacing a fully expired part with an empty
+        /// one would break that promise and delete rows the regular path keeps, so with the setting on
+        /// every eligible part just gets its TTL metadata shifted below.
+        const bool recalculate_only = (*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+
+        /// The whole part is expired under the new TTL: replace it with an empty part.
+        if (delta && !recalculate_only && shifted_max <= ctx->time_of_mutation)
+        {
+            LOG_TRACE(ctx->log, "Part {} is fully expired after MATERIALIZE TTL, creating empty part with mutation version {}",
+                ctx->source_part->name, ctx->future_part->part_info.mutation);
+
+            /// Seed the patch part index from the covered part to keep the patch partition uniform
+            /// (see `MergeTreeData::createEmptyPart`).
+            std::optional<PatchPartIndex> patch_part_index;
+            if (ctx->source_part->info.isPatch())
+                patch_part_index = ctx->source_part->getPatchPartIndex().cloneEmpty();
+
+            auto [empty_part, lock] = ctx->data->createEmptyPart(
+                ctx->future_part->part_info, ctx->source_part->partition, ctx->future_part->name,
+                ctx->source_part->getMetadataSnapshot(), ctx->txn, std::move(patch_part_index));
+
+            ctx->temporary_directory_lock = std::move(lock);
+            ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
+            promise.set_value(std::move(empty_part));
+            return false;
+        }
+
+        /// No row in the part is expired under the new TTL (or `materialize_ttl_recalculate_only` asks
+        /// for a metadata-only refresh, which is exactly what the shift does): clone the part and shift
+        /// its TTL infos. `ITTLAlgorithm::isTTLExpired` treats `ttl == current_time` as expired, so the
+        /// comparison must be strict: a part whose earliest expiry equals `time_of_mutation` is partially
+        /// expired and takes the regular rewrite below. The part's OLD max TTL must not be expired
+        /// either: the regular rewrite drops such a part's data wholesale, before even looking at the
+        /// new expression (`all_data_dropped` in `TTLTransform` is decided on the part's stored infos),
+        /// so cloning it - however live its rows are under the new TTL - would produce a different
+        /// result than the rewrite. Rewriting `ttl.txt` and `checksums.txt` in place
+        /// is only possible when every file of the part is stored separately; a packed part cannot be
+        /// modified after it is written, so it takes the regular rewrite below as well.
+        if (delta
+            && (recalculate_only
+                || (shifted_min > ctx->time_of_mutation
+                    && source_ttl_infos.table_ttl.max > ctx->time_of_mutation))
+            && isFullPartStorage(ctx->source_part->getDataPartStorage()))
+        {
+            LOG_TRACE(ctx->log, "Part {} is not expired after MATERIALIZE TTL, cloning and shifting TTL by {} seconds to mutation version {}",
+                ctx->source_part->name, *delta, ctx->future_part->part_info.mutation);
+
+            auto [part, lock] = clone_part();
+
+            part->ttl_infos.table_ttl.min = shifted_min;
+            part->ttl_infos.table_ttl.max = shifted_max;
+            /// The rows TTL is the only TTL info of this part (checked above), so the aggregate bounds
+            /// are exactly the shifted rows-TTL bounds; recompute them instead of shifting blindly.
+            part->ttl_infos.part_min_ttl = part->ttl_infos.table_ttl.min;
+            part->ttl_infos.part_max_ttl = part->ttl_infos.table_ttl.max;
+            /// The part now reflects the new rows-TTL expression, so update its fingerprint accordingly.
+            part->ttl_infos.table_ttl_expression = new_ttl_expression;
+            part->ttl_infos.table_ttl_timezone = new_ttl_timezone;
+
+            /// Rewrite the file with ttl infos in json format.
+            part->getDataPartStorage().removeFile("ttl.txt");
+            auto out_ttl = part->getDataPartStorage().writeFile("ttl.txt", 4096, ctx->context->getWriteSettings());
+            HashingWriteBuffer out_hashing(*out_ttl);
+            part->ttl_infos.write(out_hashing);
+            out_hashing.finalize();
+            part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+            part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+            out_ttl->finalize();
+            out_ttl->sync();
+
+            /// Rewrite the file with checksums.
+            part->getDataPartStorage().removeFile("checksums.txt");
+            auto out_checksums = part->getDataPartStorage().writeFile("checksums.txt", 4096, ctx->context->getWriteSettings());
+            part->checksums.write(*out_checksums);
+            out_checksums->finalize();
+            out_checksums->sync();
+
+            part->modification_time = time(nullptr);
+
+            /// The clone recorded `ttl.txt` and `checksums.txt` as hardlinked from the source part,
+            /// but they were just rewritten, so this part no longer shares those blobs with the
+            /// source. Leaving them in the set would make zero-copy replication persist the stale
+            /// hardlink list to the parent zero-copy node, keeping the source's old `ttl.txt` blob
+            /// alive forever after the source part is dropped - one leaked blob per fast-cloned part.
+            /// (`checksums.txt` is copied rather than hardlinked on zero-copy disks, so erasing it
+            /// only matters for the other configurations; erasing an absent name is a no-op.)
+            ctx->hardlinked_files.hardlinks_from_source_part.erase("ttl.txt");
+            ctx->hardlinked_files.hardlinks_from_source_part.erase("checksums.txt");
+
+            part->getDataPartStorage().beginTransaction();
+            if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+                part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
+            ctx->temporary_directory_lock = std::move(lock);
+            promise.set_value(std::move(part));
+            return false;
+        }
+
+        /// The part is only partially expired, or its per-part delta could not be proven constant
+        /// (unknown/stale fingerprint, calendar/DST interval, or column-dependent TTL): fall through to
+        /// the regular `MATERIALIZE TTL` rewrite below, which recomputes the TTL from the actual data.
+    }
+
     for (const auto & command : *ctx->commands)
     {
         if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
@@ -4803,44 +5084,13 @@ bool MutateTask::prepare()
     /// a storage-type change must fall through to the full rewrite.
     if (!is_storage_touched.any_rows_affected && !ctx->changes_storage_type)
     {
-        NameSet files_to_copy_instead_of_hardlinks;
-        auto settings_ptr = ctx->data->getSettings();
-        /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
-        /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
-        /// Example:
-        ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
-        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
-        ///                                         ^ part name don't participate in lock path
-        /// In case of full hardlink we will have:
-        ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
-        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
-        /// So we need to copy to have a new name
-        bool copy_checksumns = ctx->data->supportsReplication() && (*settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
-        if (copy_checksumns)
-            files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
-
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
 
-        IDataPartStorage::ClonePartParams clone_params
-        {
-            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
-            .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
-            .keep_metadata_version = true,
-            .temporary_data = ctx->context->getTempDataOnDisk(),
-        };
-
-        MergeTreeData::MutableDataPartPtr part;
-        scope_guard lock;
-
-        {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
-            part->getDataPartStorage().beginTransaction();
-            if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
-                part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
-            ctx->temporary_directory_lock = std::move(lock);
-        }
+        auto [part, lock] = clone_part();
+        part->getDataPartStorage().beginTransaction();
+        if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+            part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
+        ctx->temporary_directory_lock = std::move(lock);
 
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
         promise.set_value(std::move(part));
@@ -5042,6 +5292,30 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+
+    /// The TTL infos were copied from the source part above and are recalculated only when the mutation
+    /// executes TTL, which `shouldExecuteTTL` decides from the CURRENT TTLs of the table. The saved rows-TTL
+    /// fingerprint may however describe another expression: the table may have no rows TTL any more (after
+    /// `REMOVE TTL`), or a different one (after a `MODIFY TTL` that was not materialized). The mutation can
+    /// then change or rename the columns that old expression reads without touching the bounds, and a later
+    /// `MODIFY TTL` back to a shift of it would trust them. The columns the old expression reads are not
+    /// known here, so drop the fingerprint of such a part whenever the mutation does not recalculate TTL,
+    /// and rewrite `ttl.txt` to persist that (it is hardlinked from the source part otherwise). The same
+    /// applies when the mutation applies patch parts: they may update the columns of the current rows TTL
+    /// as well, and leave no outstanding patches for the fast path to notice.
+    if (ctx->execute_ttl_type == ExecuteTTLType::NONE)
+    {
+        auto & ttl_infos = ctx->new_data_part->ttl_infos;
+        const bool fingerprint_is_current = ctx->metadata_snapshot->hasRowsTTL()
+            && ttl_infos.table_ttl_expression == getRowsTTLExpressionFingerprint(ctx->metadata_snapshot->getRowsTTL());
+        if (!ttl_infos.table_ttl_expression.empty() && (!fingerprint_is_current || alter_conversions->hasPatches()))
+        {
+            ttl_infos.table_ttl_expression.clear();
+            ttl_infos.table_ttl_timezone.clear();
+            ttl_infos.has_unknown_rows_ttl_provenance = true;
+            ctx->rewrite_ttl_infos = true;
+        }
+    }
 
     if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
     {

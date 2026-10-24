@@ -34,6 +34,8 @@ public:
 private:
     const TTLUpdateField ttl_update_field;
     const String ttl_update_key;
+    /// See `ITTLAlgorithm::isResultColumnShadowed`.
+    bool result_column_shadowed = false;
 };
 
 
