@@ -1,0 +1,12 @@
+one entry with a scoped and an unscoped command, MergeTree
+1	1	777	888
+2	2	20	888
+two scoped commands in one entry do not cross-apply
+1	1	777	100
+2	2	20	888
+a mutation racing a pending scoped CLEAR COLUMN keeps the other partitions
+1	1	777	101
+2	2	20	201
+one entry with a scoped and an unscoped command, ReplicatedMergeTree
+1	1	777	888
+2	2	20	888

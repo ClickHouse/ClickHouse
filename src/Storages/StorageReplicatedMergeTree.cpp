@@ -7409,6 +7409,8 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
+            /// Pin the partitions of the scoped commands as `ID '...'` before the entry is written, see `mutate`.
+            resolvePartitionIdsOfScopedCommands(mutation_entry.commands, query_context);
 
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
@@ -8891,6 +8893,13 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// Resolve the partitions of the scoped commands (`... IN PARTITION p`) once, with the submitting
+    /// query's context, and replace each partition expression in the command text with the `ID '...'`
+    /// it resolved to. The entry written to `/mutations` then names exactly these partitions: every
+    /// replica, the block numbers allocated below, and every later reload agree on them, and none of
+    /// them evaluates the user's partition expression again.
+    resolvePartitionIdsOfScopedCommands(mutation_entry.commands, query_context);
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
@@ -9093,11 +9102,17 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {}", sync_timeout_ms);
 }
 
-QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
+QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & original_commands, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
+
+    /// Resolve the partitions of the scoped commands once, as in `mutate`: the block numbers are
+    /// allocated in the partitions they name, and the patch is produced from the same commands, so
+    /// both steps agree on the partitions without evaluating the partition expression twice.
+    MutationCommands commands = original_commands;
+    resolvePartitionIdsOfScopedCommands(commands, query_context);
 
     LightweightUpdateHolderInKeeper update_holder;
     update_holder.zookeeper = zookeeper;

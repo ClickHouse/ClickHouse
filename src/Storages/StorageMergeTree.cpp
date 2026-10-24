@@ -1226,7 +1226,15 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    /** Resolve the partitions of the commands that name some, once, here: the per-part selection of the
+      * commands to apply on the fly has to respect that scope, and a partition expression is arbitrary
+      * user SQL (`getPartitionIDFromQuery` ends in `evaluateConstantExpression`, and the expression may
+      * contain a subquery over this very table), so it must not be evaluated on the read path.
+      */
+    MutationCommands commands_with_partitions = commands;
+    resolvePartitionIdsOfScopedCommands(commands_with_partitions, query_context);
+
+    MergeTreeMutationEntry entry(std::move(commands_with_partitions), disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1458,11 +1466,18 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    /// Validate explicit IN PARTITION ids (if any) before starting mutation.
+    /// A command whose partition is not a scope (`IN PARTITION ALL`) is never resolved;
+    /// validate it here, so that it is rejected before the mutation starts.
+    /// The partitions of a scoped command are resolved exactly once, by `prepareMutationEntry`, under
+    /// the `alter_lock` below: a partition expression may depend on the table state (e.g. a subquery
+    /// over this table), so it must be evaluated after the mutation is ordered with metadata `ALTER`s.
     /// Unlike the replicated case there is no need to analyze the predicate here:
     /// parts of unaffected partitions are skipped by `canSkipMutationCommandForPart`.
     for (const auto & command : commands)
     {
+        if (command.has_partition)
+            continue;
+
         auto alter = command.ast();
         if (!alter)
             continue;
@@ -1945,6 +1960,16 @@ void StorageMergeTree::loadMutations()
 
                 MergeTreeMutationEntry entry = loadMutationEntry(disk, it->name());
                 UInt64 block_number = entry.block_number;
+
+                /** Only the command text is persisted with the entry, so resolve the partition ids of the
+                  * scoped commands again here - once, and not while a storage snapshot is built. An entry
+                  * created by this version names its partitions as `ID '...'` already, so this reads back
+                  * exactly the partitions resolved at creation and evaluates nothing. An older entry may
+                  * still carry a partition expression; it is left unresolved, because the table is not
+                  * attached yet and the expression may refer to it.
+                  */
+                resolvePartitionIdsOfScopedCommands(*entry.commands, getContext(), /* only_pinned = */ true);
+
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
@@ -2900,8 +2925,21 @@ enum class PartitionScope
 };
 
 static PartitionScope getPartitionScope(
-    const MergeTreeData & storage, const ASTAlterCommand * alter, const String & partition_id, const ContextPtr & context)
+    const MergeTreeData & storage,
+    const ASTAlterCommand * alter,
+    const std::optional<NameSet> & resolved_partition_ids,
+    const String & partition_id,
+    const ContextPtr & context)
 {
+    /// The partitions of a scoped command were resolved when the mutation entry was created or loaded,
+    /// so the scope is read off the command here instead of evaluating the partition expression again.
+    if (resolved_partition_ids)
+    {
+        return resolved_partition_ids->contains(partition_id)
+            ? PartitionScope::ThisPartition
+            : PartitionScope::OtherPartitions;
+    }
+
     if (!alter)
         return PartitionScope::Unscoped;
 
@@ -2934,7 +2972,7 @@ static bool isMaterializedByMerge(
     return std::all_of(commands.begin(), commands.end(), [&](const auto & command)
     {
         auto alter = command.ast();
-        auto scope = getPartitionScope(storage, alter.get(), partition_id, context);
+        auto scope = getPartitionScope(storage, alter.get(), command.partition_ids, partition_id, context);
 
         /// A command scoped to other partitions is not applied to this part: `MutateTask` skips it
         /// through `canSkipMutationCommandForPart` and clones the untouched part forward to the
@@ -4698,6 +4736,12 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 
         addSupportedCommands(*commands, mutation_version, result);
     }
+
+    /// A command that names a partition applies to that partition alone. Selecting the pending commands
+    /// by mutation version alone applied it to every part whose data version predates the mutation, so
+    /// while a `CLEAR COLUMN c IN PARTITION p` was pending, reads of *all* partitions answered the
+    /// column's default, and went back to the stored values once the mutation materialized.
+    filterCommandsOutsidePartition(result, part->info.getOriginalPartitionId());
 
     std::reverse(result.begin(), result.end());
     return result;

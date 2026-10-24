@@ -682,6 +682,12 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+
+        /// Drops the commands that name partitions other than @partition_id: a command with
+        /// `IN PARTITION` applies to the partitions it names alone. Reads the partition ids resolved
+        /// on the command itself (`MutationCommand::partition_ids`) and evaluates nothing.
+        void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
+
         /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
         void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
@@ -1496,6 +1502,24 @@ public:
     };
 
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
+
+    /** For every command that names partitions (`... IN PARTITION p`), resolves the partition ids into
+      * `MutationCommand::partition_ids`, so that the per-part command selection of a mutations snapshot
+      * can respect the scope without evaluating anything itself.
+      *
+      * A partition expression is arbitrary user SQL (`getPartitionIDFromQuery` ends in
+      * `evaluateConstantExpression`, and the expression may even contain a subquery over the table
+      * being read), so it is resolved exactly once - when the mutation entry is created - and never
+      * while a storage snapshot is being built. The expression is also replaced in `ast_text` with the
+      * `ID '...'` it resolved to, so the persisted entry pins the partitions: loading it again after a
+      * restart or on another replica resolves the same ids and evaluates nothing. Only the commands that
+      * have a partition are parsed, so an entry of the ordinary kind pays nothing here.
+      *
+      * With @only_pinned, which is used when a persisted entry is read back, only the commands whose
+      * partitions are all named as `ID '...'` are resolved; a partition expression of an entry created
+      * by an older version is left unresolved and is not evaluated.
+      */
+    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned = false) const;
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
