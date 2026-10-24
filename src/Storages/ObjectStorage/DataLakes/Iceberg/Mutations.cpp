@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Core/SortDescription.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -16,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
@@ -171,7 +173,17 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         delete_commands[0].type = MutationCommand::DELETE;
 
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
-        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+
+        SortDescription delete_sort_description;
+        delete_sort_description.emplace_back(block_datafile_path);
+        delete_sort_description.emplace_back(block_row_number);
+
+        auto builder = interpreter->execute();
+        builder.resize(1);
+        SortingStep::fullSortStreams(
+            builder, SortingStep::Settings(context->getSettingsRef()), delete_sort_description, /*limit_=*/0);
+
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
