@@ -87,6 +87,31 @@ struct Expected
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
 
+#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
+    /// Set by the caller, like `enable_highlighting`: statement parsers then capture the tree they
+    /// built so far before failing (see `Parsers/PartialASTCapture.h`). Only the standalone
+    /// WebAssembly parser is built with this.
+    bool enable_partial_ast_capture = false;
+    /// Outputs: the captured tree, with an `Error` node in the slot that failed, and the
+    /// `max_parsed_pos` it was captured at.
+    ASTPtr partial_ast;
+    const char * partial_ast_pos = nullptr;
+    /// The number of `SELECT`s being parsed, and inside an `INSERT`, the `WITH` written before it and
+    /// that number when the `INSERT` starts its own `SELECT`: a capture one `SELECT` deeper is a
+    /// `SELECT` of the union of the `INSERT`, which `ast` gives that `WITH`.
+    size_t partial_ast_selects = 0;
+    ASTPtr partial_ast_outer_with;
+    size_t partial_ast_outer_with_selects = 0;
+    /// A part of a statement that failed - a storage definition, a dictionary, an `ALTER` command,
+    /// the list of commands - captured the same way, with the `max_parsed_pos` it was captured at.
+    /// The capture of the node around it at that position takes it in place of an `Error`.
+    ASTPtr partial_ast_fragment;
+    const char * partial_ast_fragment_pos = nullptr;
+    /// The last element of the last list of columns and table properties that parsed, in the order
+    /// written, which `ASTColumns` does not keep: an `Error` after the list follows it.
+    ASTPtr partial_ast_last_column_element;
+#endif
+
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
     {
