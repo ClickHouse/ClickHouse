@@ -337,6 +337,72 @@ def declare_common_header_owners(root, rules):
     return edges
 
 
+def declare_function_group_headers(path, public_owner):
+    """Declare the headers read by the CPU-specific Functions compilation groups."""
+    from initial_migration.factor_build_selections import canonical_list
+    from initial_migration.prune_inherited_headers import ARCHES, Document
+
+    doc = Document(path, package="src/Functions", files=["PolygonUtils.h"])
+    source = doc.source
+    edits = []
+    providers = {
+        # PolygonUtils.h is private here, so its own includes need direct providers too.
+        "pointInPolygon.cpp": [
+            ":headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api",
+            "//src/Common:cache_policy", "//src:core_defines", "//src/Common:exception_api",
+        ],
+        "FunctionsHashingMisc.cpp": [
+            ":headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api", "//src/Common:target_specific",
+        ],
+    }
+
+    def append(node, labels):
+        return canonical_list(ast.BinOp(node, ast.Add(), ast.List([ast.Constant(label) for label in labels], ast.Load())))
+
+    for _, call in source.rules():
+        fields = {kw.arg: kw.value for kw in call.keywords}
+        name = fields["name"].value
+        if name == "headers":
+            headers = fields["hdrs"]
+            excluded = next((kw for kw in headers.keywords if kw.arg == "exclude"), None)
+            if excluded is None:
+                headers.keywords.append(ast.keyword("exclude", ast.List([ast.Constant("PolygonUtils.h")], ast.Load())))
+                edits.append((*source.span(headers), ast.unparse(headers)))
+            elif "PolygonUtils.h" not in doc.values(excluded.value, ARCHES[0]):
+                edits.append((*source.span(excluded.value), ast.unparse(append(excluded.value, ["PolygonUtils.h"]))))
+        if name not in ("clickhouse_functions_obj__compile_1", "clickhouse_functions_obj__compile_2"):
+            continue
+        srcs, deps = fields["srcs"], fields["implementation_deps"]
+        for items in (n for n in ast.walk(srcs) if isinstance(n, ast.List)):
+            files = [item.value for item in items.elts if isinstance(item, ast.Constant)]
+            if "pointInPolygon.cpp" in files and "PolygonUtils.h" not in files:
+                edits.append((*source.span(items), ast.unparse(append(items, ["PolygonUtils.h"]))))
+        additions = {}
+        for cpu in ARCHES:
+            inputs = {f.removeprefix(":") for f in doc.values(srcs, cpu)}
+            direct = doc.labels(deps, cpu) | doc.labels(fields.get("deps"), cpu)
+            owners = (public_owner(dep) for cpp, labels in providers.items() if cpp in inputs for dep in labels)
+            additions["@platforms//cpu:" + cpu] = list(dict.fromkeys(dep for dep in owners if doc.reference(dep) not in direct))
+        if not any(additions.values()):
+            continue
+        last = deps.right if isinstance(deps, ast.BinOp) else deps
+        if (isinstance(last, ast.Call) and getattr(last.func, "id", None) == "select"
+                and set(additions) <= {key.value for key in last.args[0].keys}):
+            choices = last.args[0]
+            for key, row in zip(choices.keys, choices.values):
+                if additions.get(key.value):
+                    edits.append((*source.span(row), ast.unparse(append(row, additions[key.value]))))
+        else:
+            common = os.path.commonprefix(list(additions.values()))
+            value = ast.unparse(append(deps, common)) if common else source.text(deps)
+            remaining = {cpu: labels[len(common):] for cpu, labels in additions.items()}
+            if any(remaining.values()):
+                value += " + select(" + json.dumps(remaining) + ")"
+            edits.append((*source.span(deps), value))
+    if edits:
+        path.write_text(source.rewrite(edits))
+
+
 def declare_first_party_header_deps(root):
     from initial_migration.factor_build_selections import canonical_list
     from initial_migration.measured_deps import editable_dependency_lists
@@ -349,7 +415,12 @@ def declare_first_party_header_deps(root):
     def public_owner(label):
         # The initial CMake packages own these headers before the compiled libraries are split out.
         headers = {
-            "//src/Common:parser_support_api": ["DateLUT.h"],
+            "//src/Common:parser_support_api": ["BitHelpers.h", "DateLUT.h", "NaNUtils.h", "PODArray.h", "SipHash.h", "iota.h"],
+            "//src/Common:cache_policy": ["CacheBase.h"],
+            "//src/Common:exception_api": ["Exception.h", "typeid_cast.h"],
+            "//src/Common:memory_tracking_api": ["VectorWithMemoryTracking.h"],
+            "//src/Common:target_specific": ["TargetSpecific.h"],
+            "//src:core_defines": ["Core/Defines.h"],
             "//src:column_types": [
                 "Columns/ColumnArray.h", "Columns/ColumnConst.h", "Columns/ColumnFixedString.h", "Columns/ColumnMap.h",
                 "Columns/ColumnNullable.h", "Columns/ColumnTuple.h",
@@ -376,6 +447,7 @@ def declare_first_party_header_deps(root):
             return common_list(node.right) or common_list(node.left)
         return None
 
+    declare_function_group_headers(root / "src/Functions/BUILD.bazel", public_owner)
     for (package, target, field), deps in (*FIRST_PARTY_HEADER_DEPS.items(), *declare_common_header_owners(root, rules).items()):
         path = root / package / "BUILD.bazel"
         doc = Document(path, package=package)

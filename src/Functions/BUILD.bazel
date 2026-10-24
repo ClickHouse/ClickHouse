@@ -981,7 +981,10 @@ ch_cc_library(
             "FunctionsStringDistance.cpp",
             "randomString.cpp",
         ],
-        "@platforms//cpu:aarch64": ["pointInPolygon.cpp"],
+        "@platforms//cpu:aarch64": [
+            "pointInPolygon.cpp",
+            "PolygonUtils.h",
+        ],
     }),
     clickhouse_code = True,
     copts = [
@@ -1019,7 +1022,16 @@ ch_cc_library(
         "//src/Common:current_metrics",
         "//src/Common:exception_api",
         "//src:column_types",
-    ],
+        ":headers",
+        "//src/Common:parser_support_api",
+        "//src/Common:memory_tracking_api",
+    ] + select({
+        "@platforms//cpu:x86_64": ["//src/Common:target_specific"],
+        "@platforms//cpu:aarch64": [
+            "//src/Common:cache_policy",
+            "//src:core_defines",
+        ],
+    }),
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     source_headers = True,
     alwayslink = True,
@@ -1028,7 +1040,10 @@ ch_cc_library(
 ch_cc_library(
     name = "clickhouse_functions_obj__compile_2",
     srcs = select({
-        "@platforms//cpu:x86_64": ["pointInPolygon.cpp"],
+        "@platforms//cpu:x86_64": [
+            "pointInPolygon.cpp",
+            "PolygonUtils.h",
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     arches = ["x86_64"],
@@ -1095,7 +1110,15 @@ ch_cc_library(
             "@clickhouse_zmij//:_zmij",
         ],
     }) + ["//src/Common:current_metrics"] + select({
-        "@platforms//cpu:x86_64": ["//src:column_types"],
+        "@platforms//cpu:x86_64": [
+            "//src:column_types",
+            ":headers",
+            "//src/Common:parser_support_api",
+            "//src/Common:memory_tracking_api",
+            "//src/Common:cache_policy",
+            "//src:core_defines",
+            "//src/Common:exception_api",
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     local_defines = select({
@@ -1375,6 +1398,7 @@ cc_library(
         exclude = _PRIVATE_FUNCTIONS_OBJ_0_HEADERS + [
             "CastOverloadResolver.h",
             "registerFunctions.h",
+            "PolygonUtils.h",
         ],
     ),
     deps = [

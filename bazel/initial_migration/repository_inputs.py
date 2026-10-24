@@ -160,6 +160,50 @@ def package_source_files(owner):
     return frozenset(package_sources(owner))
 
 
+def included_source_files(owner, group):
+    """Resolve literal C #includes or NASM %includes within a pinned repository."""
+    nasm = group['language'] == 'ASM_NASM'
+    prefix = owner + '/'
+    files = package_source_files(owner)
+    flags = group['copts']
+    includes = [arg.removeprefix(prefix) for flag, arg in zip(flags, flags[1:])
+                if flag in {'-I', '-isystem'} and arg.startswith(prefix)]
+    pending = [source_path(label).removeprefix(prefix) for label in group['srcs']]
+    visited, included = set(), set()
+    while pending:
+        source = pending.pop()
+        if source in visited:
+            continue
+        visited.add(source)
+        text = subprocess.check_output(
+            ['git', '-C', str(ROOT / owner), 'show', REPOSITORIES[owner]['commit'] + ':' + source],
+        ).decode()
+        for line in text.splitlines():
+            if nasm:
+                line = line.partition(';')[0].strip()
+                if not re.search(r'%\s*(?:include|depend|pathsearch)\b|\bincbin\b', line, re.I):
+                    continue
+                literal = re.fullmatch(r'''%\s*include\s+(["'])([^"']+)\1''', line, re.I)
+                directories = ['', *includes]
+            else:
+                if not re.match(r'^\s*#\s*include\b', line):
+                    continue
+                literal = re.match(r'^\s*#\s*include\s*(["<])([^">]+)[">]', line)
+                directories = [posixpath.dirname(source), *includes] if literal and literal[1] == '"' else includes
+            if not literal:
+                raise ValueError(f'{owner}/{source}: unsupported include: {line}')
+            operand = literal[2]
+            path = next((candidate for directory in directories
+                         if (candidate := posixpath.normpath(posixpath.join(directory, operand))) in files), None)
+            if path is None:
+                if nasm:
+                    raise ValueError(f'{owner}/{source}: NASM include not found: {operand}')
+                continue  # C library and compiler headers come from the toolchain.
+            included.add(path)
+            pending.append(path)
+    return sorted(included)
+
+
 @cache
 def textual_source_names(owner):
     """Names present in literal includes of a pinned repository.

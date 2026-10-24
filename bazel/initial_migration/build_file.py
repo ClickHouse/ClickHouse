@@ -11,7 +11,7 @@ from initial_migration.compact_build import compact
 from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, TEXTUAL_SOURCE_SUFFIXES, HeaderDirectory,
     configuration_owner, directory_sources, execution_path, package_source_files, package_sources,
-    repository, source_label, source_path,
+    included_source_files, repository, source_label, source_path,
     textual_source_names,
 )
 from initial_migration.simplify_globs import GlobFiles, simplify_globs, simplify_source_globs
@@ -70,7 +70,22 @@ SOURCE_HEADER_SUFFIXES = {
 # //bazel:arrow_flatbuffer_headers generates the current six outputs.
 # Keep cpp/src/generated/parquet_types.{cpp,h,tcc}, produced by Thrift.
 SOURCE_HEADER_EXCLUDES = {
-    'contrib/arrow': ('cpp/src/generated/*_generated.h',),
+    'contrib/arrow': (
+        'cpp/src/generated/*_generated.h',
+        # The migration imports Arrow headers into :arrow_headers; the checked-in
+        # BUILD publishes them through the compiled libraries. Neither SDK uses
+        # these implementation headers from disabled modules and tests.
+        'cpp/src/arrow/compute/kernels/pivot_internal.h',
+        'cpp/src/arrow/csv/*_internal.h',
+        'cpp/src/arrow/filesystem/azurefs_internal.h',
+        'cpp/src/arrow/util/bitset_stack_internal.h',
+        'cpp/src/arrow/util/bpacking_simd512_generated_internal.h',
+        'cpp/src/arrow/util/cache_internal.h',
+        'cpp/src/arrow/util/map_internal.h',
+        'cpp/src/arrow/util/print_internal.h',
+        'cpp/src/arrow/util/rle_bitmap_internal.h',
+        'cpp/src/arrow/util/stopwatch_internal.h',
+    ),
 }
 SOURCE_HEADER_TARGETS = {
     owner: (REPOSITORIES[owner]['name'].removeprefix('clickhouse_') + '_headers')
@@ -567,6 +582,15 @@ class BuildFile:
         """Separate private headers, public headers, and non-compilable inputs."""
         fields = {key: list(group.get(key, [])) for key in
                   ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps')}
+        nasm = group.get('language') == 'ASM_NASM'
+        if nasm or (self.owner == 'contrib/isa-l' and group.get('language') == 'C'):
+            headers = included_source_files(self.owner, group)
+            fields['hdrs'] = [path for path in headers if nasm or path.startswith('include/')]
+            if not nasm:
+                fields['srcs'].extend(path for path in headers if not path.startswith('include/'))
+            fields['textual_hdrs'] = []
+            fields['additional_compiler_inputs'] = []
+            return fields
         original = {}
         for field in ('hdrs', 'additional_compiler_inputs'):
             directories = [item.directory for item in fields[field] if isinstance(item, HeaderDirectory)]
@@ -577,7 +601,7 @@ class BuildFile:
                 directory for directory in sorted(set(directories))
                 if not any(directory.startswith(parent + '/') for parent in directories if parent != directory)
             ]
-        custom = group.get('cmake_runtime') or group.get('language') == 'ASM_NASM'
+        custom = group.get('cmake_runtime')
         supplied, supplied_labels, supplied_repos, _ = ((), (), frozenset(), frozenset()) if custom else self.dependency_headers(
             arch, tuple(group.get('deps', ())) + tuple(library_deps))
         for old_field, directories in original.items():
@@ -1137,16 +1161,6 @@ class BuildFile:
                                     '@clickhouse_llvm_project//:runtime_source_inputs',
                                     '@clickhouse_llvm_project//:runtime_generated_headers',
                                 ]
-                    if group.get('language') == 'ASM_NASM' and field == 'hdrs':
-                        value = list(value)
-                        for _, origin, directory in group.get('native_cxx_includes', []):
-                            if origin == 'generated' and directory == 'libcxx/include/c++/v1':
-                                value.append('@clickhouse_llvm_project//:runtime_generated_headers')
-                            elif origin == 'source' and directory in {'libcxx/include', 'libcxxabi/include'}:
-                                library = directory.split('/', 1)[0]
-                                value.append('@clickhouse_llvm_project//:runtime_' + library + '_headers')
-                            else:
-                                raise ValueError(f'{name}: unsupported NASM include {origin} {directory}')
                     if self.owner in {'contrib/krb5', 'contrib/libhdfs3'}:
                         public = ('contrib/krb5-cmake/include/com_err.h', 'contrib/krb5-cmake/include/krb5/krb5.h')
                         if field in {'hdrs', 'textual_hdrs', 'additional_compiler_inputs'}:
