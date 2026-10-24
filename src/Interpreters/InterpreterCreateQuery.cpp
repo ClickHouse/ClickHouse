@@ -44,6 +44,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -53,6 +54,7 @@
 
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
@@ -1380,6 +1382,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
+
+        for (const auto & index : properties.indices)
+            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
@@ -4078,6 +4083,17 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
+            /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Aliases
+            /// and indices inherited from `AS src` are not in this query, so they stay uncovered.
+            if (create.columns_list && create.columns_list->indices)
+            {
+                for (const auto & index : create.columns_list->indices->children)
+                {
+                    if (const auto * declaration = index->as<ASTIndexDeclaration>())
+                        checkTextIndexPreAndPostProcessorPermissions(*declaration, ColumnsDescription{}, getContext());
+                }
+            }
 
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query

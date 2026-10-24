@@ -1,0 +1,18 @@
+1. Direct call denied.
+2. Denied in a preprocessor.
+3. Denied in a postprocessor.
+4. Denied when nested under a String result.
+5. Denied via ALTER ADD INDEX.
+6. Unprivileged expression unaffected.
+1
+7. Accepted with the privilege, so not a blocklist.
+1
+8. Existing index stays readable without the privilege.
+1
+9. Unrelated ALTER does not re-authorize.
+1
+10. Neither does DETACH/ATTACH.
+1
+11. An ALIAS column hiding a privileged function is denied.
+12. So is an alias renamed by an earlier command of the same ALTER.
+13. Redeclaring with a privileged function is denied.
