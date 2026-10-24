@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <algorithm>
 
 
@@ -117,21 +118,6 @@ namespace
             default:
                 return nullptr;
         }
-    }
-
-    /// Whether the series of the node come from one metric, so they stay different after the metric name is dropped.
-    bool hasSingleMetricName(const Node * node)
-    {
-        if (node->node_type == NodeType::InstantSelector)
-        {
-            const auto & matchers = static_cast<const PrometheusQueryTree::InstantSelector *>(node)->matchers;
-            return std::ranges::any_of(matchers, [](const Matcher & matcher)
-            {
-                return matcher.label_name == kMetricName && matcher.matcher_type == PrometheusQueryTree::MatcherType::EQ;
-            });
-        }
-        const auto * argument = getLabelPreservingArgument(node);
-        return argument && hasSingleMetricName(argument);
     }
 
     /// Whether filtering this side of the operator can't hide an error Prometheus gives for duplicate series.
