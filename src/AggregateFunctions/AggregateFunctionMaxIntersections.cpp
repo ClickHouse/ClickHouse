@@ -254,7 +254,7 @@ SELECT maxIntersections(start, end) FROM my_events;
         {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Count, name, argument_types, parameters);
-        }, documentation});
+        }, documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 
     FunctionDocumentation::Description position_description = R"(
 Aggregate function that calculates the positions of the occurrences of the [`maxIntersections`](/reference/functions/aggregate-functions/maxIntersections) function.
@@ -301,7 +301,7 @@ SELECT maxIntersectionsPosition(start, end) FROM my_events;
         {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return createAggregateFunctionMaxIntersections(AggregateFunctionIntersectionsKind::Position, name, argument_types, parameters);
-        }, position_documentation});
+        }, position_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 }
 
 }

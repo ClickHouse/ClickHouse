@@ -102,6 +102,13 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    /// The positions of the `Variant` arguments that the function, or the outermost combinator, does not support
+    /// according to `AggregateFunctionProperties::variant_arguments_conversion` and `VariantArgumentsOfNestedFunction`.
+    /// They are converted by `AggregateFunctionVariantAdapter`. If `including_nested` is true, the arguments that are converted
+    /// by the nested function of a combinator with `VariantArgumentsOfNestedFunction::Forwarded` are included as well.
+    VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(
+        const String & name, NullsAction action, const DataTypes & argument_types, bool including_nested) const;
+
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,

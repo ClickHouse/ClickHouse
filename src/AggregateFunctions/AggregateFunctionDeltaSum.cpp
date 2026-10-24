@@ -212,7 +212,7 @@ SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
 
     factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }
