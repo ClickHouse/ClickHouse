@@ -494,6 +494,7 @@ public:
 
         filter_actions_dag = other.filter_actions_dag;
         query_info.filter_actions_dag = filter_actions_dag;
+        filter_actions_dag_conditions = other.filter_actions_dag_conditions;
 
         limit = other.limit;
 
@@ -643,6 +644,11 @@ public:
             top_k_filter_info->dynamic_filter_pending = false;
     }
 
+    bool filterActionsDAGWasBuiltFrom(const String & filter_column_name) const
+    {
+        return filter_actions_dag_conditions.contains(filter_column_name);
+    }
+
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
     /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
     /// `createLocalParallelReplicasReadingStep` do the same for the steps they rebuild internally).
@@ -787,6 +793,9 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Names of the filter conditions `filter_actions_dag` was built from, as of the call that built it.
+    std::unordered_set<String> filter_actions_dag_conditions;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
