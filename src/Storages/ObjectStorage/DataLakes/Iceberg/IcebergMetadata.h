@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <optional>
+#include <unordered_set>
 #include <base/defines.h>
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -218,7 +219,11 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
-    void drop(ContextPtr context) override;
+    void drop(
+        ContextPtr context,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageID & storage_id,
+        DropCleanupPolicy policy) override;
 
     DataLakeMetadataPtr cloneWithNewSettings(StorageObjectStorageConfigurationPtr configuration, ContextPtr context) const override;
 
@@ -274,6 +279,9 @@ private:
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
     ObjectIterator prepared_iterator;
+    /// Reused by a retried drop(): the metadata listing these files may be partly deleted by then.
+    std::optional<std::unordered_set<String>> files_to_drop;
+    std::unordered_set<String> data_files_to_drop;
 
     mutable std::mutex cached_latest_metadata_mutex;
     mutable std::optional<Iceberg::MetadataFileWithInfo> cached_latest_metadata TSA_GUARDED_BY(cached_latest_metadata_mutex);

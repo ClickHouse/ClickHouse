@@ -166,14 +166,14 @@ ReachableFilesResult collectReachableFiles(
     if (!metadata->has(f_snapshots))
     {
         LOG_INFO(log, "No snapshots in metadata, reachable set contains only metadata-root files");
-        return {std::move(reachable), version, metadata_path};
+        return {std::move(reachable), version, metadata_path, {}};
     }
 
     auto snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     if (!snapshots || snapshots->size() == 0)
     {
         LOG_INFO(log, "Empty snapshots array, reachable set contains only metadata-root files");
-        return {std::move(reachable), version, metadata_path};
+        return {std::move(reachable), version, metadata_path, {}};
     }
 
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
@@ -185,11 +185,13 @@ ReachableFilesResult collectReachableFiles(
         reachable.insert(resolver.resolve(path));
     for (const auto & path : snapshot_files.manifest_paths)
         reachable.insert(resolver.resolve(path));
+    std::unordered_set<String> data_files;
     for (const auto & path : snapshot_files.data_file_paths)
-        reachable.insert(resolver.resolve(path));
+        data_files.insert(resolver.resolve(path));
+    reachable.insert(data_files.begin(), data_files.end());
 
     LOG_INFO(log, "Collected {} reachable files from metadata graph", reachable.size());
-    return {std::move(reachable), version, metadata_path};
+    return {std::move(reachable), version, metadata_path, std::move(data_files)};
 }
 
 }

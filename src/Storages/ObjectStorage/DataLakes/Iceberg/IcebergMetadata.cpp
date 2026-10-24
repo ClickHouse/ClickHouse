@@ -35,6 +35,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
@@ -85,6 +86,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
@@ -131,6 +133,13 @@ extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int FILE_ALREADY_EXISTS;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_drop_metadata_anchor_fail[];
+extern const char iceberg_drop_first_data_delete_fail[];
 }
 
 namespace Setting
@@ -1123,7 +1132,13 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        /// A `version-hint.text` left behind by a failed DROP also occupies the path, its write below would fail.
+        std::vector<String> metadata_files = listFiles(
+            *object_storage,
+            configuration_ptr->getPathForRead().path,
+            "metadata",
+            [](const RelativePathWithMetadata & file)
+            { return file.relative_path.ends_with(".metadata.json") || file.relative_path.ends_with("metadata/version-hint.text"); });
         if (!metadata_files.empty())
         {
             if (if_not_exists)
@@ -2102,27 +2117,201 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
+void IcebergMetadata::drop(
+    ContextPtr context, const std::shared_ptr<DataLake::ICatalog> & catalog, const StorageID & storage_id, DropCleanupPolicy policy)
 {
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        /// Skipped rather than refused: this runs after the table is already marked as dropped, so
-        /// throwing here only makes `DatabaseCatalog` retry the drop forever.
-        if (persistent_components.table_root_was_derived)
+        dropFromCatalog(context, catalog, storage_id);
+        return;
+    }
+
+    /// Skipped rather than refused: throwing would only make `DatabaseCatalog` retry the drop forever.
+    if (persistent_components.table_root_was_derived)
+    {
+        LOG_WARNING(
+            log,
+            "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
+            "other tables. Drop it while querying the table directory itself to delete the data.",
+            persistent_components.path_resolver.getTableRoot(),
+            persistent_components.table_path);
+        dropFromCatalog(context, catalog, storage_id);
+        return;
+    }
+
+    bool any_object_deleted = false;
+
+    auto should_swallow = [&](bool after_catalog_drop) -> bool
+    {
+        switch (policy)
+        {
+            case DropCleanupPolicy::Reattaching:
+                return any_object_deleted;
+            case DropCleanupPolicy::AsyncRetry:
+                return false;
+            case DropCleanupPolicy::CatalogRetry:
+                return after_catalog_drop;
+        }
+        return false;
+    };
+
+    auto remove_object = [&](const String & file, const char * kind, bool after_catalog_drop, const char * inject_failpoint)
+    {
+        /// Some listed files may not exist, and deleting nothing is not a deleted file.
+        if (policy == DropCleanupPolicy::Reattaching && !any_object_deleted && !object_storage->exists(StoredObject(file)))
+            return;
+        try
+        {
+            if (inject_failpoint)
+                fiu_do_on(inject_failpoint, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop {} deletion", kind);
+                });
+            LOG_DEBUG(log, "Deleting Iceberg {} file on drop: {}", kind, file);
+            object_storage->removeObjectIfExists(StoredObject(file));
+            any_object_deleted = true;
+        }
+        catch (...)
+        {
+            /// A delete can take effect and still throw.
+            if (policy == DropCleanupPolicy::Reattaching && !any_object_deleted)
+            {
+                try
+                {
+                    any_object_deleted = !object_storage->exists(StoredObject(file));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
+            }
+            if (!should_swallow(after_catalog_drop))
+                throw;
+            LOG_WARNING(
+                log,
+                "Best-effort Iceberg drop: ignoring failure to delete {} file {}: {}",
+                kind,
+                file,
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
+    };
+
+    const bool collect_files = policy != DropCleanupPolicy::AsyncRetry || !files_to_drop;
+
+    /// Another replica of a Replicated database can have deleted the table, and another table can be at its
+    /// location since. Not read through the cache: that table can reuse the file names of this one.
+    if (!catalog)
+    {
+        bool own_metadata = false;
+        bool other_metadata = false;
+        for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
+        {
+            auto metadata = getMetadataJSONObject(
+                path, object_storage, /* metadata_cache */ nullptr, context, log,
+                getCompressionMethodFromMetadataFile(path), std::nullopt);
+            std::optional<String> uuid;
+            if (metadata->has(Iceberg::f_table_uuid))
+                uuid = normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid));
+            if (uuid == persistent_components.table_uuid)
+            {
+                own_metadata = true;
+                break;
+            }
+            other_metadata = true;
+        }
+        /// A retry still deletes what is left of this table when no other table is there.
+        if (!own_metadata && (collect_files || other_metadata))
+        {
+            LOG_INFO(log, "No metadata file of the Iceberg table is left at '{}', nothing to delete", persistent_components.table_path);
+            dropFromCatalog(context, catalog, storage_id);
+            return;
+        }
+    }
+
+    /// Only the files of this table: other tables can share its location.
+    if (collect_files)
+    {
+        /// Not read through the cache either, for the same reason.
+        auto uncached_components = persistent_components;
+        uncached_components.metadata_cache = nullptr;
+        auto reachable = Iceberg::collectReachableFiles(
+            object_storage, uncached_components, *data_lake_settings, context, log, catalog, storage_id.getTableName());
+
+        auto read_metadata = [&](const String & path)
+        {
+            return getMetadataJSONObject(
+                path, object_storage, /* metadata_cache */ nullptr, context, log,
+                getCompressionMethodFromMetadataFile(path), persistent_components.table_uuid);
+        };
+        auto root = read_metadata(reachable.metadata_path);
+        std::optional<String> root_uuid;
+        if (root->has(Iceberg::f_table_uuid))
+            root_uuid = normalizeUuid(root->getValue<String>(Iceberg::f_table_uuid));
+        /// The latest metadata file at a location shared with other tables can be theirs.
+        if (!catalog && root_uuid != persistent_components.table_uuid)
         {
             LOG_WARNING(
                 log,
-                "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
-                "other tables. Drop it while querying the table directory itself to delete the data.",
-                persistent_components.path_resolver.getTableRoot(),
-                persistent_components.table_path);
+                "Keeping the files of the Iceberg table at '{}': its latest metadata file '{}' belongs to another table",
+                persistent_components.table_path,
+                reachable.metadata_path);
+            dropFromCatalog(context, catalog, storage_id);
             return;
         }
-
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
-        for (const auto & file : files)
-            object_storage->removeObjectIfExists(StoredObject(file));
+        /// `metadata-log` can miss versions of the table, e.g. the one written by `CREATE`.
+        bool other_metadata = false;
+        for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
+        {
+            if (reachable.files.contains(path))
+                continue;
+            if (root_uuid)
+            {
+                auto metadata = read_metadata(path);
+                if (metadata->has(Iceberg::f_table_uuid) && normalizeUuid(metadata->getValue<String>(Iceberg::f_table_uuid)) == *root_uuid)
+                {
+                    reachable.files.insert(path);
+                    continue;
+                }
+            }
+            other_metadata = true;
+        }
+        /// The version hint belongs to the location: a table whose metadata stays there can read through it.
+        if (other_metadata)
+            reachable.files.erase(
+                std::filesystem::path(persistent_components.path_resolver.getTableRoot()) / "metadata" / "version-hint.text");
+        files_to_drop = std::move(reachable.files);
+        data_files_to_drop = std::move(reachable.data_files);
     }
+    const auto & files = *files_to_drop;
+
+    /// Everything but the data files goes after the catalog drop: a retried DROP resolves the table from it.
+    std::vector<String> metadata_files;
+    for (const auto & file : files)
+    {
+        if (data_files_to_drop.contains(file))
+            remove_object(file, "data", /* after_catalog_drop */ false, FailPoints::iceberg_drop_first_data_delete_fail);
+        else
+            metadata_files.push_back(file);
+    }
+
+    if (should_swallow(/* after_catalog_drop */ false))
+    {
+        try
+        {
+            dropFromCatalog(context, catalog, storage_id);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Best-effort Iceberg drop: ignoring failure to remove the table from the catalog: {}",
+                getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
+    }
+    else
+        dropFromCatalog(context, catalog, storage_id);
+
+    for (const auto & file : metadata_files)
+        remove_object(file, "metadata", /* after_catalog_drop */ true, FailPoints::iceberg_drop_metadata_anchor_fail);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const

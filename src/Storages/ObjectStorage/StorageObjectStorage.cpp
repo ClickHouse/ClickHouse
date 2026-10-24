@@ -17,6 +17,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -81,6 +82,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace FailPoints
@@ -1115,6 +1117,16 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+std::shared_ptr<const Settings> StorageObjectStorage::getDropQuerySettings(const ContextPtr & query_context)
+{
+    /// All settings, the Iceberg metadata init in drop() reads more than `iceberg_delete_data_on_drop`.
+    auto settings = query_context->getSettingsCopy();
+    /// Only the initial run of a `Replicated` database's DDL creates the Iceberg table, so only it deletes the files.
+    if (isSecondaryDDLReplay(query_context))
+        settings[Setting::iceberg_delete_data_on_drop] = false;
+    return std::make_shared<const Settings>(std::move(settings));
+}
+
 void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
 {
     /// Dropping a data lake may delete its data with the client it holds: in the query, or later in the background with
@@ -1123,28 +1135,70 @@ void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) cons
         && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
             || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
         checkSessionMayUseServerIdentity(*object_storage, query_context);
+
+    drop_query_settings = getDropQuerySettings(query_context);
 }
 
 void StorageObjectStorage::drop()
 {
-    dropTable(configuration, catalog, storage_id);
+    dropImpl(configuration, object_storage, catalog, getStorageID(), drop_query_settings);
 }
 
-void StorageObjectStorage::dropTable(
+void StorageObjectStorage::dropImpl(
     const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const StorageID & storage_id)
+    const StorageID & storage_id,
+    const std::shared_ptr<const Settings> & query_settings)
 {
-    /// A table of an `Atomic` database is dropped by a background thread, which has no query context.
+    /// A table of an `Atomic` database is dropped by a background thread, which has no query context,
+    /// so the settings of the `DROP` query are captured in `checkTableCanBeDropped`.
     /// A table of a `DataLakeCatalog` database is dropped inside the query, so the query settings apply.
-    auto query_context = CurrentThread::tryGetQueryContext();
-    auto drop_context = query_context ? query_context : Context::getGlobalContextInstance();
-    if (catalog)
+    ContextPtr drop_context;
+    if (query_settings)
     {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        auto context_with_settings = Context::createCopy(Context::getGlobalContextInstance());
+        context_with_settings->setSettings(*query_settings);
+        drop_context = context_with_settings;
     }
-    configuration->drop(drop_context);
+    else if (auto query_context = CurrentThread::tryGetQueryContext())
+        drop_context = query_context;
+    else
+        drop_context = Context::getGlobalContextInstance();
+    const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+
+    /// The catalog purges the files itself, or cannot drop the table and must throw before any file is deleted.
+    if (catalog && !catalog->keepsFilesOnDrop())
+    {
+        IDataLakeMetadata::dropFromCatalog(drop_context, catalog, storage_id);
+        return;
+    }
+
+    /// A table from a DataLakeCatalog database or one not read since it was attached has no metadata loaded yet.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
+    {
+        try
+        {
+            configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+            LOG_INFO(
+                getLogger("StorageObjectStorage"),
+                "No metadata file of the Iceberg table {} is left, nothing to delete",
+                storage_id.getNameForLogs());
+        }
+    }
+
+    /// Only Atomic/Replicated databases give a non-temporary table a UUID.
+    DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
+    if (catalog == nullptr)
+        policy = (storage_id.hasUUID() && storage_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+            ? DropCleanupPolicy::AsyncRetry
+            : DropCleanupPolicy::Reattaching;
+    configuration->drop(drop_context, catalog, storage_id, policy);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

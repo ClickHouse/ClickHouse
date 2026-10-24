@@ -372,9 +372,14 @@ Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, co
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, getStorageID());
 }
 
+void StorageObjectStorageCluster::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    drop_query_settings = StorageObjectStorage::getDropQuerySettings(query_context);
+}
+
 void StorageObjectStorageCluster::drop()
 {
-    StorageObjectStorage::dropTable(configuration, catalog, getStorageID());
+    StorageObjectStorage::dropImpl(configuration, object_storage, catalog, getStorageID(), drop_query_settings);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
