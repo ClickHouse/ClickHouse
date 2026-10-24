@@ -2352,6 +2352,8 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.column_name,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
+    if (settings[Setting::extremes])
+        filter_step->setSkipExtremes();
     appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
     query_plan.addStep(std::move(filter_step));
 }

@@ -38,6 +38,10 @@ public:
     bool isLeft() const { return array_join.is_left; }
     bool isUnaligned() const { return is_unaligned; }
 
+    /// `arrayJoin(emptyArrayToSingle(x))` is `LEFT ARRAY JOIN x`: make the output `name` of `before` return `x`
+    /// for the join, and return whether it did.
+    static bool unpadArrayJoinArgument(ActionsDAG & before, const String & name);
+
     /// the step as arrayJoin(col), or arrayJoin(emptyArrayToSingle(col)) for LEFT, empty if it has no such form
     std::optional<ActionsDAG> toActionsDAG() const;
 

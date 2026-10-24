@@ -32,6 +32,8 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , skip_extremes(other.skip_extremes)
+        , array_join_lowering(other.array_join_lowering)
     {}
 
     String getName() const override { return "Filter"; }
@@ -44,6 +46,30 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
+
+    /// The extremes stream passes through without the predicate being evaluated or applied.
+    /// Only for a step whose actions compute nothing besides the predicate, like the result filter.
+    void setSkipExtremes() { skip_extremes = true; }
+    bool skipsExtremes() const { return skip_extremes; }
+
+    /// How a step that skips the extremes evaluates its `arrayJoin` functions on the main stream: as consecutive
+    /// expression, array join and filter transforms, the way they run after the `lowerArrayJoinFunction` optimization.
+    /// The optimization does not lower such a step into separate plan steps, because those would not skip the extremes.
+    struct ArrayJoinLowering
+    {
+        size_t max_block_size = 0;
+        bool enable_lazy_columns_replication = false;
+        bool nondeterministic_before_expansion = false;
+    };
+    void setArrayJoinLowering(ArrayJoinLowering lowering) { array_join_lowering = lowering; }
+    const std::optional<ArrayJoinLowering> & getArrayJoinLowering() const { return array_join_lowering; }
+
+    /// Copy `skipsExtremes` and `getArrayJoinLowering` to a step made from this one.
+    void copyExtremesHandlingTo(FilterStep & other) const
+    {
+        other.skip_extremes = skip_extremes;
+        other.array_join_lowering = array_join_lowering;
+    }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
     bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
@@ -101,6 +127,11 @@ public:
 private:
     void updateOutputHeader() override;
 
+    void addFilterTransforms(
+        QueryPipelineBuilder & pipeline, ActionsDAG dag, const String & filter_name, bool remove_filter,
+        const std::optional<std::pair<UInt64, String>> & cache_condition, const BuildQueryPipelineSettings & settings) const;
+    void addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings);
+
     /// Everything removeUnusedColumns needs to know, computed without touching the DAG.
     /// Shared by removeUnusedColumns, getUnneededColumns and pruneDAGOutputsByPosition so their answers cannot differ.
     struct UnneededColumnsPlan
@@ -151,6 +182,8 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    bool skip_extremes = false;
+    std::optional<ArrayJoinLowering> array_join_lowering;
 };
 
 }

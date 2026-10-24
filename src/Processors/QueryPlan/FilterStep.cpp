@@ -7,18 +7,23 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -500,19 +505,90 @@ FilterStep::FilterStep(
     actions_dag.removeUnusedActions(false, false);
 }
 
-void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+/// Stream headers must match, constness included, and a lambda type has no default value.
+static const ActionsDAG::Node * addNodeWithoutPredicate(ActionsDAG & dag, const ActionsDAG::Node * node, const ColumnPtr & stream_column)
+{
+    const auto * source = node;
+    while (source->type == ActionsDAG::ActionType::ALIAS)
+        source = source->children.front();
+
+    if (source->type == ActionsDAG::ActionType::INPUT || source->column)
+        return node;
+
+    if (const auto * stream_constant = stream_column ? typeid_cast<const ColumnConst *>(stream_column.get()) : nullptr)
+        return &dag.addColumn(ColumnConst::create(stream_constant->getDataColumnPtr(), 0), node->result_type, node->result_name);
+
+    if (typeid_cast<const DataTypeFunction *>(node->result_type.get()))
+    {
+        ActionsDAG::NodeRawConstPtrs children;
+        for (const auto * child : source->children)
+            children.push_back(addNodeWithoutPredicate(dag, child, nullptr));
+        return &dag.addFunction(source->function_base, std::move(children), node->result_name);
+    }
+
+    return &dag.materializeNode(
+        dag.addColumn(node->result_type->createColumnConstWithDefaultValue(0), node->result_type, node->result_name));
+}
+
+/// `stream_header` is `dag.updateHeader` of the stream's header, so it starts with the outputs in their order.
+static ExpressionActionsPtr makeActionsWithoutPredicate(
+    const ActionsDAG & dag, const String & filter_column_name, bool remove_filter_column, const Block & stream_header,
+    const ExpressionActionsSettings & settings)
+{
+    auto result = dag.clone();
+    auto & outputs = result.getOutputs();
+    for (size_t i = 0; i < outputs.size(); ++i)
+        outputs[i] = addNodeWithoutPredicate(result, outputs[i], stream_header.getByPosition(i).column);
+
+    if (remove_filter_column)
+        outputs.erase(std::ranges::find(outputs, &result.findInOutputs(filter_column_name)));
+
+    result.removeUnusedActions(/*allow_remove_inputs=*/ false, /*allow_constant_folding=*/ false);
+
+    /// removeUnusedActions keeps every arrayJoin, also one that only the predicate reads.
+    std::unordered_set<const ActionsDAG::Node *> array_joins;
+    for (const auto & node : result.getNodes())
+        if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            array_joins.insert(&node);
+    result.removeNodes(array_joins);
+
+    return std::make_shared<ExpressionActions>(std::move(result), settings);
+}
+
+/// The extremes rows pass an array join unexpanded, with a default element in place of the array.
+static ExpressionActionsPtr makeArrayJoinWithoutExpansion(
+    const Block & stream_header, const Block & joined_header, const String & array_join_column_name,
+    const ExpressionActionsSettings & settings)
+{
+    ActionsDAG dag(stream_header.getColumnsWithTypeAndName());
+    const auto & joined = joined_header.getByName(array_join_column_name);
+    for (auto & output : dag.getOutputs())
+    {
+        if (output->result_name != array_join_column_name)
+            continue;
+        if (const auto * joined_constant = typeid_cast<const ColumnConst *>(joined.column.get()))
+            output = &dag.addColumn(ColumnConst::create(joined_constant->getDataColumnPtr(), 0), joined.type, joined.name);
+        else
+            output = &dag.materializeNode(dag.addColumn(joined.type->createColumnConstWithDefaultValue(0), joined.type, joined.name));
+    }
+    return std::make_shared<ExpressionActions>(std::move(dag), settings);
+}
+
+void FilterStep::addFilterTransforms(
+    QueryPipelineBuilder & pipeline, ActionsDAG dag, const String & filter_name, bool remove_filter,
+    const std::optional<std::pair<UInt64, String>> & cache_condition, const BuildQueryPipelineSettings & settings) const
 {
     std::vector<ActionsAndName> and_atoms;
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
     /// The atoms are reordered only with short-circuit evaluation, like the arguments of `and`.
-    if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
+    if (settings.enable_multiple_filters_transforms_for_and_chain && !dag.hasStatefulFunctions())
     {
         const auto & actions_settings = settings.getActionsSettings();
         bool reorder = actions_settings.short_circuit_function_evaluation != ShortCircuitFunctionEvaluation::DISABLE
             && actions_settings.short_circuit_function_evaluation_reorder_arguments;
-        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name, reorder);
+        and_atoms = splitAndChainIntoMultipleFilters(dag, filter_name, reorder);
     }
 
     /// All streams of the pipe have the same header, so compute the transformed header once
@@ -522,23 +598,88 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
         auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
-        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
+            if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+                return std::make_shared<ExpressionTransform>(
+                    header, makeActionsWithoutPredicate(expression->getActionsDAG(), and_atom.name, true, *transformed_header, settings.getActionsSettings()));
+
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
 
             /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, condition);
+            return std::make_shared<FilterTransform>(header, transformed_header, expression, and_atom.name, true, on_totals, nullptr, cache_condition);
         });
     }
 
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
 
     auto transformed_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
+        if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+            return std::make_shared<ExpressionTransform>(
+                header, makeActionsWithoutPredicate(expression->getActionsDAG(), filter_name, remove_filter, *transformed_header, settings.getActionsSettings()));
+
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
+        return std::make_shared<FilterTransform>(header, transformed_header, expression, filter_name, remove_filter, on_totals, nullptr, cache_condition);
     });
+}
+
+void FilterStep::addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+{
+    /// The conjuncts that do not depend on the joins are pushed down below them, as `filterPushDown` would do.
+    if (remove_filter_column)
+    {
+        auto pushed = actions_dag.splitActionsForFilterPushDown(
+            filter_column_name, remove_filter_column, pipeline.getHeader().getNames(), pipeline.getHeader().getColumnsWithTypeAndName(),
+            /*allow_non_deterministic_functions=*/ false);
+        if (pushed)
+        {
+            String pushed_filter_name = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
+            addFilterTransforms(pipeline, std::move(pushed->dag), pushed_filter_name, pushed->remove_filter, std::nullopt, settings);
+        }
+    }
+
+    while (auto extracted = actions_dag.extractFirstArrayJoin(array_join_lowering->nondeterministic_before_expansion))
+    {
+        bool is_left = ArrayJoinStep::unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
+
+        auto before = std::make_shared<ExpressionActions>(std::move(extracted->before), settings.getActionsSettings());
+        auto before_header = std::make_shared<const Block>(before->getActionsDAG().updateHeader(pipeline.getHeader()));
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+                return std::make_shared<ExpressionTransform>(
+                    header, makeActionsWithoutPredicate(before->getActionsDAG(), {}, false, *before_header, settings.getActionsSettings()));
+            return std::make_shared<ExpressionTransform>(header, before_header, before);
+        });
+
+        Names array_join_columns{extracted->array_join_column_name};
+        auto array_join_action = std::make_shared<ArrayJoinAction>(
+            array_join_columns, is_left, /*is_unaligned=*/ false,
+            array_join_lowering->max_block_size, array_join_lowering->enable_lazy_columns_replication);
+        auto joined_header = ArrayJoinTransform::transformHeader(pipeline.getHeader(), array_join_columns);
+        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+                return std::make_shared<ExpressionTransform>(
+                    header, makeArrayJoinWithoutExpansion(*header, joined_header, extracted->array_join_column_name, settings.getActionsSettings()));
+            return std::make_shared<ArrayJoinTransform>(header, array_join_action, stream_type == QueryPipelineBuilder::StreamType::Totals);
+        });
+
+        actions_dag = std::move(extracted->after);
+    }
+}
+
+void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+{
+    /// Evaluate the `arrayJoin` functions in the same order as after the `lowerArrayJoinFunction` optimization,
+    /// so the main stream does not depend on whether the extremes are enabled.
+    if (array_join_lowering && actions_dag.hasArrayJoin()
+        && !(array_join_lowering->nondeterministic_before_expansion && actions_dag.hasStatefulFunctions()))
+        addLoweredArrayJoins(pipeline, settings);
+
+    addFilterTransforms(pipeline, std::move(actions_dag), filter_column_name, remove_filter_column, condition, settings);
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
