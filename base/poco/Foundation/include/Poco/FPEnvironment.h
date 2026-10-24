@@ -27,7 +27,10 @@
 #    include "Poco/FPEnvironment_DEC.h"
 #elif defined(sun) || defined(__sun)
 #    include "Poco/FPEnvironment_SUN.h"
-#elif defined(POCO_OS_FAMILY_UNIX)
+#elif defined(POCO_OS_FAMILY_UNIX) || defined(POCO_OS_FAMILY_WINDOWS)
+/// Upstream Poco uses `FPEnvironment_WIN32` (`_controlfp`) on Windows, but mingw-w64
+/// provides a real C99 <fenv.h>, so the portable implementation works there and is the
+/// only one this fork carries.
 #    include "Poco/FPEnvironment_C99.h"
 #else
 #    include "Poco/FPEnvironment_DUMMY.h"

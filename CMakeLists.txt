@@ -268,6 +268,12 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
+# The option works by putting `-g1` on those modules, which is a *reduction* only when the build
+# has fuller debug info to begin with. Where there is none it is an increase, so it is off there.
+if (DISABLE_ALL_DEBUG_SYMBOLS OR OS_WINDOWS)
+    set (OMIT_HEAVY_DEBUG_SYMBOLS OFF)
+endif ()
+
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
@@ -376,7 +382,9 @@ option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
 if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
-    if (LINKER_NAME MATCHES "lld")
+    # lld's MinGW driver does not implement `--time-trace` (only the ELF driver does),
+    # so the Windows link would fail with "unknown argument".
+    if (LINKER_NAME MATCHES "lld" AND NOT OS_WINDOWS)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
         set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
     endif ()
@@ -437,9 +445,11 @@ endif()
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
-# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, SunOS, WebAssembly and LoongArch.
+# Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, SunOS, Windows, WebAssembly and
+# LoongArch. Windows does not need it: there the compiler already calls `__chkstk` to probe every page
+# of a frame larger than one.
 # Note: it's not enabled on RISC-V64 due to bugs in LLVM.
-if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
+if (NOT OS_DARWIN AND NOT OS_SUNOS AND NOT OS_WINDOWS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
@@ -487,6 +497,12 @@ endif ()
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
+elseif (OS_WINDOWS)
+    # No debug info in the PE image. A PE image cannot exceed 4 GiB - the field that holds its size
+    # is 32 bits - and DWARF for a binary this large runs to several times that on its own; PE also
+    # has no equivalent of the `.gnu_debuglink` arrangement the Linux packages use to carry it in a
+    # separate file. A crash therefore symbolizes to module and offset rather than to file and line.
+    set (DEBUG_INFO_FLAGS "-g0")
 endif()
 
 if (OS_DARWIN)
@@ -495,7 +511,9 @@ if (OS_DARWIN)
 endif()
 
 # generate ranges for fast "addr2line" search
-if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+# Not when there is no debug info to index: `-gdwarf-aranges` is in the `-g` family and puts the
+# debug level back to its default, undoing an earlier `-g0`.
+if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" AND NOT DEBUG_INFO_FLAGS STREQUAL "-g0")
     # NOTE: that clang has a bug because of it does not emit .debug_aranges
     # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
@@ -711,6 +729,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WINDOWS)
+    include(cmake/windows/default_libs.cmake)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
 endif ()
@@ -757,7 +777,8 @@ endif ()
 # and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
 # The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
-if (NOT OS_DARWIN)
+# Not on Windows either: '-z' is an ELF concept, and the PE/COFF driver of lld rejects it outright.
+if (NOT OS_DARWIN AND NOT OS_WINDOWS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,now")
     if (NOT LINKER_IS_SOLARIS)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro")
@@ -765,9 +786,10 @@ if (NOT OS_DARWIN)
 endif ()
 
 # Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
-# Not on Darwin (no '-z' options in ld64) and not on WebAssembly (no ELF segments).
+# Not on Darwin (no '-z' options in ld64), not on WebAssembly (no ELF segments), and not on Windows
+# (the PE/COFF driver of lld rejects '-z').
 # The native SunOS linker does not support '-z separate-code'.
-if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT OS_WINDOWS AND NOT LINKER_IS_SOLARIS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 
@@ -775,7 +797,7 @@ endif ()
 # their own groups instead of next to their translation units all over `.text`. Startup then reads a few
 # hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
 # binary is not in the page cache. Supported by lld and mold; same exclusions as above.
-if (NOT OS_DARWIN AND NOT OS_WASM)
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT OS_WINDOWS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,keep-text-section-prefix")
 endif ()
 
@@ -1041,4 +1063,11 @@ if (NATIVE_BUILD_TARGETS
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
+endif ()
+
+if (OS_WINDOWS)
+    # Defines the `clickhouse-windows-ported` aggregate target that CI builds while the
+    # Windows port is in progress. Must come after every `add_subdirectory` so that it can
+    # see the targets.
+    include (cmake/windows/ported_targets.cmake)
 endif ()

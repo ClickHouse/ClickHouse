@@ -135,6 +135,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./packages",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
+        # `Build (amd_windows)` builds and runs the Windows self-tests.
+        "./utils/windows-selftest",
     ],
     exclude_paths=test_data_submodules,
     with_git_submodules=True,
@@ -702,6 +704,18 @@ class JobConfigs:
             # The ~94 GiB of build output also does not fit the ~135 GiB free on
             # `amd-large` (`m7i.8xlarge`).
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
+        ),
+        Job.ParamSet(
+            # No artifact: `clickhouse.exe` is not something to hand to anyone yet. See
+            # docs/resources/develop-contribute/build/build-cross-windows.mdx.
+            #
+            # An `amd64` runner, unlike every other cross-build here, because this job also runs
+            # the binary it produced (see `build_clickhouse.py`): an `x86_64` PE needs an
+            # `x86_64` host, and Wine on ARM ships no `x86` emulator. Cross-compiling is
+            # arch-independent, so nothing else about the job changes.
+            parameter=BuildTypes.AMD_WINDOWS,
+            provides=[],
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
     # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and

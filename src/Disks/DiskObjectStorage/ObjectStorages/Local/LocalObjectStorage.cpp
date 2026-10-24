@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <array>
@@ -11,6 +12,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFile.h>
@@ -56,6 +58,7 @@ namespace ErrorCodes
     extern const int STALE_VERSION;
     extern const int SYSTEM_ERROR;
     extern const int PATH_ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -65,14 +68,12 @@ struct timespec getMTime(const struct stat & file_stat)
 {
 #if defined(OS_DARWIN)
     return file_stat.st_mtimespec;
+#elif defined(OS_WINDOWS)
+    /// `struct stat` there keeps whole seconds only.
+    return timespec{.tv_sec = file_stat.st_mtime, .tv_nsec = 0};
 #else
     return file_stat.st_mtim;
 #endif
-}
-
-bool isLaterThan(const struct timespec & left, const struct timespec & right)
-{
-    return std::tie(left.tv_sec, left.tv_nsec) > std::tie(right.tv_sec, right.tv_nsec);
 }
 
 String makeETag(const struct stat & file_stat)
@@ -91,6 +92,11 @@ ObjectMetadata makeObjectMetadata(const struct stat & file_stat)
     ObjectMetadata object_metadata;
     object_metadata.size_bytes = file_stat.st_size;
     object_metadata.etag = makeETag(file_stat);
+#if defined(OS_WINDOWS)
+    /// The token has whole-second `mtime` and a zero `st_ino` there (see `getMTime`), so a same-size
+    /// rewrite within one second keeps it unchanged: it must not identify the content to the caches.
+    object_metadata.etag_is_strong = false;
+#endif
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
     return object_metadata;
 }
@@ -111,7 +117,7 @@ bool isVanishedEntryError(const std::error_code & error)
 std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
 {
     struct stat file_stat{};
-    if (0 != ::stat(resolved_path.c_str(), &file_stat))
+    if (0 != platformStat(resolved_path, file_stat))
     {
         std::error_code error(errno, std::generic_category());
         if (isVanishedEntryError(error))
@@ -135,10 +141,15 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
         description = "/";
 
     if (!settings.read_only)
-        fs::create_directories(settings.key_prefix);
+        fs::create_directories(pathFromString(settings.key_prefix));
 }
 
-String resolvePathRelativelyToBase(const String & path, const String & base_path)
+/// Returns an `fs::path`, and the two incoming strings become one through `pathFromString`: these
+/// are UTF-8 paths, and every step here - normalization, the containment checks, the join - is a
+/// `std::filesystem` step, so a `String` in the middle would be decoded again through the narrow
+/// constructor, which on Windows reads it through the active code page. The callers convert back
+/// with `pathToString` where a syscall wrapper or a log line wants a string.
+fs::path resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
     /// A path with an embedded NUL cannot be validated: `std::string` and `fs::path` compare the whole
     /// value, while every syscall the resolved path is later passed to (`open`, `mkdir`, `stat`) stops at
@@ -148,31 +159,32 @@ String resolvePathRelativelyToBase(const String & path, const String & base_path
     if (path.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path contains an embedded NUL byte");
 
-    auto configured_base = fs::path(base_path).lexically_normal();
+    const auto configured_base = pathFromString(base_path).lexically_normal();
+    auto candidate = pathFromString(path); /// Not `const`: it is returned below, and constness would block the move.
 
-    auto is_inside = [&](const String & candidate)
+    auto is_inside = [&](const fs::path & to_check)
     {
-        return fileOrSymlinkPathStartsWith(candidate, configured_base.string())
-            && pathStartsWith(candidate, configured_base.string());
+        return fileOrSymlinkPathStartsWith(to_check, configured_base)
+            && pathStartsWith(to_check, configured_base);
     };
 
-    if (is_inside(path))
-        return path;
+    if (is_inside(candidate))
+        return candidate;
 
-    auto combined = (configured_base / path).lexically_normal().string();
+    auto combined = (configured_base / candidate).lexically_normal();
     if (is_inside(combined))
         return combined;
 
-    auto path_canonical = fs::weakly_canonical(fs::path(path).lexically_normal());
+    auto path_canonical = fs::weakly_canonical(candidate.lexically_normal());
     throw Exception(
         ErrorCodes::PATH_ACCESS_DENIED,
         "Path `{}` which was canonicalized to `{}` is outside the table path directory : `{}`",
         path,
-        path_canonical.string(),
-        configured_base.string());
+        pathToString(path_canonical),
+        pathToString(configured_base));
 }
 
-String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path) const
+fs::path LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path) const
 {
     return resolvePathRelativelyToBase(path, settings.key_prefix);
 }
@@ -347,6 +359,13 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
+#if !defined(OS_WINDOWS)
+
+bool isLaterThan(const struct timespec & left, const struct timespec & right)
+{
+    return std::tie(left.tv_sec, left.tv_nsec) > std::tie(right.tv_sec, right.tv_nsec);
+}
+
 /// Give the version about to be published a modification time strictly later than
 /// the version it replaces, so that no two versions of a path can ever share an etag.
 ///
@@ -452,7 +471,7 @@ void publishConditionally(const String & temp_path, const String & target_path, 
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_LINK, target_path, "Cannot link {} to {}", temp_path, target_path);
     }
 
-    const String parent_path = fs::path(target_path).parent_path();
+    const String parent_path = pathToString(fs::path(target_path).parent_path());
     int dir_fd = ::open(parent_path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dir_fd < 0)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, parent_path, "Cannot open directory {}", parent_path);
@@ -566,6 +585,8 @@ private:
     bool temporary_file_removed = false;
 };
 
+#endif
+
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
@@ -576,7 +597,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     bool /* restrict_seek */) const
 {
     std::shared_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    const String resolved_path = pathToString(resolvePathRelativelyToKeyPrefix(object.remote_path));
     LOG_TEST(log, "Read object: {}", resolved_path);
     auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
 
@@ -608,12 +629,13 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
     /// Held until the file is created below, so that `removeObject` cannot prune the directory in the meantime.
     std::shared_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    const auto resolved = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    const String resolved_path = pathToString(resolved);
     LOG_TEST(log, "Write object: {}", resolved_path);
 
     /// Unlike real blob storage, in local fs we cannot create a file with non-existing prefix.
     /// So let's create it.
-    fs::create_directories(fs::path(resolved_path).parent_path());
+    fs::create_directories(resolved.parent_path());
 
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
     if (blob_storage_log)
@@ -627,6 +649,19 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 
     if (!if_none_match.empty() || !if_match.empty() || write_settings.object_storage_write_atomically)
     {
+#if defined(OS_WINDOWS)
+        /// The compare-and-swap below is built out of `flock` on the parent directory, `link`
+        /// and `utimensat`. Windows has no equivalent of any of the three that keeps the same
+        /// guarantees: its advisory locks are over byte ranges of a file rather than over a
+        /// directory, and its `struct stat` keeps modification times to the second, which is
+        /// far too coarse to tell two versions of an object apart. Emulating it needs a design
+        /// of its own, so refuse the write rather than perform it without the exclusion that a
+        /// conditional write promises.
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Conditional and atomic writes to the local object storage are not implemented on Windows, cannot write object {}",
+            object.remote_path);
+#else
         if (!if_none_match.empty() && if_none_match != "*")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -648,19 +683,20 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         /// otherwise be staged and published under the server's working directory,
         /// giving conditional writes a different notion of a key than every other
         /// method of this storage.
-        auto target_path = fs::path(resolved_path);
+        const auto & target_path = resolved;
         /// Not from `thread_local_rng`: an atomic write may happen inside an operation whose other random names are
         /// expected to be reproducible from a seed.
-        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{:016x}", target_path.filename().string(), randomSeed());
+        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{:016x}", pathToString(target_path.filename()), randomSeed());
 
         return std::make_unique<WriteBufferToConditionallyPublishedFile>(
             resolved_path,
-            temp_path,
+            pathToString(temp_path),
             buf_size,
             publish_mode,
             std::move(if_match_etag),
             settings.key_prefix,
             std::move(blob_storage_log));
+#endif
     }
 
     return std::make_unique<WriteBufferFromFileWithLogging>(
@@ -676,10 +712,11 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
 
     /// Exclusive: see `directories_mutex`.
     std::unique_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    const auto resolved = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    const String resolved_path = pathToString(resolved);
 
     /// For local object storage files are actually removed when "metadata" is removed.
-    if (!fs::exists(resolved_path))
+    if (!fs::exists(resolved))
         return;
 
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
@@ -688,7 +725,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     Int32 error_code = 0;
     String error_message;
 
-    if (0 != unlink(resolved_path.data()))
+    if (0 != platformUnlink(resolved_path))
     {
         error_code = errno;
         error_message = errnoToString();
@@ -721,19 +758,19 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
             error_code,
             error_message);
 
-    /// Both paths have to be brought into the same form before they are compared: `resolved_path` is
+    /// Both paths have to be brought into the same form before they are compared: `resolved` is
     /// relative or otherwise not canonical when the `path` of the disk is (e.g. contains `..`), and then `dir`
     /// never compares equal to the canonicalized `root`, so the loop below would remove the root directory
     /// of the object storage itself.
-    fs::path root = fs::weakly_canonical(settings.key_prefix);
-    fs::path dir = fs::weakly_canonical(fs::path(resolved_path).parent_path());
+    fs::path root = fs::weakly_canonical(pathFromString(settings.key_prefix));
+    fs::path dir = fs::weakly_canonical(resolved.parent_path());
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
     {
         LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
-            std::string(dir), dir.has_parent_path(), dir.has_relative_path(), std::string(root), pathStartsWith(dir, root));
+            pathToGenericString(dir), dir.has_parent_path(), dir.has_relative_path(), pathToGenericString(root), pathStartsWith(dir, root));
 
-        std::string dir_str = dir;
-        if (0 != rmdir(dir_str.data()))
+        std::string dir_str = pathToString(dir);
+        if (0 != platformRmdir(dir_str))
         {
             /// ENOENT: the directory was already removed together with its last object by another remover.
             if (errno == ENOTDIR || errno == ENOTEMPTY || errno == ENOENT)
@@ -786,7 +823,7 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     /// so a caller must not be able to observe a different file or a differently
     /// shaped etag depending on which of the two it called.
     std::shared_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    const String resolved_path = pathToString(resolvePathRelativelyToKeyPrefix(path));
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
     return tryStatResolvedPath(resolved_path);
@@ -799,7 +836,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     std::optional<size_t>) const
 {
     std::shared_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    const String resolved_path = pathToString(resolvePathRelativelyToKeyPrefix(object.remote_path));
     LOG_TEST(log, "Read small object: {}", resolved_path);
 
     /// Opening the file here instead of delegating to `readObject`: the etag must come
@@ -842,7 +879,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     std::shared_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    const String resolved_path = pathToString(resolvePathRelativelyToKeyPrefix(path));
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
     /// Every etag of this storage has to come out of `makeETag`: a caller feeds the
@@ -850,7 +887,7 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     /// ever compare unequal there, turning a conditional write into an unconditional
     /// `PreconditionFailed`.
     struct stat file_stat{};
-    if (0 != ::stat(resolved_path.c_str(), &file_stat))
+    if (0 != platformStat(resolved_path, file_stat))
     {
         const int stat_errno = errno;
         const bool does_not_exist = isVanishedEntryError(std::error_code(stat_errno, std::generic_category()));
@@ -961,8 +998,8 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
                 /// re-resolution (`fs::relative` / `fs::weakly_canonical`) uses
                 /// throwing filesystem primitives that abort the whole listing
                 /// when a churned entry vanishes mid-resolution.
-                if (auto metadata = tryStatResolvedPath(entry_path))
-                    children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
+                if (auto metadata = tryStatResolvedPath(pathToGenericString(entry_path)))
+                    children.emplace_back(std::make_shared<RelativePathWithMetadata>(pathToGenericString(entry_path), std::move(*metadata)));
             }
 
             it.increment(ec);
@@ -980,10 +1017,9 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     std::shared_lock lock(directories_mutex);
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
-    return fs::exists(resolved_path);
+    return fs::exists(resolvePathRelativelyToKeyPrefix(path));
 }
 
 void LocalObjectStorage::copyObject( // NOLINT

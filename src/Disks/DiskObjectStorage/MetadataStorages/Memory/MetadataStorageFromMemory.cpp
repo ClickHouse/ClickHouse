@@ -97,7 +97,7 @@ DirectoryIteratorPtr MetadataStorageFromMemory::iterateDirectory(const std::stri
 {
     std::shared_lock lock(metadata_mutex);
     auto children = tree.listDirectory(normalizePath(path));
-    return std::make_unique<StaticDirectoryIterator>(std::vector<std::filesystem::path>{children.begin(), children.end()});
+    return std::make_unique<StaticDirectoryIterator>(std::vector<std::string>{children.begin(), children.end()});
 }
 
 MetadataTransactionPtr MetadataStorageFromMemory::createTransaction()

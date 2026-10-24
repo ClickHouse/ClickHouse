@@ -25,6 +25,23 @@
 #define __real_aligned_alloc(alignment, size) je_aligned_alloc(alignment, size)
 #define __real_free je_free
 
+#elif defined(OS_WINDOWS)
+
+/// The Windows CRT has no `posix_memalign`/`aligned_alloc`, and its over-aligned allocations
+/// need their own `free`/`realloc`, so the whole family is routed through the wrappers in
+/// `base/alignedAlloc.h` - see the comment there for why it cannot be done one function at a
+/// time. Every `__real_*` allocation below is release-compatible with `__real_free`, which is
+/// what the callers rely on (they pair an allocation of either kind with the same free).
+
+#include <base/alignedAlloc.h>
+
+#define __real_malloc(size) DB::alignedMalloc(size)
+#define __real_calloc(nmemb, size) DB::alignedCalloc(nmemb, size)
+#define __real_realloc(ptr, size) DB::alignedRealloc(ptr, size)
+#define __real_posix_memalign(memptr, alignment, size) DB::alignedPosixMemalign(memptr, alignment, size)
+#define __real_aligned_alloc(alignment, size) DB::alignedAlloc(alignment, size)
+#define __real_free DB::alignedFree
+
 #else
 
 #define __real_malloc(size) ::malloc(size)

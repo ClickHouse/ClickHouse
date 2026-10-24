@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/ProtocolDefines.h>
 #include "config.h"
 
@@ -33,6 +34,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getUserHomePath.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
@@ -126,6 +128,11 @@
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <io.h>
+#endif
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -195,6 +202,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
@@ -275,8 +283,8 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
     {
         if (query_with_output->isOutfileTruncate() && query_with_output->out_file)
         {
-            if (fs::exists(tmp_file))
-                fs::remove(tmp_file);
+            if (fs::exists(pathFromString(tmp_file)))
+                fs::remove(pathFromString(tmp_file));
         }
     }
 }
@@ -315,13 +323,13 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 
             try
             {
-                fs::rename(tmp_file, out_file);
+                fs::rename(pathFromString(tmp_file), pathFromString(out_file));
             }
             catch (const fs::filesystem_error & e)
             {
                 /// Clean up temporary file
-                if (fs::exists(tmp_file))
-                    fs::remove(tmp_file);
+                if (fs::exists(pathFromString(tmp_file)))
+                    fs::remove(pathFromString(tmp_file));
 
                 throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE,
                     "Cannot rename temporary file {} to {}: {}",
@@ -521,6 +529,25 @@ private:
     std::function<void()> on_flush_callback;
 };
 
+namespace
+{
+
+/// Whether the descriptor is a terminal. On Windows `isatty` is true for every character device,
+/// `NUL` included, and treating `NUL` as a terminal would select the interactive mode, which waits
+/// for console input that never comes. Only a console handle is a terminal there.
+bool isTerminal(int fd)
+{
+#if defined(OS_WINDOWS)
+    const auto handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    DWORD mode = 0;
+    return handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &mode);
+#else
+    return isatty(fd);
+#endif
+}
+
+}
+
 ClientBase::~ClientBase() = default;
 
 ClientBase::ClientBase(
@@ -544,9 +571,9 @@ ClientBase::ClientBase(
     , output_stream(output_stream_)
     , error_stream(error_stream_)
 {
-    stdin_is_a_tty = isatty(in_fd_);
-    stdout_is_a_tty = isatty(out_fd_);
-    stderr_is_a_tty = isatty(err_fd_);
+    stdin_is_a_tty = isTerminal(in_fd_);
+    stdout_is_a_tty = isTerminal(out_fd_);
+    stderr_is_a_tty = isTerminal(err_fd_);
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
@@ -1028,10 +1055,14 @@ try
         WriteBuffer * underlying_buf = nullptr;
         if (!pager.empty() && !isEmbeeddedClient())
         {
+#if !defined(OS_WINDOWS)
+            /// Neither signal exists on Windows: a write to a closed pipe fails with an error
+            /// rather than raising `SIGPIPE`, and there is no `SIGQUIT`. Nothing to ignore.
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+#endif
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -1114,7 +1145,7 @@ try
 
                 auto flags = O_WRONLY | O_EXCL;
 
-                auto file_exists = fs::exists(out_file);
+                auto file_exists = fs::exists(pathFromString(out_file));
                 if (file_exists && query_with_output->isOutfileAppend())
                     flags |= O_APPEND;
                 else if (file_exists && query_with_output->isOutfileTruncate())
@@ -1323,6 +1354,16 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
+void ClientBase::checkPagerIsSupported([[maybe_unused]] const String & pager_command)
+{
+#if defined(OS_WINDOWS)
+    /// The pager is started through `ShellCommand`, which is not implemented on Windows. Reject it
+    /// when it is set rather than at the first query result.
+    if (!pager_command.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The pager is not supported on Windows");
+#endif
+}
+
 void ClientBase::adjustSettings(ContextMutablePtr context)
 {
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
@@ -1367,8 +1408,17 @@ void ClientBase::initClientContext(ContextMutablePtr context)
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
     struct stat file_stat{};
-    return fstat(fd, &file_stat) == 0
-        && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
+    if (fstat(fd, &file_stat) != 0)
+        return false;
+    if (S_ISREG(file_stat.st_mode))
+        return true;
+#if defined(S_ISLNK)
+    /// The Windows CRT's `_stat` has no symlink bit - it follows reparse points and reports the
+    /// target - so there is nothing to test for there.
+    if (S_ISLNK(file_stat.st_mode))
+        return true;
+#endif
+    return false;
 }
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
@@ -1538,11 +1588,13 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
         // So it's easier to just pass a descriptor, without the terminal name.
         tty_fd = stdout_fd;
     }
+#if !defined(OS_WINDOWS)
     else if (stdin_is_a_tty)
     {
         /// If stdin is a tty, it's writable, tty can't be readonly.
         tty_fd = stdin_fd;
     }
+#endif
 
     if (tty_fd != -1)
     {
@@ -1550,6 +1602,24 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
         return;
     }
 
+#if defined(OS_WINDOWS)
+    /// A console `stdin` is the console input buffer `CONIN$`, which is not writable, and there is no `/dev/tty`.
+    /// Open the active console screen buffer `CONOUT$`: it is there even when `stdout` and `stderr` are redirected.
+    try
+    {
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>("CONOUT$", buf_size, O_RDWR);
+        return;
+    }
+    catch (const Exception & e)
+    {
+        tty_buf.reset();
+
+        if (e.code() != ErrorCodes::CANNOT_OPEN_FILE && e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+
+        /// The process has no console.
+    }
+#else
     /// If none of stdin/stdout/stderr are tty but progress rendering was requested, open /dev/tty.
 
     static constexpr auto tty_file_name = "/dev/tty";
@@ -1582,6 +1652,8 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
             /// Fallback to other options.
         }
     }
+
+#endif
 
     /// Failed to open /dev/tty.
     need_render_progress = false;
@@ -1810,11 +1882,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->isOutfileTruncate() && fs::is_regular_file(out_file))
+            if (query_with_output->isOutfileTruncate() && fs::is_regular_file(pathFromString(out_file)))
             {
                 out_file_if_truncated = out_file;
-                fs::path out_file_path(out_file);
-                out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
+                fs::path out_file_path = pathFromString(out_file);
+                out_file = pathToString(out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), pathToString(out_file_path.filename())));
 
                 /// Update the AST literal so that initOutputFormat writes to the temp file
                 /// and performAtomicRename reads the temp path from the AST.
@@ -1824,7 +1896,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
             {
-                fs::path file_path(out_file);
+                fs::path file_path = pathFromString(out_file);
                 fs::path parent_dir = file_path.parent_path();
 
                 if (!parent_dir.empty() && !fs::exists(parent_dir))
@@ -1838,7 +1910,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         throw Exception(
                             ErrorCodes::CANNOT_CREATE_DIRECTORY,
                             "Cannot create parent directories for INTO OUTFILE '{}': {}",
-                            parent_dir.string(),
+                            pathToString(parent_dir),
                             e.what());
                     }
                 }
@@ -1883,7 +1955,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         range.second);
             }
 
-            if (fs::exists(out_file))
+            if (fs::exists(pathFromString(out_file)))
             {
                 if (!query_with_output->isOutfileAppend() && !query_with_output->isOutfileTruncate())
                 {
@@ -2443,10 +2515,13 @@ void ClientBase::resetOutput()
         if (!cancelled)
             pager_cmd->wait();
 
+#if !defined(OS_WINDOWS)
+        /// Neither signal exists on Windows, so neither was ignored on the way in.
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+#endif
 
         setupSignalHandler();
     }
@@ -4030,7 +4105,9 @@ bool ClientBase::processQueryText(const String & text)
     {
         auto set_pager_to = [&](const String & cmd)
         {
-            pager = trim(cmd, [](char c) { return isWhitespaceASCII(c); });
+            String new_pager = trim(cmd, [](char c) { return isWhitespaceASCII(c); });
+            checkPagerIsSupported(new_pager);
+            pager = std::move(new_pager);
             /// Re-apply pretty-format width/row limits — they need to be raised when the
             /// pager is enabled and restored to defaults when it is cleared. Otherwise a
             /// runtime `pager ...` without `--pager` on the command line would keep the
@@ -5168,11 +5245,7 @@ void ClientBase::runInteractive()
     }
 
     if (home_path.empty())
-    {
-        const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-        if (home_path_cstr)
-            home_path = home_path_cstr;
-    }
+        home_path = pathFromString(getUserHomePath());
 
     history_max_entries = getClientConfiguration().getUInt("history_max_entries", 1000000);
 
@@ -5201,7 +5274,7 @@ void ClientBase::runInteractive()
         /// Load command history if present.
         bool should_create_parent_directories = false;
         if (getClientConfiguration().has("history_file"))
-            history_file = getClientConfiguration().getString("history_file");
+            history_file = pathFromString(getClientConfiguration().getString("history_file"));
         else
         {
             history_file = getHistoryFilePath();
@@ -5219,7 +5292,7 @@ void ClientBase::runInteractive()
                 if (should_create_parent_directories && history_file.has_parent_path())
                     fs::create_directories(history_file.parent_path());
 
-                FS::createFile(history_file);
+                FS::createFile(pathToGenericString(history_file));
             }
             catch (const ErrnoException & e)
             {
@@ -5228,7 +5301,7 @@ void ClientBase::runInteractive()
             }
         }
 
-        actual_history_file_path = history_file;
+        actual_history_file_path = pathToGenericString(history_file);
     }
 
     auto options = ReplxxLineReader::Options
@@ -5515,17 +5588,17 @@ void ClientBase::runNonInteractive()
 
 fs::path ClientBase::getHistoryFilePath()
 {
-    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-    if (history_file_from_env)
-        return history_file_from_env;
+    auto history_file_from_env = getPathFromEnvironment("CLICKHOUSE_HISTORY_FILE");
+    if (!history_file_from_env.empty())
+        return pathFromString(history_file_from_env);
 
     /// Client query history was stored in ~/.clickhouse-client-history
     /// before moving to $XDG_STATE_HOME/clickhouse/client-query-history.
     /// We'll pick up the old file and use it if it is already present.
-    auto * home_path = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path)
+    auto home_path = getUserHomePath();
+    if (!home_path.empty())
     {
-        auto path_in_home_dir = fs::path(home_path) / ".clickhouse-client-history";
+        auto path_in_home_dir = pathFromString(home_path) / ".clickhouse-client-history";
 
         if (fs::exists(path_in_home_dir))
             return path_in_home_dir;
@@ -5535,7 +5608,13 @@ fs::path ClientBase::getHistoryFilePath()
     if (!xdg_state_home.empty())
         return xdg_state_home / "client-query-history";
 
-    throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
+    throw Exception(
+        ErrorCodes::CANNOT_OPEN_FILE,
+        "None of $CLICKHOUSE_HISTORY_FILE, $XDG_STATE_HOME or a home directory ($HOME"
+#if defined(OS_WINDOWS)
+        ", %USERPROFILE% or %HOMEDRIVE%%HOMEPATH%"
+#endif
+        ") is set; cannot place history file.");
 }
 
 #if !USE_FUZZING_MODE

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCache.h>
 
 #include <IO/Operators.h>
@@ -531,21 +532,22 @@ void FileCache::initialize()
 {
     // Prevent initialize() from running twice. This may be caused by two cache disks being created with the same path (see integration/test_filesystem_cache).
     callOnce(initialize_called, [&] {
-        bool need_to_load_metadata = fs::exists(getBasePath());
+        const fs::path base_path = pathFromString(getBasePath());
+        bool need_to_load_metadata = fs::exists(base_path);
         try
         {
             if (!need_to_load_metadata)
-                fs::create_directories(getBasePath());
+                fs::create_directories(base_path);
 
             metadata.fillStatVFS();
-            auto fs_info = std::filesystem::space(getBasePath());
+            auto fs_info = std::filesystem::space(base_path);
             const size_t size_limit = main_priority->getSizeLimit(cache_state_guard.lock());
             if (fs_info.capacity < size_limit)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
                                 getBasePath(), std::to_string(size_limit));
 
-            status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+            status_file = make_unique<StatusFile>(pathToGenericString(base_path / "status"), StatusFile::write_full_info);
         }
         catch (const std::filesystem::filesystem_error & e)
         {
@@ -1689,8 +1691,10 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (shutdown)
         return;
 
+#if USE_LIBFIU
     while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+#endif
 
     Stopwatch watch;
     size_t reschedule_ms = free_space_keeping_reschedule_ms;
@@ -2176,7 +2180,7 @@ void FileCache::loadMetadataImpl()
 {
     auto parse_user = [&](const fs::path & path) -> std::optional<OriginInfo>
     {
-        auto filename = path.filename().string();
+        auto filename = pathToGenericString(path.filename());
 
         auto pos = filename.find_last_of('.');
         if (pos == std::string::npos)
@@ -2212,7 +2216,7 @@ void FileCache::loadMetadataImpl()
                 }
                 else
                 {
-                    user_it = fs::directory_iterator{metadata.getBaseDirectory()};
+                    user_it = fs::directory_iterator{pathFromString(metadata.getBaseDirectory())};
                     initialized = true;
                 }
 
@@ -2227,7 +2231,7 @@ void FileCache::loadMetadataImpl()
                     /// Only client directories are loaded from here. Ignore files: a server of
                     /// another version may keep files of its own next to them, and opening one
                     /// as a directory would fail the whole load.
-                    const auto entry = user_it->path().filename().string();
+                    const auto entry = pathToGenericString(user_it->path().filename());
                     if (entry != "status")
                         LOG_WARNING(log, "Ignoring file {} in {}", entry, metadata.getBaseDirectory());
                     continue;
@@ -2248,7 +2252,7 @@ void FileCache::loadMetadataImpl()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Unexpected file format: {}", user_it->path().string());
+                    LOG_WARNING(log, "Unexpected file format: {}", pathToGenericString(user_it->path()));
                     continue;
                 }
             }
@@ -2285,7 +2289,7 @@ void FileCache::loadMetadataImpl()
                     return std::nullopt;
 
                 auto type = key_types_to_load[key_type_index];
-                auto dir_path = fs::path(metadata.getBaseDirectory()).append(getKeyTypePrefix(type));
+                auto dir_path = pathFromString(metadata.getBaseDirectory()).append(getKeyTypePrefix(type));
                 origin.segment_type = type;
                 key_type_index++;
 
@@ -2297,7 +2301,7 @@ void FileCache::loadMetadataImpl()
 
             auto path = key_prefix_it->path();
 
-            const std::string key_prefix_dir_name = path.filename();
+            const std::string key_prefix_dir_name = pathToGenericString(path.filename());
             if (key_prefix_it->is_directory() &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::Data) &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::System)

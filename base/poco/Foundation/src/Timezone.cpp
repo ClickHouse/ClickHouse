@@ -16,7 +16,11 @@
 #include <ctime>
 
 
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include "Timezone_WIN32.cpp"
+#else
 #include "Timezone_UNIX.cpp"
+#endif
 
 
 namespace Poco {

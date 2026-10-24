@@ -1,3 +1,4 @@
+#include <base/lgamma_r.h>
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 

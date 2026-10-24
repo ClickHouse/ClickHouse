@@ -38,6 +38,10 @@
 #include <link.h>
 #endif
 
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#endif
+
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
@@ -70,8 +74,10 @@ bool shouldShowAddress(const void * addr)
     return show_addresses.load(std::memory_order_relaxed);
 }
 
+#if !defined(OS_WINDOWS)
 /// A fault address above the first page is shown only as an offset inside a loaded object:
 /// the runtime address of the heap, a stack or JIT code must not be published.
+/// Only the POSIX signal-context code below reports fault addresses.
 std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
 {
     if (!shouldShowAddress(addr))
@@ -85,6 +91,7 @@ std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr
         return {};
     return resolved;
 }
+#endif
 }
 
 StackTrace::StackTrace()
@@ -102,6 +109,11 @@ bool StackTrace::showAddresses()
     return show_addresses.load(std::memory_order_relaxed);
 }
 
+#if !defined(OS_WINDOWS)
+/// Everything from here to the matching #endif interprets a POSIX signal context.
+/// Windows reports faults through Structured Exception Handling and has neither
+/// `siginfo_t` nor `ucontext_t`; see the note in StackTrace.h. Capturing the current
+/// stack, below, stays available.
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -377,6 +389,7 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
     return nullptr;
 #endif
 }
+#endif
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 namespace
@@ -445,10 +458,43 @@ StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index,
 }
 #endif
 
+#if defined(OS_WINDOWS)
+namespace
+{
+/// The runtime address range of the executable's PE image, read from its own headers.
+struct MainImageBounds
+{
+    const char * begin = nullptr;
+    const char * end = nullptr;
+};
+
+MainImageBounds getMainImageBounds()
+{
+    const auto * image_base = reinterpret_cast<const char *>(GetModuleHandleW(nullptr));
+    const auto * dos_header = reinterpret_cast<const IMAGE_DOS_HEADER *>(image_base);
+    const auto * nt_headers = reinterpret_cast<const IMAGE_NT_HEADERS *>(image_base + dos_header->e_lfanew);
+    return {image_base, image_base + nt_headers->OptionalHeader.SizeOfImage};
+}
+
+/// The runtime address of a frame must not be published, because it defeats ASLR. An address inside
+/// the executable resolves to its offset in the image, as an ELF one does; an address elsewhere (a DLL,
+/// JIT code) is not attributed to any object, so it resolves to nothing.
+StackTrace::ResolvedAddress resolveAddress(const MainImageBounds & image, const void * virtual_addr)
+{
+    const auto * address = static_cast<const char *>(virtual_addr);
+    if (address >= image.begin && address < image.end)
+        return {reinterpret_cast<const void *>(static_cast<uintptr_t>(address - image.begin)), {}, StackTrace::AddressKind::MainObject};
+    return {nullptr, {}, StackTrace::AddressKind::UnknownMapping};
+}
+}
+#endif
+
 StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
+#elif defined(OS_WINDOWS)
+    return ::resolveAddress(getMainImageBounds(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
 #endif
@@ -465,6 +511,8 @@ StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_a
     if (main_object.begin <= address && address < main_object.end)
         return {reinterpret_cast<const void *>(address - main_object.bias), {}, AddressKind::MainObject};
     return {nullptr, {}, AddressKind::UnknownMapping};
+#elif defined(OS_WINDOWS)
+    return ::resolveAddress(getMainImageBounds(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
 #endif
@@ -629,15 +677,29 @@ void StackTrace::forEachFrame(
 #else
     UNUSED(fatal);
 
+#if defined(OS_WINDOWS)
+    /// A frame inside the executable gets its offset in the image as `physical_addr`, as the ELF branch
+    /// above does; a frame elsewhere gets none. See `resolveAddress`.
+    const MainImageBounds image = getMainImageBounds();
+#endif
+
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
         current_frame.virtual_addr = frame_pointers[i];
+#if defined(OS_WINDOWS)
+        current_frame.physical_addr = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(::resolveAddress(image, frame_pointers[i]).address));
+#endif
         callback(current_frame);
     }
 #endif
 }
 
+#if !defined(OS_WINDOWS)
+/// Everything from here to the matching #endif interprets a POSIX signal context.
+/// Windows reports faults through Structured Exception Handling and has neither
+/// `siginfo_t` nor `ucontext_t`; see the note in StackTrace.h. Capturing the current
+/// stack, below, stays available.
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
@@ -740,6 +802,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
     asynchronous_stack_unwinding = false;
 }
+#endif
 
 StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
     : size(size_)
@@ -941,6 +1004,16 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
 
         callback(out.str());
     };
+#elif defined(OS_WINDOWS)
+    auto callback_wrapper = [&](const StackTrace::Frame & frame)
+    {
+        /// Only the offset of a frame inside the executable is shown, never its runtime address:
+        /// see `forEachFrame`.
+        if (frame.physical_addr && shouldShowAddress(frame.physical_addr))
+            callback(fmt::format("{}. ? @ {}", frame_index++, frame.physical_addr));
+        else if (frame.virtual_addr)
+            callback(fmt::format("{}. ?", frame_index++));
+    };
 #else
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
@@ -1071,7 +1144,9 @@ void StackTrace::dropCache()
 }
 
 
+#if !defined(OS_WINDOWS)
 thread_local bool asynchronous_stack_unwinding = false;
 thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+#endif
 
 #pragma clang diagnostic pop

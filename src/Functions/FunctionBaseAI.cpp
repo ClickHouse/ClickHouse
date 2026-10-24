@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Functions/FunctionBaseAI.h>
 
 #include <Access/Common/AccessType.h>
@@ -347,8 +348,7 @@ AIRequestPolicy FunctionBaseAI::makeRequestPolicy(const ContextPtr & context)
 
     AIRequestPolicy policy;
     policy.timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, context->getServerSettings());
-    policy.timeouts.receive_timeout
-        = Poco::Timespan(static_cast<int64_t>(settings[Setting::ai_function_request_timeout_sec].value) /*s*/, 0 /*us*/);
+    policy.timeouts.receive_timeout = timespanFromSeconds(settings[Setting::ai_function_request_timeout_sec].value);
     policy.max_retries = settings[Setting::ai_function_max_retries].value;
     policy.retry_initial_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
     policy.throw_on_error = settings[Setting::ai_function_throw_on_error].value;

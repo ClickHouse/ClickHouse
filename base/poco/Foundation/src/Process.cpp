@@ -16,6 +16,9 @@
 #include "Poco/Environment.h"
 
 
+#if !defined(POCO_OS_FAMILY_WINDOWS)
+/// Only the POSIX implementation uses a narrow environment block: `CreateProcessW` is given a
+/// UTF-16 block built in `Process_WIN32U.cpp` instead.
 namespace
 {
 	std::vector<char> getEnvironmentVariablesBuffer(const Poco::Process::Env& env)
@@ -45,9 +48,12 @@ namespace
 		return envbuf;
 	}
 }
+#endif
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#include "Process_WIN32U.cpp"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #include "Process_UNIX.cpp"
 #endif
 

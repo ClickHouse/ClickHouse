@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 #include <base/defines.h>
@@ -43,27 +44,34 @@ public:
     void recordCreate(const NormalizedPath & directory)
     {
         if (const auto snapshot_path = resolveToSnapshotPath(directory))
-            created_directories.insert(*snapshot_path);
+            created_directories.insert(pathToGenericString(*snapshot_path));
     }
 
     std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
     {
-        auto resolved = path.string();
+        /// The whole resolution happens in generic UTF-8 strings, including the starting point:
+        /// `path.string()` is native-format on Windows, so `B\\C` would stop matching the `B/`
+        /// prefix of a recorded move and the descendants of a moved directory would resolve to
+        /// themselves rather than to their pre-move path.
+        auto resolved = pathToGenericString(path);
 
         for (const auto & event : events | std::views::reverse)
         {
             if (const Remove * remove = std::get_if<Remove>(&event))
             {
-                if (resolved == remove->path || resolved.starts_with(remove->path.native() + '/'))
+                const auto removed = pathToGenericString(remove->path);
+                if (resolved == removed || resolved.starts_with(removed + '/'))
                     return std::nullopt;
             }
             else if (const Move * move = std::get_if<Move>(&event))
             {
-                if (resolved == move->to)
-                    resolved = move->from;
-                else if (resolved.starts_with(move->to.native() + '/'))
-                    resolved = move->from.native() + resolved.substr(move->to.native().size());
-                else if (resolved == move->from.native() || resolved.starts_with(move->from.native() + '/'))
+                const auto from = pathToGenericString(move->from);
+                const auto to = pathToGenericString(move->to);
+                if (resolved == to)
+                    resolved = from;
+                else if (resolved.starts_with(to + '/'))
+                    resolved = from + resolved.substr(to.size());
+                else if (resolved == from || resolved.starts_with(from + '/'))
                     return std::nullopt;
             }
             else
@@ -72,12 +80,12 @@ public:
             }
         }
 
-        return NormalizedPath{resolved};
+        return NormalizedPath{pathFromString(resolved)};
     }
 
     bool isCreatedByTransaction(const NormalizedPath & path) const
     {
-        return created_directories.contains(path);
+        return created_directories.contains(pathToGenericString(path));
     }
 
 private:
@@ -152,7 +160,7 @@ void UncommittedState::moveDirectory(const std::string & path_from, const std::s
 void UncommittedState::recordCreatedFile(const std::string & path, const std::string & blob_key)
 {
     const auto normalized_path = normalizePath(path);
-    const auto directory = tx_snapshot->getDirectoryRemoteInfo(normalized_path.parent_path());
+    const auto directory = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path.parent_path()));
     if (!directory)
         return;
 
@@ -178,7 +186,7 @@ void UncommittedState::recordCreatedFile(const std::string & path, const std::st
     /// would be placed at the default location again - which is exactly the blob that the file this one was
     /// hard-linked from is keeping alive.
     if (new_blob_key != getDefaultBlobKey(directory->remote_path, file_name))
-        tx_snapshot->markDirectoryExplicit(normalized_path.parent_path());
+        tx_snapshot->markDirectoryExplicit(pathToGenericString(normalized_path.parent_path()));
 }
 
 void UncommittedState::recordHardLink(const std::string & path_from, const std::string & path_to)
@@ -187,9 +195,9 @@ void UncommittedState::recordHardLink(const std::string & path_from, const std::
     const auto normalized_path_to = normalizePath(path_to);
 
     /// The target directory gains a file whose blob is stored under the prefix of another directory.
-    markDirectoryExplicit(normalized_path_to.parent_path());
+    markDirectoryExplicit(pathToGenericString(normalized_path_to.parent_path()));
 
-    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(normalized_path_from.parent_path());
+    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()));
     if (!directory_from)
         return;
 
@@ -203,7 +211,7 @@ void UncommittedState::recordHardLink(const std::string & path_from, const std::
     tx_snapshot->addBlobLink(info.blob_key);
 
     /// A hard link over something that already exists is rejected by the commit, which is where the error belongs.
-    if (!tx_snapshot->getDirectoryRemoteInfo(normalized_path_to.parent_path())
+    if (!tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()))
         || tx_snapshot->existsFile(path_to)
         || tx_snapshot->existsDirectory(path_to))
         return;
@@ -218,8 +226,8 @@ void UncommittedState::recordMovedFile(const std::string & path_from, const std:
     if (normalized_path_from == normalized_path_to)
         return;
 
-    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(normalized_path_from.parent_path());
-    const auto directory_to = tx_snapshot->getDirectoryRemoteInfo(normalized_path_to.parent_path());
+    const auto directory_from = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_from.parent_path()));
+    const auto directory_to = tx_snapshot->getDirectoryRemoteInfo(pathToGenericString(normalized_path_to.parent_path()));
     if (!directory_from || !directory_to)
         return;
 

@@ -32,6 +32,14 @@ std::string errnoToString(int the_errno)
     const size_t buf_size = 128;
     char buf[buf_size];
 
-    return fmt::format(
-        "errno: {}, strerror: {}", the_errno, getErrorMessage(strerror_r(the_errno, buf, buf_size), buf, buf_size, the_errno));
+#if defined(OS_WINDOWS)
+    /// The Windows CRT spells the bounded form `strerror_s`, with the arguments in the other order.
+    /// Like the XSI `strerror_r` it reports a status rather than the string, so it resolves to the
+    /// same overload above.
+    const auto result = strerror_s(buf, buf_size, the_errno);
+#else
+    const auto result = strerror_r(the_errno, buf, buf_size); /// NOLINT(readability-qualified-auto): a `char *` with glibc, an `int` with the XSI form
+#endif
+
+    return fmt::format("errno: {}, strerror: {}", the_errno, getErrorMessage(result, buf, buf_size, the_errno));
 }

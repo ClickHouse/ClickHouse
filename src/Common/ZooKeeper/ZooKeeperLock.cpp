@@ -1,6 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/logger_useful.h>
-#include <filesystem>
 
 namespace DB
 {
@@ -12,8 +12,6 @@ namespace ErrorCodes
 
 }
 
-namespace fs = std::filesystem;
-
 namespace zkutil
 {
 
@@ -24,7 +22,7 @@ ZooKeeperLock::ZooKeeperLock(
     const std::string & lock_message_,
     bool throw_if_lost_)
     : zookeeper(zookeeper_)
-    , lock_path(fs::path(lock_prefix_) / lock_name_)
+    , lock_path(joinZooKeeperPath(lock_prefix_, lock_name_))
     , lock_message(lock_message_)
     , throw_if_lost(throw_if_lost_)
     , log(getLogger("zkutil::Lock"))

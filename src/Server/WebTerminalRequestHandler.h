@@ -24,7 +24,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    IServer & server;
+    [[maybe_unused]] IServer & server;
 
     /// If set, overrides the `default_session_user` server setting for this endpoint
     /// (composable protocols allow a per-endpoint default user). An empty value prohibits

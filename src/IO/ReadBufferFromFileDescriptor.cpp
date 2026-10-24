@@ -10,11 +10,18 @@
 #include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Throttler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/preadNoWait.h>
 #include <Common/filesystemHelpers.h>
+#if defined(OS_WINDOWS)
+#include <io.h>
+#include <Poco/UnWindows.h>
+#else
 #include <poll.h>
+#endif
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
 
@@ -46,6 +53,170 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_ADVISE;
 }
+
+
+#if defined(OS_WINDOWS)
+namespace
+{
+
+/// `WaitForSingleObject` on a console input handle reports that the input buffer holds *some*
+/// record - mouse movement, focus changes and window resizes among them - while `ReadFile` and
+/// `ReadConsole` consume only key-down records that carry a character. Reporting readiness on
+/// anything else would let the following read block past the timeout, so peek the queue and
+/// answer only for the records a read would actually consume, discarding the rest (a read would
+/// discard them too).
+///
+/// In line mode (`ENABLE_LINE_INPUT`, the console default) even a character is not enough:
+/// `ReadFile` returns only once a whole line has been entered, so a partly typed line must not
+/// count as readiness until its Enter is in the queue.
+bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string & file_name)
+{
+    DWORD console_mode = 0;
+    const bool line_input = GetConsoleMode(handle, &console_mode) && (console_mode & ENABLE_LINE_INPUT);
+
+    VectorWithMemoryTracking<INPUT_RECORD> records;
+    Stopwatch watch;
+    for (;;)
+    {
+        const auto elapsed = watch.elapsedMilliseconds();
+        const auto remaining = static_cast<UInt64>(timeout_milliseconds) > elapsed
+            ? static_cast<UInt64>(timeout_milliseconds) - elapsed
+            : 0;
+
+        const DWORD waited = WaitForSingleObject(handle, static_cast<DWORD>(remaining));
+        if (waited == WAIT_FAILED)
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot poll file {} (WaitForSingleObject), error code: {}",
+                file_name,
+                GetLastError());
+        }
+        if (waited != WAIT_OBJECT_0)
+            return false;
+
+        /// Peek the whole queue: in line mode the Enter that completes a line can be behind any
+        /// number of characters.
+        DWORD queued = 0;
+        if (!GetNumberOfConsoleInputEvents(handle, &queued))
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot poll file {} (GetNumberOfConsoleInputEvents), error code: {}",
+                file_name,
+                GetLastError());
+        }
+        records.resize(std::max<DWORD>(queued, 1));
+
+        DWORD count = 0;
+        if (!PeekConsoleInputW(handle, records.data(), static_cast<DWORD>(records.size()), &count))
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot poll file {} (PeekConsoleInput), error code: {}",
+                file_name,
+                GetLastError());
+        }
+
+        auto is_character = [](const INPUT_RECORD & record)
+        {
+            return record.EventType == KEY_EVENT && record.Event.KeyEvent.bKeyDown && record.Event.KeyEvent.uChar.UnicodeChar != 0;
+        };
+
+        /// The records before the first character are invisible to a read.
+        DWORD to_discard = 0;
+        while (to_discard < count && !is_character(records[to_discard]))
+            ++to_discard;
+
+        bool partial_line = false;
+        if (to_discard < count)
+        {
+            if (!line_input)
+                return true;
+            for (DWORD i = to_discard; i < count; ++i)
+                if (is_character(records[i]) && records[i].Event.KeyEvent.uChar.UnicodeChar == L'\r')
+                    return true;
+            partial_line = true;
+        }
+
+        /// Consume the invisible records, or the handle stays signaled by them and this loop would
+        /// spin until the timeout instead of waiting.
+        if (to_discard != 0)
+        {
+            DWORD discarded = 0;
+            if (!ReadConsoleInputW(handle, records.data(), to_discard, &discarded))
+            {
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                    "Cannot poll file {} (ReadConsoleInput), error code: {}",
+                    file_name,
+                    GetLastError());
+            }
+        }
+
+        if (partial_line)
+        {
+            /// The characters of the line stay queued until a read takes the whole line, so the handle
+            /// stays signaled and cannot tell us when the rest arrives: look at the queue again a bit
+            /// later, until the timeout.
+            if (remaining == 0)
+                return false;
+            Sleep(static_cast<DWORD>(std::min<UInt64>(remaining, 10)));
+        }
+    }
+}
+
+/// A pipe handle is not a readiness signal: it is signaled when an I/O operation on it completes,
+/// not when unread bytes arrive, and anonymous pipes cannot be waited on for readability at all.
+/// So probe the pipe with `PeekNamedPipe` until it has data or the timeout expires. Between probes
+/// the thread waits a short, growing interval: this is the polling period, there is no event to wait for.
+bool pollPipeInput(HANDLE handle, int timeout_milliseconds, const std::string & file_name)
+{
+    Stopwatch watch;
+    DWORD interval_milliseconds = 1;
+    for (;;)
+    {
+        DWORD available = 0;
+        if (!PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr))
+        {
+            const DWORD error = GetLastError();
+            /// The writer has closed its end: the next read returns EOF without blocking, as with `POLLHUP`.
+            if (error == ERROR_BROKEN_PIPE)
+                return true;
+
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot poll file {} (PeekNamedPipe), error code: {}",
+                file_name,
+                error);
+        }
+        if (available > 0)
+            return true;
+
+        const auto elapsed = watch.elapsedMilliseconds();
+        if (elapsed >= static_cast<UInt64>(timeout_milliseconds))
+            return false;
+
+        const auto remaining = static_cast<UInt64>(timeout_milliseconds) - elapsed;
+        Sleep(static_cast<DWORD>(std::min<UInt64>(interval_milliseconds, remaining)));
+        interval_milliseconds = std::min<DWORD>(interval_milliseconds * 2, 50);
+    }
+}
+
+/// A console input handle, as opposed to any other character device (`NUL`, a serial port).
+bool isConsoleInput(HANDLE handle)
+{
+    DWORD mode = 0;
+    return GetFileType(handle) == FILE_TYPE_CHAR && GetConsoleMode(handle, &mode);
+}
+
+}
+#endif
 
 
 std::string ReadBufferFromFileDescriptor::getFileName() const
@@ -87,10 +258,10 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
                         detect_os_page_cache_reads.store(false, std::memory_order_relaxed);
                 }
                 if (!from_os_page_cache)
-                    res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+                    res = platformPRead(fd, to + bytes_read, to_read, offset + bytes_read);
             }
             else
-                res = ::read(fd, to + bytes_read, to_read);
+                res = platformRead(fd, to + bytes_read, to_read);
         }
         if (!res)
             break;
@@ -198,12 +369,45 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     if (hasPendingData())
         return true;
 
+    auto timeout_milliseconds = static_cast<int>(
+        std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
+
+#if defined(OS_WINDOWS)
+    /// Windows has no `poll` for file descriptors - `WSAPoll` takes sockets only. The console is
+    /// waitable with `WaitForSingleObject`, pipes are probed with `PeekNamedPipe`; a disk file
+    /// is not waitable but is also always ready to read, which is what `poll` reports for one.
+    auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll file {}: not an open descriptor", getFileName());
+    }
+
+    if (GetFileType(handle) == FILE_TYPE_DISK)
+        return true;
+
+    if (isConsoleInput(handle))
+        return pollConsoleInput(handle, timeout_milliseconds, getFileName());
+
+    if (GetFileType(handle) == FILE_TYPE_PIPE)
+        return pollPipeInput(handle, timeout_milliseconds, getFileName());
+
+    const DWORD waited = WaitForSingleObject(handle, static_cast<DWORD>(timeout_milliseconds));
+    if (waited == WAIT_FAILED)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        throw Exception(
+            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+            "Cannot poll file {} (WaitForSingleObject), error code: {}",
+            getFileName(),
+            GetLastError());
+    }
+    return waited == WAIT_OBJECT_0;
+#else
     pollfd poll_fd{};
     poll_fd.fd = fd;
     poll_fd.events = POLLIN | POLLPRI;
-
-    auto timeout_milliseconds = static_cast<int>(
-        std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
     /// Retry EINTR with the remaining time, otherwise a periodic signal (e.g. the query profiler's)
     /// would reset the deadline on every retry and the poll could never expire. Same pattern as
@@ -241,6 +445,7 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     }
 
     return result > 0;
+#endif
 }
 
 

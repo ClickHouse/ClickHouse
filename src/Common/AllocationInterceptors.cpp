@@ -206,6 +206,15 @@ void operator delete[](void * ptr, std::align_val_t align) noexcept
     Memory::deleteImpl(ptr);
 }
 
+/// The sized forms exist only where the compiler emits calls to them. clang enables sized
+/// deallocation by default when targeting Linux and macOS, but not Windows - the Microsoft
+/// runtime's ABI has no sized `operator delete`, and clang applies that to every Windows target,
+/// mingw-w64 included. Where the feature is off, the compiler always calls the unsized forms
+/// above, which do the same accounting by asking the allocator for the size instead of being
+/// told it, so nothing goes untracked; defining these anyway would just be four functions that
+/// the standard library has not declared and nothing can call.
+#if defined(__cpp_sized_deallocation)
+
 void operator delete(void * ptr, std::size_t size) noexcept
 {
     AllocationTrace trace;
@@ -237,3 +246,5 @@ void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noe
     trace.onFree(ptr, actual_size);
     Memory::deleteSized(ptr, size, align);
 }
+
+#endif

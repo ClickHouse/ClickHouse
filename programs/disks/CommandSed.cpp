@@ -102,11 +102,15 @@ public:
         {
             /// Without SIGTERM, could have the following failure path:
             /// failed write -> sed's stdout undrained -> pipes full -> stdin blocked -> feeder.join() hangs.
+#if !defined(OS_WINDOWS)
+            /// Windows has no `kill`, and `ShellCommand` cannot have started `sed` there anyway.
             if (0 != ::kill(command->getPid(), SIGTERM))
                 LOG_WARNING(log, "Cannot send SIGTERM to sed (pid {}): {}", command->getPid(), errnoToString());
+#endif
             feeder.join();
             throw;
         }
+
         feeder.join();
 
         /// Drain sed's stderr before calling command->wait().

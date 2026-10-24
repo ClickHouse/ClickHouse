@@ -7,11 +7,8 @@
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
 
-#include <filesystem>
 #include <iostream>
 #include <Examples/clickhouse_examples.h>
-
-namespace fs = std::filesystem;
 
 using namespace DB;
 
@@ -40,10 +37,10 @@ try
     Stopwatch stage;
     /// Load current inserts
     std::unordered_set<String> lock_holder_paths;
-    for (const String & entry : zookeeper->getChildren(fs::path(zookeeper_path) / "temp"))
+    for (const String & entry : zookeeper->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, "temp")))
     {
         if (startsWith(entry, "abandonable_lock-"))
-            lock_holder_paths.insert(fs::path(zookeeper_path) / "temp" / entry);
+            lock_holder_paths.insert(zkutil::joinZooKeeperPath(zookeeper_path, "temp", entry));
     }
     std::cerr << "Stage 1 (get lock holders): " << lock_holder_paths.size()
               << " lock holders, elapsed: " << stage.elapsedSeconds() << "s." << std::endl;
@@ -51,14 +48,14 @@ try
 
     if (!lock_holder_paths.empty())
     {
-        Strings partitions = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+        Strings partitions = zookeeper->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, "block_numbers"));
         std::cerr << "Stage 2 (get partitions): " << partitions.size()
                   << " partitions, elapsed: " << stage.elapsedSeconds() << "s." << std::endl;
         stage.restart();
 
         std::vector<std::future<Coordination::ListResponse>> lock_futures;
         for (const String & partition : partitions)
-            lock_futures.push_back(zookeeper->asyncGetChildren(fs::path(zookeeper_path) / "block_numbers" / partition));
+            lock_futures.push_back(zookeeper->asyncGetChildren(zkutil::joinZooKeeperPath(zookeeper_path, "block_numbers", partition)));
 
         struct BlockInfo
         {
@@ -75,7 +72,7 @@ try
             for (const String & entry : partition_block_numbers)
             {
                 Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
-                String zk_path = fs::path(zookeeper_path) / "block_numbers" / partitions[i] / entry;
+                String zk_path = zkutil::joinZooKeeperPath(zookeeper_path, "block_numbers", partitions[i], entry);
                 block_infos.push_back(
                     BlockInfo{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
             }

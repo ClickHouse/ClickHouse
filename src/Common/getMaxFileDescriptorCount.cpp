@@ -1,5 +1,7 @@
 #include <Common/getMaxFileDescriptorCount.h>
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 #include <sys/resource.h>
+#endif
 
 std::optional<size_t> getMaxFileDescriptorCount()
 {

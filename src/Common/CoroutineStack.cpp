@@ -1,3 +1,5 @@
+#if !defined(OS_WINDOWS)
+
 #include <base/defines.h>
 #include <base/MemorySanitizer.h>
 #include <Common/formatReadable.h>
@@ -126,3 +128,5 @@ void CoroutineStack::deallocate(boost::context::stack_context & sctx) const
     CurrentMetrics::sub(CurrentMetrics::FiberStackBytes, sctx.size);
     ProfileEvents::increment(ProfileEvents::FiberStackFreeNanoseconds, watch.elapsedNanoseconds());
 }
+
+#endif

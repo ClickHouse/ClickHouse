@@ -1,6 +1,7 @@
 #include <Common/Crypto/X509Certificate.h>
 
 #include <base/scope_guard.h>
+#include <base/time.h> /// `timegm` on Windows
 
 #include <ctime>
 
@@ -179,7 +180,7 @@ std::string X509Certificate::subjectName() const
 /// "admin\0.evil.com") would be silently truncated to "admin", letting a certificate impersonate a
 /// different subject during authentication. Preserving the exact bytes makes such a value compare
 /// unequal to any NUL-free configured subject, and also avoids silent truncation of long names.
-static std::string extractNameEntry(X509_NAME * name, uint nid)
+static std::string extractNameEntry(X509_NAME * name, unsigned nid)
 {
     if (!name)
         return {};
@@ -204,12 +205,12 @@ static std::string extractNameEntry(X509_NAME * name, uint nid)
     return std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(length));
 }
 
-std::string X509Certificate::issuerName(uint nid) const
+std::string X509Certificate::issuerName(unsigned nid) const
 {
     return extractNameEntry(X509_get_issuer_name(certificate), nid);
 }
 
-std::string X509Certificate::subjectName(uint nid) const
+std::string X509Certificate::subjectName(unsigned nid) const
 {
     return extractNameEntry(X509_get_subject_name(certificate), nid);
 }

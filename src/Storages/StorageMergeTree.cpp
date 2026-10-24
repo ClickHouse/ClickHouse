@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageProxy.h>
 
@@ -7,6 +8,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/MergeSelectorAlgorithm.h>
@@ -547,10 +549,10 @@ void StorageMergeTree::removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk)
 
     /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
     /// (silently skips) its inserts.
-    const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+    const auto deduplication_logs_path = pathToGenericString(fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME);
     if (disk->existsDirectory(deduplication_logs_path))
     {
-        LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
+        LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path);
         disk->removeRecursive(deduplication_logs_path);
         ++removed_count;
     }
@@ -1871,7 +1873,7 @@ void StorageMergeTree::loadDeduplicationLog()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
     auto disk = getDisks()[0];
-    std::string path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+    std::string path = pathToGenericString(fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME);
 
     /// Deduplication log only matters on INSERTs.
     if (!disk->isReadOnly())
@@ -1902,7 +1904,7 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
         bool object_exists = true;
         try
         {
-            object_exists = disk->checkUniqueId(disk->getUniqueId(fs::path(relative_data_path) / file_name));
+            object_exists = disk->checkUniqueId(disk->getUniqueId(pathToGenericString(fs::path(relative_data_path) / file_name)));
         }
         catch (...)
         {
@@ -4649,10 +4651,10 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    fs::path mutations_path_in_backup = fs::path{data_path_in_backup} / "mutations";
+    const String mutations_path_in_backup = joinBackupPath(data_path_in_backup, "mutations");
     BackupEntries backup_entries;
     for (auto it = current_mutations_by_version.lower_bound(version); it != current_mutations_by_version.end(); ++it)
-        backup_entries.emplace_back(mutations_path_in_backup / fmt::format("{:010}.txt", it->first), it->second.backup());
+        backup_entries.emplace_back(joinBackupPath(mutations_path_in_backup, fmt::format("{:010}.txt", it->first)), it->second.backup());
     return backup_entries;
 }
 

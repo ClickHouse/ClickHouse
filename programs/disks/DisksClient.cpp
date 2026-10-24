@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <DisksClient.h>
 #include <optional>
 #include <Client/ClientBase.h>
@@ -5,6 +6,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/IDisk.h>
 #include <base/types.h>
@@ -27,7 +29,7 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
 {
     if (path_.has_value())
     {
-        if (!fs::path{path_.value()}.is_absolute())
+        if (!pathFromString(path_.value()).is_absolute())
         {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
         }
@@ -86,8 +88,8 @@ std::vector<String> DiskWithPath::getAllFilesByPrefix(const String & prefix, boo
             if (slash_pos == String::npos)
                 return {"", prefix};
 
-            std::filesystem::path pattern_path{prefix};
-            return {pattern_path.parent_path(), pattern_path.filename()};
+            std::filesystem::path pattern_path = pathFromString(prefix);
+            return {pathToGenericString(pattern_path.parent_path()), pathToGenericString(pattern_path.filename())};
         }();
 
         if (!isDirectory(path_before))
@@ -132,30 +134,43 @@ void DiskWithPath::setPath(const String & any_path)
 
 String DiskWithPath::validatePathAndGetAsRelative(const String & path)
 {
-    String lexically_normal_path = fs::path(path).lexically_normal();
+    String lexically_normal_path = pathToGenericString(pathFromString(path).lexically_normal());
     if (lexically_normal_path.contains(".."))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
 
     /// If path is absolute we should keep it as relative inside disk, so disk will look like
-    /// an ordinary filesystem with root.
-    if (fs::path(lexically_normal_path).is_absolute())
-        return lexically_normal_path.substr(1);
+    /// an ordinary filesystem with root. `relative_path` strips the whole root: the `/` on POSIX,
+    /// and on Windows also a drive (`C:/`) or a UNC prefix (`//server/`), which `substr(1)` would not.
+    const auto fs_path = pathFromString(lexically_normal_path);
 
-    return lexically_normal_path;
+    /// Stripping a root name loses which drive or share the path is on, and a disk has one root only:
+    /// the built-in `local` disk is rooted at `/`, which is the root of the current drive. A path on
+    /// another drive or share would silently name the same relative path on the current drive, so it
+    /// is refused. Drive letters and server names are case-insensitive. On POSIX the root name is always empty.
+    const String root_name = pathToGenericString(fs_path.root_name());
+    const String current_root_name = pathToGenericString(fs::current_path().root_name());
+    if (!std::ranges::equal(root_name, current_root_name, [](char a, char b) { return toLowerIfAlphaASCII(a) == toLowerIfAlphaASCII(b); }))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Path {} is not on the drive of the current directory ({}), which is the only one a disk can address",
+            path,
+            current_root_name);
+
+    return pathToGenericString(fs_path.relative_path());
 }
 
 String DiskWithPath::normalizePathAndGetAsRelative(const String & messyPath)
 {
-    std::filesystem::path path(messyPath);
-    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path);
-    String npath = canonical_path.make_preferred().string();
-    return validatePathAndGetAsRelative(npath);
+    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(pathFromString(messyPath));
+    return validatePathAndGetAsRelative(pathToGenericString(canonical_path));
 }
 
 String DiskWithPath::normalizePath(const String & path)
 {
-    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path);
-    return canonical_path.make_preferred().string();
+    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(pathFromString(path));
+    /// The paths of `DiskWithPath` are `IDisk` virtual paths: `/`-separated by definition, so they
+    /// are read back generically rather than with the host's preferred separator.
+    return pathToGenericString(canonical_path);
 }
 
 DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_)
@@ -222,7 +237,7 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
             std::pair{
                 [this, config_prefix]()
                 { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix); },
-                fs::current_path().string()});
+                pathToGenericString(fs::current_path())});
     }
 
     addDisk(begin_disk, std::nullopt);

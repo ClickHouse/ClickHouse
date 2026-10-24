@@ -1,3 +1,4 @@
+#include <IO/PlatformFileIO.h>
 #include <Disks/IO/ThreadPoolReader.h>
 #include <future>
 #include <fcntl.h>
@@ -171,7 +172,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
             {
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-                res = ::pread(fd, request.buf, request.size, request.offset);
+                res = platformPRead(fd, request.buf, request.size, request.offset);
             }
 
             /// File has ended.

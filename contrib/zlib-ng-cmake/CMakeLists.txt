@@ -9,7 +9,11 @@ if(NOT ARCH_S390X)
     target_compile_definitions(_zlib PRIVATE -DUNALIGNED64_OK)
 endif()
 
-set (HAVE_UNISTD_H 1)
+if (OS_WINDOWS)
+    set (HAVE_UNISTD_H 0)
+else ()
+    set (HAVE_UNISTD_H 1)
+endif ()
 add_definitions(-D_LARGEFILE64_SOURCE=1 -D__USE_LARGEFILE64)
 
 target_compile_definitions(_zlib PUBLIC -DHAVE_VISIBILITY_HIDDEN)
@@ -17,7 +21,11 @@ target_compile_definitions(_zlib PUBLIC -DHAVE_VISIBILITY_INTERNAL)
 target_compile_definitions(_zlib PUBLIC -DHAVE_BUILTIN_CTZ)
 target_compile_definitions(_zlib PUBLIC -DHAVE_BUILTIN_CTZLL)
 target_compile_definitions(_zlib PUBLIC -DHAVE_ATTRIBUTE_ALIGNED)
-target_compile_definitions(_zlib PUBLIC -DHAVE_POSIX_MEMALIGN)
+if (NOT OS_WINDOWS)
+    # mingw-w64 has no `posix_memalign`; without this, `zng_alloc` falls through to the
+    # `_aligned_malloc`/`_aligned_free` pair that zlib-ng uses on Windows.
+    target_compile_definitions(_zlib PUBLIC -DHAVE_POSIX_MEMALIGN)
+endif ()
 
 set(ZLIB_ARCH_SRCS)
 set(ZLIB_ARCH_HDRS)
