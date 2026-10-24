@@ -9,7 +9,6 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 set -e
 
 MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
-    --enable_analyzer 1 \
     --use_skip_indexes_on_data_read 1 \
     --query_plan_remove_unused_columns 1 \
     --optimize_move_to_prewhere 1 \

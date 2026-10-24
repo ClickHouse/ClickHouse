@@ -24,7 +24,7 @@ ColumnsDescription StorageSystemFormats::getColumnsDescription()
         {"supports_random_access", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format supports random access in the input."},
         {"has_schema_inference", std::make_shared<DataTypeUInt8>(), "The format can dynamically determine the schema from the data (either from embedded header/metadata or from the piece of data)."},
         {"has_external_schema", std::make_shared<DataTypeUInt8>(), "The format either has a fixed schema or accepts a predefined schema in its own format."},
-        {"prefers_large_blocks", std::make_shared<DataTypeUInt8>(), "The format will write larger blocks into output and generate larger blocks on input."},
+        {"prefers_large_blocks", std::make_shared<DataTypeUInt8>(), "The format will write larger blocks into output."},
         {"supports_append", std::make_shared<DataTypeUInt8>(), "It's possible to append into a single file with this format."},
         {"supports_subsets_of_columns", std::make_shared<DataTypeUInt8>(), "The input format can recognize when certain columns are omitted."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description of what the format is."},
@@ -51,7 +51,7 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr con
         bool has_schema_inference = creators.schema_reader_creator != nullptr;
         bool has_external_schema = creators.external_schema_reader_creator != nullptr;
         bool prefers_large_blocks = creators.prefers_large_blocks;
-        bool supports_append = creators.append_support_checker && creators.append_support_checker(settings);
+        bool supports_append = has_output_format && FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, settings);
         bool supports_subset_of_columns = creators.subset_of_columns_support_checker && creators.subset_of_columns_support_checker(settings);
 
         res_columns[0]->insert(format_name);
@@ -59,7 +59,7 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, ContextPtr con
         res_columns[2]->insert(has_output_format);
         res_columns[3]->insert(supports_parallel_parsing);
         res_columns[4]->insert(creators.supports_parallel_formatting);
-        res_columns[5]->insert(creators.is_tty_friendly);
+        res_columns[5]->insert(has_output_format && creators.is_tty_friendly);
         res_columns[6]->insert(content_type);
         res_columns[7]->insert(supports_random_access);
         res_columns[8]->insert(has_schema_inference);
