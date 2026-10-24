@@ -462,10 +462,11 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 class TextIndexDAGReplacer
 {
 public:
-    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_)
+    TextIndexDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_, bool direct_read_from_text_index_, const ActionsDAG * scan_columns_ = nullptr)
         : actions_dag(actions_dag_)
         , text_index_read_infos(text_index_read_infos_)
         , direct_read_from_text_index(direct_read_from_text_index_)
+        , scan_columns(scan_columns_)
     {
         /// Register the text-index virtual column inputs that are already present in this DAG from a previous
         /// optimization pass. This prevents them from being re-added to `index_read_tasks` when the same DAG is processed again.
@@ -562,6 +563,8 @@ private:
     ActionsDAG & actions_dag;
     TextIndexReadInfos text_index_read_infos;
     bool direct_read_from_text_index = false;
+    /// Maps this DAG's inputs to the scan's output columns; null when the DAG reads the scan directly.
+    const ActionsDAG * scan_columns = nullptr;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
@@ -589,13 +592,26 @@ private:
             || function_name == "hasPhrase";
     }
 
+    /// Returns `node` expressed over the scan's columns; `holder` owns the composed DAG.
+    const ActionsDAG::Node * expressOverScan(const ActionsDAG::Node & node, std::optional<ActionsDAG> & holder) const
+    {
+        if (!scan_columns)
+            return &node;
+
+        holder = ActionsDAG::merge(scan_columns->clone(), ActionsDAG::cloneSubDAG({&node}, /*remove_aliases=*/ false));
+        return holder->getOutputs().front();
+    }
+
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
         /// Canonicalize the function-node subtree so that the serialized column names
         /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
         /// produced when the condition was originally constructed in ReadFromMergeTree::applyFilters.
-        ActionsDAGWithInversionPushDown canonical_dag(&function_node, context, /* boolean_context */ false);
-        const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
+        std::optional<ActionsDAG> function_over_scan;
+        const ActionsDAG::Node * analyzed_node = expressOverScan(function_node, function_over_scan);
+
+        ActionsDAGWithInversionPushDown canonical_dag(analyzed_node, context, /* boolean_context */ false);
+        const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : *analyzed_node;
 
         /// The index is analyzed under a `CAST` that drops `Nullable` and throws on NULL. Direct read replaces or
         /// short-circuits the predicate, so `NOT hasToken(CAST(s, 'String'), 'a')` would return the NULL row
@@ -732,7 +748,8 @@ private:
             chassert(preprocessor_dag.getOutputs().size() == 1);
             const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
             /// The index was analyzed on the expression under lossless conversions, e.g. `s` in `hasToken(toNullable(s), 'Foo')`.
-            const auto * haystack = unwrapLosslessConversion(arg_haystack);
+            std::optional<ActionsDAG> haystack_over_scan;
+            const auto * haystack = unwrapLosslessConversion(expressOverScan(*arg_haystack, haystack_over_scan));
             auto haystack_name = getNameWithoutAliases(haystack);
 
             /// Check that preprocessor contains current expression as its argument.
@@ -1073,45 +1090,10 @@ static bool applyTextIndexInject(
     ReadFromMergeTree & read_from_merge_tree_step,
     ActionsDAG & dag,
     const TextIndexReadInfos & text_index_infos,
-    const NameToNameMap & source_columns)
+    const ActionsDAG * scan_columns)
 {
-    /// Match inputs renamed by a step below (e.g. `__table1.s`) by their scan column name, then restore the header names.
-    /// A node with the scan column name blocks the rename, unless it is an alias of an input renamed to the same
-    /// column (e.g. `__table1.s AS s` of the projection): it holds the same values, so matching it by name is fine.
-    NameSet conflicting_names;
-    for (const auto & node : dag.getNodes())
-    {
-        const auto * source_node = &node;
-        while (source_node->type == ActionsDAG::ActionType::ALIAS)
-            source_node = source_node->children.front();
-
-        auto it = source_columns.end();
-        if (source_node != &node && source_node->type == ActionsDAG::ActionType::INPUT)
-            it = source_columns.find(source_node->result_name);
-
-        if (it == source_columns.end() || it->second != node.result_name)
-            conflicting_names.insert(node.result_name);
-    }
-
-    std::unordered_map<const ActionsDAG::Node *, String> renamed_inputs;
-    for (const auto * input : dag.getInputs())
-    {
-        auto it = source_columns.find(input->result_name);
-        if (it == source_columns.end() || conflicting_names.contains(it->second))
-            continue;
-
-        renamed_inputs.emplace(input, input->result_name);
-        const_cast<ActionsDAG::Node &>(*input).result_name = it->second;
-    }
-
-    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false);
-    bool is_rewritten = replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
-
-    for (const auto * input : dag.getInputs())
-        if (auto it = renamed_inputs.find(input); it != renamed_inputs.end())
-            const_cast<ActionsDAG::Node &>(*input).result_name = it->second;
-
-    return is_rewritten;
+    TextIndexDAGReplacer replacer(dag, text_index_infos, /*direct_read_from_text_index=*/ false, scan_columns);
+    return replacer.replace(read_from_merge_tree_step.getContext(), /*filter_column_name=*/ String{}).has_value();
 }
 
 static bool processAndOptimizeTextIndexFunctionsInPrewhere(
@@ -1213,38 +1195,8 @@ void processAndOptimizeTextIndexFunctions(
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 
-    /// The scan column that each output of the steps walked so far is an alias of, e.g. `__table1.s` -> `s`.
-    NameToNameMap source_columns;
-    auto update_source_columns = [&](const ActionsDAG & dag)
-    {
-        NameSet input_names;
-        for (const auto * input : dag.getInputs())
-            input_names.insert(input->result_name);
-
-        /// A column that is not an input of the DAG passes through the step unchanged (see `ActionsDAG::updateHeader`).
-        NameToNameMap updated;
-        for (const auto & [name, source] : source_columns)
-            if (!input_names.contains(name))
-                updated.emplace(name, source);
-
-        for (const auto * output : dag.getOutputs())
-        {
-            updated.erase(output->result_name);
-
-            const auto * node = output;
-            while (node->type == ActionsDAG::ActionType::ALIAS)
-                node = node->children.front();
-
-            if (node->type != ActionsDAG::ActionType::INPUT)
-                continue;
-
-            auto it = source_columns.find(node->result_name);
-            const String & source = it == source_columns.end() ? node->result_name : it->second;
-            if (source != output->result_name)
-                updated.emplace(output->result_name, source);
-        }
-        source_columns = std::move(updated);
-    };
+    /// Composition of the Filter/Expression DAGs walked so far: expresses the current step's inputs over the scan's columns.
+    std::optional<ActionsDAG> scan_columns;
 
     /// Walk the steps above the scan; traverse row-preserving pass-throughs (liftUpFunctions may hoist a projection above a sort) and stop where the column set changes (aggregation, join).
     for (auto it = walk_begin; it != stack.rend(); ++it)
@@ -1277,28 +1229,34 @@ void processAndOptimizeTextIndexFunctions(
             const auto * result_filter_node = processAndOptimizeTextIndexDAG(
                 *read_from_merge_tree_step, filter_dag, text_index_infos, filter_step->getFilterColumnName(), direct_read_allowed);
 
-            update_source_columns(filter_dag);
-            if (!result_filter_node)
-                continue;
-
-            bool removes_filter_column = filter_step->removesFilterColumn();
-            auto new_filter_column_name = result_filter_node->result_name;
-            node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
-            continue;
+            if (result_filter_node)
+            {
+                bool removes_filter_column = filter_step->removesFilterColumn();
+                auto new_filter_column_name = result_filter_node->result_name;
+                node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            }
+        }
+        else
+        {
+            /// Inject-only rewrite: a merged postprocessor DAG reads only the indexed column, so inputs and output names are unchanged -- reuse the step's input header.
+            ActionsDAG & dag = filter_step ? filter_step->getExpression() : expression_step->getExpression();
+            if (applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, scan_columns ? &*scan_columns : nullptr))
+            {
+                const SharedHeader & input_header = step->getInputHeaders().front();
+                if (filter_step)
+                    node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                else
+                    node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
+            }
         }
 
-        /// Inject-only rewrite: a merged postprocessor DAG reads only the indexed column, so inputs and output names are unchanged -- reuse the step's input header.
-        ActionsDAG & dag = filter_step ? filter_step->getExpression() : expression_step->getExpression();
-        bool is_rewritten = applyTextIndexInject(*read_from_merge_tree_step, dag, text_index_infos, source_columns);
-        update_source_columns(dag);
-        if (!is_rewritten)
-            continue;
-
-        const SharedHeader & input_header = step->getInputHeaders().front();
-        if (filter_step)
-            node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-        else
-            node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
+        /// The step pointers taken at the loop start dangle if `node->step` was replaced above.
+        const IQueryPlanStep * current_step = node->step.get();
+        const auto * current_filter_step = typeid_cast<const FilterStep *>(current_step);
+        const ActionsDAG & step_dag = current_filter_step
+            ? current_filter_step->getExpression()
+            : typeid_cast<const ExpressionStep &>(*current_step).getExpression();
+        scan_columns = scan_columns ? ActionsDAG::merge(std::move(*scan_columns), step_dag.clone()) : step_dag.clone();
     }
 }
 
