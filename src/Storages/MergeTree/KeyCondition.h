@@ -490,7 +490,6 @@ public:
     /// comparison uses: an `Array` or `Map`, at any depth, holding a `Nullable` or floating-point element, in a type
     /// with no `Dynamic`, `Variant` or `JSON` node.
     static bool typeMayHideValueAboveMax(const DataTypePtr & type);
-    /// Positions of the `typeMayHideValueAboveMax` columns among `types`; empty when there are none.
     static std::vector<size_t> getColumnsMayHideValueAboveMax(const DataTypes & types);
     /// A copy of `getExtremes`-derived bounds whose given columns can be compared safely: the upper end is `+inf`,
     /// and a lower end holding a NULL, which a merge in `Field` order can place above a row, is `-inf`.
