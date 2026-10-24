@@ -16,10 +16,26 @@ exports_files([
     "tests/gtest_ytsaurus_dictionary_source.cpp",
 ])
 
+_CACHE_DICTIONARY_HEADERS = [
+    "CacheDictionary.h",
+    "CacheDictionaryUpdateQueue.h",
+]
+
+_SHARED_DICTIONARY_HEADERS = [
+    "ClickHouseDictionarySource.h",
+    "DictionaryPipelineExecutor.h",
+    "DictionarySourceHelpers.h",
+    "HashedDictionary.h",
+    "HashedDictionaryCollectionTraits.h",
+    "HashedDictionaryCollectionType.h",
+    "HashedDictionaryParallelLoader.h",
+    "InvalidateQueryResponse.h",
+]
+
 _PRIVATE_DICTIONARIES_0_HEADERS = [
     "DirectDictionary.h",
     "FlatDictionary.h",
-]
+] + _CACHE_DICTIONARY_HEADERS + _SHARED_DICTIONARY_HEADERS
 
 _PRIVATE_DICTIONARIES_1_HEADERS = [
     "CacheDictionaryStorage.h",
@@ -46,18 +62,33 @@ _PRIVATE_DICTIONARIES_1_HEADERS = [
     "YAMLRegExpTreeDictionarySource.h",
     "YTsaurusDictionarySource.h",
     "readInvalidateQuery.h",
-]
+    "RangeHashedDictionary.h",
+] + _CACHE_DICTIONARY_HEADERS + _SHARED_DICTIONARY_HEADERS
 
 _PRIVATE_DICTIONARIES_2_HEADERS = [
     "HashedArrayDictionary.h",
-]
+    "RangeHashedDictionary.h",
+] + _SHARED_DICTIONARY_HEADERS
 
-_PUBLIC_HEADERS = glob(
-    [
-        "*.h",
-    ],
-    exclude = _PRIVATE_DICTIONARIES_0_HEADERS + _PRIVATE_DICTIONARIES_1_HEADERS + _PRIVATE_DICTIONARIES_2_HEADERS,
-)
+_PUBLIC_HEADERS = [
+    "DictionaryFactory.h",
+    "DictionaryHelpers.h",
+    "DictionarySource.h",
+    "DictionarySourceFactory.h",
+    "DictionaryStructure.h",
+    "ExternalQueryBuilder.h",
+    "HierarchyDictionariesUtils.h",
+    "ICacheDictionaryStorage.h",
+    "IDictionary.h",
+    "IDictionarySource.h",
+    "NaiveBayesDictionary.h",
+    "NaiveBayesModel.h",
+    "SSDCacheDictionaryStorage.h",
+    "XGBoostDictionary.h",
+    "XGBoostModel.h",
+    "getDictionaryConfigurationFromAST.h",
+    "registerDictionaries.h",
+]
 
 _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES = [
     "AI_SDK_HAS_ANTHROPIC=1",
@@ -207,7 +238,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "clickhouse_dictionaries__compile_1",
-    srcs = ([
+    srcs = [
         "CacheDictionaryUpdateQueue.cpp",
     ] + glob(["Cassandra*.cpp"]) + [
         "ClickHouseDictionarySource.cpp",
@@ -241,7 +272,7 @@ ch_cc_library(
         "YAMLRegExpTreeDictionarySource.cpp",
         "YTsaurusDictionarySource.cpp",
         "readInvalidateQuery.cpp",
-    ] + glob(["register*.cpp"]) + _PRIVATE_DICTIONARIES_1_HEADERS),
+    ] + glob(["register*.cpp"]) + _PRIVATE_DICTIONARIES_1_HEADERS,
     hdrs = _PUBLIC_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
@@ -620,12 +651,7 @@ cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(
-        [
-            "**/*.h",
-        ],
-        exclude = _PRIVATE_DICTIONARIES_0_HEADERS + _PRIVATE_DICTIONARIES_1_HEADERS + _PRIVATE_DICTIONARIES_2_HEADERS,
-    ),
+    hdrs = _PUBLIC_HEADERS,
     deps = [
         "//base/poco/Util:_poco_util",
         "//src:headers",

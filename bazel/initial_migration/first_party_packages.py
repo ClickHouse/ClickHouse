@@ -193,14 +193,16 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
         for kw in rule.keywords:
             if kw.arg in {"srcs", "hdrs", "textual_hdrs", "private_hdrs"}:
                 kw.value = RemoveHeaders().visit(kw.value)
-    owner = compilers[compiler]
-    attribute = next((kw for kw in owner.keywords if kw.arg == field), None)
-    if attribute is None:
-        owner.keywords.append(ast.keyword(arg=field, value=headers))
-    elif isinstance(attribute.value, ast.List) and isinstance(headers, ast.List):
-        attribute.value.elts.extend(headers.elts)
-    else:
-        attribute.value = ast.BinOp(left=attribute.value, op=ast.Add(), right=headers)
+    for name in [compiler] if isinstance(compiler, str) else compiler:
+        owner = compilers[name]
+        value = deepcopy(headers)
+        attribute = next((kw for kw in owner.keywords if kw.arg == field), None)
+        if attribute is None:
+            owner.keywords.append(ast.keyword(arg=field, value=value))
+        elif isinstance(attribute.value, ast.List) and isinstance(value, ast.List):
+            attribute.value.elts.extend(value.elts)
+        else:
+            attribute.value = ast.BinOp(left=attribute.value, op=ast.Add(), right=value)
 
 
 # Public headers read outside dbms__compile_0 and clickhouse_common_io__compile_0.
@@ -346,6 +348,34 @@ def declare_src_compiled_headers(rows, files):
         literals = list_expr([p for p in paths if "*" not in p])
         headers = ast.BinOp(left=expr("glob(" + json.dumps(patterns) + ")"), op=ast.Add(), right=literals)
         declare_compiled_headers(rows, files, compiler, headers)
+
+
+def declare_dictionary_private_headers(rows, files):
+    # These headers are read only by the listed CMake compile groups.
+    for groups, names in (
+        ((0,), ("DirectDictionary.h", "FlatDictionary.h")),
+        ((1,), (
+            "CacheDictionaryStorage.h", "NaiveBayesTrainer.h", "CassandraDictionarySource.h",
+            "CassandraHelpers.h", "CassandraSource.h", "ExecutableDictionarySource.h",
+            "ExecutablePoolDictionarySource.h", "FileDictionarySource.h", "HTTPDictionarySource.h",
+            "IPAddressDictionary.h", "MongoDBDictionarySource.h", "MySQLDictionarySource.h",
+            "NullDictionarySource.h", "PolygonDictionary.h", "PolygonDictionaryImplementations.h",
+            "PolygonDictionaryUtils.h", "PostgreSQLDictionarySource.h", "RedisDictionarySource.h",
+            "RedisSource.h", "RegExpTreeDictionary.h", "XDBCDictionarySource.h",
+            "YAMLRegExpTreeDictionarySource.h", "YTsaurusDictionarySource.h", "readInvalidateQuery.h",
+        )),
+        ((2,), ("HashedArrayDictionary.h",)),
+        ((1, 2), ("RangeHashedDictionary.h",)),
+        ((0, 1), ("CacheDictionary.h", "CacheDictionaryUpdateQueue.h")),
+        ((0, 1, 2), (
+            "ClickHouseDictionarySource.h", "DictionaryPipelineExecutor.h",
+            "DictionarySourceHelpers.h", "HashedDictionary.h", "HashedDictionaryCollectionTraits.h",
+            "HashedDictionaryCollectionType.h", "HashedDictionaryParallelLoader.h",
+            "InvalidateQueryResponse.h",
+        )),
+    ):
+        compilers = [f"clickhouse_dictionaries__compile_{index}" for index in groups]
+        declare_compiled_headers(rows, files, compilers, list_expr(names), field="srcs")
 
 
 def declare_dbms_private_headers(rows, files):
@@ -945,6 +975,8 @@ class Migration:
                 declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, list_expr([header]))
             declare_src_compiled_headers(self.rows["src"], self.package_inventory("src"))
             declare_dbms_private_headers(self.rows["src"], self.package_inventory("src"))
+        if self.from_generator and "src/Dictionaries" in self.rows:
+            declare_dictionary_private_headers(self.rows["src/Dictionaries"], self.package_inventory("src/Dictionaries"))
         data = self.rewrite_consumers()
         builds = self.render_builds()
         data.update(builds)

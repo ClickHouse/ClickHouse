@@ -11499,12 +11499,6 @@ filegroup(
     srcs = glob(["libcxx/include/**"]),
 )
 
-cc_library(
-    name = "libcxxabi_headers",
-    hdrs = glob(["libcxxabi/include/*.h"]),
-    includes = ["libcxxabi/include"],
-)
-
 filegroup(
     name = "runtime_libcxxabi_headers",
     srcs = glob(["libcxxabi/include/**"]),

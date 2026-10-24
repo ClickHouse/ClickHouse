@@ -111,6 +111,73 @@ def declare_boost_header_libraries(build):
     build.rules.append(contents)
 
 
+def declare_external_compiler_headers(root):
+    """Publish Abseil's optional_ref.h with Status and keep CRoaring's forced include private."""
+    from initial_migration.compact_build import Source
+
+    overlays = root / "bazel/dependencies"
+    for repository, target, field, header, old, replacement in (
+        ("clickhouse_abseil_cpp", "absl_status", "hdrs", "absl/types/optional_ref.h",
+         ":absl_internal_optional_ref", ":absl_hardening"),
+        ("clickhouse_croaring", "_roaring__compile_1", "srcs",
+         "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
+         "@clickhouse//contrib/croaring-cmake:page_aligned_functions", None),
+    ):
+        path = overlays / (repository + ".BUILD.bazel")
+        source = Source(path.read_text())
+        rules = {next(k.value.value for k in rule.keywords if k.arg == "name"): (stmt, rule)
+                 for stmt, rule in source.rules()}
+        rule = rules[target][1]
+        attrs = {k.arg: k.value for k in rule.keywords}
+        edits = []
+        items = attrs.get(field)
+        if items is None:
+            pos = source.span(rule)[1] - 1
+            separator = "" if source.bytes[:pos].rstrip().endswith(b",") else ","
+            edits.append((pos, pos, separator + f"\n    {field} = {json.dumps([header])},\n"))
+        elif not any(isinstance(n, ast.Constant) and n.value == header for n in ast.walk(items)):
+            values = source.text(items) + " + " + json.dumps([header])
+            if isinstance(items, ast.List):
+                values = json.dumps(ast.literal_eval(items) + [header])
+            edits.append((*source.span(items), values))
+        if old.startswith(":") and old[1:] in rules:
+            statement, donor = rules[old[1:]]
+            donor_attrs = {k.arg: k.value for k in donor.keywords}
+            if ast.literal_eval(donor_attrs["hdrs"]) != [header]:
+                raise ValueError(f"{old} now owns other headers")
+            edits.append((*source.span(statement), ""))
+        # The original CMake import records direct -include files in hdrs.
+        # After package splitting the same file was a header library instead.
+        for field_name in ("deps", "implementation_deps", "hdrs", "textual_hdrs", "additional_compiler_inputs"):
+            if field_name == field:
+                continue
+            deps = attrs.get(field_name)
+            if deps is None:
+                continue
+            for group in (n for n in ast.walk(deps) if isinstance(n, ast.List)):
+                retired = {old} if replacement else {old, old.rsplit(":", 1)[0] + ":headers", header}
+                if not any(isinstance(n, ast.Constant) and n.value in retired for n in group.elts):
+                    continue
+                values = [replacement if v in retired else v for v in ast.literal_eval(group)]
+                edits.append((*source.span(group), json.dumps(list(dict.fromkeys(v for v in values if v)))))
+        if edits:
+            path.write_text(source.rewrite(edits))
+
+    # Only CRoaring's roaring.c uses -include on this one ClickHouse source file.
+    path = root / "contrib/croaring-cmake/BUILD.bazel"
+    source = Source(path.read_text())
+    allowed = {"page_aligned_functions.h"}
+    if (any(next(k.value.value for k in rule.keywords if k.arg == "name")
+            not in {"headers", "page_aligned_functions"} for _, rule in source.rules())
+            or any(set(ast.literal_eval(n.args[0])) - allowed for n in ast.walk(source.module)
+                   if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "exports_files")):
+        raise ValueError(f"{path} contains other targets")
+    path.write_text('exports_files(\n    ["page_aligned_functions.h"],\n'
+                    '    visibility = ["@clickhouse_croaring//:__pkg__"],\n)\n')
+
+
+
+
 def declare_common_header_owners(root, rules):
     """Keep Common headers with their memory, parser, and string libraries."""
     from initial_migration.prune_inherited_headers import Document
@@ -1358,6 +1425,7 @@ def main():
     declare_compiled_parser_headers(ROOT / "src/Parsers/BUILD.bazel")
     declare_unit_test_private_hdrs(ROOT / "src/BUILD.bazel")
     declare_first_party_header_deps(ROOT)
+    declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import share_local_defines
     share_local_defines(ROOT, selection_builds)
     # Rule transfers can leave adjacent literal lists. Preserve select()

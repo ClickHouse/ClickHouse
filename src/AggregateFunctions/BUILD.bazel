@@ -76,7 +76,7 @@ _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS = [
 
 ch_cc_library(
     name = "clickhouse_aggregate_functions__compile_0",
-    srcs = ([
+    srcs = [
         "AggregateFunctionAggThrow.cpp",
         "AggregateFunctionAnalysisOfVariance.cpp",
         "AggregateFunctionAny.cpp",
@@ -148,7 +148,7 @@ ch_cc_library(
         "AggregateFunctionTheilsU.cpp",
         "AggregateFunctionThirdMoment.cpp",
         "AggregateFunctionTopK.cpp",
-    ]) + select({
+    ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["AggregateFunctionUniq.cpp"],
     }) + [
@@ -334,13 +334,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }) + [
-        "@clickhouse_boost//:boost_headers_no_openssl",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "@clickhouse_datasketches_cpp//:datasketches_cpp",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
         "//contrib/cityhash102:_cityhash",
@@ -348,10 +341,7 @@ ch_cc_library(
         "//src:headers",
         "//src/Common",
         "//src/Parsers:headers",
-        "//bazel:clickhouse_config_headers",
         "@clickhouse_croaring//:_roaring",
-        "@clickhouse_croaring//:_roaring__compile_0",
-        "//base:pcg_random",
         "//src/Common:exception_api",
     ] + select({
         "@platforms//cpu:x86_64": ["//src/Common:assert_cast"],

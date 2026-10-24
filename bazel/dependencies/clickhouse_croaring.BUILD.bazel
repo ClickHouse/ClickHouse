@@ -109,6 +109,7 @@ ch_cc_library(
     name = "_roaring__compile_1",
     srcs = [
         "src/roaring.c",
+        "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
     ],
     copts = [
         "-w",
@@ -116,10 +117,7 @@ ch_cc_library(
         "-include",
         "contrib/croaring-cmake/page_aligned_functions.h",
     ],
-    implementation_deps = [
-        ":_roaring__compile_0",
-        "@clickhouse//contrib/croaring-cmake:page_aligned_functions",
-    ],
+    implementation_deps = [":_roaring__compile_0"],
     language = "C",
     libcxx_headers = False,
     local_defines = _ROARING_LOCAL_DEFINES,

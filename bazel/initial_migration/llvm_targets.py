@@ -304,10 +304,6 @@ def declare_from_references(root, references):
         build.rule('filegroup', 'runtime_' + library + '_headers', {
             'srcs': Glob([library + '/include/**'], exclude=('**/BUILD', '**/BUILD.bazel')),
         })
-    build.rule('cc_library', 'libcxxabi_headers', {
-        'hdrs': Glob(['libcxxabi/include/*.h']),
-        'includes': ['libcxxabi/include'],
-    })
     for path in RUNTIME_ROOT_INPUTS:
         if not (root / path).is_file():
             raise ValueError('Missing ClickHouse runtime input: ' + path)

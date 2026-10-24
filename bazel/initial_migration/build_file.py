@@ -1176,9 +1176,7 @@ class BuildFile:
                         # src/asio_service.cxx uses OpenSSL only when NuRaft's TLS support is enabled.
                         if (postgres or supplied) and set(supplied) != openssl:
                             raise ValueError(f'{name} must link both OpenSSL libraries for TLS: {value}')
-                        if postgres:
-                            supplied.append('@clickhouse_llvm_project//:libcxxabi_headers')
-                        elif nuraft:
+                        if nuraft:
                             # asio_service.cxx uses both <asio/ip/address.hpp> and <boost/asio.hpp>.
                             # Only the complete Boost library exports the extra 'boost' include directory.
                             boost = [
@@ -1219,16 +1217,11 @@ class BuildFile:
                     if 'crypto' in reachable:
                         system_includes[arch] = [inc for inc in includes if inc.directory not in openssl_includes]
             if native_library and self.owner not in {None, llvm_targets.PREFIX}:
-                # Only the pinned source repository's libcxxabi include root
-                # belongs to libcxxabi_headers. Keep LLVM toolchain includes.
+                # External C libraries do not use the captured C++ ABI include directory.
+                abi = LocalInclude(llvm_targets.PREFIX + '/libcxxabi/include', self.owner)
                 for arch, includes in system_includes.items():
-                    if groups[arch]['language'] not in {'C', 'CXX'}:
-                        continue
-                    abi = LocalInclude(llvm_targets.PREFIX + '/libcxxabi/include', self.owner)
-                    if abi in includes:
+                    if groups[arch]['language'] == 'C':
                         system_includes[arch] = [inc for inc in includes if inc != abi]
-                        implementation_deps.setdefault('@platforms//cpu:' + arch, []).append(
-                            '@clickhouse_llvm_project//:libcxxabi_headers')
             if implementation_deps:
                 attrs['implementation_deps'] = select({
                     '@platforms//cpu:' + arch: implementation_deps.get('@platforms//cpu:' + arch, [])

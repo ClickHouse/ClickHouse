@@ -1,9 +1,4 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
-package(default_visibility = ["//visibility:public"])
-
-cc_library(
-    name = "page_aligned_functions",
-    hdrs = ["page_aligned_functions.h"],
-    deps = ["@clickhouse_croaring//:_roaring__compile_0"],
+exports_files(
+    ["page_aligned_functions.h"],
+    visibility = ["@clickhouse_croaring//:__pkg__"],
 )

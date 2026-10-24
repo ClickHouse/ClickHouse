@@ -1603,6 +1603,7 @@ ch_cc_library(
     hdrs = [
         "absl/status/internal/status_internal.h",
         "absl/status/status.h",
+        "absl/types/optional_ref.h",
     ],
     copts = _ABSL_COPTS,
     implementation_deps = [
@@ -1617,7 +1618,7 @@ ch_cc_library(
     local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_cord",
-        ":absl_internal_optional_ref",
+        ":absl_hardening",
         ":absl_base_config",
         ":absl_function_ref",
         ":absl_inlined_vector_internal",
@@ -2137,18 +2138,6 @@ cc_library(
         ":absl_throw_delegate",
         ":absl_type_traits",
         ":absl_weakly_mixed_integer",
-    ],
-)
-
-cc_library(
-    name = "absl_internal_optional_ref",
-    hdrs = [
-        "absl/types/optional_ref.h",
-    ],
-    includes = ["."],
-    deps = [
-        ":absl_hardening",
-        ":absl_base_config",
     ],
 )
 

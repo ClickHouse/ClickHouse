@@ -22,6 +22,10 @@ DEPENDENCIES = {
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
+        '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
+        '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
+    ], [], []),
     ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
     ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA], [], []),
     ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt'], [], []),
@@ -84,7 +88,9 @@ EMBEDDED_UNUSED = {
         '@llvm-project//libunwind:headers',
     },
     'dbms_embedded': _EMBEDDED_UNUSED | {
-        '//base/glibc-compatibility', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
+        '//base/glibc-compatibility', '//bazel:clickhouse_config_headers', '//src/Common:cow',
+        '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
+        '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_abseil_cpp//:absl_raw_hash_set', '@clickhouse_abseil_cpp//:absl_strings',
         '@clickhouse_abseil_cpp//:absl_synchronization', '@clickhouse_arrow//:_arrow__compile_0',
         '@clickhouse_aws_c_mqtt//:aws_c_mqtt', '@clickhouse_croaring//:_roaring',
