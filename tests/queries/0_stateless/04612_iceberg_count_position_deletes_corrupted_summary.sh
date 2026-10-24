@@ -2,7 +2,8 @@
 # Tags: no-fasttest
 
 # A merge-on-read table with position deletes (5 rows - 2 deleted): the trivial count is
-# answered from the snapshot summary (`total-records` minus `total-position-deletes`).
+# not answered from metadata, because `total-position-deletes` also counts delete records
+# that no longer match a live data file, so `count` falls back to a real scan.
 #
 # It also pins the count-from-files cache contract: the cache is primed with the raw
 # per-file row count (5) before the delete, and the post-delete counts run with the
@@ -48,7 +49,7 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_cou
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=0 --optimize_count_from_files=1 \
     --use_cache_for_count_from_files=1 --query "SELECT count() FROM ${TABLE}"
 
-# The trivial count optimization is applied from the snapshot summary.
+# With live position delete files the trivial count optimization must not be applied.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=1 --query \
     "SELECT count() FROM (EXPLAIN SELECT count() FROM ${TABLE}) WHERE explain LIKE '%Optimized trivial count%'"
 

@@ -21,6 +21,7 @@
 namespace DB::ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONVERT_TYPE;
@@ -433,6 +434,50 @@ GTEST_TEST(SettingFieldNonZeroUInt32, ReadBinaryRejectsZeroAndOutOfRange)
     ASSERT_TRUE(in.eof());
 }
 
+GTEST_TEST(SettingFieldNumber, ReadBinaryRejectsOutOfRange)
+{
+    /// The binary form of an integer setting is a 64-bit VarUInt or VarInt; a narrower field rejects a value it cannot hold.
+    auto expect_incorrect_data = [](auto setting, auto write_value)
+    {
+        WriteBufferFromOwnString out;
+        write_value(out);
+        const String bytes = out.str();
+        ReadBufferFromString in(bytes);
+        try
+        {
+            setting.readBinary(in);
+            FAIL() << "an out-of-range value was accepted from the binary form";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+        }
+    };
+
+    expect_incorrect_data(SettingFieldUInt32{}, [](WriteBuffer & out) { writeVarUInt(4294967296ULL, out); });
+    expect_incorrect_data(SettingFieldBool{}, [](WriteBuffer & out) { writeVarUInt(2, out); });
+    expect_incorrect_data(SettingFieldInt32{}, [](WriteBuffer & out) { writeVarInt(Int64(2147483648LL), out); });
+    expect_incorrect_data(SettingFieldInt32{}, [](WriteBuffer & out) { writeVarInt(Int64(-2147483649LL), out); });
+
+    /// Values the field writes itself, including the boundaries, round-trip exactly.
+    auto round_trip = [](auto written)
+    {
+        WriteBufferFromOwnString out;
+        written.writeBinary(out);
+        const String bytes = out.str();
+        ReadBufferFromString in(bytes);
+        decltype(written) reread;
+        reread.readBinary(in);
+        ASSERT_EQ(reread.value, written.value);
+        ASSERT_TRUE(in.eof());
+    };
+
+    round_trip(SettingFieldUInt32{std::numeric_limits<UInt32>::max()});
+    round_trip(SettingFieldBool{true});
+    round_trip(SettingFieldInt32{std::numeric_limits<Int32>::min()});
+    round_trip(SettingFieldInt32{std::numeric_limits<Int32>::max()});
+}
+
 GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
 {
     using Flags = BaseSettingsHelpers::Flags;
@@ -516,12 +561,16 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
         std::string_view covers;
         SettingsWriteFormat format;
         std::function<void(WriteBuffer &)> write_wire;
+        /// A setting name is an identifier, so a name declared longer than `MAX_SETTING_NAME_SIZE` is
+        /// refused before it is read at all, instead of running out of buffer.
+        int expected_code = DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
     };
 
     const std::vector<Case> cases = {
         {"the setting name, i.e. every BaseSettingsHelpers::readString carrier",
          SettingsWriteFormat::STRINGS_WITH_FLAGS,
-         [&](WriteBuffer & out) { writeVarUInt(declared_size, out); }},
+         [&](WriteBuffer & out) { writeVarUInt(declared_size, out); },
+         DB::ErrorCodes::TOO_LARGE_STRING_SIZE},
         {"SettingFieldString::readBinary",
          SettingsWriteFormat::BINARY,
          [&](WriteBuffer & out)
@@ -581,7 +630,7 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
         }
         catch (const DB::Exception & e)
         {
-            EXPECT_EQ(e.code(), DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF) << e.displayText();
+            EXPECT_EQ(e.code(), test_case.expected_code) << e.displayText();
         }
     }
 }

@@ -1,0 +1,26 @@
+<!-- Reading Snappy-compressed Parquet string columns that are mostly empty or repetitive, like `hits.parquet`. -->
+<test>
+    <substitutions>
+        <substitution>
+            <name>max_dictionary_size</name>
+            <values>
+                <value>0</value>
+                <value>1048576</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <fill_query>
+        INSERT INTO FUNCTION file('test_parquet_snappy_strings_{max_dictionary_size}.parquet', Parquet)
+        SELECT
+            if(cityHash64(intDiv(number, 4)) % 8 = 0, concat('search phrase ', toString(cityHash64(number) % 20000)), '') AS phrase,
+            ['', '', '', 'iPhone', 'iPad', 'GT-I9300', 'Lumia 920'][cityHash64(intDiv(number, 16)) % 7 + 1] AS model
+        FROM numbers(30000000)
+        SETTINGS output_format_parquet_compression_method = 'snappy',
+                 output_format_parquet_max_dictionary_size = {max_dictionary_size},
+                 engine_file_truncate_on_insert = 1
+    </fill_query>
+
+    <query>SELECT phrase, model FROM file('test_parquet_snappy_strings_{max_dictionary_size}.parquet', Parquet) FORMAT Null</query>
+    <query>SELECT count(DISTINCT phrase) FROM file('test_parquet_snappy_strings_{max_dictionary_size}.parquet', Parquet) FORMAT Null</query>
+</test>

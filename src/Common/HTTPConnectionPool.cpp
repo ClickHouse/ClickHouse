@@ -18,12 +18,9 @@
 
 #include <IO/SocketPeerClosed.h>
 
-#include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
@@ -496,39 +493,10 @@ private:
             return now - Session::getLastRequest();
         }
 
-        void flushRequest() override
+        /// Installs IO scheduling hooks and per-thread throttlers on the session.
+        /// It has to run before any socket I/O of the exchange starts, so both send entrypoints call it.
+        void installTransportHooks(const Poco::Net::HTTPRequest & request)
         {
-            if (bool(request_stream))
-            {
-                request_stream->flush();
-
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthOutputStream *>(request_stream))
-                {
-                    request_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedOutputStream *>(request_stream))
-                {
-                    chunked_steam->rdbuf()->close();
-                    request_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPOutputStream *>(request_stream))
-                {
-                    request_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    request_stream_completed = false;
-                }
-            }
-            request_stream = nullptr;
-
-            Session::flushRequest();
-        }
-
-        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
-        {
-            auto idle = idleTime();
-
             // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
@@ -538,67 +506,29 @@ private:
                 Session::setReceiveThrottler(throttler);
             if (auto throttler = CurrentThread::getWriteThrottler())
                 Session::setSendThrottler(throttler);
-
-            std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
-            chassert(result.exceptions() & std::ios::badbit);
-
-            request_stream = &result;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
-
-            return result;
         }
 
-        std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
+        Poco::Net::HTTPClientSession::BodyInfo
+        sendRequestHeaders(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
-            std::istream & result = Session::receiveResponse(response);
-            chassert(result.exceptions() & std::ios::badbit);
-
-            response_stream = &result;
-            response_stream_completed = false;
-
-            return result;
+            installTransportHooks(request);
+            return Session::sendRequestHeaders(request, connect_time, first_byte_time);
         }
 
-        void reset() override
+        /// `getConnection` hands out a full `Poco::Net::HTTPClientSession`, so callers may still use the
+        /// legacy iostream API. It does not go through `sendRequestHeaders`, hence the separate override.
+        std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
-            request_stream = nullptr;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
-
-            Session::reset();
+            installTransportHooks(request);
+            return Session::sendRequest(request, connect_time, first_byte_time);
         }
 
         ~PooledConnection() override
         {
-            if (bool(response_stream))
-            {
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
-                {
-                    response_stream_completed = fixed_steam->isComplete();
-                }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                {
-                    response_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                {
-                    response_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    response_stream_completed = false;
-                }
-            }
             /// Unregister from live_connections first, before tearing down session internals,
             /// so that the async metrics thread cannot dereference a partially-destructed session.
             group->atConnectionDestroy(this);
 
-            response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
@@ -688,9 +618,14 @@ private:
             }
         }
 
-        bool isCompleted() const
+        /// A connection can only be reused when both the request and the response of the last
+        /// exchange were transferred to the end: anything left unsent or unread would be taken
+        /// for a part of the next request or response.
+        /// Not `const`: for a chunked response body the check has to peek into the socket to tell
+        /// a body that ended exactly at the last chunk from a truncated one.
+        bool isCompleted()
         {
-            return request_stream_completed && response_stream_completed;
+            return Session::isRequestBodyComplete() && Session::isResponseBodyComplete();
         }
 
         EndpointConnectionPool::WeakPtr pool;
@@ -699,12 +634,6 @@ private:
         bool isExpired = false;
 
         LoggerPtr log = getLogger("PooledConnection");
-
-        std::ostream * request_stream = nullptr;
-        std::istream * response_stream = nullptr;
-
-        bool request_stream_completed = true;
-        bool response_stream_completed = true;
     };
 
     using Connection = PooledConnection;
@@ -902,6 +831,14 @@ private:
     ConnectionPtr prepareConnectionViaProxy(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
+        /// The proxy host name is resolved by Poco (`HTTPClientSession::reconnect` builds a
+        /// `SocketAddress` out of `ProxyConfig::host`), so it does not go through the DNS cache.
+        /// It cannot be replaced with a resolved address here: when TLS terminates at the proxy
+        /// rather than at the target - an `https` proxy, or an `http` proxy with tunneling turned
+        /// off - Poco also uses `ProxyConfig::host` as the TLS peer name
+        /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
+        /// there would break certificate verification. Routing it through the cache needs a
+        /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection->setKeepAlive(true);
         connection->setProxyConfig(poco_proxy_config);
@@ -1190,7 +1127,9 @@ struct EndpointPoolKey
                    proxy_config.protocol,
                    proxy_config.tunneling,
                    proxy_config.original_request_protocol,
-                   proxy_config.no_proxy_hosts)
+                   proxy_config.no_proxy_hosts,
+                   proxy_config.username,
+                   proxy_config.password)
             == std::tie(
                    rhs.connection_group,
                    rhs.target_host,
@@ -1201,7 +1140,9 @@ struct EndpointPoolKey
                    rhs.proxy_config.protocol,
                    rhs.proxy_config.tunneling,
                    rhs.proxy_config.original_request_protocol,
-                   rhs.proxy_config.no_proxy_hosts);
+                   rhs.proxy_config.no_proxy_hosts,
+                   rhs.proxy_config.username,
+                   rhs.proxy_config.password);
     }
 };
 
@@ -1219,6 +1160,8 @@ struct Hasher
         s.update(k.proxy_config.protocol);
         s.update(k.proxy_config.tunneling);
         s.update(k.proxy_config.original_request_protocol);
+        s.update(k.proxy_config.username);
+        s.update(k.proxy_config.password);
         return s.get64();
     }
 };

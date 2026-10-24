@@ -1,0 +1,9 @@
+setting reset covers every arm
+8
+setting change covers every arm
+8
+without the query-level SETTINGS the invalid session value still applies
+query parameter binding covers every arm
+14
+the last binding of a duplicated query parameter wins
+2

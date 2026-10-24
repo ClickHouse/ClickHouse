@@ -10,5 +10,16 @@
     <backups>
         <allowed_disk>backups</allowed_disk>
         <allowed_path>/backups/</allowed_path>
+        <!-- Used by test_backup_to_not_yet_existing_backup_area, which needs a backup area whose
+             ancestors do not exist yet. Nothing creates deep_backups/a/b/c: that BackupWriterFile has
+             to create the chain, and fsync it, is the point. It sits under the server's own data
+             directory because a top-level directory is not creatable by the server user in the
+             test container.
+
+             This entry must stay AFTER /backups/: checkPath resolves a relative destination against
+             the FIRST entry, and returns the first entry the destination is under, so reordering
+             would change where every existing case's backups go. Appending cannot, because entry
+             N+1 is only consulted when entry N does not match. -->
+        <allowed_path>/var/lib/clickhouse/deep_backups/a/b/c</allowed_path>
     </backups>
 </clickhouse>

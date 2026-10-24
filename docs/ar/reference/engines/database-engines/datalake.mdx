@@ -13,7 +13,7 @@ doc_type: 'reference'
 الحاجة إلى تكرار البيانات. ويحوّل ذلك ClickHouse إلى محرك استعلامات قوي يعمل
 بسلاسة مع البنية التحتية القائمة لبحيرة البيانات لديك.
 
-## الكتالوجات المدعومة
+## الكتالوجات المدعومة {#supported-catalogs}
 
 يدعم محرك `DataLakeCatalog` كتالوجات البيانات التالية:
 
@@ -22,7 +22,7 @@ doc_type: 'reference'
 * **Hive Metastore** - كتالوج نظام Hadoop التقليدي
 * **REST Catalogs** - أي كتالوج يدعم مواصفة Iceberg REST
 
-## إنشاء قاعدة بيانات
+## إنشاء قاعدة بيانات {#creating-a-database}
 
 ستحتاج إلى تمكين الإعدادات التالية لاستخدام محرك `DataLakeCatalog`:
 
@@ -48,9 +48,10 @@ catalog_type,
 
 | الإعداد                 | الوصف                                                                                                                                                                                                                                                                                                                                     |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog_type`          | نوع الكتالوج: `glue`، `unity` (Delta)، `rest` (Iceberg)، `hive`، `onelake` (Iceberg)، `delta_sharing` (Iceberg، مساحات أسماء مسطحة)، `horizon` (Snowflake Horizon Iceberg REST)                                                                                                                                                           |
+| `catalog_type`          | نوع الكتالوج: `glue`، `unity` (Delta، أو Delta وIceberg مع `use_unity_catalog_v2`)، `rest` (Iceberg)، `hive`، `onelake` (Iceberg)، `delta_sharing` (Iceberg، مساحات أسماء مسطحة)، `horizon` (Snowflake Horizon Iceberg REST)                                                                                                              |
 | `warehouse`             | اسم الـwarehouse/قاعدة البيانات المراد استخدامها في الكتالوج.                                                                                                                                                                                                                                                                             |
 | `catalog_credential`    | بيانات اعتماد المصادقة الخاصة بالكتالوج (مثل مفتاح API أو رمز وصول)                                                                                                                                                                                                                                                                       |
+| `use_unity_catalog_v2`  | عند استخدام `catalog_type = 'unity'`: استخدم التنفيذ الجديد الذي يدعم جداول Delta Lake وIceberg. القيمة الافتراضية: `false`. اضبطه عند تنفيذ `CREATE`، أو غيّره لقاعدة بيانات موجودة باستخدام `ALTER DATABASE ... MODIFY SETTING`.                                                                                                        |
 | `auth_header`           | رأس HTTP مخصص للمصادقة مع خدمة الكتالوج                                                                                                                                                                                                                                                                                                   |
 | `auth_scope`            | نطاق OAuth2 للمصادقة (إذا كنت تستخدم OAuth)                                                                                                                                                                                                                                                                                               |
 | `storage_endpoint`      | URL نقطة النهاية للتخزين الأساسي                                                                                                                                                                                                                                                                                                          |
@@ -66,11 +67,30 @@ catalog_type,
 | `dlf_access_key_secret` | مفتاح الوصول السري للوصول إلى DLF                                                                                                                                                                                                                                                                                                         |
 | `force_add_bucket`      | عند إنشاء عناوين URL لتخزين الكائنات من موقع الجدول الذي يوفّره الكتالوج و`storage_endpoint`، أضِف اسم الـbucket/Container في البداية حتى إذا كانت نقطة النهاية تتضمنه بالفعل. القيمة الافتراضية: `false`. اضبطها على `true` للكتالوجات التي تعيد مسارات من دون الـbucket وتتطلب إضافته في خطوة إنشاء عنوان URL (مسارات على نمط Polaris). |
 
-## أمثلة
+## أمثلة {#examples}
 
 راجع الأقسام التالية للاطلاع على أمثلة لاستخدام محرك `DataLakeCatalog`:
 
 * [Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog)
+* Unity Catalog مع جداول Delta Lake وIceberg
+  عند ضبط `use_unity_catalog_v2 = 1`، يدعم الكتالوج `unity` جداول Delta Lake وIceberg معًا،
+  ويكتشف صيغة كل جدول.
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS
+    catalog_type = 'unity',
+    use_unity_catalog_v2 = 1,
+    warehouse = 'my_catalog',
+    catalog_credential = '<client_id>:<client_secret>';
+SHOW TABLES FROM database_name;
+SELECT count() FROM database_name.`schema_name.table_name`;
+```
+
+يقبل `catalog_credential` كيان خدمة يستخدم OAuth بالصيغة `<client_id>:<client_secret>`،
+أو رمز وصول شخصيًا (`dapi...`)، أو رمز OAuth تم الحصول عليه مسبقًا.
+
 * [Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
   يمكن استخدامه عند تمكين `allow_database_iceberg`.

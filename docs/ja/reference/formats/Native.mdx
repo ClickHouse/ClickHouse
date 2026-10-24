@@ -15,9 +15,7 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 `Native` フォーマットの完全な公式仕様は [こちら](/ja/resources/develop-contribute/native-protocol/format) で公開されており、それに対応する `Native` プロトコル — これを伝送する TCP wire protocol — の仕様は [こちら](/ja/resources/develop-contribute/native-protocol/protocol) で公開されています。
 
@@ -37,9 +35,7 @@ doc_type: 'reference'
   ただし、このフォーマットを直接扱うのはあまり現実的ではないかもしれません。
 </Tip>
 
-<div id="data-types-wire-format">
-  ## データ型のワイヤ形式
-</div>
+## データ型のワイヤ形式 {#data-types-wire-format}
 
 データはワイヤ上で列指向フォーマットで送信されます。つまり、各カラムは個別に送信され、
 1 つのカラム内のすべての値が単一の配列としてまとめて送信されます。
@@ -52,9 +48,7 @@ doc_type: 'reference'
   プロトコルバージョンを指定しない通常の HTTP インターフェイスを使用しているため、`BlockInfo` は省略されます。
 </Note>
 
-<div id="block-structure">
-  ### ブロック構造
-</div>
+### ブロック構造 {#block-structure}
 
 次のクエリは、`number` と `str` の 2 つのカラムを持つ 3 行を返します:
 
@@ -96,9 +90,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### 複数のブロック
-</div>
+### 複数のブロック {#multiple-blocks}
 
 ただし、多くの場合、データは1つのブロックには収まらず、ClickHouse は複数のブロックに分けて送信します。
 データが1ブロックにつき1行に分割されるよう、ブロックサイズを小さくして2行を取得する次のクエリを見てみましょう。
@@ -152,9 +144,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### 単純なデータ型
-</div>
+### 単純なデータ型 {#simple-data-types}
 
 これらの比較的単純なデータ型における個々の値のワイヤ形式は、`RowBinary`/`RowBinaryWithNamesAndTypes` と似ています。
 この説明に該当する型の一覧は次のとおりです。
@@ -174,9 +164,7 @@ const data = new Uint8Array([
 
 詳細については、[&quot;RowBinary data types wire format&quot;](/ja/reference/formats/RowBinary/RowBinary#data-types-wire-format) にある上記の型の説明を参照してください。
 
-<div id="complex-data-types">
-  ### 複合データ型
-</div>
+### 複合データ型 {#complex-data-types}
 
 以下の型のエンコーディングは、`RowBinary` および `RowBinaryWithNamesAndTypes` のものとは異なります。
 
@@ -188,9 +176,7 @@ const data = new Uint8Array([
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 `Native`フォーマットでは、Nullableカラムでは実際のデータの前に、ブロック内の行数と同じだけのバイト列が置かれます。各バイトは、その値が `NULL` かどうかを示します。たとえば、このクエリでは、代わりに各奇数が `NULL` になります。
 
@@ -310,9 +296,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 `LowCardinality` が透過的に扱われる [RowBinary](/ja/reference/formats/RowBinary/RowBinary#lowcardinality) とは異なり、Nativeフォーマット では辞書ベースの列指向エンコーディングを使用します。カラムは、バージョンプレフィックス、一意な値の辞書、その辞書を参照する整数の索引の Array としてエンコードされます。
 
@@ -360,9 +344,7 @@ const data = new Uint8Array([
 02 00 02 00 02              // 索引 → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 各配列の先頭に LEB128 形式の要素数が付く [RowBinary](/ja/reference/formats/RowBinary/RowBinary#array) とは異なり、Nativeフォーマットでは、配列は次の 2 つの列指向サブストリームとしてエンコードされます。
 
@@ -401,9 +383,7 @@ const data = new Uint8Array([
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 `Map(K, V)` は `Array(Tuple(K, V))` としてエンコードされます。つまり、配列オフセットの後にすべてのキーが並び、その後にすべての値が並びます。これは、各エントリごとにキーと値が交互に格納される [RowBinary](/ja/reference/formats/RowBinary/RowBinary#map) とは異なります。
 
@@ -432,9 +412,7 @@ const data = new Uint8Array([
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 各行がそれぞれ自身の discriminant バイトを持ち、その直後に値がインラインで続く [RowBinary](/ja/reference/formats/RowBinary/RowBinary#variant) とは異なり、Nativeフォーマット では discriminant とデータが分離されています。
 
@@ -463,9 +441,7 @@ const data = new Uint8Array([
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 各値が自己記述的 (型プレフィックス + 値) である [RowBinary](/ja/reference/formats/RowBinary/RowBinary#dynamic) とは異なり、Nativeフォーマット では `Dynamic` は構造プレフィックスに続く [Variant](#variant) カラムとしてシリアライズされます。
 
@@ -492,9 +468,7 @@ const data = new Uint8Array([
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 各行がパス名と値を含み自己記述的である [RowBinary](/ja/reference/formats/RowBinary/RowBinary#json) とは異なり、Nativeフォーマット では `JSON` は列指向の構造でシリアライズされます。このエンコーディングは複雑で、バージョンにも依存します。具体的には、シリアル化バージョン、動的パス名、共有データレイアウトを含む構造プレフィックスに続いて、型付きパス (それぞれをバルクカラムとして格納) 、動的パス (それぞれを [Dynamic](#dynamic) カラムとして格納) 、さらにオーバーフローパス用の共有データで構成されます。
 

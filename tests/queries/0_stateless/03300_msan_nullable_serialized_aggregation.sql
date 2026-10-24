@@ -23,7 +23,7 @@ GROUP BY
     isZeroOrNull(assumeNotNull(materialize(NULL))),
     tuple(1, NULL),
     (NULL, NULL) GLOBAL IN CAST(tuple(NULL, NULL), 'Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))')
-SETTINGS transform_null_in = 0, enable_analyzer = 1;
+SETTINGS transform_null_in = 0;
 
 
 -- Multiple nullable tuples in GROUP BY

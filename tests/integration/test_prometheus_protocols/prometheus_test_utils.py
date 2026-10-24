@@ -300,8 +300,13 @@ def extract_error_from_http_api_response(response):
 
 
 # Returns whether the differences between correspondent values of two HTTP API responses are not greater than `eps`.
+# If `ordered` is False, the series of a "vector" result are compared regardless of their order.
 # Also may return False if any response has unexpected structure.
-def http_api_response_close_to(response1, response2, eps=0):
+def http_api_response_close_to(response1, response2, eps=0, ordered=True):
+    if not ordered:
+        response1 = sort_series_of_vector(response1)
+        response2 = sort_series_of_vector(response2)
+
     if response1 == response2:
         return True
 
@@ -402,6 +407,20 @@ def http_api_response_close_to(response1, response2, eps=0):
 
     # Unexpected result_type
     return False
+
+
+# The series of an instant vector have no defined order, so they are sorted by labels before comparing.
+def sort_series_of_vector(response):
+    data = json.loads(response)
+    if (
+        isinstance(data, dict)
+        and data.get("resultType") == "vector"
+        and isinstance(data.get("result"), list)
+    ):
+        data["result"] = sorted(
+            data["result"], key=lambda ts: sorted(ts.get("metric", {}).items())
+        )
+    return json.dumps(data)
 
 
 def time_value_pair_close_to(time_value_pair1, time_value_pair2, eps):

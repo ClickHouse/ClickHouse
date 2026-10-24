@@ -1,0 +1,7 @@
+-- the DROP COLUMN waits for the paused UPDATE
+drop column registered while the update is paused	0
+1	1
+-- a merge runs while the UPDATE is paused
+active parts	1
+1	1
+2	1

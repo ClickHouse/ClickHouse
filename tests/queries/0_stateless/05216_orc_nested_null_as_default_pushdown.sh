@@ -16,7 +16,7 @@ run_cases 0
 for structure in 't Nullable(Tuple(x Int64))' 't Nullable(Tuple(x Nullable(Int64)))'; do
     ${CLICKHOUSE_CLIENT} --query "
         SELECT count() FROM file('${DATA_FILE}', ORC, '${structure}') WHERE tupleElement(t, 'x') = 2
-        SETTINGS enable_nullable_tuple_type = 1, enable_analyzer = 1, input_format_null_as_default = 1,
+        SETTINGS enable_nullable_tuple_type = 1, input_format_null_as_default = 1,
                  optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1, max_threads = 1
         FORMAT JSON" | jq -c '{result: .data, rows_read: .statistics.rows_read}'
 done

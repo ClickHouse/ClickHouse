@@ -1,0 +1,61 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis; with `condition`, it also prints the key condition. -#}
+{% macro check(table, predicate, condition = false) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+    {%- if condition %}, (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%'){% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+-- Deterministic key-transform atoms must be produced for the key columns that the
+-- direct match does not cover, not only when nothing else matched. For example, with
+-- `ORDER BY (concat(s, '_x'), s)` and `WHERE s = 'b'`, the direct atom covers `s`,
+-- and the deterministic transform must additionally constrain the leading key column
+-- `concat(s, '_x')`.
+
+-- An injective wrap of the direct column leads the key: both atoms must be exact. The direct
+-- atom alone selects the same marks for `!=`, so its condition shows the second atom.
+CREATE TABLE test_det_injective (s String) ENGINE = MergeTree ORDER BY (concat(s, '_x'), s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_det_injective SELECT char(97 + intDiv(number, 4)) FROM numbers(24);
+
+{{ check('test_det_injective', "s = 'b'", condition = true) }}
+{{ check('test_det_injective', "s != 'b'", condition = true) }}
+
+-- A non-injective wrap leads the key: the extra atom is relaxed, still prunes for
+-- equality, and must never prune wrongly.
+CREATE TABLE test_det_noninjective (s String) ENGINE = MergeTree ORDER BY (cityHash64(s) % 8, s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_det_noninjective SELECT char(97 + intDiv(number, 4)) FROM numbers(24);
+
+{{ check('test_det_noninjective', "s = 'b'") }}
+-- The relaxed atom of a non-injective transform never prunes for `notEquals`: only the exact
+-- direct atom on `s` prunes.
+{{ check('test_det_noninjective', "s != 'b'") }}
+
+-- A plain single-column key must keep its single direct atom: the deterministic pass
+-- must not add anything through the column's identity transform.
+CREATE TABLE test_det_plain (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_det_plain SELECT number FROM numbers(24);
+
+{{ check('test_det_plain', "id = 5", condition = true) }}
+
+-- A float zero equals the zero of the other sign, which a key function tells apart: `cityHash64(-0.0)`
+-- differs from `cityHash64(0.0)`. A zero constant therefore builds no atom through the transform, and only
+-- the direct atom constrains `f`. A non-zero constant keeps both atoms.
+CREATE TABLE test_det_float_zero (f Float64) ENGINE = MergeTree ORDER BY (cityHash64(f), f)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_det_float_zero SELECT if(number < 4, -0., number) FROM numbers(12);
+
+{{ check('test_det_float_zero', 'f = 0', condition = true) }}
+{{ check('test_det_float_zero', 'f != 0') }}
+{{ check('test_det_float_zero', 'f <=> 0') }}
+{{ check('test_det_float_zero', 'f = 5', condition = true) }}

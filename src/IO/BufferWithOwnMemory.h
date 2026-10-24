@@ -72,6 +72,10 @@ struct Memory : boost::noncopyable, Allocator
 
     void resize(size_t new_size, bool deallocate_if_empty = false);
 
+    /// Like `resize`, but when the capacity is exceeded it grows by at least 1/8, so that a sequence of small
+    /// appends takes amortized linear time instead of reallocating the whole data on every append.
+    void resizeAmortized(size_t new_size);
+
 private:
     static size_t withPadding(size_t value)
     {

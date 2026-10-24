@@ -71,12 +71,14 @@ DictionarySourceFactory::DictionarySourceFactory() : log(getLogger("DictionarySo
 {
 }
 
-void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source, Documentation documentation)
+void DictionarySourceFactory::registerSource(
+    const std::string & source_type, Creator create_source, SecretArgumentsSpec secret_arguments, Documentation documentation)
 {
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionarySourceFactory: the source name '{}' is not unique", source_type);
 
     source_documentations.emplace(source_type, std::move(documentation));
+    source_secret_arguments.emplace(source_type, std::move(secret_arguments));
 }
 
 Documentation DictionarySourceFactory::getDocumentation(const std::string & source_type) const

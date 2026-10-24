@@ -1,11 +1,14 @@
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -16,6 +19,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -122,6 +126,36 @@ BlockIO createHypotheticalIndex(
     /// column's distribution from the reported skip ratio.
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
+
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
+    ASTPtr expanded_index_decl = query.index_decl->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
+
+    /// The alias checks also read ALIAS column definitions that constant folding removed from `index_desc.expression`.
+    const auto & columns = metadata->getColumns();
+    NameSet referenced_columns;
+    auto collect_columns = [&](this auto && self, const ASTPtr & ast) -> void
+    {
+        RequiredSourceColumnsVisitor::Data data;
+        RequiredSourceColumnsVisitor(data).visit(ast);
+        for (const auto & name : data.requiredColumns())
+        {
+            /// Access is granted per storage column; a name that is neither a column nor a subcolumn is an alias in the expression.
+            const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+            if (!column)
+                continue;
+            const String storage_name = column->getNameInStorage();
+            if (referenced_columns.insert(storage_name).second && columns.hasAlias(storage_name))
+                if (auto column_default = columns.getDefault(storage_name))
+                    self(column_default->expression);
+        }
+    };
+    collect_columns(expanded_index_decl->as<ASTIndexDeclaration &>().getExpression());
+    context->checkAccess(AccessType::SELECT, table_id, Names(referenced_columns.begin(), referenced_columns.end()));
+
+    KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
+    KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
 
     /// validate() must run before get(): index creators assume their arguments were already
     /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),

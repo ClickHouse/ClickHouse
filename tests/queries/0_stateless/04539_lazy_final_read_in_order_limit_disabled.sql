@@ -10,7 +10,7 @@ SYSTEM STOP MERGES t_lazy_final_gates;
 INSERT INTO t_lazy_final_gates SELECT number, if(number < 20000, 7, 999), toString(number) FROM numbers(100000);
 INSERT INTO t_lazy_final_gates SELECT number, if(number < 20000, 7, 999), 'updated' FROM numbers(100000);
 
-SET enable_analyzer = 1, query_plan_optimize_lazy_final = 1, optimize_read_in_order = 1, max_threads = 4;
+SET query_plan_optimize_lazy_final = 1, optimize_read_in_order = 1, max_threads = 4;
 SET exact_rows_before_limit = 0;
 
 -- Filter without ORDER BY and LIMIT: lazy FINAL applies.

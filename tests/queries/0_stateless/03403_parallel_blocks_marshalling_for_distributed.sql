@@ -11,7 +11,12 @@ FROM numbers_mt(1000000);
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, parallel_replicas_local_plan = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
-SET prefer_localhost_replica = 1, enable_analyzer = 1;
+SET prefer_localhost_replica = 1;
+
+-- These plans are the query-based ones: plan-based ships the fragment as a plan, so it carries the
+-- `BlocksMarshalling` step inside the reading step's description instead of as its children.
+-- `05238_pr_plan_based_blocks_marshalling` covers the same queries for plan-based.
+SET parallel_replicas_plan_based = 0;
 
 SELECT replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')
 FROM (

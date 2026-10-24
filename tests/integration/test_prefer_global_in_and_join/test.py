@@ -52,21 +52,21 @@ CREATE TABLE t2 (A Int64) ENGINE = MergeTree ORDER BY A AS SELECT * FROM values(
     assert (
         ch2.query(
             database="test_default_database",
-            sql="SELECT * FROM t1_d WHERE A IN ( SELECT A FROM t2 ) SETTINGS prefer_global_in_and_join = 1, enable_analyzer = 1"
+            sql="SELECT * FROM t1_d WHERE A IN ( SELECT A FROM t2 ) SETTINGS prefer_global_in_and_join = 1"
         ) == "1\n2\n"
     )
 
     assert (
         ch2.query(
             database="test_default_database",
-            sql="SELECT * FROM t1_d JOIN t2 USING (A) JOIN t2 USING (A) SETTINGS prefer_global_in_and_join = 1, enable_analyzer = 1"
+            sql="SELECT * FROM t1_d JOIN t2 USING (A) JOIN t2 USING (A) SETTINGS prefer_global_in_and_join = 1"
         ) == "1\n2\n"
     )
 
     assert (
         ch2.query(
             database="test_default_database",
-            sql="SELECT * FROM t1_d JOIN t2 USING (A) SETTINGS prefer_global_in_and_join = 1, enable_analyzer = 1"
+            sql="SELECT * FROM t1_d JOIN t2 USING (A) SETTINGS prefer_global_in_and_join = 1"
         ) == "1\n2\n"
     )
 

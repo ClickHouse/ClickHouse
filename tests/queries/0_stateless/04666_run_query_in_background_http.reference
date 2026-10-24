@@ -9,15 +9,41 @@ no output
 killed
 --- SELECT in background discards the result
 no output
---- CREATE TABLE AS SELECT in background
+--- CREATE TABLE AS SELECT returns as soon as the SELECT has started
+no output
+still populating after the client returned
 created with rows
+--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started
+no output
+still populating after the client returned
+replaced with rows
+--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started
+no output
 --- enabling the setting for a whole session is rejected
 run_query_in_background cannot be changed with SET
---- a query that cannot run in the background fails asynchronously
-failed asynchronously
---- a background query runs as the submitting user, and a missing grant is denied asynchronously
+--- a query that cannot run in the background fails synchronously
+THERE_IS_NO_SESSION
+--- a background query runs as the submitting user, and a missing grant is denied synchronously
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--- errors raised inside the interpreter before the main work are returned synchronously
+BAD_ARGUMENTS
+CANNOT_UPDATE_COLUMN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT
+SUPPORT_IS_DISABLED
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+--- SYSTEM RELOAD DICTIONARY returns as soon as the reload has started
 no output
-denied asynchronously
+loaded
+--- errors raised after the main work has started are only logged
+only logged
 --- a settings constraint of the user is enforced on a background query
 SETTING_CONSTRAINT_VIOLATION
 --- the database setting is applied before the target table of a background query is checked

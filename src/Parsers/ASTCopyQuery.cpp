@@ -7,7 +7,10 @@ namespace DB
 
 void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << "COPY " << table_name;
+    if (subquery.empty())
+        ostr << "COPY " << table_name;
+    else
+        ostr << "COPY (" << subquery << ')';
 
     if (!column_names.empty())
     {

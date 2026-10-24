@@ -1,7 +1,13 @@
--- Tags: stateful
+-- Tags: stateful, long
 
 -- To avoid too slow test execution
 set remote_filesystem_read_method='threadpool', allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_step_marks=0, filesystem_prefetch_step_bytes='100Mi';
+
+-- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
+-- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
+-- the S3 throughput drops the full scans become slow enough to be killed by `max_estimated_execution_time`.
+-- The filesystem cache sits below the compressed read buffers, so it does not change `ReadCompressedBytes`.
+SET enable_filesystem_cache=1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
@@ -14,7 +20,16 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- while the standalone run reads from disk, making the subtraction invalid.
 SET use_uncompressed_cache=0;
 
+-- `apply_string_filters_during_scan` materializes the values that do not match a substring condition
+-- of PREWHERE as empty strings, so the in-memory size of the read block, which the estimation is based on,
+-- becomes much smaller than the amount of data actually read from disk.
+SET apply_string_filters_during_scan=0;
+
 SET use_query_condition_cache=0;
+
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
 
 create table t(a UInt64) engine=MergeTree order by a;
 insert into t select number from numbers_mt(1e6);

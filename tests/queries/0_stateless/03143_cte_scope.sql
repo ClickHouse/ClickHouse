@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/56287
-SET enable_analyzer = 1;
 DROP TABLE IF EXISTS tmp_a;
 DROP TABLE IF EXISTS tmp_b;
 

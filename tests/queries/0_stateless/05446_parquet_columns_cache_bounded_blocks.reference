@@ -1,0 +1,17 @@
+--- dictionary-encoded strings of 64 bytes without size statistics, written by PyArrow: cached
+[false]
+65536	4194304
+s	1	65536
+--- dictionary-encoded strings of 2 KiB without size statistics, written by PyArrow: read in small blocks, not cached
+[false]
+65536	134217728
+65536	134217728
+65536	2147450880	33554432
+id	1	65536
+s	1	65536
+--- the rows of a cached chunk left by the column index
+61440	31457280
+61440	31457280
+--- a function of a cached chunk
+5173394108097966080
+5173394108097966080

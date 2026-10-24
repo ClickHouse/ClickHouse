@@ -5,7 +5,6 @@ SET enable_parallel_replicas=1,
     cluster_for_parallel_replicas = 'parallel_replicas';
 
 SET query_plan_join_swap_table = 0;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 ( `Id` UInt64, `Payload` String, `Time` DateTime ) ENGINE = Memory;

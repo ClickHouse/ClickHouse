@@ -36,7 +36,6 @@ function run_query_with_pure_parallel_replicas () {
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
         --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
-        --enable_analyzer 1 \
         --optimize_trivial_count_query 1
 }
 
@@ -51,8 +50,7 @@ function run_query_with_custom_key_parallel_replicas () {
         --query_id "${1}_custom_key_analyzer" \
         --max_parallel_replicas 3 \
         --parallel_replicas_mode 'custom_key_sampling' \
-        --parallel_replicas_custom_key "$2" \
-        --enable_analyzer 1
+        --parallel_replicas_custom_key "$2"
 }
 
 $CLICKHOUSE_CLIENT --query "

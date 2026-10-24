@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="azure_allow_parallel_part_upload">
-  ## azure_allow_parallel_part_upload
-</div>
+## azure_allow_parallel_part_upload {#azure_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 استخدام عدة سلاسل رسائل للرفع متعدد الأجزاء إلى Azure.
 
-<div id="azure_check_objects_after_upload">
-  ## azure_check_objects_after_upload
-</div>
+## azure_check_objects_after_upload {#azure_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تحقّق من كل كائن جرى رفعه إلى Azure Blob Storage للتأكد من نجاح عملية الرفع
 
-<div id="azure_connect_timeout_ms">
-  ## azure_connect_timeout_ms
-</div>
+## azure_connect_timeout_ms {#azure_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -43,17 +37,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 مهلة الاتصال بالمضيف في أقراص Azure.
 
-<div id="azure_create_new_file_on_insert">
-  ## azure_create_new_file_on_insert
-</div>
+## azure_create_new_file_on_insert {#azure_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يُمكّن أو يعطّل إنشاء ملف جديد مع كل عملية إدراج في جداول محرك Azure
 
-<div id="azure_ignore_file_doesnt_exist">
-  ## azure_ignore_file_doesnt_exist
-</div>
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -66,17 +56,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 1 — يعيد `SELECT` نتيجة فارغة.
 * 0 — يطلق `SELECT` استثناءً.
 
-<div id="azure_list_object_keys_size">
-  ## azure_list_object_keys_size
-</div>
+## azure_list_object_keys_size {#azure_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 الحد الأقصى لعدد الملفات التي يمكن إرجاعها ضمن دفعة واحدة في طلب ListObject
 
-<div id="azure_min_upload_part_size">
-  ## azure_min_upload_part_size
-</div>
+## azure_min_upload_part_size {#azure_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
@@ -84,9 +70,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأدنى لحجم الجزء المطلوب رفعه أثناء الرفع متعدد الأجزاء إلى Azure Blob Storage.
 
-<div id="azure_request_timeout_ms">
-  ## azure_request_timeout_ms
-</div>
+## azure_request_timeout_ms {#azure_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
@@ -94,9 +78,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 مهلة الخمول لإرسال البيانات إلى azure واستلامها منه. تُعتبر العملية فاشلة إذا حُظر استدعاء قراءة أو كتابة واحد عبر TCP لهذه المدة.
 
-<div id="azure_skip_empty_files">
-  ## azure_skip_empty_files
-</div>
+## azure_skip_empty_files {#azure_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -109,9 +91,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — يُطلق `SELECT` استثناءً إذا كان الملف الفارغ غير متوافق مع التنسيق المطلوب.
 * 1 — أعاد `SELECT` نتيجة فارغ للملف الفارغ.
 
-<div id="azure_strict_upload_part_size">
-  ## azure_strict_upload_part_size
-</div>
+## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -119,9 +99,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحجم الدقيق للجزء المراد رفعه عند استخدام الرفع متعدد الأجزاء إلى Azure blob storage.
 
-<div id="azure_throw_on_zero_files_match">
-  ## azure_throw_on_zero_files_match
-</div>
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,23 +112,27 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 1 — يُطلق `SELECT` استثناءً.
 * 0 — يعيد `SELECT` نتيجة فارغة.
 
-<div id="azure_truncate_on_insert">
-  ## azure_truncate_on_insert
-</div>
+## azure_truncate_on_insert {#azure_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يُفعّل أو يعطّل إجراء truncate قبل الإدراج في جداول محرك Azure.
 
-<div id="azure_use_adaptive_timeouts">
-  ## azure_use_adaptive_timeouts
-</div>
+## azure_use_adaptive_timeouts {#azure_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
 
-عند ضبطه على `true`، تُنفَّذ المحاولتان الأوليان لجميع طلبات Azure باستخدام مُهل إرسال واستقبال منخفضة.
-عند ضبطه على `false`، تُنفَّذ جميع المحاولات باستخدام المُهل نفسها.
+عند ضبطه على `true`، تُنفَّذ المحاولتان الأوليان لجميع طلبات Azure باستخدام مُهل إرسال واستقبال منخفضة.
+عند ضبطه على `false`، تُنفَّذ جميع المحاولات باستخدام المُهل نفسها.
+
+## azure_validate_etag_on_read {#azure_validate_etag_on_read}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد لاكتشاف عمليات الاستبدال الموضعي المتزامنة لـ blobs في Azure أثناء القراءة، وذلك بتثبيت كل طلب `GET` على قيمة `ETag` المُدرَجة باستخدام `If-Match` والتحقق من قيمة `ETag` في الاستجابة الواردة، على غرار ما يفعله `s3_validate_etag_on_read` مع S3. يؤدي ضبط `compatibility` على إصدار أقدم من 26.10 إلى استعادة السلوك السابق (بدون تحقق)."}]}]} />
+
+عند قراءة blob من Azure Blob Storage عبر دالات الجداول `azureBlobStorage` / `azureBlobStorageCluster` أو محرك الجدول `AzureBlobStorage`، يُثبَّت كل طلب `GET` على نسخة الـ blob التي رُصدت عند استعراضه، وذلك بإرسال قيمة `ETag` الخاصة به في `If-Match`، ثم يُتحقَّق من قيمة `ETag` في الاستجابة الواردة. فقراءة الملف الواحد تُصدر طلبات `GET` عديدة لنطاقات جزئية منه؛ وإذا استُبدل الـ blob موضعيًا بين هذه الطلبات (كأن تعيد جهة كتابة خارجية كتابة مفتاح ثابت)، فقد تُجمَّع القراءات من نسختين مختلفتين للـ blob، ويظهر ذلك في صورة قيمة تحقق تالفة أو خطأ في التحليل. كذلك يُستخدم الحجم المسجَّل وقت الاستعراض حدًّا أعلى للقراءة، ولذا لا يكون صحيحًا إلا للنسخة التي سُجِّل لها. وعند اكتشاف عدم تطابق، تفشل القراءة مع الخطأ `AZURE_OBJECT_CHANGED_DURING_READ` بدلًا من إرجاع بيانات غير متسقة. لا تعطّل هذا الإعداد إلا لأعباء العمل التي تقرأ عمدًا blobs يجري استبدالها وتحتمل القراءات غير المتسقة.
 
 {/*AUTOGENERATED_END*/}

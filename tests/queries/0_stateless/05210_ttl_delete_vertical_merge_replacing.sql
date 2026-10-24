@@ -6,9 +6,12 @@
 -- filled from the case table so neither the schema nor the rows can drift apart, and asserted to
 -- hold the same rows afterwards. `test1_control_algo` is `Horizontal` - that is what makes it a
 -- control rather than a second copy of the case.
+--
+-- max_bytes_to_merge_at_max_space_in_pool = 0 makes background merges impossible for these
+-- tables: it is only read when selecting a background merge, so OPTIMIZE FINAL still merges.
 
 SET alter_sync = 2;
-SET optimize_throw_if_noop = 0;
+SET optimize_throw_if_noop = 1;
 SET optimize_on_insert = 0;
 
 -- Test 1: an expired winning version drops the key; the older live version is not resurrected.
@@ -30,6 +33,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
@@ -72,16 +76,12 @@ SELECT 'test1_control_same_rows', arraySort(groupArray((id, ver, d, c1, c2, c3))
 FROM t_ttl_vert_repl_win;
 
 SYSTEM FLUSH LOGS part_log;
--- Exclude `TTLDropMerge`: a part whose rows are all expired is dropped by a short-circuit that
--- always uses the `Horizontal` algorithm.
-SELECT 'test1_algo', merge_algorithm FROM system.part_log
+SELECT 'test1_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_repl_win' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
-SELECT 'test1_control_algo', merge_algorithm FROM system.part_log
+    ORDER BY event_time_microseconds;
+SELECT 'test1_control_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_repl_off' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
+    ORDER BY event_time_microseconds;
 
 DROP TABLE t_ttl_vert_repl_win;
 DROP TABLE t_ttl_vert_repl_off;
@@ -105,6 +105,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
@@ -131,6 +132,11 @@ SELECT 'test2_id_range', min(id), max(id) FROM t_ttl_vert_repl_no_version;
 SELECT 'test2_seqs', groupUniqArray(seq) FROM t_ttl_vert_repl_no_version;
 SELECT 'test2_cols', sum(c1), sum(c2), sum(c3) FROM t_ttl_vert_repl_no_version;
 
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test2_algo', merge_algorithm, merge_reason FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_repl_no_version' AND event_type = 'MergeParts'
+    ORDER BY event_time_microseconds;
+
 DROP TABLE t_ttl_vert_repl_no_version;
 
 -- Test 3: a duplicate-free part that sorts entirely before the others takes the chunk pass-through
@@ -152,6 +158,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
@@ -183,9 +190,9 @@ SELECT 'test3_odd_even', countIf(id < 200 AND id % 2 = 0), countIf(id >= 200 AND
 
 SYSTEM FLUSH LOGS part_log;
 -- Both merges must be vertical; the second one is the one reaching the pass-through.
-SELECT 'test3_algos', countDistinct(merge_algorithm), any(merge_algorithm) FROM system.part_log
+SELECT 'test3_algos', merge_algorithm, merge_reason, length(merged_from) FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_repl_disjoint' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge';
+    ORDER BY event_time_microseconds;
 
 DROP TABLE t_ttl_vert_repl_disjoint;
 
@@ -209,6 +216,7 @@ TTL d + INTERVAL 1 DAY DELETE WHERE keep = 0
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
@@ -228,9 +236,8 @@ SELECT 'test4_keep', groupUniqArray(keep), groupUniqArray(ver) FROM t_ttl_vert_r
 SELECT 'test4_cols', sum(c1), sum(c2), sum(c3) FROM t_ttl_vert_repl_where;
 
 SYSTEM FLUSH LOGS part_log;
-SELECT 'test4_algo', merge_algorithm FROM system.part_log
+SELECT 'test4_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_repl_where' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
+    ORDER BY event_time_microseconds;
 
 DROP TABLE t_ttl_vert_repl_where;

@@ -14,6 +14,8 @@ from helpers.iceberg_utils import (
 ICEBERG_SETTINGS = {
     "allow_insert_into_iceberg": 1,
     "allow_iceberg_remove_orphan_files": 1,
+    # The orphans these tests create are fresh.
+    "iceberg_orphan_files_min_retention_seconds": 0,
 }
 
 LOCAL_TABLE_PREFIX = "/var/lib/clickhouse/user_files/iceberg_data/default"

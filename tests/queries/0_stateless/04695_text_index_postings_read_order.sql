@@ -5,7 +5,6 @@
 -- declares. The number of posting lists read must therefore not grow with the number of tokens in
 -- the query. See PR https://github.com/ClickHouse/ClickHouse/pull/112491.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 -- Keep the counts below independent of what other queries have already cached.

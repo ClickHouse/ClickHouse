@@ -1,0 +1,30 @@
+5
+1
+50
+16
+4
+14000
+14000
+100000
+50000
+1151659567105041792	3102937540787617446
+1151659567105041792	3102937540787617446
+977
+977
+05259_reorder_0	0
+05259_reorder_1	1
+1
+1
+1
+1
+05259_sleep_lambda_select	100000
+05259_sleep_lambda_where	100000
+05259_sleep_select	100000
+05259_sleep_where	100000
+50
+50
+1
+1
+50
+AND column: notEmpty(__table1.s)
+AND column: equals(modulo(__table1.number, 2_UInt8), 0_UInt8)

@@ -22,7 +22,6 @@ INSERT INTO t_pr_merge_1 SELECT number, number % 10 FROM numbers(50000);
 INSERT INTO t_pr_merge_2 SELECT number + 50000, number % 10 FROM numbers(50000);
 CREATE TABLE m_pr_merge (a UInt64, b UInt64) ENGINE = Merge(currentDatabase(), '^t_pr_merge_[12]$');
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

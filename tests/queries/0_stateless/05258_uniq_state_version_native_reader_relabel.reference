@@ -1,0 +1,2 @@
+AggregateFunction(1, uniq, UInt64)	100	[100]
+Array(AggregateFunction(1, uniq, UInt64))	[[100]]

@@ -4,7 +4,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
 SELECT number IN (materialize(1)) FROM numbers(3);
 0
 1

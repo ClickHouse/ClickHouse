@@ -1,0 +1,7 @@
+LEFT JOIN	69
+INNER JOIN	69
+LEFT JOIN, aggregated right side	69
+05320_inner	1
+05320_left	1
+05320_left_aggregated	1
+indexHint on the non-preserved side	150

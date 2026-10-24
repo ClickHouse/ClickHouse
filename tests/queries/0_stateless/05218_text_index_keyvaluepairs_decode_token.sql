@@ -5,7 +5,6 @@
 -- of the table function `mergeTreeTextIndex` and the pairs shown in the description of the index condition.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET optimize_trivial_count_query = 1;

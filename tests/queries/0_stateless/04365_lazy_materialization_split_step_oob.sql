@@ -1,6 +1,3 @@
--- below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old analyzer; that
--- CI variant also forbids changing enable_analyzer inside a subquery.
---
 -- Regression test for issue #101567: OOB in splitExpressionStep and splitFilterStep during
 -- optimizeLazyMaterialization2. The first query covers splitExpressionStep over a projection;
 -- it absorbs its predicate into the projection PREWHERE, so no FilterStep survives to split.

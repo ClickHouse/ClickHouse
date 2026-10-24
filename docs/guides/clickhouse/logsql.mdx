@@ -16,7 +16,7 @@ It translates a LogsQL query to a ClickHouse `SELECT` query.
 Enable it for a session and configure the source table:
 
 ```sql
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_database = 'default';
 SET logsql_table = 'logs';
 SET logsql_time_column = '_time';

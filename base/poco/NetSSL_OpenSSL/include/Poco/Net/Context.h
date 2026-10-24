@@ -149,6 +149,14 @@ namespace Net
             std::string cipherList;
             /// Specifies the supported ciphers in OpenSSL notation.
             /// Defaults to "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH".
+            /// Applies to TLS 1.2 and earlier only; the TLS 1.3 cipher
+            /// suites are configured with cipherSuites.
+
+            std::string cipherSuites;
+            /// Specifies the supported TLS 1.3 cipher suites in OpenSSL notation.
+            /// If left empty, the OpenSSL default cipher suites are used.
+            /// Cipher suite names OpenSSL does not recognize are ignored; a value that
+            /// leaves no recognized suite throws SSLContextException.
 
             std::string dhParamsFile;
             /// Specifies a file containing Diffie-Hellman parameters.

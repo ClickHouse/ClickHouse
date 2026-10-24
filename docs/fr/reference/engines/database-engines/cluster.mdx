@@ -1,0 +1,68 @@
+---
+description: 'Fournit un accès en temps réel aux tables d’une base de données sur un cluster défini dans la configuration du serveur, en lui transmettant les requêtes `SELECT` et `INSERT`.'
+sidebarTitle: 'Cluster'
+slug: /engines/database-engines/cluster
+title: 'Cluster'
+doc_type: 'reference'
+---
+
+Le moteur de base de données `Cluster` donne accès en temps réel aux tables d’une base de données sur un cluster défini dans la configuration du serveur. Il est l’équivalent du moteur de base de données [`Remote`](/fr/reference/engines/database-engines/remote) pour un cluster nommé, de la même manière que la fonction de table [`cluster`](/fr/reference/functions/table-functions/cluster) correspond à la fonction de table [`remote`](/fr/reference/functions/table-functions/remote).
+
+La liste des tables et leur structure sont récupérées à la demande auprès du cluster, si bien que la base de données reflète toujours son état actuel. Chaque table est accessible sous la forme d’un stockage [`Distributed`](/fr/reference/engines/table-engines/special/distributed) sur le cluster nommé, auquel les requêtes `SELECT` et `INSERT` sont transmises.
+
+Cette fonctionnalité permet de fédérer plusieurs clusters ClickHouse ou de connecter un cluster entier à `clickhouse-local` ou à un autre cluster sans avoir à renseigner ses adresses : il suffit de définir le cluster une seule fois dans la configuration, avec les identifiants propres à chaque réplique, les connexions sécurisées et le secret interserveur.
+
+## Création d’une base de données {#creating-a-database}
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('cluster_name', 'database');
+```
+
+**Paramètres du moteur**
+
+* `cluster_name` — Le nom d’un cluster défini dans la configuration du serveur (voir [Clusters](/fr/reference/engines/table-engines/special/distributed#distributed-clusters)), comme pour le moteur de table `Distributed`. Les [macros](/fr/reference/settings/server-settings/settings/other#macros) telles que `{cluster}` sont prises en charge et développées à chaque accès.
+* `database` — Le nom de la base de données sur le cluster.
+
+Contrairement au moteur de base de données `Remote`, le moteur `Cluster` n’accepte aucun argument d’authentification et ne stocke aucun secret : les connexions utilisent les paramètres définis pour chaque réplique dans la configuration du cluster (utilisateur, mot de passe, connexions sécurisées, compression et secret interserveur). Le cluster est résolu à nouveau à partir de la configuration à chaque accès : la base de données prend ainsi en compte les rechargements de la configuration et la [découverte automatique des clusters](/fr/guides/oss/deployment-and-scaling/cluster-discovery), comme une table `Distributed`. Le cluster doit exister lors de la création de la base de données ; s’il disparaît ensuite de la configuration, le serveur démarre tout de même et la base de données signale son absence jusqu’à ce qu’il soit rétabli dans la configuration.
+
+Une réplique qui pointe vers le serveur actuel est traitée comme une partition locale : les opérations `SELECT` et `INSERT` sont exécutées directement en tant qu’utilisateur courant, qui doit donc disposer des privilèges correspondants sur la base de données sous-jacente et ses tables. Les identifiants configurés pour le cluster ne sont utilisés que pour les répliques effectivement distantes. Si la réplique locale d’une partition ne possède pas la base de données ou une table, la recherche se reporte sur les répliques distantes de cette partition, comme le fait une table [`Distributed`](/fr/reference/engines/table-engines/special/distributed).
+
+Lorsque le cluster comporte plusieurs partitions, chaque table proxy lit les données de toutes ces partitions, mais les métadonnées — la liste des tables et leur structure — proviennent d’une partition choisie arbitrairement (de préférence locale), comme pour la fonction de table [`cluster`](/fr/reference/functions/table-functions/cluster). La liste ne nécessite ainsi qu’une seule requête, au lieu d’une par partition. Les partitions d’un cluster sont donc censées contenir le même ensemble de tables ; une table présente uniquement sur certaines d’entre elles est exposée par un proxy dont les requêtes échouent sur celles qui ne la possèdent pas. Une opération `INSERT` dans une table d’une base de données à plusieurs partitions envoie chaque ligne vers une partition choisie aléatoirement (les tables proxy `Distributed` possèdent une clé de répartition implicite `rand()`, qui respecte les poids configurés des partitions) ; pour cibler une partition précise dans une requête, définissez [`insert_shard_id`](/fr/reference/settings/session-settings/insert#insert_shard_id). La clé implicite ne sert qu’à répartir les lignes insérées : en lecture, la table se comporte comme une table `Distributed` sans clé de répartition (en particulier, [`optimize_skip_unused_shards`](/fr/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards) et [`force_optimize_skip_unused_shards`](/fr/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) ne l’utilisent pas pour écarter des partitions).
+
+En particulier, une table qui n’existe que sur une partition non retenue pour la résolution n’apparaît pas dans `SHOW TABLES` ni dans `EXISTS TABLE`, et sa résolution par nom renvoie `UNKNOWN_TABLE` ; aucune table proxy ne permet de l’interroger. Une table présente sur la partition retenue pour la résolution, mais absente d’une autre partition, est visible, mais les requêtes via le proxy peuvent échouer sur cette autre partition.
+
+Il n’existe aucune définition équivalente pouvant être réexécutée pour une table proxy `Cluster` ; `SHOW CREATE TABLE` renvoie donc l’erreur `THERE_IS_NO_QUERY`. Cela concerne notamment les cas suivants :
+
+* La table est actuellement accessible grâce au repli sur une réplique distante décrit ci-dessus (la réplique locale d’une partition ne possède pas la base de données ou la table). Une table `Distributed` couvrant l’ensemble du cluster n’effectue pas ce repli, et le sous-ensemble du cluster utilisé pour le repli n’a pas de nom propre.
+* Le nom du cluster de la base de données contient des macros. `Cluster` développe ces macros à chaque accès, tandis que `Distributed` ne les développe qu’à la création de la table. Recréer la table à partir de l’expression contenant les macros ou de leur valeur actuelle produirait donc un comportement différent après une modification de la configuration.
+* Un rechargement de la configuration peut transformer un cluster à une seule partition en cluster à plusieurs partitions. Le proxy actif acquiert alors une clé implicite `rand()` pour répartir les lignes `INSERT`, tandis qu’une table sérialisée avant le rechargement n’a pas de clé. Sérialiser systématiquement cette clé n’est pas non plus équivalent, car une table `Distributed` autonome l’utiliserait pour écarter des partitions lors des lectures ; `CREATE TABLE` ne permet pas d’exprimer une clé de répartition réservée aux insertions.
+
+## Notes {#notes}
+
+* Le moteur donne accès au cluster en lecture seule : les commandes DDL telles que `CREATE TABLE`, `DROP TABLE` et `ALTER`, ainsi que les commandes similaires, ne sont pas prises en charge sur la base de données `Cluster`. Gérez le schéma directement sur le cluster, par exemple au moyen de requêtes DDL avec [`ON CLUSTER`](/fr/reference/statements/distributed-ddl).
+* Les droits d’accès sont vérifiés sur les serveurs distants pour les utilisateurs configurés dans la définition du cluster (ou pour l’utilisateur courant si le cluster utilise un secret interserveur), ainsi que localement, selon les privilèges habituels sur la base de données et ses tables.
+* Les particularités du moteur de base de données `Remote` — les règles de visibilité des tables d’une partition locale, l’exhaustivité de l’énumération, le signalement des erreurs lorsqu’un cluster est indisponible et les chaînes de bases de données proxy — s’appliquent également au moteur `Cluster` ; consultez les [notes](/fr/reference/engines/database-engines/remote#notes) correspondantes.
+
+## Exemple {#example}
+
+Créez une base de données `Cluster` pointant vers la base de données `default` du cluster `test_shard_localhost` défini dans la configuration du serveur, puis utilisez-la :
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('test_shard_localhost', 'default');
+```
+
+```sql
+SHOW TABLES FROM cluster_db;
+```
+
+```text
+┌─name─┐
+│ t    │
+└──────┘
+```
+
+```sql
+SELECT * FROM cluster_db.t;
+```

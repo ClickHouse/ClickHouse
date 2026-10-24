@@ -43,13 +43,24 @@ namespace ErrorCodes
 
 /// Grower for the bucket maps. The stock `HashTableGrower` quadruples the buffer below `max_size_degree`,
 /// which leaves the table at a load factor as low as ~0.125; with the whole `Bucket` stored in every cell that
-/// wastes a lot of memory across many aggregation states. Doubling keeps the same worst-case load factor (0.5)
-/// with at most half the slots of quadrupling.
+/// wastes a lot of memory across many aggregation states. This one doubles the buffer and fills it up to 3/4:
+/// bucket keys are mostly consecutive, and `TrivialHash` puts a run of them in consecutive cells without collisions.
 struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 {
+    size_t maxFill() const { return bufSize() / 4 * 3; }
+    bool overflow(size_t elems) const { return elems > maxFill(); }
+
     void increaseSize()
     {
         ++size_degree;
+    }
+
+    /// `reserve` sizes the buffer here, so it follows the same 3/4 limit.
+    void set(size_t num_elems)
+    {
+        size_degree = 4;
+        while (overflow(num_elems))
+            ++size_degree;
     }
 };
 
@@ -108,10 +119,6 @@ public:
     {
         return Traits::getName();
     }
-
-    /// Timeseries parameters may carry DecimalField (from toDateTime64(...) casts), whose
-    /// default printed form collides with String literals — so we print parameters with ::Type.
-    bool shouldPrintParametersWithTypes() const override { return true; }
 
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
         GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, GridScaleIntervalType grid_step_, GridScaleIntervalType window_, UInt32 grid_scale_,
@@ -437,7 +444,9 @@ protected:
         /// Visit the populated buckets in ascending index order, feeding each into the sliding window when its
         /// grid point's window reaches it. When most bucket slots are populated (`use_range_scan`) looking each
         /// index up in the hash map is cheaper than sorting; otherwise collect the populated buckets and sort them once.
-        const bool use_range_scan = (buckets.size() != 0)
+        /// A map with fewer cells than `bucket_count` wraps the keys into clusters, and looking up an absent key walks one.
+        const size_t num_cells = buckets.getBufferSizeInBytes() / sizeof(typename std::remove_cvref_t<decltype(buckets)>::cell_type);
+        const bool use_range_scan = (buckets.size() != 0) && num_cells >= bucket_count
             && (static_cast<double>(buckets.size()) >= static_cast<double>(bucket_count) * BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN);
         if (use_range_scan)
         {

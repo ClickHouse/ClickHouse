@@ -119,6 +119,20 @@ El proceso de fusión depende de `settings_constraints_replace_previous`:
   cada tipo de restricción no definido se toma del perfil anterior y cada
   tipo de restricción definido se sustituye por el valor del nuevo perfil.
 
+## CONSTRAINTS y la configuración `compatibility` {#constraints-and-compatibility}
+
+La configuración [`compatibility`](/es/reference/settings/session-settings/compatibility#compatibility) cambia los
+ajustes que el usuario no ha establecido a los valores predeterminados de una versión anterior. Nunca aplica un valor que las
+CONSTRAINTS rechacen: un ajuste conserva su valor predeterminado cuando el valor predeterminado anterior está fuera de su rango `min`/`max`,
+es uno de sus valores `disallowed` o el ajuste es `const`. Lo mismo ocurre con un ajuste de un nivel
+que [`allow_feature_tier`](/es/reference/settings/server-settings/settings/allow#allow_feature_tier) deshabilita.
+La configuración `readonly` no restringe `compatibility` de esta manera, sino que determina si una consulta puede siquiera establecer
+`compatibility`.
+
+Los ajustes de `MergeTree` solo siguen la `compatibility` del perfil predeterminado, que define los valores predeterminados
+de todas las tablas a nivel de servidor. En este caso, un ajuste también conserva su valor predeterminado cuando una
+CONSTRAINT con el prefijo `merge_tree_` del perfil predeterminado o `allow_feature_tier` rechaza el valor predeterminado anterior.
+
 ## Modo de solo lectura {#read-only}
 
 El modo de solo lectura se habilita mediante el SETTING `readonly`, que no debe confundirse con el tipo de CONSTRAINT `readonly`. Cuando `readonly = 1`, un SETTING que de otro modo sería rechazado aún puede modificarse si un CONSTRAINT `changeable_in_readonly` lo permite. Para conocer el significado de los valores de este SETTING, consulte la [referencia de SETTINGS](/es/reference/settings/session-settings/other#readonly); para saber qué clases de consultas permite cada valor y cómo lo establece la HTTP interface, consulte [permisos para consultas](/es/concepts/features/configuration/settings/permissions-for-queries#readonly).

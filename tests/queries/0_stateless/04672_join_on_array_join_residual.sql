@@ -3,8 +3,6 @@
 -- mask by row position. Such a condition is rejected instead of producing an out of bounds
 -- read (logical error in debug and sanitizer builds) or silently wrong results.
 
-SET enable_analyzer = 1;
-
 -- The stress job appends two client options from one block, and a client option beats a
 -- randomized one (`TestCase.add_effective_settings` in tests/clickhouse-test):
 --   * `join_algorithm` on odd threads (ci/jobs/scripts/stress/stress.py:166-179). With

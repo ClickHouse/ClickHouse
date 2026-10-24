@@ -4,7 +4,6 @@
 -- per row, independently, so a row that satisfies the query's own filter can still be discarded by
 -- the pre-filter's draw. The main filter pushdown refuses to move such conjuncts for the same reason.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 -- With parallel replicas the plan is printed for the initiator and for the replica, so every
 -- pre-filter below would be listed twice.

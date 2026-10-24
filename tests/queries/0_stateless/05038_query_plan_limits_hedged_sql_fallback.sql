@@ -10,7 +10,6 @@ CREATE TABLE t_plan_limits_hedged_fallback (a UInt64) ENGINE = MergeTree ORDER B
 INSERT INTO t_plan_limits_hedged_fallback SELECT number FROM numbers(1000);
 
 -- `serialize_query_plan` requires the analyzer; pin it against `compatibility` randomization.
-SET enable_analyzer = 1;
 -- The ordinary distributed path is under test; parallel replicas gate plan shipping differently.
 SET enable_parallel_replicas = 0;
 SET serialize_query_plan = 1;

@@ -37,6 +37,23 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
 
 Use background I/O pool to read from MergeTree tables. This setting may increase performance for I/O bound queries
 
+## allow_block_nested_loop_join {#allow_block_nested_loop_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting that gates the block nested loop join, which executes a `JOIN` whose `ON` section determines no join key instead of rejecting it with `INVALID_JOIN_ON_EXPRESSION`. The compatibility value 0 restores the previous behavior."}]}]}/>
+
+Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+
+It examines every pair of rows, which costs the product of the two tables' row counts. The operator is the last resort of join planning, reached only when no [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) can execute the condition, so it is not selected through that setting.
+
+When the setting is disabled, a query that reaches the operator is rejected with `INVALID_JOIN_ON_EXPRESSION` while it is being planned.
+
+Possible values:
+
+- 0 — Reject such a query.
+- 1 — Execute it as a block nested loop join (default).
+
 ## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -174,7 +191,7 @@ Enables delta-kernel writes feature.
 
 Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](/reference/settings/session-settings/force#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
 
-Not applied when [max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) or [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
+[max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) and [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) apply to the combined size of all partition sets while the streams remain separate.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -369,12 +386,6 @@ Set to false to force the old full-mutation behavior.
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
 index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
 
-## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Allow named collections' fields override by default.
-
 ## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -439,6 +450,20 @@ It does not control whether `Nullable(Tuple(...))` columns can be created in tab
 ClickHouse uses the value for this setting loaded at server startup.
 Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to evaluate final `DISTINCT` in parallel using hash partitioning."}]}]}/>
+
+Evaluate the final `DISTINCT` on multiple threads by partitioning input streams by the hash of the `DISTINCT` columns. Equal keys reach the same stream, allowing each partition to be deduplicated independently.
+
+Unlike [allow_distinct_partitions_independently](/reference/settings/session-settings/allow#allow_distinct_partitions_independently), this does not require a relationship between the table's partition key and the `DISTINCT` columns. The number of input streams and hash partitions is capped independently of `max_threads` to bound the cost of splitting blocks and connecting streams.
+
+Hash partitioning is not applied to globally sorted input because `DISTINCT` preserves that order. [max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) and [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) apply to the combined size of all hash partitions.
+
+`DISTINCT` without `ORDER BY` has no defined row order, so this optimization may return the same distinct values in a different order. As a result, `LIMIT`, `OFFSET`, or `LIMIT BY` over unordered `DISTINCT` results may select a different subset of rows.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

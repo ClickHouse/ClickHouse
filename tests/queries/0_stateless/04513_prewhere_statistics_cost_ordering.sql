@@ -7,7 +7,6 @@
 -- predicate first because its default 1% selectivity looks "more selective",
 -- ignoring that the Map column is ~500x more expensive to read.
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 0;
 SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;

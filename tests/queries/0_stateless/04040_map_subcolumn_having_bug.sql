@@ -7,8 +7,6 @@
 -- Every query is run with optimize_functions_to_subcolumns = 1 and = 0;
 -- results must match.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_map_having;
 
 CREATE TABLE t_map_having (id UInt64, m Map(String, UInt64))

@@ -44,6 +44,25 @@ FROM system.tables
 WHERE database = currentDatabase()
     AND name = 'test_04909_plain_wildcard';
 
+-- The persisted `partition_strategy = 'none'` must not strand a `headers(...)` argument: the
+-- metadata-load path re-parses both.
+CREATE TABLE test_04909_plain_wildcard_headers (d Date, x UInt64)
+ENGINE = S3('s3://bucket/test_04909/plain', 'Parquet', headers('foo' = 'bar'))
+PARTITION BY d;
+SELECT count()
+FROM system.tables
+WHERE database = currentDatabase()
+    AND name = 'test_04909_plain_wildcard_headers'
+    AND create_table_query LIKE '%partition_strategy = \'none\'%'
+    AND create_table_query LIKE '%headers(%';
+
+DETACH TABLE test_04909_plain_wildcard_headers;
+ATTACH TABLE test_04909_plain_wildcard_headers;
+SELECT count()
+FROM system.tables
+WHERE database = currentDatabase()
+    AND name = 'test_04909_plain_wildcard_headers';
+
 -- An explicit `partition_strategy = 'none'` contradicts a `{_partition_id}` path:
 -- only `wildcard` substitutes the placeholder, so the definition must be rejected.
 CREATE TABLE test_04909_explicit_none (d Date, x UInt64)
@@ -53,3 +72,4 @@ PARTITION BY d; -- { serverError BAD_ARGUMENTS }
 DROP TABLE test_04909_glob_hive;
 DROP TABLE test_04909_glob_wildcard;
 DROP TABLE test_04909_plain_wildcard;
+DROP TABLE test_04909_plain_wildcard_headers;

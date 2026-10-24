@@ -62,7 +62,7 @@ run_case_queries()
 {
     local label="$1" column="$2"
     shift 2
-    local queries="SET enable_nullable_tuple_type = 1; SET enable_analyzer = 1;
+    local queries="SET enable_nullable_tuple_type = 1;
                    SET transform_null_in = ${null_in}; SET max_threads = 1;"
     local entry predicate name optimize push_down prefix
     for entry in "$@"; do
@@ -101,6 +101,6 @@ rm -f "${outputs[@]}"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM file('${DATA_FILE}', ORC)
     WHERE tuple(tupleElement(t, 'x'), tupleElement(t, 'x')) IN ((0, 0))
-    SETTINGS enable_nullable_tuple_type = 1, enable_analyzer = 1, transform_null_in = 1,
+    SETTINGS enable_nullable_tuple_type = 1, transform_null_in = 1,
              optimize_functions_to_subcolumns = 1, input_format_orc_filter_push_down = 1, max_threads = 1
     FORMAT JSON" | jq -c '{result: .data, rows_read: .statistics.rows_read}'

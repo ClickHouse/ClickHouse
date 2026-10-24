@@ -13,38 +13,48 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="table_disk">
-  ## table_disk
-</div>
+## table_disk {#table_disk}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Es un disco de tabla: la ruta/endpoint apunta a los datos de la tabla, no a los datos de la base de datos.
-Compatible con discos de almacenamiento de objetos cuyos metadatos residen en el propio almacenamiento de objetos
+Compatible con discos de almacenamiento de objetos cuya metadata reside en el propio almacenamiento de objetos
 (s3&#95;plain, s3&#95;plain&#95;rewritable, web, web&#95;index) y sus variantes con caché. Las variantes
 cifradas solo son compatibles con los discos s3&#95;plain / s3&#95;plain&#95;rewritable con escritura, no
 con los discos web / web&#95;index de solo lectura.
+Se da por hecho que las partes ya presentes en la ruta coinciden con las columnas y la clave de ordenación
+que declara esta tabla. No queda registrada en ningún sitio la clave de ordenación con la que se escribió cada parte, por lo que una
+tabla que declare una clave distinta sobre las mismas partes devolverá resultados incorrectos o un error.
 
-<div id="table_readonly">
-  ## table_readonly
-</div>
+## table_readonly {#table_readonly}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración para marcar la tabla como de solo lectura, lo que impide inserciones y modificaciones"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nueva configuración para marcar la tabla como de solo lectura, impidiendo inserciones y modificaciones"}]}]} />
 
-Si se establece en true, la tabla queda en modo de solo lectura y no realiza modificaciones en disco.
+Si se establece en true, la tabla pasa a modo de solo lectura.
 
 Se rechazan todas las operaciones en primer plano que modificarían la tabla: inserciones, mutaciones, `OPTIMIZE` y los comandos de partición que modifican datos
-(`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, así como `MOVE PARTITION ... TO TABLE` cuando esta tabla es el destino). Las operaciones
+(`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, así como `MOVE PARTITION ... TO TABLE` cuando el destino es esta tabla). Las operaciones
 que no modifican los datos de la tabla, como `FREEZE`/`UNFREEZE` y `FORGET PARTITION`, siguen estando permitidas.
 
-Tampoco se programa ningún trabajo en segundo plano: se suprimen las fusiones normales, las fusiones TTL (`DELETE`/`MOVE`/recompresión), las fusiones de recompresión, las mutaciones en segundo plano
-y los movimientos de partes en segundo plano. Como consecuencia, una tabla con TTL ya no elimina ni mueve sus datos expirados mientras esta configuración
-está habilitada.
+No se programa ningún trabajo en segundo plano que modifique los datos de la tabla: se suprimen las fusiones regulares, las fusiones por TTL (`DELETE`/`MOVE`/recompresión), las fusiones de recompresión, las mutaciones en segundo plano
+y los movimientos de partes en segundo plano. En consecuencia, una tabla con TTL deja de recuperar o mover sus datos caducados mientras esta configuración
+esté habilitada. La limpieza se detiene tras esperar a que finalice la iteración de limpieza en curso. La carga asíncrona de partes obsoletas (inactivas) que una
+tabla escribible realiza tras el arranque se suspende si aún está pendiente: no se carga ninguna parte más, incluidas las cargas que ya estaban en cola
+pero no habían comenzado, y las partes que quedan sin cargar se cargarán cuando la configuración vuelva a desactivarse. Los workers en segundo plano se deshabilitan
+antes de que el `ALTER` que habilita la configuración haga su commit, de modo que no se inicia ninguna limpieza ni carga de partes en una tabla que ya es de solo lectura de forma persistente. Las demás
+operaciones que ya estén en curso, incluida la carga de partes que ya había comenzado, pueden finalizar.
 
-La configuración siempre puede volver a cambiarse con `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (o `RESET SETTING`). No se admite para `ReplicatedMergeTree`.
+La caché de estadísticas en memoria sigue actualizándose periódicamente. Establezca `refresh_statistics_interval = 0` para deshabilitar también esta tarea en segundo plano.
+Las lecturas en streaming (`SELECT ... STREAM`) siguen funcionando: el trabajo en segundo plano que atiende sus suscripciones solo lee partes, por lo que también se ejecuta en tablas de solo lectura.
+
+La configuración siempre puede revertirse con `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (o `RESET SETTING`). En ese momento se inician los workers en segundo plano
+que la tabla de solo lectura nunca llegó a iniciar, por lo que las fusiones, mutaciones, movimientos, TTL y la limpieza se reanudan sin necesidad de reiniciar el servidor.
+Las partes obsoletas (inactivas) se cargan antes de que la limpieza pueda eliminar las partes vacías que las cubren. La tabla permanece en solo lectura para las consultas concurrentes durante
+toda la ejecución de ese `ALTER`: solo vuelve a aceptar escrituras una vez que la sentencia ha finalizado, no en el momento en que se confirmó su metadata.
+Esta configuración no es compatible con `ReplicatedMergeTree`.
 
 {/*AUTOGENERATED_END*/}

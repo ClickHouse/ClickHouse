@@ -114,6 +114,8 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
             return std::make_shared<JSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings, pretty_json);
         });
         factory.markOutputFormatSupportsParallelFormatting(format);
+        /// With output_format_json_array_of_rows all rows form one JSON array.
+        factory.registerAppendSupportChecker(format, [](const FormatSettings & settings) { return !settings.json.array_of_rows; });
         factory.setContentType(format, [](const std::optional<FormatSettings> & settings)
         {
             return settings && settings->json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8";

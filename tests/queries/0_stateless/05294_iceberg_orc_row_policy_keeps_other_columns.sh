@@ -17,8 +17,8 @@ rm -rf "${ICEBERG_PATH}"
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
     SET input_format_parquet_use_native_reader_v3 = 1;
-    CREATE TABLE t (k UInt64, a UInt64, s String) ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');
-    INSERT INTO TABLE FUNCTION icebergLocal('${ICEBERG_PATH}', 'ORC', 'k UInt64, a UInt64, s String')
+    CREATE TABLE t (k Int64, a Int64, s String) ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');
+    INSERT INTO TABLE FUNCTION icebergLocal('${ICEBERG_PATH}', 'ORC', 'k Int64, a Int64, s String')
         SELECT number, number % 3, toString(number * 10) FROM numbers(10);
 "
 

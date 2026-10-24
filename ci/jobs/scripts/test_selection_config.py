@@ -33,6 +33,8 @@ class SelectionConfig:
     # Rows of `checks_coverage_lines` that belong to this kind of test.
     coverage_check_name_like: str = "Stateless%per_test_coverage%"
     coverage_test_name_pattern: str = "^[0-9]{5}_"
+    # A failed GitHub API read of the selection is retried this long, then the targeted job skips.
+    github_retry_sec: int = 180
 
 
 SELECTION_CONFIG = SelectionConfig()

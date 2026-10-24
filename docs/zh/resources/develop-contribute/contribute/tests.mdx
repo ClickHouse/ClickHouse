@@ -357,7 +357,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 性能测试可用于衡量并比较 ClickHouse 某个相对独立部分在合成查询上的性能。
 性能测试位于 `tests/performance/`。
 每个测试都由一个 `.xml` 文件表示，其中包含测试用例的描述。
-测试通过 `docker/test/performance-comparison` 工具运行。调用方法请参见 readme 文件。
+测试由 CI 作业 `ci/jobs/performance_tests.py` 在 `ci/docker/performance-comparison` 镜像中运行。
 
 每个测试会在循环中运行一个或多个查询 (可能包含多种参数组合) 。
 
@@ -368,7 +368,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 ## 测试工具和脚本 {#test-tools-and-scripts}
 
 `tests` 目录中的一些程序并不是现成的测试用例，而是测试工具。
-例如，对于 `Lexer`，有一个工具 `src/Parsers/tests/lexer`，它只是对 stdin 进行标记化，并将带颜色的结果输出到 stdout。
+例如，对于 `Lexer`，有一个工具 `src/Parsers/examples/lexer.cpp`，它只是对 stdin 进行标记化，并将带颜色的结果输出到 stdout。
 你可以将这类工具用作代码示例，也可用于探索和手动测试。
 
 ## 杂项测试 {#miscellaneous-tests}
@@ -509,9 +509,9 @@ libFuzzer 专用的配置、字典和语料库存放在 `tests/fuzz`。
 要构建 Fuzzer，必须同时设置 `-DENABLE_FUZZING=1` 和 `-DENABLE_TESTS=1` 选项。
 我们建议在构建 Fuzzer 时禁用 Jemalloc。
 用于将 ClickHouse 模糊测试集成到
-Google OSS-Fuzz 的配置可在 `docker/fuzz` 中找到。
+Google OSS-Fuzz 的配置可在 `tests/fuzz` 中找到。
 
-我们还使用简单的模糊测试来生成随机 SQL 查询，并检查 server 在执行这些查询时不会崩溃。
+我们还使用简单的模糊测试来生成随机 SQL 查询，并检查服务器在执行这些查询时不会崩溃。
 你可以在 `00746_sql_fuzzy.python` 中找到它。
 此测试应持续运行 (隔夜及更长时间) 。
 
@@ -592,7 +592,7 @@ ClickHouse 提供了诊断功能，可帮助运维工程师定位故障硬件。
 
 代码风格规则见[此处](/zh/resources/develop-contribute/contribute/style)。
 
-要检查一些常见的风格问题，可以使用 `utils/check-style` 脚本。
+要检查一些常见的风格问题，可以使用 `ci/jobs/scripts/check_style/check_cpp.sh` 脚本，或者通过 `python -m ci.praktika run "Style check"` 在本地运行完整的风格检查。
 
 如果要强制代码符合规范，可以使用 `clang-format`。
 `.clang-format` 文件位于源码根目录。

@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse server，并根据 ClickHouse 源代码自动生成。
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />集群发现已不再是Experimental功能，只要集群在 `remote_servers` 中配置了 `discovery` 部分，该功能便始终启用。此设置已弃用，不再产生任何效果。它仍保留为 `String` 类型，以确保此前可接受的任何值 (包括空标签) 依然有效。
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用对通过 `user_defined_executable_function_drivers_config` 声明的 executable 用户自定义函数驱动的 Experimental 支持。驱动会将 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` 中提供的用户代码片段转换为可运行的 executable UDF。
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用对 WebAssembly UDF 的 Experimental 支持
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />这是 `enable_webterminal` 早期的 (Experimental) 名称。若未设置 `enable_webterminal`，出于向后兼容考虑，仍会继续识别该设置。此设置已弃用。
 

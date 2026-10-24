@@ -4,7 +4,6 @@
 -- `dictGet(...) >= const` predicate, so an ordinary query failed at default settings.
 
 -- Correlated subqueries are a feature of the analyzer, so this test needs it.
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_dict_source;
 DROP DICTIONARY IF EXISTS d_correlated_sets;

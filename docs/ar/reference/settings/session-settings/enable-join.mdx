@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين تحويل جدول التجزئة إلى مصفوفة مسطحة في عمليات الربط عندما يكون المفتاح عددًا صحيحًا واحدًا ضمن نطاق قيم صغير.
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 استخدم جداول تجزئة تخزّن مفاتيح الربط وحدها، دون مرجع إلى صف أيمن، في عمليات الربط التي لا يمكن أن تتضمّن نتيجتها أي قيمة مأخوذة من صف أيمن: `LEFT ANTI`، و`LEFT SEMI` عندما لا يُحدَّد أي عمود أيمن. يتميّز هذا النوع من الجداول بخلية أصغر حجمًا، ويسمح بإسقاط الكتل اليمنى بدلًا من تخزينها.
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 صفِّ الجانب الأيسر باستخدام مجموعة مفاتيح JOIN التي جُمعت من الجانب الأيمن وقت التشغيل.
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أصبحت عوامل تصفية وقت التشغيل لـ JOIN ميزة من فئة الإنتاج."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين تصفية الربط باستخدام التحليل الديناميكي للفهارس"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أصبحت عوامل تصفية وقت التشغيل الخاصة بـ JOIN ميزة ضمن فئة الإنتاج."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين التصفية في عمليات الربط باستخدام تحليل الفهرس الديناميكي"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "تمكين استبعاد الحبيبات في جانب الفحص (الأيسر) من JOIN باستخدام عامل تصفية وقت التشغيل المُجمَّع من جانب البناء (الأيمن)."}]}]} />
 
-شغّل تمريرةً ثانية من تحليل الفهارس (عبر use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) بهدف استبعاد granules على الجانب الأيسر من الربط.
+يستبعد الحبيبات في جانب الفحص من JOIN باستخدام عامل تصفية وقت التشغيل المُجمَّع من جانب البناء، راجع `enable_join_runtime_filters`.
+لا يكون له أي تأثير إلا إذا كان `use_skip_indexes_on_data_read = 1`.
+لا يمكن الاستبعاد إلا بمفتاح ربط يكون عمودًا من أعمدة المفتاح الأساسي في جانب الفحص، أو يغطيه فهرس تخطٍّ من نوع `minmax` أو `set` أو `bloom_filter`.
+إذا احتفظ عامل تصفية وقت التشغيل بقيم المفاتيح الدقيقة، يكون مسند الاستبعاد مجموعة `IN` من هذه القيم، وإلا فيُستخدم نطاق المفاتيح بين الحد الأدنى والحد الأقصى (وقدرته على الاستبعاد أقل).
 
-## enable_join_transitive_predicates
+لا يسري إلا عند قراءة جانب الفحص من الربط محليًا؛ إذ تُرفَق الواصفات التي تُوجِّه عملية الاستبعاد بخطوة القراءة أثناء تحسين خطة الاستعلام، ولا تُنقَل عند إعادة بناء تلك الخطوة للتنفيذ عن بُعد، ولذلك لا يحدث استبعاد الحبيبات مع النسخ المتماثلة المتوازية (`enable_parallel_replicas = 1`) ولا مع خطة الاستعلام الموزَّعة (`make_distributed_plan = 1`). وفي هذه الأوضاع لا يكون للإعداد أي أثر: فالاستعلام يُعيد النتيجة نفسها، ويعمل عامل تصفية وقت التشغيل الخاص بـ JOIN تمامًا كما يعمل عند تعطيل هذا الإعداد، والفرق الوحيد هو غياب استبعاد الحبيبات.
+
+كما يُتخطّى استبعاد الحبيبات عند قراءة جانب الفحص باستخدام `FINAL` (إذ لم يُنفَّذ الاستبعاد لعمليات القراءة باستخدام `FINAL`، كما أن `optimizeLazyFinal` يعيد بناء هذه القراءة دون الواصفات)، وكذلك في الجداول التي تحتوي على تعديلات بيانات أو تعديلات `ALTER` معلّقة، أو على أجزاء تصحيح. ولا يكون للإعداد أي أثر في هذه الحالات بالمعنى نفسه.
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

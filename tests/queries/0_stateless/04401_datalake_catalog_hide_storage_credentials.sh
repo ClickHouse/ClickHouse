@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no DataLakeCatalog, whose settings it then does not mask
 # Regression test: DataLake credential settings (legacy storage_* aliases and canonical names)
 # must be redacted as [HIDDEN] when the CREATE query is formatted, for BOTH the DataLakeCatalog
 # database engine (system.databases.engine_full, SHOW CREATE DATABASE) and the Iceberg*/Paimon*

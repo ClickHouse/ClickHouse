@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: fails with parallel replicas, https://github.com/ClickHouse/clickhouse-private/issues/79501
 
 # A view with `SQL SECURITY DEFINER` or `NONE` that hides rows is read through an opaque step,
 # so the invoker's expressions and predicates never see the rows the view drops.

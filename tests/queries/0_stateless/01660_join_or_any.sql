@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: `ANY RIGHT JOIN` with `OR` returns an extra row, https://github.com/ClickHouse/ClickHouse/issues/123992
 SET joined_subquery_requires_alias = 0;
 SET any_join_distinct_right_table_keys = 0;
 

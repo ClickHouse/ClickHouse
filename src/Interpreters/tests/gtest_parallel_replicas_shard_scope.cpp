@@ -114,7 +114,7 @@ ClusterPtr makeReplicatedDatabaseCluster(
 {
     std::vector<std::vector<DatabaseReplicaInfo>> infos;
     for (size_t i = 0; i < shard_names.size(); ++i)
-        infos.push_back({DatabaseReplicaInfo{"127.0.0." + std::to_string(i + 1), shard_names[i], "replica1", {}}});
+        infos.push_back({DatabaseReplicaInfo{"127.0.0." + std::to_string(i + 1), shard_names[i], "replica1", {}, ""}});
 
     const ConnectionParameterStorage storage;
     const auto params = storage.params(name);

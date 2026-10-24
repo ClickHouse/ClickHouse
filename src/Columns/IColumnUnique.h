@@ -44,6 +44,9 @@ public:
     virtual bool tryUniqueInsert(const Field & x, size_t & index) = 0;
 
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
+    /// Inserts rows `rows` of `src` with the rules of `uniqueInsertRangeFrom`, which differ from `uniqueInsertFrom` for NULL
+    /// and for values that compare equal to the default, such as `-0.0`, and replaces each row number with its index.
+    virtual void uniqueInsertRowsFrom(const IColumn & src, std::span<UInt64> rows) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
     virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;

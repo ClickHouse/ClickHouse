@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки относятся к серверу ClickHouse и автоматически генерируются из исходного кода ClickHouse.
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Должен ли фоновый воркер памяти корректировать внутренний трекер памяти на основе данных из внешних источников, таких как jemalloc и cgroups
+Определяет, корректирует ли фоновый воркер памяти глобальный трекер памяти на каждом такте по внешнему измерению памяти, фактически используемой процессом: по использованию памяти cgroup, если cgroups доступны (см. `memory_worker_use_cgroup`), а в противном случае — по значению `stats.resident` из jemalloc.
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+Глобальный трекер памяти — это счётчик: выделения памяти увеличивают его, а освобождения — уменьшают. Любая асимметрия учёта остаётся в нём на всё время жизни процесса, поскольку ничто другое его не уменьшает, а дрейф вверх никогда не отрабатывается: описываемая им память уже освобождена. Как только один лишь дрейф превысит `max_server_memory_usage`, любое выделение памяти будет завершаться ошибкой — вплоть до проверки на ноль байт в начале соединения, — и сервер будет отклонять все запросы, используя лишь малую долю своего лимита. Корректировка по измерению ограничивает время жизни такого дрейфа одним тактом воркера (`memory_worker_period_ms`; по умолчанию 50 мс при чтении из cgroups и 100 мс при чтении из jemalloc).
+
+При этом корректировка не скрывает дрейф. `MemoryTrackingUncorrected` хранит значение, которое имел бы трекер без каких-либо корректировок (снимок исходного счётчика, обновляемый на каждом такте воркера), поэтому разность `MemoryTrackingUncorrected - MemoryTracking` показывает дрейф, накопленный к текущему моменту.
+
+Значение `0` возвращает поведение предыдущих версий: трекер корректируется только на первом такте воркера и всякий раз, когда его значение становится отрицательным.
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 Длительность в миллисекундах, в течение которой должно сохраняться состояние memory pressure, прежде чем jemalloc динамически скорректирует `dirty_decay_ms`. Если использование памяти остается выше порога purge в течение этого периода, автоматическое устаревание грязных страниц отключается (`dirty_decay_ms=0`) для более агрессивного освобождения памяти. Если использование памяти остается ниже порога в течение этого периода, восстанавливается поведение устаревания по умолчанию. Установите 0, чтобы отключить динамическую корректировку и использовать настройки устаревания jemalloc по умолчанию.
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -40,33 +40,25 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Не влияет, если `max_server_memory_usage_to_ram_ratio` равно `0`.
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 Период срабатывания фонового воркера памяти, который корректирует использование памяти трекером памяти и очищает неиспользуемые страницы при повышенном потреблении памяти. Если установлено значение 0, будет использоваться значение по умолчанию в зависимости от источника использования памяти
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />
 
 Пороговое соотношение объема грязных страниц jemalloc к объему памяти, доступной серверу ClickHouse. Когда объем грязных страниц превышает это соотношение, фоновый воркер памяти принудительно очищает грязные страницы. Если задано значение 0, принудительная очистка на основе соотношения грязных страниц отключается.
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 Пороговый коэффициент для очистки jemalloc относительно памяти, доступной серверу ClickHouse. Когда общее использование памяти превышает этот коэффициент, фоновый воркер памяти принудительно очищает грязные страницы. Если задано значение 0, принудительная очистка на основе общего объема памяти отключается.
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
 
@@ -87,9 +79,7 @@ RSS, которую не видит глобальный трекер памят
 разрыв `resident - tracked` в основном обусловлен накладными расходами shadow/runtime санитайзера,
 а не задержкой учёта в трекере.
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Использовать данные о текущем использовании памяти в cgroup для корректировки отслеживания памяти.
 

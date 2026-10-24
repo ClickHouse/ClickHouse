@@ -182,13 +182,61 @@ TEST(PollingQueue, FinishInterruptsWait)
 
     std::thread finisher([&]
     {
-        std::this_thread::sleep_for(milliseconds(50));
         std::lock_guard guard(mutex);
         queue.finish();
     });
 
-    EXPECT_FALSE(queue.wait(lock));
+    auto res = queue.wait(lock);
     finisher.join();
+    EXPECT_FALSE(res);
+    EXPECT_TRUE(res.hasNotification(PollingQueue::Notification::Finish));
+}
+
+TEST(PollingQueue, SpillNotificationsInterruptWaitAndPreserveTasks)
+{
+    PollingQueue queue;
+    TestPipe pipe;
+    std::mutex mutex;
+
+    std::unique_lock lock(mutex);
+    queue.addTask(0, &pipe, pipe.readFd());
+
+    std::thread notifier([&]
+    {
+        std::lock_guard guard(mutex);
+        queue.notify(PollingQueue::Notification::Spill);
+        queue.notify(PollingQueue::Notification::Spill);
+    });
+
+    auto res = queue.wait(lock);
+    notifier.join();
+    EXPECT_FALSE(res);
+    EXPECT_TRUE(res.hasNotification(PollingQueue::Notification::Spill));
+    EXPECT_FALSE(res.hasNotification(PollingQueue::Notification::Finish));
+    EXPECT_EQ(queue.size(), 1);
+
+    auto empty = queue.tryGetReadyTask(lock);
+    EXPECT_FALSE(empty);
+    EXPECT_FALSE(empty.hasNotification(PollingQueue::Notification::Spill));
+    EXPECT_FALSE(empty.hasNotification(PollingQueue::Notification::Finish));
+
+    pipe.makeReady();
+    EXPECT_EQ(queue.wait(lock).data, &pipe);
+    EXPECT_TRUE(queue.empty());
+}
+
+TEST(PollingQueue, FinishRemainsSetAcrossSpillNotifications)
+{
+    PollingQueue queue;
+    std::mutex mutex;
+    std::unique_lock lock(mutex);
+
+    queue.notify(PollingQueue::Notification::Spill);
+    queue.finish();
+    queue.notify(PollingQueue::Notification::Spill);
+
+    EXPECT_TRUE(queue.wait(lock).hasNotification(PollingQueue::Notification::Finish));
+    EXPECT_TRUE(queue.tryGetReadyTask(lock).hasNotification(PollingQueue::Notification::Finish));
 }
 
 #endif

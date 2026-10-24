@@ -34,6 +34,7 @@ arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
 **설정**
 
 * `arrow_flight_request_descriptor_type` — 데이터셋 이름을 Flight 서버로 전송하는 방식을 제어합니다. 값: `path`(기본값) 또는 `command`. 자세한 내용은 [ArrowFlight 테이블 엔진](/ko/reference/engines/table-engines/integrations/arrowflight#settings)을 참조하십시오.
+* `arrow_flight_request_timeout_sec` — 단일 Arrow Flight 요청의 타임아웃을 초 단위로 지정합니다. 기본값은 `300`이며, `0`은 타임아웃이 없음을 의미합니다. 자세한 내용은 [ArrowFlight 테이블 엔진](/ko/reference/engines/table-engines/integrations/arrowflight#settings)을 참조하십시오.
 
 **예시**
 

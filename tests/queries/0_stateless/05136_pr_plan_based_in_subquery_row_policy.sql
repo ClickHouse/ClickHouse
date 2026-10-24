@@ -23,7 +23,6 @@ INSERT INTO t_rp_nested SELECT number FROM numbers(25);
 CREATE ROW POLICY t_rp_pol ON t_rp_main
     USING k IN (SELECT k FROM t_rp_allow WHERE k IN (SELECT k FROM t_rp_nested)) TO ALL;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

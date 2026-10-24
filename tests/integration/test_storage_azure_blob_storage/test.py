@@ -27,9 +27,17 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/named_collections.xml", "configs/schema_cache.xml", "configs/blob_log.xml"],
+            main_configs=[
+                "configs/named_collections.xml",
+                "configs/schema_cache.xml",
+                "configs/blob_log.xml",
+                "configs/dynamic_disk_include.xml",
+                "configs/dynamic_disk_include_source.xml",
+                "configs/system_table_disks.xml",
+            ],
             user_configs=["configs/disable_profilers.xml", "configs/users.xml", "configs/sync_inserts.xml"],
             with_azurite=True,
+            stay_alive=True,
         )
         cluster.start()
         container_client = cluster.blob_service_client.get_container_client("cont")
@@ -2061,3 +2069,89 @@ def test_invalid_upload_settings_do_not_affect_reads(cluster):
     )
 
     azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")
+
+
+def test_server_credentials_on_reload(cluster):
+    # At startup a stored table whose definition now resolves to the server's own identity is loaded with a client
+    # that has no credentials (`s3_load_table_anonymously_if_credentials_restricted`), so the server starts and
+    # the table cannot use that identity. `UNDROP` cannot cover it: a table without local data is removed at once on
+    # `DROP`. A dynamic disk created with the opt-in records it in its definition and keeps the server's identity.
+    node = cluster.instances["node"]
+    url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    node.query("DROP TABLE IF EXISTS test_server_credentials_reload SYNC")
+    node.query("DROP TABLE IF EXISTS test_server_credentials_disk_reload SYNC")
+    node.query("DROP TABLE IF EXISTS test_server_credentials_include_disk_reload SYNC")
+    node.query("DROP TABLE IF EXISTS system.test_server_credentials_system_disk_reload SYNC")
+    node.query("DROP NAMED COLLECTION IF EXISTS azure_server_credentials_reload")
+    node.query(
+        f"CREATE NAMED COLLECTION azure_server_credentials_reload AS storage_account_url = '{url}', container = 'cont',"
+        f" blob_path = 'test_server_credentials_reload.csv', account_name = 'devstoreaccount1', account_key = '{key}'"
+    )
+    azure_query(
+        node,
+        "CREATE TABLE test_server_credentials_reload (x UInt8)"
+        " ENGINE = AzureBlobStorage(azure_server_credentials_reload, format = 'CSV')",
+    )
+    azure_query(node, "INSERT INTO test_server_credentials_reload VALUES (7)")
+    assert azure_query(node, "SELECT * FROM test_server_credentials_reload").strip() == "7"
+
+    # Without the account key the stored definition resolves to the server's own identity.
+    node.query("ALTER NAMED COLLECTION azure_server_credentials_reload DELETE account_name, account_key")
+
+    # The disk uses the server's own identity; these settings keep it from contacting Azurite, which cannot verify it.
+    node.query(
+        f"CREATE TABLE test_server_credentials_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+        f" SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = '{url}', container_name = 'cont',"
+        f" readonly = 1, container_already_exists = 1, skip_access_check = 1)",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    assert "_azure_server_credentials_allowed" in node.query(
+        "SHOW CREATE TABLE test_server_credentials_disk_reload"
+    )
+
+    # The same when the endpoint comes from `include`, which is resolved after the marker is written.
+    node.query(
+        "CREATE TABLE test_server_credentials_include_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+        " SETTINGS disk = disk(type = azure_blob_storage, include = 'azure_server_identity', container_name = 'cont',"
+        " readonly = 1, container_already_exists = 1, skip_access_check = 1)",
+        settings={"s3_allow_server_credentials_in_user_queries": 1, "dynamic_disk_allow_include": 1},
+    )
+    assert "_azure_server_credentials_allowed" in node.query(
+        "SHOW CREATE TABLE test_server_credentials_include_disk_reload"
+    )
+
+    # A `system` table disk needs no opt-in with `s3_allow_server_credentials_for_system_table_disks`, and the same
+    # definition outside `system` is still refused, although the disk is already created.
+    system_disk = (
+        f"disk(type = azure_blob_storage, storage_account_url = '{url}', container_name = 'cont',"
+        f" readonly = 1, container_already_exists = 1, skip_access_check = 1)"
+    )
+    node.query(
+        "CREATE TABLE system.test_server_credentials_system_disk_reload (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+        f" SETTINGS disk = {system_disk}"
+    )
+    assert "ACCESS_DENIED" in node.query_and_get_error(
+        "CREATE TABLE test_server_credentials_user_disk (x UInt8) ENGINE = MergeTree ORDER BY tuple()"
+        f" SETTINGS disk = {system_disk}"
+    )
+
+    node.restart_clickhouse()
+
+    assert node.query("EXISTS TABLE test_server_credentials_reload").strip() == "1"
+    assert node.contains_in_log("Loading this table with an Azure client that has no credentials")
+    node.query_and_get_error(
+        "SELECT * FROM test_server_credentials_reload", settings={"azure_sdk_max_retries": 0}
+    )
+
+    assert node.query("EXISTS TABLE test_server_credentials_disk_reload").strip() == "1"
+    assert node.query("EXISTS TABLE test_server_credentials_include_disk_reload").strip() == "1"
+    assert node.query("EXISTS TABLE system.test_server_credentials_system_disk_reload").strip() == "1"
+    assert not node.contains_in_log("Loading the dynamic Azure disk")
+
+    node.query("DROP TABLE test_server_credentials_reload SYNC")
+    node.query("DROP TABLE test_server_credentials_disk_reload SYNC")
+    node.query("DROP TABLE test_server_credentials_include_disk_reload SYNC")
+    node.query("DROP TABLE system.test_server_credentials_system_disk_reload SYNC")
+    node.query("DROP NAMED COLLECTION azure_server_credentials_reload")

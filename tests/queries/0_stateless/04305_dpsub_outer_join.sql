@@ -18,7 +18,7 @@ INSERT INTO t3 VALUES (0, 'v3_0'), (1, 'v3_1'), (4, 'v3_4');
 -- Make t1 appear expensive so the optimizer prefers to join t2 and t3 first, exercising the
 -- non-Inner reorder path (the null-supplying relation ends up at different relation indices).
 SET param__internal_join_table_stat_hints = '{"t1": {"cardinality": 100000, "distinct_keys": {"id": 2}}, "t2": {"cardinality": 3, "distinct_keys": {"id": 3}}, "t3": {"cardinality": 3, "distinct_keys": {"id": 3}}}';
-SET enable_analyzer = 1, single_join_prefer_left_table = 0;
+SET single_join_prefer_left_table = 0;
 
 SELECT 'LEFT+LEFT no opt:';
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value

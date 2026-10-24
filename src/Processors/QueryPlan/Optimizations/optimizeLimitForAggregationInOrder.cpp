@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
@@ -27,6 +28,11 @@ static bool isTransparentStep(IQueryPlanStep * step)
     /// limit past it would feed it a truncated prefix and produce wrong extremes.
     /// WindowStep preserves rows but is not supported by this optimization.
     if (typeid_cast<ExtremesStep *>(step) || typeid_cast<WindowStep *>(step))
+        return false;
+
+    /// The query result cache must store the complete result of the (sub)query below it. A limit hint installed
+    /// into an aggregation below this step would truncate the cached entry.
+    if (typeid_cast<StreamInQueryResultCacheStep *>(step))
         return false;
 
     auto * transforming = dynamic_cast<ITransformingStep *>(step);

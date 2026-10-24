@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "セッション設定",
+  "group": "session 設定",
   "pages": [
     "ja/reference/settings/session-settings/additional",
     "ja/reference/settings/session-settings/aggregate",
@@ -35,6 +35,7 @@
     "ja/reference/settings/session-settings/cluster",
     "ja/reference/settings/session-settings/cluster-table",
     "ja/reference/settings/session-settings/collect-hash",
+    "ja/reference/settings/session-settings/columns-cache",
     "ja/reference/settings/session-settings/compatibility",
     "ja/reference/settings/session-settings/compatibility-ignore",
     "ja/reference/settings/session-settings/compile",
@@ -115,6 +116,7 @@
     "ja/reference/settings/session-settings/log",
     "ja/reference/settings/session-settings/log-queries",
     "ja/reference/settings/session-settings/log-query",
+    "ja/reference/settings/session-settings/logsql",
     "ja/reference/settings/session-settings/low-cardinality",
     "ja/reference/settings/session-settings/materialize",
     "ja/reference/settings/session-settings/materialize-statistics-on-insert",
@@ -257,6 +259,7 @@
     "ja/reference/settings/session-settings/vector-search",
     "ja/reference/settings/session-settings/wait-for",
     "ja/reference/settings/session-settings/webassembly-udf",
+    "ja/reference/settings/session-settings/weight-lowering",
     "ja/reference/settings/session-settings/write-through-distributed-cache",
     "ja/reference/settings/session-settings/other"
   ],

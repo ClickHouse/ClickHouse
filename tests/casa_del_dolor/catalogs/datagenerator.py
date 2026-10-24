@@ -1,6 +1,6 @@
 import random
 import re
-from decimal import Decimal, getcontext
+from decimal import ROUND_HALF_UP, Decimal, getcontext, localcontext
 from datetime import datetime, timedelta, date
 import json
 import logging
@@ -475,6 +475,31 @@ class LakeDataGenerator:
                 return ch_hint
             ch_hint = m.group(1).strip()
 
+    # Keys for values of ClickHouse `JSON` columns. None of them is a typed path BuzzHouse
+    # declares (its `jcols` list), so no value can fail a typed path's type.
+    _JSON_KEYS = ("k0", "k1", "k2", "k3", "obj", "arr", "k.dotted", "k space")
+
+    def _rand_json_value(self, depth: int):
+        roll = random.randint(1, 8 if depth < 2 else 6)
+        if roll == 1:
+            return None
+        if roll == 2:
+            return self._rand_bool()
+        if roll == 3:
+            return random.randint(-(2**31), 2**31)
+        if roll == 4:
+            # Finite only: NaN and Infinity are not JSON
+            return random.uniform(-1e5, 1e5)
+        if roll <= 6:
+            return self._rand_string(random.randint(0, 10))
+        if roll == 7:
+            return [self._rand_json_value(depth + 1) for _ in range(random.randint(0, 3))]
+        return self._rand_json_object(depth + 1)
+
+    def _rand_json_object(self, depth: int = 0) -> dict:
+        keys = random.sample(self._JSON_KEYS, random.randint(0, 4))
+        return {k: self._rand_json_value(depth) for k in keys}
+
     def _random_value_for_type(
         self, dtype: DataType, null_rate: float, ch_hint: str = ""
     ):
@@ -555,6 +580,11 @@ class LakeDataGenerator:
             # Empty `Tuple()` is STRING-mapped and casts back by parsing its text form
             if re.match(r"Tuple\(\s*\)$", ch_hint):
                 return "()"
+            # `JSON` casts back by parsing a JSON object
+            if ch_hint.startswith("JSON"):
+                return json.dumps(
+                    _to_json_safe(self._rand_json_object()), ensure_ascii=False
+                )
             return self._rand_string(
                 random.randint(
                     self._thread_local._min_str_len, self._thread_local._max_str_len
@@ -581,6 +611,10 @@ class LakeDataGenerator:
                     return random.choice(enum_values)
             if re.match(r"Tuple\(\s*\)$", ch_hint):
                 return b"()"
+            if ch_hint.startswith("JSON"):
+                return json.dumps(
+                    _to_json_safe(self._rand_json_object()), ensure_ascii=False
+                ).encode()
             return self._rand_binary(
                 random.randint(
                     self._thread_local._min_str_len, self._thread_local._max_str_len
@@ -593,6 +627,9 @@ class LakeDataGenerator:
         if HAS_TIMESTAMP_NTZ and isinstance(dtype, TimestampNTZType):
             return self._rand_timestamp()
         if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            # A ClickHouse `JSON` column only holds objects
+            if ch_hint.startswith("JSON"):
+                return json.dumps(_to_json_safe(self._rand_json_object()))
             # Spark stores variants as self-describing values, so any type works.
             inner_type = self.type_generator.generate_random_spark_type(
                 allow_variant=False, max_depth=random.randint(1, 5)
@@ -1001,10 +1038,14 @@ class LakeDataGenerator:
                 int(value.year), int(value.month), int(value.day)
             )
         if isinstance(spark_type, DecimalType):
-            # Iceberg validates that the BigDecimal scale equals the field scale.
-            return jvm.java.math.BigDecimal(str(value)).setScale(
-                spark_type.scale, jvm.java.math.RoundingMode.HALF_UP
-            )
+            # Iceberg validates that the BigDecimal scale equals the field scale. py4j
+            # returns a JVM BigDecimal as a Python Decimal, so rescale here; it is sent
+            # back as `new BigDecimal(str(d))`, which keeps the scale.
+            with localcontext() as ctx:
+                ctx.prec = 80
+                return Decimal(str(value)).quantize(
+                    Decimal(1).scaleb(-spark_type.scale), rounding=ROUND_HALF_UP
+                )
         if isinstance(spark_type, BinaryType):
             return jvm.java.nio.ByteBuffer.wrap(bytes(value))
         return None

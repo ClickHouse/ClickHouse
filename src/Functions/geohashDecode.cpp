@@ -36,16 +36,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"encoded", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeTuple>(
-                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-                Strings{"longitude", "latitude"});
+        return "(StringOrFixedString) -> Tuple(longitude Float64, latitude Float64)";
     }
 
     template <typename ColumnTypeEncoded>

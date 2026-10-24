@@ -54,7 +54,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -753,11 +752,8 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
-    if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                        "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+    if (start > src_vec.data.size() || length > src_vec.data.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnVector<T>", start, length, src_vec.data.size());
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -918,6 +914,10 @@ constexpr bool COMPRESS_DWORDS = false;
 template <size_t ELEMENT_WIDTH>
 constexpr size_t COMPRESS_ROWS = ELEMENT_WIDTH == 1 ? 8 : (COMPRESS_DWORDS<ELEMENT_WIDTH> ? 32 : 16) / ELEMENT_WIDTH;
 
+/// One shuffle stores a whole vector of `COMPRESS_ROWS` elements from the current count, which can be past all selected rows.
+template <size_t ELEMENT_WIDTH>
+constexpr size_t COMPRESS_MAX_OVERWRITE = COMPRESS_ROWS<ELEMENT_WIDTH> * ELEMENT_WIDTH;
+
 /// For each mask of `COMPRESS_ROWS` rows, the control that moves the selected elements to the front: byte indices,
 /// or dword indices for `COMPRESS_DWORDS`.
 template <size_t ELEMENT_WIDTH>
@@ -942,7 +942,7 @@ alignas(16) constexpr auto compress_table = []
 }();
 
 /// Writes the rows of the block at `data_pos` selected by `mask` to `res` and returns their number. Mixed blocks are compressed
-/// with a table-driven byte shuffle. Up to `SIMD_ELEMENTS` elements from `res` may be written, past the returned count.
+/// with a table-driven byte shuffle. Up to `COMPRESS_MAX_OVERWRITE` bytes past the returned count may be written.
 /// `res` may alias `data_pos` if it is not ahead of it (filtering in place): each store ends within the rows already loaded.
 template <typename T, size_t SIMD_ELEMENTS>
 ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
@@ -1001,6 +1001,9 @@ ALWAYS_INLINE size_t compressBlock(UInt64 mask, const T * data_pos, T * res)
 template <typename T, typename Container, size_t SIMD_ELEMENTS>
 void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
+    /// The writes of `compressBlock` past the selected rows land in the right padding, so an exact `result_size_hint` is kept.
+    static_assert(Container::pad_right >= COMPRESS_MAX_OVERWRITE<sizeof(T)>);
+
     size_t current_offset = res_data.size();
     /// Use the capacity reserved from `result_size_hint` without reallocating.
     size_t reserve_size = res_data.capacity();
@@ -1012,25 +1015,17 @@ void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
     while (filt_pos < filt_end_aligned)
     {
         const UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-        /// `compressBlock` writes up to `SIMD_ELEMENTS` elements from `current_offset`.
-        if (reserve_size - current_offset >= SIMD_ELEMENTS)
+        /// Skipping empty blocks also keeps an empty array, which points to shared static memory, from being written.
+        if (mask)
         {
-            current_offset += compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, res + current_offset);
-        }
-        else
-        {
-            /// Compress into a local buffer so an exact `result_size_hint` is not exceeded by the slack of the last blocks.
-            T block[SIMD_ELEMENTS];
-            const size_t count = compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, block);
-            if (reserve_size - current_offset < count)
+            if (reserve_size - current_offset < static_cast<size_t>(std::popcount(mask))) [[unlikely]]
             {
                 reserve_size += alloc_size;
                 res_data.resize(reserve_size);
                 res = res_data.data();
                 alloc_size *= 2;
             }
-            memcpy(res + current_offset, block, count * sizeof(T));
-            current_offset += count;
+            current_offset += compressBlock<T, SIMD_ELEMENTS>(mask, data_pos, res + current_offset);
         }
 
         filt_pos += SIMD_ELEMENTS;

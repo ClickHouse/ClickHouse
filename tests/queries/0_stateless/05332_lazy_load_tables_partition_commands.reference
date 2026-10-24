@@ -1,0 +1,13 @@
+t_dst	TableProxy
+t_log	TableProxy
+t_moved	TableProxy
+t_src	TableProxy
+ATTACH PARTITION FROM an unloaded source
+13	348
+MOVE PARTITION TO an unloaded destination
+0
+10	45
+REPLACE PARTITION FROM a loaded source
+10	45
+a source that is not MergeTree is refused
+10	45

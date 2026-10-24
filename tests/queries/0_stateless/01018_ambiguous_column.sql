@@ -1,5 +1,4 @@
 SET output_format_pretty_color=1;
-SET enable_analyzer = 1;
 
 select * from system.one cross join system.one;
 select * from system.one cross join system.one r;

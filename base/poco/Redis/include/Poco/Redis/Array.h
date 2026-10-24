@@ -301,9 +301,33 @@ namespace Redis
             return result.str();
         }
 
+        /// The maximum allowed nesting depth of arrays in a reply.
+        /// Replies of real Redis servers are nested only a few levels deep,
+        /// while unbounded nesting would lead to stack overflow in the recursive parser.
+        static constexpr int MAX_NESTING_DEPTH = 128;
+
         static void read(RedisInputStream & input, Array & value)
         {
             value.clear();
+
+            struct DepthGuard
+            {
+                explicit DepthGuard(int & depth_) : depth(depth_)
+                {
+                    ++depth;
+                }
+
+                ~DepthGuard()
+                {
+                    --depth;
+                }
+
+                int & depth;
+            };
+
+            DepthGuard depth_guard(input.arrayNestingDepth());
+            if (depth_guard.depth > MAX_NESTING_DEPTH)
+                throw RedisException("Too deep nesting of arrays in the answer received from Redis server");
 
             Int64 length = NumberParser::parse64(input.getline());
 

@@ -1,0 +1,9 @@
+--- ASOF INNER JOIN: same result without and with runtime filter ---
+1	10	5	1000
+1	20	15	1001
+3	15	10	3000
+1	10	5	1000
+1	20	15	1001
+3	15	10	3000
+--- runtime filter IS applied to equality key for ASOF INNER JOIN ---
+BuildRuntimeFilter (Build runtime join filter on id)

@@ -4,8 +4,6 @@
 -- version ('v0_initial', 'v1_with_codec' or 'v2_with_positions'), used to preserve forward compatibility
 -- during upgrades.
 
-SET enable_analyzer = 1;
-
 SELECT '-- default value';
 SELECT value FROM system.merge_tree_settings WHERE name = 'text_index_serialization_version';
 

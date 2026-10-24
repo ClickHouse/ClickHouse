@@ -1,0 +1,13 @@
+p	{'a':'CODEC(Delta(1), LZ4)','j':'CODEC(ZSTD(3))','m':'CODEC(ZSTD(1))'}
+1	x	1.5	[1,2]
+quantized column
+12
+12
+inner table of a materialized view
+p	{'a':'CODEC(ZSTD(1))'}
+gate
+CREATE TABLE default.t_subcolumn_codecs_copy (`id` UInt64, `p` Tuple(a UInt64, b String), CODEC `p.a` (Delta(8), ZSTD(1))) ENGINE = MergeTree ORDER BY id
+CREATE TABLE default.t_subcolumn_codecs_existing (`id` UInt64, `p` Tuple(a UInt64, b String), CODEC `p.a` (Delta(8), ZSTD(1))) ENGINE = MergeTree ORDER BY id
+restored
+CREATE TABLE default.t_subcolumn_codecs_restored (`id` UInt64, `p` Tuple(a UInt64, b String), CODEC `p.a` (Delta(8), ZSTD(1))) ENGINE = MergeTree ORDER BY id
+10	45

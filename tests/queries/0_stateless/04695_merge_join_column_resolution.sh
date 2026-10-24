@@ -31,13 +31,13 @@ done | $CLICKHOUSE_CLIENT
 # constant, which makes the result independent of the order in which the source tables are read.
 # The old analyzer cannot resolve columns of a `Merge` table that are missing from some of the
 # source tables, so the analyzer is enforced.
-$CLICKHOUSE_CLIENT --enable_analyzer 1 --query "
+$CLICKHOUSE_CLIENT --query "
     SELECT count(), sum(sipHash64(*))
     FROM (SELECT 0 AS n FROM numbers(100)) AS t1
     PASTE JOIN merge(currentDatabase(), '') AS t2
 "
 
-$CLICKHOUSE_CLIENT --enable_analyzer 1 --query "
+$CLICKHOUSE_CLIENT --query "
     SELECT count(), sum(sipHash64(*))
     FROM (SELECT 0 AS n FROM numbers(3)) AS t1
     CROSS JOIN merge(currentDatabase(), '') AS t2

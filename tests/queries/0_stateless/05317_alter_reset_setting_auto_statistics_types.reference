@@ -1,0 +1,3 @@
+distinct statistics before the reset	2
+distinct statistics after RESET SETTING	1
+distinct statistics after MODIFY SETTING = DEFAULT	1

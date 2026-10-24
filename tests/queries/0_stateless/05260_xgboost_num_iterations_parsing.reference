@@ -1,0 +1,21 @@
+num_iterations 'abc'
+BAD_ARGUMENTS
+must be a positive integer, got 'abc'
+num_iterations '10abc'
+BAD_ARGUMENTS
+must be a positive integer, got '10abc'
+num_iterations 1.5
+BAD_ARGUMENTS
+must be a positive integer, got '1.5'
+num_iterations 0
+BAD_ARGUMENTS
+must be a positive integer, got '0'
+num_iterations 2147483647
+BAD_ARGUMENTS
+Unknown or forbidden training parameter 'not_a_training_param'
+num_iterations 2147483648
+BAD_ARGUMENTS
+is 2147483648, but the maximum is 2147483647
+num_iterations 4000000000
+BAD_ARGUMENTS
+is 4000000000, but the maximum is 2147483647

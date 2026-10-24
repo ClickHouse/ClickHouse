@@ -71,22 +71,6 @@ function wait_for_server # port, pid
     fi
 }
 
-function left_or_right()
-{
-    local from=$1 && shift
-    local basename=$1 && shift
-
-    if [ -e "$from/$basename" ]; then
-        echo "$from/$basename"
-        return
-    fi
-
-    case "$from" in
-        left) echo "right/$basename" ;;
-        right) echo "left/$basename" ;;
-    esac
-}
-
 function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
@@ -109,7 +93,7 @@ function configure
         # server *config* directives overrides
         --path db0
         --user_files_path "$perf_wd/db0/user_files"
-        --top_level_domains_path "$(left_or_right right top_level_domains)"
+        --top_level_domains_path "$perf_wd/top_level_domains"
         --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
     )
@@ -317,9 +301,15 @@ function restart
 
     match_reference_debug_info
 
-    # Intentionally unquoted below: expands to nothing on non-x86_64.
+    # Intentionally unquoted below: both expand to nothing when unused.
     local pinning_prefix
     pinning_prefix=$(cpu_pinning_prefix)
+    # ASLR off, so that both servers load the executable at the same address (Linux only).
+    local no_aslr_prefix=""
+    if [ "$(uname -s)" = "Linux" ]
+    then
+        no_aslr_prefix="setarch $(uname -m) -R"
+    fi
 
     set -m # Spawn servers in their own process groups
 
@@ -330,7 +320,7 @@ function restart
         # server *config* directives overrides
         --path left/db
         --user_files_path "$perf_wd/left/db/user_files"
-        --top_level_domains_path "$(left_or_right left top_level_domains)"
+        --top_level_domains_path "$perf_wd/top_level_domains"
         --tcp_port $LEFT_SERVER_PORT
         # The perf-comparison config removes <http_port>; re-enable it on the
         # command line (a documented config override) with a distinct port per
@@ -343,7 +333,7 @@ function restart
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    $pinning_prefix $no_aslr_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -355,7 +345,7 @@ function restart
         # server *config* directives overrides
         --path right/db
         --user_files_path "$perf_wd/right/db/user_files"
-        --top_level_domains_path "$(left_or_right right top_level_domains)"
+        --top_level_domains_path "$perf_wd/top_level_domains"
         --tcp_port $RIGHT_SERVER_PORT
         --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
@@ -365,7 +355,7 @@ function restart
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    $pinning_prefix $no_aslr_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -382,6 +372,13 @@ function restart
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
+
+    # Compare only two running servers: a server that failed to start keeps the callers' handling.
+    # exit, not return: confirm_changes only skips its rerun when the restart fails.
+    if [ -n "$no_aslr_prefix" ] && kill -0 $left_pid && kill -0 $right_pid
+    then
+        python3 "$script_dir/check_executable_base.py" left/db right/db || exit 1
+    fi
 
     # Check again that both servers we started are running -- this is important
     # for running locally, when there might be some other servers started and we
@@ -419,7 +416,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+        test_files=($(ls "$test_prefix" | rg '\.xml$' | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
 # TODO: remove
 #    elif [ "$PR_TO_TEST" -ne 0 ] \
 #        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
@@ -452,6 +449,15 @@ function run_tests
         # to have sequential indexes...
         test_files=("${test_files[@]}")
     fi
+
+    for test in "${test_files[@]}"
+    do
+        if rg -q 'requires_s3="1"' "$test"
+        then
+            echo "Cannot compare $test: perf_s3 requires the Praktika performance job for S3 provisioning and per-side namespaces" >&2
+            exit 1
+        fi
+    done
 
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
@@ -731,7 +737,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     right join query_runs
         on query_logs.query_id = query_runs.query_id
             and query_logs.version = query_runs.version
-    where (test, query_index) not in partial_queries
+    where (test, query_index) not in partial_queries or ${CHPC_NIGHTLY:-0}
     ;
 
 -- This is just for convenience -- human-readable + easy to make plots.
@@ -765,7 +771,7 @@ create table query_run_metrics_for_stats engine File(
         -- not filtered.
         metric_values
     from query_run_metric_arrays
-    where (test, query_index) not in broken_queries
+    where (test, query_index) not in broken_queries and (test, query_index) not in partial_queries
     order by test, query_index, run, version
     ;
 
@@ -877,6 +883,7 @@ function confirm_changes
 {
 # The dashboard supplies its own query list and practical thresholds. Keep
 # its rerun artifacts separate from the shard report's confirmation.
+if [ "${CHPC_NIGHTLY:-0}" = 1 ]; then echo "confirm_changes: skipped in nightly mode"; return 0; fi
 local confirm_dir="${1:-analyze-confirm}"
 local flagged_input="${2:-}"
 rm -rf "$confirm_dir" || return 1
@@ -2064,7 +2071,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || { restart && get_profiles ; } ) ||:
+    ( get_profiles ) || { restart && ( get_profiles ) ; } ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

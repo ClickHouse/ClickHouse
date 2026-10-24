@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickPipes supports integrating with a schema registry to decode Avro- and Protobuf-encoded record values and [structured Kafka keys](/integrations/clickpipes/kafka/reference#structured-message-keys).
+ClickPipes supports integrating with a schema registry to decode Avro- and Protobuf-encoded record values. Kafka ClickPipes also support [structured Kafka keys](/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 For Protobuf record values, you can also [upload a schema directly](/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) without configuring a schema registry.
 
-## Supported registries for Kafka ClickPipes {#supported-schema-registries}
+## Supported registries for streaming ClickPipes {#supported-schema-registries}
 
-Kafka ClickPipes supports two families of schema registry:
+Kafka ClickPipes support two families of schema registry:
 
 - [Confluent-compatible registries](#confluent-compatible-registries): any registry that is API-compatible with the Confluent Schema Registry, such as the Confluent Schema Registry itself and the Redpanda Schema Registry. Supports Avro and Protobuf.
 - [AWS Glue Schema Registry](#aws-glue-schema-registry): for Avro data serialized with the AWS Glue SerDe, typically from Amazon MSK.
+
+Kinesis ClickPipes support the AWS Glue Schema Registry for Avro and Protobuf data.
 
 ClickPipes doesn't support Azure Schema Registry yet. If you require support for it, [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
 
@@ -62,15 +64,15 @@ When mappings for fields such as `_key.id` are configured, ClickPipes resolves t
 
 If your producers serialize Avro with the AWS Glue SerDe (for example `AWSKafkaAvroSerializer` against an Amazon MSK topic), ClickPipes can resolve those schemas directly from the AWS Glue Schema Registry. Glue uses a different wire format and a different API from Confluent-compatible registries, so it is configured separately.
 
-AWS Glue Schema Registry configuration is currently available only through the ClickHouse Cloud console. It isn't supported through the ClickPipes API or Terraform provider.
+AWS Glue Schema Registry configuration is available through the ClickHouse Cloud console, the ClickPipes API, and the Terraform provider.
 
 <Note>
-**Avro only.** AWS Glue registries are supported for the Avro format only. The Glue SerDe can also frame JSON and Protobuf, but these are not supported by ClickPipes and are rejected when the pipe is created.
+**Kafka:** AWS Glue registries support the Avro format only. **Kinesis:** AWS Glue registries support `AvroConfluent` and `Protobuf`. JSON is not supported through the Glue SerDe.
 </Note>
 
 ### Configuration {#glue-configuration}
 
-In the ClickPipe creation wizard, enable **Schema registry** on the Kafka connection step and set **Registry type** to **AWS Glue**:
+In the ClickPipe creation wizard, enable **Schema registry** on the Kafka or Kinesis connection step and set **Registry type** to **AWS Glue**:
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Schema registry panel with AWS Glue selected" size="lg" border/>
 
@@ -81,7 +83,7 @@ In the ClickPipe creation wizard, enable **Schema registry** on the Kafka connec
 | Registry name | Yes         | Name of the Glue registry. Schemas that resolve to a different registry are rejected, so a typo surfaces when ClickPipes resolves a schema version. | `my-glue-registry`                              |
 | IAM role ARN  | Conditional | A dedicated role for registry access. Optional when your broker uses IAM authentication; required otherwise.                            | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue`    |
 
-There is no registry URL to configure. Every record produced by the Glue SerDe carries the ID of its own schema version, which ClickPipes resolves with `glue:GetSchemaVersion` and caches, one API call per distinct schema version. Schema evolution is handled automatically: when records switch to a new schema version mid-stream, it is resolved on first sight.
+There is no registry URL to configure. Every record produced by the Glue SerDe carries the ID of its own schema version, which ClickPipes resolves with `glue:GetSchemaVersion` and caches, one API call per distinct schema version. Schema evolution is handled automatically: when records switch to a new schema version mid-stream, it is resolved on first sight. For Kinesis, configure the same fields through [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) or [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
 ### IAM setup {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ Paste the new role's ARN into the **IAM role ARN** field in the wizard.
 
 ### Limitations {#glue-limitations}
 
-- Avro only. JSON Schema and Protobuf via the Glue SerDe are not supported.
-- Kafka sources only. Kinesis ClickPipes cannot use a Glue registry.
+- Kafka supports Avro only. JSON Schema and Protobuf via the Glue SerDe are not supported.
+- Kinesis supports `AvroConfluent` and `Protobuf` through AWS Glue Schema Registry. An uploaded Protobuf schema cannot be combined with a schema registry.
 
 ## Schema mapping {#schema-mapping}
 

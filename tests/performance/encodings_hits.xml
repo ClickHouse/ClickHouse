@@ -1,0 +1,134 @@
+<!--
+    Compression codecs and `LowCardinality` on real columns of `hits_100m_single` and `hits_10m_single`: decoding and encoding
+    with `LZ4`, `ZSTD(1)`, `DoubleDelta` and `T64, LZ4` of a time series (`EventTime`) and of clustered 64-bit IDs (`UserID`),
+    with `LZ4`, `ZSTD(1)` and `LowCardinality` of URLs; `LowCardinality` `GROUP BY` at low (`MobilePhoneModel`, 187 values),
+    medium (`SearchPhrase`, 6 M) and high cardinality (`URL`, 18 M, beyond the shared dictionary of 8192 keys), whose `String`
+    counterparts run in `clickbench.xml`. Decoding and the low-cardinality query run in one thread; `use_uncompressed_cache = 0`
+    (a hit would skip the decompression).
+    `enc_num`: 100 M rows, one copy of `EventTime` and `UserID` per codec (`DEFAULT` columns, one insert with merges stopped),
+    the strings as `LowCardinality`, 16 partitions of one part, sorted by all columns so both servers get the same layout.
+    `enc_url`: the 10 M URLs of `hits_10m_single`, one column per encoding, one part. `enc_w_*`: one target per codec for the
+    timed writes, which run last so that no write-back overlaps the reads: `TRUNCATE` + a single-threaded `INSERT ... SELECT`
+    squashed into one part (10 M rows of `EventTime` and `UserID`, or the 2.3 M URLs of `CounterID < 57`), settings in the URL;
+    the `NONE` write is the control (everything but the codec).
+    The setup runs every write once and checks rows, codecs, types, one part per table and the content against the source;
+    every copy in `enc_num` equals its `LZ4` column, and the `LowCardinality` queries give the results of their `String`
+    counterparts.
+    Per server and invocation: 12-16 GB written by the setup, 3.0-3.4 GB by the timed writes (most deleted before write-back);
+    on disk `enc_num` 4.4 GB, `enc_url` 0.6 GB, `enc_w_*` 0.5 GB; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <use_uncompressed_cache>0</use_uncompressed_cache>
+    <max_bytes_ratio_before_external_group_by>0</max_bytes_ratio_before_external_group_by>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>codec</name>
+        <values>
+            <value>lz4</value>
+            <value>zstd</value>
+            <value>dd</value>
+            <value>t64</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>w_codec</name>
+        <values>
+            <value>none</value>
+            <value>lz4</value>
+            <value>zstd</value>
+            <value>dd</value>
+            <value>t64</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>url_enc</name>
+        <values>
+            <value>lz4</value>
+            <value>zstd</value>
+            <value>lc</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>
+    CREATE TABLE enc_num
+    (
+        CounterID UInt32, EventDate Date,
+        t_lz4 DateTime CODEC(LZ4), u_lz4 UInt64 CODEC(LZ4),
+        t_zstd DateTime DEFAULT t_lz4 CODEC(ZSTD(1)), u_zstd UInt64 DEFAULT u_lz4 CODEC(ZSTD(1)),
+        t_dd DateTime DEFAULT t_lz4 CODEC(DoubleDelta), u_dd UInt64 DEFAULT u_lz4 CODEC(DoubleDelta),
+        t_t64 DateTime DEFAULT t_lz4 CODEC(T64, LZ4), u_t64 UInt64 DEFAULT u_lz4 CODEC(T64, LZ4),
+        MobilePhoneModel LowCardinality(String), SearchPhrase LowCardinality(String), URL LowCardinality(String)
+    )
+    ENGINE = MergeTree PARTITION BY intHash32(u_lz4) % 16
+    ORDER BY (CounterID, EventDate, intHash32(u_lz4), t_lz4, u_lz4, MobilePhoneModel, SearchPhrase, URL)
+    SETTINGS old_parts_lifetime = 10
+</create_query>
+<create_query>
+    CREATE TABLE enc_url (url_lz4 String CODEC(LZ4), url_zstd String DEFAULT url_lz4 CODEC(ZSTD(1)), url_lc LowCardinality(String) DEFAULT url_lz4)
+    ENGINE = MergeTree ORDER BY tuple()
+</create_query>
+<create_query>CREATE TABLE enc_w_num_none (t DateTime CODEC(NONE), u UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_num_lz4 (t DateTime CODEC(LZ4), u UInt64 CODEC(LZ4)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_num_zstd (t DateTime CODEC(ZSTD(1)), u UInt64 CODEC(ZSTD(1))) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_num_dd (t DateTime CODEC(DoubleDelta), u UInt64 CODEC(DoubleDelta)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_num_t64 (t DateTime CODEC(T64, LZ4), u UInt64 CODEC(T64, LZ4)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_url_lz4 (url String CODEC(LZ4)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_url_zstd (url String CODEC(ZSTD(1))) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+<create_query>CREATE TABLE enc_w_url_lc (url LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS old_parts_lifetime = 0</create_query>
+
+<fill_query>SYSTEM STOP MERGES enc_num</fill_query>
+<fill_query>INSERT INTO enc_num (CounterID, EventDate, t_lz4, u_lz4, MobilePhoneModel, SearchPhrase, URL) SELECT CounterID, EventDate, EventTime, UserID, MobilePhoneModel, SearchPhrase, URL FROM hits_100m_single SETTINGS max_insert_threads = 16</fill_query>
+<fill_query>SYSTEM START MERGES enc_num</fill_query>
+<fill_query>ALTER TABLE enc_num MODIFY SETTING lock_acquire_timeout_for_background_operations = 600</fill_query>
+<fill_query>OPTIMIZE TABLE enc_num FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>INSERT INTO enc_url (url_lz4) SELECT URL FROM hits_10m_single SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 20000000, min_insert_block_size_bytes = 0</fill_query>
+<fill_query>INSERT INTO enc_w_num_{w_codec} SELECT EventTime, UserID FROM hits_10m_single SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 20000000, min_insert_block_size_bytes = 0</fill_query>
+<fill_query>INSERT INTO enc_w_url_{url_enc} SELECT URL FROM hits_10m_single WHERE CounterID &lt; 57 SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 20000000, min_insert_block_size_bytes = 0</fill_query>
+
+<fill_query>SELECT throwIf(count() != 16 OR sum(rows) != 100000000) FROM system.parts WHERE database = 'default' AND table = 'enc_num' AND active</fill_query>
+<fill_query>SELECT throwIf(count() != 9 OR countIf(table = 'enc_url' AND rows = 10000000) != 1 OR countIf(table LIKE 'enc\_w\_num\_%' AND rows = 10000000) != 5 OR countIf(table LIKE 'enc\_w\_url\_%' AND rows = 2331397) != 3) FROM system.parts WHERE database = 'default' AND (table = 'enc_url' OR table LIKE 'enc\_w\_%') AND active</fill_query>
+<fill_query>
+    SELECT throwIf(arraySort(groupArray(concat(table, '.', name, ' ', type, ' ', compression_codec))) != [
+        'enc_w_num_dd.t DateTime CODEC(DoubleDelta)', 'enc_w_num_dd.u UInt64 CODEC(DoubleDelta)',
+        'enc_w_num_lz4.t DateTime CODEC(LZ4)', 'enc_w_num_lz4.u UInt64 CODEC(LZ4)',
+        'enc_w_num_none.t DateTime CODEC(NONE)', 'enc_w_num_none.u UInt64 CODEC(NONE)',
+        'enc_w_num_t64.t DateTime CODEC(T64, LZ4)', 'enc_w_num_t64.u UInt64 CODEC(T64, LZ4)',
+        'enc_w_num_zstd.t DateTime CODEC(ZSTD(1))', 'enc_w_num_zstd.u UInt64 CODEC(ZSTD(1))',
+        'enc_w_url_lc.url LowCardinality(String) ', 'enc_w_url_lz4.url String CODEC(LZ4)', 'enc_w_url_zstd.url String CODEC(ZSTD(1))'])
+    FROM system.columns WHERE database = 'default' AND table LIKE 'enc\_w\_%'
+</fill_query>
+<fill_query>SELECT throwIf(countIf(NOT (t_zstd = t_lz4 AND t_dd = t_lz4 AND t_t64 = t_lz4 AND u_zstd = u_lz4 AND u_dd = u_lz4 AND u_t64 = u_lz4)) != 0) FROM enc_num</fill_query>
+<fill_query>SELECT throwIf((SELECT sum(cityHash64(CounterID, EventDate, t_lz4, u_lz4, MobilePhoneModel, SearchPhrase, URL)) FROM enc_num) != (SELECT sum(cityHash64(CounterID, EventDate, EventTime, UserID, MobilePhoneModel, SearchPhrase, URL)) FROM hits_100m_single))</fill_query>
+<fill_query>SELECT throwIf(countIf(NOT (url_zstd = url_lz4 AND url_lc = url_lz4)) != 0 OR sum(cityHash64(url_lz4)) != (SELECT sum(cityHash64(URL)) FROM hits_10m_single)) FROM enc_url</fill_query>
+<fill_query>SELECT throwIf((SELECT sum(cityHash64(t, u)) FROM enc_w_num_{w_codec}) != (SELECT sum(cityHash64(EventTime, UserID)) FROM hits_10m_single))</fill_query>
+<fill_query>SELECT throwIf((SELECT sum(cityHash64(url)) FROM enc_w_url_{url_enc}) != (SELECT sum(cityHash64(URL)) FROM hits_10m_single WHERE CounterID &lt; 57))</fill_query>
+<fill_query>SELECT throwIf((SELECT sum(cityHash64(m, c)) FROM (SELECT lower(MobilePhoneModel) AS m, count() AS c FROM enc_num GROUP BY m)) != (SELECT sum(cityHash64(m, c)) FROM (SELECT lower(MobilePhoneModel) AS m, count() AS c FROM hits_100m_single GROUP BY m)))</fill_query>
+<fill_query>SELECT throwIf((SELECT groupArray(cityHash64(SearchPhrase, c)) FROM (SELECT SearchPhrase, count() AS c FROM enc_num WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC, SearchPhrase LIMIT 10)) != (SELECT groupArray(cityHash64(SearchPhrase, c)) FROM (SELECT SearchPhrase, count() AS c FROM hits_100m_single WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC, SearchPhrase LIMIT 10)))</fill_query>
+<fill_query>SELECT throwIf((SELECT groupArray(cityHash64(URL, c)) FROM (SELECT URL, count() AS c FROM enc_num GROUP BY URL ORDER BY c DESC, URL LIMIT 10)) != (SELECT groupArray(cityHash64(URL, c)) FROM (SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c DESC, URL LIMIT 10)))</fill_query>
+
+<query>SELECT t_{codec}, u_{codec} FROM enc_num FORMAT Null SETTINGS max_threads = 1</query>
+<query>SELECT url_{url_enc} FROM enc_url FORMAT Null SETTINGS max_threads = 1</query>
+<query>SELECT lower(MobilePhoneModel) AS m, count() AS c FROM enc_num GROUP BY m FORMAT Null SETTINGS max_threads = 1</query>
+<query>SELECT SearchPhrase, count() AS c FROM enc_num WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC, SearchPhrase LIMIT 10 FORMAT Null</query>
+<query>SELECT URL, count() AS c FROM enc_num GROUP BY URL ORDER BY c DESC, URL LIMIT 10 FORMAT Null</query>
+
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_num_none' 'INSERT INTO enc_w_num_none SELECT EventTime, UserID FROM hits_10m_single'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_num_lz4' 'INSERT INTO enc_w_num_lz4 SELECT EventTime, UserID FROM hits_10m_single'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_num_zstd' 'INSERT INTO enc_w_num_zstd SELECT EventTime, UserID FROM hits_10m_single'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_num_dd' 'INSERT INTO enc_w_num_dd SELECT EventTime, UserID FROM hits_10m_single'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_num_t64' 'INSERT INTO enc_w_num_t64 SELECT EventTime, UserID FROM hits_10m_single'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_url_lz4' 'INSERT INTO enc_w_url_lz4 SELECT URL FROM hits_10m_single WHERE CounterID < 57'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_url_zstd' 'INSERT INTO enc_w_url_zstd SELECT URL FROM hits_10m_single WHERE CounterID < 57'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+<query type="shell"><![CDATA[for q in 'TRUNCATE TABLE enc_w_url_lc' 'INSERT INTO enc_w_url_lc SELECT URL FROM hits_10m_single WHERE CounterID < 57'; do ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}?max_threads=1&max_insert_threads=1&min_insert_block_size_rows=20000000&min_insert_block_size_bytes=0" --data-binary "$q"; done]]></query>
+
+<drop_query>DROP TABLE IF EXISTS enc_num, enc_url, enc_w_num_none, enc_w_num_lz4, enc_w_num_zstd, enc_w_num_dd, enc_w_num_t64, enc_w_url_lz4, enc_w_url_zstd, enc_w_url_lc SYNC</drop_query>
+
+</test>

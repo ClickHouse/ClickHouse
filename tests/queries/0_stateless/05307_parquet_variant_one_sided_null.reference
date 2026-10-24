@@ -1,0 +1,4 @@
+1	7
+4	\N
+Malformed Parquet variant column 'v': a row has `metadata` but no `value`
+Malformed Parquet variant column 'v': a row has `value` but no `metadata`

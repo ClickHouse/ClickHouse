@@ -9,9 +9,10 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -113,7 +114,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
-    ThrottlerPtr local_throttler_)
+    ThrottlerPtr local_throttler_,
+    const IOSchedulingSettings & io_scheduling_)
     : ReadBufferFromFileBase(
         /* buf_size */use_external_buffer_ ? 0 : remote_fs_buffer_size_,
         /* existing_memory */nullptr,
@@ -143,6 +145,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         read_until_position_.value_or(file_size_),
         std::move(local_throttler_))
 {
+    info.io_scheduling = io_scheduling_;
+
     LOG_TEST(
         log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
         "external buffer: {}, allow seeks after first read: {}, file size: {}",
@@ -268,6 +272,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
             info.cache_settings.segments_batch_size,
             origin,
             info.cache_settings.boundary_alignment);
+        info.file_segments->setIOSchedulingSettings(info.io_scheduling);
     }
 
     return !info.file_segments->empty();
@@ -492,6 +497,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
     auto create_remote_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         auto impl = info.implementation_buffer_creator();
+        impl->setIOSchedulingSettings(info.io_scheduling);
         if (impl->supportsRightBoundedReads())
             return impl;
         return std::make_unique<BoundedReadBuffer>(std::move(impl));
@@ -538,7 +544,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             /// Result buffer is owned only by current buffer -- not shareable like in the case above.
             /// We cannot directly check info.remote_file_reader because of a possible race with background downloader.
-            auto reader = file_segment.extractRemoteFileReader();
+            auto reader = file_segment.extractRemoteFileReader(info.io_scheduling);
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
             {
                 info.remote_file_reader = reader;
@@ -668,8 +674,12 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(
-                    offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                {
+                    /// Park the CPU lease while waiting for a concurrent download
+                    CPULeaseParkGuard cpu_park;
+                    download_state = file_segment.wait(
+                        offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                }
 
                 if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
                 {
@@ -701,7 +711,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                auto downloader_id = file_segment.getOrSetDownloader();
+                auto downloader_id = file_segment.getOrSetDownloader(info_.io_scheduling);
                 if (downloader_id == FileSegment::getCallerId())
                 {
                     if (canStartFromCache(offset, file_segment))
@@ -936,6 +946,8 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
         appendFilesystemCacheLog(info.file_segments->front(), state->read_type);
     }
 
+    state.reset();
+
     if (info.file_segments && !info.file_segments->empty() && !info.file_segments->front().isCompleted())
     {
         info.file_segments->completeAndPopFront(
@@ -1130,7 +1142,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (continue_predownload)
             {
@@ -1384,6 +1397,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             {
                 if (!implementation_buffer_can_be_reused)
                     file_segment.resetRemoteFileReader();
+                else if (state && state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+                    state->buf.reset();
 
                 file_segment.completePartAndResetDownloader();
             }
@@ -1399,7 +1414,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         }
     });
 
-    if (state && state->buf)
+    if (state)
     {
         bool can_read_further = updateImplementationBufferIfNeeded();
         if (!can_read_further)
@@ -1499,6 +1514,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
 
+    /// The reader stays in the segment, so drop our reference before the next downloader can take it over.
+    if (state->read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+        state->buf.reset();
     if (state->read_type != ReadType::CACHED && file_segment.isDownloader())
         file_segment.completePartAndResetDownloader();
 
@@ -1525,6 +1543,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
+
+    /// Park the CPU lease during the read; a cache hit parks only briefly
+    CPULeaseParkGuard cpu_park;
 
     size_t size = 0;
     if (state.bytes_to_predownload)
@@ -1634,7 +1655,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (success)
             {
@@ -1834,6 +1856,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
         /* read_until_position */range_begin + n, info.local_throttler);
+    current_info.io_scheduling = info.io_scheduling;
 
     if (info.cache_settings.temp_cache_only)
     {
@@ -1866,6 +1889,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             create_settings,
             /* batch_size */0,
             origin);
+        current_info.file_segments->setIOSchedulingSettings(current_info.io_scheduling);
     }
 
     if (current_info.file_segments->empty())
@@ -1901,6 +1925,8 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             /// stale `to` buffer. Detaching it here keeps the reader exclusively ours until it is dropped.
             if (std::uncaught_exceptions() > uncaught_exceptions_on_entry || !implementation_buffer_can_be_reused)
                 file_segment.resetRemoteFileReader();
+            else
+                current_state.reset();
 
             file_segment.completePartAndResetDownloader();
         }
@@ -1923,11 +1949,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         if (offset == file_segment_end_non_included)
         {
             current_info.cache_file_reader.reset();
+            current_state.reset();
             current_info.file_segments->completeAndPopFront(
                 info.cache_settings.allow_background_download,
                 /* force_shrink_to_downloaded_size */false);
-
-            current_state.reset();
             continue;
         }
 
@@ -2065,6 +2090,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     first_offset = file_offset_of_buffer_end = new_pos;
 
     info.reset();
+    info.reserve_ahead.reset();
     state.reset();
     initialized = false;
 
@@ -2110,6 +2136,22 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
 {
     setReadUntilPosition(getFileSize());
+}
+
+void CachedOnDiskReadBufferFromFile::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
+{
+    if (state && state->buf)
+        state->buf->setIOSchedulingSettings({});
+    if (info.remote_file_reader)
+        info.remote_file_reader->setIOSchedulingSettings({});
+
+    /// Completes the file segments and destroys the readers while the previous links are valid.
+    file_offset_of_buffer_end = getPosition();
+    info.reset();
+    state.reset();
+    initialized = false;
+
+    info.io_scheduling = io_scheduling;
 }
 
 off_t CachedOnDiskReadBufferFromFile::getPosition()

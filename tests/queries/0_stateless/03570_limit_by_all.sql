@@ -1,7 +1,6 @@
 SET max_threads = 1;
 SET max_insert_threads = 1;
 SET max_block_size = 65536;
-SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS test_limit_by_all;
 
@@ -108,7 +107,6 @@ FROM
     FROM test_limit_by_all
     ORDER BY d, category, value, name
     LIMIT 2 BY ALL
-    SETTINGS enable_positional_arguments = 0
 )
 GROUP BY d, category
 ORDER BY d, category;
@@ -161,8 +159,7 @@ WITH toStartOfHour(toDateTime('2025-01-01 12:00:00')) AS h
 SELECT h, category
 FROM test_limit_by_all
 ORDER BY h, category, value
-LIMIT 1 BY ALL
-SETTINGS enable_positional_arguments = 0;
+LIMIT 1 BY ALL;
 
 SELECT id, category, value
 FROM test_limit_by_all

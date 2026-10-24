@@ -1,0 +1,14 @@
+-- Compute the result and write it to disk
+499500
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes
+-- Corrupt the body of the entry: it must be handled as a cheap miss
+499500
+QueryCacheOnDiskMisses
+QueryCacheOnDiskWrittenBytes
+-- The corrupt entry was dropped and replaced, the next run is served from disk
+499500
+QueryCacheOnDiskHits
+QueryCacheOnDiskReadBytes
+-- Truncated payload (the result chunks are cut off) is also a cheap miss
+499500

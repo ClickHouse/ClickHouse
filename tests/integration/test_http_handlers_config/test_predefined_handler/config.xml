@@ -36,10 +36,28 @@
 
         <rule>
             <methods>GET</methods>
+            <url>/test_predefined_handler_request_parser_backtracks</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT length([[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]][1])</query>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
             <url>/test_predefined_handler_settings_param</url>
             <handler>
                 <type>predefined_query_handler</type>
                 <query>SELECT getSetting('max_threads') SETTINGS max_threads = {threads:UInt64}</query>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_request_parser_limits</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))</query>
             </handler>
         </rule>
 

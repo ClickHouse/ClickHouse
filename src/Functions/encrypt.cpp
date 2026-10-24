@@ -90,7 +90,7 @@ SELECT comment, hex(secret) FROM encryption_test WHERE comment LIKE '%gcm%';
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encryption;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionEncrypt<EncryptImpl>>(documentation);
+    factory.registerFunction<FunctionEncrypt<EncryptImpl>>(documentation, FunctionFactory::Case::Sensitive, encryptionFunctionSecretArguments());
 }
 
 }

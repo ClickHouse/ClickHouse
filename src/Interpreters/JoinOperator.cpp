@@ -17,6 +17,7 @@
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/MergeJoin.h>
 
@@ -35,6 +36,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsBool allow_block_nested_loop_join;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
@@ -90,6 +92,7 @@ namespace Setting
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
+    extern const QueryPlanSerializationSettingsBool allow_block_nested_loop_join;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
@@ -146,6 +149,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     : join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
+    allow_block_nested_loop_join = query_settings[Setting::allow_block_nested_loop_join];
 
     max_block_size = query_settings[Setting::max_block_size];
 
@@ -207,6 +211,9 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
+    /// A plan from before the name existed was built where the block nested loop join did not exist.
+    allow_block_nested_loop_join = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN
+        && settings[QueryPlanSerializationSetting::allow_block_nested_loop_join];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
 
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
@@ -444,6 +451,10 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
+    /// `QueryPlanSerializationSettings` is a strict named schema, so the name goes on the wire only towards a peer
+    /// that knows it. An older peer has no block nested loop join at all: it behaves as with the setting disabled.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN)
+        settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;
@@ -512,6 +523,15 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
+}
+
+bool JoinSettings::canRunGraceHash() const
+{
+    const auto global_context = Context::getGlobalContextInstance();
+    if (!global_context || !global_context->getSharedTempDataOnDisk())
+        return false;
+
+    return legacy_join_size_limits_trigger_spilling || max_bytes_before_external_join > 0 || join_algorithms.size() == 1;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)

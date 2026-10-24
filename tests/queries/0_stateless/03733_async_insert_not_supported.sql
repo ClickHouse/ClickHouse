@@ -3,7 +3,9 @@ set wait_for_async_insert = 0;
 set async_insert_deduplicate = 1;
 set deduplicate_blocks_in_dependent_materialized_views = 1;
 
-set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=5000;
+-- The busy timeout must outlast this test: a table-scoped flush waits only for the batches it takes
+-- from the queue itself, not for one the deadline timer already drained.
+set async_insert_use_adaptive_busy_timeout=0, async_insert_busy_timeout_min_ms=1000, async_insert_busy_timeout_max_ms=600000;
 
 create table src_table
 (

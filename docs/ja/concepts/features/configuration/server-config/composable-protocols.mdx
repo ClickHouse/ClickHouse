@@ -225,9 +225,7 @@ doc_type: 'reference'
 カスタムハンドラーのセクションへの変更は設定のリロード時に検出され、対応する
 エンドポイント は自動的に自動的に再起動されます。
 
-<div id="default-session-user-per-endpoint">
-  ### エンドポイントごとのデフォルトセッションユーザー
-</div>
+### エンドポイントごとのデフォルトセッションユーザー {#default-session-user-per-endpoint}
 
 クライアントがユーザー名を指定せずに接続した場合 (たとえば、`user` パラメータなしの HTTP リクエストや、ユーザー名が空のネイティブプロトコル `Hello` パケット) 、サーバーはデフォルトセッションユーザーとして認証します。デフォルトセッションユーザーは、デフォルト値が `default` の `default_session_user` [サーバー設定](/ja/reference/settings/server-settings/settings)です。
 
@@ -256,9 +254,7 @@ doc_type: 'reference'
 
 タグは、エンドポイントのモジュールから参照先の (`impl`) モジュールに向かって検索され、エンドポイントに最も近い値が優先されます。この設定は、`tcp`、`http`、`mysql`、`postgres`のプロトコルハンドラー、およびリクエストを認証する`prometheus`ハンドラー (`remote_write`、`remote_read`、`query`、`api_v1`) に適用されます。メトリクス公開エンドポイント (Keeperのメトリクス専用エンドポイントを含む) は認証なしで提供され、この設定を無視します。固定ユーザーを持つハンドラー (`http_handlers`ルールの`handler`内の`user`キー、または`prometheus.handlers`ルールの`handler`内の`user`キー) は、設定されたユーザーとして認証され、この設定も無視します。特に、`default_session_user`が空であっても、これらのハンドラーが拒否されることはありません。この設定は`interserver`プロトコルでは使用できません。interserver接続はクラスターのsecretと初期ユーザーによって認証され、デフォルトのセッションユーザーを使用することはありません。
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### 追加のレイヤーパラメータを指定する
-</div>
+### 追加のレイヤーパラメータを指定する {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 一部のモジュールでは、追加のレイヤーパラメータを指定できます。たとえば、TLS レイヤーでは、秘密鍵 (`privateKeyFile`) と証明書ファイル (`certificateFile`) を次のように指定できます。
 
@@ -282,3 +278,6 @@ doc_type: 'reference'
 
 </protocols>
 ```
+
+TLS レイヤーでは `cipherList` と `cipherSuites` も設定できますが、これらが有効になるのは、そのレイヤー自身に `privateKeyFile` (証明書が別ファイルの場合は `certificateFile` も) が指定されている場合に限られます。
+これらが指定されていないレイヤーで空でない `cipherSuites` を設定すると、起動時にエラーになります。

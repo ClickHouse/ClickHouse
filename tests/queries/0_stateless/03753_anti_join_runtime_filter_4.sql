@@ -11,7 +11,6 @@ INSERT INTO customer SELECT number, 7, 7 FROM numbers(10000);
 INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 
 
-SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET join_algorithm = 'hash,parallel_hash';
 

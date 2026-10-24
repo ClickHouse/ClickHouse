@@ -5,7 +5,6 @@
 -- A FINAL read is bucketed only along primary-key-range layers, so a dedup group never spans
 -- buckets; a read that cannot be split safely stays serial.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

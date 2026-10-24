@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table_join_1;
 CREATE TABLE test_table_join_1

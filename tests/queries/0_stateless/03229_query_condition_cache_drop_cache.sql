@@ -4,8 +4,6 @@
 
 -- Tests that SYSTEM CLEAR QUERY CONDITION CACHE works
 
-SET allow_experimental_analyzer = 1;
-
 -- (it's silly to use what will be tested below but we have to assume other tests cluttered the query cache)
 SYSTEM CLEAR QUERY CONDITION CACHE;
 

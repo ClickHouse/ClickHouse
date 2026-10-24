@@ -1,5 +1,4 @@
 -- { echo }
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 1;
 -- Positive OFFSET
 SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) OFFSET 5);
@@ -81,7 +80,6 @@ SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)
 SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 2 WITH TIES);
 [0,1,1,1]
 -- { echo }
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 -- Positive OFFSET
 SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) OFFSET 5);

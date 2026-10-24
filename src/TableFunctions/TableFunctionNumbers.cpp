@@ -160,7 +160,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
             },
             .introduced_in = {1, 1},
             .category = FunctionDocumentation::Category::TableFunction,
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionNumbers<false>>(
@@ -249,7 +249,7 @@ LIMIT 1;
 ### Notes {#notes}
 - For performance reasons, if you know how many rows you need, prefer bounded forms (`numbers(N)`, `numbers(N, M[, S])`) over unbounded `numbers()` / `system.numbers`.
 - For parallel generation, use `numbers_mt(...)` or the [`system.numbers_mt`](/reference/system-tables/numbers_mt) table. Note that results may be returned in any order.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true});
 }
 

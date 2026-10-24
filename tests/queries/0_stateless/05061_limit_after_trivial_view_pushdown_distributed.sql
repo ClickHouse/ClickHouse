@@ -4,7 +4,6 @@
 -- a trivial view and `optimize_trivial_view_pushdown_to_distributed` must not forward it to the shards,
 -- where every shard would apply the range to its own rows. Both shards of the cluster read the same
 -- local table, so the two shards return the same five rows each.
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 
 DROP TABLE IF EXISTS t_trivial_range_local;

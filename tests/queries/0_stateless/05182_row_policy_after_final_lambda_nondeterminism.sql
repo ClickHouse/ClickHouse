@@ -8,7 +8,6 @@
 -- query, so it passes the constant-folding gate and the folded carrier really is built.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET apply_row_policy_after_final = 1;
 
 DROP TABLE IF EXISTS t_row_policy_lambda;

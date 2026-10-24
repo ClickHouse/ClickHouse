@@ -19,6 +19,7 @@
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -199,7 +200,7 @@ Arguments also can be passed using [named collections](/concepts/features/config
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+The rest of the conditions are executed in ClickHouse after the query to MySQL finishes. The `LIMIT` sampling constraint is pushed to MySQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -384,7 +385,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 - [mysql_map_fixed_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
 - [mysql_max_rows_to_insert](/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
 }
 
 }

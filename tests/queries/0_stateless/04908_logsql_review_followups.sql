@@ -12,7 +12,7 @@ INSERT INTO logs_04908 VALUES
     ('2024-01-01 00:00:01', 'positive fraction', 15.5, '2KB'),
     ('2024-01-01 00:00:02', 'integer', 10, '3KB');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04908';
 SET dialect = 'logsql';
 

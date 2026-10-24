@@ -31,6 +31,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
         in_prewhere = parent_scope->in_prewhere;
+        resolving_join_on_expression = parent_scope->resolving_join_on_expression;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -237,7 +238,7 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
 
     /// There are 2 kinds of expressions:
     /// 1. Does not contain any subquery -- it is safe to return by reference
-    /// 2. Contains subqueries -- it is required to make a deep copy becuase
+    /// 2. Contains subqueries -- it is required to make a deep copy because
     ///    distributed queries may fail.
     /// It could be simplified once StorageDistributed and Parallel Replicas
     /// stop using AST to send task to the shards.

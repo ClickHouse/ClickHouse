@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
@@ -74,8 +75,8 @@ public:
     ~SharedChunkAllocator();
 
 private:
-    std::vector<SharedChunk> chunks;
-    std::vector<size_t> free_chunks;
+    VectorWithMemoryTracking<SharedChunk> chunks;
+    VectorWithMemoryTracking<size_t> free_chunks;
 
     void release(SharedChunk * ptr) noexcept;
 

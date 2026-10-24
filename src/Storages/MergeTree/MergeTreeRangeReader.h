@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <mutex>
+#include <span>
 
 namespace DB
 {
@@ -51,6 +52,9 @@ struct PrewhereExprStep
 
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
+
+    /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
+    bool query_condition_cache_attribution_boundary = false;
 };
 
 using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
@@ -200,18 +204,18 @@ private:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, size_t current_range_last_mark_, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(MutableColumns & columns, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows);
 
         size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(MutableColumns & columns);
+        size_t finalize(MutableColumns & columns, Columns & shared_columns);
 
         bool isFinished() const { return is_finished; }
 
@@ -221,6 +225,9 @@ private:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
+        /// End mark of the contiguous mark range being read. Bounds caching of
+        /// deserialized columns in the reader (see IMergeTreeReader::readRows).
+        size_t current_range_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -230,7 +237,7 @@ private:
 
         /// Current position from the beginning of file in rows
         size_t position() const;
-        size_t readRows(MutableColumns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -242,8 +249,8 @@ private:
         Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(MutableColumns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(MutableColumns & columns);
+        size_t read(MutableColumns & columns, Columns & shared_columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(MutableColumns & columns, Columns & shared_columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -276,9 +283,12 @@ private:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         void checkNoDelayedRows() const;
 
-        size_t readRows(MutableColumns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
+        size_t alignRowsToColumnsCacheStripes(
+            size_t rows_num, size_t stripe_marks, size_t max_block_size_rows, std::span<IMergeTreeReader * const> columns_cache_readers) const;
+        size_t alignRowsToColumnsCacheStripesImpl(size_t rows_num, size_t stripe_marks) const;
     };
 
 public:
@@ -291,6 +301,9 @@ public:
 
         /// All read marks.
         MarkRanges read_mark_ranges;
+
+        /// Marks emptied by the steps up to the query condition cache attribution boundary.
+        MarkRanges query_condition_cache_attributable_marks;
 
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
@@ -450,7 +463,12 @@ public:
         LoggerPtr log;
     };
 
-    ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
+    /// `max_block_size_rows` is the limit of rows in a block (`max_block_size`, lowered by a `LIMIT`), which `max_rows`
+    /// can be below of to keep to `preferred_block_size_bytes`. 0 if not known.
+    /// `columns_cache_readers` are the readers of the chain that read columns, which decide together how its blocks
+    /// are aligned with the stripes of the columns cache; only this reader if empty.
+    ReadResult startReadingChain(
+        size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows = 0, std::span<IMergeTreeReader * const> columns_cache_readers = {});
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
 
     const Block & getSampleBlock() const { return result_sample_block; }
@@ -481,6 +499,13 @@ private:
     Stream stream;
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
+
+    /// Positions in `read_sample_block` of the virtual columns that may be filled by this reader.
+    /// They are found once, so that a lookup by name is not needed for every block.
+    std::optional<size_t> part_offset_position;
+    std::optional<size_t> block_offset_position;
+    std::optional<size_t> part_granule_offset_position;
+    std::optional<size_t> distance_position;
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;

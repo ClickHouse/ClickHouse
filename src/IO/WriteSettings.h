@@ -43,6 +43,11 @@ struct WriteSettings
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
 
+    /// A reader must never see a partially written object: it has to see either the previous version or the new one.
+    /// Object storages like S3 and Azure always publish an object at once; a local object storage writes to a
+    /// temporary file and renames it over the target.
+    bool object_storage_write_atomically = false;
+
     /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.
     /// 0 disables. Honored only by metadata storages that support inline data.
     size_t inline_file_max_bytes = 0;

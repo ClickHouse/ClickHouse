@@ -1,0 +1,7 @@
+subquery in a filter	10
+row policy kept after a rejected ALTER	50
+subquery in a row policy	10
+plain filter	94
+plain result filter
+1
+2

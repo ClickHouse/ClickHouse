@@ -18,7 +18,6 @@ CREATE TABLE t_jr_04303_right (id UInt64, val String) ENGINE = MergeTree() ORDER
 
 INSERT INTO t_jr_04303_right VALUES (2, 'R2'), (3, 'R3'), (5, 'R5'), (6, 'R6'), (7, 'R7');
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';

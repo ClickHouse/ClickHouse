@@ -12,7 +12,10 @@ DICTIONARY_FILES = [
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance", dictionaries=DICTIONARY_FILES, stay_alive=True
+    "instance",
+    main_configs=["configs/no_async_load_databases.xml"],
+    dictionaries=DICTIONARY_FILES,
+    stay_alive=True,
 )
 
 
@@ -180,3 +183,27 @@ def test_xml_dict_same_name(started_cluster):
     instance.restart_clickhouse()
     assert "node" in instance.query("show tables from default")
     instance.query("drop table default.node")
+
+
+@pytest.mark.parametrize("database", ["default", "system"])
+def test_projection_with_xml_dict(started_cluster, database):
+    # The dictionaries from the configuration files have to be known when the tables are attached at startup,
+    # otherwise the projection cannot be analyzed and is skipped. The `system` database is loaded before the others.
+    table = f"{database}.prj"
+    instance.query(f"DROP TABLE IF EXISTS {table}")
+    instance.query(
+        f"CREATE TABLE {table} (x UInt64, "
+        "PROJECTION p (SELECT x, dictGet('node', 'name', x % 2) AS v GROUP BY x, v)) "
+        "ENGINE = MergeTree ORDER BY x"
+    )
+    instance.query(f"INSERT INTO {table} SELECT number FROM numbers(10)")
+    instance.restart_clickhouse()
+    assert (
+        instance.query(
+            f"SELECT name FROM system.projections WHERE database = '{database}' AND table = 'prj'"
+        )
+        == "p\n"
+    )
+    instance.query(f"ALTER TABLE {table} ADD COLUMN y UInt64")
+    assert instance.query(f"SELECT count() FROM {table}") == "10\n"
+    instance.query(f"DROP TABLE {table}")

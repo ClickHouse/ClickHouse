@@ -729,6 +729,8 @@ curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "
 
 In this case, `?role=my_role&role=my_other_role` works similarly to executing `SET ROLE my_role, my_other_role` before the statement.
 
+The `role` query parameter is not affected by the `access_control_improvements.readonly_restricts_set_role` server setting, which refuses only the `SET ROLE` statement.
+
 ## HTTP response codes caveats {#http_response_codes_caveats}
 
 Because of limitations of the HTTP protocol, a HTTP 200 response code doesn't guarantee that a query was successful.
@@ -868,6 +870,8 @@ $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VA
 ```
 
 ClickHouse also supports a Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Let's look at an example.
+
+The same handlers can also be defined from SQL, without editing the server configuration file - see [`CREATE HANDLER`](/reference/statements/create/handler).
 
 First of all, add this section to your server configuration file.
 

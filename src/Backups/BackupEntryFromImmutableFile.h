@@ -28,7 +28,9 @@ public:
     std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override;
     UInt64 getSize() const override;
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
+    /// Asked from the disk rather than kept in the entry: a backup has one entry per file of every part, so for a
+    /// large table the copies hold hundreds of megabytes describing the same few disks.
+    DataSourceDescription getDataSourceDescription() const override;
     bool isEncryptedByDisk() const override { return copy_encrypted; }
     bool isFromFile() const override { return true; }
     bool isFromImmutableFile() const override { return true; }
@@ -45,7 +47,6 @@ private:
 
     const DiskPtr disk;
     const String file_path;
-    const DataSourceDescription data_source_description;
     const bool copy_encrypted;
     const std::optional<UInt64> passed_file_size;
     const std::optional<UInt128> passed_checksum;

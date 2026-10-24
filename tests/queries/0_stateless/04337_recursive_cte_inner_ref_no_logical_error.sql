@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 -- Test for https://github.com/ClickHouse/ClickHouse/issues/89844
 

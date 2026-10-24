@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: deduplication needs both inserts to produce the same chunks in the same order, and parallel
+-- replicas can split the probe read between replicas differently for each insert.
+
 -- The insert deduplication hash must not depend on the internal representation of a column. A hash join
 -- carries the probe side as a lazily replicated column, whose generic per-row hashing produces a
 -- different byte stream than the dense column's range overload, so a retry of the same logical insert

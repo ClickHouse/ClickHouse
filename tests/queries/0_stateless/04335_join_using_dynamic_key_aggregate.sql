@@ -3,7 +3,6 @@
 -- from the wrong (Nullable) type while the planner produces a Dynamic column, and the Null
 -- combinator aborts with "Bad cast from type DB::ColumnDynamic to DB::ColumnNullable".
 
-SET enable_analyzer = 1;
 SET allow_dynamic_type_in_join_keys = 1;
 
 DROP TABLE IF EXISTS t_nt;

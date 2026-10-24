@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server を構成するもので、ClickHouse のソースコードから自動生成されています。
 
-<div id="logger.async">
-  ## logger.async
-</div>
+## logger.async {#logger.async}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />`<true>` (デフォルト) の場合、ログは非同期で記録されます (出力チャネルごとに 1 つのバックグラウンドスレッド) 。それ以外の場合は、LOG を呼び出すスレッド内でログが記録されます。
 
-<div id="logger.async_queye_max_size">
-  ## logger.async_queye_max_size
-</div>
+## logger.async_queue_max_size {#logger.async_queue_max_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65536" changeable_without_restart="No" />非同期ログを使用する場合、フラッシュ待ちキューに保持されるメッセージの最大数です。これを超えたメッセージは破棄されます。次の2のべき乗に切り上げられます (例: `100000` は `131072` になります) 。
 

@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ThoughtSpot'
+slug: /integrations/thoughtspot
+keywords: ['clickhouse', 'ThoughtSpot', 'connect', 'integrate', 'ui']
+description: 'ThoughtSpot은 데이터를 실시간으로 검색, 탐색, 시각화할 수 있는 AI 기반 분석 플랫폼입니다.'
+title: 'ThoughtSpot'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+ThoughtSpot은 네이티브 ClickHouse 커넥터를 사용하여 ClickHouse Cloud 또는 온프레미스 배포 환경에 연결할 수 있습니다.
+
+<Steps>
+  <Step title="연결 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="ThoughtSpot에서 ClickHouse 연결 생성" id="2-create-a-clickhouse-connection-in-thoughtspot">
+    1. **Data workspace** &gt; **Connections**로 이동합니다.
+
+    2. **+ Create connection**을 클릭하고 **ClickHouse** 타일을 선택한 다음 **Next**를 클릭합니다.
+
+    3. 연결 이름, 설명(선택 사항), 이전 단계에서 수집한 ClickHouse 연결 정보를 입력한 다음 **Next**를 클릭합니다. 각 속성에 대한 자세한 내용은 ThoughtSpot 문서의 [ClickHouse 연결 참고](https://docs.thoughtspot.com/cloud/latest/connections-clickhouse-reference)를 참조하십시오.
+
+    4. (선택 사항) 쿼리 수준 타임아웃을 구성하려면 **Advanced Config** 메뉴를 엽니다. **Key**에는 `queryTimeoutSeconds`를 입력하고, **Value**에는 타임아웃 값을 초 단위로 입력합니다. 최대 10분 이내로 설정하는 것을 권장합니다.
+
+    5. (선택 사항) key-value 쌍을 추가로 지정하려면 **Advanced Config** 메뉴를 열고 **Key**와 **Value**를 입력합니다. 쌍을 더 추가하려면 더하기 기호(**+**)를 클릭합니다.
+
+       <Note>
+         입력하는 모든 key-value 쌍은 ClickHouse 데이터 소스에 정의되어 있어야 합니다. key-value 쌍은 대소문자를 구분합니다.
+       </Note>
+
+    6. 사용할 테이블과 컬럼을 선택한 다음 **Create connection**을 클릭합니다. 추가된 테이블 및 컬럼 수를 알려 주는 메시지가 표시됩니다.
+
+    이제 **Data workspace** &gt; **Connections** 페이지에 연결이 표시됩니다. ThoughtSpot에서 ClickHouse 데이터를 검색하고, 연결된 테이블에 실시간 쿼리를 실행할 수 있습니다.
+  </Step>
+</Steps>

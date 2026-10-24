@@ -3,8 +3,6 @@
 -- mergeTreeProjection used to ignore the parent table's row policy (clickhouse-private#53773). It now
 -- resolves the policy against the projection with the analyzer and refuses when it can't be enforced.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS users_rls_proj;
 DROP ROW POLICY IF EXISTS rp_users_rls_proj ON users_rls_proj;
 

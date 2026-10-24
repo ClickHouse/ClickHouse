@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- Merged after ssl_config.xml, whose <openSSL replace="replace"> would otherwise drop this. -->
+    <openSSL>
+        <client>
+            <cipherSuites>TLS_CHACHA20_POLY1305_SHA256</cipherSuites>
+        </client>
+    </openSSL>
+</clickhouse>

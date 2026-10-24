@@ -3,8 +3,6 @@
 -- Test that asterisk_include_virtual_columns works with MergeTree.
 -- Previously this caused: "Virtual column _distance must be filled by range reader".
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS test_virtuals_mt;
 
 CREATE TABLE test_virtuals_mt (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, long
+# Tags: no-parallel, no-fasttest, long, no-parallel-replicas
+# Tag no-parallel-replicas: fails with parallel replicas, https://github.com/ClickHouse/clickhouse-private/issues/79502
 # Tag no-parallel: Messes with internal cache
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
 #     long: Sloooow ...

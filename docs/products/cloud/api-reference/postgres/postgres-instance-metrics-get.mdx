@@ -1,7 +1,7 @@
 ---
 title: "Get Postgres time-series metrics"
 openapi: "/_specs/cloud-openapi.json GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics"
-description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, and more). Use this to chart or analyze how a service behaved over time."
+description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time."
 tag: "Beta"
 ---
 
@@ -9,7 +9,7 @@ tag: "Beta"
 
 <span data-endpoint-badge="Beta"><Badge color="blue">Beta</Badge></span>
 
-**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, and more). Use this to chart or analyze how a service behaved over time.
+**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns bucketed time-series metrics for a PostgreSQL service over the requested window (CPU, memory, disk, network, connections, cache hit ratio, throughput, transactions, wait events, lock waits, and more). Use this to chart or analyze how a service behaved over time.
 
 <div data-permissions class="api-section">
 <div class="api-section-heading flex flex-col gap-y-4 w-full">

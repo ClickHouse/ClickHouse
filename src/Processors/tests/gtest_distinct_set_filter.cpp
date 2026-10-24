@@ -1056,6 +1056,23 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesRetainedStringKeys)
     }
 }
 
+TEST(DistinctSetFilterSemantics, ExtractionRetainsMemoryUntilTheLastKey)
+{
+    const Block header{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+    DistinctSetFilter filter(header, {}, {});
+    filter.filter(Chunk({makeNumberColumn<ColumnUInt64>(std::vector<UInt64>{1, 2, 3})}, 3));
+    const auto bytes = filter.getTotalByteCount();
+    ASSERT_GT(bytes, 0);
+    auto keys = std::move(filter).extractKeys();
+    EXPECT_EQ(keys->getTotalByteCount(), bytes);
+    for (size_t i = 0; i < 3; ++i)
+    {
+        const auto columns = keys->next(1, 0);
+        ASSERT_EQ(columns.front()->size(), 1);
+        EXPECT_EQ(keys->getTotalByteCount(), i == 2 ? 0 : bytes);
+    }
+}
+
 TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
 {
     const auto u8 = std::make_shared<DataTypeUInt8>();
@@ -1065,6 +1082,7 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
     const std::vector<DataTypes> key_types{
         {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64},
         {std::make_shared<DataTypeNullable>(u8), u64},
+        {std::make_shared<DataTypeNullable>(u64), u64},
         {std::make_shared<DataTypeFixedString>(3), u64},
         {std::make_shared<DataTypeLowCardinality>(u64), u64},
         {std::make_shared<DataTypeArray>(u64)}};
@@ -1087,7 +1105,7 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
             set.init(SetVariants::chooseMethod(key_columns, key_sizes));
             SCOPED_TRACE(::testing::Message() << "method=" << static_cast<int>(set.type) << ", rows=" << rows);
 
-            auto check = [&]<typename Method>(const Method &)
+            set.callOnMethod([&]<typename Method>(const Method &)
             {
                 typename Method::State state(key_columns, key_sizes, {});
                 size_t actual_bytes = 0;
@@ -1098,15 +1116,7 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
                         actual_bytes = state.prepared_keys.allocated_bytes();
                 }
                 EXPECT_EQ(set.estimatePreparedKeysMemory(rows, key_sizes), actual_bytes);
-            };
-            switch (set.type)
-            {
-                case SetVariants::Type::EMPTY:
-                    FAIL() << "Set method was not initialized";
-#define M(NAME) case SetVariants::Type::NAME: check(*set.NAME); break;
-                APPLY_FOR_SET_VARIANTS(M)
-#undef M
-            }
+            });
         }
     }
 }

@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+-- Tag no-shared-merge-tree: RMT/SMT allocate block numbers starting from 0
 DROP TABLE IF EXISTS t;
 
 -- Wide + full storage (so columns are hardlinked) with persisted _block_number/_block_offset.

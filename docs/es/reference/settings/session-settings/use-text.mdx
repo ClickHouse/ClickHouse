@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_text_index_header_cache
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 Indica si los encabezados deserializados del índice de texto deben almacenarse en caché en memoria.
 Usar la caché de encabezados del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con un gran número de consultas sobre índice de texto.
 
-## use_text_index_like_evaluation_by_dictionary_scan
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -32,7 +32,7 @@ Permite evaluar consultas LIKE/ILIKE escaneando el diccionario del índice de te
 
 Los patrones acelerados son `%value%`, `value%` y `%value`, así como las llamadas a `startsWith` y `endsWith` que `optimize_rewrite_like_perfect_affix` reescribe como `value%` y `%value`.
 
-## use_text_index_negative_tokens_cache
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,7 +41,16 @@ Los patrones acelerados son `%value%`, `value%` y `%value`, así como las llamad
 Indica si se deben almacenar en caché los tokens de índice de texto que no están presentes en una parte de datos.
 La caché de tokens inexistentes utiliza la caché de tokens de índice de texto y evita consultas repetidas al diccionario para tokens inexistentes.
 
-## use_text_index_postings_cache
+## use_text_index_pattern_bypass_cache {#use_text_index_pattern_bypass_cache}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para almacenar en caché los escaneos de diccionario de patrones del índice de texto que superaron el umbral de la lista de postings."}]}]} />
+
+Indica si se deben almacenar en caché los escaneos de diccionario de patrones del índice de texto que superan `text_index_like_max_postings_to_read`.
+La caché de omisión de patrones usa la caché de tokens del índice de texto y evita repetir los escaneos de diccionario que anteriormente tuvieron que recurrir a la evaluación del predicado original.
+
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -50,7 +59,7 @@ La caché de tokens inexistentes utiliza la caché de tokens de índice de texto
 Si se almacenan en memoria las listas de postings deserializadas del índice de texto.
 Usar la caché de postings del índice de texto puede reducir significativamente la latencia y aumentar el rendimiento al trabajar con una gran cantidad de consultas sobre índice de texto.
 
-## use_text_index_tokens_cache
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

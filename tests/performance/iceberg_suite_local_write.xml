@@ -1,0 +1,29 @@
+<!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
+<!-- Scale factor: 10 -->
+<test>
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+    </settings>
+    <!-- Append-only writes to local Iceberg tables; write-feature mutations have their own suite. -->
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values><value>iceberg_suite_write</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_large</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_wr_large_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_small</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_wr_small_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>engine_function_wr_planned</name>
+            <values><value>IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_suite_write_wr_planned_' || toString(toUnixTimestamp64Micro(now64(6))) || '/', 'Parquet')</value></values>
+        </substitution>
+    </substitutions>
+    <include file="iceberg_suite_shared_write.xml.inc"/>
+</test>

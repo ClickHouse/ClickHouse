@@ -552,10 +552,9 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
     EXPECT_TRUE(std::filesystem::exists(finalPath()));
 }
 
-/// A duplicate UNIQUE KEY inside one block must be rejected with the defined
-/// SUPPORT_IS_DISABLED (interim stance: no INSERT-time dedup yet), not surface
-/// RocksDB's raw non-increasing-key error. Covers the sorted writer directly
-/// and the unsorted writer via `write` with a non-UK sort key.
+/// A duplicate key inside one block is rejected by the writer; the commit's probe resolves
+/// conflicts between blocks, not within one. Covers the sorted writer directly and the unsorted
+/// writer via `write` with a non-UK sort key.
 TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
 {
     auto block = makeUInt64Block({7, 7});

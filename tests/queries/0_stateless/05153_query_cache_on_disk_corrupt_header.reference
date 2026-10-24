@@ -1,0 +1,18 @@
+-- Compute the result and write it to disk
+499500
+QueryCacheOnDiskMisses
+-- The entry is served from disk while its header is intact
+499500
+QueryCacheOnDiskHits
+-- Moving expires_at into the far future is a miss, not a resurrected entry
+499500
+QueryCacheOnDiskMisses
+-- The corrupt entry was replaced, so the next run is a hit again
+499500
+QueryCacheOnDiskHits
+-- Changing created_at is a miss as well
+499500
+QueryCacheOnDiskMisses
+-- And so is changing total_size
+499500
+QueryCacheOnDiskMisses

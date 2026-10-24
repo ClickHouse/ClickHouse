@@ -5,7 +5,6 @@
 -- element-wise over a common supertype instead, so the rewrite is skipped for this shape and the
 -- regular IN handling keeps its semantics. Regression test for the review finding in PR #97540.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 

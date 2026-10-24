@@ -13,8 +13,12 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 [Sensor.Community](https://sensor.community/en/) は、オープンな環境データを生み出す、コントリビューター主導のグローバルなセンサーネットワークです。データは世界中のセンサーから収集されています。誰でもセンサーを購入し、好きな場所に設置できます。データをダウンロードするための API は [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) で公開されており、データは [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/) のもとで自由に利用できます。
 
 <Warning>
-  このデータセットには 200 億件を超えるレコードが含まれているため、お使いのリソースでこの規模を処理できない場合は、以下のコマンドをそのままコピー＆ペーストしないよう注意してください。以下のコマンドは [ClickHouse Cloud](https://clickhouse.cloud) の **Production** インスタンスで実行されています。
+  このデータセットには 200 億件を超えるレコードが含まれているため、お使いのリソースでこの規模を処理できない場合は、以下のコマンドをそのままコピー＆ペーストしないよう注意してください。これらのコマンドは、十分なサイズの [ClickHouse Cloud](/ja/products/cloud/getting-started/intro) サービス上で実行したものです。
 </Warning>
+
+<Tip>
+  これらのコマンドを実際に試すには、[ClickHouse Cloud の無料トライアル](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors)に登録するか、[セルフホストの ClickHouse](/ja/get-started/setup/install) をセットアップしてください。
+</Tip>
 
 1. データは S3 にあるため、`s3` テーブル関数を使ってファイルからテーブルを作成できます。また、データをその場でクエリすることもできます。ClickHouse に挿入する前に、まず数行を見てみましょう。
 
@@ -74,9 +78,9 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. ClickHouse Cloud サービスには、`default` という名前のクラスターがあります。ここでは、クラスター内の各ノードから S3 ファイルを並列に読み込む `s3Cluster` テーブル関数を使用します。 (クラスターがない場合は、`s3` 関数を使用し、クラスター名を削除してください。)
+3. ここでは、S3 ファイルをクラスター内の各ノードに分散して並列に読み込む [`s3Cluster`](/ja/reference/functions/table-functions/s3Cluster) テーブル関数を使用します。ClickHouse Cloud ではクラスター名が `default` なので、以下のように実行できます。セルフマネージドのサーバーでは、`default` をクラスター名に置き換えてください。単一のサーバーで実行する場合は、代わりに [`s3`](/ja/reference/functions/table-functions/s3) テーブル関数を使用し、最初の引数を削除して URL が最初の引数になるようにしてください。
 
-このクエリには時間がかかります。非圧縮データが約1.67Tあるためです：
+このクエリは時間がかかります。非圧縮で約1.67Tのデータがあるためです：
 
 ```sql
 INSERT INTO sensors
@@ -173,4 +177,4 @@ ORDER BY day ASC;
 
 結果の可視化を以下に示します：
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="蒸し暑い日" />
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="高温多湿の日" />

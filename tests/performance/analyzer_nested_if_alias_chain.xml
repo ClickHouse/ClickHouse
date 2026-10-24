@@ -12,7 +12,6 @@
         is actually exercised). Depth is kept moderate so the query stays sub-second.
     -->
     <settings>
-        <enable_analyzer>1</enable_analyzer>
         <max_expanded_ast_elements>5000000000</max_expanded_ast_elements>
     </settings>
 

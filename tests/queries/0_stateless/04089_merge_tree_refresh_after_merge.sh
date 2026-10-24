@@ -10,6 +10,10 @@
 # is {merged part} either way; the superseded parts are Deleting once grabbed for removal and stay
 # Outdated otherwise. system.parts returns non-Active parts only when _state is selected, hence the
 # grouping below.
+#
+# The refresh grabs the superseded parts with `grabOldParts(true)`, which skips a part while anything else
+# holds a reference to it and returns nothing while another thread is inside it. So one refresh may leave
+# them Outdated; the next refresh grabs them. The refresh is repeated until they are grabbed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,6 +32,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
+      metadata_snapshot_write_delay_ms = 0, -- the readers see the snapshot of the state right after every commit
       path = '${disk_path}')
 "
 
@@ -60,7 +65,15 @@ WHERE database = currentDatabase() AND table = 'reader' GROUP BY _state ORDER BY
 ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES writer"
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE writer FINAL"
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 04089_reader_${CLICKHOUSE_DATABASE}"
+for _ in {1..100}
+do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK 04089_reader_${CLICKHOUSE_DATABASE}"
+    [[ $(${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM system.parts
+        WHERE database = currentDatabase() AND table = 'reader' AND _state = 'Outdated'") == 0 ]] && break
+    sleep 0.1
+done
+
 echo "reader after merge:"
 ${CLICKHOUSE_CLIENT} --query "
 SELECT _state, count() FROM system.parts

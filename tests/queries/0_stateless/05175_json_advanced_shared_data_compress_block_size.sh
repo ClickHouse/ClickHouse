@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
+# Tags: no-random-merge-tree-settings, long
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/118874: ADVANCED JSON shared data must
 # size its compressed blocks by min_compress_block_size, not one tiny block per path/substream. Checks the mean

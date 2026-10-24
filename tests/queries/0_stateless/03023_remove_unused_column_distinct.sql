@@ -11,5 +11,4 @@ FROM
             concat('section_', number % 3) AS section_id
         FROM numbers(10)
     )
-)
-SETTINGS enable_analyzer = 1;
+);

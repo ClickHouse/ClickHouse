@@ -3,7 +3,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/116476.
 -- A stop-word postprocessor spelled with `IN` must drop the same tokens as one spelled with `=`.
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;

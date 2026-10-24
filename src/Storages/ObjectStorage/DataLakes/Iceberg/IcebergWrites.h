@@ -65,6 +65,8 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
+Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -205,7 +207,7 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
 
 };

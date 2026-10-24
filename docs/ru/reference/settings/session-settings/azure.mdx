@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="azure_allow_parallel_part_upload">
-  ## azure_allow_parallel_part_upload
-</div>
+## azure_allow_parallel_part_upload {#azure_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать несколько потоков для multipart-загрузки в Azure.
 
-<div id="azure_check_objects_after_upload">
-  ## azure_check_objects_after_upload
-</div>
+## azure_check_objects_after_upload {#azure_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Проверять каждый объект, загруженный в Azure Blob Storage, чтобы убедиться в успешности загрузки
 
-<div id="azure_connect_timeout_ms">
-  ## azure_connect_timeout_ms
-</div>
+## azure_connect_timeout_ms {#azure_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -43,17 +37,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Тайм-аут подключения к хосту для Azure-дисков.
 
-<div id="azure_create_new_file_on_insert">
-  ## azure_create_new_file_on_insert
-</div>
+## azure_create_new_file_on_insert {#azure_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает или отключает создание нового файла при каждой вставке в таблицы движка Azure
 
-<div id="azure_ignore_file_doesnt_exist">
-  ## azure_ignore_file_doesnt_exist
-</div>
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -66,17 +56,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 1 — `SELECT` возвращает пустой результат.
 * 0 — `SELECT` генерирует исключение.
 
-<div id="azure_list_object_keys_size">
-  ## azure_list_object_keys_size
-</div>
+## azure_list_object_keys_size {#azure_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Максимальное количество файлов, которое может быть возвращено за один батч по запросу ListObject
 
-<div id="azure_min_upload_part_size">
-  ## azure_min_upload_part_size
-</div>
+## azure_min_upload_part_size {#azure_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
@@ -84,9 +70,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Минимальный размер части, загружаемой при multipart-загрузке в Azure Blob Storage.
 
-<div id="azure_request_timeout_ms">
-  ## azure_request_timeout_ms
-</div>
+## azure_request_timeout_ms {#azure_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
@@ -94,9 +78,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Тайм-аут бездействия при отправке и получении данных в/из Azure. Операция завершается с ошибкой, если один вызов TCP на чтение или запись блокируется на это время.
 
-<div id="azure_skip_empty_files">
-  ## azure_skip_empty_files
-</div>
+## azure_skip_empty_files {#azure_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -109,9 +91,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — `SELECT` генерирует исключение, если пустой файл несовместим с запрошенным форматом.
 * 1 — `SELECT` возвращает пустой результат для пустого файла.
 
-<div id="azure_strict_upload_part_size">
-  ## azure_strict_upload_part_size
-</div>
+## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -119,9 +99,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Точный размер части, загружаемой при multipart-загрузке в Azure Blob Storage.
 
-<div id="azure_throw_on_zero_files_match">
-  ## azure_throw_on_zero_files_match
-</div>
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,17 +112,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 1 — `SELECT` генерирует исключение.
 * 0 — `SELECT` возвращает пустой результат.
 
-<div id="azure_truncate_on_insert">
-  ## azure_truncate_on_insert
-</div>
+## azure_truncate_on_insert {#azure_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает или отключает выполнение TRUNCATE перед вставкой в таблицы с движком Azure.
 
-<div id="azure_use_adaptive_timeouts">
-  ## azure_use_adaptive_timeouts
-</div>
+## azure_use_adaptive_timeouts {#azure_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -152,5 +126,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если установлено значение `true`, то для всех запросов к Azure первые две попытки выполняются с короткими тайм-аутами отправки и получения.
 Если установлено значение `false`, то все попытки выполняются с одинаковыми тайм-аутами.
+
+## azure_validate_etag_on_read {#azure_validate_etag_on_read}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка для обнаружения параллельной перезаписи blob-объектов Azure на месте во время чтения: каждый запрос `GET` привязывается к полученному при листинге `ETag` с помощью `If-Match`, а `ETag` ответа проверяется — аналогично тому, как это делает `s3_validate_etag_on_read` для S3. При значении `compatibility`, соответствующем версиям до 26.10, восстанавливается прежнее поведение (без проверки)."}]}]} />
+
+При чтении blob-объекта из Azure Blob Storage через табличные функции `azureBlobStorage` / `azureBlobStorageCluster` или движок таблицы `AzureBlobStorage` каждый запрос `GET` привязывается к той версии blob-объекта, которая была получена при его листинге: для этого его `ETag` передаётся в заголовке `If-Match`, а `ETag` ответа проверяется. Чтение одного файла порождает множество запросов `GET` с диапазонами; если между ними blob-объект перезаписывается на месте (например, внешней пишущей стороной, перезаписывающей фиксированный ключ), то без этой проверки прочитанные данные могут оказаться склеены из двух разных версий blob-объекта, что проявится как несовпадение контрольной суммы или ошибка разбора. Размер, зафиксированный при листинге, также используется как правая граница чтения, поэтому он корректен только для той версии, для которой был получен. При обнаружении несоответствия чтение завершается ошибкой `AZURE_OBJECT_CHANGED_DURING_READ`, а не возвращает несогласованные данные. Отключайте настройку только для рабочих нагрузок, которые намеренно читают перезаписываемые blob-объекты и допускают несогласованное чтение.
 
 {/*AUTOGENERATED_END*/}

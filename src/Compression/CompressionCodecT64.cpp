@@ -12,6 +12,7 @@
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/TargetSpecific.h>
 
 namespace DB
@@ -340,6 +341,53 @@ NO_INLINE void decompressOneBit(const char * src, char * dst, UInt32 num_element
     }
 }
 
+using MatrixLine [[gnu::vector_size(64)]] = UInt64;
+
+ALWAYS_INLINE void loadPartialLine(MatrixLine & line, const char * src, UInt32 part)
+{
+    switch (part)
+    {
+        case 7: line[6] = unalignedLoad<UInt64>(src + 48); [[fallthrough]];
+        case 6: line[5] = unalignedLoad<UInt64>(src + 40); [[fallthrough]];
+        case 5: line[4] = unalignedLoad<UInt64>(src + 32); [[fallthrough]];
+        case 4: line[3] = unalignedLoad<UInt64>(src + 24); [[fallthrough]];
+        case 3: line[2] = unalignedLoad<UInt64>(src + 16); [[fallthrough]];
+        case 2: line[1] = unalignedLoad<UInt64>(src + 8); [[fallthrough]];
+        case 1: line[0] = unalignedLoad<UInt64>(src); [[fallthrough]];
+        default: break;
+    }
+}
+
+template <size_t N>
+ALWAYS_INLINE void loadPlanes(UInt64 (&matrix)[N], const char * src, UInt32 num_bits)
+{
+    static_assert(N % 8 == 0);
+    if constexpr (N == 8)
+    {
+        if (num_bits == N)
+        {
+            memcpy(matrix, src, sizeof(matrix));
+            return;
+        }
+        for (UInt32 i = 0; i < N; ++i)
+            matrix[i] = i < num_bits ? unalignedLoad<UInt64>(src + i * sizeof(UInt64)) : 0;
+    }
+    else
+    {
+        const UInt32 full_lines = num_bits / 8;
+#pragma clang loop unroll(full)
+        for (UInt32 line_index = 0; line_index < N / 8; ++line_index)
+        {
+            MatrixLine line = {};
+            if (line_index < full_lines)
+                memcpy(&line, src + sizeof(MatrixLine) * line_index, sizeof(line));
+            else if (line_index == full_lines)
+                loadPartialLine(line, src + sizeof(MatrixLine) * line_index, num_bits % 8);
+            memcpy(&matrix[8 * line_index], &line, sizeof(line));
+        }
+    }
+}
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
@@ -352,8 +400,8 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
     /// A 64-byte matrix avoids clearing unused planes and reconstructing zero high bytes.
     if (num_bits <= 8)
     {
-        UInt64 matrix[8] = {};
-        memcpy(matrix, src, num_bits * sizeof(UInt64));
+        alignas(64) UInt64 matrix[8];
+        loadPlanes(matrix, src, num_bits);
 
         /// Always the plane loop. The shuffle measured slower here even at six to eight planes.
         if (full || part_bits)
@@ -369,8 +417,10 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         return;
     }
 
-    UInt64 matrix[64] = {};
-    memcpy(matrix, src, num_bits * sizeof(UInt64));
+    /// Aligned to its size, so that the matrix never straddles a page boundary. Otherwise, depending on the stack layout,
+    /// the vector stores filling it may split across two pages on every call, which is very slow.
+    alignas(sizeof(UInt64) * 64) UInt64 matrix[64];
+    loadPlanes(matrix, src, num_bits);
 
     UInt32 full_bytes = num_bits / 8;
 
@@ -805,9 +855,10 @@ void registerCodecT64(CompressionCodecFactory & factory)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64. Expected: 'bit', 'byte')");
             String name = literal->value.safeGet<String>();
 
-            if (name == "byte")
+            /// The variant is a keyword and is matched case-insensitively, like the codec name itself.
+            if (equalsCaseInsensitive(name, "byte"))
                 variant = Variant::Byte;
-            else if (name == "bit")
+            else if (equalsCaseInsensitive(name, "bit"))
                 variant = Variant::Bit;
             else
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64: {}", name);

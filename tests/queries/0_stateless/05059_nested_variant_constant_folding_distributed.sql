@@ -3,7 +3,6 @@
 -- https://github.com/ClickHouse/ClickHouse/pull/111136, which scoped out the compound case covered here.
 
 -- The exact serialization lives in the analyzer (`ConstantNode::toASTImpl`), so force the analyzer.
-SET enable_analyzer = 1;
 
 -- The member type has to be named per element, not once for the whole constant.
 SELECT [42::UInt64]::Array(Variant(UInt64, String)) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;

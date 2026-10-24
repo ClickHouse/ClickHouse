@@ -12,6 +12,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -117,10 +118,11 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         }
     }
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings));
+    configuration.emplace(StoragePostgreSQL::getConfiguration(
+        args, context, &postgresql_settings, /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
-    /// stored in a named collection.
+    /// stored in a named collection. `getConfiguration` checks these overrides of the collection.
     if (settings_ast)
         postgresql_settings.loadFromQuery(settings_ast->as<ASTSetQuery &>());
 
@@ -190,7 +192,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
-All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in ClickHouse after the query to PostgreSQL finishes. The `LIMIT` sampling constraint is pushed to PostgreSQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## Passing a query instead of a table name {#passing-a-query}
 
@@ -325,7 +327,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 ### Replicating or migrating Postgres data with PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > In addition to table functions, you can always use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
 }
 
 }

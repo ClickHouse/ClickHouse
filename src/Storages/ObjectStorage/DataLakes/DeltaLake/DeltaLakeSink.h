@@ -29,6 +29,7 @@ public:
         ContextPtr context_,
         SharedHeader sample_block_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatFilterInfoPtr format_filter_info_,
         const String & format,
         const String & compression_method);
 
@@ -52,6 +53,7 @@ private:
     const DeltaLake::WriteTransactionPtr delta_transaction;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
+    const FormatFilterInfoPtr format_filter_info;
     const SharedHeader sample_block;
     /// `sample_block` with each column's type replaced by the Delta write-schema type, so the data files
     /// are written to match the Delta log (e.g. a declared `UInt8` column is stored as `short`).

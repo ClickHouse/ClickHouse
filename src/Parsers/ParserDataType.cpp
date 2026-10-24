@@ -329,6 +329,16 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!type_name_suffix.empty())
         type_name = type_name_upper + " " + type_name_suffix;
 
+    /// The SQL standard, PostgreSQL and Trino spell the composite types case-insensitively,
+    /// e.g. ARRAY(INTEGER), MAP(VARCHAR, BIGINT).
+    if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        if (type_name_upper == "ARRAY")
+            type_name = "Array";
+        else if (type_name_upper == "MAP")
+            type_name = "Map";
+    }
+
     /// skip trailing comma in types, e.g. Tuple(Int, String,)
     if (pos->type == TokenType::Comma)
     {

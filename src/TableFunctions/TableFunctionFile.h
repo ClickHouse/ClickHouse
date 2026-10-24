@@ -23,6 +23,9 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    /// A table over an explicit path keeps its data in a local unreplicated file, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
+    bool hasUnreplicatedTableDataOnDisk() const override { return fd < 0; }
+
 protected:
     int fd = -1;
     std::optional<StorageFile::FileSource> file_source;

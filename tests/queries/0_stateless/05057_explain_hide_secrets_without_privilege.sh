@@ -52,8 +52,8 @@ GRANT SELECT ON $db.nested_const_view TO $user;
 GRANT SELECT ON $db.where_const_view TO $user;
 EOF
 
-# The analyzer, the session setting alone must not disclose secrets
-new_settings="SETTINGS enable_analyzer = 1, format_display_secrets_in_show_and_select = 1"
+# The session setting alone must not disclose secrets
+new_settings="SETTINGS format_display_secrets_in_show_and_select = 1"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.encrypted_view $new_settings"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.encrypted_view $new_settings, explain_query_plan_default = 'legacy'"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN actions = 1 SELECT * FROM $db.nested_const_view $new_settings, explain_query_plan_default = 'legacy'"

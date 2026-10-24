@@ -1,0 +1,24 @@
+<test>
+    <!-- The constant overhead of reading a block from a MergeTree table and processing it. -->
+    <!-- A filter would round the blocks up to whole granules, so the queries don't have one. -->
+    <create_query>
+        CREATE TABLE merge_tree_small_blocks (key UInt64, value UInt64, str String, sparse UInt8, arr Array(UInt32))
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9
+    </create_query>
+
+    <fill_query>
+        INSERT INTO merge_tree_small_blocks
+        SELECT number, cityHash64(number), toString(number % 1000), number % 100 = 0, range(number % 3)
+        FROM numbers_mt(1000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE merge_tree_small_blocks FINAL</fill_query>
+
+    <query>SELECT sum(value) FROM merge_tree_small_blocks SETTINGS max_block_size = 16, max_threads = 1</query>
+    <query>SELECT sum(sparse) FROM merge_tree_small_blocks SETTINGS max_block_size = 16, max_threads = 1</query>
+    <query>SELECT sum(length(str)) FROM merge_tree_small_blocks SETTINGS max_block_size = 16, max_threads = 1</query>
+    <query>SELECT sum(length(arr)) FROM merge_tree_small_blocks SETTINGS max_block_size = 16, max_threads = 1</query>
+    <query>SELECT str, count() FROM merge_tree_small_blocks GROUP BY str FORMAT Null SETTINGS max_block_size = 16, max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS merge_tree_small_blocks</drop_query>
+</test>

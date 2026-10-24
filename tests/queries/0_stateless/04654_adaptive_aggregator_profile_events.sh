@@ -48,7 +48,6 @@ SELECT 'pressure-drained records', coalesce(sum(value), 0) > 0 FROM system.event
 # The lazy FINAL replacement's internal deduplication aggregation passes the adaptive settings
 # through; a separate process pins the freeze counter to that aggregation alone.
 $CLICKHOUSE_LOCAL --query "
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, min_filtered_ratio_for_lazy_final = 0;
 SET adaptive_aggregator_freeze_threshold = 128;
 SET collect_hash_table_stats_during_aggregation = 0;

@@ -19,7 +19,6 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 INSERT INTO t_pr_top_k SELECT number, number % 1000 FROM numbers(100000);
 OPTIMIZE TABLE t_pr_top_k FINAL;
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

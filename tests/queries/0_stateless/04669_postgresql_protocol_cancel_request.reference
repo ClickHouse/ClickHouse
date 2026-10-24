@@ -1,0 +1,8 @@
+--- the statement is running
+1
+--- under a query id the client can cancel
+1
+--- after the cancel request, the statement is gone
+0
+--- and the client was told why
+1

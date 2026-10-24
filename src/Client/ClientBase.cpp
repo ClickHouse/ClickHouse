@@ -39,6 +39,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/quoteString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
@@ -166,7 +167,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
-    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
     extern const SettingsString logsql_table;
     extern const SettingsString logsql_time_column;
@@ -203,6 +204,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_APPEND_TO_FILE;
 }
 
 }
@@ -220,6 +222,38 @@ namespace
 {
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
+
+/// The console output of the client. If the reader of the output goes away, as `head` does in
+/// `clickhouse-local -q '...' | head -1`, the write fails with `EPIPE` (`SIGPIPE` is blocked).
+/// The buffer remembers that, so the client can stop quietly, like `cat` and other tools do.
+/// It is done here and not in `WriteBufferFromFileDescriptor`, because only the client's own
+/// stdout is special: a broken pipe anywhere else (e.g. a pipe to a child process) is an error.
+class WriteBufferToStdout : public DB::WriteBufferFromFileDescriptor
+{
+public:
+    WriteBufferToStdout(int fd_, std::atomic<bool> & stdout_is_broken_)
+        : DB::WriteBufferFromFileDescriptor(fd_)
+        , stdout_is_broken(stdout_is_broken_)
+    {
+    }
+
+private:
+    std::atomic<bool> & stdout_is_broken;
+
+    void nextImpl() override
+    {
+        try
+        {
+            DB::WriteBufferFromFileDescriptor::nextImpl();
+        }
+        catch (const DB::ErrnoException & e)
+        {
+            if (e.getErrno() == EPIPE)
+                stdout_is_broken = true;
+            throw;
+        }
+    }
+};
 
 /// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
 bool hasStreamingTableExpression(const DB::IAST & ast)
@@ -503,7 +537,7 @@ ClientBase::ClientBase(
     , cmd_settings(std::make_unique<Settings>())
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
-    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
+    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferToStdout>>(out_fd_, stdout_is_broken))
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
@@ -527,12 +561,16 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         max_length = settings[Setting::max_query_size];
 
     const Dialect dialect = settings[Setting::dialect];
+    /// The Trino parser handles every `SET` form itself (including `SET SESSION` and `SET ROLE`),
+    /// and the LogsQL parser has its own `SET` escape that keeps word filters such as `set error`,
+    /// so they do not take the escape.
+    const bool is_set_escape = dialect != Dialect::clickhouse && dialect != Dialect::trino && dialect != Dialect::logsql
+        && isClickHouseJSONSetEscape(
+            pos, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
-    /// except for plain `SET` queries which are still parsed with `ParserQuery` so
-    /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
-    /// without being locked into JSON-only input.
-    if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]))
+    /// A plain `SET` query is an escape hatch from every non-ClickHouse dialect. Parse it
+    /// with `ParserQuery` so users can switch back to another dialect.
+    if (dialect == Dialect::clickhouse_json && !is_set_escape)
     {
         if (!settings[Setting::enable_json_ast_dialect])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -689,17 +727,20 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             throw;
         }
     }
-    else if (dialect == Dialect::kusto)
+    else if (dialect == Dialect::kusto && !is_set_escape)
     {
         /// KQL is lexically a different language, so it does not go through the SQL
         /// tokenizer at all. Any failure is thrown; the interactive path below already
         /// reports a thrown exception the same way it reports a returned message.
+        /// A plain `SET` query is still parsed with `ParserQuery` below, as in every other dialect.
         res = parseKQLQuery(
             pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
     else
     {
-        if (dialect == Dialect::prql)
+        if (is_set_escape)
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        else if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
@@ -709,7 +750,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
                 settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
-                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
+                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::enable_logsql_dialect], settings[Setting::max_parser_depth],
                 settings[Setting::max_query_size]);
         else if (dialect == Dialect::trino)
             parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::enable_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -1039,6 +1080,7 @@ try
         /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
         /// format, it must not be overridden by the `default_format` setting fallback below.
         bool outfile_format_from_extension = false;
+        String non_empty_appended_file;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -1082,8 +1124,12 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
+                auto file_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+                if ((flags & O_APPEND) && file_buf->size() > 0)
+                    non_empty_appended_file = out_file;
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
+                    std::move(file_buf),
                     compression_method,
                     static_cast<int>(compression_level),
                     /*zstd_window_log=*/ 0,
@@ -1094,7 +1140,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                        std::make_shared<WriteBufferToStdout>(stdout_fd, stdout_is_broken)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -1180,6 +1226,14 @@ try
             format_settings.pretty.squash_max_wait_ms = 0;
         }
 
+        if (!non_empty_appended_file.empty()
+            && !FormatFactory::instance().checkIfFormatSupportAppend(current_format, client_context, format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to file {} because the {} format doesn't support appends. "
+                "Use TRUNCATE instead of APPEND, or write into a new file",
+                non_empty_appended_file, current_format);
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -1189,6 +1243,10 @@ try
         else
             output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+
+        /// The file already starts with the prefix of the format, e.g. the header of `CSVWithNames`.
+        if (!non_empty_appended_file.empty())
+            output_format->doNotWritePrefix();
 
         output_format->setAutoFlush();
 
@@ -1631,10 +1689,36 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
-void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
+void ClientBase::pinOutboundDialect(const String & outbound_query)
 {
-    if (!current_query_parsed_as_json_dialect)
+    if (current_query_is_set_escape && !current_query_parsed_as_json_dialect)
+    {
+        /// The client parsed this SQL `SET` escape with `ParserQuery` while the session used
+        /// another dialect. Make the server parse the same SQL before the setting takes effect.
+        client_context->setSetting("dialect", String("clickhouse"));
         return;
+    }
+
+    if (!current_query_parsed_as_json_dialect)
+    {
+        /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
+        /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`,
+        /// `SETTINGS enable_logsql_dialect = ...`) has already
+        /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
+        /// not change how this very query text is parsed on the other side - it only applies to the
+        /// statements that follow it. Only a value the query itself changed is restored (the others are
+        /// empty, see `processParsedSingleQuery`), so settings the user never touched are not forced onto
+        /// the server: a `dialect` the server pushed from the user's profile stays as the server set it.
+        if (current_query_parse_dialect)
+            client_context->setSetting("dialect", *current_query_parse_dialect);
+        if (current_query_parse_json_ast_gate)
+            client_context->setSetting("enable_json_ast_dialect", *current_query_parse_json_ast_gate);
+        if (current_query_parse_trino_gate)
+            client_context->setSetting("enable_trino_dialect", *current_query_parse_trino_gate);
+        if (current_query_parse_logsql_gate)
+            client_context->setSetting("enable_logsql_dialect", *current_query_parse_logsql_gate);
+        return;
+    }
 
     /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
     /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
@@ -1819,7 +1903,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     /// before sending so the server parses it the same way the client did. Must run before
     /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
     /// included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    pinOutboundDialect(query);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
@@ -1969,6 +2053,25 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
                         cancelQuery();
                     }
+                }
+            }
+
+            /// The output format may write in a background thread (squashing in `Pretty` formats). If that
+            /// write has failed (for example, the output pipe is broken), stop now: the query may have
+            /// produced all of its output already, and the next write would happen only at its end.
+            /// Handle it like any other local format error: cancel the query on the server and keep
+            /// receiving packets until the end, otherwise the query keeps running on the server.
+            if (output_format && !local_format_error)
+            {
+                try
+                {
+                    output_format->checkBackgroundError();
+                }
+                catch (...)
+                {
+                    local_format_error = std::make_exception_ptr(
+                        LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
+                    sendCancel(local_format_error);
                 }
             }
 
@@ -2268,10 +2371,28 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    if (need_render_progress_table && tty_buf)
+    auto handle_exception = [this]
     {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    };
+
+    try
+    {
+        if (need_render_progress_table && tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.clearTableOutput(*tty_buf, lock);
+        }
+    }
+    catch (...)
+    {
+        /// The terminal may be gone, e.g. a closed session of the client embedded into the server.
+        handle_exception();
     }
 
     /// Order is important: format, compression, file
@@ -2285,12 +2406,7 @@ void ClientBase::resetOutput()
     {
         /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
         /// as well as cleaning other output related setup
-        if (!have_error)
-        {
-            client_exception
-                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
-            have_error = true;
-        }
+        handle_exception();
     }
 
     output_format.reset();
@@ -2369,9 +2485,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onTimezoneUpdate(packet.server_timezone);
                 break;
 
+            /// A subquery executed while the server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are informational here.
+            case Protocol::Server::Progress:
+                onProgress(packet.progress);
+                break;
+
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
+                    "Progress or ProfileEvents, got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -2453,7 +2580,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     /// before sending so the server parses it the same way the client did.
     /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
     /// `dialect` is included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    pinOutboundDialect(query);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send
@@ -2493,7 +2620,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQueryForInsert();
+            receiveEndOfQueryForInsert(parsed_query);
         }
     }
     catch (...)
@@ -2504,7 +2631,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         try
         {
             if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert();
+                receiveEndOfQueryForInsert(parsed_query);
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2810,14 +2937,20 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
 }
 
 
-/// Process Log packets, used when inserting data by blocks
+/// Process Log packets, used when inserting data by blocks.
+/// Also process the result of INSERT ... RETURNING, which is sent by the server while it receives the data.
 void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
     while (packet_type && (*packet_type == Protocol::Server::Log
             || *packet_type == Protocol::Server::ProfileEvents
-            || *packet_type == Protocol::Server::TimezoneUpdate))
+            || *packet_type == Protocol::Server::TimezoneUpdate
+            || *packet_type == Protocol::Server::Data
+            || *packet_type == Protocol::Server::Totals
+            || *packet_type == Protocol::Server::Extremes
+            || *packet_type == Protocol::Server::ProfileInfo
+            || *packet_type == Protocol::Server::Progress))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -2825,8 +2958,8 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 }
 
 
-/// Process Log packets, exit when receive Exception or EndOfStream
-bool ClientBase::receiveEndOfQueryForInsert()
+/// Process Log packets and the result of INSERT ... RETURNING, exit when receive Exception or EndOfStream
+bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 {
     while (true)
     {
@@ -2834,6 +2967,22 @@ bool ClientBase::receiveEndOfQueryForInsert()
 
         switch (packet.type)
         {
+            case Protocol::Server::Data:
+                onData(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::Totals:
+                onTotals(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::Extremes:
+                onExtremes(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::ProfileInfo:
+                onProfileInfo(packet.profile_info);
+                break;
+
             case Protocol::Server::EndOfStream:
                 onEndOfStream();
                 return true;
@@ -2863,7 +3012,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, Totals, Extremes or ProfileInfo. Got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -2985,14 +3134,35 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
-        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
+        /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
-        /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
+        /// transport dialect is pinned to match the outbound text in `pinOutboundDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+        current_query_is_set_escape = !current_query_parsed_as_json_dialect
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::trino
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::logsql
+            && parsed_query->as<ASTSetQuery>();
+        const Field parse_dialect = client_context->getSettingsRef().get("dialect");
+        const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
+        const Field parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
+        const Field parse_logsql_gate = client_context->getSettingsRef().get("enable_logsql_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
-        connection->setFormatSettings(getFormatSettings(client_context));
+        /// Remember only the values this query's own `SETTINGS` clause changed: those are pinned back for
+        /// the outbound query. A setting the query left alone is not pinned, so what
+        /// `applySettingsFromServerIfNeeded` applies below (e.g. the user's profile `dialect`) is sent as is.
+        const auto changed_by_query = [&](const String & name, const Field & parse_value) -> std::optional<Field>
+        {
+            if (client_context->getSettingsRef().get(name) == parse_value)
+                return std::nullopt;
+            return parse_value;
+        };
+        current_query_parse_dialect = changed_by_query("dialect", parse_dialect);
+        current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
+        current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
+        current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3003,6 +3173,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
@@ -3809,6 +3980,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
+                if (have_error && stdout_is_broken)
+                    return false;
                 if (have_error && (buzz_house || !ignore_error))
                     return buzz_house || is_interactive;
 
@@ -3919,6 +4092,49 @@ bool ClientBase::processQueryText(const String & text)
         }
     }
 
+    /// Client-side `/dialect <name>` command (also `/lang`, `/language`) - equivalent to `SET dialect = '<name>'`.
+    /// A `SET` query is not always expressible in the current dialect: after `SET dialect = 'kusto'` the input
+    /// is parsed with the Kusto parser, so a regular `SET dialect = 'clickhouse'` cannot be used to switch back.
+    /// Without an argument, prints the current dialect.
+    /// Interactive only: a noninteractive script gets the whole input parsed as SQL, and the dialect
+    /// for it is selected with the `--dialect` option or a `SET dialect = ...` statement.
+    /// The commands are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
+    if (is_interactive)
+    {
+        for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
+        {
+            std::optional<String> dialect_name;
+            if (boost::iequals(trimmed_input, prefix))
+                dialect_name.emplace();
+            else if (trimmed_input.size() > prefix.size() && boost::istarts_with(trimmed_input, prefix)
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+                dialect_name = trim(trimmed_input.substr(prefix.size()), [](char c) { return isWhitespaceASCII(c); });
+
+            if (!dialect_name)
+                continue;
+
+            if (dialect_name->empty())
+            {
+                output_stream << "Current dialect: " << client_context->getSettingsRef()[Setting::dialect].toString() << std::endl;
+                return true;
+            }
+
+            /// Allow `/dialect 'kusto'` in addition to `/dialect kusto`.
+            if (dialect_name->size() >= 2 && (dialect_name->front() == '\'' || dialect_name->front() == '"')
+                && dialect_name->back() == dialect_name->front())
+                dialect_name = dialect_name->substr(1, dialect_name->size() - 2);
+
+            /// Execute the equivalent SQL through the normal query path. Besides validating the
+            /// value, this lets the server enforce query-setting constraints. The normal `SET`
+            /// bookkeeping persists the setting only after a successful exchange, so a rejected
+            /// command leaves the prompt and the parser on the previous dialect, and the user
+            /// retries at the next prompt.
+            processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name));
+            return true;
+        }
+    }
+
 
 #if USE_CLIENT_AI
     // Handle "?? <free_text>" command
@@ -3970,9 +4186,13 @@ bool ClientBase::processQueryText(const String & text)
     /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
     /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
     /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    /// In noninteractive `clickhouse-local` the interactive-only commands (`/dialect`, ...) are rejected
+    /// with an explicit message and are not suggested for a misspelled name. Like the commands themselves,
+    /// this applies only when the whole input is the command: inside a multi-statement script the text
+    /// goes to `executeMultiQuery` and is parsed in the current dialect.
     if (is_interactive || supportsLocalMetaCommands())
     {
-        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input))
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input, is_interactive))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
     }
 
@@ -3988,7 +4208,43 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::getPrompt() const
 {
-    return prompt;
+    String pattern = prompt;
+
+    /// A non-default dialect is shown in parentheses, after the server display name if the prompt
+    /// contains it, e.g. `clickhouse-cloud (polyglot) :) `.
+    String dialect_indicator;
+    if (client_context)
+    {
+        if (const Dialect dialect = client_context->getSettingsRef()[Setting::dialect]; dialect != Dialect::clickhouse)
+            dialect_indicator = "(" + client_context->getSettingsRef()[Setting::dialect].toString() + ")";
+    }
+
+    const bool has_display_name = pattern.contains("{display_name}");
+
+    String display_name = server_display_name;
+    if (has_display_name && !dialect_indicator.empty())
+    {
+        if (!display_name.empty())
+            display_name += ' ';
+        display_name += dialect_indicator;
+    }
+
+    boost::replace_all(pattern, "{display_name}", display_name);
+
+    /// A custom prompt does not have to contain the display name (e.g. `--prompt '{user}@{host}'`),
+    /// but the active dialect still has to be visible - append it before the trailing smiley, if any.
+    if (!has_display_name && !dialect_indicator.empty())
+    {
+        static constexpr std::string_view smiley = ":) ";
+        if (pattern.ends_with(smiley))
+            pattern = pattern.substr(0, pattern.size() - smiley.size()) + dialect_indicator + " " + String(smiley);
+        else if (pattern.empty())
+            pattern = dialect_indicator;
+        else
+            pattern += " " + dialect_indicator;
+    }
+
+    return appendSmileyIfNeeded(pattern);
 }
 
 
@@ -5063,6 +5319,13 @@ void ClientBase::runInteractive()
                 lr->setInitialText(next_query_to_prepopulate);
                 next_query_to_prepopulate.clear();
             }
+
+            if (on_waiting_for_query_input)
+                on_waiting_for_query_input(true);
+            SCOPE_EXIT_SAFE({
+                if (on_waiting_for_query_input)
+                    on_waiting_for_query_input(false);
+            });
 
             input = lr->readLine(getPrompt(), ":-] ");
         }

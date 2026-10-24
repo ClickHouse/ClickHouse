@@ -100,7 +100,6 @@ INSERT INTO customer SELECT * FROM generateRandom() LIMIT 1;
 INSERT INTO orders SELECT * FROM generateRandom() LIMIT 1;
 INSERT INTO lineitem SELECT * FROM generateRandom() LIMIT 1;
 
-set enable_analyzer = 1;
 set allow_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 SET optimize_move_to_prewhere = 1;

@@ -7,14 +7,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 
-#include <Functions/FunctionFactory.h>
-
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
@@ -146,16 +145,6 @@ private:
     std::unordered_set<String> names_to_collect;
 };
 
-QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
-{
-    auto function_node = std::make_shared<FunctionNode>(name);
-
-    auto function = FunctionFactory::instance().get(name, context);
-    function_node->getArguments().getNodes() = std::move(arguments);
-    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
-    return function_node;
-}
-
 FunctionNodePtr createResolvedAggregateFunction(
     const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
 {
@@ -175,11 +164,6 @@ FunctionNodePtr createResolvedAggregateFunction(
     function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
-}
-
-QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
-{
-    return createResolvedFunction(context, "tupleElement", {argument, std::make_shared<ConstantNode>(index)});
 }
 
 QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)

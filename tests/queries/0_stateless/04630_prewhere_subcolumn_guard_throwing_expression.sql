@@ -1,6 +1,5 @@
 -- Tags: no-random-merge-tree-settings
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;

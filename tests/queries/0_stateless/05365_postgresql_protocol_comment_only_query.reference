@@ -1,0 +1,13 @@
+line comment: I Z
+block comment: I Z
+nested block comment: I Z
+empty statements and comments: I Z
+comment mentioning the catalog: I Z
+semicolon: I Z
+empty string: I Z
+whitespace: I Z
+comment before a statement: T D C Z
+comment after a statement: T D C Z
+unterminated block comment: E Z
+unterminated nested block comment: E Z
+connection still usable: T D C Z

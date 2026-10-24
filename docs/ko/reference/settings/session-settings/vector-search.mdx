@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="vector_search_filter_strategy">
-  ## vector_search_filter_strategy
-</div>
+## vector_search_filter_strategy {#vector_search_filter_strategy}
 
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
 
@@ -27,21 +25,17 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * &#39;postfilter&#39; - 벡터 유사도 인덱스를 사용해 최근접 이웃을 식별한 다음, 다른 필터를 적용합니다.
 * &#39;prefilter&#39; - 다른 필터를 먼저 평가한 다음, 브루트포스 검색을 수행해 이웃을 식별합니다.
 
-<div id="vector_search_index_fetch_multiplier">
-  ## vector_search_index_fetch_multiplier
-</div>
+## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier}
 
 **별칭**: `vector_search_postfilter_multiplier`
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "설정 'vector_search_postfilter_multiplier'의 별칭"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "설정 'vector_search_postfilter_multiplier'의 별칭"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "새 설정입니다. 도입 당시에는 설정 이름이 `vector_search_postfilter_multiplier`였으며, 현재 이 이름은 이 설정의 별칭입니다."}]}]} />
 
 벡터 유사도 인덱스에서 가져올 최근접 이웃 수에 이 값을 곱합니다. 다른 프레디케이트와 함께 사용하는 포스트필터링에만 적용되며, 설정 `vector_search_with_rescoring = 1`인 경우에도 적용됩니다. 유효 범위는 [1.0, 1000.0]입니다. 이 범위를 벗어나는 값은 거부됩니다.
 
-<div id="vector_search_use_quantized_codes">
-  ## vector_search_use_quantized_codes
-</div>
+## vector_search_use_quantized_codes {#vector_search_use_quantized_codes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -52,9 +46,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 1. 양자화된 벡터를 스캔하고 필터링합니다(이 단계에서는 `k * vector_search_index_fetch_multiplier`개의 결과를 생성합니다).
 2. 찾은 벡터를 원본 전체 정밀도 벡터와 다시 대조해 점수를 재계산합니다.
 
-<div id="vector_search_with_rescoring">
-  ## vector_search_with_rescoring
-</div>
+## vector_search_with_rescoring {#vector_search_with_rescoring}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

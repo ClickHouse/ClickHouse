@@ -10,6 +10,9 @@ namespace DB
 {
 
 struct Settings;
+class ColumnsDescription;
+class ColumnMapper;
+struct FormatSettings;
 
 /// Settings that change how a function inside a condition evaluates without leaving any trace in the
 /// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family, `locate`, `least`/`greatest` and a few more
@@ -99,6 +102,29 @@ public:
     /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
     /// either, so the mapping is unambiguous.
     static String makeFilePartName(const String & path, std::string_view version_token);
+
+    /// The `table_id` for the entries of a file-backed table. A `part_name` from `makeFilePartName` that
+    /// identifies the data by itself - an absolute local path with its version token, or the full
+    /// location of a remote object, including the storage it is in, with its ETag (or of an immutable
+    /// data lake file) - needs no table to be unambiguous. So a table without a UUID (the one behind a
+    /// table function like `file` or `s3`, or a table in a database without UUIDs) keeps such entries
+    /// without a table, while a `Nil` `table_id` disables the cache (see `write` and `read`).
+    /// The `part_name` identifies only the bytes of the file, not how they are read: the same file can be
+    /// read through another format, compression or structure (e.g. a column missing in the file with
+    /// another default), and a verdict of one such reader is wrong for another. A table fixes all of them,
+    /// so a table without a UUID gets an id derived from them instead. A data lake also maps its columns to
+    /// the fields of a file by field ids (`column_mapper`, may be null), and the same file and columns can
+    /// map to different fields (e.g. a column dropped and added again under the same name, read at two
+    /// snapshots), so the mapping is part of the id too. A table can also fix the format settings of its
+    /// reader at `CREATE` (`format_settings`, null when the reader takes them from the query context, which
+    /// the condition hash covers already), and those that change the verdict are part of the id as well.
+    static UUID getTableIdForFileEntries(
+        const UUID & table_uuid,
+        std::string_view format,
+        std::string_view compression_method,
+        const ColumnsDescription & columns,
+        const ColumnMapper * column_mapper,
+        const FormatSettings * format_settings);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
