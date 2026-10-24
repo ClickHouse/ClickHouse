@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- High workfactor makes each bcrypt verification slow enough that concurrent distinct-password
+         attempts genuinely overlap, so the concurrency cap is exercised deterministically. -->
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+    <!-- Cap concurrent bcrypt verifications at 1 to make the throttle observable with a small flood. -->
+    <max_concurrent_bcrypt_authentications>1</max_concurrent_bcrypt_authentications>
+</clickhouse>
