@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-parallel-replicas
 # Tag no-fasttest: needs Parquet and S3
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache, which a parallel
 # test can clear at any moment (see 04498_query_condition_cache_local_files.sh).
+# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 # Every row group below has a row matching `k % 100000 < 100` (each one spans at least 100000 rows, and the last row
 # matches), so no row group can be skipped; a repeated query must still skip the 8192-row blocks without a match.
