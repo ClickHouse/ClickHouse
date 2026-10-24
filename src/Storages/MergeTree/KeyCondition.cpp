@@ -2376,6 +2376,11 @@ static bool floatValuesMissKeyValues(
     if (!anyInTypeTree(*key_expression_input_type, [](const IDataType & input_type) { return isColumnedAsDecimal(input_type); }))
         return false;
 
+    /// Only a float, or a `Dynamic`, `Variant` or `JSON` value, can be a float, so the values of another type are not looked
+    /// at: index analysis would read a large `IN` set of `DateTime64` values over a `DateTime64` key value by value.
+    if (!anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node) || isDynamic(node) || isVariant(node) || isObject(node); }))
+        return false;
+
     column = column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
     type = removeLowCardinality(type);
     /// A NULL value holds the default value of the nested column, which converts exactly.
