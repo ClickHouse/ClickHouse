@@ -313,7 +313,9 @@ TEST(ConvertDictionaryAST, SourceCollectionParameterRejected)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    EXPECT_THROW(getDictionaryConfigurationFromAST(*create, getContext().context), DB::Exception);
+    EXPECT_THROW(getDictionaryConfigurationFromAST(*create, getContext().context, "", /*is_fresh_definition=*/true), DB::Exception);
+    /// A replayed definition is not refused.
+    EXPECT_NO_THROW(getDictionaryConfigurationFromAST(*create, getContext().context));
 }
 
 
