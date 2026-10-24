@@ -3855,24 +3855,6 @@ bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const std:
     return false;
 }
 
-ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPtrs & nodes)
-{
-    ColumnsWithTypeAndName arguments;
-    arguments.reserve(nodes.size());
-
-    for (const auto * child : nodes)
-    {
-        ColumnWithTypeAndName argument;
-        argument.column = child->column;
-        argument.type = child->result_type;
-        argument.name = child->result_name;
-
-        arguments.emplace_back(std::move(argument));
-    }
-
-    return arguments;
-}
-
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
@@ -4508,36 +4490,69 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
+        FunctionOverloadResolverPtr func_builder_and
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+        const Node * rejected = nullptr;
+        bool rejected_is_surviving_and = false;
         if (new_children.size() == 1)
+            rejected = new_children.front();
+        else
         {
-            /// Rejected set has only one predicate.
-            /// Fix the result type and add an alias.
-            auto & child = new_children.front();
+            rejected = &addFunction(func_builder_and, new_children, {});
+            rejected_is_surviving_and = true;
+        }
 
-            /// Preserve the original type if the column is needed in the result.
-            if (!removes_filter)
-                child = &addBooleanCondition(*child, predicate->result_type, nullptr);
+        /// A surviving `and` already yields 0 or 1, so only a declared type it does not already
+        /// carry needs restoring; by name, because `Bool` equals `UInt8` but prints `true`.
+        const bool needs_type_restoration = !rejected_is_surviving_and
+            || rejected->result_type->getName() != predicate->result_type->getName();
+        DataTypePtr declared_type;
+        if (!removes_filter && needs_type_restoration)
+        {
+            if (rejected_is_surviving_and && predicate->result_type->isNullable() && !rejected->result_type->isNullable())
+            {
+                /// A carrier is picked by name, because that makes the choice stable for unordered rejected conjuncts.
+                size_t carrier = 0;
+                for (size_t i = 1; i < new_children.size(); ++i)
+                    if (new_children[i]->result_name > new_children[carrier]->result_name)
+                        carrier = i;
 
-            Node node;
-            node.type = ActionType::ALIAS;
+                NodeRawConstPtrs retyped_children = new_children;
+                retyped_children[carrier] = &addBooleanCondition(*retyped_children[carrier], predicate->result_type, nullptr);
+                rejected = &addFunction(func_builder_and, std::move(retyped_children), {});
+            }
+
+            /// `and` reports `Bool` only for an argument that is exactly `Bool`, not `Nullable(Bool)`,
+            /// but `Bool` equals `UInt8`, so the surviving `and` can declare that name itself.
+            if (rejected_is_surviving_and && rejected->result_type->equals(*predicate->result_type))
+                declared_type = predicate->result_type;
+            else
+            {
+                const auto * converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
+                rejected_is_surviving_and &= converted == rejected;
+                rejected = converted;
+            }
+        }
+
+        Node node;
+        if (rejected_is_surviving_and)
+        {
+            /// `getConjunctionNodes` descends only through a node that is itself a function `and`, so an
+            /// alias here would hide the whole remainder from a later split of this filter.
+            node = *rejected;
             node.result_name = predicate->result_name;
-            node.result_type = predicate->result_type;
-            node.children.swap(new_children);
-            *predicate = std::move(node);
+            if (declared_type)
+                node.result_type = declared_type;
         }
         else
         {
-            /// Predicate is function AND, which still have more then one argument
-            /// or it has one argument of the wrong type.
-            /// Update children and rebuild it.
-            predicate->children.swap(new_children);
-            auto arguments = prepareFunctionArguments(predicate->children);
-
-            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-
-            predicate->function_base = func_builder_and->build(arguments);
-            predicate->function = predicate->function_base->prepare(arguments);
+            node.type = ActionType::ALIAS;
+            node.result_name = predicate->result_name;
+            node.result_type = rejected->result_type;
+            node.children = {rejected};
         }
+        *predicate = std::move(node);
     }
 
     std::unordered_set<const Node *> used_inputs;
