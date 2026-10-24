@@ -754,6 +754,11 @@ public:
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    /// The same as `isShortCircuit`, but the settings can depend on the argument types.
+    virtual bool isShortCircuitForArgumentTypes(ShortCircuitSettings & settings, const DataTypes & arguments) const
+    {
+        return isShortCircuit(settings, arguments.size());
+    }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /** True if the function might throw an exception while it is executed, for these argument types.
