@@ -1,5 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
+#include <optional>
 #include <string_view>
 
 #include <IO/S3/Credentials.h>
@@ -108,26 +109,34 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
     if (tcp_port.empty())
         throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No tcp_port or tcp_port_secure in config file");
 
-    if (auto coordination_key = std::string{config_name} + ".coordination_settings";
-        config.has(coordination_key))
+    /// Co-located client: mirror some of the server's own coordination settings. Overrides for this
+    /// server from `per_server_coordination_settings.server-<id>` take precedence over
+    /// `coordination_settings` (see `CoordinationSettings::loadFromConfig`).
+    std::string per_server_elem;
+    if (auto server_id_key = std::string{config_name} + ".server_id"; config.has(server_id_key))
+        per_server_elem = std::string{config_name} + ".per_server_coordination_settings.server-" + config.getString(server_id_key);
+
+    const auto find_setting_key = [&](const std::string & name) -> std::optional<std::string>
     {
-        if (auto operation_timeout_key = coordination_key + ".operation_timeout_ms";
-            config.has(operation_timeout_key))
-            operation_timeout_ms = config.getInt(operation_timeout_key);
+        if (!per_server_elem.empty())
+            if (auto key = per_server_elem + "." + name; config.has(key))
+                return key;
+        if (auto key = std::string{config_name} + ".coordination_settings." + name; config.has(key))
+            return key;
+        return std::nullopt;
+    };
 
-        if (auto session_timeout_key = coordination_key + ".session_timeout_ms";
-            config.has(session_timeout_key))
-            session_timeout_ms = config.getInt(session_timeout_key);
+    if (auto key = find_setting_key("operation_timeout_ms"))
+        operation_timeout_ms = config.getInt(*key);
 
-        if (auto use_xid_64_key = coordination_key + ".use_xid_64";
-            config.has(use_xid_64_key))
-            use_xid_64 = config.getBool(use_xid_64_key);
+    if (auto key = find_setting_key("session_timeout_ms"))
+        session_timeout_ms = config.getInt(*key);
 
-        /// Co-located client: mirror the server's own limit from `coordination_settings`.
-        if (auto max_request_size_key = coordination_key + ".max_request_size";
-            config.has(max_request_size_key))
-            max_request_size = config.getUInt64(max_request_size_key);
-    }
+    if (auto key = find_setting_key("use_xid_64"))
+        use_xid_64 = config.getBool(*key);
+
+    if (auto key = find_setting_key("max_request_size"))
+        max_request_size = config.getUInt64(*key);
 
     Poco::Util::AbstractConfiguration::Keys keys;
     std::string raft_configuration_key = std::string{config_name} + ".raft_configuration";
