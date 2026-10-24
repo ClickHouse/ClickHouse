@@ -1,11 +1,11 @@
 perimeterSpherical with readWKTPolygon
 0.069811
 areaSpherical with readWKTPolygon
--0.000305
+0.000305
 perimeterCartesian with readWKTPolygon
 4
 areaCartesian with readWKTPolygon
--1
+1
 perimeterSpherical with readWKTRing
 0.069811
 perimeterSpherical with readWKTPoint

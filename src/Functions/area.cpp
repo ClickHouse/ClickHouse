@@ -6,6 +6,8 @@
 #include <boost/geometry/algorithms/perimeter.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -29,7 +31,10 @@ struct AreaCalculator
 
     Float64 operator()(const Polygon<Point> & object)
     {
-        return static_cast<Float64>(boost::geometry::area(object));
+        Float64 area = (*this)(object.outer());
+        for (const auto & hole : object.inners())
+            area -= (*this)(hole);
+        return area;
     }
 
     Float64 operator()(const MultiLineString<Point> & object)
@@ -39,12 +44,16 @@ struct AreaCalculator
 
     Float64 operator()(const MultiPolygon<Point> & object)
     {
-        return static_cast<Float64>(boost::geometry::area(object));
+        /// Sum polygon areas separately so components with opposite winding do not cancel.
+        Float64 area = 0;
+        for (const auto & polygon : object)
+            area += (*this)(polygon);
+        return area;
     }
 
     Float64 operator()(const Ring<Point> & object)
     {
-        return static_cast<Float64>(boost::geometry::area(object));
+        return std::abs(static_cast<Float64>(boost::geometry::area(object)));
     }
 };
 
