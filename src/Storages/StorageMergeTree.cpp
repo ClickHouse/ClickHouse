@@ -1163,10 +1163,24 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
         if (storage.currently_merging_mutating_parts.contains(part))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
-    storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
+    try
+    {
+        storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
 
-    if (is_mutation)
-        storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
+        if (is_mutation)
+            storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
+        else if (!future_part->isResultPatch())
+            storage.currently_merging_part_future_versions[future_part->parts[0]] = future_part->part_info.getDataVersion();
+    }
+    catch (...)
+    {
+        /// The destructor does not run for a constructor that throws.
+        for (const auto & part : future_part->parts)
+            storage.currently_merging_mutating_parts.erase(part);
+        storage.currently_mutating_part_future_versions.erase(future_part->parts[0]);
+        storage.currently_merging_part_future_versions.erase(future_part->parts[0]);
+        throw;
+    }
 }
 
 
@@ -1181,6 +1195,7 @@ void CurrentlyMergingPartsTagger::finalize()
             std::terminate();
         storage.currently_merging_mutating_parts.erase(part);
         storage.currently_mutating_part_future_versions.erase(part);
+        storage.currently_merging_part_future_versions.erase(part);
     }
 
     storage.currently_processing_in_background_condition.notify_all();

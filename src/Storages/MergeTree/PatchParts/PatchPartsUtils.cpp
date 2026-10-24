@@ -585,7 +585,7 @@ PatchInfosByPartition getPatchPartsByPartition(const std::vector<MergeTreePartIn
     return res;
 }
 
-static void sortDataVersions(DataVersionsByPartition & data_versions)
+void sortDataVersions(DataVersionsByPartition & data_versions)
 {
     for (auto & [_, versions] : data_versions)
     {
