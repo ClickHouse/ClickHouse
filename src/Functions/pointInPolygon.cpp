@@ -262,8 +262,9 @@ public:
         /// would otherwise short-circuit to this loose signature, letting a malformed polygon
         /// argument such as an array of one-element tuples reach `executeImpl` and abort while
         /// reading the missing coordinate). The point tuple is documented as
-        /// `Tuple(NativeNumber, NativeNumber)` here to match the `isNativeNumber` check the
-        /// legacy `getReturnTypeImpl` performs.
+        /// `Tuple(NativeNumber, NativeNumber)` describes the non-nullable case.
+        /// Nullable point coordinates and the conditional Nullable(UInt8) result type
+        /// are handled by getReturnTypeImpl and cannot be described by this signature.
         return "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
     }
 
@@ -421,6 +422,10 @@ public:
         const IColumn & point_y = nullable_y ? nullable_y->getNestedColumn() : *tuple_columns[1];
 
         bool point_is_const = const_tuple_col != nullptr;
+        auto point_is_null = [&](size_t row)
+        {
+            return (nullable_x && nullable_x->isNullAt(row)) || (nullable_y && nullable_y->isNullAt(row));
+        };
         auto wrap_result = [&](ColumnPtr values) -> ColumnPtr
         {
             if (!nullable_x && !nullable_y)
@@ -429,19 +434,14 @@ public:
             auto null_map = ColumnUInt8::create(input_rows_count);
             auto & null_map_data = null_map->getData();
             for (size_t row = 0; row < input_rows_count; ++row)
-            {
-                const size_t point_row = point_is_const ? 0 : row;
-                null_map_data[row] = static_cast<UInt8>(
-                    (nullable_x && nullable_x->getNullMapData()[point_row])
-                    || (nullable_y && nullable_y->getNullMapData()[point_row]));
-            }
+                null_map_data[row] = static_cast<UInt8>(point_is_null(point_is_const ? 0 : row));
             return ColumnNullable::create(values->convertToFullColumnIfConst(), std::move(null_map));
         };
-        auto make_const_result = [&](bool is_in) -> ColumnPtr
+        auto make_const_result = [&](const auto & impl) -> ColumnPtr
         {
-            if (!nullable_x && !nullable_y)
-                return result_type->createColumnConst(input_rows_count, is_in);
-            return wrap_result(ColumnUInt8::create(input_rows_count, static_cast<UInt8>(is_in)));
+            if (point_is_null(0))
+                return result_type->createColumnConst(input_rows_count, Null());
+            return result_type->createColumnConst(input_rows_count, impl.contains(point_x.getFloat64(0), point_y.getFloat64(0)));
         };
         bool poly_is_const = true;
 
@@ -498,8 +498,7 @@ public:
 
                 if (point_is_const)
                 {
-                    bool is_in = impl.contains(point_x.getFloat64(0), point_y.getFloat64(0));
-                    return make_const_result(is_in);
+                    return make_const_result(impl);
                 }
 
                 return wrap_result(pointInPolygon(point_x, point_y, impl));
@@ -529,8 +528,7 @@ public:
 
                 if (point_is_const)
                 {
-                    bool is_in = impl.contains(point_x.getFloat64(0), point_y.getFloat64(0));
-                    return make_const_result(is_in);
+                    return make_const_result(impl);
                 }
 
                 return wrap_result(pointInPolygon(point_x, point_y, impl));
@@ -565,6 +563,11 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t point_index = point_is_const ? 0 : i;
+                if (point_is_null(point_index))
+                {
+                    data[i] = 0;
+                    continue;
+                }
                 data[i] = isInsideMultiPolygon(
                     point_x.getFloat64(point_index), point_y.getFloat64(point_index), *multi_polygon_column_float64, i);
             }
@@ -585,6 +588,11 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t point_index = point_is_const ? 0 : i;
+                if (point_is_null(point_index))
+                {
+                    data[i] = 0;
+                    continue;
+                }
                 data[i] = isInsidePolygonWithHoles(
                     point_x.getFloat64(point_index), point_y.getFloat64(point_index), *polygon_column_float64, i);
             }
@@ -599,6 +607,11 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t point_index = point_is_const ? 0 : i;
+                if (point_is_null(point_index))
+                {
+                    data[i] = 0;
+                    continue;
+                }
                 data[i] = isInsidePolygonWithoutHoles(
                     point_x.getFloat64(point_index), point_y.getFloat64(point_index), *polygon_column_float64, i);
             }
