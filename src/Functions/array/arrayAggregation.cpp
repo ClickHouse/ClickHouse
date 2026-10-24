@@ -94,6 +94,71 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 template <typename ArrayElement, AggregateOperation operation>
 using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, operation>::Result;
 
+/// Whether the big integer fits in the lower half of its bits as a signed number, so that the product
+/// of two such numbers cannot overflow. It looks at the 64-bit items, because comparisons of big integers are slow.
+template <typename T>
+static bool fitsHalfWidth(const T & x)
+{
+    using Impl = typename T::_impl;
+    constexpr unsigned half = Impl::item_count / 2;
+    const UInt64 extension = static_cast<UInt64>(static_cast<Int64>(x.items[Impl::little(half - 1)]) >> 63);
+    if (!is_signed_v<T> && extension != 0)
+        return false;
+    for (unsigned i = half; i < Impl::item_count; ++i)
+        if (x.items[Impl::little(i)] != extension)
+            return false;
+    return true;
+}
+
+/// `common::mulOverflow` does not detect overflow for big integers, so for them it is detected by dividing back.
+template <typename T>
+static bool productOverflows(T x, T y, T & res)
+{
+    if constexpr (is_big_int_v<T>)
+    {
+        res = common::mulIgnoreOverflow(x, y);
+        /// The division is slow, and it is not needed for small factors.
+        if (fitsHalfWidth(x) && fitsHalfWidth(y))
+            return false;
+        if constexpr (is_signed_v<T>)
+        {
+            if (x == -1 && y == std::numeric_limits<T>::min())
+                return true;
+        }
+        return x != 0 && res / x != y;
+    }
+    else
+    {
+        return common::mulOverflow(x, y, res);
+    }
+}
+
+/// The product of integers is exact while it fits `T`, and continues in `Float64` once it does not,
+/// because the result of `arrayProduct` is `Float64` anyway.
+template <typename T, typename GetElement>
+static Float64 integerProduct(size_t size, GetElement && get_element)
+{
+    T product = get_element(0);
+    size_t i = 1;
+    for (T res{}; i < size; ++i)
+    {
+        if (productOverflows(product, get_element(i), res))
+            break;
+        product = res;
+    }
+
+    Float64 inexact_product = static_cast<Float64>(product);
+    for (; i < size; ++i)
+    {
+        const T element = get_element(i);
+        /// The product is exactly zero, while in `Float64` it could be `-0` or, after infinity, NaN.
+        if (element == 0)
+            return 0;
+        inexact_product *= static_cast<Float64>(element);
+    }
+    return inexact_product;
+}
+
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
@@ -404,7 +469,7 @@ struct ArrayAggregateImpl
                         {
                             T product_val = product.value;
 
-                            if (common::mulOverflow(x_val, product_val, product.value))
+                            if (productOverflows(x_val, product_val, product.value))
                                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                         }
 
@@ -415,12 +480,16 @@ struct ArrayAggregateImpl
 
                         res[i] = DecimalUtils::convertTo<ResultType>(product, static_cast<UInt32>(result_scale));
                     }
-                    else
+                    else if constexpr (is_floating_point<AggregationType>)
                     {
                         for (size_t array_index = 1; array_index < array_size; ++array_index)
                             product = product * x;
 
                         res[i] = static_cast<ResultType>(product);
+                    }
+                    else
+                    {
+                        res[i] = integerProduct<AggregationType>(array_size, [&](size_t) { return product; });
                     }
                 }
 
@@ -456,6 +525,13 @@ struct ArrayAggregateImpl
                 continue;
             }
 
+            if constexpr (aggregate_operation == AggregateOperation::product && !is_decimal<Element> && !is_floating_point<AggregationType>)
+            {
+                res[i] = integerProduct<AggregationType>(offsets[i] - pos, [&](size_t j) { return static_cast<AggregationType>(data[pos + j]); });
+                pos = offsets[i];
+                continue;
+            }
+
             size_t count = 1;
             aggregate_value = static_cast<AggregationType>(data[pos]); // NOLINT
             ++pos;
@@ -477,7 +553,7 @@ struct ArrayAggregateImpl
                         AggregateValueDecimalUnderlyingValue current_aggregate_value = aggregate_value.value;
                         AggregateValueDecimalUnderlyingValue element_value = static_cast<AggregateValueDecimalUnderlyingValue>(element.value);
 
-                        if (common::mulOverflow(current_aggregate_value, element_value, aggregate_value.value))
+                        if (productOverflows(current_aggregate_value, element_value, aggregate_value.value))
                             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                     }
                     else
