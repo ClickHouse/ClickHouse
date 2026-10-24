@@ -220,12 +220,42 @@ bool MergeTreePartsMover::selectPartsForMove(
     return false;
 }
 
-MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
+void MergeTreePartsMover::assertLeaderMayContinueMove(std::optional<UInt64> admission_epoch) const
 {
-    auto cancellation_hook = [&my_moves_blocker = moves_blocker]()
+    /// Explicit `ALTER ... MOVE` commands carry their admission epoch through cloning, which can
+    /// take arbitrary time. Background moves only need the existing freshness check.
+    if (admission_epoch)
+        data->assertWritableLeaderAtEpoch(*admission_epoch);
+    else if (!data->mayMutateSharedStorage())
+        throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts: the leader lease is no longer fresh (leader_election).");
+}
+
+MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(
+    const MergeTreeMoveEntry & moving_part,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::optional<UInt64> admission_epoch) const
+{
+    /// Called for every copied chunk. Under `leader_election` the `moving/` directory is on shared
+    /// storage, so besides the blocker, which is cancelled only once the heartbeat notices a lost lease,
+    /// the copy must also stop as soon as the lease is stale or the leadership epoch has changed,
+    /// rather than keep writing into a path the next leader may be using.
+    auto cancellation_hook = [this, admission_epoch]()
     {
-        if (my_moves_blocker.isCancelled())
+        if (moves_blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
+        assertLeaderMayContinueMove(admission_epoch);
+    };
+
+    /// The leadership epoch this move belongs to. Sampled before the first fence below, so a
+    /// lease lost and reacquired in between only makes the removals guarded by it more cautious.
+    /// The partially copied directory of a failed copy, the temporary clone and, after the swap,
+    /// the source copy are removed only by the lease holder in this epoch: after a lease loss the
+    /// deterministic `moving/<part>` path may already be used by the next leader for its own move.
+    const UInt64 move_epoch = admission_epoch.value_or(data->currentLeadershipEpoch());
+    auto may_remove_after_failure = [this, move_epoch]()
+    {
+        return data->mayMutateSharedStorage() && data->currentLeadershipEpoch() == move_epoch;
     };
     cancellation_hook();
 
@@ -254,9 +284,13 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
             LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
                 fullPath(disk, path_to_clone + relative_path));
+            /// The prelude mutates the shared `moving/` namespace before the per-chunk hook of the
+            /// fallback copy is reached, so apply the same fence right before each mutation.
+            cancellation_hook();
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
 
+        cancellation_hook();
         disk->createDirectories(path_to_clone);
 
         /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
@@ -273,16 +307,19 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(
-                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook);
+                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log, cancellation_hook, may_remove_after_failure);
         }
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
+        cloned_part_storage = part->makeCloneOnDisk(
+            disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook, may_remove_after_failure);
     }
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings(), PartDirIntent::OpenExisting);
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+    if (data->hasLeaderElection())
+        cloned_part.part->move_leadership_epoch = move_epoch;
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
     cloned_part.part->is_temp = false;
@@ -311,6 +348,11 @@ try
     part.setState(MergeTreeDataPartState::DeleteOnDestroy);
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
     part.renameTo(part.name, /* remove_new_dir_if_exists */ false);
+
+    /// `swapActivePart` installs the clone directly, without `preparePartForCommit`, so record the identity
+    /// of its directory here, as `preparePartForCommit` does for the other parts that become active.
+    if (data->hasLeaderElection())
+        part.shared_storage_incarnation = data->getPartSharedStorageIncarnation(part);
 }
 catch (...)
 {
@@ -325,7 +367,7 @@ catch (...)
     throw;
 }
 
-void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) const
+void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part, std::optional<UInt64> admission_epoch) const
 {
     /// Used to get some stuck parts in the moving directory by stopping moves while pause is active
     FailPointInjection::pauseFailPoint(FailPoints::stop_moving_part_before_swap_with_active);
@@ -360,6 +402,8 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     /// See DataPartStorageOnDiskBase::remove().
     cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
     data->lockSharedData(*cloned_part.part, /* replace_existing_lock = */ true);
+
+    assertLeaderMayContinueMove(admission_epoch);
 
     renameClonedPart(*cloned_part.part);
 

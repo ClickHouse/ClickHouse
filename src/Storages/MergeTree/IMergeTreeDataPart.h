@@ -356,6 +356,23 @@ public:
     bool is_temp = false;
     std::atomic<bool> is_removed = false;
 
+    /// Under `leader_election`, the leadership epoch of the move that made this part a temporary
+    /// moving clone or put it into the `DeleteOnDestroy` state (see `currentLeadershipEpoch`). Such
+    /// a part is removed by its destructor, possibly long after the move; it is removed only if
+    /// this node still holds the lease in the same epoch. After a lose-and-reacquire cycle the
+    /// directory may be the active copy adopted by the intermediate leader (and then by this node
+    /// again on its takeover), or the moving clone of the intermediate leader, so it is kept and
+    /// reconciled like any other duplicate or stale moving directory. Written under the parts lock
+    /// before the part can reach its destructor.
+    mutable std::optional<UInt64> move_leadership_epoch;
+
+    /// Under `leader_election`, the identity of the part directory on shared storage at the time this
+    /// replica loaded or committed the part (see `MergeTreeData::getPartSharedStorageIncarnation`).
+    /// Block numbers are reconstructed from the remaining parts when a table restarts empty, so a part
+    /// name can be reused by another leader for different data; the name alone does not tell a replica
+    /// that its cached part was replaced. Written before the part becomes active.
+    std::optional<String> shared_storage_incarnation;
+
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
@@ -503,7 +520,8 @@ public:
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
     static void writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
-    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    /// `disk` is the disk the transaction writes to; only its capabilities are consulted.
+    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
 
     CompressionCodecPtr default_codec;
 
@@ -603,13 +621,22 @@ public:
     virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
                                                    const DiskTransactionPtr & disk_transaction) const;
 
+    /// Makes the same clone as `makeCloneInDetached`, but in `relative_dir_name` (relative to the
+    /// storage data directory) instead of a directory in `detached/`.
+    DataPartStoragePtr makeCloneAt(const String & relative_dir_name, const DiskTransactionPtr & disk_transaction) const;
+
+    /// The directory in `detached/` a clone with this prefix would be put into, `_tryN` suffix and
+    /// all. Empty when the part looks like it has already been cloned there (only for `broken`).
+    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
+
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(
         const DiskPtr & disk,
         const String & directory_name,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) const;
+        const std::function<void()> & cancellation_hook,
+        const std::function<bool()> & may_remove_after_failure) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -917,8 +944,6 @@ protected:
 
     /// Calculate the size of all files required to read a specified subcolumn.
     virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
-
-    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of

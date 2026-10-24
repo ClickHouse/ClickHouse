@@ -587,8 +587,17 @@ public:
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
-    /// Checked before `RENAME DATABASE` moves this table into `new_database_name`. Unlike a table rename,
-    /// only the database name changes there: the table name and the table UUID are preserved.
+    /// Called for each table by `DatabaseAtomic::renameDatabase` (the `RENAME DATABASE` path) before it
+    /// moves this table into `new_database_name`. Unlike a table rename, a database rename keeps each
+    /// table's name and UUID and only changes the database name, so the generic `checkTableCanBeRenamed`
+    /// — which encodes table-rename semantics (UUID transitions, moving between databases) — must not be
+    /// reused here: it would reject `ReplicatedMergeTree` with implicit `database`/`table` macros,
+    /// `KeeperMap`, and `ObjectStorageQueue`, none of which a database rename has ever been forbidden to
+    /// carry (this is also exercised by the Ordinary-to-Atomic startup conversion, which finishes with
+    /// `RENAME DATABASE`). The default is therefore a no-op. Only storages that depend on the database name
+    /// in a way that cannot be re-derived afterwards override this to reject: `MergeTree` with
+    /// `leader_election = 1` (its shared path is fixed at startup) and `ObjectStorageQueue` whose
+    /// `keeper_path` expands the `{database}` macro.
     virtual void checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const {}
 
     /** Rename the table.
@@ -812,6 +821,23 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if `DatabaseCatalog::dropTableFinally` should skip the per-disk
+    /// `removeRecursive(getStoreDirPath(uuid))` loop after `drop()` returns. Storages
+    /// whose data lives on shared object storage and is managed externally (for
+    /// example, `MergeTree` with `leader_election = 1`) override this to true so that
+    /// only one node attempts to clean up the shared prefix and the other nodes do
+    /// not retry forever against keys the first node already deleted.
+    virtual bool dropSkipsDataDirectoryCleanup() const { return false; }
+
+    /// Returns true if, after `drop()`, the ownership of the table's data directory could not
+    /// be determined — for example, a lazily loaded table (`StorageTableProxy`) whose real
+    /// storage failed to materialize during `DROP`, so we cannot know whether its data lives
+    /// on shared object storage owned by another node (`leader_election`) or on ordinary local
+    /// disks. The database/catalog cleanup then falls back to its narrower conservative logic:
+    /// clean up node-local disks (so an ordinary table does not leak `store/<uuid>`), but skip
+    /// disks whose metadata is shared across nodes. Unlike `dropSkipsDataDirectoryCleanup`,
+    /// this does not skip cleanup entirely.
+    virtual bool dropDataOwnershipUnknown() const { return false; }
     /// Returns true if the table can store its own unreplicated data on disk.
     /// Such a table cannot be created in a `Replicated` database while
     /// `database_replicated_allow_only_replicated_engine` is enabled.

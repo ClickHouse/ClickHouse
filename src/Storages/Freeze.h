@@ -3,6 +3,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -33,7 +35,12 @@ class Unfreezer
 {
 public:
     explicit Unfreezer(ContextPtr context);
-    PartitionCommandsResultInfo unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory);
+    PartitionCommandsResultInfo unfreezePartitionsFromTableDirectory(
+        MergeTreeData::MatcherFn matcher,
+        const String & backup_name,
+        const Disks & disks,
+        const fs::path & table_directory,
+        const std::function<void()> & assert_writable_at_admission_epoch);
     BlockIO systemUnfreeze(const String & backup_name);
 private:
     ContextPtr local_context;

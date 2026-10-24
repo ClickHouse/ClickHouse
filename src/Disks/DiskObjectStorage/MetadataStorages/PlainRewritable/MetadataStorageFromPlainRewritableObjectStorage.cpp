@@ -1355,18 +1355,27 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
-    if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
+    /// An explicit request (zero) must not be skipped: its caller relies on a reload that starts after the
+    /// call, e.g. a `MergeTree` table with `leader_election` taking over writes needs to see every part the
+    /// previous leader committed. So it bypasses the throttle and waits for a concurrent refresh (which may
+    /// have listed the storage before the request) instead of returning, then reloads on its own.
+    const bool explicit_request = not_sooner_than_milliseconds == 0;
+    if (explicit_request)
+        previous_refresh.restart();
+    else if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
         return;
 
     std::unique_lock load_lock(load_mutex, std::defer_lock);
-    if (!load_lock.try_lock())
+    if (explicit_request)
+        load_lock.lock();
+    else if (!load_lock.try_lock())
         return;
 
     /// The periodic refresh is best-effort. Waiting for the transactions in flight would make every new transaction
     /// wait behind this one, which is exactly the disk-wide stall during a long operation that the path locks avoid;
     /// so skip this round instead if anything is in flight. An explicit request (SYSTEM RESTART DISK passes zero
     /// to bypass the throttle) waits.
-    const auto tx_lock = not_sooner_than_milliseconds == 0 ? std::optional(path_locks.lockAll()) : path_locks.tryLockAll();
+    const auto tx_lock = explicit_request ? std::optional(path_locks.lockAll()) : path_locks.tryLockAll();
     if (!tx_lock)
         return;
 
