@@ -4673,6 +4673,8 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         {
             auto lock = lockParts();
+            /// Mutation versions are numbered per table, so a carried-over one would name a version this table never reached.
+            part->info.mutation = 0;
             auto block_holder = fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(lock);
@@ -4932,8 +4934,10 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAnd
     part->info.max_block = block_holder->block.number;
     part->info.mutation = 0;
 
-    bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
+    /// A part adopted from detached/ may have been merged under other semantics, so a non-zero
+    /// level would wrongly mark its ORDER BY keys as collapsed and let FINAL skip collapsing them.
+    part->info.level = 0;
+    part->info.use_legacy_max_level = false;
     part->setName(part->getNewName(part->info));
 
     return block_holder;

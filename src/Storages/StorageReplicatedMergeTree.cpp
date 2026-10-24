@@ -7867,6 +7867,11 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     {
         const String old_name = loaded_parts[i]->name;
 
+        /// A part adopted from detached/ may have been merged under other semantics, so a non-zero
+        /// level would wrongly mark its ORDER BY keys as collapsed and let FINAL skip collapsing them.
+        loaded_parts[i]->info.level = 0;
+        loaded_parts[i]->info.use_legacy_max_level = false;
+
         output.writeExistingPart(loaded_parts[i], deduplicate_part);
 
         renamed_parts.old_and_new_names[i].old_dir.clear();

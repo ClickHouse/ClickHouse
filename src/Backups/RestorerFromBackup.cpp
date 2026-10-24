@@ -1021,6 +1021,9 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     existing_table_def->formatForErrorMessage(),
                     table_def_from_backup->formatForErrorMessage());
             }
+
+            std::lock_guard lock{mutex};
+            tables_with_same_definition.insert(storage.get());
         }
     }
     catch (Exception & e)
@@ -1028,6 +1031,12 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         e.addMessage("While checking {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
+}
+
+bool RestorerFromBackup::isTableDefinitionSameAsInBackup(const IStorage & storage) const
+{
+    std::lock_guard lock{mutex};
+    return tables_with_same_definition.contains(&storage);
 }
 
 void RestorerFromBackup::insertDataToTables()

@@ -10394,8 +10394,9 @@ public:
         const std::shared_ptr<MergeTreeData> & storage_,
         const BackupPtr & backup_,
         const ContextPtr & query_context_,
-        const ZooKeeperRetriesInfo & zookeeper_retries_info_)
-        : storage(storage_), backup(backup_), query_context(query_context_), zookeeper_retries_info(zookeeper_retries_info_)
+        const ZooKeeperRetriesInfo & zookeeper_retries_info_,
+        bool reset_level_)
+        : storage(storage_), backup(backup_), query_context(query_context_), zookeeper_retries_info(zookeeper_retries_info_), reset_level(reset_level_)
     {
     }
 
@@ -10452,6 +10453,15 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
+        if (reset_level)
+        {
+            for (const auto & part : parts)
+            {
+                part->info.level = 0;
+                part->info.use_legacy_max_level = false;
+            }
+        }
+
         storage->attachRestoredParts(std::move(parts), query_context, zookeeper_retries_info);
         parts.clear();
         temp_part_dirs.clear();
@@ -10462,6 +10472,7 @@ private:
     const BackupPtr backup;
     const ContextPtr query_context;
     const ZooKeeperRetriesInfo zookeeper_retries_info;
+    const bool reset_level;
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
@@ -10481,8 +10492,17 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
+    /// FINAL treats a part with a non-zero level as already collapsed, which holds only if the part was merged
+    /// with the same merge semantics. Graphite rollup rules come from the server config, not the table definition.
+    bool reset_level = merging_params.mode != MergingParams::Ordinary
+        && (merging_params.mode == MergingParams::Graphite || !restorer.isTableDefinitionSameAsInBackup(*this));
+
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
-        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getContext(), restorer.getZooKeeperRetriesInfo());
+        std::static_pointer_cast<MergeTreeData>(shared_from_this()),
+        backup,
+        restorer.getContext(),
+        restorer.getZooKeeperRetriesInfo(),
+        reset_level);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
