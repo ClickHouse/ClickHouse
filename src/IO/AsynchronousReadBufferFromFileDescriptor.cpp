@@ -55,7 +55,6 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.priority = Priority{base_priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     request.direct_io = direct_io;
-    bytes_to_ignore = 0;
 
     return reader.submit(request);
 }
@@ -144,6 +143,9 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         chassert(memory.size() == 0 || memory.size() == internal_buffer.size());
         result = asyncReadInto(buf, internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
+
+    /// The skipped bytes belong to the request just consumed; until then getPosition counts them.
+    bytes_to_ignore = 0;
 
     chassert(!result.page_cache_cell);
     chassert(result.size >= result.offset);
