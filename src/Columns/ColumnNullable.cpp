@@ -2,6 +2,7 @@
 #include <iterator>
 
 #include <Common/Arena.h>
+#include <Common/ErrnoException.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -19,6 +20,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <mutex>
+#include <sys/mman.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -40,6 +42,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
@@ -113,13 +116,24 @@ void ColumnNullable::materializeNullMapSlow() const
 namespace
 {
 
-/// Never written, so it does not take memory: the pages of `.bss` are mapped to the zero page on reading.
+/// A read-only anonymous mapping, so it does not take memory: its pages are mapped to the zero page on reading.
+/// Not a static array in `.bss`, which would take 16 MiB of the 2 GiB reach of the PC-relative references of the binary.
 /// Padded on both sides like `PaddedPODArray`, because the readers may read past the end of the null map
-/// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`).
+/// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`). Never unmapped.
 constexpr size_t zeros_size = 16 << 20;
 constexpr size_t zeros_pad_left = PADDING_FOR_SIMD;
-alignas(4096) UInt8 zeros_with_padding[zeros_pad_left + zeros_size + PADDING_FOR_SIMD];
-UInt8 * const zeros = zeros_with_padding + zeros_pad_left;
+
+const UInt8 * getZeros()
+{
+    static const UInt8 * const zeros = []
+    {
+        void * mapping = mmap(nullptr, zeros_pad_left + zeros_size + PADDING_FOR_SIMD, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (MAP_FAILED == mapping)
+            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot mmap the zero null map");
+        return static_cast<const UInt8 *>(mapping) + zeros_pad_left;
+    }();
+    return zeros;
+}
 
 }
 
@@ -128,7 +142,7 @@ const UInt8 * ColumnNullable::getNullMapRawDataOrZeros() const
     if (const auto * map = tryGetNullMapData())
         return map->data();
     if (size() <= zeros_size)
-        return zeros;
+        return getZeros();
     return getNullMapData().data();
 }
 

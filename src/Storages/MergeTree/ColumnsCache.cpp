@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <chrono>
+#include <optional>
 
+#include <Columns/ColumnNullable.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -332,13 +334,16 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
     const size_t existing_row_end = existing->row_begin + existing->rows;
     if (row_end > existing_row_end)
         column->insertRangeFrom(*incoming_column, existing_row_end - incoming->row_begin, row_end - existing_row_end);
+    /// The readers share the column and may create a missing null map lazily, see `setMany`. The merged column is
+    /// the server's, so its null maps are created under `MemoryTrackerBlockerInThread` together with the rest of it.
+    materializeNullMapsRecursively(*column);
     column->shrinkToFit();
     merged->column = std::move(column);
 
     return merged;
 }
 
-size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation)
+size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, std::vector<bool> * entries_resident)
 {
     /// What the cache allocates here - merged entries, the index, the cells of the shards - is the
     /// server's. The columns the query read become the server's once admitted, but taking them off
@@ -346,9 +351,16 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     /// trackers yet would be flushed under the blocker, to the global tracker only.
     size_t bytes_to_hand_over = 0;
     size_t bytes_admitted = 0;
+
+    /// The readers share the cached columns (a read of a whole entry is served the very same column) and may create
+    /// a missing null map lazily, which would change the weight of an entry after it was accounted, so create the
+    /// null maps now. Before the blocker: the columns are still the query's, and so are their null maps.
+    for (const auto & entry : entries)
+        materializeNullMapsRecursively(*entry->column);
+
     {
         MemoryTrackerBlockerInThread not_charged_to_query_or_user;
-        bytes_admitted = setManyImpl(entries, expected_table_generation, bytes_to_hand_over);
+        bytes_admitted = setManyImpl(entries, expected_table_generation, bytes_to_hand_over, entries_resident);
     }
     if (bytes_to_hand_over)
         handOverCurrentQueryMemoryToServer(bytes_to_hand_over);
@@ -358,8 +370,12 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     return bytes_admitted;
 }
 
-size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over)
+size_t ColumnsCache::setManyImpl(
+    const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over, std::vector<bool> * entries_resident)
 {
+    if (entries_resident)
+        entries_resident->assign(entries.size(), false);
+
     if (entries.empty())
         return 0;
 
@@ -393,14 +409,30 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
     /// the cache and read the granules on both sides of it - merge with each other as well.
     std::unordered_map<Key, size_t, ColumnsCacheKeyHash> position_by_key;
 
+    /// For `entries_resident`: the entries whose granules the cache holds already, and the position in `keys` of the
+    /// entry each of the others ends up in.
+    std::vector<bool> already_resident(entries.size());
+    std::vector<std::optional<size_t>> stored_at(entries.size());
+
     const size_t shard_max_size = shards.front()->maxSizeInBytes();
-    for (const auto & entry : entries)
+    for (size_t entry_idx = 0; entry_idx < entries.size(); ++entry_idx)
     {
+        const auto & entry = entries[entry_idx];
         auto position = position_by_key.find(entry->key);
-        const MappedPtr existing = position == position_by_key.end() ? shardOf(entry->key).get(entry->key) : to_store[position->second];
+        const bool from_shard = position == position_by_key.end();
+        const MappedPtr existing = from_shard ? shardOf(entry->key).get(entry->key) : to_store[position->second];
         auto merged = mergeEntries(existing, entry);
         if (!merged)
+        {
+            if (existing && existing->coversMarks(entry->first_mark, entry->end_mark))
+            {
+                if (from_shard)
+                    already_resident[entry_idx] = true;
+                else
+                    stored_at[entry_idx] = position->second;
+            }
             continue;
+        }
 
         /// An entry whose weight exceeds the size limit of its shard would be evicted right after
         /// insertion. Reject it up front.
@@ -412,9 +444,11 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
         {
             to_store[position->second] = std::move(merged);
             weights[position->second] = weight;
+            stored_at[entry_idx] = position->second;
             continue;
         }
 
+        stored_at[entry_idx] = keys.size();
         position_by_key.emplace(merged->key, keys.size());
         keys.push_back(merged->key);
         to_store.push_back(std::move(merged));
@@ -422,7 +456,11 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
     }
 
     if (to_store.empty())
+    {
+        if (entries_resident)
+            *entries_resident = std::move(already_resident);
         return 0;
+    }
 
     /// Record the stripes before the entries are inserted, so that the eviction callback, which
     /// may run inside the insertion itself, always finds the bit to reset.
@@ -505,6 +543,11 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
         }
     }
     accountAdmitted(entries_admitted);
+
+    if (entries_resident)
+        for (size_t entry_idx = 0; entry_idx < entries.size(); ++entry_idx)
+            (*entries_resident)[entry_idx] = already_resident[entry_idx] || (stored_at[entry_idx] && resident[*stored_at[entry_idx]]);
+
     return bytes_admitted;
 }
 
@@ -575,6 +618,25 @@ void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::
             return true;
         });
     }
+}
+
+void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
+{
+    /// The memory of the cache is the server's, see `setMany`.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+
+    std::vector<Key> keys;
+    keys.reserve(entries.size());
+    for (const auto & entry : entries)
+        keys.push_back(entry->key);
+    removeStaleEntries(keys, entries);
+
+    parkedColumns().releaseUnused();
+}
+
+bool ColumnsCache::containsAll(const std::vector<Key> & keys) const
+{
+    return std::ranges::all_of(keys, [&](const Key & key) { return shards[shardIndex(key)]->contains(key); });
 }
 
 void ColumnsCache::removeTable(const UUID & table_uuid)

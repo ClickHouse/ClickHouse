@@ -9,10 +9,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # otherwise the eviction subtracts more bytes than were added. `Arrow` over HTTP is formatted on the server.
 
 # The tag is unique per test database, so the entry does not clash with other tests and the cache does not need to be cleared.
+# The per-user quota of the query cache (`query_cache_max_size_in_bytes` in the test configuration) is shared with the tests
+# running in parallel (and with the other copies of this test in the flaky check), so lift it, otherwise the entry may not be stored.
 TAG="${CLICKHOUSE_DATABASE}_nullable"
-SETTINGS="use_query_cache = 1, query_cache_compress_entries = 0, query_cache_squash_partial_results = 0, query_cache_tag = '${TAG}'"
+SETTINGS="use_query_cache = 1, query_cache_compress_entries = 0, query_cache_squash_partial_results = 0, query_cache_max_size_in_bytes = 0, query_cache_max_entries = 0, query_cache_tag = '${TAG}'"
 
-QUERY="SELECT toNullable(number), [toNullable(number)] FROM numbers(10000) SETTINGS ${SETTINGS}"
+QUERY="SELECT toNullable(number), [toNullable(number)] FROM numbers(1000) SETTINGS ${SETTINGS}"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${QUERY} FORMAT Null"
 
 SIZE_BEFORE=$(${CLICKHOUSE_CLIENT} --query "SELECT result_size FROM system.query_cache WHERE tag = '${TAG}'")
