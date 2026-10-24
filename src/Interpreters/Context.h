@@ -281,8 +281,8 @@ class AsynchronousInsertQueue;
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
-/// Callback for initialize input()
-using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
+/// Callback for initialize input(): sends the description of the columns and the structure of the blocks to the client
+using InputInitializer = std::function<void(ContextPtr, const ColumnsDescription &, const Block &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
@@ -1089,8 +1089,9 @@ public:
 
     /// When input() is present we have to send columns structure to client
     void setInputInitializer(InputInitializer && initializer);
-    /// This method is called in StorageInput::read while executing query
-    void initializeInput(const StoragePtr & input_storage);
+    /// This method is called in StorageInput::read while executing query,
+    /// and while building the pipeline of INSERT ... RETURNING with the data sent by the client separately.
+    void initializeInput(const ColumnsDescription & columns, const Block & header);
 
     /// Callback for read data blocks from client one by one for function input()
     void setInputBlocksReaderCallback(InputBlocksReader && reader);
