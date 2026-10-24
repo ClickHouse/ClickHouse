@@ -1,5 +1,4 @@
 #include <Columns/ColumnCompressed.h>
-#include <Common/formatReadable.h>
 
 #pragma clang diagnostic ignored "-Wold-style-cast"
 
@@ -18,11 +17,11 @@ namespace ErrorCodes
 
 std::shared_ptr<Memory<>> ColumnCompressed::compressBuffer(const void * data, size_t data_size, bool force_compression)
 {
+    /// LZ4 compresses a buffer of at most `LZ4_MAX_INPUT_SIZE` bytes in one call. A bigger buffer stays uncompressed.
+    if (data_size > LZ4_MAX_INPUT_SIZE)
+        return {};
+
     size_t max_dest_size = LZ4_COMPRESSBOUND(data_size);
-
-    if (max_dest_size > std::numeric_limits<int>::max())
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(data_size));
-
     Memory<> compressed(max_dest_size);
 
     int compressed_size = LZ4_compress_default(
