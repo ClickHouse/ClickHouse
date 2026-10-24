@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CANNOT_WRITE_TO_FILE;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -46,6 +47,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
+    extern const char non_transactional_removal_store_fail_after_first_part[];
     extern const char transaction_after_commit_pause[];
     extern const char transaction_rollback_pause_after_mark[];
     extern const char transaction_rollback_reset_removal_tid_fail[];
@@ -174,8 +176,18 @@ void NonTransactionalRemovalLocks::lock(
 void NonTransactionalRemovalLocks::store()
 {
     /// Drain as we go, so that the destructor only releases the locks that were not stored.
+    size_t stored = 0;
     while (!locked_parts.empty())
     {
+        if (stored++ > 0)
+        {
+            fiu_do_on(FailPoints::non_transactional_removal_store_fail_after_first_part,
+            {
+                throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Injected failure of the removal store of the part {}",
+                    locked_parts.back().part->name);
+            });
+        }
+
         LockedPart locked = std::move(locked_parts.back());
         locked_parts.pop_back();
 

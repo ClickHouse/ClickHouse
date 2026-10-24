@@ -98,6 +98,7 @@ namespace DB
 
 namespace FailPoints
 {
+    extern const char non_transactional_drop_pause_before_publish[];
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
     extern const char storage_merge_tree_load_mutations_pause_before_read[];
     extern const char mt_merge_selecting_task_pause_when_scheduled[];
@@ -3648,6 +3649,8 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
 
 DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
 {
+    FailPointInjection::pauseFailPoint(FailPoints::non_transactional_drop_pause_before_publish);
+
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
 

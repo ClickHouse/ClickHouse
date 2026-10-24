@@ -429,6 +429,10 @@ static struct InitFiu
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
+    PAUSEABLE(transaction_log_pause_before_loading_entries) \
+    PAUSEABLE(non_transactional_drop_pause_before_publish) \
+    ONCE(non_transactional_removal_store_fail_after_first_part) \
+    ONCE(version_metadata_store_creation_csn_fail) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
     PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \
