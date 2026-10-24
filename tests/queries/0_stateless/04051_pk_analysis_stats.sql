@@ -26,7 +26,6 @@ insert into t select number, toString(number) from numbers_mt(1e5);
 insert into t select number + 1e6, 'xxx' from numbers_mt(1e5);
 optimize table t final;
 
-set enable_analyzer=1;
 set use_query_condition_cache=1;
 
 -- Pin the settings that the assertion depends on. The test runner injects

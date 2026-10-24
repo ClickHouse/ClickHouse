@@ -50,6 +50,18 @@ Number of threads in the Aggregator thread pool running a task.
 
 Number of queued or active jobs in the Aggregator thread pool.
 
+### AIRequestThreads {#airequestthreads}
+
+Number of threads in the AI request thread pool.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+Number of threads in the AI request thread pool running a task.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+Number of queued or active jobs in the AI request thread pool.
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.
@@ -854,6 +866,14 @@ Number of threads in global thread pool running a task.
 
 Number of queued or active jobs in global thread pool.
 
+### GlueCatalogSchemaCacheBytes {#gluecatalogschemacachebytes}
+
+Size of the cache of current Iceberg schema field types in Glue catalogs in bytes
+
+### GlueCatalogSchemaCacheEntries {#gluecatalogschemacacheentries}
+
+Number of entries in the cache of current Iceberg schema field types in Glue catalogs
+
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 
 Number of threads in the HashedDictionary thread pool.
@@ -1117,6 +1137,10 @@ Number of container nodes currently stored in Keeper.
 ### KeeperOutstandingRequests {#keeperoutstandingrequests}
 
 Number of outstanding requests
+
+### KeeperRaftThreadsWaitingForLogsPreprocessing {#keeperraftthreadswaitingforlogspreprocessing}
+
+Number of Raft event loop threads waiting for the local log entries to be preprocessed after startup. The Raft event loop also runs the listener, the election and heartbeat timers and every RPC completion, so this should stay at zero or one.
 
 ### KeeperReadThreads {#keeperreadthreads}
 
@@ -1461,6 +1485,10 @@ Number of active threads in the threadpool for loading Outdated data parts.
 ### OutdatedPartsLoadingThreadsScheduled {#outdatedpartsloadingthreadsscheduled}
 
 Number of queued or active jobs in the threadpool for loading Outdated data parts.
+
+### PackedPartsBufferedBytes {#packedpartsbufferedbytes}
+
+Amount of memory (bytes) allocated for the buffered data of packed data parts being written. The data moved to temporary files is not included.
 
 ### PageCacheBytes {#pagecachebytes}
 
@@ -2166,6 +2194,10 @@ Number of temporary files created for JOIN
 
 Number of temporary files for vertical merge
 
+### TemporaryFilesForPackedParts {#temporaryfilesforpackedparts}
+
+Number of temporary files with the buffered data of packed data parts being written
+
 ### TemporaryFilesForSet {#temporaryfilesforset}
 
 Number of temporary files created for `IN` sets in external memory
@@ -2250,6 +2282,18 @@ Number of entries in the deduplication caches of the tags tables of TimeSeries t
 
 Number of temporary files created
 
+### TransactionLogEntries {#transactionlogentries}
+
+Number of entries in the transaction log (`/log`) at its last listing
+
+### TransactionsRunning {#transactionsrunning}
+
+Number of running transactions started on this replica
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+Latest transaction snapshot minus the global watermark; new transactions read this many CSNs behind
+
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 
 Number of threads in thread pools servicing pipes of executable UDF driver commands.
@@ -2289,6 +2333,10 @@ Number of entries in the vector similarity index cache
 ### VersionInteger {#versioninteger}
 
 Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.
+
+### WaitingQuery {#waitingquery}
+
+Number of queries waiting for asynchronous loading or startup to finish, limited by the 'max_waiting_queries' server setting
 
 ### Write {#write}
 

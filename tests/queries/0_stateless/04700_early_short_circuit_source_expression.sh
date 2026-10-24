@@ -12,8 +12,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_04700_early_short_circuit_source (x UInt8)
 syntax_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN SYNTAX
     SELECT 1 OR ((SELECT count(*) FROM t_04700_early_short_circuit_source) > 0)
-    SETTINGS enable_analyzer = 1,
-             enable_function_early_short_circuit = 1
+    SETTINGS enable_function_early_short_circuit = 1
 ")
 
 if grep -qF 't_04700_early_short_circuit_source' <<< "$syntax_output" \
@@ -25,8 +24,7 @@ fi
 
 header_output=$($CLICKHOUSE_CLIENT -q "
     SELECT 1 OR ((SELECT count(*) FROM t_04700_early_short_circuit_source) > 0)
-    SETTINGS enable_analyzer = 1,
-             enable_function_early_short_circuit = 1
+    SETTINGS enable_function_early_short_circuit = 1
     FORMAT TSVWithNames
 ")
 
@@ -39,8 +37,7 @@ fi
 secret_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN SYNTAX
     SELECT 1 OR notEmpty(concat('SAME_LITERAL_123', encrypt('aes-128-ecb', 'x', 'SAME_LITERAL_123')))
-    SETTINGS enable_analyzer = 1,
-             enable_function_early_short_circuit = 1,
+    SETTINGS enable_function_early_short_circuit = 1,
              format_display_secrets_in_show_and_select = 0
 ")
 
@@ -58,8 +55,7 @@ fi
 non_lazy_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
     SELECT 1 OR ignore(sleep(1))
-    SETTINGS enable_analyzer = 1,
-             enable_function_early_short_circuit = 1
+    SETTINGS enable_function_early_short_circuit = 1
 ")
 
 if grep -qF 'function_name: ignore, function_type: ordinary, result_type:' <<< "$non_lazy_output"; then
