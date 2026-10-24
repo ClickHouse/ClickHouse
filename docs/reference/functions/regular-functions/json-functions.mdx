@@ -27,11 +27,16 @@ The following assumptions are made:
 
 These functions are based on [simdjson](https://github.com/lemire/simdjson), and designed for more complex JSON parsing requirements.
 
+They accept either a JSON string or a value of the [`JSON`](/sql-reference/data-types/newjson) data type as their first argument. The functions use optimized access to `JSON` subcolumns where possible; see the individual function documentation for their supported arguments and result semantics.
+
+The `JSON` data type can differ from a JSON string in ways that affect results: it does not retain `null` keys or the order of object keys. Consequently, functions whose results depend on key order — `JSONKey`, `JSONExtractKeys`, `JSONExtractKeysAndValues`, `JSONExtractKeysAndValuesRaw`, and an integer index addressing an object member — use the order in which the column stores keys, which is not necessarily the order in which they were written.
+
 ### Case-Insensitive JSONExtract Functions {#case-insensitive-jsonextract-functions}
 
 These functions perform ASCII case-insensitive key matching when extracting values from JSON objects.
 They work identically to their case-sensitive counterparts, except that object keys are matched without regard to case.
-When multiple keys match with different cases, the first match is returned.
+If a JSON object contains multiple keys that differ only in case (e.g. `Key` and `KEY`), the function returns the value of the first matching key in document order when the input is a string.
+When the input is a column of `JSON` type, which key is chosen among case-insensitive duplicates is not guaranteed.
 
 <Note>
 These functions may be less performant than their case-sensitive counterparts, so use the regular JSONExtract functions if possible.
