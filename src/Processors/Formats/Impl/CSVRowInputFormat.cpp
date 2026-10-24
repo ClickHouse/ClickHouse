@@ -214,15 +214,19 @@ void CSVFormatReader::skipRow()
         else
         {
             const char * span_start = istr.position();
-            auto * pos = find_first_symbols<'"', '\'', '\r', '\n'>(istr.position(), istr.buffer().end());
+            auto * pos = format_settings.csv.allow_single_quotes
+                ? find_first_symbols<'"', '\'', '\r', '\n'>(istr.position(), istr.buffer().end())
+                : find_first_symbols<'"', '\r', '\n'>(istr.position(), istr.buffer().end());
             istr.position() = pos;
 
             if (pos > istr.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
-            quote_start = updateQuoteStart(
-                span_start, pos, quote_start, at_stream_start && span_start == istr.buffer().begin(),
-                format_settings.csv.delimiter, format_settings.csv.tuple_delimiter, whitespace_is_skipped);
+            /// A span that ends at `\n` ends the row, so the quote-start state is not needed any more.
+            if (pos == istr.buffer().end() || *pos != '\n')
+                quote_start = updateQuoteStart(
+                    span_start, pos, quote_start, at_stream_start && span_start == istr.buffer().begin(),
+                    format_settings.csv.delimiter, format_settings.csv.tuple_delimiter, whitespace_is_skipped);
             at_stream_start = false;
 
             if (pos == istr.buffer().end())
@@ -941,13 +945,17 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         else
         {
             const char * span_start = pos;
-            pos = find_first_symbols<'"', '\'', '\r', '\n'>(pos, in.buffer().end());
+            pos = settings.csv.allow_single_quotes
+                ? find_first_symbols<'"', '\'', '\r', '\n'>(pos, in.buffer().end())
+                : find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
-            quote_start = updateQuoteStart(
-                span_start, pos, quote_start, at_stream_start && span_start == in.buffer().begin(),
-                settings.csv.delimiter, settings.csv.tuple_delimiter, whitespace_is_skipped);
+            /// A span that ends at `\n` ends the row, and the row end resets the state below.
+            if (pos == in.buffer().end() || *pos != '\n')
+                quote_start = updateQuoteStart(
+                    span_start, pos, quote_start, at_stream_start && span_start == in.buffer().begin(),
+                    settings.csv.delimiter, settings.csv.tuple_delimiter, whitespace_is_skipped);
             at_stream_start = false;
 
             if (pos == in.buffer().end())
