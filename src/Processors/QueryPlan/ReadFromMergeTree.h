@@ -693,6 +693,9 @@ public:
         bool added_part_starting_offset = false;
         bool added_part_offset = false;
     };
+    /// Whether `_part_starting_offset` and `_part_offset` of the output are this read's own row positions in `getParts()`
+    /// (no table column or computed filter output takes these names). Precondition of `addStartingPartOffsetAndPartOffset`.
+    bool canComputeGlobalRowIndex() const;
     PartOffsetColumns addStartingPartOffsetAndPartOffset();
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }

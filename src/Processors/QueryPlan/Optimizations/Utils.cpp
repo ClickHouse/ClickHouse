@@ -271,9 +271,9 @@ bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
         return false;
 
     /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
-    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
-    const auto & columns = reading->getStorageMetadata()->getColumns();
-    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
+    /// or a computed output of a filter with the same name takes the place of: the second read would fetch the rows
+    /// that column's values point to.
+    if (!reading->canComputeGlobalRowIndex())
         return false;
 
     return true;
