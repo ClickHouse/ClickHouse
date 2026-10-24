@@ -12,8 +12,11 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
+#include <Common/assert_cast.h>
 
 #include <Interpreters/Context.h>
 
@@ -24,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -151,6 +155,54 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
         }
     }
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
+}
+
+void validateIcebergFieldIds(
+    const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids)
+{
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id is on the inner type, under the same path.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
+            return;
+        default:
+            break;
+    }
+
+    if (!field_ids.contains(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+            path);
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            size_t num_elements = tuple.getElements().size();
+            for (size_t i = 0; i < num_elements; ++i)
+                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
+            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 FormatFilterInfo::FormatFilterInfo(
