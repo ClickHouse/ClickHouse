@@ -8918,9 +8918,18 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     /// flight; a stale request must not touch the shared result pane.
     const belongs_to_active_connection = () => generation === null || generation === connectionGeneration;
 
-    let response;
+    /// Admitted like the query of a run (`admitRunQuery`), and holding the admission until the body is
+    /// read: a panel query is a query of the user too, so an implicit-user probe must not displace it.
+    /// `payload` is the body being read: the error text, or the result. A failure to read it is not
+    /// a network error, so it is only waited for here and surfaces where the body is used.
+    let response, payload;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await admitRunQuery(server_address, new AbortController().signal, async () => {
+            const response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+            payload = response.ok ? response.json() : response.text();
+            await Promise.allSettled([payload]);
+            return response;
+        });
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -8934,7 +8943,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     /// active connection: the outcome is about these credentials, not the live fields.
     rememberAuthenticationOutcome(response, server_address, user, password);
     if (!response.ok) {
-        let error_text = await response.text();
+        let error_text = await payload;
         if (!quiet && belongs_to_active_connection()) {
             clear();
             resultEl.renderError(error_text);
@@ -8947,10 +8956,11 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         resultEl.clearError();
         logoEl.style.display = 'block';
     }
-    return await response.json();
+    return await payload;
 }
 
-async function getServerStatus(server_address, user, password) {
+/// `signal` (optional) aborts the request; an aborted request reports failure like any other.
+async function getServerStatus(server_address, user, password, signal) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
@@ -8959,7 +8969,7 @@ async function getServerStatus(server_address, user, password) {
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t, currentUser() AS u", signal, headers: { 'Authorization': 'never' } });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -8999,7 +9009,8 @@ let selected_database = current_url.searchParams.get('database');
 /// edit must cancel a deferred startup auto-run (`defer_run_for_reconcile`), which is armed against
 /// this loaded connection. Once a stamped entry exists, that entry's own
 /// `connectionServer`/`connectionUser` stamp is authoritative.
-const initial_connection = {server: url_elem.value, user: user_elem.value};
+const initial_connection = {server: url_elem.value, user: user_elem.value,
+    implicitUser: implicitUserStamp(url_elem.value, user_elem.value)};
 
 /// The (server, user) connection the current `selected_database` belongs to.
 /// `resetConnectionScopedState` compares the live connection against this — via the same
@@ -9018,7 +9029,8 @@ let selected_database_connection = null;
 function stampSelectedDatabaseConnection() {
     selected_database_connection = selected_database === null
         ? null
-        : {server: url_elem.value, user: user_elem.value};
+        : {server: url_elem.value, user: user_elem.value,
+            implicitUser: implicitUserStamp(url_elem.value, user_elem.value)};
 }
 stampSelectedDatabaseConnection();
 
@@ -10380,21 +10392,36 @@ function loadPasswordlessLogins() {
 /// Record a successful authentication as `server_address`/`user` with `password`: an empty password
 /// remembers the login as passwordless, a non-empty one forgets it.
 ///
+/// An empty `user` field authenticates as the server's `default_session_user`, and the login is saved
+/// to the password manager under that name (`storeCredentials`), so the next visit refills it as an
+/// explicit name. Such a login is therefore recorded under both spellings: the empty one and the name
+/// of the account, `implicit_user` as reported by the server for this very request when the caller
+/// knows it, otherwise the name this visit has learned (`learnedImplicitUser`). An explicit user is
+/// recorded only under its own name, so different users are never conflated.
+///
 /// Best-effort: it runs on the success path of an authentication check and of a query, and a storage
 /// failure (`QuotaExceededError`, a storage policy exception) must not turn that success into a
 /// client-side error or lose the green indication. Without the entry the page merely does not drop a
 /// stale autofilled password next time, which is the pre-existing behaviour.
-function rememberLoginPassword(server_address, user, password) {
-    const key = passwordlessLoginKey(server_address, user);
-    const logins = loadPasswordlessLogins();
-    if (password) {
-        if (!logins.delete(key)) return;
-    } else {
-        if (logins.has(key)) return;
-        logins.add(key);
-        /// A `Set` iterates in insertion order, so the oldest entries go first.
-        while (logins.size > MAX_PASSWORDLESS_LOGINS) logins.delete(logins.values().next().value);
+function rememberLoginPassword(server_address, user, password, implicit_user = '') {
+    const keys = [passwordlessLoginKey(server_address, user)];
+    if (!effectiveConnectionUser(server_address, user)) {
+        const account = implicit_user || learnedImplicitUser(server_address);
+        if (account) keys.push(passwordlessLoginKey(server_address, account));
     }
+    const logins = loadPasswordlessLogins();
+    let changed = false;
+    for (const key of keys) {
+        if (password) {
+            if (logins.delete(key)) changed = true;
+        } else if (!logins.has(key)) {
+            logins.add(key);
+            changed = true;
+        }
+    }
+    if (!changed) return;
+    /// A `Set` iterates in insertion order, so the oldest entries go first.
+    while (logins.size > MAX_PASSWORDLESS_LOGINS) logins.delete(logins.values().next().value);
     try { window.localStorage.setItem(PASSWORDLESS_LOGINS_KEY, JSON.stringify([...logins])); } catch (e) { /* best-effort, see above */ }
 }
 
@@ -10416,6 +10443,12 @@ function rememberLoginPassword(server_address, user, password) {
 /// Without the proof a non-empty password still forgets the passwordless entry: at worst the page then
 /// keeps an autofilled password it would have dropped, which is the pre-existing behaviour. An empty
 /// password is remembered only with the proof, since the entry makes the page drop a saved password.
+///
+/// A login of an empty `user` field is recorded under the name of the account too (see
+/// `rememberLoginPassword`). When this visit has not learned that name yet (`checkCredentials` may
+/// never run, see above), it is asked from the server with the same password (`learnImplicitUser`),
+/// once at a time per server, and the login is recorded under it as well. Best-effort like the rest:
+/// if the server cannot tell, only the empty spelling is recorded.
 const ACCESS_DENIED_ERROR_CODE = '497';
 function rememberAuthenticationOutcome(response, server_address, user, password) {
     const exception_code = response.headers.get('X-ClickHouse-Exception-Code');
@@ -10423,6 +10456,16 @@ function rememberAuthenticationOutcome(response, server_address, user, password)
     if (response.status === 403 && exception_code?.trim() !== ACCESS_DENIED_ERROR_CODE) return;
     if (response.ok || exception_code !== null || password) {
         rememberLoginPassword(server_address, user, password);
+        if (effectiveConnectionUser(server_address, user) || learnedImplicitUser(server_address)) return;
+        /// The servers being asked, kept on the function like `implicitUserVisitState`.
+        const probes = rememberAuthenticationOutcome.probes ??= new Set();
+        const key = serverIdentityKey(server_address);
+        if (key === null || probes.has(key)) return;
+        probes.add(key);
+        learnImplicitUser(server_address, password).then(name => {
+            probes.delete(key);
+            if (name) rememberLoginPassword(server_address, user, password, name);
+        });
     }
 }
 
@@ -10480,11 +10523,12 @@ function checkCredentials() {
     checked_connection = connectionTuple();
     const [server_address, user, password] = [url_elem.value, user_elem.value, password_elem.value];
     getServerStatus(server_address, user, password).then(json => {
+        if (json && !user && json.u) rememberImplicitUser(server_address, json.u);
         if (current_check_credentials_request_num == check_credentials_request_num) {
             if (json) {
                 /// These credentials were accepted: recorded from the values the request was sent with,
                 /// not the live fields (an autofill raising no `input` could have changed them since).
-                rememberLoginPassword(server_address, user, password);
+                rememberLoginPassword(server_address, user, password, user ? '' : (json.u || ''));
                 [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
                 document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
                 updateServerInfoVisibility();
@@ -11651,7 +11695,13 @@ function parseInbandExceptionFromTail(tail, format)
 /// not be re-read here, or a tab switch + database/connection edit during that await (or between the
 /// sequential statement groups of a "Run all") would send this run's already-snapshotted query to a
 /// different database, server or identity.
+/// The query of a run is admitted against the implicit-user probes of its server (`admitRunQuery`).
 async function postImpl(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params = '')
+{
+    return admitRunQuery(connection.url, abortController.signal, () => postImplAdmitted(cell, posted_request_num, query, targetResultEl,
+        abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params));
+}
+async function postImplAdmitted(cell, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params)
 {
     const tab = cell.tab;
     /// The connection tuple (server address, user, password) is snapshotted once per run by the
@@ -12641,6 +12691,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     /// `last_url_for_download` docs).
     const query_url = connection.url;
     const query_user = connection.user;
+    const query_implicit_user = connection.implicitUser;
 
     cell.downloadVisible = false;
     cell.copyVisible = false;
@@ -12744,6 +12795,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
                 database: query_database,
                 url: query_url,
                 user: query_user,
+                implicitUser: query_implicit_user,
             }, undefined, tab, cell);
         }
         updateTabIndicator(tab);
@@ -12778,6 +12830,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     cell.downloadDatabase = query_database;
     cell.downloadUrl = query_url;
     cell.downloadUser = query_user;
+    cell.downloadImplicitUser = query_implicit_user || '';
 
     if (result.is_raw || result.is_image) {
         el.elapsedNs = 1e6 * (performance.now() - query_start);
@@ -12836,6 +12889,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
         database: query_database,
         url: query_url,
         user: query_user,
+        implicitUser: query_implicit_user,
     }, undefined, tab, cell);
 }
 
@@ -12867,6 +12921,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
     /// `writeHistoryEntry`); the password authenticates this run's requests only.
     const query_url = connection.url;
     const query_user = connection.user;
+    const query_implicit_user = connection.implicitUser;
 
     /// A multi-statement run cannot be shaped: it sends one request per statement while a sort, a
     /// filter or a page names the columns of ONE result, so applying it would push an `ORDER BY` or a
@@ -13127,6 +13182,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         database: query_database,
         url: query_url,
         user: query_user,
+        implicitUser: query_implicit_user,
     }, parsed[0].query, tab, cell);
 }
 
@@ -13997,6 +14053,7 @@ async function materializeResult(cell) {
     cell.downloadDatabase = result.database || '';
     cell.downloadUrl = result.url ?? '';
     cell.downloadUser = result.user ?? '';
+    cell.downloadImplicitUser = result.implicitUser || '';
     cell.progressPhase = 'done';
     cell.downloadVisible = download_reproducible;
     cell.copyVisible = is_raw;
@@ -14215,6 +14272,7 @@ const CELL_STATE_FIELDS = [
     /// result, which lives in one cell (see the result-shape block above).
     'sortColumns', 'filters', 'pagination', 'shapeQuery', 'shapeContext', 'downloadShape',
     'downloadQuery', 'downloadParams', 'downloadDatabase', 'downloadUrl', 'downloadUser',
+    'downloadImplicitUser',
     'downloadVisible', 'copyVisible',
     'launchQuery', 'launchRunId', 'runEditorInteraction', 'queryErrorOwnerStart',
     /// The Logs/Metrics view selection and the resource meters describe one run's output, which
@@ -14258,6 +14316,7 @@ function cellRuntimeDefaults() {
         downloadDatabase: '',   /// database the download should target (the producing connection)
         downloadUrl: '',        /// server address the download reproduces against (producing connection)
         downloadUser: '',       /// user the download reproduces against (producing connection)
+        downloadImplicitUser: '', /// stamp of the account an implicit `downloadUser` ran as (see `replayConnectionUser`)
         downloadVisible: false, /// whether the download / copy buttons apply to this cell
         copyVisible: false,
         launchQuery: undefined, /// editor text snapshotted when this cell's run was launched (see `saveHistory`)
@@ -14540,6 +14599,7 @@ function clearCell(cell) {
     cell.downloadDatabase = '';
     cell.downloadUrl = '';
     cell.downloadUser = '';
+    cell.downloadImplicitUser = '';
     cell.logoVisible = true;
     /// A cleared cell has no logs/metrics and shows the result view; its toggles are re-offered as
     /// the new run streams them (see `_markLogsAvailable`). Reset the shared toggles too when the
@@ -15423,6 +15483,7 @@ function paintDownloadCopy(cell) {
     last_database_for_download = cell.downloadDatabase || '';
     last_url_for_download = cell.downloadUrl || '';
     last_user_for_download = cell.downloadUser || '';
+    last_implicit_user_for_download = cell.downloadImplicitUser || '';
 }
 
 /// Repaint the shared chrome (Run/Stop button, favicon, progress bar, logo, download/copy) from
@@ -16485,7 +16546,7 @@ function serializeCell(cell) {
         /// The text `params` was last coherently committed for; persisting it lets the reload's
         /// restore recognize an incoherent pair (see `paramsSyncedQuery`).
         paramsSyncedQuery: cell.paramsSyncedQuery,
-        result: cell.result,
+        result: durableResultSnapshot(cell.result),
         /// The query as of the last URL/history sync. Persisting it lets startup reconciliation
         /// tell a stale reload (the URL hash is this cell's own last synced query, but it was
         /// edited afterwards) from a fresh external URL.
@@ -16599,7 +16660,7 @@ async function persist() {
                 /// provenance lets the reload's restore refuse to stamp that pair as coherent
                 /// (`restoreEditor`), keeping the stale binding out of the rebuilt history/URL.
                 paramsSyncedQuery: tab.paramsSyncedQuery,
-                result: tab.result,
+                result: durableResultSnapshot(tab.result),
                 /// The query as of the last URL/history sync. Persisting it lets startup
                 /// reconciliation tell a stale reload (the URL hash is this tab's own last
                 /// synced query, but the tab was edited afterwards) from a fresh external URL.
@@ -16639,9 +16700,12 @@ async function persist() {
 /// reloaded `run=1` URL reproduces the displayed result instead of replaying against a different
 /// database or server.
 /// `fromRun` marks an entry that a genuine run produced (see `writeHistoryEntry`).
-function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, shape, user, server_address, database) {
+function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, shape, user, server_address, database, implicitUser) {
     const out = [];
     if (user) out.push('user=' + encodeURIComponent(user));
+    /// The account an implicit run (an empty `user`) was authenticated as, see `runEntryImplicitUser`.
+    /// It is a parameter of this page only, never sent to the server.
+    if (implicitUser) out.push('implicit_user=' + encodeURIComponent(implicitUser));
     /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
     /// still match it (`fromRun`). `saveHistory` sets it on the run itself; the editor-only
     /// writers (`syncHistory`/`refreshCurrentHistoryEntry`, driven by tab switch/rename,
@@ -16733,7 +16797,8 @@ function sameServerAddress(a, b) {
 /// `http://alice@host:8123/` and `http://bob@host:8123/` look like the same server there and must be
 /// separated by their user. The field takes precedence over the userinfo, mirroring how the request
 /// is built. The userinfo may be percent-encoded, so decode it (falling back to the raw value on a
-/// malformed escape) before comparing.
+/// malformed escape) before comparing. With neither, the result is empty: the server authenticates the
+/// request as its `default_session_user` (see `sameConnectionUser`).
 function effectiveConnectionUser(serverAddress, fieldUser) {
     if (fieldUser) return fieldUser;
     try {
@@ -16742,6 +16807,267 @@ function effectiveConnectionUser(serverAddress, fieldUser) {
     } catch (e) {
         return '';
     }
+}
+
+/// The implicit user to stamp next to a stored connection (a result snapshot, a history entry, a
+/// selection): the name the server last reported during this visit to authenticate a request without a
+/// user as (`learnedImplicitUser`), or empty when the connection names its user explicitly. The stamp
+/// is taken when the connection is recorded, so a stored connection keeps denoting the account it was
+/// used with even when the server's `default_session_user` changes later.
+/// When the name is not known yet, the stamp is a marker of this page visit
+/// (`pendingImplicitUserStamp`) instead: the name is typically learned moments later in the same visit
+/// (`checkCredentials`, or the `storeCredentials` probe of the very run being recorded), and then the
+/// marker resolves to it (`resolvedImplicitUser`), so a run launched before the name was known is not
+/// mistaken for a different connection than the one it ran on.
+/// A name learned by an earlier visit is deliberately not used: the server's `default_session_user` may
+/// have changed since, and the startup reconciliation (`reconcileStartup`) can run before this visit's
+/// probe returns, so a remembered name would claim the live connection is an account it may no longer
+/// be (keeping its selected database, or naming it in a `run=1` URL).
+function implicitUserStamp(serverAddress, fieldUser) {
+    if (effectiveConnectionUser(serverAddress, fieldUser)) return '';
+    return learnedImplicitUser(serverAddress) || pendingImplicitUserStamp();
+}
+
+/// The state of this page visit for the implicit users: a random id for the markers stamped while the
+/// name was not known (`pendingImplicitUserStamp`), and, for each server (`serverIdentityKey`), the
+/// first name learned during this visit (`first`, what such a marker resolves to) and the latest one
+/// (`latest`, what the live connection is stamped with). Kept on the function rather than in a `let`,
+/// because it is consulted at load, by `initial_connection`, before this point of the script runs.
+function implicitUserVisitState() {
+    if (!implicitUserVisitState.state)
+        implicitUserVisitState.state = {id: Date.now().toString(36) + Math.random().toString(36).slice(2), first: {}, latest: {}};
+    return implicitUserVisitState.state;
+}
+
+/// The stamp of an implicit connection whose name is not known yet: it starts with a NUL, which no
+/// real user name has, and names this visit, so a marker persisted by an earlier visit (a history
+/// entry, a saved result snapshot) never resolves and fails closed like an empty stamp.
+function pendingImplicitUserStamp() {
+    return '\u0000pending:' + implicitUserVisitState().id;
+}
+
+/// The account a stored stamp denotes: the stamp itself, or for a marker of this visit the first name
+/// learned for the server since (empty if none yet). A marker of another visit denotes no known name.
+function resolvedImplicitUser(serverAddress, stamp) {
+    if (!stamp) return '';
+    if (!stamp.startsWith('\u0000')) return stamp;
+    if (stamp !== pendingImplicitUserStamp()) return '';
+    const key = serverIdentityKey(serverAddress);
+    const first = implicitUserVisitState().first;
+    return (key !== null && Object.hasOwn(first, key)) ? first[key] : '';
+}
+
+/// The form of a stamp to store beyond this visit: a marker of this visit is replaced with the name it
+/// has resolved to by now (`resolvedImplicitUser`), since the marker itself would no longer resolve on
+/// a later visit (after a reload, or when the link is shared) and would fail closed against the very
+/// account it denotes. A marker that has not resolved yet is kept as is.
+function durableImplicitUserStamp(serverAddress, stamp) {
+    return resolvedImplicitUser(serverAddress, stamp) || stamp;
+}
+
+/// A result snapshot (`cell.result`) as it is persisted (`IndexedDB`, `history.state`): with its
+/// implicit-user stamp in the durable form (`durableImplicitUserStamp`). The snapshot is recorded when
+/// the run completes, possibly before this visit has learned the implicit name, so the stamp is
+/// upgraded again on every write.
+function durableResultSnapshot(result) {
+    if (!result || !result.implicitUser) return result;
+    const implicit_user = durableImplicitUserStamp(result.url, result.implicitUser);
+    return implicit_user === result.implicitUser ? result : {...result, implicitUser: implicit_user};
+}
+
+/// Do two connections on the same server (compared separately by `sameServerAddress`) use the same
+/// account? Equal explicit effective users (`effectiveConnectionUser`) always do. Two implicit ones do
+/// when their stamps (`implicitUserStamp`) denote the same user, or, while neither denotes a known
+/// name, when the stamps themselves are equal: only the same marker of this visit (or two entries both
+/// stamped with no name) match then, so an entry stamped by an earlier visit, possibly for another
+/// account, is never taken for the live implicit connection before this visit has learned its name.
+/// An implicit user is additionally the same as an explicit name when its stamp names it, so a login
+/// refilled by the password manager under that name (`storeCredentials`) is the same connection as the
+/// implicit one it was saved from, and does not reset the selected database or count as a diverged
+/// run. A stored connection carries its own stamp, taken when it was recorded, never the current
+/// `learnedImplicitUser`: an entry stamped with no name (or written before the stamp existed, or by an
+/// earlier visit before the name was known) never matches the live implicit user, failing closed. Only
+/// a marker stamped earlier in this visit takes the name learned since (`resolvedImplicitUser`).
+function sameConnectionUser(a_server, a_user, a_implicit_user, b_server, b_user, b_implicit_user) {
+    const a = effectiveConnectionUser(a_server, a_user);
+    const b = effectiveConnectionUser(b_server, b_user);
+    const a_implicit = resolvedImplicitUser(a_server, a_implicit_user);
+    const b_implicit = resolvedImplicitUser(b_server, b_implicit_user);
+    if (a === '' && b === '')
+        return (a_implicit !== '' || b_implicit !== '')
+            ? a_implicit === b_implicit
+            : (a_implicit_user || '') === (b_implicit_user || '');
+    if (a === b) return true;
+    const a_account = a || a_implicit;
+    const b_account = b || b_implicit;
+    return a_account !== '' && a_account === b_account;
+}
+
+/// The `implicit_user` to serialize into the URL of an entry that carries `run=1`: an auto-executed
+/// link must replay under the account that produced it, but an implicit connection (an empty field)
+/// is authenticated as whatever the server's `default_session_user` is when the link is opened. The
+/// link must not name that account as `user` though: an empty field can also be authenticated by
+/// a proxy in front of the server (the `X-ClickHouse-User` / `X-ClickHouse-Key` headers) or by a TLS
+/// certificate, and the server rejects a `user` parameter combined with those. So the link keeps the
+/// empty field and carries the name the stamp denotes (`resolvedImplicitUser`) as `implicit_user`
+/// instead, and the startup auto-run proceeds only after the server confirms that a request without a
+/// user is still authenticated as that account (`runDeferredStartupQuery`). Empty for a connection
+/// naming its user (the field or the userinfo of the server address), or while the name is unknown.
+function runEntryImplicitUser(server_address, user, implicit_user) {
+    if (effectiveConnectionUser(server_address, user)) return '';
+    return resolvedImplicitUser(server_address, implicit_user);
+}
+
+/// The `user` to send to reproduce a result recorded as `server_address`/`user` with the stamp
+/// `implicit_user` (Download). An implicit connection keeps the empty field, which preserves how it is
+/// authenticated (see `runEntryImplicitUser`), while the server still authenticates a request without
+/// a user as the recorded account; the name is asked from the server if this visit does not know it
+/// yet. If the server now authenticates such a request as another account, the recorded account is
+/// named explicitly, so the request fails visibly or reproduces the result as that account, rather
+/// than silently exporting the data of another user. A stamp that denotes no known name (recorded by
+/// an earlier visit before the name was learned) keeps the empty field. `password` is the one the
+/// request will be sent with, snapshotted by the caller.
+async function replayConnectionUser(server_address, user, implicit_user, password) {
+    if (effectiveConnectionUser(server_address, user)) return user;
+    const account = resolvedImplicitUser(server_address, implicit_user);
+    if (!account) return '';
+    if (!learnedImplicitUser(server_address)) await learnImplicitUser(server_address, password);
+    return account === learnedImplicitUser(server_address) ? '' : account;
+}
+
+/// Ask the server which user it authenticates a request without a `user` as (`currentUser` in
+/// `getServerStatus`), and remember the answer (`rememberImplicitUser`). Returns the name, or empty if
+/// the server cannot tell. The probe is sent outside of the connection's HTTP session (see
+/// `storeCredentials`). Runs of the server wait for the probe (`admitRunQuery`), so it is aborted once
+/// it takes longer than `IMPLICIT_USER_PROBE_TIMEOUT_MS`: a stalled probe must not hold the queries of
+/// the user back. The time spent waiting for admission does not count.
+const IMPLICIT_USER_PROBE_TIMEOUT_MS = 5000;
+async function learnImplicitUser(server_address, password) {
+    const probe_address = serverAddressWithoutSession(server_address);
+    if (!probe_address) return '';
+    const json = await admitImplicitUserProbe(server_address, () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+        return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
+    });
+    if (!json || !json.u) return '';
+    rememberImplicitUser(server_address, json.u);
+    return json.u;
+}
+
+/// Admission of the implicit-user probes (`learnImplicitUser`) against the queries of runs (`postImpl`).
+/// A probe is an ordinary query of the same user, so it competes with the queries of the user for
+/// the user's query slots: with `max_concurrent_queries_for_user = 1` the server rejects whichever of
+/// the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`. The probes are bookkeeping and must
+/// never displace a query of the user, whichever path starts them (`storeCredentials`,
+/// `rememberAuthenticationOutcome` after the database panel or the completions, Download, the
+/// startup auto-run). So, per server (`serverAdmissionKey`): a probe is sent only while no query of a
+/// run is in flight, waiting for them to finish otherwise, and a run that starts while a probe is in
+/// flight sends its query only after the probe has settled. A run counts from its admission to the
+/// end of its response, as the server holds the slot until then. The probe is a short status query
+/// with a bounded lifetime (`IMPLICIT_USER_PROBE_TIMEOUT_MS`), so a run waits for it only briefly; a
+/// probe can wait as long as the runs go on. A run that is stopped while it waits (`signal`) stops
+/// waiting and proceeds with its aborted request, which fails without being sent, as a run stopped
+/// at any other point.
+function implicitUserProbeAdmission(server_address) {
+    const all = implicitUserProbeAdmission.servers ??= new Map();
+    const key = serverAdmissionKey(server_address) ?? server_address;
+    if (!all.has(key)) all.set(key, { runs: 0, probes: new Set(), idle: [] });
+    return all.get(key);
+}
+async function admitRunQuery(server_address, signal, run) {
+    const admission = implicitUserProbeAdmission(server_address);
+    ++admission.runs;
+    try {
+        if (admission.probes.size && !signal.aborted) {
+            const stopped = new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+            /// No probe of this server starts while `runs` is non-zero, so the set only shrinks here.
+            while (admission.probes.size && !signal.aborted)
+                await Promise.race([Promise.allSettled([...admission.probes]), stopped]);
+        }
+        return await run();
+    } finally {
+        if (--admission.runs === 0) for (const wake of admission.idle.splice(0)) wake();
+    }
+}
+async function admitImplicitUserProbe(server_address, probe) {
+    const admission = implicitUserProbeAdmission(server_address);
+    /// Rechecked after every wake-up: a run may have been admitted between the wake-up and this point.
+    while (admission.runs) await new Promise(resolve => admission.idle.push(resolve));
+    const pending = probe();
+    admission.probes.add(pending);
+    try {
+        return await pending;
+    } finally {
+        admission.probes.delete(pending);
+    }
+}
+
+/// The key under which the probes and the runs are admitted (`implicitUserProbeAdmission`): the
+/// protocol and the host with the port, or `null` if the address does not parse. Coarser than
+/// `serverIdentityKey`: the query slots belong to the server, so connections that differ only in the
+/// path or the query string (e.g. `session_id`) still compete for them. Grouping connections that do
+/// not share the slots only makes a run wait for a short probe.
+function serverAdmissionKey(server_address) {
+    let url;
+    try { url = new URL(server_address, location.href); } catch (e) { return null; }
+    return url.protocol + '//' + url.host;
+}
+
+/// `sameConnectionUser` of a stored connection and the live connection fields.
+function sameAsLiveConnectionUser(server, user, implicit_user) {
+    return sameConnectionUser(server, user, implicit_user,
+        url_elem.value, user_elem.value, implicitUserStamp(url_elem.value, user_elem.value));
+}
+
+/// The key under which the implicit user of a server is remembered: the endpoint as compared by
+/// `sameServerAddress` (protocol, host, the path with the root trailing slash collapsed, and the query
+/// string), or `null` if the address does not parse.
+function serverIdentityKey(server_address) {
+    let url;
+    try { url = new URL(server_address, location.href); } catch (e) { return null; }
+    const path = (url.pathname === '/' || url.pathname === '') ? '/' : url.pathname;
+    return url.protocol + '//' + url.host + path + url.search;
+}
+
+/// The user that a server authenticates a request without a `user` as (its `default_session_user`),
+/// as last reported during this visit by the server itself (`currentUser` in `getServerStatus`), or
+/// empty if this visit has not asked yet. Not persisted across page loads, see `implicitUserStamp`:
+/// a stored entry carries its own stamp, so comparing it with the name the password manager refills on
+/// the next visit does not need the name remembered.
+function learnedImplicitUser(server_address) {
+    const key = serverIdentityKey(server_address);
+    const latest = implicitUserVisitState().latest;
+    return (key !== null && Object.hasOwn(latest, key)) ? latest[key] : '';
+}
+function rememberImplicitUser(server_address, user) {
+    const key = serverIdentityKey(server_address);
+    if (key === null || !user) return;
+    const state = implicitUserVisitState();
+    const resolves_markers = !Object.hasOwn(state.first, key);
+    if (resolves_markers) state.first[key] = user;
+    state.latest[key] = user;
+    if (resolves_markers) restampPendingImplicitUser();
+}
+
+/// The markers of this visit (`pendingImplicitUserStamp`) have just resolved to a name. A run that
+/// finished before the name was learned has already been recorded with its marker: the current
+/// history entry (its `run=1` URL then has no `implicit_user=`, see `runEntryImplicitUser`) and
+/// possibly the persisted result snapshots. Write them again, so the durable form (`durableImplicitUserStamp`) replaces the
+/// marker: the current entry is refreshed in place (`refreshCurrentHistoryEntry`, keeping `run=1` only
+/// under the usual conditions), and the snapshots are saved again (`durableResultSnapshot`). Only
+/// state that carries a marker of this visit is touched, so nothing is written during the startup
+/// reconciliation unless a run of this visit already recorded it. Older history entries are not
+/// reachable without navigating; their markers never resolve on a later visit and fail closed.
+function restampPendingImplicitUser() {
+    const marker = pendingImplicitUserStamp();
+    const tab = getActiveTab();
+    const cur = history.state;
+    if (tab && cur && cur.tabId === tab.id
+        && (cur.connectionImplicitUser === marker || (cur.result && cur.result.implicitUser === marker)))
+        refreshCurrentHistoryEntry(tab);
+    if (tabs.some(t => t.cells.some(c => c.result && c.result.implicitUser === marker)))
+        scheduleSave();
 }
 
 /// Has the live target moved away from the connection/selection the query that produced this run
@@ -16772,8 +17098,7 @@ function liveDivergedFromRun(run_snapshot) {
            !snapshot_connection_known
         || effectiveDatabase(selected_database) !== effectiveDatabase(run_snapshot.database)
         || !sameServerAddress(run_snapshot.url, url_elem.value)
-        || effectiveConnectionUser(run_snapshot.url, run_snapshot.user)
-            !== effectiveConnectionUser(url_elem.value, user_elem.value));
+        || !sameAsLiveConnectionUser(run_snapshot.url, run_snapshot.user, run_snapshot.implicitUser));
 }
 
 /// Write a browser-history entry + URL derived from the tab. The top-level query/params
@@ -16843,6 +17168,13 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     const entry_database = use_snapshot ? run_snapshot.database : selected_database;
     const entry_server = use_snapshot ? run_snapshot.url : url_elem.value;
     const entry_user = use_snapshot ? run_snapshot.user : user_elem.value;
+    /// A marker of this visit is stored as the name it has resolved to by now (`resolvedImplicitUser`):
+    /// the marker itself would no longer resolve on a later visit (after a reload, or when the link is
+    /// shared) and would fail closed against the very account the entry ran as.
+    const entry_implicit_stamp = use_snapshot
+        ? (run_snapshot.implicitUser || '')
+        : implicitUserStamp(url_elem.value, user_elem.value);
+    const entry_implicit_user = durableImplicitUserStamp(entry_server, entry_implicit_stamp);
     const carries_run = fromRun && !live_diverged;
     /// `run=1` additionally requires the tab's own `runnableUrl` policy (see `makeTab`): only a tab
     /// whose entries a genuine run produced under a `?run=1` load — or that adopted such a policy
@@ -16863,7 +17195,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     const state = {
         query: recorded_query,
         params: recorded_params,
-        result: tab.result || null,
+        result: durableResultSnapshot(tab.result) || null,
         tabId: tab.id,
         tabName: tab.title,
         /// A history entry can outlive the tab it describes: Close tab followed by Back must
@@ -16889,6 +17221,8 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         /// survives re-authentication with a different password on the same server/user.
         connectionServer: entry_server,
         connectionUser: entry_user,
+        /// The account an implicit `connectionUser` was authenticated as (see `sameConnectionUser`).
+        connectionImplicitUser: entry_implicit_user,
         /// The run identity this entry currently reflects (see `run_epoch`): the still-running launch
         /// while the entry's own cell is in flight (so a mid-run `result: null` entry is stamped with
         /// the run that wrote it), otherwise the completed snapshot's id. `window.onpopstate` matches
@@ -16941,7 +17275,9 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     /// on reload would not reproduce it (and must not fire a write against the wrong server/database).
     /// The producing user/server/database are serialized into the URL and stamped into the state so
     /// Back/Forward can restore this entry's `database=` only while the live connection still matches.
-    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, entry_user, entry_server, entry_database);
+    /// A `run=1` URL carries the account of an implicit run once it is known (`runEntryImplicitUser`).
+    const url_implicit_user = stamp_run ? runEntryImplicitUser(entry_server, entry_user, entry_implicit_user) : '';
+    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, entry_user, entry_server, entry_database, url_implicit_user);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(recorded_query);
@@ -17106,6 +17442,9 @@ function saveHistory(stateData, titleForDoc, tab, cell) {
         /// connection has since changed. The password is deliberately never stored in history.
         url: stateData.url,
         user: stateData.user,
+        /// The account an implicit `user` was authenticated as (see `sameConnectionUser`), stored
+        /// durably like the history entry's stamp (`durableImplicitUserStamp`).
+        implicitUser: durableImplicitUserStamp(stateData.url, stateData.implicitUser),
         format: stateData.format,
         /// The `X-ClickHouse-Exception-Tag` of a failed run, so restoring the snapshot (tab switch,
         /// reload, Back/Forward) can split a transport `__exception__` marker on the validated block —
@@ -17257,7 +17596,12 @@ window.onpopstate = function(event) {
     const target_server = popped_url.searchParams.get('url')
         || (opened_locally ? 'http://localhost:8123/' : location.origin);
     const target_user = popped_url.searchParams.get('user') || '';
-    if (url_elem.value !== target_server || user_elem.value !== target_user) {
+    /// The user is compared by identity (`sameConnectionUser`), not spelling: an entry written for the
+    /// implicit user (an empty field, omitted from the URL) and stamped with its name, and a live login
+    /// refilled under that name are the same connection, and replacing the field would also drop the
+    /// password that authenticates it.
+    if (url_elem.value !== target_server
+        || !sameAsLiveConnectionUser(target_server, target_user, event.state?.connectionImplicitUser)) {
         url_elem.value = target_server;
         user_elem.value = target_user;
         /// The password that authenticated this entry's `target_server`/`target_user` is deliberately
@@ -17410,8 +17754,8 @@ window.onpopstate = function(event) {
             applySelectedDatabaseHighlight();
         }
     } else if (sameServerAddress(event.state.connectionServer, url_elem.value)
-        && effectiveConnectionUser(event.state.connectionServer, event.state.connectionUser)
-            === effectiveConnectionUser(url_elem.value, user_elem.value)) {
+        && sameAsLiveConnectionUser(event.state.connectionServer, event.state.connectionUser,
+            event.state.connectionImplicitUser)) {
         selected_database = new URL(location.href).searchParams.get('database');
         /// The gate above confirmed the entry belongs to the live connection, so record it as the
         /// connection this restored selection belongs to (keeps `resetConnectionScopedState`'s later
@@ -17659,7 +18003,8 @@ async function postOne()
     /// `postImpl` used to) would let a tab switch + connection edit during it send this run's
     /// snapshotted query to the newly entered server or identity.
     dropAutofilledStalePassword();
-    const connection = { url: url_elem.value, user: user_elem.value, password: password_elem.value };
+    const connection = { url: url_elem.value, user: user_elem.value, password: password_elem.value,
+        implicitUser: implicitUserStamp(url_elem.value, user_elem.value) };
     /// Snapshot the selected database at launch too (see the connection above): the panel selection
     /// is shared, so re-reading it after the preflight await would let a mid-await database change
     /// retarget this run. It is threaded through to `postImpl` (the request URL) and the saved
@@ -17780,7 +18125,8 @@ async function postAll()
     /// See `postOne`: the connection context and selected database are snapshotted at launch so a tab
     /// switch + connection/database edit during the preflight await cannot reroute this run.
     dropAutofilledStalePassword();
-    const connection = { url: url_elem.value, user: user_elem.value, password: password_elem.value };
+    const connection = { url: url_elem.value, user: user_elem.value, password: password_elem.value,
+        implicitUser: implicitUserStamp(url_elem.value, user_elem.value) };
     const query_database = selected_database;
     ++activation_num;
     const my_run = ++tab.reqNum;
@@ -17862,17 +18208,51 @@ async function cancel()
     cancelTabRun(getActiveTab());
 }
 
-function storeCredentials() {
+/// The server URL without the parameters that attach a request to an HTTP session (`session_id`,
+/// `session_check`, `session_timeout`), or `null` if the URL cannot be parsed. The other parameters
+/// are kept byte for byte. The server rejects a concurrent request in the same session with
+/// `SESSION_IS_LOCKED`, so an auxiliary request issued while a query may be running must not join it.
+function serverAddressWithoutSession(server_address) {
+    let url;
+    try { url = new URL(server_address, location.href); } catch (e) { return null; }
+    url.search = url.search.slice(1).split('&').filter(p => !/^session_(id|check|timeout)(=|$)/.test(p)).join('&');
+    return url.href;
+}
+
+/// Offer the connection's login to the browser's password manager, so it can be autofilled on the next
+/// visit. `PasswordCredential` rejects an empty `id` (as it rejects an empty password) with a
+/// `TypeError`, and the browser may not implement it at all (Firefox has no `PasswordCredential`), so
+/// both cases are checked up front instead of throwing out of every Run. An empty `user` field makes
+/// the server authenticate the request as its `default_session_user`, which is server configuration
+/// (not necessarily `default`), so the real name is asked from the server (`currentUser` in
+/// `getServerStatus`, sent without a `user` parameter) and the login is saved under it: the refilled
+/// name then selects the same account explicitly. The probe is sent outside of the connection's HTTP
+/// session (`serverAddressWithoutSession`): a query of another tab may be in flight in it, and the
+/// server rejects a concurrent request in one session with `SESSION_IS_LOCKED`.
+/// Nothing is saved if the server cannot tell, which includes a server URL with a userinfo
+/// (`http://alice@host:8123/`): `fetch` refuses URLs with credentials, so such a connection does not
+/// work from this page at all.
+///
+/// The probe is an ordinary query of the same user, so while the query of this Run is in flight it
+/// would compete with it for the user's query slots: with `max_concurrent_queries_for_user = 1` the
+/// server rejects whichever of the two arrives second with `TOO_MANY_SIMULTANEOUS_QUERIES`, and the
+/// probe can win the race, since the Run first awaits its lexer preflight. So the probe is sent only
+/// after `run` (the promise of the launched Run) has settled; the connection is still the one taken
+/// here, at launch. The probe is admitted against the runs of other tabs as well (`admitRunQuery`).
+/// Returns a promise for tests.
+function storeCredentials(run) {
     /// A stale autofilled password must not be re-offered to the browser's store either.
     dropAutofilledStalePassword();
-    if (password_elem.value) {
-        const cred = new PasswordCredential({
-            id: user_elem.value,
-            password: password_elem.value,
-            name: url_elem.value,
-        });
-        navigator.credentials.store(cred);
-    }
+    const server_address = url_elem.value;
+    const user = user_elem.value;
+    const password = password_elem.value;
+    if (!password || typeof PasswordCredential !== 'function') return Promise.resolve();
+    const store = id => navigator.credentials.store(new PasswordCredential({ id, password, name: server_address }));
+    if (user) return store(user);
+    if (!serverAddressWithoutSession(server_address)) return Promise.resolve();
+    return Promise.allSettled([run]).then(() => learnImplicitUser(server_address, password)).then(name => {
+        if (name) return store(name);
+    });
 }
 
 /// The "Run" / "Run one" button submits the form; handle it here.
@@ -17883,8 +18263,7 @@ document.getElementById('controls').addEventListener('submit', e =>
     if (activeInFlight()) {
         cancel();
     } else {
-        postOne();
-        storeCredentials();
+        storeCredentials(postOne());
     }
 });
 
@@ -17894,8 +18273,7 @@ document.getElementById('run-all').addEventListener('click', e =>
     e.preventDefault();
     markBootstrapDirty(e);
     if (!activeInFlight()) {
-        postAll();
-        storeCredentials();
+        storeCredentials(postAll());
     }
 });
 
@@ -17913,11 +18291,9 @@ document.addEventListener('keydown', event => {
             cancel();
         } else if (event.shiftKey && isMultiQuery) {
             /// Ctrl/Cmd+Shift+Enter runs all queries in multi-query mode.
-            postAll();
-            storeCredentials();
+            storeCredentials(postAll());
         } else {
-            postOne();
-            storeCredentials();
+            storeCredentials(postOne());
         }
         event.preventDefault();
     }
@@ -20430,8 +20806,8 @@ function resetConnectionScopedState() {
     /// stamp (no selection) fails the check the safe way, matching the previous unconditional clear.
     const identity_changed = selected_database_connection === null
         || !sameServerAddress(selected_database_connection.server, url_elem.value)
-        || effectiveConnectionUser(selected_database_connection.server, selected_database_connection.user)
-            !== effectiveConnectionUser(url_elem.value, user_elem.value);
+        || !sameAsLiveConnectionUser(selected_database_connection.server, selected_database_connection.user,
+            selected_database_connection.implicitUser);
     const cleared_selection = selected_database !== null && identity_changed;
     if (cleared_selection) {
         selected_database = null;
@@ -20468,8 +20844,8 @@ function resetConnectionScopedState() {
     const connection_diverged = current_entry
         && current_entry.connectionServer !== undefined
         && (!sameServerAddress(current_entry.connectionServer, url_elem.value)
-            || effectiveConnectionUser(current_entry.connectionServer, current_entry.connectionUser)
-                !== effectiveConnectionUser(url_elem.value, user_elem.value));
+            || !sameAsLiveConnectionUser(current_entry.connectionServer, current_entry.connectionUser,
+                current_entry.connectionImplicitUser));
     /// Before the first history write there is no entry to compare against, yet a deferred startup
     /// auto-run may already be armed (`defer_run_for_reconcile`) against the connection the page
     /// loaded with (`initial_connection`). A trusted connection edit in that window must cancel the
@@ -20488,8 +20864,8 @@ function resetConnectionScopedState() {
     /// suppresses the legitimate auto-run.
     const bootstrap_connection_diverged = (!current_entry || current_entry.connectionServer === undefined)
         && (!sameServerAddress(initial_connection.server, url_elem.value)
-            || effectiveConnectionUser(initial_connection.server, initial_connection.user)
-                !== effectiveConnectionUser(url_elem.value, user_elem.value));
+            || !sameAsLiveConnectionUser(initial_connection.server, initial_connection.user,
+                initial_connection.implicitUser));
     /// A Back/Forward restore replays these connection changes synthetically to reproduce the popped
     /// entry; it must NOT restamp history here. `history.state` is already that popped entry and
     /// `activeTabId` still points at the tab being left, so a restamp would overwrite the time-travel
@@ -21486,6 +21862,54 @@ const url_query = query_area.value;          /// already decoded from the hash; 
 /// query that produced nothing.
 const defer_run_for_reconcile = run_immediately;
 
+/// The account a `run=1` link of an implicit run was produced as (see `runEntryImplicitUser`).
+const implicit_user_from_url = current_url.searchParams.get('implicit_user') || '';
+
+/// Run the deferred startup `run=1` query. A link of an implicit run carries the account it was
+/// produced as (`implicit_user`): while the connection is still implicit, the query runs only once the
+/// server confirms that a request without a user is authenticated as that account
+/// (`learnImplicitUser`), since the server's `default_session_user` may have changed since the link was
+/// written, or the link is opened by someone the server authenticates as another account. Otherwise
+/// the query is left in the editor and the link no longer carries `run=1`, failing closed. Any change
+/// of the connection, the tab or the query while the server is being asked, any other action that
+/// cancels a deferred auto-run (`deferred_run_cancelled`: a database selection, a parameter edit), or
+/// a run started meanwhile (`tab.reqNum`, which also covers a run that has already completed),
+/// cancels the auto-run as well.
+/// A user that is named explicitly by the time the auto-run starts (e.g. silently refilled by the
+/// password manager, which fires no `input` event) must be that same account: a refill of another
+/// saved login would otherwise run the linked query as a different user than the link records.
+function runDeferredStartupQuery() {
+    if (!implicit_user_from_url) {
+        postAll();   /// saves history itself on completion
+        return;
+    }
+    const tab = getActiveTab();
+    const explicit_user = effectiveConnectionUser(url_elem.value, user_elem.value);
+    if (explicit_user) {
+        if (explicit_user === implicit_user_from_url) {
+            postAll();
+        } else {
+            tab.runnableUrl = false;
+            refreshCurrentHistoryEntry(tab);
+        }
+        return;
+    }
+    const connection = connectionTuple();
+    const query = query_area.value;
+    const request_num = tab.reqNum;
+    learnImplicitUser(url_elem.value, password_elem.value).then(name => {
+        const unchanged = connectionTuple() === connection && getActiveTab() === tab && query_area.value === query
+            && tab.reqNum === request_num && !deferred_run_cancelled && !bootstrap_dirty;
+        if (!unchanged || activeInFlight()) return;
+        if (name === implicit_user_from_url) {
+            postAll();
+        } else {
+            tab.runnableUrl = false;
+            refreshCurrentHistoryEntry(tab);
+        }
+    });
+}
+
 /// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
 async function reconcileStartup() {
     const loaded = await loadFromDb();
@@ -22035,7 +22459,7 @@ async function reconcileStartup() {
     /// cancels the run (`deferred_run_cancelled`): running anyway would execute the shared query
     /// against a target or edit the live URL no longer requests it for.
     if (defer_run_for_reconcile && !deferred_run_cancelled && !stale_blank_reload_bare && query_area.value && !preserve_local_query && !bootstrap_dirty) {
-        postAll();   /// saves history itself on completion
+        runDeferredStartupQuery();
     } else if (activated) {
         syncHistory();   /// reflect the restored active tab in the URL (replaceState)
     } else if (reown_adopted_entry) {
@@ -22145,6 +22569,10 @@ let last_database_for_download = '';
 /// rather than silently exporting data from the wrong server.
 let last_url_for_download = '';
 let last_user_for_download = '';
+/// The implicit-user stamp of the producing connection (see `sameConnectionUser`): an implicit run
+/// (no `user`) is downloaded as the account it was authenticated as once that name is known
+/// (`replayConnectionUser`), not as whatever the server's `default_session_user` is at download time.
+let last_implicit_user_for_download = '';
 
 // Toggle download dropdown
 document.getElementById('download-div').addEventListener('click', function(e) {
@@ -22256,6 +22684,33 @@ const formatExtensions = {
   Markdown: "md"
 };
 
+/// Submit the export of `query` to `url` (a request to `server_address`) as a form, so that the browser
+/// saves the response as a file. The export is a query of the user, so it is admitted like the query of a
+/// run (`admitRunQuery`): it is sent only after an implicit-user probe in flight has settled, or the
+/// probe could take the last query slot of the user (`max_concurrent_queries_for_user`) and the export
+/// would fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. The page cannot see when the browser finishes
+/// receiving the file, so the admission ends with the submission; a probe that starts while the export
+/// still holds the slot is the one the server rejects, which only leaves the login unrecorded.
+async function submitDownload(server_address, url, query) {
+    await admitRunQuery(server_address, new AbortController().signal, async () => {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        form.enctype = 'multipart/form-data';
+        form.style.display = 'none';
+
+        const queryInput = document.createElement('input');
+        queryInput.type = 'hidden';
+        queryInput.name = 'query';
+        queryInput.value = query;
+        form.appendChild(queryInput);
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    });
+}
+
 // Handle download button click
 document.getElementById('download-button').addEventListener('click', async function() {
     const formatSelect = document.getElementById('download-format');
@@ -22278,11 +22733,19 @@ document.getElementById('download-button').addEventListener('click', async funct
     // snapshotted (never stored in history), so the live password is used — a mismatched
     // connection then surfaces as a visible authentication error rather than silently exporting
     // data from the wrong server.
-    const user = last_user_for_download;
+    //
+    // Everything the download sends is snapshotted here, before the first await: the account may have
+    // to be asked from the server (`replayConnectionUser`), and a tab or connection switch meanwhile
+    // replaces the live fields and the `last_*_for_download` globals, which would otherwise mix the
+    // query, password, database and parameters of another result into a request to this server.
+    const server_address = last_url_for_download || url_elem.value;
     dropAutofilledStalePassword();
     const password = password_elem.value;
-    const server_address = last_url_for_download || url_elem.value;
     const query = last_query_for_download;
+    const database = last_database_for_download;
+    const shape = last_shape_for_download;
+    const params = { ...last_params_for_download };
+    const user = await replayConnectionUser(server_address, last_user_for_download, last_implicit_user_for_download, password);
 
     if (!query) {
         alert('No query to download results for');
@@ -22320,10 +22783,10 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
-    if (last_database_for_download) url += '&database=' + encodeURIComponent(last_database_for_download);
-    url += last_shape_for_download;
+    if (database) url += '&database=' + encodeURIComponent(database);
+    url += shape;
 
-    for (const [name, value] of Object.entries(last_params_for_download))
+    for (const [name, value] of Object.entries(params))
     {
         url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
     }
@@ -22339,22 +22802,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         ? query.slice(0, format_clause.start) + query.slice(format_clause.end)
         : query;
 
-    // Create a form and submit it to trigger download
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.enctype = 'multipart/form-data';
-    form.style.display = 'none';
-
-    const queryInput = document.createElement('input');
-    queryInput.type = 'hidden';
-    queryInput.name = 'query';
-    queryInput.value = downloadQuery;
-    form.appendChild(queryInput);
-
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
+    await submitDownload(server_address, url, downloadQuery);
 
     // Close dropdown
     document.getElementById('download-dropdown').classList.remove('show');

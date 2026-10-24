@@ -485,6 +485,14 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function runScenario(js, config) {
     const { sandbox, stores, stats } = makeContext(config);
     vm.runInContext(js, sandbox, { filename: 'play.html.js' });
+    /// A scenario may replace page functions or the network right after the synchronous bootstrap,
+    /// before the asynchronous reconciliation reaches the deferred auto-run.
+    if (config.afterBoot) config.afterBoot(sandbox);
+    /// A scenario on the live implicit connection may need this visit to have learned its user, as
+    /// `checkCredentials` does when the server answers before `reconcileStartup` reads IndexedDB:
+    /// `config.learnImplicitUser` is the name the server reports for the origin of the page.
+    if (config.learnImplicitUser)
+        vm.runInContext(`rememberImplicitUser(${JSON.stringify(new URL(config.href).origin)}, ${JSON.stringify(config.learnImplicitUser)})`, sandbox);
     /// A scenario may interact with the bootstrap workspace while IndexedDB is still opening
     /// (see the dirty-startup scenario): run `config.duringLoad(sandbox)` inside the `openDelayMs`
     /// window, before `reconcileStartup` takes over the workspace (`bootstrap_settled`).
@@ -1099,10 +1107,11 @@ async function main() {
                 /// dropped by the connection-divergence check instead of by the policy under test.
                 { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
                   result: { ran: true, query: 'SELECT 8', params: {}, database: null,
-                            url: new URL(base).origin, user: '' },
+                            url: new URL(base).origin, user: '', implicitUser: 'default' },
                   lastSavedQuery: 'SELECT 8' },
             ],
             seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+            learnImplicitUser: 'default',
         });
         /// Sanity: `Report` really is the clean, run-backed tab this contract is about — otherwise
         /// the assertion below would pass for the trivial reason that no tab could carry `run=1`.
@@ -1143,16 +1152,17 @@ async function main() {
                 /// dropped by the connection-divergence check instead of by the policy under test.
                 { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
                   result: { ran: true, query: 'SELECT 8', params: {}, database: null,
-                            url: origin, user: '' },
+                            url: origin, user: '', implicitUser: 'default' },
                   lastSavedQuery: 'SELECT 8' },
             ],
             seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+            learnImplicitUser: 'default',
         });
         const entryState = (extra) => Object.assign({
             tabId: 't8', tabName: 'Report', query: 'SELECT 8', params: {},
             result: { ran: true, query: 'SELECT 8', params: {}, database: null,
-                      url: origin, user: '' },
-            connectionServer: origin, connectionUser: '',
+                      url: origin, user: '', implicitUser: 'default' },
+            connectionServer: origin, connectionUser: '', connectionImplicitUser: 'default',
         }, extra);
         /// Back to a MODERN entry carrying the policy: the tab adopts it. This is the "promote"
         /// direction, asserted so the clearing below cannot pass by never adopting a policy at all.
@@ -1208,7 +1218,8 @@ async function main() {
         vm.runInContext(
             "(() => { const t = getActiveTab();" +
             " saveHistory({ query: t.query, params: {}, database: selected_database," +
-            " url: url_elem.value, user: user_elem.value, ok: true, data: null, fullEditor: true }, undefined, t); })()",
+            " url: url_elem.value, user: user_elem.value, implicitUser: implicitUserStamp(url_elem.value, user_elem.value)," +
+            " ok: true, data: null, fullEditor: true }, undefined, t); })()",
             r.sandbox);
         await sleep(50);
         check('run-marker-kept-for-own-run', 'a genuine run under a `run=1` load keeps `run=1` on its own URL',
@@ -1790,6 +1801,354 @@ async function main() {
             switched.requests.length === 0, switched.requests);
         check('format-connection-change-lexer-load', 'the editor text is unchanged',
             switched.text === 'select 1', switched.text);
+    }
+
+    /// Guard (implicit account of a `run=1` link): a link of an implicit run carries the account it ran
+    /// as (`implicit_user`) instead of naming it as `user`, which a proxy-authenticated server would
+    /// reject. The startup auto-run proceeds only once the server confirms that a request without a
+    /// user is authenticated as that account; otherwise the query stays in the editor and the URL
+    /// loses `run=1`.
+    for (const [server_user, expect_run] of [['alice', true], ['bob', false]]) {
+        const q = 'SELECT 7';
+        const probes = [];
+        let runs = 0;
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                sandbox.postAll = async () => { ++runs; };
+                sandbox.fetch = async (url, options) => {
+                    probes.push({ url: String(url), body: options && options.body });
+                    return {
+                        ok: true,
+                        status: 200,
+                        headers: { get: () => null },
+                        text: async () => '',
+                        json: async () => ({ v: 'test', t: 0, u: server_user }),
+                    };
+                };
+            },
+        });
+        await sleep(50);
+        const what = expect_run ? 'the confirmed implicit account' : 'another implicit account';
+        check('run-link-implicit-user', `the server is asked which account an empty user is (${what})`,
+            probes.some(p => String(p.body).includes('currentUser()') && !/[?&]user=/.test(p.url)), probes);
+        check('run-link-implicit-user', `the query is auto-run only for ${expect_run ? 'it' : 'the linked account'} (${what})`,
+            runs === (expect_run ? 1 : 0), runs);
+        if (!expect_run) {
+            check('run-link-implicit-user', 'the refused link no longer carries run=1',
+                new URL(r.sandbox.location.href).searchParams.get('run') === null, r.sandbox.location.href);
+            check('run-link-implicit-user', 'the query stays in the editor',
+                vm.runInContext('query_area.value', r.sandbox) === q, vm.runInContext('query_area.value', r.sandbox));
+        }
+    }
+
+    /// Guard (silent password-manager refill before a `run=1` link of an implicit run): the password
+    /// manager may fill the user field with a saved login without an `input` event, so nothing cancels
+    /// the deferred auto-run. The query runs only when that explicit user is the linked account;
+    /// a refill of another login leaves the query in the editor and drops `run=1`.
+    for (const [refilled_user, expect_run] of [['alice', true], ['bob', false]]) {
+        const q = 'DELETE FROM target WHERE id = 1';
+        const run_users = [];
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                vm.runInContext(`user_elem.value = ${JSON.stringify(refilled_user)};`, sandbox);
+                sandbox.postAll = async () => { run_users.push(vm.runInContext('user_elem.value', sandbox)); };
+                sandbox.fetch = async () => ({
+                    ok: false,
+                    status: 503,
+                    headers: { get: () => null },
+                    text: async () => '',
+                    json: async () => ({}),
+                });
+            },
+        });
+        await sleep(50);
+        const what = expect_run ? 'refilled with the linked account' : 'refilled with another account';
+        check('run-link-silent-refill', `the query is auto-run only as the linked account (${what})`,
+            JSON.stringify(run_users) === JSON.stringify(expect_run ? ['alice'] : []), run_users);
+        if (!expect_run) {
+            check('run-link-silent-refill', 'the refused link no longer carries run=1',
+                new URL(r.sandbox.location.href).searchParams.get('run') === null, r.sandbox.location.href);
+            check('run-link-silent-refill', 'the query stays in the editor',
+                vm.runInContext('query_area.value', r.sandbox) === q, vm.runInContext('query_area.value', r.sandbox));
+        }
+    }
+
+    /// Guard (cancellation while the implicit account is asked): an action that cancels a deferred
+    /// auto-run (a database selection) or a run of the user (here one that has already completed,
+    /// which bumps `tab.reqNum`) while the probe is pending must cancel the auto-run once the probe
+    /// answers, although the connection, the tab and the query are unchanged. The control case
+    /// proves the delayed probe alone does not cancel it.
+    for (const [interaction, act] of [
+        ['none', () => {}],
+        ['database', (sandbox) => vm.runInContext("commitSelectedDatabase('changed_by_user')", sandbox)],
+        ['completed-run', (sandbox) => vm.runInContext('++getActiveTab().reqNum', sandbox)],
+    ]) {
+        const q = 'DELETE FROM target WHERE id = 1';
+        const probes = [];
+        let respond;
+        const responded = new Promise(resolve => { respond = resolve; });
+        let runs = 0;
+        const r = await runScenario(js, {
+            href: base + '?run=1&implicit_user=alice&database=original#' + Buffer.from(q, 'utf8').toString('base64'),
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            afterBoot: (sandbox) => {
+                sandbox.postAll = async () => { ++runs; };
+                sandbox.fetch = async (url, options) => {
+                    const is_probe = String(options && options.body).includes('currentUser()');
+                    if (is_probe) {
+                        probes.push(String(url));
+                        await responded;
+                    }
+                    return {
+                        ok: is_probe,
+                        status: is_probe ? 200 : 503,
+                        headers: { get: () => null },
+                        text: async () => '',
+                        json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+                    };
+                };
+            },
+        });
+        for (let i = 0; i < 100 && !probes.length; ++i) await sleep(10);
+        check('run-link-delayed-probe', `the server is asked which account an empty user is (${interaction})`,
+            probes.length > 0, probes);
+        act(r.sandbox);
+        respond();
+        await sleep(50);
+        check('run-link-delayed-probe', `the query is auto-run only without an interaction (${interaction})`,
+            runs === (interaction === 'none' ? 1 : 0), runs);
+    }
+
+    /// Guard (Download of an implicit result while its account is asked): a restored implicit result
+    /// whose account this visit has not learned waits for the server (`replayConnectionUser`). A tab or
+    /// connection switch meanwhile replaces the live password and the `last_*_for_download` state;
+    /// the submitted request must still carry the query, password, database, shape and parameters
+    /// taken when Download was clicked, all for the server of that result.
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't9', title: 'Report', query: 'select 1', params: {}, result: null, lastSavedQuery: 'select 1' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't9', tabOrder: ['t9'], tabSeq: 9, tabTitleSeq: 2 },
+        });
+        const probes = [];
+        let respond;
+        const responded = new Promise(resolve => { respond = resolve; });
+        r.sandbox.fetch = async (url, options) => {
+            const is_probe = String(options && options.body).includes('currentUser()');
+            if (is_probe) {
+                probes.push(String(url));
+                await responded;
+            }
+            return {
+                ok: is_probe,
+                status: is_probe ? 200 : 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+            };
+        };
+        const forms = [];
+        const create_element = r.sandbox.document.createElement;
+        r.sandbox.document.createElement = (tag) => {
+            const el = create_element(tag);
+            if (String(tag).toLowerCase() === 'form') {
+                el.submit = () => {
+                    const input = (el.children || []).find(c => c.name === 'query');
+                    forms.push({ action: el.action, query: input && input.value });
+                };
+            }
+            return el;
+        };
+        vm.runInContext(`
+            last_url_for_download = 'http://a:8123/';
+            last_user_for_download = '';
+            last_implicit_user_for_download = 'alice';
+            last_query_for_download = 'SELECT a';
+            last_database_for_download = 'db_a';
+            last_shape_for_download = '&shape=a';
+            last_params_for_download = { p: 'a' };
+            password_elem.value = 'secret_a';
+            document.getElementById('download-format').value = 'CSV';
+            document.getElementById('download-button').dispatchEvent({ type: 'click', isTrusted: true });
+        `, r.sandbox);
+        for (let i = 0; i < 100 && !probes.length; ++i) await sleep(10);
+        check('download-snapshot', 'the account of the implicit result is asked from its server',
+            probes.length === 1 && probes[0].startsWith('http://a:8123/?') && probes[0].includes('password=secret_a'), probes);
+        vm.runInContext(`
+            last_url_for_download = 'http://b:8123/';
+            last_user_for_download = 'bob';
+            last_query_for_download = 'SELECT b';
+            last_database_for_download = 'db_b';
+            last_shape_for_download = '&shape=b';
+            last_params_for_download.p = 'b';
+            password_elem.value = 'secret_b';
+        `, r.sandbox);
+        respond();
+        await sleep(50);
+        const form = forms[0];
+        check('download-snapshot', 'the download is submitted once', forms.length === 1, forms);
+        if (form) {
+            const action = form.action;
+            check('download-snapshot', 'to the server of the result, as the empty user',
+                action.startsWith('http://a:8123/?') && !/[?&]user=/.test(action), action);
+            check('download-snapshot', 'with the password, database, shape and parameters taken at the click',
+                action.includes('&password=secret_a') && action.includes('&database=db_a') && action.includes('&shape=a')
+                    && action.includes('&param_p=a') && !/secret_b|db_b|shape=b|param_p=b/.test(action), action);
+            check('download-snapshot', 'and the query taken at the click', form.query === 'SELECT a', form.query);
+        }
+    }
+
+    /// Guard (implicit-user probes never take the query slot of a run): a probe is an ordinary query
+    /// of the same user, so with `max_concurrent_queries_for_user = 1` it would make the query of a
+    /// concurrent run fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. A probe started by the bookkeeping of
+    /// another request (`rememberAuthenticationOutcome`, as after the database panel) holds the query
+    /// of a Run back until it settles, and a probe wanted while the query of a Run is in flight waits
+    /// for it to finish. The admission is per server, not per connection: a probe started for one
+    /// HTTP session (`session_id=a`) also holds back the Run of another one (`session_id=b`).
+    for (const order of ['probe-first', 'run-first', 'probe-first-other-session']) {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't10', title: 'Report', query: 'SELECT 7', params: {}, result: null, lastSavedQuery: 'SELECT 7' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't10', tabOrder: ['t10'], tabSeq: 10, tabTitleSeq: 2 },
+        });
+        const events = [];
+        const holds = { probe: null, query: null };
+        const release = { probe: null, query: null };
+        for (const kind of ['probe', 'query'])
+            holds[kind] = new Promise(resolve => { release[kind] = resolve; });
+        r.sandbox.fetch = async (url, options) => {
+            const body = String(options && options.body);
+            const kind = body.includes('currentUser()') ? 'probe' : body.includes('SELECT 7') ? 'query' : null;
+            if (kind) {
+                events.push(kind + ':start');
+                await holds[kind];
+                events.push(kind + ':end');
+            }
+            return {
+                ok: kind === 'probe',
+                status: kind === 'probe' ? 200 : 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({ v: 'test', t: 0, u: 'alice' }),
+            };
+        };
+        const remember = () => vm.runInContext(`
+            user_elem.value = '';
+            password_elem.value = '';
+            rememberAuthenticationOutcome({ ok: true, status: 200, headers: { get: () => null } }, url_elem.value, '', '');
+        `, r.sandbox);
+        const wait_for = async (event) => { for (let i = 0; i < 100 && !events.includes(event); ++i) await sleep(10); };
+        if (order === 'probe-first' || order === 'probe-first-other-session') {
+            const other_session = order === 'probe-first-other-session';
+            const origin = new URL(base).origin;
+            if (other_session) vm.runInContext(`url_elem.value = ${JSON.stringify(origin + '/?session_id=a')};`, r.sandbox);
+            remember();
+            await wait_for('probe:start');
+            if (other_session) vm.runInContext(`url_elem.value = ${JSON.stringify(origin + '/?session_id=b')};`, r.sandbox);
+            vm.runInContext("query_area.value = 'SELECT 7'; postAll();", r.sandbox);
+            await sleep(50);
+            const what = other_session ? 'the query of a Run in another HTTP session' : 'the query of the Run';
+            check('probe-admission', what + ' is held back while the probe is in flight',
+                !events.includes('query:start'), events);
+            release.probe();
+            release.query();
+            await wait_for('query:end');
+            check('probe-admission', 'and is sent once the probe has settled',
+                events.indexOf('query:start') > events.indexOf('probe:end'), events);
+        } else {
+            vm.runInContext("query_area.value = 'SELECT 7'; postAll();", r.sandbox);
+            await wait_for('query:start');
+            remember();
+            await sleep(50);
+            check('probe-admission', 'the probe waits while the query of a Run is in flight',
+                !events.includes('probe:start'), events);
+            release.query();
+            release.probe();
+            await wait_for('probe:end');
+            check('probe-admission', 'and is sent once the query has finished',
+                events.indexOf('probe:start') > events.indexOf('query:end'), events);
+        }
+    }
+
+    /// Guard (a stalled probe never disables the runs): the probe that holds the queries of the runs
+    /// back has a bounded lifetime, and a run stopped while it waits for the probe stops waiting. A run
+    /// that is stopped while held back settles at once without sending its query, and the next run is
+    /// held back only until the probe is aborted by its timeout (`IMPLICIT_USER_PROBE_TIMEOUT_MS`).
+    {
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            seedTabs: [
+                { id: 't11', title: 'Report', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't11', tabOrder: ['t11'], tabSeq: 11, tabTitleSeq: 2 },
+        });
+        const events = [];
+        r.sandbox.fetch = async (url, options) => {
+            const body = String(options && options.body);
+            const kind = body.includes('currentUser()') ? 'probe' : body.includes('SELECT 8') ? 'query' : null;
+            const signal = options && options.signal;
+            /// Like the browser: an aborted request is not sent and rejects with `AbortError`.
+            const abort_error = () => Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+            if (signal && signal.aborted) {
+                if (kind) events.push(kind + ':not-sent');
+                throw abort_error();
+            }
+            if (kind) events.push(kind + ':start');
+            if (kind === 'probe') {
+                /// The probe stalls until it is aborted, or forever if it cannot be.
+                await new Promise((resolve, reject) => signal && signal.addEventListener('abort', () => {
+                    events.push('probe:aborted');
+                    reject(abort_error());
+                }, { once: true }));
+            }
+            return {
+                ok: false,
+                status: 503,
+                headers: { get: () => null },
+                text: async () => '',
+                json: async () => ({}),
+            };
+        };
+        const wait_for = async (event, ms = 1000) => { for (let i = 0; i < ms / 10 && !events.includes(event); ++i) await sleep(10); };
+        vm.runInContext(`
+            user_elem.value = '';
+            password_elem.value = '';
+            rememberAuthenticationOutcome({ ok: true, status: 200, headers: { get: () => null } }, url_elem.value, '', '');
+        `, r.sandbox);
+        await wait_for('probe:start');
+        vm.runInContext("query_area.value = 'SELECT 8'; globalThis.first_run = postAll();", r.sandbox);
+        await sleep(50);
+        vm.runInContext('cancel()', r.sandbox);
+        const first_settled = await Promise.race([
+            vm.runInContext('first_run', r.sandbox).then(() => true, () => true),
+            sleep(1000).then(() => false)]);
+        check('probe-admission-cancel', 'a run stopped while held back by a stalled probe settles at once',
+            first_settled && !events.includes('probe:aborted'), events);
+        check('probe-admission-cancel', 'without sending its query', !events.includes('query:start'), events);
+        vm.runInContext("postAll();", r.sandbox);
+        await sleep(50);
+        check('probe-admission-cancel', 'the next run is held back while the probe is in flight',
+            !events.includes('query:start'), events);
+        await wait_for('query:start', 10000);
+        check('probe-admission-cancel', 'and is sent once the stalled probe is aborted by its timeout',
+            events.includes('probe:aborted') && events.indexOf('query:start') > events.indexOf('probe:aborted'), events);
     }
 
     if (failures) {
