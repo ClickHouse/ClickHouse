@@ -1775,7 +1775,7 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
     auto data_parts = getDataPartsVectorForInternalUsage();
-    /// Only parts below a mutation's version can be in its scope, so each entry scans just that prefix.
+    /// Only parts below a mutation's version can be in its scope, so each entry looks only at that prefix.
     std::stable_sort(data_parts.begin(), data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs->info.getDataVersion() < rhs->info.getDataVersion(); });
 
@@ -1784,27 +1784,18 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
     const Int64 lowest_uncommitted_insert_block = getLowestUncommittedNewPartBlockNum();
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
-        size_t parts_to_do = 0;
-        /// Not countable work yet, but this mutation still has to rewrite it once the transaction
-        /// commits, so the entry must not be reported as having nothing left.
-        bool has_uncommitted_part_in_scope = false;
         const auto scope_end = std::partition_point(data_parts.begin(), data_parts.end(),
             [&](const auto & part) { return part->info.getDataVersion() < static_cast<Int64>(mutation_version); });
-        for (auto part_it = data_parts.begin(); part_it != scope_end; ++part_it)
-        {
-            const auto & part = *part_it;
-            switch (getPartMutationScope(*part, static_cast<Int64>(mutation_version), entry.tid))
-            {
-                case PartMutationScope::Inside: ++parts_to_do; break;
-                case PartMutationScope::PendingCommit: has_uncommitted_part_in_scope = true; break;
-                case PartMutationScope::Outside: break;
-            }
-        }
 
-        const bool waiting_for_lower_block
-            = scope_is_block_ordered && static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block;
-        if (parts_to_do > 0 || waiting_for_lower_block || has_uncommitted_part_in_scope)
+        bool has_work = false;
+        /// For a plain mutation every lower-version part is work or a pending commit that joins it.
+        if (entry.tid.isNonTransactional())
+            has_work = scope_end != data_parts.begin() || static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block;
+        else
+            has_work = std::any_of(data_parts.begin(), scope_end, [&](const auto & part)
+                { return getPartMutationScope(*part, static_cast<Int64>(mutation_version), entry.tid) != PartMutationScope::Outside; });
+
+        if (has_work)
             result.emplace(entry.file_name, *entry.commands);
     }
     return result;
@@ -1836,7 +1827,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info}, part});
         active_parts_by_name.emplace(part->name, part);
     }
-    /// Only parts below a mutation's version can be in its scope, so each entry scans just that prefix.
+    /// Only parts below a mutation's version can be in its scope, so each entry looks only at that prefix.
     std::stable_sort(all_parts.begin(), all_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part.version < rhs.part.version; });
 
