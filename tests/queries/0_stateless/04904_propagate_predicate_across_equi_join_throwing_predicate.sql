@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 

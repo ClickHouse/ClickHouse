@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
@@ -58,10 +59,33 @@ constexpr auto makeUnpackBitsTable(std::index_sequence<widths...>)
     return std::array<void (*)(const UInt8 *, size_t, T *, size_t), sizeof...(widths)>{&unpackBitsImpl<T, widths>...};
 }
 
-/// Unpacks `count` values of `bit_width` bits each, stored back to back starting at bit
-/// `bit_offset` of `in`, least significant bits first, as in Parquet's bit-packed encodings.
-/// The values must lie within [`in`, `in_end`). The input does not have to be padded: the values
-/// whose 9-byte loads would cross `in_end` are unpacked from a zero-padded copy of the tail.
+template <size_t num_streams>
+void byteStreamSplitDecodeImpl(const UInt8 * in, size_t num_values, size_t stride, UInt8 * out)
+{
+    for (size_t i = 0; i < num_values; ++i)
+        for (size_t stream = 0; stream < num_streams; ++stream)
+            out[i * num_streams + stream] = in[stream * stride + i];
+}
+
+/// Interleaves `num_streams` byte streams, each `stride` bytes apart in `in`, back into
+/// `num_values` values of `num_streams` bytes: byte `stream` of value `i` is `in[stream * stride + i]`.
+void byteStreamSplitDecode(const UInt8 * in, size_t num_streams, size_t num_values, size_t stride, UInt8 * out)
+{
+    switch (num_streams)
+    {
+        case 2: byteStreamSplitDecodeImpl<2>(in, num_values, stride, out); return;
+        case 4: byteStreamSplitDecodeImpl<4>(in, num_values, stride, out); return;
+        case 8: byteStreamSplitDecodeImpl<8>(in, num_values, stride, out); return;
+        case 16: byteStreamSplitDecodeImpl<16>(in, num_values, stride, out); return;
+        default:
+            for (size_t i = 0; i < num_values; ++i)
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                    out[i * num_streams + stream] = in[stream * stride + i];
+    }
+}
+
+}
+
 template <typename T>
 void unpackBits(const UInt8 * in, const UInt8 * in_end, size_t bit_offset, size_t bit_width, T * out, size_t count)
 {
@@ -95,32 +119,8 @@ void unpackBits(const UInt8 * in, const UInt8 * in_end, size_t bit_offset, size_
     unpack(tail, tail_bit % 8, out + fast_count, count - fast_count);
 }
 
-template <size_t num_streams>
-void byteStreamSplitDecodeImpl(const UInt8 * in, size_t num_values, size_t stride, UInt8 * out)
-{
-    for (size_t i = 0; i < num_values; ++i)
-        for (size_t stream = 0; stream < num_streams; ++stream)
-            out[i * num_streams + stream] = in[stream * stride + i];
-}
-
-/// Interleaves `num_streams` byte streams, each `stride` bytes apart in `in`, back into
-/// `num_values` values of `num_streams` bytes: byte `stream` of value `i` is `in[stream * stride + i]`.
-void byteStreamSplitDecode(const UInt8 * in, size_t num_streams, size_t num_values, size_t stride, UInt8 * out)
-{
-    switch (num_streams)
-    {
-        case 2: byteStreamSplitDecodeImpl<2>(in, num_values, stride, out); return;
-        case 4: byteStreamSplitDecodeImpl<4>(in, num_values, stride, out); return;
-        case 8: byteStreamSplitDecodeImpl<8>(in, num_values, stride, out); return;
-        case 16: byteStreamSplitDecodeImpl<16>(in, num_values, stride, out); return;
-        default:
-            for (size_t i = 0; i < num_values; ++i)
-                for (size_t stream = 0; stream < num_streams; ++stream)
-                    out[i * num_streams + stream] = in[stream * stride + i];
-    }
-}
-
-}
+template void unpackBits<UInt32>(const UInt8 *, const UInt8 *, size_t, size_t, UInt32 *, size_t);
+template void unpackBits<UInt64>(const UInt8 *, const UInt8 *, size_t, size_t, UInt64 *, size_t);
 
 /// Used for dictionary indices and repetition/definition levels.
 /// Throws if any decoded value is >= `limit`.
@@ -312,13 +312,13 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-            {
                 count = countBytesInFilter(filter, 0, num_values);
+            if constexpr (!skip)
+            {
                 if (count && limit == 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-            }
-            if constexpr (!skip)
                 memset(out, 0, count * sizeof(T));
+            }
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;
@@ -1577,6 +1577,10 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             /// any fixed-size types, so we do the same just in case.
             if (fixed_size_converter)
                 return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
+            break;
+        case parq::Encoding::ALP:
+            if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
+                return makeALPDecoder(physical_type, data, fixed_size_converter);
             break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }

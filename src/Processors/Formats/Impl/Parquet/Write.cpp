@@ -1,7 +1,9 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 #include <lz4.h>
 #include <zlib.h>
+#include <variant>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <xxhash.h>
@@ -1655,6 +1657,30 @@ void writeColumnImpl(
     static constexpr bool can_use_dictionary = !std::is_same_v<ParquetDType, BooleanType>;
     bool use_dictionary = can_use_dictionary && options.use_dictionary_encoding && !s.is_bool;
 
+    /// `ALP` is used without a dictionary. Other writers (Arrow, parquet-java, arrow-rs) treat `ALP`
+    /// like any other non-dictionary encoding: as the fallback when the dictionary gets too big. But
+    /// here the dictionary is abandoned only when it exceeds `max_dictionary_size` (1 MiB by
+    /// default, i.e. 131072 distinct `DOUBLE` values), so most column chunks would never get to
+    /// `ALP`, even those where it is a lot better:
+    /// for decimal-like values `ALP` bit-packs the differences from the vector minimum, so it needs
+    /// fewer bits per value than the dictionary indexes once the values are not very repetitive,
+    /// and it doesn't store the dictionary itself. The user opts into `ALP` explicitly, so it is
+    /// what they get. The values that `ALP` can't encode don't make the page bigger than `PLAIN`:
+    /// such pages are written as `PLAIN` (see `ALPEncoder`).
+    static constexpr bool is_floating_point
+        = std::is_same_v<ParquetDType, FloatType> || std::is_same_v<ParquetDType, DoubleType>;
+    if constexpr (is_floating_point)
+    {
+        if (options.use_alp_encoding)
+        {
+            encoding = parq::Encoding::ALP;
+            use_dictionary = false;
+        }
+    }
+
+    /// Encodings of the written data pages, for `ColumnMetaData.encodings`.
+    std::vector<parq::Encoding::type> data_page_encodings;
+
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
     /// If we ever use DataPageV2, enable this flag in that case too:
@@ -1684,24 +1710,43 @@ void writeColumnImpl(
     };
     reset_size_statistics();
 
-    /// The only non-dictionary encoding we write is PLAIN.
-    if (encoding != parq::Encoding::PLAIN)
+    /// The only non-dictionary encodings we write are PLAIN and ALP.
+    if (encoding != parq::Encoding::PLAIN && !(is_floating_point && encoding == parq::Encoding::ALP))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Parquet encoding for writing: {}", static_cast<int>(encoding));
 
-    /// Exactly one of the two is used at a time, depending on `use_dictionary`.
+    /// Exactly one of these is used at a time, depending on `use_dictionary` and `encoding`.
     std::optional<DictionaryEncoder<ParquetDType>> dict_encoder;
     std::optional<PlainEncoder<ParquetDType>> plain_encoder;
+    using ALPEncoderType = std::conditional_t<is_floating_point, ALPEncoder<typename ParquetDType::c_type>, std::monostate>;
+    std::optional<ALPEncoderType> alp_encoder;
+
+    auto make_non_dictionary_encoder = [&]
+    {
+        if constexpr (is_floating_point)
+        {
+            if (encoding == parq::Encoding::ALP)
+            {
+                alp_encoder.emplace();
+                return;
+            }
+        }
+        plain_encoder.emplace(fixed_string_size);
+    };
+
     if (use_dictionary)
         dict_encoder.emplace(fixed_string_size);
     else
-        plain_encoder.emplace(fixed_string_size);
+        make_non_dictionary_encoder();
 
-    /// Calls `f` with the encoder in use. Both have the same interface for the values of a page.
+    /// Calls `f` with the encoder in use. They have the same interface for the values of a page.
     auto with_encoder = [&](auto && f)
     {
         if constexpr (can_use_dictionary)
             if (use_dictionary)
                 return f(*dict_encoder);
+        if constexpr (is_floating_point)
+            if (alp_encoder)
+                return f(*alp_encoder);
         return f(*plain_encoder);
     };
 
@@ -1816,6 +1861,14 @@ void writeColumnImpl(
         /// Append the values, and reset the encoder for the next page.
         with_encoder([&](auto & encoder) { encoder.flush(encoded); });
 
+        /// The `ALP` encoder writes the pages it can't compress as `PLAIN`.
+        parq::Encoding::type page_encoding = use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding;
+        if constexpr (is_floating_point)
+            if (page_encoding == parq::Encoding::ALP)
+                page_encoding = alp_encoder->lastPageEncoding();
+        if (!use_dictionary && !std::count(data_page_encodings.begin(), data_page_encodings.end(), page_encoding))
+            data_page_encodings.push_back(page_encoding);
+
         if (encoded.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
 
@@ -1832,7 +1885,7 @@ void writeColumnImpl(
         header.__isset.data_page_header = true;
         auto & d = header.data_page_header;
         d.__set_num_values(static_cast<Int32>(def_count));
-        d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
+        d.__set_encoding(page_encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
 
@@ -1971,7 +2024,7 @@ void writeColumnImpl(
         total_statistics.clear();
 
         dict_encoder.reset();
-        plain_encoder.emplace(fixed_string_size);
+        make_non_dictionary_encoder();
     };
 
     /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
@@ -2272,9 +2325,14 @@ void writeColumnImpl(
         addToEncodingsUsed(s, parq::Encoding::PLAIN); // dictionary itself
         addToEncodingsUsed(s, parq::Encoding::RLE_DICTIONARY); // ids
     }
-    else
+    else if (data_page_encodings.empty())
     {
         addToEncodingsUsed(s, encoding);
+    }
+    else
+    {
+        for (auto e : data_page_encodings)
+            addToEncodingsUsed(s, e);
     }
 
     if (bloom_data.has_value())
