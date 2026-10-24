@@ -387,11 +387,12 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
     split->setLevel("Syslog", syslog_level);
 
-    // text_log is a sink like the others: the root logger must stay at least as verbose as
-    // text_log.level, otherwise the messages never reach the text_log channel (see buildLoggers).
-    if (allowTextLog() && config.has("text_log"))
+    // text_log is a sink like the others: the root logger must stay at least as verbose as an
+    // explicitly configured text_log.level, otherwise those messages never reach the text_log channel.
+    // An unset text_log.level keeps the previous behaviour (text_log capped by the other sinks).
+    if (allowTextLog() && config.has("text_log.level"))
     {
-        int text_log_level = Poco::Logger::parseLevel(config.getString("text_log.level", "trace"));
+        int text_log_level = Poco::Logger::parseLevel(config.getString("text_log.level"));
         max_log_level = std::max(text_log_level, max_log_level);
         split->setTextLogLevel(text_log_level);
     }
