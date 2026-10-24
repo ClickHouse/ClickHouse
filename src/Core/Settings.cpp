@@ -11342,6 +11342,28 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(Seconds, promql_range_query_split_interval, 0, R"(
+If greater than zero, a range query of the Prometheus HTTP API (`/api/v1/query_range`) at least this long is evaluated in chunks, one after another, and the results of the chunks are merged.
+The chunks start at the first steps at or after multiples of this interval since the Unix epoch, so the same chunks repeat when a dashboard is refreshed.
+This bounds the memory used to evaluate the query by the memory of one chunk, but makes the query slower unless the chunks are read from the query cache (see `promql_range_query_cache_min_age`).
+The results of all chunks are still kept in memory until they are merged into the response, so the memory of the response itself is not bounded.
+A query using `@ start()` or `@ end()` is not split, nor is a query with a setting that applies to the whole result, like `max_result_rows`, `limit` or `order`,
+with a GROUP BY, sorting, JOIN or set limit, like `max_rows_to_group_by` or `max_rows_in_set`, or with a read, network, transfer, speed or leaf time limit, like `max_rows_to_read`, `max_network_bytes`, `max_rows_to_transfer`, `min_execution_speed` or `max_execution_time_leaf`,
+which would start again for each chunk, or with `max_execution_time` and `timeout_overflow_mode = 'break'`, which would return a different partial result. 0 disables splitting.
+The chunks are separate queries, so a check over the whole range, like the one for series with the same labels or the limit on the grid points of a subquery, sees one chunk at a time.
+Each chunk counts as one query against quotas.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 0, 0, "New setting."}) \
+    \
+    DECLARE(Seconds, promql_range_query_cache_min_age, 0, R"(
+If greater than zero, a chunk of a range query split by `promql_range_query_split_interval` that covers a whole interval and ends more than this many seconds ago
+is executed with `use_query_cache = 1` and `query_cache_nondeterministic_function_handling = 'save'`, and the other chunks are executed with `use_query_cache = 0`.
+The other query cache settings, like `query_cache_ttl`, apply as usual.
+A query with a negative `offset` or an `@` modifier can read samples newer than its chunk, so its chunks are not cached. 0 disables caching of chunks, also in a request, and so does `use_query_cache` changed to 0 by the profile or the request.
+No chunk is cached if an overflow mode, like `timeout_overflow_mode`, is not `throw`, because a limit could cut the chunk short.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 0, 0, "New setting."}) \
+    \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
