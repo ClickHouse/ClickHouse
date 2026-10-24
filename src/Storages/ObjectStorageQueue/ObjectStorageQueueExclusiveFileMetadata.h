@@ -16,6 +16,7 @@ public:
         const std::string & path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<UInt64> & loading_retries_ref_,
         std::atomic<size_t> & metadata_ref_count_,
         ObjectStorageQueueMetadata & metadata_,
         const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
@@ -36,9 +37,10 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-    void prepareResetProcessingRequests(Coordination::Requests & requests) override;
+    void prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable) override;
 
-    PathState getPathState(std::string & failure_message) const override;
+    PathState getPathState(
+        std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
