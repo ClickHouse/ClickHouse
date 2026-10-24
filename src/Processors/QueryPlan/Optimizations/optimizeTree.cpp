@@ -655,6 +655,17 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
+    /// Before `optimizeReadInOrder` and `optimizeWindowPerPartition`, which look at the steps below the window
+    /// sorting: the expressions are merged into the `Expression` step there, so the shape of the plan stays the same.
+    if (optimization_settings.push_down_expressions_below_window && !make_distributed_plan)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto &)
+            {
+                tryPushDownExpressionsBelowWindow(stack, nodes, extra_settings);
+            });
+    }
+
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {

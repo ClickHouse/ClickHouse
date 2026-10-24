@@ -8,6 +8,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Common/SipHash.h>
 
@@ -96,6 +97,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool query_plan_lazy_materialization_for_join;
     extern const SettingsBool query_plan_push_down_volume_reducing_functions;
+    extern const SettingsBool query_plan_push_down_expressions_below_window;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
@@ -134,6 +136,23 @@ namespace Setting
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsString distributed_plan_force_exchange_kind;
     extern const SettingsString force_optimize_projection_name;
@@ -269,6 +288,17 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
+    /// With `overflow_mode = 'break'`, a step can stop reading before all rows are read, so the projection after
+    /// the window functions is computed only for some rows, and computing it before them could throw.
+    const bool may_break_on_overflow
+        = (from[Setting::group_by_overflow_mode] == OverflowMode::BREAK && from[Setting::max_rows_to_group_by])
+        || (from[Setting::distinct_overflow_mode] == OverflowMode::BREAK && (from[Setting::max_rows_in_distinct] || from[Setting::max_bytes_in_distinct]))
+        || (from[Setting::sort_overflow_mode] == OverflowMode::BREAK && (from[Setting::max_rows_to_sort] || from[Setting::max_bytes_to_sort]))
+        || (from[Setting::result_overflow_mode] == OverflowMode::BREAK && (from[Setting::max_result_rows] || from[Setting::max_result_bytes]))
+        || (from[Setting::set_overflow_mode] == OverflowMode::BREAK && (from[Setting::max_rows_in_set] || from[Setting::max_bytes_in_set]))
+        || (from[Setting::join_overflow_mode] == OverflowMode::BREAK && (from[Setting::max_rows_in_join] || from[Setting::max_bytes_in_join]));
+    push_down_expressions_below_window = from[Setting::query_plan_enable_optimizations]
+        && from[Setting::query_plan_push_down_expressions_below_window] && !may_break_on_overflow;
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
     convert_outer_join_to_inner_join_transitively = convert_outer_join_to_inner_join && from[Setting::query_plan_convert_outer_join_to_inner_join_transitively];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
