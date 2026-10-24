@@ -345,7 +345,10 @@ std::string mgrsEncode(Float64 longitude, Float64 latitude, UInt8 precision)
     const UTMCoordinate utm = wgs84ToUTM(longitude, latitude);
 
     const Int64 easting_int = static_cast<Int64>(std::floor(utm.easting));
-    const Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
+    Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
+
+    if (latitude < 0.0 && northing_int == static_cast<Int64>(FALSE_NORTHING))
+        --northing_int;
 
     std::string result = std::to_string(utm.zone);
     result += utm.band;
