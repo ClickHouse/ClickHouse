@@ -279,6 +279,18 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
+ColumnStatisticsPtr buildInt32Stats(const std::vector<StatisticsType> & types, size_t total)
+{
+    const auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr column = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        column->insert(static_cast<Int32>(i));
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(column));
+    return stats;
+}
+
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
 ColumnStatisticsPtr buildNullableInt32Stats(
@@ -301,6 +313,59 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+}
+
+TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto measured_stats = buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, 100);
+    ConditionSelectivityEstimatorBuilder measured_builder(getContext().context);
+    measured_builder.addStatistics("k", measured_stats);
+    measured_builder.addStatistics("j", measured_stats);
+    measured_builder.incrementRowCount(100);
+    auto measured_estimator = measured_builder.getEstimator();
+
+    const auto measured_profile = measured_estimator->estimateRelationProfile();
+    const auto & measured = measured_profile.column_stats.at("k");
+    EXPECT_EQ(measured.ndv_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_EQ(measured.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_FALSE(measured.ndv_provenance.has(PartialPartCoverage));
+    EXPECT_FALSE(measured.range_provenance.has(PartialPartCoverage));
+
+    auto basic_stats = buildInt32Stats({StatisticsType::Basic}, 100);
+    ConditionSelectivityEstimatorBuilder basic_builder(getContext().context);
+    basic_builder.addStatistics("k", basic_stats);
+    basic_builder.incrementRowCount(100);
+    const auto basic_profile = basic_builder.getEstimator()->estimateRelationProfile();
+    const auto & basic = basic_profile.column_stats.at("k");
+    EXPECT_EQ(basic.ndv_provenance.origin, ColumnStatsOrigin::SyntheticFallback);
+    EXPECT_EQ(basic.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+
+    ConditionSelectivityEstimatorBuilder partial_builder(getContext().context);
+    partial_builder.addStatistics("k", measured_stats);
+    partial_builder.incrementRowCount(1000);
+    const auto partial_profile = partial_builder.getEstimator()->estimateRelationProfile();
+    const auto & partial = partial_profile.column_stats.at("k");
+    EXPECT_EQ(partial.ndv_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_EQ(partial.range_provenance.origin, ColumnStatsOrigin::PartStatistics);
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialPartCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialPartCoverage));
+
+    /// The predicate reaches the estimator as an `ActionsDAG` node, as in `estimateRowsFor`.
+    ContextPtr context = getContext().context;
+    ParserExpressionWithOptionalAlias parser(false);
+    ASTPtr ast = parseQuery(parser, "k < 90 AND j < 50", 1000, 1000, 1000);
+    const auto int32_type = std::make_shared<DataTypeInt32>();
+    auto syntax_result = TreeRewriter(context).analyze(ast, NamesAndTypesList{{"k", int32_type}, {"j", int32_type}});
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
+    const auto * predicate = &dag.findInOutputs(ast->getColumnName());
+    const auto filtered_profile = measured_estimator->estimateRelationProfile(nullptr, predicate);
+    const auto & filtered = filtered_profile.column_stats.at("k");
+    EXPECT_TRUE(filtered.ndv_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.range_provenance.has(RowSubset));
+    EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)

@@ -8,5 +8,49 @@ Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 4625	6660450
 -- plain LIMIT also drops value ranges
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
--- limit above the table size also drops value ranges
+-- ORDER BY and limit above the table size preserve value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- WHERE on a join input drops value ranges: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+5654	9086000
+5654	9086000
+-- the same filter as PREWHERE with optimization enabled
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- the same filter as PREWHERE with optimization disabled
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- trivial LIMIT equal to the table size still drops value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a non-throwing sort limit drops value ranges of an ORDER BY with a limit above the table size
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- the same sort limit with overflow mode throw preserves value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- a non-throwing read limit drops value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a non-throwing leaf read limit drops value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a non-throwing timeout drops value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- top-K read with a limit equal to the table size preserves value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+5654	9086000
+5654	9086000
+-- top-K read with a limit below the table size drops value ranges
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- top-K granule selection keeping every granule preserves value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- top-K granule selection dropping granules drops value ranges
+1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+1539	1188750
+1539	1188750
+-- a pending metadata-only DROP and RENAME COLUMN drops value ranges: syntax order
+200000	200999
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+49500	10114483500
+49500	10114483500
+-- the materialized rename restores value ranges
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2

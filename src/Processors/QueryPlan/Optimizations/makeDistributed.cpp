@@ -1494,7 +1494,9 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             annotation_stack.pop_back();
             if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !node->children.empty())
                 build_step->setEstimatedBuildRows(
-                    estimateReadRowsCount(*node->children.front(), nullptr, /*for_runtime_filter_transport=*/true).estimated_rows);
+                    estimateReadRowsCount(
+                        *node->children.front(), nullptr, RelationStatsOptions{.for_runtime_filter_transport = true})
+                        .estimated_rows);
             for (auto * child : node->children)
                 annotation_stack.push_back(child);
         }

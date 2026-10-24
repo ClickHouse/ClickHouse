@@ -54,6 +54,7 @@
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1316,11 +1317,16 @@ static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
     }
 }
 
+/// One of the value-range predicates of `RelationStatistics.h`, naming the guarantee a consumer needs.
+using IEJoinRangeGuarantee = bool (*)(const ColumnStatsProvenance &);
+
+/// The statistics range of a key operand, or std::nullopt when it is missing, not numeric, or
+/// its provenance does not give the guarantee the caller needs.
 static std::optional<IEJoinOperandRange> getIEJoinOperandRange(
-    const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
+    const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand, IEJoinRangeGuarantee has_guarantee)
 {
     auto it = column_stats.find(operand.getColumnName());
-    if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+    if (it == column_stats.end() || !it->second.min_value || !it->second.max_value || !has_guarantee(it->second.range_provenance))
         return {};
     auto min_value = statisticsFieldToFloat64(*it->second.min_value);
     auto max_value = statisticsFieldToFloat64(*it->second.max_value);
@@ -1345,8 +1351,9 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
         return {};
 
-    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs);
-    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs);
+    /// Uniform interpolation tolerates inexact endpoints, but the values must be spread over the range.
+    auto left_range = getIEJoinOperandRange(planning_context.left_column_stats, lhs, QueryPlanOptimizations::isRepresentativeValueRange);
+    auto right_range = getIEJoinOperandRange(planning_context.right_column_stats, rhs, QueryPlanOptimizations::isRepresentativeValueRange);
     if (!left_range || !right_range)
         return {};
 
@@ -1401,8 +1408,11 @@ static Float64 estimateIEJoinKeyPairSelectivity(
     bool first_bound_is_upper = shared_column_on_left ? isLessFamily(first_op) : !isLessFamily(first_op);
     const auto & lower_bound = first_bound_is_upper ? second_bound : first_bound;
     const auto & upper_bound = first_bound_is_upper ? first_bound : second_bound;
-    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound);
-    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound);
+    /// Ordered bounds are a consequence of `lo <= hi` only for the true extremes of the joined rows. A range
+    /// that is merely representative (e.g. of a sample) can hide the disorder that refutes a pseudo-band;
+    /// without exact ranges the pair is scored as independent.
+    auto lower_bound_range = getIEJoinOperandRange(bounds_stats, lower_bound, QueryPlanOptimizations::isExactValueRange);
+    auto upper_bound_range = getIEJoinOperandRange(bounds_stats, upper_bound, QueryPlanOptimizations::isExactValueRange);
     bool bounds_ordered = lower_bound_range && upper_bound_range
         && lower_bound_range->min <= upper_bound_range->min && lower_bound_range->max <= upper_bound_range->max;
 
