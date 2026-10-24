@@ -200,6 +200,7 @@ public:
     void readText(DB::ReadBuffer & rb) { zeroValue()->readText(rb); }
     size_t size() const { return hasZero() ? 1 : 0; }
     bool empty() const { return !hasZero(); }
+    static constexpr size_t initial_buffer_bytes = sizeof(Cell);
     size_t getBufferSizeInBytes() const { return sizeof(Cell); }
     size_t getCollisions() const { return 0; }
 };
@@ -295,6 +296,10 @@ public:
     using mapped_type = typename Ts::mapped_type;
     using value_type = typename Ts::value_type;
     using cell_type = typename Ts::cell_type;
+
+    /// What `getBufferSizeInBytes` returns before any submap grows.
+    static constexpr size_t initial_buffer_bytes = T0::initial_buffer_bytes + T1::initial_buffer_bytes
+        + T2::initial_buffer_bytes + T3::initial_buffer_bytes + Ts::initial_buffer_bytes;
 
     using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
     using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;

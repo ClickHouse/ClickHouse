@@ -1255,7 +1255,7 @@ void Aggregator::executeImpl(
             /// smaller threshold.
             const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
             const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
+                && (bytesForPrefetch(method.data) > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
