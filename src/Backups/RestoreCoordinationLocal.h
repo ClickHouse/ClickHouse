@@ -52,6 +52,9 @@ public:
     /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
     /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
     bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) override;
+    bool acquireReplicatedNamedCollections(const String & replication_id) override;
+    void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
+    Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
 
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
@@ -78,6 +81,7 @@ private:
     /// election_id matches is the single owner that replays the shared RocksDB data on restore.
     std::unordered_map<String /* rocksdb_dir */, String /* election_id */> rocksdb_data_owner TSA_GUARDED_BY(mutex);
     std::unordered_set<String /* table_zk_path */> acquired_shared_databases;
+    std::unordered_map<String /* replication_id */, Strings /* dir_paths */> replicated_named_collections_dirs TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;
 

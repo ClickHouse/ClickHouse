@@ -21,6 +21,7 @@
 #include <Backups/BackupsHelper.h>
 #endif
 #include <Common/FailPoint.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -44,6 +45,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <base/insertAtEnd.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -516,6 +518,53 @@ struct BackupsWorker::BackupStarter
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
+
+            /// With `backup_named_collections` unset, a DATABASE or ALL element exports the named
+            /// collections only if the user may read their values. That decision belongs to the
+            /// initiating user, but with the default `distributed_ddl_use_initial_user_and_roles = false`
+            /// the other hosts execute the dispatched query with full access and would always export, so
+            /// it is taken here. A refusal is applied by excluding the table from the dispatched wildcard
+            /// elements through `EXCEPT TABLES`, not by forwarding a resolved
+            /// `backup_named_collections = false`: every host understands the long-established EXCEPT
+            /// clause, while a host predating the setting would reject a query carrying it (e.g. during
+            /// a rolling upgrade).
+            if (!backup_settings.backup_named_collections.has_value()
+                && BackupUtils::wildcardSelectionCoversSystemNamedCollections(backup_query->elements))
+            {
+                /// An element explicitly naming the table keeps its hard access requirement (see
+                /// `getRequiredAccessToBackup`) whether or not the wildcard elements are rewritten, so
+                /// the query is about to fail the access check: skip the warning and the rewrite. The
+                /// element may be written unqualified, so it is checked against the effective database
+                /// of every selected address, the same way the access check resolves it.
+                bool explicitly_selected = false;
+                for (const auto * address : cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num))
+                {
+                    auto elements = backup_query->elements;
+                    ASTBackupQuery::setCurrentDatabase(
+                        elements, address->default_database.empty() ? backup_context->getCurrentDatabase() : address->default_database);
+                    if (BackupUtils::explicitSelectionCoversSystemNamedCollections(elements))
+                    {
+                        explicitly_selected = true;
+                        break;
+                    }
+                }
+
+                if (!explicitly_selected)
+                {
+                    auto access = query_context->getAccess();
+                    if (!access->isGranted(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS})
+                        || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Not exporting the named collections to the backup: the initiating user has no rights to read "
+                            "their values (`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and "
+                            "`displaySecretsInShowAndSelect`). Set backup_named_collections = 1 to make this an error, or "
+                            "backup_named_collections = 0 to silence this warning");
+                        BackupUtils::excludeSystemNamedCollectionsFromWildcardSelection(backup_query->elements);
+                    }
+                }
+            }
         }
 
         /// Check access rights before opening the backup destination (e.g., S3).
@@ -524,7 +573,7 @@ struct BackupsWorker::BackupStarter
         if (!on_cluster)
         {
             backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
-            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements, backup_settings.backup_named_collections);
             query_context->checkAccess(required_access);
         }
 
@@ -742,7 +791,26 @@ void BackupsWorker::doBackup(
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
-        auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+        /// The elements are sent to the other hosts unresolved, and each host fills empty database
+        /// names in from its address's default database (see `DDLTask::setClusterInfo`), so an element
+        /// written unqualified can select a different table on each host. Compute the required access
+        /// per effective database, resolving the elements the way the addresses will, and authorize
+        /// the union - the same way `doRestore` checks the restore rights per address. The hosts
+        /// cannot be relied upon for these checks: with the default
+        /// `distributed_ddl_use_initial_user_and_roles = false` they execute the query with full access.
+        std::set<String> effective_databases;
+        auto addresses = cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num);
+        for (const auto * address : addresses)
+            effective_databases.insert(
+                address->default_database.empty() ? context->getCurrentDatabase() : address->default_database);
+
+        AccessRightsElements required_access;
+        for (const auto & effective_database : effective_databases)
+        {
+            auto elements = backup_query->elements;
+            ASTBackupQuery::setCurrentDatabase(elements, effective_database);
+            insertAtEnd(required_access, BackupUtils::getRequiredAccessToBackup(elements, backup_settings.backup_named_collections));
+        }
 
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);

@@ -15,15 +15,28 @@ main_configs = [
     "configs/cluster3.xml",
     "configs/replicated_access_storage.xml",
     "configs/replicated_user_defined_sql_objects.xml",
+    "configs/named_collections_storage.xml",
     "configs/backups_disk.xml",
     "configs/backups_allowed_path.xml",  # Needed by the File() destination of test_backup_on_cluster_internal_writer_fsyncs.
     "configs/query_thread_log.xml",  # The common integration config removes query_thread_log; that test needs it.
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
 ]
 
+# node3 holds a different named-collections encryption key (and a different Keeper path), to model
+# a restore target without the key, see test_system_named_collections_key_mismatch.
+main_configs_other_nc_key = [
+    (
+        "configs/named_collections_storage_other_key.xml"
+        if config == "configs/named_collections_storage.xml"
+        else config
+    )
+    for config in main_configs
+]
+
 user_configs = [
     "configs/allow_database_types.xml",
     "configs/zookeeper_retries.xml",
+    "configs/named_collections_users.xml",
 ]
 
 node1 = cluster.add_instance(
@@ -47,7 +60,7 @@ node2 = cluster.add_instance(
 
 node3 = cluster.add_instance(
     "node3",
-    main_configs=main_configs + ["configs/shutdown_wait_unfinished_queries.xml"],
+    main_configs=main_configs_other_nc_key + ["configs/shutdown_wait_unfinished_queries.xml"],
     user_configs=user_configs,
     external_dirs=["/backups/"],
     macros={"replica": "node3", "shard": "shard1"},
@@ -74,7 +87,14 @@ def drop_after_test():
         node1.query("DROP TABLE IF EXISTS tbl2 ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP DATABASE IF EXISTS mydb2 ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS initdb ON CLUSTER 'cluster3' SYNC")
+        node1.query("DROP DATABASE IF EXISTS addrdb ON CLUSTER 'cluster3' SYNC")
         node1.query("DROP USER IF EXISTS u1, u2 ON CLUSTER 'cluster3'")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_mismatch")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_host1")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_host2")
+        node1.query("DROP NAMED COLLECTION IF EXISTS backup_nc_dup")
 
 
 backup_id_counter = 0
@@ -1065,6 +1085,388 @@ def test_system_functions():
 
     node1.query("DROP FUNCTION linear_equation")
     node1.query("DROP FUNCTION parity_str")
+
+
+def test_system_named_collections():
+    node1.query(
+        "CREATE NAMED COLLECTION backup_nc AS url = 'http://example.com/nc_secret_value' NOT OVERRIDABLE, format = 'CSV'"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc'",
+        "1\n",
+    )
+
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}"
+    )
+
+    # The collection is copied to the backup as the ciphertext the Keeper storage holds:
+    # no plaintext value appears anywhere in the backup.
+    entry_files = []
+    for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+        for file_name in file_names:
+            file_path = os.path.join(dir_path, file_name)
+            with open(file_path, "rb") as f:
+                content = f.read()
+            assert b"nc_secret_value" not in content, file_path
+            if file_name.endswith(".sql.enc"):
+                entry_files.append(file_path)
+                assert content.startswith(b"ENC"), file_path
+    assert len(entry_files) == 1
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc'",
+        "0\n",
+    )
+
+    node1.query(
+        f"RESTORE TABLE system.named_collections ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    assert node1.query(
+        "SELECT mapKeys(collection) FROM system.named_collections WHERE name='backup_nc'"
+    ) == TSV([["['format','url']"]])
+    # Restored collections are visible on every host as soon as the RESTORE finishes, without
+    # waiting for the Keeper watch: each host reloads them synchronously before table creation
+    # (a table CREATE from the backup may resolve them), so no retry here.
+    assert (
+        node2.query("SELECT count() FROM system.named_collections WHERE name='backup_nc'")
+        == "1\n"
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
+def test_system_named_collections_restore_stale_replica():
+    # The loaded collections of the shared Keeper storage follow Keeper asynchronously: a server
+    # reloads them when a Keeper watch fires. The restore must not decide from that copy whether
+    # a collection still exists: a writer whose reload has not observed a deletion made through
+    # another server would skip recreating the absent Keeper entry, report success, and the
+    # synchronous reload after the restore would drop its stale copy - losing the collection.
+    node1.query("CREATE NAMED COLLECTION backup_nc_stale AS key1 = 'nc_secret_value'")
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'",
+        "1\n",
+    )
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.named_collections TO {backup_name}")
+
+    try:
+        # Keep node1's background reload from observing the deletion below: its loaded
+        # collections retain the dropped collection, modeling a replica whose Keeper watch has
+        # not been processed yet.
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT named_collections_replicated_update_pause"
+        )
+        node2.query("DROP NAMED COLLECTION backup_nc_stale")
+        assert (
+            node1.query(
+                "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'"
+            )
+            == "1\n"
+        )
+
+        node1.query(f"RESTORE TABLE system.named_collections FROM {backup_name}")
+    finally:
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT named_collections_replicated_update_pause"
+        )
+
+    # The restored collection must be in Keeper, not only in node1's memory: node2, which did
+    # observe the deletion, must see it again.
+    assert (
+        node1.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'"
+        )
+        == "1\n"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'",
+        "1\n",
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc_stale")
+
+
+def test_system_named_collections_required_privileges():
+    node1.query("CREATE NAMED COLLECTION backup_nc AS key1 = 'nc_secret_value'")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON system.named_collections TO u1")
+
+    # Exporting the collections reveals their values, so the initiator must hold the same rights
+    # that reading the values requires. The initiator is the only place to check them: with the
+    # default `distributed_ddl_use_initial_user_and_roles = false` the other hosts execute the
+    # dispatched query with full access.
+    backup_name = new_backup_name()
+    expected_error = "necessary to have the grant SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON *"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+
+    # `SHOW NAMED COLLECTIONS SECRETS` alone does not allow reading the values back:
+    # `displaySecretsInShowAndSelect` is required with it, for the export too.
+    node1.query("GRANT SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON * TO u1")
+    expected_error = "necessary to have the grant displaySecretsInShowAndSelect"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+
+    node1.query("GRANT displaySecretsInShowAndSelect ON *.* TO u1")
+    node1.query(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
+def test_system_named_collections_implicit_selection_on_cluster():
+    node1.query("CREATE NAMED COLLECTION backup_nc AS key1 = 'nc_secret_value'")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON *.* TO u1")
+
+    # With `backup_named_collections` unset, an implicit (DATABASE or ALL) selection exports the
+    # collections only if the initiating user may read their values. The hosts execute the
+    # dispatched query with full access, so the initiator takes that decision before dispatch:
+    # for u1, who may not read the values, the hosts must not export them.
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE system ON CLUSTER 'cluster' TO {backup_name}", user="u1")
+    for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+        assert "named_collections" not in os.path.relpath(dir_path, get_path_to_backup(backup_name)), dir_path
+        for file_name in file_names:
+            with open(os.path.join(dir_path, file_name), "rb") as f:
+                assert b"nc_secret_value" not in f.read(), file_name
+
+    # The hosts skip silently because the dispatched query excludes the table from its wildcard
+    # elements (an `EXCEPT TABLES` clause survives hosts predating `backup_named_collections`),
+    # so the initiator must have warned about the privilege-based skip, like a local backup does.
+    assert node1.contains_in_log(
+        "Not exporting the named collections to the backup: the initiating user has no rights"
+    )
+
+    # An element explicitly naming the table keeps its hard requirement even when a wildcard
+    # element selects the table too: the backup must fail rather than silently omit the
+    # explicitly requested entries.
+    expected_error = "necessary to have the grant SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON *"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections, DATABASE system ON CLUSTER 'cluster' TO {new_backup_name()}",
+        user="u1",
+    )
+
+    # The same backup by a user holding the rights exports the collections.
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP DATABASE system ON CLUSTER 'cluster' TO {backup_name}")
+    entry_files = []
+    for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+        if os.path.basename(dir_path) == "named_collections":
+            entry_files += file_names
+    assert len(entry_files) == 1
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
+def test_backup_required_privileges_address_default_database():
+    # The addresses of 'cluster_address_default_db' set `default_database`, so an unqualified
+    # table name in the dispatched query resolves on every host to that database, not to the
+    # initiator's current database. The initiator must authorize what the hosts will actually
+    # export: with the default `distributed_ddl_use_initial_user_and_roles = false` the hosts
+    # execute the dispatched query with full access.
+    node1.query("CREATE DATABASE initdb ON CLUSTER 'cluster'")
+    node1.query("CREATE DATABASE addrdb ON CLUSTER 'cluster'")
+    node1.query(
+        "CREATE TABLE initdb.tbl ON CLUSTER 'cluster' (x UInt8) "
+        "ENGINE=ReplicatedMergeTree('/clickhouse/tables/initdb_tbl/', '{replica}') ORDER BY x"
+    )
+    node1.query(
+        "CREATE TABLE addrdb.tbl ON CLUSTER 'cluster' (x UInt8) "
+        "ENGINE=ReplicatedMergeTree('/clickhouse/tables/addrdb_tbl/', '{replica}') ORDER BY x"
+    )
+    node1.query("INSERT INTO addrdb.tbl VALUES (1)")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON initdb.* TO u1")
+
+    backup_name = new_backup_name()
+    expected_error = "necessary to have the grant BACKUP ON addrdb.tbl"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_address_default_db' TO {backup_name}",
+        user="u1",
+        database="initdb",
+    )
+
+    node1.query("GRANT BACKUP ON addrdb.tbl TO u1")
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster_address_default_db' TO {backup_name}",
+        user="u1",
+        database="initdb",
+    )
+
+    node1.query("DROP DATABASE initdb ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP DATABASE addrdb ON CLUSTER 'cluster' SYNC")
+
+
+def test_system_named_collections_key_mismatch():
+    node1.query("CREATE NAMED COLLECTION backup_nc_mismatch AS key1 = 'value1'")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.named_collections TO {backup_name}")
+    node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
+
+    # node3 does not hold the key the collections were encrypted with: the restore must fail
+    # before anything is restored, with both key fingerprints in the message.
+    expected_error = "encrypted with a key with fingerprint"
+    assert expected_error in node3.query_and_get_error(
+        f"RESTORE TABLE system.named_collections FROM {backup_name}"
+    )
+    assert (
+        node3.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'"
+        )
+        == "0\n"
+    )
+
+    # `restore_named_collections = false` is the escape hatch: the restore proceeds without them.
+    node3.query(
+        f"RESTORE TABLE system.named_collections FROM {backup_name} "
+        "SETTINGS restore_named_collections = false"
+    )
+    assert (
+        node3.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'"
+        )
+        == "0\n"
+    )
+
+    # A node holding the key restores the collection.
+    node2.query(f"RESTORE TABLE system.named_collections FROM {backup_name}")
+    assert (
+        node2.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'"
+        )
+        == "1\n"
+    )
+
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc_mismatch'",
+        "1\n",
+    )
+    node1.query("DROP NAMED COLLECTION backup_nc_mismatch")
+
+
+def test_system_named_collections_distinct_sources():
+    # A backup taken from hosts whose named-collections storages are not shared holds the
+    # collections of each host in its own directory of the backup. Restoring it onto hosts
+    # sharing one Keeper storage must restore the union of those directories - restoring only
+    # the directory of the host that acquires the restore would silently lose the others' -
+    # and refuse conflicting definitions of the same collection before anything is created.
+    storage_config = "/etc/clickhouse-server/config.d/named_collections_storage.xml"
+    local_path = "/var/lib/clickhouse/named_collections_distinct_sources/"
+    try:
+        # Move node2 to a per-host (local encrypted) storage with the same key, modeling a
+        # cluster backed up before its hosts shared a named-collections storage.
+        node2.replace_in_config(
+            storage_config, "zookeeper_encrypted", "local_encrypted"
+        )
+        node2.replace_in_config(storage_config, "/named_collections_path/", local_path)
+        node2.restart_clickhouse()
+
+        node1.query(
+            "CREATE NAMED COLLECTION backup_nc_host1 AS key1 = 'nc_host1_value'"
+        )
+        node2.query(
+            "CREATE NAMED COLLECTION backup_nc_host2 AS key1 = 'nc_host2_value'"
+        )
+        # A collection both hosts define identically but created with different creation flags:
+        # the stored statement of node2's copy retains `IF NOT EXISTS`. The flags are no part of
+        # the definition, so merging the directories must not treat the copies as conflicting.
+        node1.query("CREATE NAMED COLLECTION backup_nc_same AS key1 = 'nc_same_value'")
+        node2.query(
+            "CREATE NAMED COLLECTION IF NOT EXISTS backup_nc_same AS key1 = 'nc_same_value'"
+        )
+        backup_name = new_backup_name()
+        node1.query(
+            f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}"
+        )
+
+        # A second backup also holding a collection the two hosts define differently.
+        node1.query("CREATE NAMED COLLECTION backup_nc_dup AS key1 = 'host1'")
+        node2.query("CREATE NAMED COLLECTION backup_nc_dup AS key1 = 'host2'")
+        conflicting_backup_name = new_backup_name()
+        node1.query(
+            f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {conflicting_backup_name}"
+        )
+
+        node1.query("DROP NAMED COLLECTION backup_nc_host1")
+        node1.query("DROP NAMED COLLECTION backup_nc_dup")
+        node1.query("DROP NAMED COLLECTION backup_nc_same")
+        node2.query("DROP NAMED COLLECTION backup_nc_host2")
+        node2.query("DROP NAMED COLLECTION backup_nc_dup")
+        node2.query("DROP NAMED COLLECTION backup_nc_same")
+    finally:
+        node2.replace_in_config(
+            storage_config, "local_encrypted", "zookeeper_encrypted"
+        )
+        node2.replace_in_config(storage_config, local_path, "/named_collections_path/")
+        node2.restart_clickhouse()
+
+    # The hosts share the Keeper storage again: the restore must bring back the collections of
+    # both directories, visible on both hosts without waiting for the Keeper watch. (The values
+    # cannot be read back here - displaying them needs the `display_secrets_in_show_and_select`
+    # server config - but each backup entry is one authenticated CREATE statement, so a restored
+    # name proves its values came with it.)
+    node1.query(
+        f"RESTORE TABLE system.named_collections ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+    for node in [node1, node2]:
+        assert node.query(
+            "SELECT name, mapKeys(collection) FROM system.named_collections "
+            "WHERE name IN ('backup_nc_host1', 'backup_nc_host2', 'backup_nc_same') "
+            "ORDER BY name"
+        ) == TSV(
+            [
+                ["backup_nc_host1", "['key1']"],
+                ["backup_nc_host2", "['key1']"],
+                ["backup_nc_same", "['key1']"],
+            ]
+        )
+    node1.query("DROP NAMED COLLECTION backup_nc_host1")
+    node1.query("DROP NAMED COLLECTION backup_nc_host2")
+    node1.query("DROP NAMED COLLECTION backup_nc_same")
+
+    # Conflicting definitions of one name cannot coexist in one shared storage, and silently
+    # picking one of them would restore wrong values: the restore is refused before anything
+    # has been created.
+    expected_error = "define the same named collection differently"
+    assert expected_error in node1.query_and_get_error(
+        f"RESTORE TABLE system.named_collections ON CLUSTER 'cluster' FROM {conflicting_backup_name}"
+    )
+    for node in [node1, node2]:
+        assert (
+            node.query(
+                "SELECT count() FROM system.named_collections WHERE name LIKE 'backup_nc%'"
+            )
+            == "0\n"
+        )
 
 
 def test_projection():

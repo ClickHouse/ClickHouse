@@ -130,6 +130,22 @@ struct BackupSettings
     /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
 
+    /// Whether to export the SQL-created named collections (the `system.named_collections` table).
+    /// Exporting them writes their values into the backup, so it requires the rights to read the
+    /// values back: `SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and
+    /// `displaySecretsInShowAndSelect`.
+    /// - unset (the default): a backup selecting the table through an `ALL` or `DATABASE system`
+    ///   element exports the collections if the user holds those rights and skips them with a
+    ///   warning otherwise; naming the table explicitly requires the rights.
+    /// - true: the backup exports the collections and requires the rights, however the table is
+    ///   selected.
+    /// - false: the backup never exports the collections and does not require the rights.
+    /// For `BACKUP ON CLUSTER` the initiating host takes the unset-default decision against its
+    /// user's rights before dispatching the query, because the other hosts may execute it with full
+    /// access; a refusal is dispatched as an `EXCEPT TABLES` clause of the wildcard elements, not
+    /// as a resolved value of this setting (see `BackupsWorker`).
+    std::optional<bool> backup_named_collections;
+
 #if CLICKHOUSE_CLOUD
     /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a
     /// barrier: the writer pool drains and waits for the slowest file of the batch before the batch is

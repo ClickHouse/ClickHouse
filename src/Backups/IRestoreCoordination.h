@@ -73,6 +73,20 @@ public:
     /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) = 0;
 
+    /// Sets that this replica is going to restore the named collections of a replicated (Keeper) storage.
+    /// The function returns false if the collections of this storage are being already restored by another replica.
+    virtual bool acquireReplicatedNamedCollections(const String & replication_id) = 0;
+
+    /// Adds the directory in the backup from which this host would restore the named collections into
+    /// a replicated (Keeper) storage. The storage is shared by the hosts using it, so the one host
+    /// which acquires the restore (see acquireReplicatedNamedCollections) restores the directories
+    /// added by every host sharing it: the directories hold different collections when the backup was
+    /// taken from hosts with storages not shared the same way, e.g. a local storage on every host.
+    virtual void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) = 0;
+
+    /// Returns all the directories added for the given storage by addReplicatedNamedCollectionsDir.
+    virtual Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const = 0;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     virtual bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) = 0;

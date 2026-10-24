@@ -10,6 +10,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -68,6 +70,8 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_workload_entities_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_named_collections_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_named_collections", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
@@ -268,7 +272,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
                     break;
             }
 
-            auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
                 throw zkutil::KeeperException::fromPath(code, path);
 
@@ -317,6 +321,76 @@ bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const Strin
             result = zk->get(path) == toString(current_host_index);
         });
     return result;
+}
+
+bool RestoreCoordinationOnCluster::acquireReplicatedNamedCollections(const String & replication_id)
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedNamedCollections");
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireReplicatedNamedCollections");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = zookeeper_path + "/repl_named_collections_acquired/" + escapeForFileName(replication_id);
+
+            /// Record current_host_index as the node value so that a host which creates the node but loses the
+            /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
+            /// With an empty value the owner's retry would deny ownership to every host, and nothing would restore
+            /// the collections.
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// The node already exists - this replica owns the restore only if it is the one that created the node.
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
+}
+
+void RestoreCoordinationOnCluster::addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path)
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::addReplicatedNamedCollectionsDir");
+    auto holder = with_retries.createRetriesControlHolder("addReplicatedNamedCollectionsDir");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+            String path = zookeeper_path + "/repl_named_collections/" + escapeForFileName(replication_id);
+            zk->createIfNotExists(path, "");
+            path += "/" + current_host;
+            zk->createIfNotExists(path, dir_path);
+        });
+}
+
+Strings RestoreCoordinationOnCluster::getReplicatedNamedCollectionsDirs(const String & replication_id) const
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::getReplicatedNamedCollectionsDirs");
+    Strings dirs;
+    auto holder = with_retries.createRetriesControlHolder("getReplicatedNamedCollectionsDirs");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            dirs.clear();
+            with_retries.renewZooKeeper(zk);
+            String path = zookeeper_path + "/repl_named_collections/" + escapeForFileName(replication_id);
+            if (!zk->exists(path))
+                return; /// No host sharing this storage found named collections in the backup.
+            for (const String & host_id : zk->getChildren(path))
+            {
+                String dir = zk->get(path + "/" + host_id);
+                if (std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
+                    dirs.push_back(dir);
+            }
+        });
+    return dirs;
 }
 
 bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id)

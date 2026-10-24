@@ -903,14 +903,16 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 
 void BackupEntriesCollector::makeBackupEntriesForTablesData()
 {
-    if (backup_settings.structure_only)
-        return;
-
+    /// No early return for `structure_only` here: the export of the named collections through the
+    /// data of `system.named_collections` is kept even then (see `shouldBackupTableData`), so with
+    /// `structure_only` everything except that table has `should_backup_data = false`.
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
     /// Using a lambda with references is fine, since it only uses `this` and `it.first` which is part of table_infos (`this`)
     /// So they will outlive runner even if an exception is thrown
     for (const auto & it : table_infos)
     {
+        if (!it.second.should_backup_data)
+            continue;
         runner.enqueueAndKeepTrack([&]()
         {
             makeBackupEntriesForTableData(it.first);
@@ -959,7 +961,11 @@ bool BackupEntriesCollector::shouldBackupTableData(
     const ASTPtr & create_table_query,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
-    if (backup_settings.structure_only)
+    /// The "data" of `system.named_collections` is the collections' definitions, which objects
+    /// restored from a schema-only backup may resolve inside their CREATE, so `structure_only`
+    /// keeps it. The other export controls - `backup_named_collections` (see
+    /// `backupNamedCollections`) and `EXCEPT DATA FROM TABLE` below - still apply.
+    if (backup_settings.structure_only && !BackupUtils::isSystemNamedCollectionsTable(table_name))
         return false;
 
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
@@ -1056,6 +1062,17 @@ bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const Str
     }
 
     return false;
+}
+
+bool BackupEntriesCollector::isTableExplicitlySelectedForBackup(const QualifiedTableName & table_name) const
+{
+    auto it = database_infos.find(table_name.database);
+    if (it == database_infos.end())
+        return false;
+
+    /// `DatabaseInfo::tables` holds only the tables named by TABLE elements; a DATABASE or ALL
+    /// element selecting the table records itself in `all_tables_elements` instead.
+    return it->second.tables.contains(table_name.table);
 }
 
 bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const

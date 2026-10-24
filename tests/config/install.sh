@@ -388,6 +388,11 @@ if [ "$FAST_TEST" != "1" ]; then
    ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
 fi
 
+# The encrypted storage for named collections requires SSL, which fasttest builds without.
+if [ "$FAST_TEST" != "1" ]; then
+    ln -sf $SRC_PATH/config.d/named_collections_storage.xml $DEST_SERVER_PATH/config.d/
+fi
+
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/ci_logs_sender.yaml $DEST_SERVER_PATH/users.d/

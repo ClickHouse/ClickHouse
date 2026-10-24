@@ -20,6 +20,8 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
+
 
 namespace DB::BackupUtils
 {
@@ -73,10 +75,57 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 }
 
 
+namespace
+{
+    bool wildcardElementCoversSystemNamedCollections(const ASTBackupQuery::Element & element)
+    {
+        static const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
+
+        if (element.type == ASTBackupQuery::DATABASE)
+            return (element.database_name == system_named_collections.first)
+                && !element.except_tables.contains(system_named_collections);
+
+        if (element.type == ASTBackupQuery::ALL)
+            return !element.except_databases.contains(system_named_collections.first)
+                && !element.except_tables.contains(system_named_collections);
+
+        return false;
+    }
+}
+
+bool isSystemNamedCollectionsTable(const QualifiedTableName & table_name)
+{
+    return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
+}
+
+bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
+{
+    return std::ranges::any_of(elements, wildcardElementCoversSystemNamedCollections);
+}
+
+void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements & elements)
+{
+    for (auto & element : elements)
+        if (wildcardElementCoversSystemNamedCollections(element))
+            element.except_tables.emplace(DatabaseCatalog::SYSTEM_DATABASE, "named_collections");
+}
+
+bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
+{
+    return std::ranges::any_of(
+        elements,
+        [](const ASTBackupQuery::Element & element)
+        {
+            return (element.type == ASTBackupQuery::TABLE) && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+                && (element.table_name == "named_collections");
+        });
+}
+
 /// Returns access required to execute BACKUP query.
-AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
+AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections)
 {
     AccessRightsElements required_access;
+    bool exports_named_collections = false;
     for (const auto & element : elements)
     {
         switch (element.type)
@@ -84,6 +133,11 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             case ASTBackupQuery::TABLE:
             {
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
+                /// Naming the table explicitly exports the collections unless `backup_named_collections`
+                /// turns the export off (see `backupNamedCollections`).
+                exports_named_collections |= (backup_named_collections != false)
+                    && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+                    && (element.table_name == "named_collections");
                 break;
             }
 
@@ -97,6 +151,11 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
+                /// A DATABASE or ALL element selecting the table requires the rights only with
+                /// `backup_named_collections = true`: with the setting unset such an element exports
+                /// the collections only if the user holds the rights (see `backupNamedCollections`),
+                /// so nothing is required.
+                exports_named_collections |= (backup_named_collections == true) && wildcardElementCoversSystemNamedCollections(element);
                 break;
             }
 
@@ -104,10 +163,27 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP);
+                exports_named_collections |= (backup_named_collections == true) && wildcardElementCoversSystemNamedCollections(element);
                 break;
             }
         }
     }
+
+    /// Exporting `system.named_collections` writes the values of all SQL-created named collections into
+    /// the backup, so it requires the same rights as reading the values (see `backupNamedCollections`,
+    /// which re-checks them on every host collecting the entries). The initiating host of a
+    /// `BACKUP ON CLUSTER` query never runs the collector, and with the default
+    /// `distributed_ddl_use_initial_user_and_roles = false` the other hosts execute the query with full
+    /// access, so this list is the only check made against the initiating user before the query is
+    /// sent to them.
+    if (exports_named_collections)
+    {
+        required_access.emplace_back(AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS});
+        /// `SHOW NAMED COLLECTIONS SECRETS` alone does not allow reading the values back, reading them
+        /// requires `displaySecretsInShowAndSelect` with it (see `StorageSystemNamedCollections`).
+        required_access.emplace_back(AccessType::displaySecretsInShowAndSelect);
+    }
+
     return required_access;
 }
 
