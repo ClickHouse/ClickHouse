@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -110,6 +111,66 @@ std::optional<std::string> getBlobKeyIfExists(const FsSnapshot & snapshot, const
         return std::nullopt;
 
     return getBlobKey(*directory, path.filename(), it->second);
+}
+
+/// The keys of the blobs shared by more than one file among the files at or under the given paths, where a transaction
+/// may remove links (see `link_removal_paths`).
+///
+/// Transactions on different paths run concurrently, so two of them may remove different links to the same blob, each
+/// seeing the other link left. The blob would then lose its last link only when the second one is published, with no
+/// tombstone marker (`PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`) written for it, and leak if the process
+/// dies before it is deleted. Locking these keys serializes such transactions, so the last one sees the blob with a
+/// single link in its own snapshot and removes it through the marker. A blob that has a single link here cannot gain
+/// another one while the paths are locked, because a hard link is created only from a locked path.
+KeyLocks::Keys collectSharedBlobKeys(const FsSnapshot & snapshot, const std::vector<std::string> & paths)
+{
+    KeyLocks::Keys keys;
+
+    auto add_if_shared = [&](std::string blob_key)
+    {
+        if (snapshot.getBlobLinkCount(blob_key) > 1)
+            keys.insert(std::move(blob_key));
+    };
+
+    for (const auto & path : paths)
+    {
+        if (snapshot.existsFile(path))
+        {
+            if (auto blob_key = getBlobKeyIfExists(snapshot, normalizePath(path)))
+                add_if_shared(std::move(*blob_key));
+        }
+        else
+        {
+            for (const auto & [_, info] : snapshot.getSubtreeRemoteInfo(path))
+                if (info)
+                    for (const auto & [file_name, file_info] : info->files)
+                        add_if_shared(getBlobKey(*info, file_name, file_info));
+        }
+    }
+
+    return keys;
+}
+
+/// The paths that the contents of `path` had before the first `moves_count` moves: the path itself, mapped back through
+/// the moves of it or of its ancestors, and the sources of the moves into its subtree (a file or a directory moved under
+/// `path`), mapped back through the earlier moves in the same way.
+void collectPathsBeforeMoves(
+    std::string path,
+    const std::vector<std::pair<std::string, std::string>> & moved_paths,
+    size_t moves_count,
+    std::vector<std::string> & result)
+{
+    for (size_t i = moves_count; i > 0; --i)
+    {
+        const auto & [moved_from, moved_to] = moved_paths[i - 1];
+        if (path == moved_to)
+            path = moved_from;
+        else if (path.starts_with(moved_to + "/"))
+            path = moved_from + path.substr(moved_to.size());
+        else if (moved_to.starts_with(path + "/"))
+            collectPathsBeforeMoves(moved_from, moved_paths, i - 1, result);
+    }
+    result.push_back(std::move(path));
 }
 
 /// The pages of one listing can only be fetched one after another, so enumerating a disk that holds
@@ -446,6 +507,9 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     std::unordered_map<std::string, PlainRewritableLayout::PendingReplace> pending_replaces;
     /// The backups of pending replacements that can be neither restored nor reclaimed: they are not loaded and not deleted.
     std::unordered_set<std::string> kept_backups;
+    /// The blob keys of the markers of blob removals by their names, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    /// Nothing on the disk has the names of these markers, so they hide nothing.
+    std::unordered_map<std::string, std::string> blob_removals;
     for (auto & [removed_name, marker_path, content] : readTombstoneMarkers(settings))
     {
         auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
@@ -461,6 +525,9 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
                 /// The backup of a pending replacement is not loaded either, like one of a committed removal.
                 pending_replaces.emplace(removed_name, std::move(parsed.pending_replace));
                 tombstones.emplace(std::move(removed_name), std::nullopt);
+                break;
+            case PlainRewritableLayout::TombstoneMarker::Kind::BlobRemoval:
+                blob_removals.emplace(std::move(removed_name), std::move(parsed.blob_key));
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::Malformed:
                 LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker_path, content);
@@ -556,6 +623,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     std::unordered_map<std::string, std::unordered_map<std::string, FileRemoteInfo>> prelisted_files;
     std::mutex prelisted_files_mutex;
     std::vector<DirectoryLoadResult> results;
+    /// Whether some directory object did not contain a logical path, see below.
+    std::atomic<bool> has_unreadable_directories = false;
 
     /// Record the files of every directory whose name starts with `name_prefix`. Listing by prefix makes
     /// one request cover many directories, and lets the listing of the disk be split into parallel parts.
@@ -729,7 +798,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
             /// result: Same, and no two tasks are given the same slot
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), files_are_prelisted, roll_back_pending_operations, remove_orphaned_objects, &tombstones, &malformed_markers, &throw_malformed_marker, &result = results[i], &log, &settings, this]
+            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), files_are_prelisted, roll_back_pending_operations, remove_orphaned_objects, &tombstones, &malformed_markers, &throw_malformed_marker, &has_unreadable_directories, &result = results[i], &log, &settings, this]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -771,7 +840,18 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
 
                     /// The root directory has a metadata object only in the explicit form, and it is stored under the reserved remote path.
                     if (remote_path == PlainRewritableLayout::ROOT_DIRECTORY_TOKEN)
+                    {
+                        /// The metadata object of the root always contains its logical path `/`, so an object without it
+                        /// was being written when the process died (`LocalObjectStorage` writes to the final key directly).
+                        /// The root is still loaded, from the listing of its own prefix, but its explicit file list is lost,
+                        /// and the blobs it linked outside of this prefix may be the ones named by the pending markers.
+                        if (local_path.empty())
+                        {
+                            LOG_WARNING(log, "The metadata object of the root directory with the key '{}' is empty", object_path);
+                            has_unreadable_directories = true;
+                        }
                         local_path.clear();
+                    }
                     else if (normalizePath(local_path).empty())
                     {
                         /// Only the reserved metadata object maps to the logical root, so an empty logical path here means that
@@ -780,6 +860,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
                         /// or it is a leftover of a directory that has been removed. Loading it as the root would hide the real
                         /// root and send lookups under it to the prefix of this directory.
                         LOG_WARNING(log, "The object with the key '{}' does not contain the logical path of a directory, ignoring it", object_path);
+                        has_unreadable_directories = true;
                         return;
                     }
 
@@ -804,10 +885,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
                         {
                             /// The explicit file list, if any, is kept: it is the only record of the files of the directory.
                             DirectoryRemoteInfo directory_info{.remote_path = remote_path, .etag = {}, .last_modified = 0, .files = files, .has_explicit_file_list = has_explicit_file_list};
-                            auto write_buf = object_storage->writeObject(
-                                object, WriteMode::Rewrite, /*object_attributes*/ std::nullopt, /*buf_size*/ 128, getWriteSettings());
-                            writeString(serializePrefixPath(original_local_path, directory_info), *write_buf);
-                            write_buf->finalize();
+                            writeMetadataObject(*object_storage, object, serializePrefixPath(original_local_path, directory_info), getWriteSettings());
                         }
 
                         local_path = std::move(original_local_path);
@@ -958,15 +1036,20 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
         }
     }
 
+    /// The blobs linked from the live directories, including the implicit ones and the root (listed just above).
+    const bool reclaim_removed_blobs = remove_orphaned_objects && !blob_removals.empty();
+    std::unordered_set<std::string> referenced_blob_keys;
+    if (!orphaned_directories.empty() || reclaim_removed_blobs)
+    {
+        for (const auto & [local_path, info] : remote_layout)
+            for (const auto & [file_name, file_info] : info.files)
+                referenced_blob_keys.insert(getBlobKey(info, file_name, file_info));
+    }
+
     /// A blob of an orphaned directory may still be linked from a file outside of it (the removal kept such blobs),
     /// and an orphaned directory in the implicit form lists such a blob as its own file, so these blobs are not deleted.
     if (!orphaned_directories.empty())
     {
-        std::unordered_set<std::string> referenced_blob_keys;
-        for (const auto & [local_path, info] : remote_layout)
-            for (const auto & [file_name, file_info] : info.files)
-                referenced_blob_keys.insert(getBlobKey(info, file_name, file_info));
-
         for (const auto & orphaned_directory : orphaned_directories)
         {
             LOG_TRACE(log, "The directory '{}' with the key '{}' was not removed completely, its {} files will be removed",
@@ -1015,8 +1098,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     fs.applyLayout(std::move(remote_layout), std::move(backups_of_targets));
     previous_refresh.restart();
 
-    if (remove_orphaned_objects && (!tombstones.empty() || !malformed_markers.empty()))
+    if (remove_orphaned_objects && (!tombstones.empty() || !malformed_markers.empty() || !blob_removals.empty()))
     {
+        /// A directory object without a logical path may be a directory of a pending removal whose `prefix.path` was
+        /// being rewritten when the process died (`LocalObjectStorage` writes to the final key directly). It cannot be
+        /// moved back, so the pending markers stay: their removals are not known to be rolled back completely.
+        const bool keep_pending_markers = has_unreadable_directories.load();
+
         StoredObjects marker_objects;
         marker_objects.reserve(tombstones.size() + malformed_markers.size());
         /// Nothing on the disk has these names, otherwise the load would have failed above.
@@ -1027,9 +1115,32 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
         {
             if (kept_backups.contains(removed_name))
                 continue;
-            marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
             pending_removals += pending_original_path.has_value();
+            if (pending_original_path.has_value() && keep_pending_markers)
+                continue;
+            marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
         }
+
+        /// A blob that no live directory links is unreachable: the operation that dropped its last link was committed.
+        /// A linked one is kept: the process died before the operation rewrote `prefix.path`, or the operation was undone.
+        /// An unreadable directory object may be the one that links the blob, so then nothing is decided.
+        size_t removed_blobs = 0;
+        if (reclaim_removed_blobs && !keep_pending_markers)
+        {
+            for (const auto & [marker_name, blob_key] : blob_removals)
+            {
+                if (!referenced_blob_keys.contains(blob_key))
+                {
+                    LOG_TRACE(log, "The blob '{}' was unlinked but not removed, removing it", blob_key);
+                    orphaned_data_objects.emplace_back(layout->constructBlobObjectKey(blob_key));
+                    ++removed_blobs;
+                }
+                marker_objects.emplace_back(layout->constructTombstoneMarkerKey(marker_name));
+            }
+        }
+
+        if (removed_blobs)
+            LOG_INFO(log, "Removing {} blobs that were unlinked but not removed, most likely because the process died in the middle of it", removed_blobs);
 
         if (pending_removals)
             LOG_INFO(
@@ -1043,16 +1154,26 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
             orphaned_data_objects.size() + orphaned_metadata_objects.size(),
             tombstones.size() - pending_removals);
 
-        object_storage->removeObjectsIfExist(orphaned_data_objects);
-        object_storage->removeObjectsIfExist(orphaned_metadata_objects);
-        /// Only now, when nothing of these removals is left, the markers can go: a marker that outlives its
-        /// objects only costs another pass, while an object that outlives its marker would look like data.
-        /// The same holds for a pending removal: its directories have all been moved back by now.
-        object_storage->removeObjectsIfExist(marker_objects);
+        /// The layout is already consistent and the leftovers stay hidden while their markers exist, so this
+        /// cleanup is best-effort, like `RemoveRecursiveOperation::finalize`: a failure must not prevent the disk
+        /// from loading. The markers are removed last, so whatever is left is retried on the next start.
+        try
+        {
+            object_storage->removeObjectsIfExist(orphaned_data_objects);
+            object_storage->removeObjectsIfExist(orphaned_metadata_objects);
+            /// Only now, when nothing of these removals is left, the markers can go: a marker that outlives its
+            /// objects only costs another pass, while an object that outlives its marker would look like data.
+            /// The same holds for a pending removal: its directories have all been moved back by now.
+            object_storage->removeObjectsIfExist(marker_objects);
 
-        ProfileEvents::increment(
-            ProfileEvents::DiskPlainRewritableOrphanedObjectsRemoved,
-            orphaned_data_objects.size() + orphaned_metadata_objects.size());
+            ProfileEvents::increment(
+                ProfileEvents::DiskPlainRewritableOrphanedObjectsRemoved,
+                orphaned_data_objects.size() + orphaned_metadata_objects.size());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove the objects left by unfinished removals, will retry on the next start");
+        }
     }
 
     return is_empty;
@@ -1532,6 +1653,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    while the locks are held. Transactions on unrelated paths proceed concurrently, including their
         ///    requests to the object storage, which may take a long time.
         const auto path_locks = metadata_storage.path_locks.lock(affected_paths);
+        const auto blob_locks = metadata_storage.blob_locks.lock(
+            collectSharedBlobKeys(*metadata_storage.fs.takeReadOnlySnapshot(), link_removal_paths));
 
         /// 2. Setup up-to-date fs into snapshot being used during commit, and start recording the changes made to it.
         commit_snapshot->resetToRoot(metadata_storage.fs.takeReadOnlySnapshot()->getRoot());
@@ -1563,9 +1686,45 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedPath
         affected_paths.push_back(std::move(normalized_path));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFilePath(const std::string & path)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addLinkRemovalPath(const std::string & path)
+{
+    auto normalized_path = normalizePath(path).string();
+    if (normalized_path.empty())
+        return;
+
+    /// The committed snapshot, where the shared blobs are looked up, has the files that the earlier operations of this
+    /// transaction moved to this path or into its subtree (directly or by moving one of their ancestors) at their paths
+    /// before the moves, so these paths are added too.
+    std::vector<std::string> original_paths;
+    collectPathsBeforeMoves(normalized_path, moved_paths, moved_paths.size(), original_paths);
+
+    for (auto & original_path : original_paths)
+        if (original_path != normalized_path && !original_path.empty())
+            link_removal_paths.push_back(std::move(original_path));
+    link_removal_paths.push_back(std::move(normalized_path));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addMovedPath(const std::string & path_from, const std::string & path_to)
+{
+    auto normalized_path_from = normalizePath(path_from).string();
+    auto normalized_path_to = normalizePath(path_to).string();
+    if (!normalized_path_from.empty() && !normalized_path_to.empty())
+        moved_paths.emplace_back(std::move(normalized_path_from), std::move(normalized_path_to));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addRemovedDirectoryPath(const std::string & path)
 {
     addAffectedPath(path);
+    addLinkRemovalPath(path);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFilePath(const std::string & path, bool may_remove_link)
+{
+    addAffectedPath(path);
+
+    /// Writing, unlinking or replacing a file may remove a link to its blob (or to the blob of the file it replaces).
+    if (may_remove_link)
+        addLinkRemovalPath(path);
 
     /// An operation on a file of a directory in the explicit form rewrites the whole `prefix.path` of the directory, which
     /// lists all of its files, so it must exclude the operations on the other files of the directory: otherwise one of
@@ -1691,6 +1850,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
     addAffectedPath(path_to);
     checkNotReservedPath(path_to, uncommitted_state);
     uncommitted_state.moveDirectory(path_from, path_to);
+    addMovedPath(path_from, path_to);
 
     const auto directory_from = normalizePath(path_from).string();
     const auto directory_to = normalizePath(path_to).string();
@@ -1734,7 +1894,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    addAffectedPath(path);
+    addRemovedDirectoryPath(path);
     if (!normalizePath(path).empty())
         uncommitted_state.removeDirectory(path);
 
@@ -1748,7 +1908,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
 {
-    addAffectedPath(path);
+    addRemovedDirectoryPath(path);
     if (!normalizePath(path).empty())
         uncommitted_state.removeDirectory(path);
 
@@ -1763,8 +1923,9 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    addAffectedFilePath(path_from);
-    addAffectedFilePath(path_to);
+    /// A hard link (or the copy that stands in for it) refuses an existing target and only adds a link to the source blob.
+    addAffectedFilePath(path_from, /*may_remove_link=*/false);
+    addAffectedFilePath(path_to, /*may_remove_link=*/false);
     checkNotReservedPath(path_to, uncommitted_state);
 
     const auto normalized_path_from = normalizePath(path_from);
@@ -1847,10 +2008,13 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(co
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
-    addAffectedFilePath(path_from);
-    addAffectedFilePath(path_to);
+    /// A move refuses an existing target and does not change the link count of the moved blob: a shared blob keeps its key
+    /// (see `isMetadataOnlyMove`), and the only link to an unshared one cannot multiply while the source path is locked.
+    addAffectedFilePath(path_from, /*may_remove_link=*/false);
+    addAffectedFilePath(path_to, /*may_remove_link=*/false);
     checkNotReservedPath(path_to, uncommitted_state);
     planFileMove(normalizePath(path_from), normalizePath(path_to));
+    addMovedPath(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/false,
@@ -1865,10 +2029,12 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    addAffectedFilePath(path_from);
+    /// Only the replaced target may lose a link; the source is moved as by `moveFile`.
+    addAffectedFilePath(path_from, /*may_remove_link=*/false);
     addAffectedFilePath(path_to);
     checkNotReservedPath(path_to, uncommitted_state);
     planFileMove(normalizePath(path_from), normalizePath(path_to));
+    addMovedPath(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/true,

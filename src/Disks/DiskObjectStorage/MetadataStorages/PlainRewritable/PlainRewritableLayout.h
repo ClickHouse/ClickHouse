@@ -54,6 +54,15 @@ public:
     /// the initial load: a complete backup is copied back over the target before the backup is reclaimed.
     constexpr static std::string PENDING_REPLACE_TOMBSTONE_PREFIX = "pending replace\n";
 
+    /// A metadata-only operation (one that only rewrites `prefix.path`, see `isMetadataOnlyMove`) that drops the last
+    /// link to a blob deletes the blob only in `finalize`, after the commit. Nothing under the prefix of a directory with
+    /// an explicit file list is listed on load, so a blob that a process killed in between leaves would be unreachable
+    /// forever. So such an operation first writes a marker with the key of the blob, and `finalize` deletes the marker
+    /// after the blob. The initial load deletes the blob of such a marker if no directory references it anymore (the
+    /// operation was committed), and keeps it otherwise (the process died before it rewrote `prefix.path`). The name of
+    /// the marker marks nothing on the disk.
+    constexpr static std::string BLOB_REMOVAL_TOMBSTONE_PREFIX = "blob removal\n";
+
     struct PendingReplace
     {
         /// The target is `constructFileObjectKey(directory_remote_path, file_name)`.
@@ -79,6 +88,7 @@ public:
             Committed,
             PendingRemoval,
             PendingReplace,
+            BlobRemoval,
             /// Not one of the contents that are written, see `parseTombstoneMarkerContent`.
             Malformed,
         };
@@ -88,12 +98,15 @@ public:
         std::string pending_original_path;
         /// For `PendingReplace`.
         PendingReplace pending_replace;
+        /// For `BlobRemoval`, see `FileRemoteInfo::blob_key`.
+        std::string blob_key;
     };
 
     /// The content of a committed marker is the removed name itself.
     static std::string makeCommittedTombstoneContent(const std::string & removed_name);
     static std::string makePendingTombstoneContent(const std::string & original_local_path);
     static std::string makePendingReplaceTombstoneContent(const PendingReplace & pending_replace);
+    static std::string makeBlobRemovalTombstoneContent(const std::string & blob_key);
     /// A marker is rewritten in place, and on the local object storage a process that dies in the middle of it leaves
     /// the content torn: empty, or a prefix of the one being written. A torn content must never be taken for another
     /// valid one: a truncated original path of a pending removal would restore the subtree under a wrong path, and a
