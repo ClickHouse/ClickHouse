@@ -6455,11 +6455,16 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             return it->second;
         };
 
+        /// Names of the columns synthesized for earlier USING keys of this JOIN. A synthesized name must not collide with them:
+        /// e.g. for `USING (k, _k)` the key `k` is renamed to `_k` when the left table has a column `k`, and the key `_k`
+        /// must then not keep the name `_k`, otherwise both keys refer to the same column.
+        NameSet synthesized_using_column_names;
+
         /** While resolving JOIN USING identifier, try to resolve identifier from parent subquery projection.
           * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
           * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
           */
-        auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_query](
+        auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_query, &synthesized_using_column_names](
                                                                    const String & identifier_full_name_,
                                                                    const TableExpressionNodePtr & left_table_expression,
                                                                    const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
@@ -6542,7 +6547,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     return nullptr;
 
                 NameAndTypePair column_name_type(identifier_full_name_, projection_node->getResultType());
-                while (existing_columns.contains(column_name_type.name))
+                while (existing_columns.contains(column_name_type.name) || synthesized_using_column_names.contains(column_name_type.name))
                     column_name_type.name = "_" + column_name_type.name;
 
                 auto [expression_source, is_single_source] = getExpressionSource(projection_node);
@@ -6558,6 +6563,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
                         || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
                     return nullptr;
+
+                synthesized_using_column_names.insert(column_name_type.name);
 
                 /// Create ColumnNode with expression from parent projection
                 return std::make_shared<ColumnNode>(std::move(column_name_type), projection_node,

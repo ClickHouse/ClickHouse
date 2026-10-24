@@ -1,0 +1,55 @@
+setting on, USING (k, _k)
+1	10
+2	20
+3	30
+setting on, USING (_k, k)
+10	1
+20	2
+30	3
+setting on, LEFT JOIN
+1	10	1
+2	20	2
+3	30	3
+4	40	0
+10	1	1
+20	2	2
+30	3	3
+40	4	0
+setting on, FULL JOIN with join_use_nulls
+1	10
+1	\N
+2	20
+3	30
+4	40
+10	1
+20	2
+30	3
+40	4
+\N	1
+setting on, merge()
+1	10
+2	20
+3	30
+10	1
+20	2
+30	3
+setting on, left table has k and _k
+1	10
+2	20
+3	30
+10	1
+20	2
+30	3
+setting on, NATURAL JOIN
+1	10
+2	20
+3	30
+10	1
+20	2
+30	3
+setting off, left table has k and _k
+1	10
+10	1
+setting off, NATURAL JOIN
+1	10
+setting off, the left table has no _k
