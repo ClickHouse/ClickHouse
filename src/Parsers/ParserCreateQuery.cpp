@@ -2978,6 +2978,16 @@ The payload of each compression block is a standalone [`.pco`](https://github.co
 This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
 </Note>
 
+### Wallaby {#wallaby}
+
+<ExperimentalBadge/>
+
+`Wallaby()` — Adaptive lossless compression for floating-point time series. The codec splits data into blocks of 1024 values and picks the cheapest of several encodings per block: constant blocks collapse to a single value; values that originate from decimals are represented as exact scaled integers and bit-packed either directly (Frame-of-Reference) or as deltas, which is much smaller on smooth series; the remaining blocks are compressed with XOR against a window of recent values, similar to `Gorilla` but with a wider choice of references. Values that cannot be represented exactly are stored as raw exceptions, so compression is always lossless. Supports `Float32` and `Float64`.
+
+<Note>
+This codec is experimental and requires `SET enable_wallaby_codec = 1` to use.
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
