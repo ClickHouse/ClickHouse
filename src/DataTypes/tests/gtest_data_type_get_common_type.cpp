@@ -83,6 +83,13 @@ TEST_P(LeastSuperTypeTest, getLeastSupertype)
     }
 }
 
+GTEST_TEST(LeastSuperTypeTest, JSONSharedRegexpIntersection)
+{
+    const auto type = getLeastSupertype(DataTypes{
+        typeFromString("JSON(SHARED REGEXP 'a', SHARED REGEXP 'b')"), typeFromString("JSON(SHARED REGEXP 'b')")});
+    EXPECT_EQ(type->getName(), "JSON(SHARED REGEXP 'b')");
+}
+
 class MostSubtypeTest : public TypeTest {};
 
 TEST_P(MostSubtypeTest, getMostSubtype)

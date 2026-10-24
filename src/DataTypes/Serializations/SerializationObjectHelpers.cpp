@@ -114,9 +114,7 @@ void unflattenAndInsertPaths(const PathsContainer & flattened_paths, MutableColu
     std::map<std::string_view, ColumnPtr> paths_for_shared_data;
     for (size_t i = 0; i != flattened_paths.size(); ++i)
     {
-        if (object_column.canAddNewDynamicPath())
-            object_column.addNewDynamicPath(flattened_paths[i], std::move(flattened_columns[i]));
-        else
+        if (!object_column.tryToAddNewDynamicPath(flattened_paths[i], flattened_columns[i]))
             paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
     }
 
