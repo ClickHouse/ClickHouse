@@ -1126,6 +1126,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
             flushObjectStorageQueue(query);
             break;
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+            dropS3QueueFailedFiles(query);
+            break;
         case Type::RESET_FILELOG:
             resetFileLog(query);
             break;
@@ -2694,6 +2697,20 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
+void InterpreterSystemQuery::dropS3QueueFailedFiles(ASTSystemQuery & query)
+{
+    auto context = getContext();
+    context->checkAccess(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, table_id);
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto queue = castStorage<StorageObjectStorageQueue>(table, DeferredTable::Load);
+    if (!queue)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
+
+    queue->dropFailedFiles(query.has_like_pattern ? std::optional<String>(query.queue_path) : std::nullopt);
+}
+
 void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
 {
     auto context = getContext();
@@ -3235,6 +3252,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_CATALOG_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA);
+            break;
+        }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_OBJECT_STORAGE_QUEUE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::RESTORE_REPLICA:

@@ -230,6 +230,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             ostr << " PATH " << quoteString(queue_path);
             break;
         }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            ostr << ' ';
+            print_database_table();
+            if (has_like_pattern)
+                ostr << " LIKE " << quoteString(queue_path);
+            break;
+        }
         case Type::RESET_FILELOG:
         {
             ostr << ' ';
@@ -757,6 +765,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("schema_cache_format", schema_cache_format);
     if (!queue_path.empty())
         w.writeString("queue_path", queue_path);
+    if (has_like_pattern)
+        w.writeString("like_pattern", queue_path);
     if (filelog_file)
         w.writeString("filelog_file", *filelog_file);
     if (filelog_offset)
@@ -950,6 +960,11 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");
+    if (r.has("like_pattern"))
+    {
+        has_like_pattern = true;
+        queue_path = r.getString("like_pattern");
+    }
     if (r.has("filelog_file"))
         filelog_file = r.getString("filelog_file");
     if (r.has("filelog_offset"))
@@ -1006,6 +1021,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             if (!scheduled_merge_parts)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
             break;
+        case Type::DROP_S3QUEUE_FAILED_FILES:
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
         case Type::RESET_FILELOG:
         case Type::REFRESH_VIEW:
