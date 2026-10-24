@@ -1,0 +1,4 @@
+# TYPE http_requests_total counter
+http_requests_total{status="ok"} 0
+http_requests_total{status="bad"} 1
+

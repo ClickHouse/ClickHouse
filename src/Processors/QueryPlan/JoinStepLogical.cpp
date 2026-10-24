@@ -1045,7 +1045,7 @@ static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinAction
                 = dag.addColumn(value_type->createColumnConstWithDefaultValue(1), value_type, "__null_safe_key_default_" + value_type->getName());
             const auto & not_null = dag.addFunction(FunctionFactory::instance().get("assumeNotNull", nullptr), {nodes[1]}, {});
             return &dag.addFunction(
-                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
+                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false, /*use_low_cardinality_optimisation=*/ false),
                 {nodes[0], &default_value, &not_null},
                 {});
         });

@@ -1,0 +1,8 @@
+# TYPE http_requests_total counter
+http_requests_total{status="ok"} 0
+http_requests_total{status="bad"} 1
+
+# TYPE http_requests_total counter
+http_requests_total{a="x"} 0
+http_requests_total{b="x"} 1
+
