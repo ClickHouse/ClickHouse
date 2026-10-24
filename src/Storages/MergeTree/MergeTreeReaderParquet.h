@@ -84,6 +84,10 @@ private:
     void finishRowGroup(size_t row_group);
     /// Decodes rows [start_row, start_row + num_rows) of the row group and appends them to `res_columns`.
     void readRowsFromRowGroup(size_t row_group, size_t start_row, size_t num_rows, MutableColumns & res_columns);
+    /// Decodes rows [start_row, start_row + num_rows) of the row group, returns the columns as in the file.
+    Columns decodeRows(size_t row_group, size_t start_row, size_t num_rows);
+    /// Appends rows [start, start + num_rows) of the columns as in the file to `res_columns`.
+    void appendRows(const Columns & columns_from_file, size_t start, size_t num_rows, MutableColumns & res_columns);
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
 

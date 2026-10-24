@@ -55,6 +55,10 @@ struct MergeTreeReaderParquet::State
     size_t row = 0;
     /// Whether any rows of the row group `row_group` were decoded.
     bool row_group_started = false;
+    /// The decoded chunk of the row group that uses the columns cache, see `readRowsFromRowGroup`:
+    /// the columns as in the file, for rows [chunk_start, chunk_start + COLUMNS_CACHE_CHUNK_ROWS).
+    Columns chunk_columns;
+    size_t chunk_start = 0;
 };
 
 MergeTreeReaderParquet::MergeTreeReaderParquet(
@@ -423,6 +427,8 @@ void MergeTreeReaderParquet::finishRowGroup(size_t row_group)
     if (columns_in_file.empty() || row_group >= state->reader.row_groups.size())
         return;
 
+    state->chunk_columns.clear();
+
     /// Release the memory of the column chunks, they are not needed anymore.
     Parquet::MemoryUsageDiff diff(Parquet::ReadStage::ColumnData);
     for (auto & column : state->reader.row_groups[row_group].columns)
@@ -468,6 +474,40 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     if (columns_in_file.empty())
         return;
 
+    const auto & row_group_state = state->reader.row_groups.at(row_group);
+    const bool uses_columns_cache = !row_group_state.cached_columns.empty() || !row_group_state.columns_cache_writes.empty();
+    if (!uses_columns_cache)
+    {
+        appendRows(decodeRows(row_group, start_row, num_rows), 0, num_rows, res_columns);
+        return;
+    }
+
+    /// The columns cache holds a row group in chunks of `COLUMNS_CACHE_CHUNK_ROWS` rows: a column is formed from
+    /// the cache only for rows within one chunk, and a chunk is written to the cache only when it is decoded in full.
+    /// So the rows are decoded a whole chunk at a time, and the requested rows are taken from the decoded chunk.
+    const size_t chunk_rows_max = Parquet::Reader::COLUMNS_CACHE_CHUNK_ROWS;
+    const size_t rows_in_row_group = size_t(row_group_state.meta->num_rows);
+    while (num_rows > 0)
+    {
+        const size_t chunk_start = start_row / chunk_rows_max * chunk_rows_max;
+        const size_t chunk_rows = std::min(chunk_rows_max, rows_in_row_group - chunk_start);
+        if (state->chunk_columns.empty() || state->chunk_start != chunk_start)
+        {
+            /// Release the previous chunk before decoding the next one.
+            state->chunk_columns.clear();
+            state->chunk_columns = decodeRows(row_group, chunk_start, chunk_rows);
+            state->chunk_start = chunk_start;
+        }
+
+        const size_t rows = std::min(num_rows, chunk_start + chunk_rows - start_row);
+        appendRows(state->chunk_columns, start_row - chunk_start, rows, res_columns);
+        start_row += rows;
+        num_rows -= rows;
+    }
+}
+
+Columns MergeTreeReaderParquet::decodeRows(size_t row_group, size_t start_row, size_t num_rows)
+{
     auto & reader = state->reader;
     auto & row_group_state = reader.row_groups.at(row_group);
 
@@ -478,6 +518,7 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
         for (const auto & column_info : reader.primitive_columns)
             compressed_bytes += static_cast<size_t>(reader.getColumnChunk(row_group, column_info.column_idx).meta_data.total_compressed_size);
         ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, compressed_bytes);
+        state->row_group_started = true;
     }
 
     Parquet::Reader::RowSubgroup subgroup;
@@ -493,7 +534,7 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
         {
             const auto & info = reader.output_columns.at(*output_idx);
             /// A column served from the columns cache is formed from the cached column, not from primitive columns.
-            const bool from_cache = !row_group_state.cached_columns.empty() && row_group_state.cached_columns[idx];
+            const bool from_cache = !row_group_state.cached_columns.empty() && !row_group_state.cached_columns[idx].empty();
             subgroup.output[idx].primitive_columns_remaining.store(from_cache ? 0 : info.primitive_end - info.primitive_start);
         }
     }
@@ -533,66 +574,79 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
             if (column->size() != num_rows)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Read {} rows of column {} from Parquet file, expected {}", column->size(), sample_block.getByPosition(i).name, num_rows);
-
-            const auto & column_in_file = columns_in_file[i];
-            if (column_in_file.binary)
-            {
-                const auto & type = column_in_file.column_in_part.type;
-                auto serialization = type->getDefaultSerialization();
-                auto result = type->createColumn();
-                result->reserve(num_rows);
-
-                const auto & binary_column = assert_cast<const ColumnString &>(*column);
-                FormatSettings format_settings;
-                for (size_t row = 0; row < num_rows; ++row)
-                {
-                    auto value = binary_column.getDataAt(row);
-                    ReadBufferFromMemory buf(value.data(), value.size());
-                    serialization->deserializeBinary(*result, buf, format_settings);
-                    if (!buf.eof())
-                        throw Exception(ErrorCodes::CORRUPTED_DATA,
-                            "Value of column {} in binary format in Parquet file has extra bytes", column_in_file.column_in_part.name);
-                }
-                column = std::move(result);
-            }
-
             columns_from_file[i] = std::move(column);
         }
 
         for (auto & column : subgroup.columns)
             column.column_and_offsets_memory.reset(&diff);
         diff.finalized = true;
-
-        for (size_t pos = 0; pos < requested_columns.size(); ++pos)
-        {
-            const auto & requested = requested_columns[pos];
-            if (!requested.position_in_sample_block || !res_columns[pos])
-                continue;
-
-            const auto & column_in_file = columns_in_file[*requested.position_in_sample_block];
-            ColumnPtr column = columns_from_file[*requested.position_in_sample_block];
-
-            if (requested.only_offsets)
-            {
-                /// Only the offsets are needed, the column is filled with default values later in `fillMissingColumns`.
-                const auto & offsets = assert_cast<const ColumnArray &>(*column).getOffsets();
-                auto & result_offsets = assert_cast<ColumnArray &>(*res_columns[pos]).getOffsets();
-                IColumn::Offset base = result_offsets.empty() ? 0 : result_offsets.back();
-                for (auto offset : offsets)
-                    result_offsets.push_back(base + offset);
-                continue;
-            }
-
-            if (requested.subcolumn_name)
-                column = column_in_file.column_in_part.type->getSubcolumn(*requested.subcolumn_name, column);
-
-            res_columns[pos]->insertRangeFrom(*column, 0, column->size());
-        }
+        return columns_from_file;
     }
     catch (...)
     {
         diff.finalized = true;
         throw;
+    }
+}
+
+void MergeTreeReaderParquet::appendRows(const Columns & columns_from_file, size_t start, size_t num_rows, MutableColumns & res_columns)
+{
+    Columns columns(columns_from_file.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        ColumnPtr column = columns_from_file[i];
+        if (start != 0 || num_rows != column->size())
+            column = column->cut(start, num_rows);
+
+        const auto & column_in_file = columns_in_file[i];
+        if (column_in_file.binary)
+        {
+            const auto & type = column_in_file.column_in_part.type;
+            auto serialization = type->getDefaultSerialization();
+            auto result = type->createColumn();
+            result->reserve(num_rows);
+
+            const auto & binary_column = assert_cast<const ColumnString &>(*column);
+            FormatSettings format_settings;
+            for (size_t row = 0; row < num_rows; ++row)
+            {
+                auto value = binary_column.getDataAt(row);
+                ReadBufferFromMemory buf(value.data(), value.size());
+                serialization->deserializeBinary(*result, buf, format_settings);
+                if (!buf.eof())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Value of column {} in binary format in Parquet file has extra bytes", column_in_file.column_in_part.name);
+            }
+            column = std::move(result);
+        }
+
+        columns[i] = std::move(column);
+    }
+
+    for (size_t pos = 0; pos < requested_columns.size(); ++pos)
+    {
+        const auto & requested = requested_columns[pos];
+        if (!requested.position_in_sample_block || !res_columns[pos])
+            continue;
+
+        const auto & column_in_file = columns_in_file[*requested.position_in_sample_block];
+        ColumnPtr column = columns[*requested.position_in_sample_block];
+
+        if (requested.only_offsets)
+        {
+            /// Only the offsets are needed, the column is filled with default values later in `fillMissingColumns`.
+            const auto & offsets = assert_cast<const ColumnArray &>(*column).getOffsets();
+            auto & result_offsets = assert_cast<ColumnArray &>(*res_columns[pos]).getOffsets();
+            IColumn::Offset base = result_offsets.empty() ? 0 : result_offsets.back();
+            for (auto offset : offsets)
+                result_offsets.push_back(base + offset);
+            continue;
+        }
+
+        if (requested.subcolumn_name)
+            column = column_in_file.column_in_part.type->getSubcolumn(*requested.subcolumn_name, column);
+
+        res_columns[pos]->insertRangeFrom(*column, 0, column->size());
     }
 }
 
