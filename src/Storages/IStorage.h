@@ -576,6 +576,11 @@ public:
     /// Storages without their own data (e.g. View) return false.
     virtual bool supportsTruncate() const { return true; }
 
+    /// Called by `TRUNCATE ALL TABLES FROM db` on every table of the database with the list of the tables it is
+    /// going to truncate, before any of them is truncated, so a table can veto the whole operation (throw), e.g.
+    /// when the truncation of its inner table alone would leave it inconsistent.
+    virtual void checkDatabaseTablesCanBeTruncated(const std::vector<StorageID> & /*tables_to_truncate*/) const {}
+
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
       */
@@ -794,8 +799,10 @@ public:
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
-    /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
+    /// Similar to above but checks for a non-permanent DETACH.
     virtual void checkTableCanBeDetached() const {}
+    /// Checks a permanent DETACH before the storage is shut down.
+    virtual void checkTableCanBeDetachedPermanently() const { checkTableCanBeDetached(); }
 
     /// Size-only drop gate used by `CREATE OR REPLACE` to enforce
     /// `max_table_size_to_drop` before EXCHANGE. Narrower than
