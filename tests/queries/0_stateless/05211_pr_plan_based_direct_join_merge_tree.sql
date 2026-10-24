@@ -24,7 +24,6 @@ CREATE TABLE dj_r (EventId UInt64, Attribute String) ENGINE = MergeTree ORDER BY
 INSERT INTO dj_l SELECT number FROM numbers(100000) SETTINGS max_block_size = 10000;  -- 10 key batches
 INSERT INTO dj_r SELECT number, toString(number) FROM numbers(100000);
 
-SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 1;
