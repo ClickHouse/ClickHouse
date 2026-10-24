@@ -990,7 +990,7 @@ The columns cache stores deserialized columns from `MergeTree` tables, eliminati
 
 Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud); `MergeTree` tables in legacy `Ordinary` databases have a nil UUID and silently ignore this setting.
 
-The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
+The cache applies to both wide and compact parts, including the parts of projections.
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 
