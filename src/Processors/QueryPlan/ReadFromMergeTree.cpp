@@ -282,10 +282,12 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsBool do_not_merge_across_partitions_select_final;
+    extern const SettingsBool enable_early_constant_folding;
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_creating_set_partitions_independently;
+    extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool force_primary_key;
@@ -3821,6 +3823,37 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
+
+    /// A forced data-skipping index still needs the granule analysis below to verify that it was used.
+    if (query_info_.prewhere_info
+        && settings[Setting::enable_early_constant_folding]
+        && !settings[Setting::force_data_skipping_indexes].changed
+        && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
+    {
+        const auto & prewhere_actions = query_info_.prewhere_info->prewhere_actions;
+        const auto & prewhere_column_name = query_info_.prewhere_info->prewhere_column_name;
+
+        /// Same order as in `FilterTransform::prepare`: check the empty set first, because the dry run
+        /// may throw for a sibling branch of `and` that the empty set would have short-circuited.
+        bool always_false = FilterTransform::isAlwaysFalseByEmptySet(prewhere_actions, prewhere_column_name);
+        if (!always_false)
+        {
+            /// Build the header from the DAG inputs: during projection analysis the PREWHERE still refers to
+            /// the parent table columns, which the projection metadata does not have.
+            ColumnsWithTypeAndName inputs;
+            for (const auto & column : prewhere_actions.getRequiredColumns())
+                inputs.emplace_back(column.type->createColumn(), column.type, column.name);
+            auto header = prewhere_actions.updateHeader(Block(std::move(inputs)));
+            const auto & filter_column = header.getByName(prewhere_column_name).column;
+            always_false = filter_column && ConstantFilterDescription(*filter_column).always_false;
+        }
+
+        if (always_false)
+        {
+            result.has_exact_ranges = true;
+            return std::make_shared<AnalysisResult>(std::move(result));
+        }
     }
 
     for (const auto & part : res_parts)

@@ -51,6 +51,9 @@ public:
 
     static bool canUseType(const DataTypePtr & type);
 
+    /// Detect an empty prepared `IN` set, including filters with nullable inputs.
+    static bool isAlwaysFalseByEmptySet(const ActionsDAG & dag, const String & filter_column_name);
+
 private:
     ExpressionActionsPtr expression;
     SetSpillables set_spillables;

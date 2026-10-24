@@ -2629,6 +2629,14 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
+bool ActionsDAG::isSuitableForConstantFolding() const
+{
+    for (const auto & node : nodes)
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isSuitableForConstantFolding(); }))
+            return false;
+    return true;
+}
+
 namespace
 {
 
