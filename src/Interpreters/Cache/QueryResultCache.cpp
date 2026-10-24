@@ -4,9 +4,27 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/misc.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessType.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageFile.h>
+#include <Storages/StorageLog.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageStripeLog.h>
+#include <Storages/StorageURL.h>
+#include <Storages/StorageView.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -21,8 +39,10 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseQuery.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -57,8 +77,15 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool enable_writes_to_query_cache;
+    extern const SettingsBool implicit_transaction;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsString obfuscate_seed;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
@@ -81,6 +108,10 @@ struct HasNonDeterministicFunctionsMatcher
     struct Data
     {
         const ContextPtr context;
+        /// Whether a bare identifier that the analyzer can resolve as a niladic function (`CURRENT_TIMESTAMP`,
+        /// `now`) counts as a call of that function. The analyzer does so only when no column or alias of that
+        /// name is in scope, which is not known here, so this is conservative.
+        const bool check_niladic_identifiers = false;
         bool has_non_deterministic_functions = false;
     };
 
@@ -90,6 +121,14 @@ struct HasNonDeterministicFunctionsMatcher
     {
         if (data.has_non_deterministic_functions)
             return;
+
+        if (const auto * identifier = node->as<ASTIdentifier>(); identifier && data.check_niladic_identifiers && !identifier->compound())
+        {
+            if (const auto func = FunctionFactory::instance().tryGet(identifier->name(), data.context);
+                func && func->allowsOmittingParentheses() && !func->isDeterministic())
+                data.has_non_deterministic_functions = true;
+            return;
+        }
 
         if (const auto * function = node->as<ASTFunction>())
         {
@@ -211,8 +250,88 @@ struct HasSystemTablesMatcher
     }
 };
 
+/// Collects the tables referenced by a query so that their modification hashes can be combined into a
+/// single value (see computeQueryReferencedTablesModificationHash). If the query uses a table function
+/// (e.g. url(), remote()), the set of underlying objects cannot be reliably enumerated this way, so we
+/// give up and signal that consistency cannot be verified.
+struct CollectReferencedTablesMatcher
+{
+    struct Data
+    {
+        std::vector<StorageID> table_ids;
+        /// The aliases of all table expressions; only `collectNamesMatchableByAdditionalTableFilters` needs them.
+        NameSet table_expression_aliases;
+        bool cannot_verify = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.cannot_verify)
+            return;
+
+        if (const auto * select = node->as<ASTSelectQuery>())
+        {
+            /// `WITH RECURSIVE` cannot be fully expanded by `ApplyWithSubqueryVisitor` (a recursive CTE
+            /// reference stays a bare identifier inside the substituted body), so a same-named real table
+            /// could be mistaken for the CTE. Fail closed.
+            if (select->recursive_with)
+                data.cannot_verify = true;
+        }
+        else if (const auto * table_expression = node->as<ASTTableExpression>())
+        {
+            if (table_expression->table_function)
+                data.cannot_verify = true;
+            for (const auto & child : {table_expression->database_and_table_name, table_expression->subquery})
+                if (child && !child->tryGetAlias().empty())
+                    data.table_expression_aliases.insert(child->tryGetAlias());
+        }
+        else if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        {
+            data.table_ids.push_back(table_identifier->getTableId());
+        }
+        else if (const auto * function = node->as<ASTFunction>())
+        {
+            /// A user-defined SQL function is expanded into its body only later (by
+            /// `UserDefinedSQLFunctionVisitor`, after `TreeRewriter`), long after this visitor runs on the
+            /// unrewritten AST. Its body can hide any of the mutable dependencies handled below - a
+            /// `dictGet`, `joinGet`, `x IN table`, `eval`, or a plain table reference - so a call spelled
+            /// `f(x)` looks like an ordinary function here and its hidden source would never be counted.
+            /// We cannot see through it without expanding it, so fail closed on any SQL UDF.
+            if (UserDefinedSQLFunctionFactory::instance().has(function->name))
+            {
+                data.cannot_verify = true;
+            }
+            /// Some functions read mutable external state named by an argument rather than by a table
+            /// expression, so the object they depend on never shows up as a table identifier here:
+            /// `dictGet('db.dict', ...)` and friends read a dictionary (which has no modification hash at
+            /// all), `joinGet('db.j', ...)` reads a `Join` table, and `eval` runs an opaque query text.
+            /// This visitor runs on the unrewritten AST - before `MarkTableIdentifiersVisitor` could turn
+            /// any identifier-spelled argument into an `ASTTableIdentifier` - and the documented quoted
+            /// spellings stay literals in any case, so fail closed.
+            else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || function->name == "eval")
+            {
+                data.cannot_verify = true;
+            }
+            /// `x IN table_name` reads a table (or a `Set`) spelled as a bare identifier, which is
+            /// likewise not an `ASTTableIdentifier` in the unrewritten AST. The identifier can also be a
+            /// column, and the two cannot be told apart without resolving names, so fail closed on any
+            /// identifier on the right-hand side. Subqueries and literal tuples are unaffected.
+            else if (functionIsInOrGlobalInOperator(function->name))
+            {
+                if (function->arguments && function->arguments->children.size() == 2
+                    && function->arguments->children[1]->as<ASTIdentifier>()
+                    && !function->arguments->children[1]->as<ASTTableIdentifier>())
+                    data.cannot_verify = true;
+            }
+        }
+    }
+};
+
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
 using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
+using CollectReferencedTablesVisitor = InDepthNodeVisitor<CollectReferencedTablesMatcher, true>;
 
 }
 
@@ -318,9 +437,9 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
 }
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context, bool check_niladic_identifiers = false)
 {
-    HasNonDeterministicFunctionsMatcher::Data finder_data{context};
+    HasNonDeterministicFunctionsMatcher::Data finder_data{.context = context, .check_niladic_identifiers = check_niladic_identifiers};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions
         || hasNonDeterministicObfuscate(ast, context);
@@ -332,6 +451,560 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);
     return finder_data.has_system_tables;
+}
+
+/// Computes the folded modification hash of a single referenced table. View-like wrappers are looked
+/// through by their own `getModificationHash` (`StorageView` hashes the tables behind its stored SELECT,
+/// `StorageMaterializedView` hashes its target table), so that the same value also appears in
+/// `system.tables.modification_hash` and is seen by wrapper engines (`Merge`, `Distributed`). Engines
+/// that do not override `getModificationHash` (e.g. `WindowView`, `LiveView`) yield nullopt (fail closed).
+bool columnExpressionsMayChangeWithoutTable(const StoragePtr & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    /// A `DEFAULT` / `MATERIALIZED` expression is evaluated by a read only for the parts that do not store
+    /// the column (e.g. after `ALTER TABLE ... ADD COLUMN`). For `MergeTree` the active parts tell whether
+    /// any of them lacks it; the parts can change after this check, but that changes the hash of the table
+    /// as well. Other storages are assumed to evaluate the expression.
+    const auto merge_tree = castStorage<const MergeTreeData>(storage, DeferredTable::Load);
+    std::optional<MergeTreeData::DataPartsVector> parts;
+    auto is_stored_in_every_part = [&](const String & column_name)
+    {
+        if (!merge_tree)
+            return false;
+        if (!parts)
+            parts = merge_tree->getDataPartsVectorForInternalUsage();
+        return std::ranges::all_of(*parts, [&](const auto & part) { return part->getColumnPosition(column_name).has_value(); });
+    };
+
+    for (const auto & column : metadata.getColumns())
+    {
+        if (!column.default_desc.expression)
+            continue;
+        if (column.default_desc.kind != ColumnDefaultKind::Alias && is_stored_in_every_part(column.name))
+            continue;
+        /// The expression is not part of the query, so a dictionary, the clock or another table it reads
+        /// would not be seen by the query walk. Fail closed on such an expression: the hash of this table
+        /// does not cover their changes.
+        if (astContainsNonDeterministicFunctions(column.default_desc.expression, context, /*check_niladic_identifiers=*/ true))
+            return true;
+        CollectReferencedTablesMatcher::Data expression_tables;
+        ASTPtr expression = column.default_desc.expression->clone();
+        CollectReferencedTablesVisitor(expression_tables).visit(expression);
+        if (expression_tables.cannot_verify || !expression_tables.table_ids.empty())
+            return true;
+    }
+    return false;
+}
+
+std::optional<UInt128> computeTableModificationHashForConsistency(const StorageID & table_id, ContextPtr context)
+{
+    /// Resolve through the context so that an unqualified name picks the same table the query will
+    /// actually read - in particular a temporary or external table that shadows a permanent one, not
+    /// just `current_database.<name>`.
+    StorageID resolved_id = StorageID::createEmpty();
+    try
+    {
+        resolved_id = context->resolveStorageID(table_id);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: could not resolve a referenced table, so we cannot verify consistency and
+        /// conservatively bail out.
+        return {};
+    }
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+    if (!storage)
+        return {};
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+
+    /// `getModificationHash` is computed here, before the query's regular access checks in the
+    /// interpreter/planner. For external engines (`URL`, object storage, `Distributed`) it performs
+    /// credentialed I/O - an HTTP request, an object listing, a remote `system.tables` query. Only
+    /// probe a table the current user is allowed to read; otherwise bail out so the cache is bypassed
+    /// (fail closed) and the query is rejected later by the normal access check with the usual error.
+    /// SELECT access is granted when at least one column is readable, matching `InterpreterSelectQuery`
+    /// (every column for `system.tables.modification_hash`, see `canComputeModificationHash`).
+    /// "The current user" is the user of the context the read will actually run under: a view with
+    /// `SQL SECURITY DEFINER` / `NONE` recurses into here with its own effective context, so the tables
+    /// behind it are probed with the grants (and row policies) the read applies, not the invoker's. See
+    /// `StorageView::getModificationHash`.
+    if (!canComputeModificationHash(context, resolved_id.database_name, resolved_id.table_name, metadata->getColumns()))
+        return {};
+
+    /// The expressions of the columns that a read can evaluate (`ALIAS`, and `DEFAULT` / `MATERIALIZED`
+    /// of the columns missing in old parts) are checked by `getModificationHashWithRefreshedMetadata`
+    /// below, the entry point shared with the probes of the wrapper engines.
+
+    /// A row policy filters what the current user reads from the table without the table itself
+    /// changing, so an unchanged table hash is not proof that the result is unchanged: an
+    /// `ALTER ROW POLICY` (or a `CREATE`/`DROP` of one) changes the result while every referenced table
+    /// stays the same, and the cache key only folds the user and role IDs, not the policy. Fail closed
+    /// on any non-trivial `SELECT` filter in the reading context. (Folding the filter into the hash
+    /// instead would have to recurse into the tables the filter's subqueries reference - which can
+    /// have policies of their own - so bailing out is the safe choice.) A filter that is literally
+    /// always true does not affect the result and is deliberately not counted: when it is later
+    /// altered to a real condition, the filter becomes non-trivial and this check starts failing
+    /// closed, so no stale entry can be served across the change in either direction.
+    if (auto row_policy_filter = context->getRowPolicyFilter(resolved_id.database_name, resolved_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return {};
+
+    /// Refreshes lazily applied external metadata first, so that the hash computed before the query
+    /// reads the table agrees with the one computed at finalization, after the read has performed that
+    /// update. Runs after the access check above because it may perform credentialed I/O (an object
+    /// listing).
+    std::optional<UInt128> table_hash = getModificationHashWithRefreshedMetadata(storage, context);
+
+    if (!table_hash)
+        return {}; /// The referenced table cannot tell whether it changed.
+
+    /// Fold the resolved table identity (including the UUID, which distinguishes a temporary table or
+    /// a re-created table from a same-named permanent one) so that distinct tables do not cancel out.
+    SipHash per_table;
+    per_table.update(resolved_id.database_name);
+    per_table.update(resolved_id.table_name);
+    per_table.update(resolved_id.uuid);
+    per_table.update(*table_hash);
+
+    return per_table.get128();
+}
+
+/// Substitutes the CTEs into `ast` in place, the same way the interpreter does. The context-aware
+/// expansion applies each subquery's own `SETTINGS`, so a CTE is not substituted into a subquery that
+/// does not see it (`enable_global_with_statement = 0`): there the name refers to a real table.
+static void expandCommonTableExpressions(ASTPtr & ast, const ContextPtr & context)
+{
+    ExpandedASTBudget budget(context->getSettingsRef()[Setting::max_expanded_ast_elements], *ast);
+    ApplyWithSubqueryVisitor::visit(ast, context, budget);
+}
+
+static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context)
+{
+    /// Expand CTEs first, the same way the interpreter does, so that in
+    /// `WITH q AS (SELECT ... FROM t) SELECT ... FROM q` the reference `q` is not mistaken for a real
+    /// (or temporary) table of the same name: the walker below must see the base tables the query will
+    /// actually read. The caller passes a throwaway copy of the AST, so in-place expansion is fine.
+    try
+    {
+        expandCommonTableExpressions(ast, context);
+    }
+    catch (...)
+    {
+        /// E.g. `WITH RECURSIVE` with the old analyzer; the query itself will throw the same error
+        /// later, so just report that consistency cannot be verified.
+        return {};
+    }
+
+    /// A non-deterministic function (`now64`, `rand`, a SQL UDF, ...) changes the result without any
+    /// referenced table changing, so an unchanged set of referenced tables is not proof that the result
+    /// is unchanged - fail closed. This also covers a view whose stored SELECT uses such a function and
+    /// is reached through the view-transparent path (`StorageView::getModificationHash` recurses into
+    /// here with the view's stored SELECT).
+    /// A niladic function can also be spelled without parentheses (`CURRENT_TIMESTAMP`), as a bare identifier.
+    if (astContainsNonDeterministicFunctions(ast, context, /*check_niladic_identifiers=*/ true))
+        return {};
+
+    CollectReferencedTablesMatcher::Data finder_data;
+    CollectReferencedTablesVisitor(finder_data).visit(ast);
+
+    /// The query uses a table function or another construct we cannot resolve - we cannot guarantee
+    /// consistency.
+    if (finder_data.cannot_verify)
+        return {};
+
+    std::vector<UInt128> table_hashes;
+    for (const auto & table_id : finder_data.table_ids)
+    {
+        auto table_hash = computeTableModificationHashForConsistency(table_id, context);
+        if (!table_hash)
+            return {};
+        table_hashes.push_back(*table_hash);
+    }
+
+    /// Combine in a deterministic, order-independent way.
+    std::sort(table_hashes.begin(), table_hashes.end());
+
+    SipHash hash;
+    hash.update(table_hashes.size());
+    for (const auto & table_hash : table_hashes)
+        hash.update(table_hash);
+    return hash.get128();
+}
+
+static bool collectFiltersFromQuerySettings(
+    const IAST & ast,
+    const Settings & settings,
+    ASTs & filter_asts,
+    const NameSet * additional_table_filters_matchable_names = nullptr,
+    bool fail_on_profile = true);
+
+/// Parses the filter expressions a query inherits from settings rather than from its own text:
+/// every value of `additional_table_filters` and the `additional_result_filter` expression. They are
+/// applied by the interpreter/planner only after the referenced-tables walk runs, and they can contain
+/// subqueries (e.g. `x IN (SELECT x FROM t2)`) whose tables never appear in the query AST, so the walk
+/// has to see them too. A filter can carry filters of its own in the `SETTINGS` clause of a subquery,
+/// so these are collected as well. Returns false when a filter cannot be parsed (the query itself will
+/// fail on it later with the same error) - the caller then fails closed.
+static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    try
+    {
+        auto parse_filter = [&](const String & filter)
+        {
+            ParserExpression parser;
+            ASTPtr filter_ast = parseQuery(
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+            filter_asts.push_back(filter_ast);
+            return collectFiltersFromQuerySettings(*filter_ast, settings, filter_asts, additional_table_filters_matchable_names);
+        };
+
+        /// Without the set of names the query can reach, all entries are collected: hashing a superset
+        /// is conservative - it can only produce extra cache misses, never a stale hit.
+        for (const auto & entry : settings[Setting::additional_table_filters].value)
+        {
+            const auto & tuple = entry.safeGet<Tuple>();
+            if (additional_table_filters_matchable_names && !additional_table_filters_matchable_names->contains(tuple.at(0).safeGet<String>()))
+                continue;
+            if (!parse_filter(tuple.at(1).safeGet<String>()))
+                return false;
+        }
+
+        const String & additional_result_filter = settings[Setting::additional_result_filter];
+        if (!additional_result_filter.empty() && !parse_filter(additional_result_filter))
+            return false;
+    }
+    catch (...)
+    {
+        /// A filter that fails to parse cannot be analyzed for table dependencies,
+        /// so fail closed - the caller disables the consistency optimization. Ok.
+        return false;
+    }
+
+    return true;
+}
+
+NameSet getNamesMatchableByAdditionalTableFilters(const StorageID & storage_id, const ContextPtr & context)
+{
+    NameSet names{storage_id.getFullNameNotQuoted()};
+    if (storage_id.getDatabaseName() == context->getCurrentDatabase())
+        names.insert(storage_id.getTableName());
+    return names;
+}
+
+static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth);
+
+/// Adds the names an `additional_table_filters` key can match for `table_id` - the table name, but only
+/// when the table is in the current database (the same rule as the planner and the interpreter), and the
+/// qualified name - and recurses into the tables the storage reads itself. Returns false when that set
+/// cannot be enumerated.
+static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID & table_id, const ContextPtr & context, NameSet & names, size_t depth)
+{
+    StorageID resolved_id = StorageID::createEmpty();
+    try
+    {
+        resolved_id = context->resolveStorageID(table_id);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: an unresolved table leaves the set unknown, and the caller hashes all entries.
+        return false;
+    }
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+    if (!storage)
+        return false;
+
+    names.merge(getNamesMatchableByAdditionalTableFilters(storage->getStorageID(), context));
+
+    /// The filters propagate only into the query behind a view whose body runs with the caller's settings:
+    /// an `INVOKER` or legacy view. `getSQLSecurityOverriddenContext` removes the caller's
+    /// `additional_table_filters` for a `DEFINER` / `NONE` body, so the tables it reads cannot match an
+    /// entry (the definer's own filters are accounted for by `StorageView::getModificationHash`).
+    if (typeid_cast<const StorageView *>(storage.get()))
+    {
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        if (metadata->sql_security_type && *metadata->sql_security_type != SQLSecurityType::INVOKER)
+            return true;
+        const auto & inner_query = metadata->getSelectQuery().inner_query;
+        return inner_query && collectNamesMatchableByAdditionalTableFiltersImpl(inner_query->clone(), context, names, depth + 1);
+    }
+    /// A read of a materialized view is pushed straight into the target storage, which does not apply
+    /// the filters keyed by the target table, so only the names of the materialized view itself can match.
+    if (typeid_cast<const StorageMaterializedView *>(storage.get()))
+        return true;
+
+    /// Storages known to read no other table: they read only their own data, files or URLs. Anything else
+    /// (`Merge`, `Distributed`, `Buffer`, ...) may read tables that are not named here, locally or on
+    /// another server, so the set is unknown.
+    /// The query names this table, so loading a lazily attached one is the expected cost.
+    return castStorage<const MergeTreeData>(storage, DeferredTable::Load)
+        || castStorage<const StorageMemory>(storage, DeferredTable::Load)
+        || castStorage<const StorageLog>(storage, DeferredTable::Load)
+        || castStorage<const StorageStripeLog>(storage, DeferredTable::Load)
+        || castStorage<const StorageFile>(storage, DeferredTable::Load)
+        || castStorage<const IStorageURLBase>(storage, DeferredTable::Load)
+        || castStorage<const StorageObjectStorage>(storage, DeferredTable::Load);
+}
+
+static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth)
+{
+    static constexpr size_t max_view_nesting_depth = 32;
+    if (depth > max_view_nesting_depth)
+        return false;
+
+    /// The same CTE expansion as `computeReferencedTablesModificationHashImpl`, so that a CTE name is
+    /// not resolved as a table.
+    try
+    {
+        expandCommonTableExpressions(ast, context);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: the set stays unknown and the caller hashes all entries.
+        return false;
+    }
+
+    CollectReferencedTablesMatcher::Data finder_data;
+    CollectReferencedTablesVisitor(finder_data).visit(ast);
+    if (finder_data.cannot_verify)
+        return false;
+
+    names.insert(finder_data.table_expression_aliases.begin(), finder_data.table_expression_aliases.end());
+    for (const auto & table_id : finder_data.table_ids)
+        if (!collectTableNamesMatchableByAdditionalTableFilters(table_id, context, names, depth))
+            return false;
+    return true;
+}
+
+/// Collects the filter expressions of the `additional_table_filters` entries and the
+/// `additional_result_filter` in the `SETTINGS` clauses of `ast` itself (e.g. the stored query of a view,
+/// or a subquery). Unlike the filters of the query's context, they are not visible through
+/// `parseFilterASTsInjectedFromSettings`. A collected filter can carry filters of its own in the `SETTINGS`
+/// clause of a subquery, so it is walked the same way. With `additional_table_filters_matchable_names`, only
+/// the `additional_table_filters` entries keyed by one of these names are collected. Returns false when one
+/// cannot be parsed or has an unexpected shape, or, with `fail_on_profile`, when a `SETTINGS` clause applies
+/// a settings `profile`.
+static bool collectFiltersFromQuerySettings(
+    const IAST & ast,
+    const Settings & settings,
+    ASTs & filter_asts,
+    const NameSet * additional_table_filters_matchable_names,
+    bool fail_on_profile)
+{
+    for (const auto & child : ast.children)
+        if (!collectFiltersFromQuerySettings(*child, settings, filter_asts, additional_table_filters_matchable_names, fail_on_profile))
+            return false;
+
+    const auto * set_query = ast.as<ASTSetQuery>();
+    if (!set_query)
+        return true;
+
+    try
+    {
+        auto parse_filter = [&](const String & filter)
+        {
+            ParserExpression parser;
+            ASTPtr filter_ast = parseQuery(
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+            filter_asts.push_back(filter_ast);
+            return collectFiltersFromQuerySettings(*filter_ast, settings, filter_asts, additional_table_filters_matchable_names, fail_on_profile);
+        };
+
+        for (const auto & change : set_query->changes)
+        {
+            /// `profile` applies the settings of a settings profile to this scope, which can include filters
+            /// that neither the query text nor the outer context shows. They cannot be analyzed here.
+            if (fail_on_profile && change.name == "profile")
+                return false;
+            if (change.name == "additional_result_filter")
+            {
+                if (change.value.getType() != Field::Types::String)
+                    return false;
+                const auto & filter = change.value.safeGet<String>();
+                if (!filter.empty() && !parse_filter(filter))
+                    return false;
+                continue;
+            }
+            if (change.name != "additional_table_filters")
+                continue;
+            if (change.value.getType() != Field::Types::Map)
+                return false;
+            for (const auto & entry : change.value.safeGet<Map>())
+            {
+                const auto & tuple = entry.safeGet<Tuple>();
+                if (additional_table_filters_matchable_names && !additional_table_filters_matchable_names->contains(tuple.at(0).safeGet<String>()))
+                    continue;
+                if (!parse_filter(tuple.at(1).safeGet<String>()))
+                    return false;
+            }
+        }
+    }
+    catch (...)
+    {
+        /// Ok to ignore: a filter that cannot be analyzed leaves the set unknown, and the caller treats
+        /// every entry as applicable.
+        return false;
+    }
+    return true;
+}
+
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context, const NameSet * seed_names)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    /// The filters given in the query's own `SETTINGS` clauses (e.g. in the stored query of a view) are
+    /// matched against the same names, and their subqueries are planned with them too.
+    ASTs query_filter_roots;
+    if (ast && !collectFiltersFromQuerySettings(*ast, settings, query_filter_roots))
+        return {};
+
+    NameSet names;
+    if (seed_names)
+        names = *seed_names;
+
+    if (settings[Setting::additional_table_filters].value.empty() && query_filter_roots.empty())
+        return names;
+
+    if (ast && !collectNamesMatchableByAdditionalTableFiltersImpl(ast->clone(), context, names, /*depth=*/ 0))
+        return {};
+
+    /// The filters themselves are planned with the same settings, so a table read by the subquery of a
+    /// filter that applies can match an entry as well. Only the filters keyed by an already collected
+    /// name (including the seed names, e.g. of a view whose own entry applies to the rows it returns, so
+    /// the closure also covers the filters reachable only through that entry), and
+    /// `additional_result_filter`, which always applies, are walked, until the set stops growing: a filter
+    /// of an unrelated table never runs, so the tables it reads cannot match anything.
+    static constexpr size_t max_iterations = 32;
+    for (size_t iteration = 0;; ++iteration)
+    {
+        if (iteration == max_iterations)
+            return {};
+
+        ASTs filters;
+        if (!parseFilterASTsInjectedFromSettings(context, filters, &names))
+            return {};
+        if (ast && !collectFiltersFromQuerySettings(*ast, settings, filters, &names))
+            return {};
+
+        const size_t names_before = names.size();
+        for (const auto & filter : filters)
+            if (!collectNamesMatchableByAdditionalTableFiltersImpl(filter->clone(), context, names, /*depth=*/ 0))
+                return {};
+        if (names.size() == names_before)
+            return names;
+    }
+}
+
+/// Hashes the dependencies of the given filters, applying the same rules as to the query itself (fail
+/// closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...). Their hashes are sorted
+/// (keeping multiplicity) the same way as the per-table hashes: they only capture the state of the tables
+/// the filters read. The order of the entries, which decides the first one matching a table, is captured
+/// by the settings themselves (the caller's cache key, or `updateHashWithRowAffectingSettings`).
+static std::optional<std::vector<UInt128>> computeFiltersModificationHashes(const ASTs & filter_asts, const ContextPtr & context)
+{
+    std::vector<UInt128> filter_hashes;
+    filter_hashes.reserve(filter_asts.size());
+    for (const auto & filter_ast : filter_asts)
+    {
+        auto filter_hash = computeReferencedTablesModificationHashImpl(filter_ast->clone(), context);
+        if (!filter_hash)
+            return {};
+        filter_hashes.push_back(*filter_hash);
+    }
+    std::sort(filter_hashes.begin(), filter_hashes.end());
+    return filter_hashes;
+}
+
+std::optional<UInt128> computeAdditionalFiltersModificationHash(ContextPtr context, const NameSet & seed_names, NameSet & matchable_names)
+{
+    auto names = collectNamesMatchableByAdditionalTableFilters(nullptr, context, &seed_names);
+    if (!names)
+        return {};
+
+    ASTs filter_asts;
+    if (!parseFilterASTsInjectedFromSettings(context, filter_asts, &*names))
+        return {};
+
+    auto filter_hashes = computeFiltersModificationHashes(filter_asts, context);
+    if (!filter_hashes)
+        return {};
+
+    SipHash hash;
+    hash.update(filter_hashes->size());
+    for (const auto & filter_hash : *filter_hashes)
+        hash.update(filter_hash);
+
+    matchable_names = std::move(*names);
+    return hash.get128();
+}
+
+std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context, const NameSet * extra_matchable_names)
+{
+    /// Inside a transaction the read uses the transaction's snapshot, while this walk samples each
+    /// table's live state (`MergeTree` hashes its current active part set, not the transaction-visible
+    /// one). The two can diverge for the whole duration of the query - a commit from another session
+    /// after `BEGIN TRANSACTION` moves the live state to `H1` while this query still reads the `H0`
+    /// snapshot - so the query could hit an existing `H1` cache entry or store its `H0` result under the
+    /// `H1` key, and the pre/post finalization recheck cannot notice because the divergence is stable
+    /// across the read. Fail closed until the hash is made transaction-snapshot-aware: the consistent
+    /// query cache is bypassed and `REFRESH ... IF CHANGED` refreshes unconditionally.
+    if (context->getCurrentTransaction())
+        return {};
+
+    /// `implicit_transaction` starts the transaction only later, on the cache-miss path (after the
+    /// cache probe that calls into here), so at probe time `getCurrentTransaction` is still null even
+    /// though the read itself will run on a transaction snapshot. That is the same live-state-vs-snapshot
+    /// divergence as above - a cache entry created outside a transaction could be served to a query that
+    /// would have read a different snapshot - so fail closed as if the transaction had already begun.
+    if (context->getSettingsRef()[Setting::implicit_transaction])
+        return {};
+
+    /// Only the `additional_table_filters` entries that can apply to a table the query reads take part,
+    /// so that an entry for an unrelated table does not move the hash.
+    auto matchable_names = collectNamesMatchableByAdditionalTableFilters(ast, context, extra_matchable_names);
+
+    ASTs filter_asts;
+    if (!parseFilterASTsInjectedFromSettings(context, filter_asts, matchable_names ? &*matchable_names : nullptr))
+        return {};
+
+    /// The filters in the query's own `SETTINGS` clauses (e.g. of a view's stored query) can read tables
+    /// that the query text never names, so their dependencies take part too, with the same matching rule.
+    if (!collectFiltersFromQuerySettings(*ast, context->getSettingsRef(), filter_asts, matchable_names ? &*matchable_names : nullptr))
+        return {};
+
+    /// The CTE expansion inside mutates the AST, so work on a copy.
+    auto query_hash = computeReferencedTablesModificationHashImpl(ast->clone(), context);
+    if (!query_hash)
+        return {};
+
+    if (filter_asts.empty())
+        return query_hash;
+
+    /// Fold the dependencies of the injected filters into the query's own hash.
+    auto filter_hashes = computeFiltersModificationHashes(filter_asts, context);
+    if (!filter_hashes)
+        return {};
+
+    SipHash combined;
+    combined.update(*query_hash);
+    for (const auto & filter_hash : *filter_hashes)
+        combined.update(filter_hash);
+    return combined.get128();
 }
 
 bool canWriteToQueryResultCacheInMemory(ContextPtr context)
@@ -365,8 +1038,34 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCa
 
     if ((skip_context_check || context->getCanUseQueryResultCache()) && hasQueryResultCacheWriteBackend(context, on_disk_cache))
     {
-        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
-        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
+        /// The filters injected through `additional_table_filters` / `additional_result_filter` are part
+        /// of the query the server runs, so the checks below have to see them too: a non-deterministic
+        /// function or a system table hidden in such a filter makes the result just as unfit for caching
+        /// as one in the query text, and the filter's own text is the same on every run, so an entry
+        /// written from it would be served again. Only the `additional_table_filters` entries that can apply
+        /// to a table the query reads are checked, the same as in `computeQueryReferencedTablesModificationHash`,
+        /// so that a filter for an unrelated table does not make the query uncachable. When that set of
+        /// names is unknown, all entries are checked.
+        const auto matchable_names = collectNamesMatchableByAdditionalTableFilters(ast, context);
+        const NameSet * matchable_names_ptr = matchable_names ? &*matchable_names : nullptr;
+        ASTs asts_to_check{ast};
+        if (!parseFilterASTsInjectedFromSettings(context, asts_to_check, matchable_names_ptr))
+            return false; /// A filter we cannot parse cannot be checked - fail closed.
+        /// The same applies to the filters in the query's own `SETTINGS` clauses, e.g. of a subquery. A settings
+        /// `profile` applied by such a clause does not make the query uncachable here: the ordinary query cache
+        /// does not see the filters of the profiles applied by the user's context either, and the non-determinism
+        /// check below judges `obfuscate` by the seed the profile sets. The consistency check
+        /// (`query_cache_use_only_when_data_was_not_changed`) fails closed for such a profile on its own.
+        if (!collectFiltersFromQuerySettings(*ast, settings, asts_to_check, matchable_names_ptr, /*fail_on_profile=*/ false))
+            return false;
+
+        bool ast_contains_nondeterministic_functions = false;
+        bool ast_contains_system_tables = false;
+        for (const auto & ast_to_check : asts_to_check)
+        {
+            ast_contains_nondeterministic_functions |= astContainsNonDeterministicFunctions(ast_to_check, context);
+            ast_contains_system_tables |= astContainsSystemTables(ast_to_check, context);
+        }
 
         const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
             = settings[Setting::query_cache_nondeterministic_function_handling];
@@ -575,7 +1274,7 @@ ASTPtr removeTableAliases(ASTPtr ast)
 /// When `pre_cleaned` is true, the caller has already cloned the AST and stripped planner table
 /// aliases (`removeTableAliases`). Skip both steps to avoid mutating the original AST or running
 /// `removeTableAliases` twice (which would over-strip chains like `__table1.__table2.x` -> `x`).
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, const bool pre_cleaned = false)
+IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, std::optional<UInt128> referenced_tables_modification_hash = {}, const bool pre_cleaned = false)
 {
     if (!pre_cleaned)
     {
@@ -628,6 +1327,13 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
         hash.update(setting.second);
     }
 
+    /// When `query_cache_use_only_when_data_was_not_changed` is enabled, the combined modification hash of
+    /// the referenced tables is folded into the key. As a result, a cached entry can only be found while
+    /// the data behind the query is unchanged - once any referenced table changes, the key changes too and
+    /// the query is recomputed.
+    if (referenced_tables_modification_hash)
+        hash.update(*referenced_tables_modification_hash);
+
     return getSipHash128AsPair(hash);
 }
 
@@ -639,17 +1345,18 @@ String queryStringFromAST(ASTPtr ast)
 /// For subqueries, clones the AST once, strips aliases, and returns both hash and query string from the cleaned AST.
 /// For non-subqueries, computes hash (which clones internally) and query string from the original AST.
 std::pair<IASTHash, String> calculateASTHashAndQueryString(
-    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery)
+    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery,
+    std::optional<UInt128> referenced_tables_modification_hash)
 {
     if (is_subquery)
     {
         auto cleaned = removeTableAliases(ast->clone());
         /// Get the query string before `calculateASTHash` mutates the AST (it strips cache-related SETTINGS).
         auto qs = queryStringFromAST(cleaned);
-        auto hash = calculateASTHash(cleaned, current_database, settings, is_subquery, /*pre_cleaned=*/ true);
+        auto hash = calculateASTHash(cleaned, current_database, settings, is_subquery, referenced_tables_modification_hash, /*pre_cleaned=*/ true);
         return {hash, std::move(qs)};
     }
-    auto hash = calculateASTHash(ast, current_database, settings, is_subquery);
+    auto hash = calculateASTHash(ast, current_database, settings, is_subquery, referenced_tables_modification_hash);
     auto qs = queryStringFromAST(ast);
     return {hash, std::move(qs)};
 }
@@ -668,7 +1375,8 @@ QueryResultCache::Key::Key(
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_,
-    bool is_subquery_)
+    bool is_subquery_,
+    std::optional<UInt128> referenced_tables_modification_hash_)
     : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -682,7 +1390,7 @@ QueryResultCache::Key::Key(
 {
     /// For subqueries, both hashing and display need a cloned AST with table aliases stripped.
     /// Compute both from a single clone via `calculateASTHashAndQueryString`.
-    auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_);
+    auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_, referenced_tables_modification_hash_);
     ast_hash = hash;
     query_string = std::move(qs);
 }
@@ -694,7 +1402,8 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
-    bool is_subquery_)
+    bool is_subquery_,
+    std::optional<UInt128> referenced_tables_modification_hash_)
     : QueryResultCache::Key(
             ast_,
             current_database,
@@ -707,7 +1416,8 @@ QueryResultCache::Key::Key(
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
             false,
-            is_subquery_)
+            is_subquery_,
+            referenced_tables_modification_hash_)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
@@ -862,6 +1572,15 @@ void QueryResultCacheWriter::finalizeWrite()
     if (result_is_incomplete)
     {
         LOG_TRACE(logger, "Skipped insert because the query result is incomplete (a consumer stopped reading it before the end), query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
+
+    /// For `query_cache_use_only_when_data_was_not_changed`: now that the pipeline has finished reading the
+    /// source tables, verify they are still in the state encoded in the cache key. If a referenced table
+    /// changed during execution, the result does not match the key and must not be stored.
+    if (consistency_validator && !consistency_validator())
+    {
+        LOG_TRACE(logger, "Skipped insert because a referenced table changed during execution, query: {}", doubleQuoteString(key.query_string));
         return;
     }
 

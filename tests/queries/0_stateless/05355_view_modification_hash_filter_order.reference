@@ -1,0 +1,4 @@
+view has a hash: yes
+the first matching filter applies: yes
+the order of overlapping filters moves the hash: yes
+a table read by a filter moves the hash: yes

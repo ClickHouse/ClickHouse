@@ -1,5 +1,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
@@ -242,12 +243,47 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
 
     auto current_data = data.get();
     auto snapshot_data = std::make_unique<SnapshotData>();
-    /// The blocks and the row count come from the same version of `data`, so they are consistent.
+    /// The blocks, the row count, and the version come from the same version of `data`, so they are consistent.
     snapshot_data->blocks = std::shared_ptr<const Blocks>(current_data, &current_data->blocks);
     snapshot_data->rows = current_data->rows;
+    snapshot_data->data_version = current_data->version;
     snapshot_data->generation = current_data->generation;
     snapshot_data->first_block_number = current_data->first_block_number;
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+}
+
+std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
+{
+    /// The hash relies on the table UUID to distinguish incarnations of a same-named table together with
+    /// a monotonic `data_version`. Without a UUID (e.g. a table in an `Ordinary` database) DROP + CREATE
+    /// restarts `data_version` from the same value, so a recreated table holding different data could
+    /// produce the same hash. There is no per-incarnation identity to fold in, so fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    SipHash hash;
+
+    /// Table identity (distinguishes different incarnations of a table with the same name) and structure version.
+    hash.update(getStorageID().uuid);
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    /// Loop-free metadata version: the column string above repeats under a metadata-only `ALTER` that is
+    /// reverted (e.g. an alias/default expression `A -> B -> A`), and `data_version` does not move because
+    /// no data changed. Folding the per-lifetime metadata version keeps such a round trip from reproducing
+    /// an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+
+    /// Every modification (insert, mutation, truncate, drop, restore) publishes a new `data` version,
+    /// captured atomically together with the blocks by the snapshot (see getStorageSnapshot). This is a
+    /// true monotonic version, so different data always produces a different hash (unlike the row count or
+    /// the address of the `Blocks` vector, which can repeat after TRUNCATE or allocator reuse). The version
+    /// resets to 0 on restart, so it is paired with the random `data_version_nonce` of this storage object.
+    if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()))
+    {
+        hash.update(data_version_nonce);
+        hash.update(snapshot_data->data_version);
+    }
+
+    return hash.get128();
 }
 
 size_t StorageMemory::getMaxReadStreams(size_t num_streams, ContextPtr)
@@ -291,6 +327,9 @@ void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
     /// The replaced blocks are dropped inside this scope, unless a reader still holds them.
     MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
     auto replaced = data.get();
+    /// The new version is one above whatever is currently published. Writers are serialized (see the
+    /// declaration), so reading the current version here and publishing version+1 is race-free.
+    new_data->version = replaced->version + 1;
     data.set(std::move(new_data));
 }
 
@@ -763,6 +802,12 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             new_rows += new_blocks.back().rows();
         }
     }
+
+    /// `RESTORE` holds only a shared table lock, so it can overlap an `INSERT`. Serialize the clone,
+    /// append and publication with the inserts: otherwise an insert published in between would be lost,
+    /// and the restore would publish different blocks under the same `version` as that insert, leaving
+    /// `getModificationHash` unchanged although the data changed.
+    std::lock_guard lock(mutex);
 
     /// Append old blocks with the new ones.
     auto old_and_new_data = std::make_unique<BlocksWithCounts>(*(data.get()));

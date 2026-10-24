@@ -1,0 +1,8 @@
+--- v
+non-deterministic bare key: has a hash
+bare key: a table read by the filter keeps the hash
+qualified key: a table read by the filter moves the hash
+--- mv
+non-deterministic bare key: has a hash
+bare key: a table read by the filter keeps the hash
+qualified key: a table read by the filter moves the hash

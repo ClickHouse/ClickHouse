@@ -25,6 +25,18 @@
                 </replica>
             </shard>
         </test_cluster_two_shards>
+        <!-- A single shard whose only replica is a remote loopback address (127.0.0.2 is not treated as
+             local, see isLocalAddress.cpp), so a query to it always takes the remote path on a fresh
+             thread of the same server process. Useful for exercising cross-server code paths without a
+             local shard that would short-circuit them. -->
+        <test_cluster_one_shard_remote>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_one_shard_remote>
         <test_cluster_two_shards_different_databases>
              <shard>
                  <replica>

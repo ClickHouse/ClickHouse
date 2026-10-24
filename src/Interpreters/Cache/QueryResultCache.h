@@ -3,20 +3,27 @@
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
+#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IASTHash.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
+#include <Interpreters/StorageID.h>
+#include <Core/Types.h>
 #include <base/UUID.h>
 
+#include <functional>
 #include <optional>
 
 namespace DB
 {
 
 struct Settings;
+class IStorage;
+struct StorageInMemoryMetadata;
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
@@ -44,6 +51,54 @@ bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskP
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check = false);
+
+/// Computes a single value that combines the modification hashes of all tables referenced by the query.
+/// It is folded into the query cache key when `query_cache_use_only_when_data_was_not_changed` is enabled,
+/// so that a cached result is only reused while the data behind the query is unchanged.
+/// Returns nullopt if consistency cannot be guaranteed (the query uses a table function, references a table
+/// that cannot be resolved, or a referenced table cannot report whether its data changed).
+/// `extra_matchable_names` are added to the names an `additional_table_filters` key of `context` can match
+/// (see `collectNamesMatchableByAdditionalTableFilters`), e.g. the names of the view whose stored query `ast` is.
+std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context, const NameSet * extra_matchable_names = nullptr);
+
+/// Collects every name an `additional_table_filters` key can match while `ast` runs under `context`: the
+/// name and the qualified name of each table it reads, directly, through views and materialized views,
+/// or in the subqueries of the filters themselves, and the aliases of the table expressions. An entry
+/// whose key is not in the set cannot apply to the query. Returns nullopt if the set cannot be
+/// enumerated (a table function, a table that cannot be resolved, a storage such as `Merge` or
+/// `Distributed` that reads tables not named in the query), in which case every entry may apply.
+/// `seed_names` are matchable from the start, so the filters keyed by them and the tables those filters
+/// read are part of the closure, e.g. the names of the view whose stored query `ast` is. `ast` can be null
+/// when only the closure of `seed_names` is needed.
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context, const NameSet * seed_names = nullptr);
+
+/// Returns the names an `additional_table_filters` key can match for the table `storage_id` read under
+/// `context`: the qualified name, and the bare table name only when the table is in the current database
+/// (the same rule as the planner and the interpreter).
+NameSet getNamesMatchableByAdditionalTableFilters(const StorageID & storage_id, const ContextPtr & context);
+
+/// Hashes the dependencies of the `additional_table_filters` entries of `context` that apply when a storage
+/// is read under one of `seed_names` (and of the entries reachable through their subqueries), and of
+/// `additional_result_filter`, and stores the closure of matchable names in `matchable_names`. Used by
+/// a storage that reads no query of its own, e.g. a materialized view, whose read is pushed into its
+/// target. Returns nullopt when the dependencies cannot be enumerated or hashed.
+std::optional<UInt128> computeAdditionalFiltersModificationHash(ContextPtr context, const NameSet & seed_names, NameSet & matchable_names);
+
+/// Computes the modification hash of a single table, folded together with the table identity (database,
+/// name and UUID) and gated by the current user's `SELECT` access on it. This is the per-table building
+/// block of `computeQueryReferencedTablesModificationHash`; view-like storages use it to hash the table
+/// they actually read. Returns nullopt if the table cannot be resolved, the user may not read it, or it
+/// cannot report whether it changed.
+std::optional<UInt128> computeTableModificationHashForConsistency(const StorageID & table_id, ContextPtr context);
+
+/// Whether a read of `storage` can evaluate a column expression of `metadata` - an `ALIAS`, or the
+/// `DEFAULT` / `MATERIALIZED` expression of a column that some data does not store - whose result can
+/// change while the table stays the same: a non-deterministic function, a dictionary, or another table.
+/// The modification hash of such a table cannot vouch for the rows read from it.
+bool columnExpressionsMayChangeWithoutTable(const StoragePtr & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context);
+
+class QueryResultCacheWriter;
+class QueryResultCacheReader;
 
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
@@ -117,6 +172,8 @@ public:
         const bool is_subquery;
 
         /// Ctor to construct a Key for writing into query result cache.
+        /// `referenced_tables_modification_hash` is folded into the key when the query cache is restricted to
+        /// consistent results (setting `query_cache_use_only_when_data_was_not_changed`); see calculateASTHash().
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
@@ -127,7 +184,8 @@ public:
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed,
-            bool is_subquery_);
+            bool is_subquery_,
+            std::optional<UInt128> referenced_tables_modification_hash_ = {});
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
@@ -135,7 +193,8 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            bool is_subquery_);
+            bool is_subquery_,
+            std::optional<UInt128> referenced_tables_modification_hash_ = {});
 
         bool operator==(const Key & other) const;
     };
@@ -243,6 +302,12 @@ public:
     };
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
+    /// Optional check evaluated at finalizeWrite() time (after the query pipeline has finished reading the
+    /// source tables). If it returns false, the entry is not stored. Used by
+    /// `query_cache_use_only_when_data_was_not_changed` to drop the entry if a referenced table changed
+    /// during execution, so the cached result always matches the data state encoded in its key.
+    void setConsistencyValidator(std::function<bool()> validator) { consistency_validator = std::move(validator); }
+
     /// Called when a consumer stopped reading the query result before the end, so only a prefix of it was buffered.
     /// finalizeWrite() then does not insert anything.
     void markResultIncomplete();
@@ -268,6 +333,7 @@ private:
     std::atomic<bool> skip_insert = false; /// both of the above: don't even buffer the result
     std::atomic<bool> result_is_incomplete = false; /// a consumer stopped reading before the end, see markResultIncomplete()
     std::atomic<bool> was_finalized = false;
+    std::function<bool()> consistency_validator;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(

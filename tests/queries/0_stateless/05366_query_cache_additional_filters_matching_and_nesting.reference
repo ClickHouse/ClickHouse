@@ -1,0 +1,12 @@
+--- an unqualified key of a table in another database
+2
+QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS
+--- a filter inside the SETTINGS of a filter's subquery
+QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS
+view has a hash: yes
+a table read by a nested filter moves the hash: yes
+--- filters reachable only through the entry keyed by the view
+v has a hash: yes
+v: a table read by a transitive filter moves the hash: yes
+mv has a hash: yes
+mv: a table read by a transitive filter moves the hash: yes

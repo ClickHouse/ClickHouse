@@ -1,0 +1,5 @@
+hash is computed
+query cache switches do not change the hash
+the query cache tag does not change the hash
+query cache policy settings do not change the hash
+a row filter changes the hash

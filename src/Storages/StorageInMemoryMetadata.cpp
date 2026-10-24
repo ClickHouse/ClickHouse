@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 
 #include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
@@ -14,7 +15,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/IndicesDescription.h>
@@ -23,11 +27,14 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnsDescription.h>
 
+#include <set>
+
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
 }
 
@@ -189,6 +196,15 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
     new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    /// Share the outer query's consumed-object-set capture: every context copied from the fresh query
+    /// context created here inherits the member (this context itself is temporary and its weak
+    /// `query_context` expires before the pipeline is built, so the member copy is the only route to the
+    /// capture). Without this, the object-storage reads of a `SQL SECURITY DEFINER` / `NONE` view would
+    /// record nothing and the query result cache consistency check would fall back to re-listing
+    /// (reopening the listing `A -> B -> A` race the capture closes). See `QueryConsumedObjectSets`.
+    /// Not an invoker-identity leak: the capture only accumulates the identities of objects the inner
+    /// query actually reads.
+    new_context->setQueryConsumedObjectSets(context->getQueryConsumedObjectSets());
     /// The analyze mode must reach every join the report walker can reach, including the joins of
     /// this view's inner query. So must the mark of the automatic mode's plan with parallel replicas.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
@@ -1138,6 +1154,225 @@ StorageMetadataHandle::operator bool() const
 bool StorageMetadataHandle::operator==(std::nullptr_t) const
 {
     return metadata == nullptr;
+}
+
+void updateHashWithEffectiveSQLSecurity(SipHash & hash, const StorageInMemoryMetadata & metadata)
+{
+    /// `getSQLSecurityOverriddenContext` returns a plain copy of the caller's context both when
+    /// `sql_security_type` is not set (a legacy view) and when it is `INVOKER`, so the two states are
+    /// one for the purposes of the hash.
+    const auto security_type = metadata.sql_security_type.value_or(SQLSecurityType::INVOKER);
+    hash.update(static_cast<Int8>(security_type));
+    /// The definer only decides who runs the query under `SQL SECURITY DEFINER`; under `INVOKER` and
+    /// `NONE` it is never read, so folding it in would make `MODIFY DEFINER` look like a data change.
+    if (security_type == SQLSecurityType::DEFINER)
+        hash.update(metadata.definer.value_or(""));
+}
+
+bool settingCanAffectQueryRows(std::string_view setting_name)
+{
+    /// Settings that only drive diagnostics - query and metric logging, profiling, tracing - or the
+    /// shape of the HTTP response, and therefore cannot change the rows a `SELECT` produces.
+    /// `RefreshTask::createRefreshContext` puts the attempt number into `log_comment`, so folding it
+    /// in would make the hash of an unchanged view differ between a first attempt and a retry: a
+    /// `REFRESH ... IF CHANGED APPEND` watermark written by a retry would then be ignored by the next
+    /// attempt, which would append a duplicate copy of unchanged rows. The rest are here because a
+    /// settings profile of a view's definer routinely carries them, and an edit to one of them must
+    /// not invalidate a watermark either.
+    /// `extremes` only adds a separate block of minimums and maximums next to the result and never
+    /// changes its rows. `max_table_size_to_drop` / `max_partition_size_to_drop` only guard `DROP` and
+    /// `TRUNCATE`; a replacing refresh zeroes them between its two source hashes. The result limits `max_result_rows` / `max_result_bytes` are deliberately not
+    /// here: `StorageView`'s `getViewContext` pins them to zero, so they fold in as a constant for a
+    /// plain view, but `StorageMaterializedView::readImpl` and a refresh run under the effective
+    /// reader's limits as they are, and a limit there can truncate the result or fail the query.
+    static const std::set<std::string_view> settings_not_affecting_rows = {
+        "log_comment",
+        "log_formatted_queries",
+        "log_processors_profiles",
+        "log_profile_events",
+        "log_queries",
+        "log_queries_cut_to_length",
+        "log_queries_min_query_duration_ms",
+        "log_queries_min_type",
+        "log_queries_probability",
+        "log_query_settings",
+        "log_query_threads",
+        "log_query_views",
+        "query_metric_log_interval",
+        "send_logs_level",
+        "send_logs_source_regexp",
+        "send_profile_events",
+        "query_profiler_cpu_time_period_ns",
+        "query_profiler_real_time_period_ns",
+        "memory_profiler_sample_max_allocation_size",
+        "memory_profiler_sample_min_allocation_size",
+        "memory_profiler_sample_probability",
+        "memory_profiler_step",
+        "metrics_perf_events_enabled",
+        "metrics_perf_events_list",
+        "trace_profile_events",
+        "trace_profile_events_list",
+        "opentelemetry_start_keeper_trace_probability",
+        "opentelemetry_start_trace_probability",
+        "opentelemetry_trace_cpu_scheduling",
+        "opentelemetry_trace_processors",
+        "enable_http_compression",
+        "http_headers_progress_interval_ms",
+        "http_response_headers",
+        "http_zlib_compression_level",
+        "send_progress_in_http_headers",
+        "extremes",
+        "max_table_size_to_drop",
+        "max_partition_size_to_drop",
+    };
+
+    if (settings_not_affecting_rows.contains(setting_name))
+        return false;
+
+    /// The query result cache settings only decide whether, where and for how long a result is cached;
+    /// none of them changes which rows a `SELECT` produces. `QueryResultCache` already leaves them out
+    /// of its own cache key for the same reason (`isQueryResultCacheRelatedSetting`). They are matched by
+    /// shape rather than listed one by one so that a query cache setting added later is covered without
+    /// touching this function, and `query_cache_tag` is excluded here as well - unlike in the cache key,
+    /// where the tag deliberately separates entries, it cannot change a single row. Without this a pure
+    /// caching-policy edit such as `ALTER USER ... SETTINGS use_query_cache = 1` would look like a data
+    /// change: it would move a view's `modification_hash` and discard a `REFRESH ... IF CHANGED`
+    /// watermark, making an `APPEND` view append a duplicate copy of unchanged rows.
+    if (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache"))
+        return false;
+
+    return true;
+}
+
+void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names)
+{
+    /// `changedToFlatMap` returns the changed settings in declaration order, which shifts whenever a
+    /// setting is added in the middle of `Settings.cpp`. A refresh watermark outlives an upgrade, so
+    /// the fold is sorted by name here: the hash then depends only on which settings are set to what,
+    /// not on the order they were applied in nor on the version that computed it.
+    /// Secrets are not masked here: the values are folded into a hash and never rendered. A masked
+    /// value would make two distinct credentials hash the same, and a setting that does change the
+    /// rows a query reads - a different account behind `s3_*` credentials, for example - would then
+    /// leave the hash unmoved and a stale result would be served as up to date.
+    const FlatStringMap changed = settings.changedToFlatMap(/* show_secrets */ true);
+    std::vector<std::pair<std::string_view, std::string_view>> row_affecting;
+    row_affecting.reserve(changed.size());
+    /// Keeps the canonical form of the matching `additional_table_filters` entries alive for the views below.
+    String matching_additional_table_filters;
+    changed.forEach([&](std::string_view name, std::string_view value)
+    {
+        if (!settingCanAffectQueryRows(name))
+            return;
+
+        /// An `additional_table_filters` entry only takes effect on a table whose name or alias matches
+        /// its key, so with the set of names the query can reach, an entry keyed by any other table
+        /// cannot change a single row. Hashing the whole map instead would make an unrelated profile
+        /// edit, such as adding a filter for some other table to the definer, discard a
+        /// `REFRESH ... IF CHANGED APPEND` watermark and append a duplicate copy of unchanged rows.
+        if (additional_table_filters_matchable_names && name == "additional_table_filters")
+        {
+            std::vector<std::pair<String, String>> matching;
+            for (const auto & entry : settings[Setting::additional_table_filters].value)
+            {
+                const auto & tuple = entry.safeGet<Tuple>();
+                const auto & table = tuple.at(0).safeGet<String>();
+                if (additional_table_filters_matchable_names->contains(table))
+                    matching.emplace_back(table, tuple.at(1).safeGet<String>());
+            }
+            /// No entry applies: the same as not having the setting at all.
+            if (matching.empty())
+                return;
+            /// The matching entries are not sorted: the planner applies only the first entry whose key
+            /// matches a table (`parseAdditionalFilterAstIfNeeded`), and two different keys can match the
+            /// same one - its bare and its qualified name, or an alias and a name - so reversing them can
+            /// change the rows. Which keys refer to the same table is not known here, so the order of all
+            /// the matching entries is kept: reordering them can move the hash without changing a row,
+            /// but never the other way around.
+            WriteBufferFromString out(matching_additional_table_filters);
+            for (const auto & [table, filter] : matching)
+            {
+                writeStringBinary(table, out);
+                writeStringBinary(filter, out);
+            }
+            out.finalize();
+            row_affecting.emplace_back(name, matching_additional_table_filters);
+            return;
+        }
+
+        row_affecting.emplace_back(name, value);
+    });
+    /// The views point into `changed.data`, which outlives this loop.
+    std::sort(row_affecting.begin(), row_affecting.end());
+
+    /// Frame the collection and each name and value with its length: `SipHash::update` of a string
+    /// does not, so `{format_schema = 'xjoin_use_nulls1'}` would otherwise hash the same as
+    /// `{format_schema = 'x', join_use_nulls = 1}`.
+    hash.update(row_affecting.size());
+    for (const auto & [name, value] : row_affecting)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(value.size());
+        hash.update(value);
+    }
+}
+
+namespace
+{
+
+/// Drops the entries of every `SETTINGS` clause in `ast` that `settingCanAffectQueryRows` rejects, and
+/// removes a `SELECT`'s clause altogether once nothing is left of it, so that it hashes the same as a
+/// query that never had one.
+/// An `additional_table_filters` entry keyed by a name outside `additional_table_filters_matchable_names`
+/// (when given) is dropped as well, and the setting altogether once no entry is left.
+void removeSettingsNotAffectingQueryRows(IAST & ast, const NameSet * additional_table_filters_matchable_names)
+{
+    for (const auto & child : ast.children)
+        removeSettingsNotAffectingQueryRows(*child, additional_table_filters_matchable_names);
+
+    if (auto * set_query = ast.as<ASTSetQuery>())
+    {
+        std::erase_if(set_query->changes, [](const SettingChange & change) { return !settingCanAffectQueryRows(change.name); });
+        if (additional_table_filters_matchable_names)
+        {
+            std::erase_if(set_query->changes, [&](SettingChange & change)
+            {
+                /// A value of another shape is kept as is: the whole setting then takes part in the hash.
+                if (change.name != "additional_table_filters" || change.value.getType() != Field::Types::Map)
+                    return false;
+                Map & entries = change.value.safeGet<Map>();
+                std::erase_if(entries, [&](const Field & entry)
+                {
+                    if (entry.getType() != Field::Types::Tuple)
+                        return false;
+                    const auto & tuple = entry.safeGet<Tuple>();
+                    if (tuple.empty() || tuple[0].getType() != Field::Types::String)
+                        return false;
+                    return !additional_table_filters_matchable_names->contains(tuple[0].safeGet<String>());
+                });
+                return entries.empty();
+            });
+        }
+        std::erase_if(set_query->default_settings, [](const String & name) { return !settingCanAffectQueryRows(name); });
+    }
+    else if (auto * select = ast.as<ASTSelectQuery>())
+    {
+        if (const auto settings = select->settings())
+        {
+            const auto & select_settings = settings->as<const ASTSetQuery &>();
+            if (select_settings.changes.empty() && select_settings.default_settings.empty() && select_settings.query_parameters.empty())
+                select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+        }
+    }
+}
+
+}
+
+void updateHashWithQueryIgnoringOperationalSettings(SipHash & hash, const IAST & query, const NameSet * additional_table_filters_matchable_names)
+{
+    auto normalized = query.clone();
+    removeSettingsNotAffectingQueryRows(*normalized, additional_table_filters_matchable_names);
+    normalized->updateTreeHash(hash, /*ignore_aliases=*/ false);
 }
 
 }

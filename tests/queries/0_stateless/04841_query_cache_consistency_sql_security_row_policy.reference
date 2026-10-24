@@ -1,0 +1,19 @@
+v_definer_04841	1
+v_definer_04841	1
+v_open_04841	6
+v_open_04841	6
+v_none_04841	6
+v_none_04841	6
+mv_definer_04841	6
+mv_definer_04841	6
+mv_open_04841	6
+mv_open_04841	6
+v_definer_04841 hits	[0,0]
+v_open_04841 hits	[0,1]
+v_none_04841 hits	[0,1]
+mv_definer_04841 hits	[0,0]
+mv_open_04841 hits	[0,1]
+row-policy definer stored entries	0
+policy alter changes the result:
+1
+2

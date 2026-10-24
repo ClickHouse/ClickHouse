@@ -1,4 +1,5 @@
 #include <thread>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/ColumnDefault.h>
@@ -49,7 +50,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Common/checkStackSize.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 #include <Core/UUID.h>
@@ -62,6 +66,8 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace ServerSetting
@@ -1000,7 +1006,29 @@ void StorageMaterializedView::alter(
 
     setInMemoryMetadata(new_metadata);
 
-    if (refresher)
+    /// `alterRefreshParams` makes a refresh that races with this `ALTER` discard its watermark and run
+    /// again under the new definition, which in `APPEND` mode appends the same rows twice. So skip it for
+    /// an `ALTER` that does not change what a refresh reads and produces, e.g. a `MODIFY COMMENT`.
+    auto refresh_definition_hash = [](const StorageInMemoryMetadata & metadata)
+    {
+        SipHash hash;
+        if (metadata.refresh)
+            metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
+        /// The operational entries of the query's own `SETTINGS` are left out, the same as in the persisted
+        /// definition hash (`computeViewDefinitionHash`): a `MODIFY QUERY` that changes only `log_comment`
+        /// reads and produces the same rows.
+        if (metadata.select.select_query)
+            updateHashWithQueryIgnoringOperationalSettings(hash, *metadata.select.select_query);
+        hash.update(metadata.sql_security_type.has_value());
+        if (metadata.sql_security_type)
+            hash.update(static_cast<UInt8>(*metadata.sql_security_type));
+        hash.update(metadata.definer.has_value());
+        if (metadata.definer)
+            hash.update(*metadata.definer);
+        hash.update(metadata.getColumns().toString(/*include_comments=*/ false));
+        return hash.get128();
+    };
+    if (refresher && refresh_definition_hash(new_metadata) != refresh_definition_hash(*view_metadata))
         refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());
 }
 
@@ -1142,6 +1170,147 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(), getContext());
+}
+
+std::optional<UInt128> StorageMaterializedView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Reading a materialized view reads its target table, so its modification hash is derived from the
+    /// target's. The target can itself be a view-like storage, so guard against a cycle the same way
+    /// `StorageView`, `Merge` and `Distributed` do: fail closed on re-entry on this thread.
+    static thread_local std::unordered_set<const IStorage *> views_being_hashed;
+    if (!views_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ views_being_hashed.erase(this); });
+
+    /// Without a table UUID (a materialized view in an `Ordinary` database) we cannot distinguish
+    /// incarnations of a same-named view: a DROP + CREATE resets the per-lifetime metadata version
+    /// folded below, so a definition change that keeps the same columns and target (e.g. a security
+    /// change) could repeat an earlier hash. Fail closed, matching `StorageView` and the other engines.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    /// A coordinated refreshable view with a replacing (non-`APPEND`) refresh is read through
+    /// `RefreshTask::getAndLockTargetTable`, which can wait for the latest exchanged target table and run
+    /// `SYSTEM SYNC REPLICA` on it before reading. Hashing `getTargetTableId` directly could sample the
+    /// stale pre-sync target after another replica finished a refresh, so fail closed.
+    if (!fixed_uuid && refresher.ptr && refresher.ptr->isCoordinated())
+        return {};
+
+    try
+    {
+        /// `readImpl` reads the target table under `getSQLSecurityOverriddenContext`, so sample it under the
+        /// same context: for `SQL SECURITY DEFINER` / `NONE` it is the effective reader's grants that the
+        /// read is allowed by, so those are the grants the check below has to use. Reading a materialized
+        /// view pushes the read straight into the target storage and applies no `SELECT` row policy of the
+        /// target at all - neither the definer's nor the caller's - so unlike `StorageView` no row-policy
+        /// change can move the result here; failing closed on the effective reader's policy (which
+        /// `computeTableModificationHashForConsistency` does) is merely conservative. See
+        /// `StorageView::getModificationHash` for the rest of the reasoning. Unlike `system.tables`, this
+        /// query-consistency path must use the effective reader context because it describes the rows read.
+        auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
+        /// `system.tables.modification_hash` requires only `SELECT` on the materialized view itself, but the
+        /// hash covers the whole target table, which for `SQL SECURITY DEFINER` / `NONE` is checked against
+        /// the effective reader's grants below. The target can have columns the view does not expose, so a
+        /// caller without access to them would observe their churn through the hash. Inside the
+        /// introspection scope, require the caller's own `SELECT` on every column of the target as well.
+        StoragePtr caller_checked_target;
+        StorageMetadataHandle caller_checked_target_metadata;
+        if (isModificationHashIntrospection()
+            && storage_snapshot->metadata->sql_security_type
+            && *storage_snapshot->metadata->sql_security_type != SQLSecurityType::INVOKER)
+        {
+            caller_checked_target = tryGetTargetTable();
+            if (!caller_checked_target)
+                return {};
+            const auto target_id = caller_checked_target->getStorageID();
+            caller_checked_target_metadata = caller_checked_target->getInMemoryMetadataPtr(query_context, false);
+            if (!canComputeModificationHash(query_context, target_id.database_name, target_id.table_name, caller_checked_target_metadata->getColumns()))
+                return {};
+        }
+
+        /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
+        /// target table and folds its identity (including the UUID, so a re-created target is distinguished).
+        /// Hash the same target table whose columns were checked against the caller above.
+        /// Inside the introspection scope, hash the target under the caller's own context: the target can
+        /// itself be a view-like storage (`outer_mv TO inner_mv`), and its own introspection checks must
+        /// run against the caller, not against this view's definer, or the caller would observe the churn
+        /// of a nested target's columns it cannot read. The caller can read every column of the target
+        /// (checked above), so this does not lose anything the caller may see.
+        auto target_hash = computeTableModificationHashForConsistency(
+            caller_checked_target ? caller_checked_target->getStorageID() : getTargetTableId(),
+            caller_checked_target ? query_context : effective_context);
+        if (!target_hash)
+            return {};
+
+        /// The call above refreshes the lazily applied metadata of the target first (see
+        /// `getModificationHashWithRefreshedMetadata`), and a schema-lazy target (`Iceberg`, `DeltaLake`, ...)
+        /// can discover new columns there. That refresh rechecks the new columns only against the effective
+        /// reader, so recheck them against the caller as well: the hash must not move because of columns
+        /// the caller is not allowed to read.
+        if (caller_checked_target)
+        {
+            const auto refreshed_metadata = caller_checked_target->getInMemoryMetadataPtr(query_context, false);
+            const auto target_id = caller_checked_target->getStorageID();
+            if (refreshed_metadata->getColumns() != caller_checked_target_metadata->getColumns()
+                && !canComputeModificationHash(query_context, target_id.database_name, target_id.table_name, refreshed_metadata->getColumns()))
+                return {};
+        }
+
+        SipHash hash;
+        /// Per-incarnation identity: a DROP + CREATE in an `Atomic` database gets a fresh UUID, so a
+        /// re-created view never repeats the hash of an earlier incarnation. See `StorageView`.
+        hash.update(getStorageID().uuid);
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this view's own column metadata. See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
+        /// The execution security context is part of what the view returns (under row policies an
+        /// `INVOKER` and a `DEFINER` view can see different rows of the target table). See `StorageView`.
+        /// Canonicalized the way `getSQLSecurityOverriddenContext` reads it, so that a security change
+        /// with no effect on the read does not look like a data change.
+        updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
+        /// `readImpl` reads the target under the effective reader's settings, which can change the rows
+        /// the read returns (for example, a definer's read limits): a settings-profile update of the
+        /// definer must invalidate consistency users the same way it does for `StorageView`. Purely
+        /// operational settings are left out: a definer's profile carries them without changing a row.
+        /// The read is pushed straight into the target storage, which does not apply the
+        /// `additional_table_filters` entries keyed by the target table, so only the entries keyed by
+        /// the names of the materialized view itself can apply (see `collectNamesMatchableByAdditionalTableFilters`).
+        /// Such an entry can read other tables in its subqueries, which in turn can have entries of their
+        /// own, so the dependencies of that whole closure are hashed as well.
+        /// The bare name matches only when this view is in the current database of the reading query.
+        const NameSet own_names = getNamesMatchableByAdditionalTableFilters(getStorageID(), query_context);
+        NameSet additional_table_filters_matchable_names;
+        auto filters_hash = computeAdditionalFiltersModificationHash(effective_context, own_names, additional_table_filters_matchable_names);
+        if (!filters_hash)
+            return {};
+        /// The dependencies of those filters are hashed under the effective reader's context, so for
+        /// `system.tables.modification_hash` of a `SQL SECURITY DEFINER` / `NONE` view they are checked
+        /// against the definer's grants rather than the caller's: a definer-profile filter
+        /// `x IN (SELECT x FROM private)` would expose the churn of `private`, which the caller may not
+        /// read. Fail closed whenever such a filter applies; the caller's own access to the target was
+        /// checked above.
+        if (caller_checked_target)
+        {
+            const auto & effective_settings = effective_context->getSettingsRef();
+            if (!effective_settings[Setting::additional_result_filter].value.empty())
+                return {};
+            for (const auto & entry : effective_settings[Setting::additional_table_filters].value)
+                if (additional_table_filters_matchable_names.contains(entry.safeGet<Tuple>().at(0).safeGet<String>()))
+                    return {};
+        }
+        updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef(), &additional_table_filters_matchable_names);
+        hash.update(*filters_hash);
+        hash.update(*target_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not inspect the target table, so we conservatively assume the data may
+        /// have changed.
+        return {};
+    }
 }
 
 Strings StorageMaterializedView::getDataPaths() const

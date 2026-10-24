@@ -2,6 +2,9 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
+#include <Common/FailPoint.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
@@ -49,6 +52,84 @@ namespace Setting
 namespace DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsBool paimon_incremental_read;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_pause_before_repeated_read[];
+}
+
+namespace
+{
+
+/// Wraps an object iterator to record every object the read consumes into the query's
+/// `QueryConsumedObjectSets`. This lets `StorageObjectStorage::getModificationHash` validate the query
+/// result cache against the exact object set the read used, rather than a fresh listing that could
+/// differ under a concurrent change. See `QueryConsumedObjectSets`.
+class CapturingObjectIterator : public IObjectIterator
+{
+public:
+    CapturingObjectIterator(ObjectIterator inner_, QueryConsumedObjectSetsPtr consumed_object_sets_, UUID table_uuid_, size_t read_index_)
+        : inner(std::move(inner_)), consumed_object_sets(std::move(consumed_object_sets_)), table_uuid(table_uuid_), read_index(read_index_)
+    {
+    }
+
+    ObjectInfoPtr next(size_t thread_num) override
+    {
+        auto object_info = inner->next(thread_num);
+        if (object_info)
+        {
+            QueryConsumedObjectSets::Object object;
+            object.path = object_info->getPath();
+            object.read_source_index = object_info->relative_path_with_metadata.read_source_index;
+            if (auto metadata = object_info->getObjectMetadata())
+            {
+                object.etag = metadata->etag;
+                object.etag_is_strong = metadata->etag_is_strong;
+                object.size = metadata->size_bytes;
+                object.last_modified = metadata->last_modified.epochTime();
+                object.has_metadata = true;
+            }
+            consumed_object_sets->add(table_uuid, read_index, std::move(object));
+        }
+        return object_info;
+    }
+
+    size_t estimatedKeysCount() override { return inner->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return inner->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        inner->setEmitProfileEvents(value);
+    }
+
+private:
+    ObjectIterator inner;
+    QueryConsumedObjectSetsPtr consumed_object_sets;
+    UUID table_uuid;
+    /// Which read of the table this is: the reads of one table are captured apart, so that a query
+    /// whose reads consumed different object sets is not validated against their union.
+    size_t read_index;
+};
+
+/// Whether a read of an object is pinned to the generation captured from its listed metadata: S3 with
+/// `s3_validate_etag_on_read` and Azure with `azure_validate_etag_on_read` issue the `GET` with an
+/// `If-Match` on the captured `ETag` and reject a response whose `ETag` drifted from it. A `GCS`-provider
+/// client is not pinned even with the setting on, because `GCS` accessed through the S3 API may return
+/// objects without an `ETag`.
+bool readIsGenerationPinned(IObjectStorage & object_storage, const ContextPtr & context)
+{
+#if USE_AWS_S3
+    if (object_storage.getType() == ObjectStorageType::S3 && context->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        const auto s3_client = object_storage.tryGetS3StorageClient();
+        return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
+    return object_storage.getType() == ObjectStorageType::Azure && context->getSettingsRef()[Setting::azure_validate_etag_on_read];
+}
+
 }
 
 
@@ -253,6 +334,54 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    /// When the query result cache consistency check is active, record the exact object set this read
+    /// consumes so `StorageObjectStorage::getModificationHash` can hash it at finalization instead of
+    /// re-listing (closes a listing `A -> B -> A` race). Only wrapped when there is a capture to fill
+    /// and the table has a UUID to key it by. See `QueryConsumedObjectSets`.
+    if (storage_id.hasUUID())
+    {
+        if (auto consumed_object_sets = context->getQueryConsumedObjectSets())
+        {
+            /// A filter over `_path`/`_file` or Hive-partition columns makes the iterator enumerate
+            /// only a pruned subset of the table's objects (glob listing filter, `_path` value
+            /// extraction). The consumed set is then a subset of the full listing the pre-read hash
+            /// was built from, so the two hashes could never compare equal even for an unchanged
+            /// table. Mark the capture pruned instead of filling it with the subset - the consistency
+            /// check then fails closed for this table rather than comparing incomparable sets.
+            const bool may_prune_object_set = predicate
+                && VirtualColumnUtils::createPathAndFileFilterDAG(
+                       predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
+                       .has_value();
+            /// The capture records the generation the listing reported, before the object is read. On S3 or
+            /// Azure with the `ETag` validation of reads turned off, an overwrite between the listing and the
+            /// `GET` makes the read return a newer generation than the captured one, and the finalization
+            /// would certify the result with the old generation. Fail closed for such a read as well.
+            /// Data lake files are never overwritten in place, and the other backends are not covered by
+            /// the capture's generation guarantee in the first place.
+            const auto object_storage_type = object_storage->getType();
+            const bool read_may_drift_from_capture = !configuration->dataFilesAreImmutable()
+                && (object_storage_type == ObjectStorageType::S3 || object_storage_type == ObjectStorageType::Azure)
+                && !readIsGenerationPinned(*object_storage, context);
+            if (may_prune_object_set || read_may_drift_from_capture)
+            {
+                consumed_object_sets->markPruned(storage_id.uuid);
+            }
+            else
+            {
+                /// Record an empty consumed set before the read starts, so that a read consuming no
+                /// object at all is distinguishable from "this table was never read". Otherwise the
+                /// finalization check would fall back to a fresh listing and could reproduce the
+                /// pre-read hash of an object set the query never read. See `beginCapture`.
+                const size_t read_index = consumed_object_sets->beginCapture(storage_id.uuid);
+                /// Lets a test change the object set between two reads of the same table in one query.
+                if (read_index > 0)
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_pause_before_repeated_read);
+                iterator_wrapper = std::make_shared<CapturingObjectIterator>(
+                    std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid, read_index);
+            }
+        }
+    }
 }
 
 ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
@@ -395,19 +524,7 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
     /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
     /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    bool reread_is_generation_pinned = false;
-#if USE_AWS_S3
-    if (object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
-    {
-        const auto s3_client = object_storage->tryGetS3StorageClient();
-        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
-    }
-#endif
-    if (object_storage->getType() == ObjectStorageType::Azure
-        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
-        reread_is_generation_pinned = true;
-    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
+    if (!configuration->dataFilesAreImmutable() && !readIsGenerationPinned(*object_storage, getContext()))
         return false;
 
 #if CLICKHOUSE_CLOUD

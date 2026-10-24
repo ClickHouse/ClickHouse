@@ -24,6 +24,7 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_randomize_for{Keyword::RANDOMIZE_FOR};
     ParserKeyword s_depends_on{Keyword::DEPENDS_ON};
     ParserKeyword s_settings{Keyword::SETTINGS};
+    ParserKeyword s_if_changed{Keyword::IF_CHANGED};
 
     auto refresh = make_intrusive<ASTRefreshStrategy>();
 
@@ -57,6 +58,9 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             refresh->set(refresh->offset, periodic_offset);
         }
     }
+
+    if (s_if_changed.ignore(pos, expected))
+        refresh->if_changed = true;
 
     if (s_randomize_for.ignore(pos, expected))
     {

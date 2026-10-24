@@ -1,0 +1,3 @@
+initial: [1]
+appended: [1,1,2]
+after: [1,1,2]

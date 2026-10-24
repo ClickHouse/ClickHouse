@@ -1,0 +1,16 @@
+deterministic filter is cached
+1
+2
+1
+non-deterministic injected filter
+0
+3
+0
+3
+1
+system table in an injected filter
+0
+1
+0
+unparsable injected filter
+0

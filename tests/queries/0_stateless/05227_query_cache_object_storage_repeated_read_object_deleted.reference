@@ -1,0 +1,9 @@
+unchanged table read twice
+30	2
+30	2
+object deleted between two reads
+30	1
+stored entries	0
+0
+1
+0
