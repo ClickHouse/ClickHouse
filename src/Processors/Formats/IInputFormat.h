@@ -9,6 +9,7 @@
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <Processors/ISource.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -16,6 +17,7 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
+struct RelativePathWithMetadata;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -69,6 +71,19 @@ struct IBucketSplitter
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
     virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
+    /// Splits a file into at most `max_buckets` buckets of similar size, to be read in parallel by
+    /// separate input formats within one query. Unlike `splitToBuckets`, the buckets may carry state
+    /// that is not serialized, e.g. the parsed file metadata, so that their readers don't have to
+    /// read it again. `object_with_metadata` identifies the version of the file for the format's
+    /// metadata cache, as in `FormatFactory::getInputWithMetadata`. Returns less than two buckets if
+    /// the file can't be split.
+    virtual std::vector<FileBucketInfoPtr> splitForParallelReading(
+        size_t max_buckets,
+        ReadBuffer & buf,
+        const FormatSettings & format_settings_,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const ContextPtr & context) = 0;
 
     virtual ~IBucketSplitter() = default;
 };

@@ -50,7 +50,12 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_);
+    /// `other_row_groups_are_read_by_other_readers` means that the row groups not in `buckets_to_read_`
+    /// are read by other readers of the same query, so they are not counted as pruned by this one.
+    void init(
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        const std::optional<std::vector<size_t>> & buckets_to_read_,
+        bool other_row_groups_are_read_by_other_readers = false);
 
     ~ReadManager();
 
