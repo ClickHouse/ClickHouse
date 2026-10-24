@@ -299,6 +299,30 @@ echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : 
 # cell that already holds the editor, one after handing it the editor first.
 [ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 5 ] && echo 'a cell run ends the tab run first: OK'
 echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
+# Only decoded result payloads feed the browser-side network leg; both live and replay keep them.
+echo "$page" | grep -q -F 'if (options.payloadMeter) options.payloadMeter(payload_bytes.length);' && echo 'result payload bytes feed the IO meter: OK'
+echo "$page" | grep -q -F 'if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);' && echo 'live result payload bytes accumulate: OK'
+echo "$page" | grep -q -F 'payloadMeter: cell ? (bytes) => accumulateResultPayload(cell.resources, bytes) : undefined,' && echo 'replayed result payload bytes accumulate: OK'
+# A replayed stream samples the IO rate from its own clock, so a restored snapshot keeps the `IO` term.
+echo "$page" | grep -q -F 'sampleIoRate(cell.resources, io_clock_base_ns + io_clock_ns);' && echo 'replayed IO rate is sampled: OK'
+# The replayed `progress` packets sample it too, so a stream without `profile_events` keeps the rate.
+echo "$page" | grep -q -F 'if (options.progressMeter) options.progressMeter(+progress.elapsed_ns || 0);' \
+    && echo "$page" | grep -q -F 'progressMeter: cell ? (elapsed_ns) => sampleReplayIo(elapsed_ns) : undefined,' \
+    && echo 'replayed progress samples the IO rate: OK'
+# Live progress packets sample the IO rate too, so it falls once the payload stops (send_profile_events = 0).
+echo "$page" | grep -A1 -F 'progressMeter: () => {' | grep -q -F 'if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);' \
+    && echo 'live progress samples the IO rate: OK'
+# In `Run all`, each group's statement clocks are offset by the run elapsed time at the group's start,
+# so a shorter statement after a longer barrier statement still advances `_last_elapsed_ns` and samples IO.
+echo "$page" | grep -q -F 'elapsed_ns: statementBaseNs[i] + (+e.detail.elapsed_ns || 0),' \
+    && echo "$page" | grep -q -F 'cell.runElapsedBaseNs = group_base_ns;' \
+    && echo 'live multi-statement IO clock is offset per group: OK'
+# The result sends of remote shards to the initiator count too: an HTTP query has no own `NativeProtocolDataBytes`.
+echo "$page" | grep -q -F "|| e.name === 'NativeProtocolDataBytes' || e.name === 'NativeProtocolDataReceiveBytes'" && echo 'remote native result sends feed the IO meter: OK'
+# The page sends the query and its data as the HTTP request body, so the browser's upload counts too.
+echo "$page" | grep -q -F "|| e.name === 'InterfaceHTTPReceiveBytes'" && echo 'browser upload feeds the IO meter: OK'
+# Result payload bytes make the meter live without any profile_events batch (send_profile_events = 0).
+echo "$page" | awk '/^function accumulateResultPayload/,/^}/' | grep -q -F 'state.has = true;' && echo 'result payload alone makes the meter live: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.
@@ -340,12 +364,12 @@ echo "$page" | grep -q -F 'const is_table = !rendered_image && isDefaultFormat(f
 # otherwise a multi-second query restores with the rates and the sparkline history of the replay
 # speed. Live streaming keeps the wall clock (`updateMetrics` called with no packet time).
 echo "$page" | grep -q -F "const t = Date.parse(String(e.current_time ?? '').replace(' ', 'T') + 'Z');" && echo 'replay clock comes from the packets: OK'
-echo "$page" | grep -q -F 'targetResultEl.updateMetrics(events, options.replay ? replayTimeSeconds(events) : undefined);' && echo 'replay time reaches the metrics model: OK'
+echo "$page" | grep -A1 -F 'const replay_time = options.replay ? replayTimeSeconds(events) : undefined;' | grep -q -F 'targetResultEl.updateMetrics(events, replay_time);' && echo 'replay time reaches the metrics model: OK'
 # A restored framed result rebuilds the cell-owned resource state from the replayed `profile_events`
 # through the same `accumulateResourceEvents` path the live reader uses, so the shared CPU/RAM/peak-RAM
 # line reappears after a reload / Back / Forward (`clearCell` dropped that state); `syncActiveTabChrome`
 # repaints it. Every replay site passes its cell.
-echo "$page" | grep -q -F 'resourceMeter: cell ? (events) => accumulateResourceEvents(cell.resources, events) : undefined,' && echo 'replay rebuilds the resource state: OK'
+echo "$page" | grep -A2 -F 'resourceMeter: cell ? (events, replay_ns) =>' | grep -q -F 'accumulateResourceEvents(cell.resources, events);' && echo 'replay rebuilds the resource state: OK'
 [ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*, format, cell, (false|!!)')" -eq 3 ] && echo 'every replay site passes its cell: OK'
 # The live reader deliberately never renders an image collected from a truncated stream
 # (`verbatim.finish(truncated)` skips it), so a saved truncated `FORMAT PNG` snapshot must not
