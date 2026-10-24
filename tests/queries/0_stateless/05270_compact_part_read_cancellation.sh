@@ -107,6 +107,27 @@ else
 fi
 rm -f "$timeout_err" "$kill_err"
 
+# A cancel can carry the error that caused it, with any code: a Pretty format cancels the query with
+# the error of its background writer. The first row cannot be formatted, so the read is cancelled
+# with BAD_ARGUMENTS once the writer runs, squash_consecutive_ms after that row arrives. The other
+# branch is one stream, so both branches run at once. Retried with a longer delay until the cancel
+# lands inside the read, as the timeout arm does.
+pretty_err="${CLICKHOUSE_TMP}/05270_pretty_err.txt"
+for squash_ms in 50 100 200 400 800 1600; do
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&output_format_float_precision=101&output_format_pretty_squash_consecutive_ms=${squash_ms}&max_threads=2&max_streams_for_merge_tree_reading=1&max_block_size=100000000&preferred_block_size_bytes=0" \
+        -d "SELECT 1.5 AS x UNION ALL SELECT toFloat64(sum(length(a)+length(b)+length(c)+length(d)+length(e)+length(f)+length(g)+length(h)+length(i))) FROM t_compact_read_cancel FORMAT Pretty" \
+        > "$pretty_err" 2>&1
+    grep -qF 'While reading part' "$pretty_err" && break
+done
+
+echo -n 'pretty error observed '
+if grep -qF 'Too high precision' "$pretty_err"; then
+    inside_part_read "$pretty_err"
+else
+    echo "with another error: $(head -c 400 "$pretty_err")"
+fi
+rm -f "$pretty_err"
+
 # A cancelled read says nothing about the part's health: it must stay active, must not be
 # detached, and must not have been queued for a check.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"

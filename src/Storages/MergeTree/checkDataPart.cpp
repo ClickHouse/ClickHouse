@@ -9,12 +9,15 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -158,21 +161,38 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+/// A killed query rethrows the exception it was cancelled with, which can have any code.
+static bool isCodeOfCancelledQuery(int code)
+{
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto query_status = query_context ? query_context->getProcessListElementSafe() : nullptr;
+    if (!query_status)
+        return false;
+
+    try
+    {
+        query_status->throwIfKilled();
+    }
+    catch (...) /// Ok: only the code of the exception the query was cancelled with is needed.
+    {
+        return getCurrentExceptionCode() == code;
+    }
+    return false;
+}
+
 bool isQueryCancellation(std::exception_ptr exception_ptr)
 {
     try
     {
         rethrow_exception(exception_ptr);
     }
-    catch (const Exception & e)
+    catch (...) /// Ok: only the error code of the exception is needed.
     {
-        return e.code() == ErrorCodes::QUERY_WAS_CANCELLED
-            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED;
-    }
-    catch (...) /// Ok: only DB::Exception carries an error code, so nothing else can be a cancellation.
-    {
-        return false;
+        int code = getCurrentExceptionCode();
+        return code == ErrorCodes::QUERY_WAS_CANCELLED
+            || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || code == ErrorCodes::TIMEOUT_EXCEEDED
+            || isCodeOfCancelledQuery(code);
     }
 }
 
