@@ -89,6 +89,60 @@ def canonical_dependency(value, package, repo):
     return repo + '//' + package + ':' + value.removeprefix(':')
 
 
+# Public declarations used before a library can link clickhouse_parsers.
+PARSER_INTERFACE_HEADERS = (
+    "CommonParsers.h", "IAST.h", "IASTFormatState.h", "IASTHash.h", "IAST_fwd.h",
+    "IParser.h", "IParserBase.h", "IdentifierQuotingStyle.h", "InlineVector.h",
+    "Lexer.h", "LiteralEscapingStyle.h", "TokenIterator.h", "parseQuery.h",
+)
+
+
+def declare_parser_interface(rows):
+    targets = {ast.literal_eval(attributes(row.value)["name"]): row.value for row in rows
+               if isinstance(row, ast.Expr) and "name" in attributes(row.value)}
+    if "parser_api" in targets:
+        return
+
+    # CMake lists the public headers among clickhouse_parsers' sources.
+    # NativePackages also publishes a glob in :headers. Both targets retain
+    # the public headers through :parser_api.
+    compiled = targets["clickhouse_parsers"]
+    hdrs = attributes(compiled)["hdrs"]
+    found = set()
+    for items in ast.walk(hdrs):
+        if isinstance(items, ast.List):
+            public = [item for item in items.elts if isinstance(item, ast.Constant)
+                      and item.value in PARSER_INTERFACE_HEADERS]
+            found.update(item.value for item in public)
+            items.elts = [item for item in items.elts if item not in public]
+    if found != set(PARSER_INTERFACE_HEADERS):
+        raise ValueError("clickhouse_parsers is missing public headers: " + str(sorted(set(PARSER_INTERFACE_HEADERS) - found)))
+    headers = targets["headers"]
+    glob = attributes(headers)["hdrs"]
+    if call_name(glob) != "glob":
+        raise ValueError("expected //src/Parsers:headers.hdrs to be a glob")
+    excluded = attributes(glob).get("exclude")
+    if excluded is None:
+        glob.keywords.append(ast.keyword(arg="exclude", value=list_expr(PARSER_INTERFACE_HEADERS)))
+    else:
+        glob.keywords = [kw for kw in glob.keywords if kw.arg != "exclude"]
+        glob.keywords.append(ast.keyword(arg="exclude", value=list_expr([*ast.literal_eval(excluded), *PARSER_INTERFACE_HEADERS])))
+    for target in (compiled, headers):
+        deps = next((kw for kw in target.keywords if kw.arg == "deps"), None)
+        if deps:
+            deps.value = ast.BinOp(left=deps.value, op=ast.Add(), right=list_expr([":parser_api"]))
+        else:
+            target.keywords.append(ast.keyword(arg="deps", value=list_expr([":parser_api"])))
+
+    # These are the owners at the native package step. publish_base() moves
+    # //base/base:headers to //base:base_headers later in generate_build.py.
+    rows.append(expr_stmt(
+        'ch_cc_library(name="parser_api", hdrs=%s, clickhouse_code=True, strip_include_prefix="/src", '
+        'deps=["//base/base:headers", "//contrib/cityhash102:headers", "//src:headers", '
+        '"//src/Common:headers", "@clickhouse_boost//:boost_headers_no_openssl"])' % json.dumps(PARSER_INTERFACE_HEADERS)
+    ))
+
+
 def git_inventory(root):
     """Native CMake inputs, regardless of generated BUILD package boundaries."""
     listing = subprocess.check_output(
@@ -363,6 +417,8 @@ class Migration:
                         '_prometheus_protobufs': 'contrib/prometheus-protobufs-cmake',
                         'clickhouse_grpc_protos': 'src/Server/grpc_protos',
                         'clickhouse_common_io': 'src',
+                        'clickhouse_common_io_embedded': 'src',
+                        'dbms_embedded': 'src',
                         'common': 'base/base',
                         'contrib': 'contrib',
                         'unit_tests_dbms': 'src',
@@ -609,6 +665,8 @@ class Migration:
                     json.dumps(['**/*' + suffix for suffix in TEXTUAL]),
                 )))
             self.loads[package]['headers'] = expr_stmt('load("@rules_cc//cc:cc_library.bzl", "cc_library")')
+        if self.from_generator and 'src/Parsers' in self.rows:
+            declare_parser_interface(self.rows['src/Parsers'])
         data = self.rewrite_consumers()
         builds = self.render_builds()
         data.update(builds)

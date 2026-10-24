@@ -211,7 +211,7 @@ ch_cc_library(
     implementation_deps = [
         "//base/poco/Util:_poco_util",
         "//src/Parsers:clickhouse_parsers",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common:stopwatch",
         "//src/Common:string_utils",
@@ -349,7 +349,7 @@ ch_cc_library(
         "//src:headers",
         "//src/Common",
         "//src/Parsers:headers",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common:exception_api",
         "//src/Common:current_metrics",

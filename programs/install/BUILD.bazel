@@ -22,7 +22,7 @@ ch_cc_library(
         "//src/Common:exception_api",
         "//src/Common/Config:clickhouse_common_config",
         "//base:common",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Access/Common:clickhouse_common_access",
         "//src:dbms",
         "//src:clickhouse_common_io__compile_0",

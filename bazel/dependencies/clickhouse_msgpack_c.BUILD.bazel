@@ -60,7 +60,7 @@ cc_library(
     defines = ["MSGPACK_USE_BOOST"],
     deps = [
         ":msgpack_c",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
     ],
 )
 

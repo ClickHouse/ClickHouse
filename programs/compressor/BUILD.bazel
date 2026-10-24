@@ -10,7 +10,7 @@ ch_cc_library(
     implementation_deps = [
         "//src/Common",
         "//src/Compression:clickhouse_compression",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Parsers:clickhouse_parsers",
         "//src:dbms",
         "//src/Common:current_metrics",

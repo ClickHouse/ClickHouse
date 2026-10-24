@@ -34,6 +34,7 @@ def generate(source, output, namespace, compressed, cmake_gzip_mtime=None):
                '    const unsigned char* data;\n    size_t size;\n'
                '    std::string_view mime_type;\n};\n\n')
     entries = []
+    size_checks = []
     variables = set()
     # WebUIRequestHandler uses lower_bound, so path ordering is significant.
     for path in sorted((p for p in source.rglob('*') if p.is_file()), key=lambda p: p.as_posix() + '.gz'):
@@ -66,7 +67,10 @@ def generate(source, output, namespace, compressed, cmake_gzip_mtime=None):
         entries.append('    EmbeddedResource{\n'
                        f'        {json.dumps(name)},\n        {variable},\n'
                        f'        sizeof({variable}),\n        {json.dumps(mime)}\n    }}')
-    content += 'constexpr std::array embedded_resources = {\n' + ',\n'.join(entries) + '\n};\n\n}\n'
+        # Clang 22 can ignore a missing #embed when writing a dependency file.
+        size_checks.append(f'static_assert(sizeof({variable}) == {packed.stat().st_size});')
+    content += 'constexpr std::array embedded_resources = {\n' + ',\n'.join(entries) + '\n};\n\n'
+    content += '\n'.join(size_checks) + '\n\n}\n'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(content)
 

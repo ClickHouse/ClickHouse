@@ -165,7 +165,7 @@ _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
         "@clickhouse_icu//:_icuuc",
         "@clickhouse_libstemmer_c//:_stemmer",
         "//src:clickhouse_common_io__compile_0",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_fmtlib//:_fmt",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/JSON:_poco_json",

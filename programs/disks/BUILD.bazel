@@ -40,7 +40,7 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common/Config:clickhouse_common_config",
         "//base:common",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common/ZooKeeper:headers",
         "//src/Loggers:loggers",
         "//src/Common:exception_api",

@@ -8,7 +8,7 @@ ch_cc_library(
     srcs = ["Obfuscator.cpp"],
     clickhouse_code = True,
     implementation_deps = [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
         "//src:dbms",

@@ -100,7 +100,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     deps = [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
         "//contrib/lz4-cmake:_lz4",

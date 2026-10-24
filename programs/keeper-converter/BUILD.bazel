@@ -11,7 +11,7 @@ ch_cc_library(
         "//src:dbms__compile_0",
         "//base/poco/Foundation:_poco_foundation",
         "//src/Common",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src:dbms",
         "//src/Common:parser_support_api",
     ],

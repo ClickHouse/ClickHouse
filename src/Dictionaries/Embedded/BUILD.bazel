@@ -93,7 +93,7 @@ ch_cc_library(
         "//base:common",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common:memory_tracking_api",
         "//src:core_defines",
     ],

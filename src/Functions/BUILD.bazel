@@ -907,7 +907,7 @@ ch_cc_library(
         "//src/Parsers:parser_api",
         "//src:column_types",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_llvm_project//:llvm_headers",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
         "//base/poco/Foundation:_poco_foundation",
@@ -1002,7 +1002,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [
             "//base:common",
-            "@clickhouse_boost//:boost_headers",
+            "@clickhouse_boost//:boost_headers_no_openssl",
             "@clickhouse_xxhash//:xxHash",
         ],
     }) + [
@@ -1039,7 +1039,7 @@ ch_cc_library(
             "//base:common",
             "//src:headers",
             "//src/Common",
-            "@clickhouse_boost//:boost_headers",
+            "@clickhouse_boost//:boost_headers_no_openssl",
             "@clickhouse_xxhash//:xxHash",
         ],
         "@platforms//cpu:aarch64": [
@@ -1195,7 +1195,7 @@ ch_cc_library(
             "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
             "//src/Storages/System:headers",
             "//src/TableFunctions:headers",
-            "@clickhouse_boost//:boost_headers",
+            "@clickhouse_boost//:boost_headers_no_openssl",
             "@clickhouse_fmtlib//:_fmt",
             "@clickhouse_libpqxx//:_libpqxx",
             "@clickhouse_libuv//:_uv",

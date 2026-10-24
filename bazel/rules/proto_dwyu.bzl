@@ -40,6 +40,16 @@ def _action(action):
         "outputs": _paths(action.outputs.to_list()),
     }
 
+def _cc_owner(dep):
+    cc = dep[CcInfo].compilation_context
+    outputs = dep[DefaultInfo].files.to_list()
+    return {
+        "label": str(dep.label),
+        "configured_owner": outputs[0].path if outputs else None,
+        "outputs": _paths(outputs),
+        "direct_headers": _paths(list(cc.direct_public_headers) + list(cc.direct_textual_headers)),
+    }
+
 def _problem(problems, reason, **evidence):
     problems.append(dict(reason = reason, **evidence))
 
@@ -65,7 +75,7 @@ def _routing_record(record, routing_file):
         ],
     }
 
-def _compile_unit(ctx, action, sources, problems, cc):
+def _compile_unit(ctx, action, sources, problems, cc, implementation_headers):
     # CppCompileAction.argv is expanded with a null paramFilePath in Bazel 9.3.
     # Never interpret an unexpanded @file or a new driver output mode as success.
     if not ctx.target_platform_has_constraint(ctx.attr._linux[platform_common.ConstraintValueInfo]):
@@ -114,7 +124,7 @@ def _compile_unit(ctx, action, sources, problems, cc):
         skipped_outputs = skip,
         # CppCompileAction.getSchedulingDependencies() supplies declared headers
         # to aquery; Action.inputs alone contains mandatory/discovered inputs.
-        inputs = depset(transitive = [action.inputs, cc.headers]),
+        inputs = depset(transitive = [action.inputs, cc.headers] + implementation_headers),
         # CppCompileAction.getEffectiveEnvironment() sets PWD on Linux.
         environment = dict(action.env, PWD = "/proc/self/cwd"),
         action = action,
@@ -140,6 +150,7 @@ def _impl(target, ctx):
     provided_sources = []
     status = "unsupported"
     cc = target[CcInfo].compilation_context if CcInfo in target else None
+    implementation_headers = [dep[CcInfo].compilation_context.headers for dep in getattr(ctx.rule.attr, "cc_implementation_deps", [])]
 
     if ctx.configuration.is_tool_configuration():
         _problem(problems, "exec_configuration")
@@ -183,7 +194,7 @@ def _impl(target, ctx):
             sources = {file: True for file in generated_sources}
             compiles = [action for action in target.actions if action.mnemonic == "CppCompile"]
             for action in compiles:
-                unit = _compile_unit(ctx, action, sources, problems, cc)
+                unit = _compile_unit(ctx, action, sources, problems, cc, implementation_headers)
                 if unit != None:
                     units.append(unit)
             should_generate = proto_common.experimental_should_generate_code(target[ProtoInfo], provider, ctx.rule.kind, target.label)
@@ -285,6 +296,10 @@ def _impl(target, ctx):
         "runtime": runtime,
         "owned_headers": manifest.path if manifest else None,
     }
+    for attr in ("cc_deps", "cc_implementation_deps"):
+        cc_deps = getattr(ctx.rule.attr, attr, [])
+        if cc_deps:
+            record[attr] = [_cc_owner(dep) for dep in cc_deps]
     ctx.actions.write(report, json.encode(record))
     ctx.actions.write(routing, json.encode(_routing_record(record, routing.path)))
     reports = depset(direct = files, transitive = transitive)

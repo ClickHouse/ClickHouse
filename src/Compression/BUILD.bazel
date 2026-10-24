@@ -134,7 +134,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
@@ -170,7 +170,7 @@ ch_cc_library(
     deps = [
         "//src/Parsers:parser_api",
         "//src/Common:memory_tracking_api",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//base:common",
     ],
 )

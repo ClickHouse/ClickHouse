@@ -17,7 +17,7 @@ ch_cc_library(
         "//src/Common",
         "//src/Common/Config:clickhouse_common_config",
         "//base:common",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Functions:clickhouse_functions_obj__compile_0",
         "//src/Parsers:clickhouse_parsers",

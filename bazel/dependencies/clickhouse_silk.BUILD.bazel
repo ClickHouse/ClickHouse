@@ -26,7 +26,7 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_liburing//:_liburing",
         ":_silk_util",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_boost//:_boost_context",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -54,6 +54,6 @@ ch_cc_library(
         "src",
     ],
     deps = [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
     ],
 )

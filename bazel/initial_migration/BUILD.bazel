@@ -28,7 +28,6 @@ py_binary(
 py_binary(
     name = "native_stripped_hash_driver",
     srcs = [
-        "compare_elf_sections.py",
         "native_stripped_hash.py",
         "verify_stripped_hash.py",
     ],

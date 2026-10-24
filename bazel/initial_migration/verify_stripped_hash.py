@@ -38,6 +38,8 @@ def compare(reference, original, strip, output, record, expected_hash=EXPECTED_S
     bazel_stripped = output / 'bazel.stripped'
     record['CMAKE_REFERENCE_SHA256'] = sha256(reference)
     record['BAZEL_CLICKHOUSE_SHA256'] = sha256(original)
+    record['CMAKE_REFERENCE_BYTES'] = reference.stat().st_size
+    record['BAZEL_CLICKHOUSE_BYTES'] = original.stat().st_size
     record['STRIP_FLAGS'] = ' '.join(STRIP_FLAGS)
     record['EXPECTED_STRIPPED_SHA256'] = expected_hash
 
@@ -49,6 +51,8 @@ def compare(reference, original, strip, output, record, expected_hash=EXPECTED_S
         subprocess.run([str(strip), *STRIP_FLAGS, '-o', str(dest), str(source)], check=True)
     record['CMAKE_STRIPPED_SHA256'] = sha256(cmake_stripped)
     record['BAZEL_STRIPPED_SHA256'] = sha256(bazel_stripped)
+    record['CMAKE_STRIPPED_BYTES'] = cmake_stripped.stat().st_size
+    record['BAZEL_STRIPPED_BYTES'] = bazel_stripped.stat().st_size
     (output / 'stripped.sha256').write_text(
         f"{record['CMAKE_STRIPPED_SHA256']}  {cmake_stripped}\n"
         f"{record['BAZEL_STRIPPED_SHA256']}  {bazel_stripped}\n"
@@ -66,6 +70,7 @@ def compare(reference, original, strip, output, record, expected_hash=EXPECTED_S
             comparison.returncode != 0
             or record['CMAKE_STRIPPED_SHA256'] != expected_hash
             or record['BAZEL_STRIPPED_SHA256'] != expected_hash
+            or record['CMAKE_STRIPPED_BYTES'] != record['BAZEL_STRIPPED_BYTES']
         )
     return record
 
@@ -176,13 +181,15 @@ def recorded_reference(args):
     if not args.reference_summary:
         raise ValueError('--arch=aarch64 requires --reference-summary from the completed CMake build')
     expected = json.loads(args.reference_summary.read_text())
-    if expected.get('arch') != 'aarch64' or expected.get('elf_machine') != 183:
+    if not isinstance(expected, dict) or expected.get('arch') != 'aarch64' or expected.get('elf_machine') != 183:
         raise ValueError('CMake --reference-summary must record an AArch64 ELF')
     for key in ('compiler_sha256', 'cmake_sha256', 'plain_stripped_sha256', 'stripped_sha256'):
-        if not re.fullmatch(r'[0-9a-f]{64}', expected.get(key, '')):
+        if not isinstance(expected.get(key), str) or not re.fullmatch(r'[0-9a-f]{64}', expected[key]):
             raise ValueError('Invalid CMake reference ' + key)
     if not isinstance(expected.get('bytes'), int) or expected['bytes'] < 20:
         raise ValueError('Invalid CMake reference original byte count')
+    if not isinstance(expected.get('stripped_bytes'), int) or expected['stripped_bytes'] < 20:
+        raise ValueError('Invalid CMake reference normalized byte count')
     if expected.get('strip_flags') != list(STRIP_FLAGS):
         raise ValueError('CMake reference used different llvm-strip flags')
     return expected, args.reference_invocation

@@ -3,7 +3,7 @@
   "base_tree": "6156a794e15d3bc634ebed15774e171394bbf127",
   "build_files": {
     "bazel/BUILD.bazel": {
-      "blob": "7b7e316f9defcab15f9616a429db7b1058fc4e51",
+      "blob": "343923f26910a887a02049b69fad65ba8c6e06cd",
       "declarations": 65
     },
     "bazel/dependencies/clickhouse_llvm_project.BUILD.bazel": {
@@ -1153,109 +1153,109 @@
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_storage_v2_storage_cc_proto",
-        "line": 1115
+        "line": 1117
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_calendar_period_cc_proto",
-        "line": 1135
+        "line": 1137
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_color_cc_proto",
-        "line": 1156
+        "line": 1158
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_date_cc_proto",
-        "line": 1176
+        "line": 1178
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_datetime_cc_proto",
-        "line": 1197
+        "line": 1199
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_dayofweek_cc_proto",
-        "line": 1217
+        "line": 1219
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_decimal_cc_proto",
-        "line": 1237
+        "line": 1239
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_expr_cc_proto",
-        "line": 1257
+        "line": 1259
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_fraction_cc_proto",
-        "line": 1277
+        "line": 1279
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_interval_cc_proto",
-        "line": 1298
+        "line": 1300
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_latlng_cc_proto",
-        "line": 1318
+        "line": 1320
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_localized_text_cc_proto",
-        "line": 1338
+        "line": 1340
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_money_cc_proto",
-        "line": 1358
+        "line": 1360
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_month_cc_proto",
-        "line": 1378
+        "line": 1380
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_phone_number_cc_proto",
-        "line": 1398
+        "line": 1400
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_postal_address_cc_proto",
-        "line": 1418
+        "line": 1420
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_quaternion_cc_proto",
-        "line": 1438
+        "line": 1440
       },
       {
         "file": "bazel/BUILD.bazel",
         "kind": "cc_proto_library",
         "label": "//bazel:google_type_timeofday_cc_proto",
-        "line": 1458
+        "line": 1460
       }
     ]
   },

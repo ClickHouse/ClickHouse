@@ -8,7 +8,7 @@ ch_cc_library(
     srcs = ["ZooKeeperRemoveByList.cpp"],
     clickhouse_code = True,
     implementation_deps = [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common/ZooKeeper:headers",
         "//src/Dictionaries:clickhouse_dictionaries",
         "//src:clickhouse_common_io__compile_0",

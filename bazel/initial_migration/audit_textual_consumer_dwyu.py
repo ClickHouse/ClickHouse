@@ -1,4 +1,4 @@
-"""Check gRPC/msgpack textual fragments in their existing compiled consumers.
+"""Check configured Boost, gRPC and msgpack textual headers in their existing compiled consumers.
 
 This supplements an original DWYU owner report. It does not qualify a binary,
 replace native link evidence, remove missing-dependency findings, or attest to
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from audit_full_dwyu import (
     FIELDS, NATIVE_CC, RuntimeActionGraph, analyzer_arguments, analyzer_option,
-    bep_file_matches, canonical, identity, query_labels, read_cquery, sha_file,
+    bep_file_matches, canonical, census_canonical, identity, query_labels, read_cquery, sha_file,
     validate_compiler_coverage, validate_link_evidence,
 )
 from audit_proto_dwyu import ProtoBep, expanded_args, graph_source, output_path
@@ -21,7 +21,32 @@ from audit_rust_import_dwyu import native_cpp_preprocessing
 
 
 PACKAGE = "//bazel/initial_migration/dwyu_regressions/consumer:"
+# The upstream boost_mysql_compiled target builds these two translation units.
+BOOST = census_canonical("@clickhouse_boost//:")
+BOOST_REPO = "external/" + BOOST.split("//", 1)[0].lstrip("@") + "/"
+BOOST_FIXTURE = BOOST + "boost_mysql_compiled"
+ASIO = BOOST_REPO + "libs/mysql/test/common/src/boost_asio.cpp"
+MYSQL = BOOST_REPO + "libs/mysql/test/common/src/boost_mysql.cpp"
+BOOST_SOURCES = {
+    ASIO: "4dfd0d71f10febea5e85af27349a7ced24b70243381bdc444daa32087d424add",
+    MYSQL: "dbdd6fb3d1fd132357a47353d9540ba61557134ce51c7855452ad0e44c3b5bb6",
+}
+# Each header contains an unconditional include inside its header guard.
+BOOST_HEADERS = {
+    "boost_separate_asio": {
+        "boost/asio/impl/src.hpp": (ASIO, "boost/asio/impl/any_completion_executor.ipp"),
+    },
+    "boost_separate_openssl": {
+        "boost/asio/ssl/impl/src.hpp": (ASIO, "boost/asio/ssl/impl/context.ipp"),
+        "boost/mysql/src.hpp": (MYSQL, "boost/mysql/impl/any_connection.ipp"),
+    },
+}
+BOOST_GROUPS = "--output_groups=dwyu_consumer,default,compilation_outputs"
 CASES = {
+    "boost_separate_asio": {"owner": BOOST + "boost_headers_no_openssl",
+                           "consumer": BOOST_FIXTURE, "sources": tuple(BOOST_SOURCES)},
+    "boost_separate_openssl": {"owner": BOOST + "boost_headers",
+                              "consumer": BOOST_FIXTURE, "sources": tuple(BOOST_SOURCES)},
     "grpc_secure": {
         "owner": "@@clickhouse_grpc//:grpc++",
         "consumer": "//src/Server/grpc_protos:clickhouse_grpc_protos",
@@ -54,6 +79,10 @@ def matching_case(label):
     """Compare canonical repo names after this build's MODULE extension prefix."""
     label = canonical(label)
     for name, case in CASES.items():
+        if name in BOOST_HEADERS:
+            if label == case["owner"]:
+                return name
+            continue
         repo, tail = case["owner"].split("//", 1)
         wanted_repo = repo.lstrip("@")
         got_repo, got_tail = label.split("//", 1)
@@ -94,6 +123,8 @@ def scoped_file(name, owner, path):
     if not path.startswith(prefix):
         return False
     tail = path[len(prefix):]
+    if name in BOOST_HEADERS:
+        return tail in BOOST_HEADERS[name]
     if name in ("grpc_secure", "grpc_unsecure"):
         return tail in ("include/grpcpp/ports_def.inc", "include/grpcpp/ports_undef.inc")
     return bool(re.fullmatch(r"include/msgpack/preprocessor/iteration/detail/(bounds|iter)/[A-Za-z0-9_]+\.hpp", tail))
@@ -125,7 +156,8 @@ def named_json(record, key, path, mnemonic, bep, invocation):
             "wrong configured consumer owner, invocation or output")
     raw = base64.b64decode(record["data"], validate=True)
     require(0 < len(raw) <= LIMIT and bytes_record(raw) == record.get("stamp")
-            and bep_file_matches(record.get("named", {}), record["stamp"]),
+            and str(Path(*record["named"].get("pathPrefix", [])) / record["named"]["name"]) == path
+            and bep_file_matches(record["named"], record["stamp"]),
             "consumer bytes do not match the successful original named result")
     return json.loads(raw)
 
@@ -178,7 +210,203 @@ def case_rows(case, name, expected_key, original_row, rows):
               for item in audit["configured_inputs"] if item.get("configurationChecksum")}
     require({expected_key, consumer_key} <= direct,
             "audit does not declare this configured owner and consumer")
+    if name in BOOST_HEADERS:
+        fixture_deps = {identity(i["label"], i["configurationChecksum"])
+                        for i in consumer["configured_inputs"] if i.get("configurationChecksum")}
+        require({identity(CASES[n]["owner"], owner["checksum"]) for n in BOOST_HEADERS} <= fixture_deps,
+                "Boost fixture lacks its two direct configured owners")
+        require(all([k for k, r in rows.items() if r["label"] == CASES[n]["owner"] and not r["is_tool"]]
+                    == [identity(CASES[n]["owner"], owner["checksum"])] for n in BOOST_HEADERS),
+                "Boost CcInfo owners differ from the original target configuration")
     return audit_key, consumer_key
+
+
+def boost_query_sources():
+    """Query only these three physical Files from both configured CcInfo owners."""
+    owners = sorted(CASES[name]["owner"] for name in BOOST_HEADERS)
+    query = "config(" + query_labels(owners) + ", target)\n"
+    filenames = sorted(BOOST_REPO + h for headers in BOOST_HEADERS.values() for h in headers)
+    formatter = """def format(target):
+    p = providers(target)
+    seen = [k for k in p if k.split("%")[-1] == "CcInfo"]
+    if len(seen) != 1 or seen[0] not in ("@@rules_cc+//cc/private:cc_info.bzl%CcInfo", "@@rules_cc+0.2.26//cc/private:cc_info.bzl%CcInfo"):
+        fail("Boost target lacks the pinned rules_cc CcInfo")
+    c = p[seen[0]].compilation_context
+    return json.encode([str(target.label), [
+        [[f.path, f.short_path, f.is_directory] for f in files if f.path in EXACT_BOOST_FILES]
+        for files in [c.direct_textual_headers, c.direct_public_headers, c.direct_private_headers]
+    ]])
+""".replace("EXACT_BOOST_FILES", repr(filenames))
+    return query, formatter
+
+
+def boost_header_query(audit):
+    query, formatter = boost_query_sources()
+    locations = [audit.out / ("textual-consumer-boost-headers." + ext) for ext in ("query", "bzl")]
+    for file, code in zip(locations, (query, formatter)):
+        file.write_text(code)
+    run = audit.command("textual-consumer-boost-headers", "cquery",
+        ["--query_file=" + str(locations[0]), "--output=starlark", "--consistent_labels",
+         "--starlark:file=" + str(locations[1])], output=True)
+    require(run["exit_code"] == 0, "Boost direct header CcInfo query failed")
+    return {"run": run, "data": Path(run["stdout"]["file"]).read_text(),
+            "inputs": [sha_file(f) for f in locations]}
+
+
+def verify_boost_headers(evidence):
+    run, data = evidence["run"], evidence["data"]
+    inputs = evidence["inputs"]
+    require(len(inputs) == 2 and
+            all(bytes_record(code.encode()) == {f: rec[f] for f in ("sha256", "bytes")}
+                for code, rec in zip(boost_query_sources(), inputs))
+            and "--query_file=" + inputs[0]["file"] in run["command"]
+            and "--starlark:file=" + inputs[1]["file"] in run["command"],
+            "Boost CcInfo query or formatter changed")
+    require(run["exit_code"] == 0 and "--output=starlark" in run["command"] and "--consistent_labels" in run["command"]
+            and bytes_record(data.encode()) == {f: run["stdout"][f] for f in ("bytes", "sha256")},
+            "changed Boost direct header CcInfo output")
+    expected = {CASES[n]["owner"]: sorted((BOOST_REPO + p, "../" + (BOOST_REPO + p).removeprefix("external/"), False) for p in headers)
+                for n, headers in BOOST_HEADERS.items()}
+    for line in data.splitlines():
+        label, (textual, modular, private) = json.loads(line)
+        require(label in expected and sorted(tuple(f) for f in textual) == expected.pop(label)
+                and not modular and not private, "wrong or duplicate configured Boost public textual File")
+    require(not expected, "missing configured Boost public textual owner")
+
+
+def boost_entries(name, owner, contexts, entered):
+    """An existing file or a skipped guard does not execute any include inside src.hpp."""
+    expected = {BOOST_REPO + path: (source, impl) for path, (source, impl) in BOOST_HEADERS[name].items()}
+    require(owner == CASES[name]["owner"] and set(entered) == set(expected),
+            "missing or foreign Boost textual ownership")
+    seen = set()
+    for context in contexts:
+        for item in context["records"]:
+            path = item["file"]
+            if path not in expected:
+                continue
+            source, impl = expected[path]
+            require(context["owner"] == owner and context["visibility"] == "public"
+                    and context["source"] == source and path not in seen and item["entered"] is True,
+                    "wrong Boost translation unit, owner, visibility, repeated or skipped header")
+            require(item["resolved_includes"].count({"include": "<" + impl + ">", "file": BOOST_REPO + impl}) == 1,
+                    "Clang did not observe the implementation include inside " + path)
+            seen.add(path)
+    require(seen == set(expected), "missing Boost implementation header body")
+
+
+def boost_command(argv, source, obj):
+    """Require the two upstream separate-compilation defines on the original command."""
+    defines = {"BOOST_ASIO_SEPARATE_COMPILATION", "BOOST_MYSQL_SEPARATE_COMPILATION"}
+    seen = []
+    for i, arg in enumerate(argv):
+        require(not arg.startswith(("-include", "--include", "-imacros", "-Wp,", "@")),
+                "forced or opaque Boost preprocessor input")
+        if arg in ("-D", "-U"):
+            require(i + 1 < len(argv), "missing Boost macro argument")
+            arg += argv[i + 1]
+        if arg.startswith(("-D", "-U")):
+            key = arg[2:].partition("=")[0]
+            if key in defines:
+                require(arg in ("-D" + key, "-D" + key + "=1"), "changed Boost separate-compilation define")
+                seen.append(key)
+            require(key not in ("BOOST_ASIO_HEADER_ONLY", "BOOST_MYSQL_HEADER_ONLY"), "Boost header-only command")
+    require(sorted(seen) == sorted(defines) and argv.count("-c") == argv.count("-o") == 1
+            and argv[argv.index("-c") + 1] == source and argv[argv.index("-o") + 1] == obj,
+            "wrong Boost CppCompile source, object or definitions")
+
+
+def boost_archive(graph, bep, key, compiled, root):
+    """Bind the two configured compilation outputs to the actual built archive."""
+    require(bep is not None and key in bep.successful_roots, "Boost fixture was not built")
+    archive_actions = [a for a in graph.owners.get(key, ()) if a["mnemonic"] == "CppArchive"]
+    require(len(archive_actions) == 1, "ambiguous or missing Boost CppArchive")
+    action = archive_actions[0]
+    files = graph.files(action, "outputIds")
+    require(len(files) == 1 and unique_output(graph, files[0], key, "CppArchive") is action,
+            "wrong Boost CppArchive output")
+    archive = files[0]
+    objects = {c["original_object"] for c in compiled}
+    argv = expanded_args(action)
+    require({x for x in graph.inputs(action) if x.endswith(".o")} == objects and
+            sorted(x for x in argv if x.endswith(".o")) == sorted(objects) and argv.count(archive) == 1,
+            "CppArchive did not use exactly the two Boost CppCompile outputs")
+    for c in compiled:
+        source, obj = c["source"], c["original_object"]
+        cpp = unique_output(graph, obj, key, "CppCompile")
+        require(graph_source(graph, cpp) == (source, obj), "borrowed Boost CppCompile")
+        args = expanded_args(cpp)
+        boost_command(args, source, obj)
+        require(sha_file(root / source)["sha256"] == BOOST_SOURCES[source], "changed upstream Boost TU")
+        c["boost_argv"] = args
+        c["boost_source_sha256"] = BOOST_SOURCES[source]
+    named = {}
+    for path in sorted(objects | {archive}):
+        require(not bep.failed(key, path) and path in bep.named, "missing native Boost output: " + path)
+        named[path] = bep.named[path]
+    return {"archive": archive, "inputs": sorted(objects), "archive_argv": argv, "named": named,
+            "owner": key, "bep": bep.path, "invocation_uuid": bep.invocation_uuid}
+
+
+def verify_boost_archive(native, compiled, consumer_key, bep, invocation):
+    require(native["owner"] == consumer_key and native["bep"] == bep and native["invocation_uuid"] == invocation,
+            "Boost archive belongs to another target, configuration or invocation")
+    archive = output_path(native["archive"])
+    expected = {c["original_object"] for c in compiled}
+    fixtures = "external/" + BOOST.split("//", 1)[0].lstrip("@") + "/"
+    parts = Path(archive).parts
+    require(len(parts) == 6 and parts[2] == "bin" and "/".join(parts[3:]) == fixtures + "libboost_mysql_compiled.a"
+            and len(compiled) == len(expected) == 2 and {c["source"] for c in compiled} == set(BOOST_SOURCES)
+            and native["inputs"] == sorted(expected) and native["archive_argv"].count(archive) == 1
+            and sorted(a for a in native["archive_argv"] if a.endswith(".o")) == sorted(expected),
+            "Boost archive, configuration or original objects changed")
+    for c in compiled:
+        source, obj, args = c["source"], output_path(c["original_object"]), c["boost_argv"]
+        require(c["consumer"] == consumer_key and c["boost_source_sha256"] == BOOST_SOURCES[source]
+                and Path(obj).parts[:5] == parts[:5] and "/_objs/boost_mysql_compiled/" in obj
+                and bytes_record(json.dumps(args).encode()) == c["cpp"], "unbound Boost CppCompile")
+        boost_command(args, source, obj)
+    require(set(native["named"]) == expected | {archive}, "Boost build did not name precisely these outputs")
+    for path, item in native["named"].items():
+        boost_output_digest(path, item)
+
+
+def boost_output_digest(path, item):
+    digest, size = item.get("digest"), item.get("length")
+    if digest is None and size is None:
+        blob = re.fullmatch(r"bytestream://[^/]+/(?:[^/]+/)*blobs/([0-9a-f]{64})/([1-9][0-9]*)",
+                            item.get("uri", ""))
+        require(blob, "missing Boost output digest")
+        digest, size = blob.groups()
+    require(str(Path(*item.get("pathPrefix", [])) / item["name"]) == path
+            and re.fullmatch("[0-9a-f]{64}", digest) and str(size).isdigit() and int(size) > 0
+            and bep_file_matches(item, {"sha256": digest, "bytes": int(size)}), "invalid Boost output digest")
+    return digest, int(size)
+
+
+def verify_boost_native_batch(ordinary_bep_file, manifest, checksum, receipts):
+    """Join the two verified textual receipts to the ordinary batch's requested archive."""
+    key = identity(BOOST_FIXTURE, checksum)
+    native = ProtoBep(ordinary_bep_file, [BOOST_FIXTURE], {key: {}}, "default")
+    require(native.successful_roots == {key} and set(receipts) == set(BOOST_HEADERS),
+            "incomplete ordinary Boost build or missing textual owner")
+    signatures = []
+    for case, receipt in receipts.items():
+        require(receipt["owner_status"] == "not_qualified" and receipt["cpp_qualified"] is False
+                and receipt["audit"] == identity(PACKAGE + case, checksum) and receipt["consumer"] == key
+                and receipt["boost_manifest"] == {k: manifest[k] for k in ("snapshot", "arch", "config")}
+                and set(receipt["resolved_textual_files"]) == {BOOST_REPO + h for h in BOOST_HEADERS[case]},
+                "wrong Boost snapshot, CPU, configured owner or header set")
+        fixture = receipt["native_fixture"]
+        archive = fixture["archive"]
+        require(fixture["owner"] == key and archive in native.named and not native.failed(key, archive)
+                and boost_output_digest(archive, native.named[archive]) ==
+                boost_output_digest(archive, fixture["named"][archive]), "ordinary Boost archive does not match")
+        signatures.append(sorted((p, boost_output_digest(p, f)) for p, f in fixture["named"].items()))
+    require(signatures[0] == signatures[1], "Boost consumer builds compiled different objects or archives")
+    return {"ordinary_invocation": native.invocation_uuid, "ordinary_bep": native.path,
+            "archive": archive, "outputs": signatures[0], "cpp_qualified": False}
+
 
 
 def check_report(original, observed, original_headers, new_headers, name=None, contexts=()):
@@ -228,6 +456,8 @@ def check_report(original, observed, original_headers, new_headers, name=None, c
                     "visibility": visibility, "source": context["source"],
                     "output": context["output"], "stamp": context["stamp"],
                 })
+    if name in BOOST_HEADERS:
+        boost_entries(name, original["analyzed_target"], contexts, entered)
     unresolved = {path: side for path, side in original["unentered_owned_files"].items() if path not in entered}
     original_findings = {field: len(original[field]) for field in FIELDS}
     new_findings = {field: len(observed[field]) for field in FIELDS}
@@ -259,7 +489,7 @@ def check_report(original, observed, original_headers, new_headers, name=None, c
 
 
 def bind_graphs(name, key, row, source, headers, rows, action_graph, header_graph, pp_graph, original_graph,
-                bep, execroot, materialize=None):
+                bep, execroot, materialize=None, native_bep=None):
     case = CASES[name]
     audit_key, consumer_key = case_rows(case, name, key, row, rows)
     require(audit_key in bep.successful_roots, "consumer result has no successful current BEP root")
@@ -317,7 +547,7 @@ def bind_graphs(name, key, row, source, headers, rows, action_graph, header_grap
         require(len(trace) == 1 and unique_output(pp_graph, trace[0], consumer_key, "DwyuCompilerPreprocess") is pp,
                 "missing original compiler trace")
         original_compiles = [a for a in original_graph.owners.get(consumer_key, ())
-                             if graph_source(original_graph, a)[0] == compiler_source]
+                             if a["mnemonic"] == "CppCompile" and graph_source(original_graph, a)[0] == compiler_source]
         require(len(original_compiles) == 1,
                 "consumer PP input is not a unique original CppCompile source")
         cpp = original_compiles[0]
@@ -383,6 +613,9 @@ def bind_graphs(name, key, row, source, headers, rows, action_graph, header_grap
                    "original_compilations": checked, "consumer_report": report_evidence,
                    "case": name, "schema": 2, "owner_manifest": manifest_record(new_headers),
                    "provenance": metadata})
+    if name in BOOST_HEADERS:
+        result["native_fixture"] = boost_archive(original_graph, native_bep, consumer_key, checked, execroot)
+        verify_boost_archive(result["native_fixture"], checked, consumer_key, bep.path, bep.invocation_uuid)
     return result
 
 
@@ -413,7 +646,10 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
         return
     audit_labels = sorted({PACKAGE + name for name in candidates.values()})
     consumer_labels = sorted({CASES[name]["consumer"] for name in candidates.values()})
+    fixture = [BOOST_FIXTURE] if set(candidates.values()) & BOOST_HEADERS.keys() else []
     labels = audit_labels + consumer_labels + [selected[key]["label"] for key in candidates]
+    if fixture:
+        labels += [CASES[name]["owner"] for name in BOOST_HEADERS]
     configuration_file = audit.query(
         "textual-consumer-configurations", "cquery", "config(" + query_labels(labels) + ", target)")
     rows, omitted = read_cquery(configuration_file)
@@ -436,13 +672,17 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
         "inputs('" + source_regex + "', mnemonic('^DwyuCompilerPreprocess$', deps(" + audit_scope + ")))",
         options + ("--output_groups=dwyu_consumer",))
     pp = RuntimeActionGraph(pp_file, "DwyuCompilerPreprocess", None, None)
-    cpp_file = audit.query("textual-consumer-original-cpp", "aquery",
-        "inputs('" + source_regex + "', mnemonic('^CppCompile$', " + query_labels(consumer_labels) + "))", options)
-    cpp = RuntimeActionGraph(cpp_file, "CppCompile", None, None)
+    cpp_query = "inputs('" + source_regex + "', mnemonic('^CppCompile$', " + query_labels(consumer_labels) + "))"
+    if fixture:
+        cpp_query += " union mnemonic('^CppArchive$', " + query_labels(fixture) + ")"
+    cpp_file = audit.query("textual-consumer-original-cpp", "aquery", cpp_query, options)
+    cpp = RuntimeActionGraph(cpp_file, ("CppCompile", "CppArchive"), None, None)
     bep_path = audit.out / "textual-consumer.bep.json"
     run = audit.command("textual-consumer", "build", [
-        "--keep_going", "--output_groups=dwyu_consumer", "--remote_download_outputs=toplevel",
-        "--build_event_publish_all_actions", "--build_event_json_file=" + str(bep_path)] + audit_labels)
+        "--keep_going", BOOST_GROUPS if fixture else "--output_groups=dwyu_consumer",
+        "--remote_download_outputs=minimal" if compact else "--remote_download_outputs=toplevel",
+        "--build_event_publish_all_actions", "--build_event_json_file=" + str(bep_path)] + audit_labels + fixture)
+    native_bep = ProtoBep(bep_path, fixture, rows) if fixture else None
     bep = ProtoBep(bep_path, audit_labels, rows, "dwyu_consumer")
     evidence = {"configurations": sha_file(configuration_file),
                 "analyzers": sha_file(graph_file), "headers": sha_file(head_file),
@@ -450,6 +690,9 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
                 "run": run, "bep": bep.path, "invocation_uuid": bep.invocation_uuid,
                 "manifest": manifest,
                 "selected": {key: candidates[key] for key in sorted(candidates)}}
+    if fixture:
+        evidence["boost_headers"] = boost_header_query(audit)
+        verify_boost_headers(evidence["boost_headers"])
     for key, name in candidates.items():
         row = selected[key]
         try:
@@ -462,7 +705,7 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
                         "compact original report differs from owned source")
             record = bind_graphs(name, key, row, json.loads(raw),
                                  original_headers[key][0]["contents"], rows, graph, head, pp, cpp, bep, execroot,
-                                 materialize)
+                                 materialize, native_bep)
         except (KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
             record = {"status": "not_proved", "reason": str(exc), "cpp_qualified": False}
         record["queries"] = evidence
@@ -514,7 +757,8 @@ def verify_compact(group, key, row, parsed, manifest):
     require(len(builds) == 1 and builds[0] == queries["run"]
             and builds[0]["command"].count("build") == 1
             and "--keep_going" in builds[0]["command"]
-            and "--output_groups=dwyu_consumer" in builds[0]["command"]
+            and (BOOST_GROUPS if set(queries["selected"].values()) & BOOST_HEADERS.keys()
+                 else "--output_groups=dwyu_consumer") in builds[0]["command"]
             and "--build_event_publish_all_actions" in builds[0]["command"]
             and downloads and set(downloads) == {"--remote_download_outputs=minimal"},
             "missing original minimal consumer build")
@@ -533,6 +777,19 @@ def verify_compact(group, key, row, parsed, manifest):
     require(len(compilations) == len(CASES[name]["sources"])
             and {short_source(c["source"]) for c in compilations} == set(CASES[name]["sources"]),
             "not the requested genuine consumer translation units")
+    if name in BOOST_HEADERS:
+        runs = [r for r in group["runs"] if r["name"] == "textual-consumer-boost-headers"]
+        require(runs == [queries["boost_headers"]["run"]], "Boost CcInfo belongs to another invocation")
+        require("--config=" + manifest["config"] in builds[0]["command"]
+                and "--config=" + manifest["config"] in runs[0]["command"], "wrong Boost build configuration")
+        verify_boost_headers(queries["boost_headers"])
+        configured = record["provenance"]["consumers"]
+        require(len(configured) == 1 and canonical(configured[0]["consumer"]) == BOOST_FIXTURE
+                and sorted((r["source"], r["preprocessed"]) for r in configured[0]["sources"])
+                == sorted((r["source"], r["preprocessed"]) for r in compilations),
+                "Boost CppCompile or preprocessing belongs to another configured translation unit")
+        require(builds[0]["command"].count(BOOST_FIXTURE) == 1, "Boost was not an ordinary requested target")
+        verify_boost_archive(record["native_fixture"], compilations, consumer_key, bep, invocation)
     contexts, seen_outputs = [], set()
     for cpp in compilations:
         require(cpp["owner"] == key and cpp["consumer"] == consumer_key
@@ -565,4 +822,7 @@ def verify_compact(group, key, row, parsed, manifest):
         "owner_status": "not_qualified", "cpp_qualified": False,
         "audit": audit_key, "consumer": consumer_key, "report": rpt["stamp"],
         "original": original_ref, "bep": bep, "invocation_uuid": invocation,
+        **({"native_fixture": record["native_fixture"],
+            "boost_manifest": {f: manifest[f] for f in ("snapshot", "arch", "config")}}
+           if name in BOOST_HEADERS else {}),
     }

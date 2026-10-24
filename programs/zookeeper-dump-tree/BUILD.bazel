@@ -8,7 +8,7 @@ ch_cc_library(
     srcs = ["ZooKeeperDumpTree.cpp"],
     clickhouse_code = True,
     implementation_deps = [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common",
         "//src/Common/ZooKeeper:headers",
         "//src/Dictionaries:clickhouse_dictionaries",

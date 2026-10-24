@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
-# Run on a Linux x86-64 host with Bazel remote execution configured.
+# Run CMake on the x86-64 Linux host or a native BuildBuddy ARM64 executor.
 set -euo pipefail
 
-arch="${CMAKE_REFERENCE_ARCH:-x86_64}"
 configure_only="${CMAKE_REFERENCE_CONFIGURE_ONLY:-0}"
-case "$arch" in
-    x86_64|aarch64) ;;
-    *) echo "CMAKE_REFERENCE_ARCH must be x86_64 or aarch64" >&2; exit 2 ;;
-esac
 case "$configure_only" in
     0|1) ;;
     *) echo "CMAKE_REFERENCE_CONFIGURE_ONLY must be 0 or 1" >&2; exit 2 ;;
 esac
+case "${CMAKE_REFERENCE_ARCH:-x86_64}" in
+    x86_64) ;;
+    aarch64)
+        native_runner="$(dirname "$0")/run_native_reference.sh"
+        if [[ "$configure_only" == 1 ]]; then
+            exec bash "$native_runner" --configure-only
+        fi
+        exec bash "$native_runner"
+        ;;
+    *) echo "CMAKE_REFERENCE_ARCH must be x86_64 or aarch64" >&2; exit 2 ;;
+esac
+archive_binary="${CMAKE_REFERENCE_ARCHIVE_BINARY:-0}"
+case "$archive_binary" in
+    0|1) ;;
+    *) echo "CMAKE_REFERENCE_ARCHIVE_BINARY must be 0 or 1" >&2; exit 2 ;;
+esac
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
-build="$root/build_bazel_reference_$arch"
+build="$root/build_bazel_reference_x86_64"
 tools_dir="$root/build_bazel_reference_tools"
 mkdir -p "$build" "$tools_dir"
 export SOURCE_DATE_EPOCH=1
@@ -29,7 +40,7 @@ save_evidence() {
         dest="$BUILDBUDDY_ARTIFACTS_DIRECTORY"
         mkdir -p "$dest"
         for file in configure-command.json configure.log CMakeCache.txt metadata.sha256 \
-                    cmake.sha256 compiler.sha256 compiler.txt toolchain.json build.log; do
+                    compiler.sha256 compiler.txt toolchain.json build.log; do
             [[ ! -f "$build/$file" ]] || cp "$build/$file" "$dest/"
         done
         for file in trace.jsonl compile_commands.json model.cmake.json build.ninja ninja-commands.txt; do
@@ -38,11 +49,11 @@ save_evidence() {
         if [[ -d "$build/.cmake/api/v1/reply" ]]; then
             tar -C "$build" -czf "$dest/cmake-file-api.tar.gz" .cmake/api/v1/reply
         fi
-        if [[ -f "$build/native/configure.log" ]]; then
-            cp "$build/native/configure.log" "$dest/native-configure.log"
-        fi
-        if [[ -f "$build/programs/clickhouse" ]]; then
-            cp "$build/programs/clickhouse" "$dest/clickhouse.cmake"
+        if (( status == 0 && configure_only == 0 )); then
+            cp "$build/cmake.sha256" "$dest/"
+            if [[ "$archive_binary" == 1 ]]; then
+                cp "$build/programs/clickhouse" "$dest/clickhouse.cmake"
+            fi
         fi
         for file in src/Storages/System/StorageSystemBuildOptions.generated.cpp base/base/GitHash.generated.cpp; do
             if [[ -f "$build/$file" ]]; then
@@ -54,7 +65,6 @@ save_evidence() {
     if (( status != 0 )); then
         echo "CMAKE_REFERENCE_FAILED=$status"
         [[ ! -f "$build/configure.log" ]] || tail -85 "$build/configure.log"
-        [[ ! -f "$build/native/configure.log" ]] || tail -85 "$build/native/configure.log"
         [[ ! -f "$build/trace.jsonl" ]] || tail -36 "$build/trace.jsonl"
         [[ ! -f "$build/build.log" ]] || tail -92 "$build/build.log"
     fi
@@ -62,7 +72,6 @@ save_evidence() {
 }
 trap save_evidence EXIT
 
-# The compiler executes on Linux x86-64 even when CMake targets AArch64.
 bazel --host_jvm_args=-Xmx24g build --config=remote --config=x86_64 \
     --remote_download_outputs=toplevel --noannounce_rc --color=no --curses=no \
     --show_progress_rate_limit=30 //bazel:cmake_toolchain_files
@@ -182,9 +191,6 @@ if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
     "$tools_dir/rustup-init" -y --no-modify-path --profile minimal --default-toolchain nightly-2026-03-22
 fi
 rustup toolchain install nightly-2026-03-22 --profile minimal
-if [[ "$arch" == aarch64 ]]; then
-    rustup target add --toolchain nightly-2026-03-22 aarch64-unknown-linux-gnu
-fi
 cmake --version
 ninja --version
 rustup run nightly-2026-03-22 rustc -vV
@@ -194,7 +200,7 @@ if [[ ! -f "$tools_dir/any2bazel/scripts/extract_cmake.py" ]]; then
     git -C "$tools_dir/any2bazel" checkout c1ca1b4e3583f5321934a25dae84af954c6a021c
 fi
 git submodule update --init --recursive --depth 1 --jobs 12
-python3 bazel/initial_migration/configure_reference.py --arch "$arch" --llvm-root "$tools_dir/llvm" \
+python3 bazel/initial_migration/configure_reference.py --arch x86_64 --llvm-root "$tools_dir/llvm" \
     --any2bazel "$tools_dir/any2bazel" --nasm "$tools_dir/llvm/bin/nasm" \
     "--cmake-arg=-DLINKER_NAME=$tools_dir/llvm/bin/ld.lld" \
     "--cmake-arg=-DLLVM_AR_PATH=$tools_dir/llvm/bin/llvm-ar" \
@@ -208,7 +214,7 @@ sha256sum "$build/src/Storages/System/StorageSystemBuildOptions.generated.cpp" \
     "$build/base/base/GitHash.generated.cpp" > "$build/metadata.sha256"
 echo 'CMAKE_REFERENCE_CONFIGURED'
 if [[ "$configure_only" == 1 ]]; then
-    echo "CMAKE_REFERENCE_CONFIGURE_ONLY=$arch"
+    echo 'CMAKE_REFERENCE_CONFIGURE_ONLY=x86_64'
     exit 0
 fi
 # This parallelism is for Ninja on the remote Linux host. It is independent of

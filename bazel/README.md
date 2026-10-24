@@ -265,6 +265,11 @@ its BCR module and executes as a declared Bazel tool. Building `//:clickhouse`
 does not run C/C++ compilation or linking through CMake or Ninja.
 `//bazel:cmake_reference_aarch64` separately builds the original native CMake
 reference on an ARM64 executor for the stripped binary comparison.
+`bazel/initial_migration/run_native_reference.sh` downloads the CMake status and hashes.
+Pass `--migration-evidence` for the generated files used by `refresh_cmake_metadata.py`
+or `--compare` to compare that checkout's CMake build against refreshed Bazel metadata.
+To compare against the saved original instead, provide `CMAKE_REFERENCE_ELF` to
+`CMAKE_REFERENCE_ARCH=aarch64 bash bazel/initial_migration/run_stripped_hash.sh --compare-originals`.
 
 Python generators use the pinned Python 3.11 toolchain. Their shell launchers
 start that interpreter directly, without requiring a host Python installation.

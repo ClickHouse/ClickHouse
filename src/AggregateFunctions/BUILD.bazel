@@ -294,7 +294,7 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
         "@clickhouse_llvm_project//:LLVMSupport",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_datasketches_cpp//:datasketches_cpp",
         "//base/glibc-compatibility",
         "//base/poco/Foundation:_poco_foundation",
@@ -326,18 +326,6 @@ ch_cc_library(
         "@platforms//cpu:x86_64": ["AggregateFunctionUniq.cpp"],
         "@platforms//cpu:aarch64": [],
     }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": glob(
-            [
-                "**/*.h",
-            ],
-            exclude = _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS + [
-                "IAggregateFunction.h",
-                "IAggregateFunction_fwd.h",
-            ],
-        ),
-        "@platforms//cpu:aarch64": [],
-    }),
     arches = ["x86_64"],
     clickhouse_code = True,
     copts = select({
@@ -345,6 +333,10 @@ ch_cc_library(
             "-mno-bmi",
             "-mno-bmi2",
         ],
+        "@platforms//cpu:aarch64": [],
+    }),
+    implementation_deps = select({
+        "@platforms//cpu:x86_64": [":headers"],
         "@platforms//cpu:aarch64": [],
     }),
     local_defines = select({
@@ -421,7 +413,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }) + [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
     ] + select({
         "@platforms//cpu:x86_64": [
             "@clickhouse_datasketches_cpp//:datasketches_cpp",
@@ -725,7 +717,7 @@ cc_library(
         "//src:core_defines",
         "//src/Parsers:headers",
         "//base:pcg_random",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src:io_string_buffers",
         "//src:with_context",
         ":aggregate_api",

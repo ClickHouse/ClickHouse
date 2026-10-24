@@ -24,8 +24,8 @@ ch_cc_library(
         "-std=c++23",
     ],
     implementation_deps = [
-        "@clickhouse_boost//:boost_asio_headers",
         "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
     ],

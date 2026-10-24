@@ -47,14 +47,29 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-Bazel source `234b7aab0` built all 51 requested targets on each CPU. Both builds linked `//:clickhouse` and `//src:unit_tests_dbms`; neither ran the unit tests. The normalized ELF's SHA-256 and byte count matched the recorded native CMake reference on each CPU. Separate compile checks built the five WebUI objects after the generated gzip inputs were added to `//src:dbms_embedded`.
+Bazel source `d67a4cc67` built all 55 requested targets on Linux x86-64 and ARM64. Each build linked `//:clickhouse` and `//src:unit_tests_dbms`. The selected 26 GoogleTests and six SQL cases passed on each CPU; the full unit test suite was not run.
+
+The normalized ELF matched the recorded native CMake SHA-256 and byte count on both CPUs. These comparisons used build metadata without downloading either executable.
 
 | Native Bazel build | Normalized SHA-256 (matches CMake) | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/4e5a002f-86ec-4495-a0f5-8277177058dc) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/b4894636-e1ad-4524-8d05-c18b179abcc7) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/995630b4-f956-477e-84cb-fe0b65fa4d8a) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/41a64355-fe01-437b-b673-5408b139a0d7) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-To check a change against these references without downloading either ELF:
+The BuildBuddy workflows for [x86-64](https://app.buildbuddy.io/invocation/408c3f79-50e3-43ed-8b4b-4a8c908aa3e4) and [ARM64](https://app.buildbuddy.io/invocation/d733c8c0-7aa0-4711-b55b-c046eaa26eb2) reported failure after Bazel exited successfully. The result reader expected `boost_mysql_compiled` to use the executable’s configuration; Bazel retained its test configuration because the target declares `testonly = True`. The build events and test reports from the two Bazel invocations above confirm the results independently of that reader.
+
+The [previous comparison for `234b7aab0`](bazel/initial_migration/validation-history.md#234b7aab0) also passed the same 26 GoogleTests and six SQL cases on each CPU.
+
+To check a change against these references without downloading either ELF, run:
+
+```sh
+bash bazel/initial_migration/run_stripped_hash.sh
+CMAKE_REFERENCE_ARCH=aarch64 bash bazel/initial_migration/run_stripped_hash.sh
+```
+
+The script uses minimal remote downloads and compares the SHA-256 and byte
+count in Bazel's Build Event Protocol (BEP) with the native CMake reference.
+To keep the BEP for inspection, run the underlying commands directly:
 
 ```sh
 bazel build --config=cmake_match --build_event_json_file=/tmp/clickhouse-x86.bep \
@@ -73,8 +88,29 @@ checks the compiler and ELF architecture, then runs `llvm-strip --strip-all
 requires successful build and target completions in one configuration. It
 reports both remote SHA-256 values and byte counts and checks that the build
 events agree with the remote blob URIs. It compares the normalized SHA-256
-against the recorded CMake hash: exit 0 means match, 1 means mismatch, and
-2 means invalid or missing metadata. This command does not rebuild CMake.
+and byte count with the recorded CMake values: exit 0 means match, 1 means
+mismatch, and 2 means invalid or missing metadata. This command does not rebuild CMake.
+
+To compare the actual normalized files with `cmp` on x86-64, run on a Linux
+x86-64 coordinator with BuildBuddy access to the recorded CMake executable:
+
+```sh
+bash bazel/initial_migration/run_stripped_hash.sh --compare-originals
+```
+
+For ARM64, set `CMAKE_REFERENCE_ELF` to the saved CMake executable, either
+raw or gzip-compressed, on the machine running Bazel:
+
+```sh
+CMAKE_REFERENCE_ARCH=aarch64 CMAKE_REFERENCE_ELF=/path/to/clickhouse.cmake.gz \
+  bash bazel/initial_migration/run_stripped_hash.sh --compare-originals
+```
+
+Before invoking Bazel, the script verifies that the uncompressed file matches
+`clickhouse.cmake` from the [recorded native ARM64 CMake build](https://app.buildbuddy.io/invocation/12df76fc-3a68-46da-8af4-1e01c1dd4b4b):
+907,067,440 bytes with SHA-256 `cd204de2504bbe77c5e2b0babce701943133374e77490f36ad8b679d18b56646`.
+A Linux ARM64 executor checks the compiler, strips both executables, and runs
+`cmp`. The coordinator downloads only the comparison result, `status.json`.
 
 ## Rebuild a native CMake reference
 
@@ -95,21 +131,24 @@ build_bazel_reference_tools/llvm/bin/llvm-strip --strip-all --remove-section=.no
 sha256sum "$ref/clickhouse.normalized"
 ```
 
-For ARM64, prepare the source and tool archives on a Linux BuildBuddy runner.
-`//bazel:cmake_reference_aarch64` runs CMake on an ARM64 executor and checks
-that Clang, Rust, TableGen and ClickHouse are ARM64 executables. Download
-this target's outputs to inspect the CMake exit status and measured hashes:
+On a BuildBuddy hosted runner, set `CMAKE_REFERENCE_ARCHIVE_BINARY=1` to
+upload the raw x86-64 CMake executable after a successful build.
+
+For ARM64, run the same entry point on a Linux BuildBuddy runner:
 
 ```sh
-python3 -B bazel/initial_migration/prepare_native_reference.py
-bazel build --config=cmake_match_aarch64 --remote_download_outputs=toplevel //bazel:cmake_reference_aarch64
-ref=bazel-bin/bazel/cmake_reference_aarch64
-python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print(s); sys.exit(s["status"] or (s["phase"] != "built"))' "$ref/status.json" &&
-  cat "$ref/cmake-reference-summary.json"
+CMAKE_REFERENCE_ARCH=aarch64 bash bazel/initial_migration/run_cmake_reference.sh
 ```
 
-The ARM64 rule saves diagnostics even on failure: require `status: 0` and
-`phase: "built"` in `status.json`. When replacing a reference, use
+The runner prepares the source and tool archives. `//bazel:cmake_reference_aarch64`
+runs CMake and Ninja on a Linux ARM64 executor and checks that Clang, Rust,
+TableGen and ClickHouse are ARM64 executables. The runner downloads `status.json`
+and `cmake-reference-summary.json`. A failed CMake action returns a nonzero
+exit code and writes diagnostics to the BuildBuddy action log.
+
+When replacing the ARM64 reference, first run
+`bash bazel/initial_migration/run_native_reference.sh --migration-evidence`
+to download the generated files. Use
 [`refresh_cmake_metadata.py`](bazel/initial_migration/refresh_cmake_metadata.py)
 with `--arch` and `--build-dir` to update the Bazel metadata from the CMake
 output. Add `--full-reference` for ARM64; `--check` verifies without writing.
@@ -138,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-**DWYU is pending for `234b7aab0`.** The binary comparison above does not evaluate dependency declarations. See the [validation history](bazel/initial_migration/validation-history.md) for earlier audit results.
+The two `d67a4cc67` builds did not run DWYU. The normalized binary comparisons do not establish that the dependency declarations are clean. See the [validation history](bazel/initial_migration/validation-history.md) for earlier audit results.

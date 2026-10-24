@@ -346,6 +346,28 @@ def target_label(name, owners):
     return ('@' + REPOSITORIES[owner]['name'] + '//:' if owner else '//:') + name
 
 
+# These CMake archive members read copied files through source-relative #embed.
+EMBEDDED_SOURCES = {
+    'clickhouse_common_io': ('src/Common/FrequencyHolder.cpp',),
+    'dbms': (
+        'src/Server/IndexRequestHandler.cpp',
+        'src/Server/KeeperDashboardRequestHandler.cpp',
+        'src/Server/KeeperJemallocHandler.cpp',
+        'src/Server/WebTerminalRequestHandler.cpp',
+        'src/Server/WebUIRequestHandler.cpp',
+    ),
+}
+
+
+def embedded_indices(name, sources):
+    """Find the source positions within the original CMake compile group."""
+    wanted = EMBEDDED_SOURCES.get(name, ())
+    result = [i for i, source in enumerate(sources) if source in wanted] if wanted else []
+    if result and tuple(sources[i] for i in result) != wanted:
+        raise ValueError(f'{name}: embedded sources changed or no longer share a CMake compile group')
+    return result
+
+
 def native_source_owner(path, owner, language):
     """Keep generated, main-repo, and toolchain files with their native target."""
     if language not in GLOBAL_COMPILE_OPTIONS:
@@ -406,7 +428,7 @@ def relocate_compilation(owners, targets):
                     group['foreign_deps'].append(label)
                     variants[arch] = {
                         **target, 'kind': 'STATIC_LIBRARY', 'deps': [],
-                        'groups': [{**group, 'srcs': srcs, 'foreign_deps': [],
+                        'groups': [{**group, 'srcs': srcs, 'foreign_deps': [], 'embedded_inputs': {},
                                     'deps': compile_dependencies(group.get('deps', []), target['deps'])}],
                     }
     return foreign
@@ -523,7 +545,7 @@ class BuildFile:
                 for item in dep_group.get('hdrs', []):
                     if (isinstance(item, HeaderDirectory)
                             and repository(item.directory) == self.owners.get(target_name)
-                            # _boost_* substitutes boost_headers plus its own
+                            # _boost_* substitutes the non-OpenSSL headers plus its own
                             # libs/<component>; it never exports all of boost/.
                             and not (item.directory == 'contrib/boost' and target_name.startswith('_boost_'))
                             and not self.header_consumers.get(item.directory, set()) <= {target_name}):
@@ -555,10 +577,10 @@ class BuildFile:
                 field = ('srcs' if binary or self.header_consumers.get(directory, set()) <= {name} else 'hdrs')
                 if not custom and owner == 'contrib/boost':
                     if owner != self.owner:
-                        fields['deps'].append('@clickhouse_boost//:boost_headers')
+                        fields['deps'].append('@clickhouse_boost//:boost_headers_no_openssl')
                         continue
                     if directory == owner and name.startswith('_boost_'):
-                        fields['deps'].append('@clickhouse_boost//:boost_headers')
+                        fields['deps'].append('@clickhouse_boost//:boost_headers_no_openssl')
                         # The compiled Boost component keeps all private
                         # implementation files, including textual .cpp inputs.
                         directory += '/libs/' + name.removeprefix('_boost_')
@@ -763,6 +785,56 @@ class BuildFile:
             fields[key] = unique
         return fields
 
+    def embedded_rule(self, name, groups, attrs):
+        """Move only the six #embed compiles and their source-relative assets."""
+        child = dict(attrs)
+        fields = {key: {} for key in ('srcs', 'implementation_deps', 'additional_compiler_inputs')}
+        private_sources, private_inputs, private_deps = {}, {}, {}
+        def header(value):
+            patterns = value.patterns if isinstance(value, Glob) else [value]
+            return all(isinstance(p, str) and p.endswith(CC_HEADER_SUFFIXES) for p in patterns)
+        for arch, group in groups.items():
+            key = '@platforms//cpu:' + arch
+            def values(field):
+                value = attrs.get(field, [])
+                value = value.values[key] if isinstance(value, Select) else value
+                parts = value.values if isinstance(value, Concat) else [value]
+                return [v for part in parts for v in (part if isinstance(part, list) else [part])]
+            assets = group['embedded_inputs']
+            embedded = [self.label(v, source_file=True) for v in assets]
+            owned = {self.label(v) for items in assets.values() for v in items}
+            sources = {self.label(v, source_file=True) for v in group['srcs']}
+            if ([v for v in values('srcs') if isinstance(v, str) and v in embedded] != embedded or
+                    not owned <= {v for v in values('additional_compiler_inputs') if isinstance(v, str)}):
+                raise ValueError(f'{name} {arch}: #embed source or asset missing from the CMake compile action')
+            fields['srcs'][key] = self.label_inputs([v for v in values('srcs') if v not in embedded], source_files=True)
+            fields['additional_compiler_inputs'][key] = self.label_inputs(
+                [v for v in values('additional_compiler_inputs') if not isinstance(v, str) or v not in owned])
+            fields['implementation_deps'][key] = [*values('implementation_deps'), ':' + name + '_embedded']
+            # Only header files can move from srcs: an unrecognized .cpp would
+            # otherwise become another object in the child archive.
+            inherited = [v for v in values('srcs') if not isinstance(v, str) or v not in sources]
+            for v in inherited:
+                if not header(v) and (not isinstance(v, str) or Path(v).suffix):
+                    raise ValueError(f'{name} {arch}: unexpected CMake compile input in srcs: {v}')
+            declared = [v for v in values('hdrs') if v != '@clickhouse_sysroot//:linux_native_headers']
+            declared.extend(values('textual_hdrs'))
+            private_sources[key] = self.label_inputs(
+                embedded + [v for v in inherited + declared if header(v)], source_files=True)
+            # An extensionless generator or filegroup may supply a header.
+            # Retain its files without compiling unclassified outputs.
+            private_inputs[key] = self.label_inputs(
+                values('additional_compiler_inputs') + [v for v in inherited + declared if not header(v)])
+            private_deps[key] = list(dict.fromkeys(values('deps') + values('implementation_deps')))
+        if set(groups) != set(ARCHES):
+            raise ValueError(f'{name}: embedded compile group must be present on both native CPUs')
+        attrs.update({field: select(branches) for field, branches in fields.items()})
+        for field in ('hdrs', 'textual_hdrs', 'deps'):
+            child.pop(field, None)
+        child.update(srcs=select(private_sources), additional_compiler_inputs=select(private_inputs),
+                     implementation_deps=select(private_deps))
+        return child
+
     def rule(self, kind, name, attrs):
         self.names.add(name)
         copts = attrs.get('copts')
@@ -781,17 +853,6 @@ class BuildFile:
             arches = list(copts.groups)
             if set(arches) != set(ARCHES):
                 attrs['arches'] = arches
-            for field, provided in (
-                    ('hdrs', '@clickhouse_sysroot//:linux_native_headers'),
-                    ('additional_compiler_inputs', '@clickhouse_sysroot//:linux_compile_files')):
-                values = attrs.get(field, [])
-                if isinstance(values, Select):
-                    attrs[field] = select({
-                        cpu: [label for label in branch if label != provided]
-                        for cpu, branch in values.values.items()
-                    })
-                else:
-                    attrs[field] = [label for label in values if label != provided]
             expected_includes = [] if language == 'CXX' else [['-I', 'generated', 'libcxx/include/c++/v1']]
             includes = [group['includes'] for group in copts.groups.values()]
             if all(value == [] for value in includes) and expected_includes:
@@ -1045,11 +1106,21 @@ class BuildFile:
                                 end = start + len(CLICKHOUSE_WARNINGS)
                                 if value[start:end] == CLICKHOUSE_WARNINGS:
                                     value = CMakeWarnings(value[:start], value[end:])
+                    if (field == 'hdrs' and name == 'clickhouse_aggregate_functions' and arch == 'x86_64'
+                            and group.get('srcs') == ['//:src/AggregateFunctions/AggregateFunctionUniq.cpp']):
+                        # The -mno-bmi group consumes the package headers privately.
+                        # Retain foreign headers from CMake's broader include directories.
+                        package = 'src/AggregateFunctions/'
+                        value = [Glob(item.patterns, (*item.exclude, package + '**/*.h')) if isinstance(item, Glob) else item
+                                 for item in value if not isinstance(item, str) or not (
+                                     item.endswith('.h') and source_path(item).startswith(package))]
+                        implementation_deps.setdefault('@platforms//cpu:' + arch, []).append('//src/AggregateFunctions:headers')
                     if group.get('language') in {'C', 'CXX', 'ASM'}:
-                        if field == 'hdrs':
+                        if field == 'hdrs' and not native_library:
                             value = value + ['@clickhouse_sysroot//:linux_native_headers']
                         if field == 'additional_compiler_inputs':
-                            value = value + ['@clickhouse_sysroot//:linux_compile_files']
+                            if not native_library:
+                                value = value + ['@clickhouse_sysroot//:linux_compile_files']
                             if group.get('native_cxx_includes'):
                                 value += [
                                     '@clickhouse_llvm_project//:runtime_source_inputs',
@@ -1096,6 +1167,15 @@ class BuildFile:
                             raise ValueError(f'{name} must link both OpenSSL libraries for TLS: {value}')
                         if postgres:
                             supplied.append('@clickhouse_llvm_project//:libcxxabi_headers')
+                        elif nuraft:
+                            # asio_service.cxx uses both <asio/ip/address.hpp> and <boost/asio.hpp>.
+                            # Only the complete Boost library exports the extra 'boost' include directory.
+                            boost = [
+                                '@clickhouse_boost//:boost_headers',
+                                '@clickhouse_boost//:boost_headers_no_openssl',
+                            ]
+                            value = [dep for dep in value if dep not in boost]
+                            supplied.extend(boost)
                         if supplied:
                             implementation_deps['@platforms//cpu:' + arch] = supplied
                         value = [dep for dep in value if dep not in openssl]
@@ -1200,7 +1280,7 @@ class BuildFile:
                         ([':_fastops_sve'] if arch == 'aarch64' else [])
                         for arch, variant in variants.items()
                     })])
-            self.rule('cc_library', rule_name, {
+            rule_attrs = {
                 **attrs,
                 # These copts already contain the CMake compile group's flags.
                 # The LLVM toolchain otherwise forces frame pointers in Release.
@@ -1211,7 +1291,11 @@ class BuildFile:
                 }),
                 'target_compatible_with': rule_compatible,
                 'alwayslink': select({'@platforms//cpu:' + arch: v['alwayslink'] for arch, v in variants.items()}),
-            })
+            }
+            embedded = self.embedded_rule(name, groups, rule_attrs) if any(g.get('embedded_inputs') for g in groups.values()) else None
+            self.rule('cc_library', rule_name, rule_attrs)
+            if embedded is not None:
+                self.rule('cc_library', name + '_embedded', embedded)
             if collapse_single:
                 return
         if fastops:

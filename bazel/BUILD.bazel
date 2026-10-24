@@ -1092,6 +1092,8 @@ grpc_proto_sources(
 proto_library(
     name = "google_storage_v2_storage_proto",
     srcs = ["gen/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto"],
+    cc_deps = ["@clickhouse_abseil_cpp//:absl_cord"],
+    cc_implementation_deps = ["@clickhouse_abseil_cpp//:absl_strings"],
     features = [
         "-fortify_source",
         "-default_compile_flags",
@@ -1790,15 +1792,6 @@ embed_clickstack(
         ":use_cmake_metadata_aarch64": CMAKE_METADATA["aarch64"]["resource_gzip_mtimes"]["ClickStack"],
         "//conditions:default": -1,
     }),
-)
-
-filegroup(
-    name = "cctz_timezone_data",
-    srcs = [
-        out
-        for out in CODEGEN_RULES["generate_native_embedded_sources"]["outs"]
-        if out.startswith("gen/embedded/contrib/cctz/testdata/zoneinfo/")
-    ],
 )
 
 label_flag(

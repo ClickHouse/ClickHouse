@@ -20,6 +20,7 @@ ROUTING_SUFFIX = ".proto_dwyu_routing.json"
 PROTO_ASPECT = "--aspects=//bazel/rules:proto_dwyu.bzl%proto_dwyu"
 NATIVE_ACTIONS = ("ClickHouseNativeArchive", "ClickHouseNativeLink")
 ARCHIVE_ACTIONS = ("CppArchive", "CppLink")
+CC_DEPENDENCY_ATTRIBUTES = ("cc_deps", "cc_implementation_deps")
 
 
 def output_path(name):
@@ -494,7 +495,7 @@ def bind_preprocessor(key, cpp, observed, record, original, reports, outputs, or
     return {"public": pub, "private": priv, "preprocess_output": pp, "header_trace": trace}
 
 
-def read_header_uses(key, pair, record, headers, bep, execroot, allowed):
+def read_header_uses(key, pair, record, headers, bep, execroot, allowed, cc_allowed, original_inputs, cc_uses):
     entered, missing, used, evidence = set(), {"public": [], "private": []}, set(), []
     public = headers["public"]
     private = headers["private"]
@@ -523,10 +524,16 @@ def read_header_uses(key, pair, record, headers, bep, execroot, allowed):
                     missing[visibility].append({"from": item["file"], **include})
                 elif resolved in public or resolved in private:
                     continue
-                elif resolved in allowed:
-                    used.update(allowed[resolved])
                 else:
-                    missing[visibility].append({"from": item["file"], **include})
+                    cc = cc_allowed[visibility].get(resolved, set())
+                    if cc:
+                        if len(cc) != 1 or not item["entered"] or resolved not in original_inputs:
+                            raise ValueError("generated C++ header has no unique direct owner or original compiler input: " + resolved)
+                        cc_uses[next(iter(cc))][visibility].add(resolved)
+                    if resolved in allowed:
+                        used.update(allowed[resolved])
+                    elif not cc:
+                        missing[visibility].append({"from": item["file"], **include})
     return entered, missing, used, evidence
 
 
@@ -652,6 +659,55 @@ def owner_report(owner, metadata, rows):
     return key
 
 
+def configured_archive_owner(dep, eligible, rows, graph):
+    """Bind CcInfo and DefaultInfo from the aspect to the original configured archive."""
+    if graph is None or not dep["outputs"]:
+        raise ValueError("missing original target C++ archive")
+    files = {output_path(name) for name in dep["outputs"]}
+    primary = output_path(dep["configured_owner"])
+    if primary not in files:
+        raise ValueError("C++ owner identity does not come from its actual outputs")
+    candidates = {}
+    for key in eligible:
+        row = rows.get(key)
+        if not row or canonical(dep["label"]) != row["label"] or row["is_tool"]:
+            continue
+        produced = {out for action in graph.owners.get(key, []) for out in graph.files(action, "outputIds")}
+        archives = {out for out in files & produced if out.endswith((".a", ".lo", ".lib"))}
+        if primary in produced and archives:
+            candidates[key] = sorted(archives)
+    if len(candidates) != 1:
+        raise ValueError("target C++ archive has no unique configured owner: " + dep["label"])
+    return next(iter(candidates.items()))
+
+
+def cc_dependency_owners(row, record, rows, graph, native, coverage):
+    """Only direct public CcInfo headers qualify; a private dep cannot serve a generated header."""
+    allowed = {v: defaultdict(set) for v in ("public", "private")}
+    owners = {}
+    configured = {identity(dep["label"], dep["configurationChecksum"])
+                  for dep in row["configured_inputs"] if dep.get("configurationChecksum")}
+    for attr in CC_DEPENDENCY_ATTRIBUTES:
+        deps = record.get(attr, [])
+        labels = {canonical(dep["label"]) for dep in deps}
+        if len(labels) != len(deps) or labels != declared_dependencies(row, attr):
+            raise ValueError("generated C++ " + attr + " differs from original configured rule")
+        for dep in deps:
+            owner, archives = configured_archive_owner(dep, configured & coverage["reachable"], rows, graph)
+            if (owner in owners or not isinstance(dep["direct_headers"], list) or not dep["direct_headers"]
+                    or not all(isinstance(header, str) and header for header in dep["direct_headers"])
+                    or any(native.failed(owner, archive) for archive in archives)):
+                raise ValueError("invalid or duplicate generated C++ dependency: " + owner)
+            # The aspect reports direct_public_headers and direct_textual_headers, never cc.headers.
+            for header in dep["direct_headers"]:
+                allowed["private"][header].add(owner)
+                if attr == "cc_deps":
+                    allowed["public"][header].add(owner)
+            owners[owner] = {"attribute": attr, "configured_owner": dep["configured_owner"],
+                             "declared_archives": archives}
+    return allowed, owners
+
+
 def dependency_owners(row, record, metadata, rows, runtime_graph, final_links, native, coverage):
     allowed = defaultdict(set)
     deps = record["direct_proto_deps"]
@@ -673,23 +729,7 @@ def dependency_owners(row, record, metadata, rows, runtime_graph, final_links, n
             or not isinstance(runtime.get("headers"), list)
             or not set(runtime["direct_headers"]) <= set(runtime["headers"]) or runtime_graph is None):
         raise ValueError("missing target protobuf runtime")
-    runtime_files = {output_path(name) for name in runtime["outputs"]}
-    output_path(runtime["configured_owner"])
-    if runtime["configured_owner"] not in runtime_files:
-        raise ValueError("runtime identity does not come from its actual outputs")
-    candidates = {}
-    for key, runtime_row in rows.items():
-        if (canonical(runtime["label"]) != runtime_row["label"] or runtime_row["is_tool"]
-                or key not in coverage["reachable"]):
-            continue
-        actions = runtime_graph.owners.get(key, [])
-        produced = {out for action in actions for out in runtime_graph.files(action, "outputIds")}
-        archives = {out for out in runtime_files & produced if out.endswith((".a", ".lo", ".lib"))}
-        if runtime["configured_owner"] in produced and archives:
-            candidates[key] = sorted(archives)
-    if len(candidates) != 1:
-        raise ValueError("target protobuf runtime archive has no unique non-tool configured owner")
-    owner, archives = next(iter(candidates.items()))
+    owner, archives = configured_archive_owner(runtime, coverage["reachable"], rows, runtime_graph)
     for header in runtime["direct_headers"]:
         allowed[header].add(owner)
     # The selected toolchain's CcInfo and its matching configured archive
@@ -807,20 +847,20 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
             metadata[name] = (key, record, evidence)
         except (KeyError, TypeError, ValueError, OSError) as exc:
             result["unqualified"][key] = str(exc)
-    runtime_labels = sorted({
+    archive_labels = sorted({
         record["runtime"]["label"] for _, record, _ in metadata.values()
         if isinstance(record.get("runtime"), dict) and isinstance(record["runtime"].get("label"), str)
-    })
-    runtime_graph = None
-    if runtime_labels:
-        # Restrict to selected runtime labels already in the original closure;
-        # never introduce the exec protoc or a new default configuration.
+    } | {label for key in expected if rows[key]["rule_class"] == "proto_library"
+         for attr in CC_DEPENDENCY_ATTRIBUTES for label in declared_dependencies(rows[key], attr)})
+    archive_graph = None
+    if archive_labels:
+        # Intersect selected runtimes and declared C++ dependencies with the original closure.
         runtime_path = audit.query(
             "proto-original-runtime-archives", "aquery",
-            "mnemonic('^(CppArchive|CppLink)$', (" + root_scope + " intersect " + query_labels(runtime_labels) + "))",
+            "mnemonic('^(CppArchive|CppLink)$', (" + root_scope + " intersect " + query_labels(archive_labels) + "))",
             ("--include_artifacts", "--include_aspects"),
         )
-        runtime_graph = RuntimeActionGraph(runtime_path, ARCHIVE_ACTIONS, rows, None)
+        archive_graph = RuntimeActionGraph(runtime_path, ARCHIVE_ACTIONS, rows, None)
         result["queries"]["runtime_archives"] = sha_file(runtime_path)
     seen = set()
     for name, (key, record, evidence) in metadata.items():
@@ -834,6 +874,9 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
         try:
             if record.get("problems") or record.get("status") == "unsupported":
                 raise ValueError("protobuf observer did not support owner: " + repr(record.get("problems")))
+            if record["status"] != "compiled" and any(
+                    record.get(attr) or declared_dependencies(row, attr) for attr in CC_DEPENDENCY_ATTRIBUTES):
+                raise ValueError("noncompiling proto declares generated C++ dependencies")
             if row["rule_class"] == "cc_proto_library":
                 if (key not in selected or record["status"] != "forwarder" or record["compile_actions"]
                         or len(record["direct_proto_deps"]) != 1):
@@ -875,7 +918,9 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
             headers, header_proof = pp_bep.read_report(execroot, key, record["owned_headers"])
             validate_owned_headers(record, headers)
             allowed, runtime_owner, runtime_native = dependency_owners(
-                row, record, metadata, rows, runtime_graph, links, native, coverage)
+                row, record, metadata, rows, archive_graph, links, native, coverage)
+            cc_allowed, cc_owners = cc_dependency_owners(row, record, rows, archive_graph, native, coverage)
+            cc_uses = {owner: {"public": set(), "private": set()} for owner in cc_owners}
             entered, uses, findings, unit_proofs = set(), set(), {"public": [], "private": []}, []
             proto_links = [a for a in original.owners.get(key, []) if a["mnemonic"] in ("CppLink", "CppArchive")]
             inputs = compile_inputs(key, original, reports, cpp)
@@ -888,7 +933,9 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                 pair = bind_preprocessor(key, action, recorded[obj], record, original, reports, produced, inputs[obj])
                 if pp_bep.failed(key, pair["preprocess_output"]) or pp_bep.failed(key, pair["header_trace"]):
                     raise ValueError("actual proto compiler preprocessing failed")
-                files, missing, used, proof = read_header_uses(key, pair, record, headers, pp_bep, execroot, allowed)
+                files, missing, used, proof = read_header_uses(
+                    key, pair, record, headers, pp_bep, execroot, allowed, cc_allowed,
+                    original.inputs(action) if cc_owners else (), cc_uses)
                 entered.update(files)
                 uses.update(used)
                 for visibility in findings:
@@ -899,6 +946,15 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                 dep for dep in record["direct_proto_deps"]
                 if owner_report(dep, metadata, rows) not in uses and canonical(dep["label"]) not in schema["retained"]
             ]
+            cc_findings = {}
+            for owner, observed in cc_uses.items():
+                cc_owners[owner]["resolved_includes"] = {v: sorted(files) for v, files in observed.items()}
+                if not any(observed.values()):
+                    cc_findings[owner] = "no direct header use proved"
+                elif cc_owners[owner]["attribute"] == "cc_deps" and not observed["public"]:
+                    cc_findings[owner] = "only generated source uses the direct C++ dependency"
+            if cc_findings and not any(findings.values()):
+                raise ValueError("unproved generated C++ dependency declaration: " + repr(cc_findings))
             clean = not unentered and not any(findings.values()) and not unused_without_schema
             result["compiled_owners"][key] = {
                 "status": "clean" if clean else "findings", "cpp_qualified": clean,
@@ -909,6 +965,8 @@ def audit_proto(audit, roots, rows, selected, native_bep, execroot):
                 "evidence": evidence, "headers": header_proof,
                 "routing_evidence": routing_evidence[name],
             }
+            if cc_owners:
+                result["compiled_owners"][key].update(cc_dependencies=cc_owners, cc_dependency_findings=cc_findings)
         except (KeyError, TypeError, ValueError, OSError, UnicodeError) as exc:
             result["unqualified"][key] = str(exc)
             # Only a unique, supported proto_library FileWrite already matched

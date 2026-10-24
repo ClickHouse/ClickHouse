@@ -1,5 +1,6 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//bazel/rules:dwyu.bzl", "dwyu_cc_consumer_audit")
+load(":boost_sources.bzl", "BOOST_MYSQL_COMPILER_SOURCES")
 
 package(
     default_testonly = True,
@@ -274,4 +275,18 @@ dwyu_cc_consumer_audit(
     ],
     consumers = ["//src:dbms__compile_0"],
     owner = "@clickhouse_msgpack_c//:msgpack_c",
+)
+
+dwyu_cc_consumer_audit(
+    name = "boost_separate_asio",
+    compiler_sources = BOOST_MYSQL_COMPILER_SOURCES,
+    consumers = ["@clickhouse_boost//:boost_mysql_compiled"],
+    owner = "@clickhouse_boost//:boost_headers_no_openssl",
+)
+
+dwyu_cc_consumer_audit(
+    name = "boost_separate_openssl",
+    compiler_sources = BOOST_MYSQL_COMPILER_SOURCES,
+    consumers = ["@clickhouse_boost//:boost_mysql_compiled"],
+    owner = "@clickhouse_boost//:boost_headers",
 )

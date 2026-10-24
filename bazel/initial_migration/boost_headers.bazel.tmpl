@@ -1,0 +1,207 @@
+_ASIO_COMPILER_OPTIONS = [
+    "boost/asio/detail/pop_options.hpp",
+    "boost/asio/detail/push_options.hpp",
+]
+
+# push_options.hpp and pop_options.hpp bracket each Asio reader's compiler
+# pragmas. Their owner lets the NuRaft consumer audit check the pair together.
+cc_library(
+    name = "boost_asio_options",
+    textual_hdrs = _ASIO_COMPILER_OPTIONS,
+)
+
+_BOOST_CONFIG_HEADERS = [
+    "boost/config.hpp",
+    "boost/config/compiler/clang.hpp",
+    "boost/config/compiler/clang_version.hpp",
+    "boost/config/detail/cxx_composite.hpp",
+    "boost/config/detail/posix_features.hpp",
+    "boost/config/detail/select_compiler_config.hpp",
+    "boost/config/detail/select_platform_config.hpp",
+    "boost/config/detail/select_stdlib_config.hpp",
+    "boost/config/helper_macros.hpp",
+    "boost/config/platform/linux.hpp",
+    "boost/config/stdlib/libcpp.hpp",
+    "boost/config/user.hpp",
+]
+
+_BOOST_CONFIG_PRIVATE_HEADERS = [
+    "boost/config/detail/suffix.hpp",
+]
+
+_BOOST_CONFIG_ABI = [
+    "boost/config/abi_prefix.hpp",
+    "boost/config/abi_suffix.hpp",
+]
+
+# detail/suffix.hpp is included only by config.hpp. The ABI headers are a
+# public pair; the Boost.Iostreams consumer audit verifies both in context.
+cc_library(
+    name = "boost_config",
+    srcs = _BOOST_CONFIG_PRIVATE_HEADERS,
+    hdrs = _BOOST_CONFIG_HEADERS,
+    features = ["external_include_paths"],
+    includes = ["."],
+    textual_hdrs = _BOOST_CONFIG_ABI,
+)
+
+cc_library(
+    name = "pfr",
+    srcs = glob(["boost/pfr/detail/*.hpp"]),
+    hdrs = ["boost/pfr.hpp"] + glob(["boost/pfr/*.hpp"]),
+    features = ["external_include_paths"],
+    includes = ["."],
+)
+
+# BOOST_PP_ITERATE and BOOST_PP_ASSIGN_SLOT repeatedly include these files
+# with BOOST_PP_FILENAME_n, BOOST_PP_VALUE or BOOST_PP_LOCAL_MACRO defined.
+_BOOST_PP_TEXTUAL = glob([
+    "boost/preprocessor/iteration/detail/**/*.hpp",
+    "boost/preprocessor/slot/detail/slot*.hpp",
+]) + [
+    "boost/preprocessor/slot/detail/counter.hpp",
+    "boost/preprocessor/slot/detail/shared.hpp",
+]
+
+# Boost includes these implementation headers in exactly one translation unit
+# when BOOST_ASIO_SEPARATE_COMPILATION or BOOST_MYSQL_SEPARATE_COMPILATION is set.
+_ASIO_SEPARATE_COMPILATION = ["boost/asio/impl/src.hpp"]
+
+_OPENSSL_SEPARATE_COMPILATION = [
+    "boost/asio/ssl/impl/src.hpp",
+    "boost/mysql/src.hpp",
+]
+
+# Boost.MySQL and Boost.Redis require OpenSSL; Asio, Beast, Cobalt and MQTT5
+# also publish TLS APIs. Their other APIs stay available without OpenSSL.
+_OPENSSL_HEADERS = glob(
+    [
+        "boost/asio/ssl/**/*.hpp",
+        "boost/beast/ssl/**/*.hpp",
+        "boost/mysql/**/*.hpp",
+        "boost/redis/**/*.hpp",
+    ],
+    exclude = _OPENSSL_SEPARATE_COMPILATION,
+) + [
+    "boost/asio/ssl.hpp",
+    "boost/beast/ssl.hpp",
+    "boost/beast/websocket/ssl.hpp",
+    "boost/cobalt/io/ssl.hpp",
+    "boost/mqtt5/ssl.hpp",
+    "boost/mqtt5/websocket_ssl.hpp",
+    "boost/mysql.hpp",
+    "boost/redis.hpp",
+]
+
+# These definitions are included by the public headers and upstream's
+# separate-compilation entry points.
+_OPENSSL_IMPLEMENTATIONS = glob([
+    "boost/asio/ssl/**/*.ipp",
+    "boost/mysql/**/*.ipp",
+    "boost/redis/**/*.ipp",
+]) + ["boost/beast/websocket/impl/ssl.hpp"]
+
+_ASIO_IMPLEMENTATIONS = glob(
+    ["boost/asio/**/*.ipp"],
+    exclude = ["boost/asio/ssl/**/*.ipp"],
+)
+
+# config.hpp and the nested WinAPI helpers are portable. The remaining top-level
+# WinAPI headers include basic_types.hpp, which rejects Linux.
+_WINAPI_HEADERS = glob(
+    [
+        "boost/detail/winapi/*.hpp",
+        "boost/winapi/*.hpp",
+    ],
+    exclude = [
+        "boost/detail/winapi/config.hpp",
+        "boost/winapi/config.hpp",
+    ],
+)
+
+cc_library(
+    name = "boost_headers_no_openssl",
+    srcs = _ASIO_IMPLEMENTATIONS,
+    hdrs = glob(
+        [
+            "boost/**/*.h",
+            "boost/**/*.hpp",
+            "boost/**/*.ipp",
+        ],
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_PP_TEXTUAL + _ASIO_IMPLEMENTATIONS + _ASIO_SEPARATE_COMPILATION + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + [
+            "boost/compute.hpp",
+            "boost/compute/**",
+            # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
+            "boost/python.hpp",
+            "boost/python/**",
+            "boost/parameter/python*",
+            "boost/mpi.hpp",
+            "boost/mpi/**",
+            "boost/graph/accounting.hpp",
+            "boost/graph/distributed/**",
+            "boost/graph/parallel/**",
+            "boost/graph/use_mpi.hpp",
+            "boost/property_map/parallel/**",
+            "boost/gil/extension/io/jpeg*",
+            "boost/gil/extension/io/jpeg/**",
+            "boost/gil/extension/io/png*",
+            "boost/gil/extension/io/png/**",
+            "boost/gil/extension/io/tiff*",
+            "boost/gil/extension/io/tiff/**",
+            "boost/gil/extension/io/raw*",
+            "boost/gil/extension/io/raw/**",
+            "boost/numeric/odeint/external/**",
+            "boost/numeric/ublas/opencl.hpp",
+            "boost/numeric/ublas/opencl/**",
+            "boost/program_options/detail/config_file.hpp",
+            "boost/pfr.hpp",
+            "boost/pfr/**",
+        ],
+    ) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": _WINAPI_HEADERS,
+    }),
+    features = ["external_include_paths"],
+    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_PP_TEXTUAL + _ASIO_SEPARATE_COMPILATION,
+    deps = [
+        ":boost_asio_options",
+        ":boost_config",
+    ],
+)
+
+cc_library(
+    name = "boost_headers",
+    srcs = _OPENSSL_IMPLEMENTATIONS,
+    hdrs = _OPENSSL_HEADERS,
+    includes = ["boost"],
+    textual_hdrs = _OPENSSL_SEPARATE_COMPILATION,
+    deps = [
+        ":boost_asio_options",
+        ":boost_config",
+        ":boost_headers_no_openssl",
+        ":pfr",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
+    ],
+)
+
+# Match boost_mysql_compiled in libs/mysql/test/CMakeLists.txt.
+cc_library(
+    name = "boost_mysql_compiled",
+    testonly = True,
+    srcs = [
+        "libs/mysql/test/common/src/boost_asio.cpp",
+        "libs/mysql/test/common/src/boost_mysql.cpp",
+    ],
+    implementation_deps = [
+        ":boost_headers",
+        ":boost_headers_no_openssl",
+    ],
+    linkstatic = True,
+    local_defines = [
+        "BOOST_ASIO_SEPARATE_COMPILATION",
+        "BOOST_MYSQL_SEPARATE_COMPILATION",
+    ],
+    tags = ["manual"],
+    visibility = ["@clickhouse//bazel/initial_migration/dwyu_regressions/consumer:__pkg__"],
+)

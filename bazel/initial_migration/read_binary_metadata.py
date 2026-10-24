@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the normalized ClickHouse BEP digest without fetching either ELF.
+"""Compare the normalized ClickHouse BEP digest and size without fetching either ELF.
 
 Run from the repository root:
   bazel build --config=cmake_match --build_event_json_file=/tmp/ch.bep \
@@ -19,8 +19,8 @@ from audit_full_dwyu import bep_file_matches, canonical
 
 
 EXPECTED = {
-    "x86_64": "ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585",
-    "aarch64": "a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03",
+    "x86_64": {"sha256": "ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585", "bytes": 710693736},
+    "aarch64": {"sha256": "a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03", "bytes": 637316696},
 }
 TARGETS = {
     "//:clickhouse": "clickhouse",
@@ -97,9 +97,10 @@ def read_metadata(bep, arch):
     if len(configurations) != 1:
         raise ValueError("ClickHouse and the normalized ELF have different Bazel configurations")
     result["configuration"] = configurations.pop()
-    normalized = result["files"]["//bazel/initial_migration:clickhouse.normalized"]["sha256"]
-    result["recorded_cmake_normalized_sha256"] = EXPECTED[arch]
-    result["matches_cmake"] = normalized == EXPECTED[arch]
+    reference = EXPECTED[arch]
+    result["recorded_cmake_normalized_sha256"] = reference["sha256"]
+    result["recorded_cmake_normalized_bytes"] = reference["bytes"]
+    result["matches_cmake"] = result["files"]["//bazel/initial_migration:clickhouse.normalized"] == reference
     return result
 
 

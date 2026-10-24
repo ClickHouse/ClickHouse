@@ -66,7 +66,7 @@ ch_cc_library(
         "@clickhouse_cctz//:_cctz",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_magic_enum//:magic_enum",
         "@clickhouse_miniselect//:miniselect",

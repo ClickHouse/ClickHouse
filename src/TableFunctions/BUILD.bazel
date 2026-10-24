@@ -123,7 +123,7 @@ ch_cc_library(
         "//src/Functions:headers",
         "//src/Parsers:headers",
         "//src/Storages/System:clickhouse_storages_system__compile_1",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_fmtlib//:_fmt",
         "//src:dbms",
         "//src/Common:exception_api",

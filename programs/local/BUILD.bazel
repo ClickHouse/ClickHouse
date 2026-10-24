@@ -20,7 +20,7 @@ ch_cc_library(
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/Util:_poco_util",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Common/ZooKeeper:headers",

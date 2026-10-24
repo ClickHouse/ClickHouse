@@ -10,7 +10,7 @@ ch_cc_library(
     implementation_deps = [
         "//src:clickhouse_common_io__compile_0",
         "//src:dbms__compile_0",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common",
         "//src:dbms",
         "//src/Common:exception_api",

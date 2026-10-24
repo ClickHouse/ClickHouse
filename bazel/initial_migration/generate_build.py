@@ -25,9 +25,9 @@ from initial_migration.format_build_files import format_build_files
 from initial_migration.prune_inherited_headers import prune, prune_published
 from initial_migration.prune_unused_exports import prune_native_exports, prune_unused_exports
 from initial_migration.build_file import (
-    BuildFile, CMakeCxxCompilerVersion, Concat, Glob,
+    BuildFile, CMakeCxxCompilerVersion, Glob,
     SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_EXCLUDES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
-    dependency_inputs, relocate_compilation,
+    EMBEDDED_SOURCES, dependency_inputs, embedded_indices, relocate_compilation,
     relocate_tools, select, starlark, target_label, target_owner,
 )
 from initial_migration.repository_inputs import (
@@ -47,20 +47,43 @@ LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
 # Headers read by ClickHouse source files in compiler dependency reports.
 # Public headers use deps so consumers receive the same CcInfo.
 FIRST_PARTY_HEADER_DEPS = {
+    ("src", "unit_tests_dbms", "deps"): [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src/Dictionaries:clickhouse_dictionaries__compile_0",
+        "@clickhouse_abseil_cpp//:absl_synchronization", "@clickhouse_arrow//:_arrow__compile_0",
+        "@clickhouse_aws//:_aws__compile_0", "@lz4//:lz4",
+    ],
+    ("programs/benchmark", "clickhouse-benchmark-lib", "implementation_deps"): ["//src/Parsers:parser_api"],
     ("programs/client", "clickhouse-client-lib", "implementation_deps"): ["//src/Parsers:headers"],
+    ("programs/format", "clickhouse-format-lib", "implementation_deps"): ["//src/Parsers:parser_api"],
     ("src/Compression", "clickhouse_compression", "implementation_deps"): ["//src/Parsers:headers"],
     ("src/Dictionaries", "headers", "deps"): [
-        "//bazel:clickhouse_config_headers", "@clickhouse_boost//:boost_headers", "@clickhouse_sparsehash_c11//:sparsehash_c11",
+        "//bazel:clickhouse_config_headers", "@clickhouse_boost//:boost_headers_no_openssl", "@clickhouse_sparsehash_c11//:sparsehash_c11",
     ],
     ("src/Functions", "clickhouse_functions_obj__compile_0", "implementation_deps"): [
         ":headers", "//src/Access/Common:headers", "//src/Functions/GatherUtils:headers",
     ],
     ("src/Functions/JSONPath", "clickhouse_functions_jsonpath", "deps"): ["//src/Parsers:parser_api"],
+    ("src/Functions/TimeSeries", "clickhouse_functions_time_series", "implementation_deps"): ["//src:headers"],
     ("src/Functions/URL", "clickhouse_functions_url__compile_0", "implementation_deps"): ["//src/Functions:headers"],
     ("src/Loggers", "loggers", "deps"): ["//src/Common:parser_support_api"],
     ("src/Storages/System", "clickhouse_storages_system__compile_1", "implementation_deps"): ["//src/Access/Common:headers"],
     ("src/Storages/System", "headers", "deps"): ["//bazel:clickhouse_config_headers"],
 }
+
+
+def declare_boost_header_libraries(build):
+    """CMake describes the compiled Boost libraries. The template declares the installed headers."""
+    from initial_migration.compact_build import Source
+
+    contents = Path(__file__).with_name("boost_headers.bazel.tmpl").read_text()
+    for _, call in Source(contents).rules():
+        name = next(kw.value.value for kw in call.keywords if kw.arg == "name")
+        if name in build.names:
+            raise ValueError(f"Duplicate Boost header library {name}")
+        build.names.add(name)
+    build.loads.setdefault("@rules_cc//cc:cc_library.bzl", set()).add("cc_library")
+    build.rules.append(contents)
 
 
 def declare_common_header_owners(root, rules):
@@ -123,6 +146,7 @@ def declare_common_header_owners(root, rules):
 
 
 def declare_first_party_header_deps(root):
+    from initial_migration.factor_build_selections import canonical_list
     from initial_migration.prune_inherited_headers import ARCHES, Document
 
     def rules(doc):
@@ -130,10 +154,9 @@ def declare_first_party_header_deps(root):
                 for kw in call.keywords if kw.arg == "name" and isinstance((name := kw.value), ast.Constant)}
 
     def public_owner(label):
-        # The initial CMake migration creates :headers before these interfaces are split out.
+        # The CMake migration creates //src/Common:headers before parser_support_api is split out.
         headers = {
             "//src/Common:parser_support_api": ["DateLUT.h"],
-            "//src/Parsers:parser_api": ["IAST.h", "IParserBase.h", "Lexer.h", "CommonParsers.h"],
         }.get(label)
         if headers is None:
             return label
@@ -158,6 +181,19 @@ def declare_first_party_header_deps(root):
     for (package, target, field), deps in (*FIRST_PARTY_HEADER_DEPS.items(), *declare_common_header_owners(root, rules).items()):
         path = root / package / "BUILD.bazel"
         doc = Document(path, package=package)
+        if (package, target) == ("src/Functions/TimeSeries", "clickhouse_functions_time_series"):
+            # The executable and unit tests link the registration objects; TimeSeries publishes no headers.
+            fields = {kw.arg: kw for kw in rules(doc)[target].keywords}
+            if {"hdrs", "textual_hdrs"} & fields.keys() or ast.literal_eval(fields["alwayslink"].value) is not True:
+                raise ValueError(f"//{package}:{target} is no longer a headerless registration library")
+            if public := fields.get("deps"):
+                source, value, edits = doc.source, public.value, []
+                if private := fields.get("implementation_deps"):
+                    value = canonical_list(ast.BinOp(value, ast.Add(), private.value))
+                    edits.append((source.starts[private.lineno - 1], source.starts[private.end_lineno], ""))
+                edits.append((*source.span(public), "implementation_deps = " + ast.unparse(value)))
+                path.write_text(source.rewrite(edits))
+                doc = Document(path, package=package)
         attrs = {kw.arg: kw.value for kw in rules(doc)[target].keywords}
         node = attrs.get(field)
         other = attrs.get("deps" if field == "implementation_deps" else "implementation_deps")
@@ -188,6 +224,58 @@ def declare_first_party_header_deps(root):
             end = doc.source.span(attrs["name"])[1]
             edit = (end, end, f",\n    {field} = " + json.dumps(missing))
         path.write_text(doc.source.rewrite([edit]))
+
+
+def declare_compiled_parser_headers(path):
+    """Publish these parser declarations on the library that compiles their implementations."""
+    from bisect import insort
+    from initial_migration.prune_inherited_headers import ARCHES, Document
+
+    headers = [
+        "Access/ASTExecuteAsQuery.h", "Access/ParserCreateUserQuery.h", "ParserAttachAccessEntity.h",
+        "ParserCreateFunctionQuery.h", "ParserCreateResourceQuery.h", "ParserCreateWorkloadQuery.h",
+        "ParserDropResourceQuery.h", "ParserDropWorkloadQuery.h", "ParserOptimizeQuery.h",
+        "parseIdentifierOrStringLiteral.h",
+    ]
+    def attrs(doc, name):
+        return next({kw.arg: kw.value for kw in call.keywords} for _, call in doc.source.rules()
+                    if any(kw.arg == "name" and kw.value.value == name for kw in call.keywords))
+
+    doc = Document(path, package="src/Parsers", files=headers)
+    compiler = attrs(doc, "clickhouse_parsers")
+    published = compiler.get("hdrs")
+    missing = []
+    for header in headers:
+        present = [doc.reference(":" + header) in doc.labels(published, arch) for arch in ARCHES]
+        if any(present) != all(present):
+            raise ValueError(f"clickhouse_parsers.hdrs differs between CPUs for {header}")
+        if not any(present):
+            missing.append(header)
+    if missing:
+        if isinstance(published, ast.Name) and isinstance(items := doc.constants.get(published.id), ast.List):
+            values = ast.literal_eval(items)
+            for header in missing:
+                insort(values, header)
+            edit = (*doc.source.span(items), json.dumps(values))
+        elif published is not None:
+            end = doc.source.span(published)[1]
+            edit = (end, end, " + " + json.dumps(missing))
+        else:
+            end = doc.source.span(compiler["name"])[1]
+            edit = (end, end, ",\n    hdrs = " + json.dumps(missing))
+        doc = Document(path, text=doc.source.rewrite([edit]), package="src/Parsers", files=headers)
+
+    shared = attrs(doc, "headers")["hdrs"]
+    if not isinstance(shared, ast.Call) or getattr(shared.func, "id", None) != "glob":
+        raise ValueError("expected src/Parsers:headers.hdrs to be a glob")
+    excluded = next((kw.value for kw in shared.keywords if kw.arg == "exclude"), None)
+    missing = [header for header in headers if not all(header in doc.values(excluded, arch) for arch in ARCHES)]
+    if missing:
+        end = doc.source.span((shared.keywords or shared.args)[-1] if excluded is None else excluded)[1]
+        insertion = ", exclude = " if excluded is None else " + "
+        doc = Document(path, text=doc.source.rewrite([(end, end, insertion + json.dumps(missing))]),
+                       package="src/Parsers", files=headers)
+    path.write_text(doc.source.bytes.decode("utf-8"))
 
 
 def declare_unit_test_private_hdrs(path):
@@ -498,13 +586,6 @@ class Graph:
         source-relative assets together, preserving their bytes and layout.
         Root-relative assets also need this layout when fetched externally.
         """
-        if source.endswith('/contrib/cctz-cmake/TimeZones.generated.cpp'):
-            assets = self.timezone_sources()
-            prefix = 'bazel/gen/' + self.arch + '/embedded/'
-            self.embed_copies.update(assets)
-            additional_inputs.append('//bazel:cctz_timezone_data')
-            flags.append('--embed-dir=$(GENDIR)/' + prefix.rstrip('/'))
-            return source
         path = ROOT / source
         if not path.is_file():
             return source
@@ -528,11 +609,6 @@ class Graph:
             return prefix + source
         return source
 
-    def timezone_sources(self):
-        return sorted(p.relative_to(ROOT).as_posix()
-                      for p in (ROOT / 'contrib/cctz/testdata/zoneinfo').rglob('*')
-                      if p.is_file() and not p.is_symlink() and p.suffix != '.tab' and p.name != 'localtime')
-
     def declare_configuration(self, builds, owners):
         for relative in sorted(self.configured):
             if not relative.startswith('contrib/'):
@@ -544,9 +620,10 @@ class Graph:
             output = 'config/' + self.arch + '/' + relative
             name = 'configure_' + self.arch + '_' + hashlib.sha256(relative.encode()).hexdigest()[:16]
             if relative == 'contrib/cctz-cmake/TimeZones.generated.cpp':
-                sources = [build.label(source_label(path)) for path in self.timezone_sources()]
                 build.rule('genrule', name, {
-                    'srcs': sources,
+                    'srcs': Glob(['testdata/zoneinfo/**'], (
+                        'testdata/zoneinfo/**/*.tab', 'testdata/zoneinfo/**/localtime',
+                    )),
                     'outs': [output],
                     'tools': ['@clickhouse//bazel/rules:generate_timezones'],
                     'cmd': '$(execpath @clickhouse//bazel/rules:generate_timezones) --output=$@ $(SRCS)',
@@ -694,9 +771,19 @@ class Graph:
                         flags += [flag, directory]
                 else:
                     flags += [flag, self.path(path)]
-            sources = [self.embedded_source(s, additional_inputs, flags) for s in sources]
+            selected = set(embedded_indices(name, sources))
+            embedded_inputs = {}
+            for i, source in enumerate(sources):
+                inputs = [] if i in selected else additional_inputs
+                sources[i] = self.embedded_source(source, inputs, flags)
+                if i in selected:
+                    if sources[i] == source or not inputs or cg['language'] != 'CXX':
+                        raise ValueError(f'{name}: missing C++ #embed copy or assets for {source}')
+                    embedded_inputs[source_label(sources[i])] = inputs
+                    additional_inputs.extend(inputs)
             groups.append({
                 'srcs': [source_label(s) for s in sources],
+                'embedded_inputs': embedded_inputs,
                 'copts': flags,
                 'cmake_source_prefix_map': cmake_has_source_prefix_map(cg.get('compileCommandFragments', []), ROOT),
                 # cc_library tokenizes defines with Bourne-shell rules. Preserve
@@ -709,6 +796,8 @@ class Graph:
                 'deps': sorted(external_deps),
                 'language': cg['language'],
             })
+        if name in EMBEDDED_SOURCES and sum(bool(g['embedded_inputs']) for g in groups) != 1:
+            raise ValueError(f'{name}: expected one CMake C++ group with #embed sources')
         dependencies = {self.id_names[d['id']] for d in target.get('dependencies', [])}
         object_refs = set()
         generated_objects = []
@@ -985,20 +1074,7 @@ def main():
     # the original group's ordered objects from its own pinned repository.
     lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))
     lz4.target('_lz4', native_lz4)
-    asio_implementations = ['boost/asio/**/*.ipp']
-    winapi_dirs = ['boost/detail/winapi', 'boost/winapi']
-    winapi_headers = [directory + '/*.hpp' for directory in winapi_dirs]
-    winapi_config = [directory + '/config.hpp' for directory in winapi_dirs]
-    boost_patterns = ['boost/**/*' + suffix for suffix in CC_HEADER_SUFFIXES]
-    builds['contrib/boost'].rule('cc_library', 'boost_headers', {
-        'srcs': Glob(asio_implementations),
-        'hdrs': Concat([
-            Glob(boost_patterns, asio_implementations + winapi_headers),
-            winapi_config,
-            select({'@platforms//os:linux': [], '//conditions:default': Glob(winapi_headers, winapi_config)}),
-        ]),
-        'features': ['external_include_paths'],
-    })
+    declare_boost_header_libraries(builds['contrib/boost'])
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(
         ROOT, {arch: graph.build for arch, graph in graphs.items()})
     builds[llvm_targets.PREFIX] = llvm
@@ -1190,11 +1266,12 @@ def main():
         for spec in REPOSITORIES.values()
     )
     factor_build_selections(ROOT, selection_builds)
+    declare_compiled_parser_headers(ROOT / "src/Parsers/BUILD.bazel")
     declare_unit_test_private_hdrs(ROOT / "src/BUILD.bazel")
     declare_first_party_header_deps(ROOT)
     # Rule transfers can leave adjacent literal lists. Preserve select()
     # and its no-match error after the CPU selections have been factored.
-    from initial_migration.compact_build import Source, simplify_list_expressions
+    from initial_migration.compact_build import Source, remove_unused_constants, simplify_list_expressions
     for path in sorted(selection_builds):
         before = path.read_text()
         after = before
@@ -1203,6 +1280,7 @@ def main():
             if updated == after:
                 break
             after = updated
+        after = remove_unused_constants(Source(after))
         if after != before:
             path.write_text(after)
     format_build_files()

@@ -497,7 +497,8 @@ def read_cquery(path):
             "actions": {},
             "configured_inputs": rule.get("configuredRuleInput", []),
             "dependency_attributes": {
-                name: attrs[name] for name in ("deps", "implementation_deps", "refs", "actual", "exports", "option_deps")
+                name: attrs[name] for name in ("deps", "implementation_deps", "refs", "actual",
+                                               "exports", "option_deps", "cc_deps", "cc_implementation_deps")
                 if name in attrs
             },
         }
@@ -613,7 +614,8 @@ class Audit:
             opts += ["--proto:include_configurations",
                      "--transitions=lite", "--noproto:locations",
                      "--noproto:rule_inputs_and_outputs",
-                      "--proto:output_rule_attrs=srcs,hdrs,textual_hdrs,tags,features,deps,implementation_deps,refs,actual,language,exports,option_deps"]
+                     "--proto:output_rule_attrs=srcs,hdrs,textual_hdrs,tags,features,deps,implementation_deps,"
+                     "refs,actual,language,exports,option_deps,cc_deps,cc_implementation_deps"]
         else:
             opts += ["--noinclude_artifacts", "--noinclude_commandline",
                      "--noinclude_param_files", "--noinclude_file_write_contents"]

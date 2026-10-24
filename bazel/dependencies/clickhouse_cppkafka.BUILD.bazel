@@ -30,6 +30,6 @@ ch_cc_library(
     local_includes = ["include/cppkafka"],
     deps = [
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
     ],
 )

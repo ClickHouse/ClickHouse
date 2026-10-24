@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import traceback
+import tempfile
 
 
 ROOT = Path("/home/buildbuddy/workspace/repo-root")
@@ -348,9 +348,19 @@ def save_evidence(build, dest):
     write_json(dest / "resource-gzip-headers.json", records)
 
 
-def main():
-    args = parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+def print_log_tail(path):
+    try:
+        with path.open("rb") as log:
+            log.seek(max(0, os.fstat(log.fileno()).st_size - 4096))
+            tail = log.read(4096)
+    except OSError:
+        return
+    if tail:
+        print(f"{path.name} (last {len(tail)} bytes):", file=sys.stderr)
+        print(tail.decode(errors="replace"), file=sys.stderr)
+
+
+def build_reference(args, evidence):
     status = {"status": 1, "phase": "initializing", "configure_only": args.configure_only}
     build = ROOT / BUILD_NAME
     tools = ROOT / "build_bazel_reference_tools"
@@ -358,7 +368,7 @@ def main():
         status["phase"] = "extracting"
         native_checkout()
         tools.mkdir(parents=True)
-        with (args.output_dir / "prepare.log").open("w") as output:
+        with (evidence / "prepare.log").open("w") as output:
             run(["tar", "-xf", args.source_archive, "-C", ROOT], os.environ, output)
             run(["tar", "-xf", args.tools_archive, "-C", tools], os.environ, output)
         build.mkdir(parents=True, exist_ok=False)
@@ -384,31 +394,44 @@ def main():
         compiler, rust = stage_toolchain(args, build, tools, env)
         status["phase"] = "configuring"
         configure(args, build, tools, env)
-        if args.configure_only:
-            status.update(status=0, phase="configured")
-        else:
+        if not args.configure_only:
             status["phase"] = "building"
             with (build / "build.log").open("w") as output:
                 run([args.cmake, "--build", build, "--target", "clickhouse", "--parallel", args.jobs], env, output)
             status["phase"] = "recording-hashes"
             record_reference(args, build, tools, env, compiler, rust)
-            status.update(status=0, phase="built")
+        status["phase"] = "saving-evidence"
+        save_evidence(build, evidence)
+        write_json(evidence / "status.json", {
+            "status": 0, "phase": "configured" if args.configure_only else "built",
+            "configure_only": args.configure_only,
+        })
+        evidence.replace(args.output_dir)
     except Exception as error:
-        status["error"] = str(error)
-        status["status"] = error.returncode if isinstance(error, subprocess.CalledProcessError) else 1
-        (args.output_dir / "driver-error.log").write_text(traceback.format_exc())
-    try:
-        save_evidence(build, args.output_dir)
-    except Exception as error:
-        status["evidence_error"] = str(error)
-        if status["status"] == 0:
-            status.update(status=1, phase="saving-evidence")
-        (args.output_dir / "evidence-error.log").write_text(traceback.format_exc())
-    write_json(args.output_dir / "status.json", status)
-    print("CMAKE_REFERENCE_STATUS=" + json.dumps(status), flush=True)
-    # The coordinator checks status.json after Bazel downloads the evidence.
-    # Returning the CMake exit code here would discard outputs after a failure.
+        rc = error.returncode if isinstance(error, subprocess.CalledProcessError) else 1
+        status.update(status=128 - rc if rc < 0 else rc or 1, error=str(error)[:1024])
+        print("CMAKE_REFERENCE_STATUS=" + json.dumps(status), file=sys.stderr)
+        logs = {
+            "extracting": [evidence / "prepare.log"],
+            "staging-toolchain": [build / "compiler.txt"],
+            "configuring": [build / "configure.log", build / "trace.jsonl"],
+            "building": [build / "build.log"],
+            "recording-hashes": [build / "strip.log"],
+        }
+        for log in logs.get(status["phase"], []):
+            print_log_tail(log)
+        return status["status"]
     return 0
+
+
+def main():
+    args = parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    # Bazel downloads every declared file from a failed action, even in minimal mode.
+    with tempfile.TemporaryDirectory(dir=args.output_dir.parent, ignore_cleanup_errors=True) as scratch:
+        evidence = Path(scratch) / "evidence"
+        evidence.mkdir()
+        return build_reference(args, evidence)
 
 
 if __name__ == "__main__":

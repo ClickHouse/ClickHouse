@@ -742,7 +742,7 @@ ch_cc_library(
         "//src:core_defines",
         "//src:core_types",
         "//base/poco/Foundation:_poco_foundation",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "//contrib/cityhash102:_cityhash",
         "@clickhouse_fmtlib//:_fmt",
     ],
@@ -790,7 +790,7 @@ ch_cc_library(
     hdrs = ["COW.h"],
     clickhouse_code = True,
     strip_include_prefix = "/src",
-    deps = ["@clickhouse_boost//:boost_headers"],
+    deps = ["@clickhouse_boost//:boost_headers_no_openssl"],
 )
 
 ch_cc_library(
@@ -903,7 +903,7 @@ ch_cc_library(
         "//base:pcg_random",
         "//contrib/cityhash102:_cityhash",
         "@clickhouse_jemalloc//:_jemalloc",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_libfiu//:_libfiu",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_re2//:_re2",

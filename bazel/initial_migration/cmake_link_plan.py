@@ -21,7 +21,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from initial_migration.build_file import native_source_owner, source_compile_label, target_label, target_owner
+from initial_migration.build_file import EMBEDDED_SOURCES, embedded_indices, native_source_owner, source_compile_label, target_label, target_owner
 from initial_migration import llvm_targets
 from initial_migration.reference_readers import read_file_api, ninja_edges, ninja_words as words
 from initial_migration.repository_inputs import REPOSITORIES, ROOT
@@ -78,8 +78,11 @@ class Plan:
         self.archives = {}
         self.archive_index = {}
         self.slots = {}
+        self.embedded_groups = {}
         self.omitted = set()
         self.make_slots()
+        if set(self.embedded_groups) != EMBEDDED_SOURCES.keys():
+            raise ValueError('Missing CMake groups for the ClickHouse #embed objects')
 
     def ref(self, label, expected):
         if label in self.ref_index:
@@ -126,6 +129,11 @@ class Plan:
                         first.setdefault(src_owner, actual_group)
                         group_label = source_compile_label(name, actual_group, src_owner, first[src_owner])
                     size = len(group_sources)
+                    embedded = embedded_indices(name, [s.removeprefix(self.source + '/') for s in group_sources])
+                    if embedded:
+                        if name in self.embedded_groups or src_owner != owner or g['language'] != 'CXX':
+                            raise ValueError(f'{name}: expected one native C++ group for its #embed objects')
+                        self.embedded_groups[name] = group_label, group_sources, set(embedded)
                     for index, source in enumerate(group_sources):
                         key = (name, source)
                         if key in self.slots:
@@ -145,6 +153,22 @@ class Plan:
                     raise ValueError("Duplicate generated object: " + str(key))
                 self.slots[key] = (target_label(name, self.owners) + "__compile_" + str(actual_group),
                                    i, len(generated))
+
+    def split_embedded_slots(self):
+        for name, (parent, sources, positions) in sorted(self.embedded_groups.items()):
+            child = target_label(name + '_embedded', self.owners)
+            self.ref(child, len(positions))
+            remaining = len(sources) - len(positions)
+            self.expected[self.ref_index[parent]] = remaining
+            ordinary = embedded = 0
+            for index, source in enumerate(sources):
+                if index in positions:
+                    self.slots[name, source] = child, embedded, len(positions)
+                    embedded += 1
+                else:
+                    self.slots[name, source] = parent, ordinary, remaining
+                    ordinary += 1
+        self.embedded_groups.clear()
 
     def object(self, path, archive_owner=None):
         path = os.path.normpath(path)
@@ -273,8 +297,16 @@ class Plan:
         ]
         if api_archives != ninja_archives:
             raise ValueError("Ninja and CMake File API archive orders differ")
-        sequence = [self.operand(arg) for arg in native]
-        sequence = [v for v in sequence if v is not None]
+        def operands():
+            return [v for arg in native if (v := self.operand(arg)) is not None]
+        sequence = operands()
+        # Preserve existing CMake ref numbers: discover them first, append the two
+        # new owners, then encode the same Ninja members with their new source slots.
+        if self.embedded_groups:
+            self.split_embedded_slots()
+            self.archives.clear()
+            self.archive_index.clear()
+            sequence = operands()
         return {
             "refs": self.refs,
             "expected_objects": self.expected,

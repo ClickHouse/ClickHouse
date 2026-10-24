@@ -13,6 +13,7 @@ exports_files([
     "msgpack-version-include.patch",
     "lz4-fast-decoder.patch",
     "perfetto-protos-protoc.patch",
+    "protobuf-generated-cc-deps.patch",
     "rules_rs-local-workspaces.patch",
     "zstd-public-headers.patch",
     "rules_cc-implementation-deps-local-includes.patch",

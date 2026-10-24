@@ -490,7 +490,7 @@ ch_cc_library(
     deps = [
         "@clickhouse//bazel:arrow_flatbuffer_headers",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",

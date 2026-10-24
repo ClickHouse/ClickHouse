@@ -45,6 +45,8 @@ def label(value, repo):
 
 
 class Document:
+    glob_strings = staticmethod(_literal_strings)
+
     def __init__(self, path, inventories=None, text=None, package='', files=None):
         self.path = path
         self.source = Source(path.read_text() if text is None else text)
@@ -88,8 +90,8 @@ class Document:
             key = ast_key(node)
             if key not in self.glob_cache:
                 opts = {kw.arg: kw.value for kw in node.keywords}
-                patterns = _literal_strings(node.args[0])
-                excludes = _literal_strings(opts['exclude']) if 'exclude' in opts else []
+                patterns = self.glob_strings(node.args[0])
+                excludes = self.glob_strings(opts['exclude']) if 'exclude' in opts else []
                 if patterns is None or excludes is None or set(opts) - {'exclude', 'allow_empty'}:
                     self.glob_cache[key] = []
                 else:
@@ -352,12 +354,13 @@ def prune(root, inventories, *, write=False, consumers=(), owners=(), postgres_h
 class PublishedGraph(Graph):
     """Typed public files, using the real main-repository Bazel packages."""
 
-    def __init__(self, root, documents):
+    def __init__(self, root, documents, *, source_files_only=False):
         super().__init__(documents)
-        from initial_migration.native_gcp_proto_inputs import dictionary, string, strings
-
         self.packages = {(doc.repo, doc.package): doc for doc in documents}
         self.outputs = {}
+        if source_files_only:
+            return
+        from initial_migration.native_gcp_proto_inputs import dictionary, string, strings
         for target, (doc, kind, attrs) in self.rules.items():
             if kind in CC_COMPILERS:
                 continue
@@ -414,7 +417,7 @@ class PublishedGraph(Graph):
 
 
 class PublishedRewrite(Rewrite):
-    def covered(self, value, target, arches, field):
+    def covered(self, value, target, arches, field, *, providers=None):
         candidate = self.doc.reference(value)
         if not arches or target not in self.graph.rules or field not in HEADER_FIELDS:
             return False
@@ -439,11 +442,47 @@ class PublishedRewrite(Rewrite):
             # Native private inputs can also come from implementation_deps.
             # Public inputs still require the same header kind through deps.
             compile_only = native and field in {'srcs', 'additional_compiler_inputs'}
-            supplied = self.graph.inherited(target, cpu, compile_only)
+            supplied = (self.graph.inherited(target, cpu, compile_only) if providers is None else
+                        set().union(*(self.graph.own_headers(p, cpu) for p in providers)))
             fields = (field,) if field in {'hdrs', 'textual_hdrs'} else ('hdrs', 'textual_hdrs')
             if not any((kind, candidate) in supplied for kind in fields):
                 return False
         return True
+
+
+def inherited_source_headers(build, name, inputs, deps, owners):
+    """Which private source files do the retained, same-package cc_library owners publish?"""
+    class SourceDocument(Document):
+        def glob_strings(self, node):
+            if isinstance(node, ast.Name) and node.id in self.constants:
+                return self.glob_strings(self.constants[node.id])
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                return self.glob_strings(node.left) + self.glob_strings(node.right)
+            if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'glob' and len(node.args) == 1:
+                opts = {k.arg: k.value for k in node.keywords}
+                if set(opts) <= {'exclude', 'allow_empty'}:
+                    excludes = self.glob_strings(opts['exclude']) if 'exclude' in opts else []
+                    return list(self.globs.result(self.glob_strings(node.args[0]), excludes))
+            values = _literal_strings(node)
+            if values is None:
+                raise ValueError('Unsupported source header glob: ' + ast.unparse(node))
+            return values
+
+    from initial_migration.first_party_packages import canonical_dependency
+    prefix = '@clickhouse//' + build.package + ':'
+    package = build.path.parent
+    files = {ref[len(prefix):] for v in inputs if v.endswith('.h') and
+             (ref := canonical_dependency(v, build.package, '@clickhouse')).startswith(prefix)}
+    files = {f for f in files if (package / f).is_file() and not any((p / marker).is_file()
+             for p in (package / f).parents if package in p.parents for marker in ('BUILD', 'BUILD.bazel'))}
+    if not files:
+        return set()
+    doc = SourceDocument(build.path, package=build.package, files=files)
+    graph = PublishedGraph(build.root, [doc], source_files_only=True)
+    target = doc.reference(':' + name)
+    retained = set(map(doc.reference, deps)) & set(map(doc.reference, owners))
+    check = PublishedRewrite(doc, graph)
+    return {v for v in inputs if check.covered(v, target, ARCHES, 'srcs', providers=retained)}
 
 
 def prune_published(root, inventories, *, consumers, write=False):

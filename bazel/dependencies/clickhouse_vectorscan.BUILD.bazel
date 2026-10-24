@@ -623,7 +623,7 @@ ch_cc_library(
     ],
     implementation_deps = [
         ":_vectorscan__compile_0",
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_boost//:boost_config",
         "@clickhouse//contrib/vectorscan-cmake:headers",
         "@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers",
@@ -714,7 +714,7 @@ ch_cc_library(
         ],
     }),
     implementation_deps = [
-        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers",
     ],
     local_defines = _VECTORSCAN_LOCAL_DEFINES,

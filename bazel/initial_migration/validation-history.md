@@ -1373,3 +1373,31 @@ DWYU, LLVM and protobuf producer controls, ordinary producer linking, full-censu
 | --- | --- | --- | --- | --- | --- |
 | x86-64 | 2026-10-22 19:48:58 UTC | [4bb0356c](https://app.buildbuddy.io/invocation/4bb0356c-9977-43aa-9282-9bce8cefdfc2) | Failed (Failed) | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` (929619680 B) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` (710693736 B) |
 | ARM64 | 2026-10-22 19:49:01 UTC | [c446f1ab](https://app.buildbuddy.io/invocation/c446f1ab-007b-4dda-ac35-9ffe6db0bbd1) | Failed (Failed) | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` (907067440 B) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` (637316696 B) |
+
+## 234b7aab0
+
+Bazel source `234b7aab0` was published in [`d0eb31f46`](https://github.com/dzbarsky/clickhouse/commit/d0eb31f4604052ebca55716ba405f8cfbb53b7e0). Its two native builds completed all 51 requested targets and linked `//:clickhouse` and `//src:unit_tests_dbms`. On each CPU, the original test reports confirm that the selected 26 GoogleTests and six SQL cases passed. The full unit test suite was not run. Separate compile checks built the five WebUI objects for `//src:dbms_embedded`.
+
+| Native Bazel build | Normalized SHA-256 (matches CMake) | Bytes |
+| --- | --- | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/4e5a002f-86ec-4495-a0f5-8277177058dc) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/b4894636-e1ad-4524-8d05-c18b179abcc7) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+
+The [x86-64](https://app.buildbuddy.io/invocation/7f45e761-87d8-4a4b-8ada-9c12f9c121a9) and [ARM64](https://app.buildbuddy.io/invocation/9cbfef68-d0ce-41f1-9ae6-0b1b8b4adc56) workflows also ran DWYU. The audit reported missing or unused dependencies on 45 non-fixture targets for x86-64 and 41 for ARM64.
+
+## 292683117
+
+The [x86-64](https://app.buildbuddy.io/invocation/08450517-5bbd-4115-9cba-dac4b3fa6f43) and [ARM64](https://app.buildbuddy.io/invocation/701aee05-1018-4c83-9abe-742e08044df3) builds stopped while Bazel was applying the protobuf patch. Neither build produced a ClickHouse binary or a new hash. Source `d67a4cc67` adds the missing Git file headers to the patch.
+
+## d67a4cc67
+
+| Native Bazel build | Normalized SHA-256 (matches CMake) | Bytes |
+| --- | --- | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/995630b4-f956-477e-84cb-fe0b65fa4d8a) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/41a64355-fe01-437b-b673-5408b139a0d7) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+
+The BuildBuddy workflows for [x86-64](https://app.buildbuddy.io/invocation/408c3f79-50e3-43ed-8b4b-4a8c908aa3e4) and [ARM64](https://app.buildbuddy.io/invocation/d733c8c0-7aa0-4711-b55b-c046eaa26eb2) reported failure after Bazel exited successfully. The result reader expected `boost_mysql_compiled` to use the executable’s configuration; Bazel retained its test configuration because the target declares `testonly = True`. The build events and test reports from the two Bazel invocations above confirm the results independently of that reader.
+
+Both native Bazel invocations built all 55 requested targets. Their default output groups contain the six embedded object files, the Boost.MySQL static archive, and two CcInfo reports for `//src:dbms_embedded` and `//src:clickhouse_common_io_embedded`. The selected 26 GoogleTests and six SQL cases passed on each CPU. These builds did not run DWYU.
+
+The direct dependencies on `//src:dbms_embedded` decreased from 135 to 114, and those on `//src:clickhouse_common_io_embedded` from 44 to 39. On both CPUs, the two CcInfo comparisons found identical ordered compilation and linking fields before and after those removals.
