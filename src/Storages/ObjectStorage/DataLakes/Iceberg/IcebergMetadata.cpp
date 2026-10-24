@@ -2234,7 +2234,7 @@ void IcebergMetadata::drop(
         auto uncached_components = persistent_components;
         uncached_components.metadata_cache = nullptr;
         auto reachable = Iceberg::collectReachableFiles(
-            object_storage, uncached_components, data_lake_settings, context, log, catalog, storage_id.getTableName());
+            object_storage, uncached_components, *data_lake_settings, context, log, catalog, storage_id.getTableName());
 
         auto read_metadata = [&](const String & path)
         {
