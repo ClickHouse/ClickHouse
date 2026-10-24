@@ -95,9 +95,30 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS parallel_distributed_insert_select = 2"
 check typed_05446 "s3Cluster, explicit structure as key-value argument"
 
+# The shape of the queries of object storage ClickPipes, with a `DEFAULT now64(3)` column missing in the files and
+# a TTL on it: with the default values of the type the rows got `1970-01-01` and the TTL deleted them.
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${S3_DIR}/clickpipes_a.json', 'LineAsString', 'l String') VALUES ('{\"document\":\"d1\"}'), ('{\"document\":\"d2\"}')"
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${S3_DIR}/clickpipes_b.json', 'LineAsString', 'l String') VALUES ('{\"document\":\"d3\"}')"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS clickpipes_05446 SYNC;
+    CREATE TABLE clickpipes_05446 (document String, _synced_at DateTime64(3, 'UTC') DEFAULT now64(3))
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/clickpipes_05446', 'r1') ORDER BY document
+    TTL toDateTime(_synced_at) + INTERVAL 30 DAY;
+"
+
+$CLICKHOUSE_CLIENT --param_url="${S3_DIR}/clickpipes_{a,b}.json" --param_format=JSONEachRow -q "
+    INSERT INTO \`${CLICKHOUSE_DATABASE}\`.\`clickpipes_05446\` (\`_synced_at\`, \`document\`)
+    SELECT \`_synced_at\` AS \`_synced_at\`, \`document\` AS \`document\`
+    FROM s3Cluster('${CLUSTER}', {url:String}, NOSIGN, {format:String})
+    SETTINGS parallel_distributed_insert_select = 2, insert_deduplicate = 0, optimize_on_insert = 0"
+$CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE clickpipes_05446 FINAL"
+echo "--- ClickPipes shape, DEFAULT now64(3) with TTL ---"
+$CLICKHOUSE_CLIENT -q "SELECT count(), min(_synced_at) > now64(3) - INTERVAL 1 HOUR FROM clickpipes_05446"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE dst_05446 SYNC;
     DROP TABLE dist_05446;
     DROP TABLE local_05446;
     DROP TABLE typed_05446 SYNC;
+    DROP TABLE clickpipes_05446 SYNC;
 "

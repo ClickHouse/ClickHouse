@@ -17,3 +17,5 @@
 1	1.50
 --- s3Cluster, explicit structure as key-value argument ---
 1	1.50
+--- ClickPipes shape, DEFAULT now64(3) with TTL ---
+3	1
