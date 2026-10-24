@@ -246,7 +246,7 @@ public:
         return *own_part;
     }
 
-    std::vector<std::string> run();
+    UniqueKeyInsertOutcome run();
 
     bool partDiscarded() const { return part_discarded; }
 
@@ -465,25 +465,28 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
     return true;
 }
 
-std::vector<std::string> UniqueKeyTxnCommit::InsertCommit::run()
+UniqueKeyInsertOutcome UniqueKeyTxnCommit::InsertCommit::run()
 {
     const CSN csn = storage.uniqueKeyTxnManager().commitTransaction(transaction, *this);
     if (csn != INVALID_CSN)
         allocation->commit();
 
-    return allocation->dedupConflicts();
+    return {
+        .conflicting_blocks = allocation->dedupConflicts(),
+        .conflicting_parts = allocation->dedupConflictParts(),
+        .part_discarded = part_discarded};
 }
 
 UniqueKeyInsertOutcome UniqueKeyTxnCommit::insert(InsertRequest request)
 {
     InsertCommit op(request);
-    auto conflicts = op.run();
+    auto outcome = op.run();
 
     LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
         "UNIQUE KEY INSERT (partition {}): done, {} conflicting block(s), part {}",
-        op.partitionId(), conflicts.size(), op.partDiscarded() ? "discarded" : "published");
+        op.partitionId(), outcome.conflicting_blocks.size(), outcome.part_discarded ? "discarded" : "published");
 
-    return {.conflicting_blocks = std::move(conflicts), .part_discarded = op.partDiscarded()};
+    return outcome;
 }
 
 class UniqueKeyTxnCommit::MergeCommit : public UniqueKeyCommitBase

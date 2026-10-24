@@ -585,6 +585,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
 
+    /// A source part written by a still running (or failed) `INSERT` may not be synced yet,
+    /// and the merged part does not necessarily get synced.
+    for (const auto & part : global_ctx->future_part->parts)
+        part->syncIfPendingFsyncAfterInsert();
+
     LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
         global_ctx->future_part->parts.size(),
         global_ctx->future_part->parts.front()->name,

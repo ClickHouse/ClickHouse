@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 
+#include <Disks/IDisk.h>
+
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
 #include <IO/SharedThreadPools.h>
@@ -50,6 +52,11 @@ void parallelSyncFiles(const std::vector<WriteBufferFromFileBase *> & files)
 void parallelSyncFiles(const std::vector<const MergeTreeWriterStream *> & streams)
 {
     parallelSyncImpl(streams, [](const MergeTreeWriterStream * stream) { stream->sync(); });
+}
+
+void parallelSyncFiles(const IDisk & disk, const std::vector<std::string> & paths)
+{
+    parallelSyncImpl(paths, [disk_ptr = &disk](const std::string & path) { disk_ptr->syncFile(path); });
 }
 
 }

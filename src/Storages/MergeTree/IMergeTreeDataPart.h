@@ -380,6 +380,12 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
+    /// The part was written by an `INSERT` that defers its fsync to the end of the query
+    /// (`fsync_after_insert = 1`, `fsync_after_insert_each_part = 0`), and has not been synced yet,
+    /// see MergeTreeData::fsyncPartsAfterInsert. Stays set if that `INSERT` failed or was cancelled
+    /// after committing the part.
+    mutable std::atomic<bool> pending_fsync_after_insert {false};
+
     /// If it is a projection part, it can be broken sometimes.
     mutable std::atomic<bool> is_broken {false};
     mutable std::string exception;
@@ -687,6 +693,14 @@ public:
     }
 
     void setBrokenReason(const String & message, int code) const;
+
+    /// Syncs the part if `pending_fsync_after_insert` is set. Called by the operations that replace
+    /// the part with another one (merges, mutations, moves) before they read it: the part that
+    /// replaces it is synced only according to `min_rows_to_fsync_after_merge` and
+    /// `min_compressed_bytes_to_fsync_after_merge`, or not at all if it is on a disk that cannot
+    /// sync finalized files, so the inserted data has to be made durable before it is replaced,
+    /// exactly as it would have been with `fsync_after_insert_each_part = 1`.
+    void syncIfPendingFsyncAfterInsert() const;
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.

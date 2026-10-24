@@ -768,9 +768,40 @@ Default: 300 (force fetch after 5 minutes).
 )", 0, \
         {"26.4", 300, 300, "New setting"}) \
     DECLARE(Bool, fsync_after_insert, false, R"(
-Do fsync for every inserted part. Significantly decreases performance of
-inserts, not recommended to use with wide parts.
+Do fsync for the data written by an `INSERT`, so that it survives a power loss by the time the
+`INSERT` is acknowledged. Decreases performance of inserts.
+
+See `fsync_after_insert_each_part` for when the fsync happens.
 )", 0) \
+    DECLARE(Bool, fsync_after_insert_each_part, false, R"(
+When the fsync of an `INSERT` happens. Has no effect unless `fsync_after_insert` is enabled.
+
+- `false` (default) - once, when the query finishes, over the set of active parts covering the
+  inserted data. This is cheaper per part: the writeback of the parts written earlier in the
+  query has already happened in the background, and the remaining fsyncs are issued as one
+  batch that the filesystem can coalesce. It does not necessarily mean fewer fsyncs in total: a
+  background merge or mutation syncs a source part that is still waiting for this fsync before
+  it reads it, and the query then syncs the wider part covering it as well. A part committed by
+  a still-running `INSERT` is then visible but
+  not yet durable - durability is guaranteed when the query completes. The files are reopened
+  for this fsync after they were written and closed. Linux reports a background writeback error
+  to such a later `fsync` as long as the file stays in the kernel's inode cache, but loses it if
+  the inode is evicted in between (e.g. under memory pressure), so in that rare case a failed
+  write can go unnoticed.
+- `true` - for every part, as soon as it is written, which is significantly slower for an
+  `INSERT` that produces many parts, and is not recommended with wide parts. Use it when every
+  part has to be durable at the moment it becomes visible, rather than at the moment the
+  `INSERT` completes, or when a writeback error must be detected even if the inode of the
+  written file is evicted from the kernel's cache before the end of the query: here every file
+  is synced through the descriptor it was written with.
+
+The same applies to the patch parts written by lightweight `UPDATE` and `DELETE`. A streaming
+`INSERT` (with `input_format_max_block_wait_ms` other than 0), which can stay open indefinitely,
+does not wait for the query to finish: with `false` it fsyncs the parts of each flushed block
+right after committing them. On disks that cannot fsync a file after it was written (object
+storage disks, including `local_blob_storage`) the parts are always synced as they are written.
+)", 0, \
+        {"26.11", true, false, "New setting. With fsync_after_insert enabled, the fsync is now done once when the INSERT finishes, over the active parts covering the inserted data, instead of once per part as it is written. previous_value=true so that `compatibility` with earlier versions restores the per-part fsync."}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \

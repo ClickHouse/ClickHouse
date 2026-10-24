@@ -437,7 +437,13 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
+    {
         finishDelayed(zookeeper);
+        /// Such an INSERT can stay open indefinitely, so it cannot postpone the fsync of what it
+        /// has already committed until onFinish(): make each flushed block durable as it goes.
+        /// This also keeps the pending list from growing without a bound.
+        fsyncCommittedParts();
+    }
 
     if (synchronously_commit_part_for_dependent_views)
         finishDelayed(zookeeper);
@@ -495,10 +501,25 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     }
                 }
 
+                /// A deduplicated block is acknowledged on the strength of the part that already holds it.
+                /// If that part is on this replica, it may have been committed by an INSERT that failed or
+                /// was cancelled before its own batched fsync (or that is still running), so it is synced
+                /// together with the parts this query commits. A part that exists only on another replica
+                /// is not found locally and is skipped by MergeTreeData::fsyncPartsAfterInsert().
+                /// This does not depend on whether this query syncs its own parts inline or in a batch.
+                if (partition.temp_part->fsync_after_insert)
+                {
+                    for (const auto & hash : conflicts)
+                        if (hash.hasConflictPartName())
+                            committed_parts.push_back(MergeTreePartInfo::fromPartName(hash.getConflictPartName(), storage.format_version));
+                }
+
                 if (conflicts.empty())
                 {
                     // Successfully committed
                     block_ids_for_log = deduplication_blocks_ids;
+                    if (partition.temp_part->needs_fsync_on_finish)
+                        committed_parts.push_back(partition.temp_part->part->info);
                     partition.temp_part->prewarmCaches();
                     break;
                 }
@@ -1301,6 +1322,16 @@ void ReplicatedMergeTreeSink::onFinish()
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
     finishDelayed(zookeeper);
+    fsyncCommittedParts();
+}
+
+void ReplicatedMergeTreeSink::fsyncCommittedParts()
+{
+    if (committed_parts.empty())
+        return;
+
+    storage.fsyncPartsAfterInsert(committed_parts, context);
+    committed_parts.clear();
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

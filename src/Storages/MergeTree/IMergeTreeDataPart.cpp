@@ -4057,6 +4057,16 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     return it->second->is_broken;
 }
 
+void IMergeTreeDataPart::syncIfPendingFsyncAfterInsert() const
+{
+    if (!pending_fsync_after_insert.load())
+        return;
+
+    /// Cleared only after a successful sync, so that if it fails, the next operation tries again.
+    getDataPartStorage().syncFiles();
+    pending_fsync_after_insert.store(false);
+}
+
 bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
 {
     return !hasProjection(projection_name) && checksums.has(projection_name + ".proj");

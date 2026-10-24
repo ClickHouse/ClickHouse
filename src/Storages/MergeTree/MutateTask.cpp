@@ -4678,6 +4678,9 @@ bool MutateTask::prepare()
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
+    /// The source part may not be synced yet, see IMergeTreeDataPart::syncIfPendingFsyncAfterInsert.
+    ctx->source_part->syncIfPendingFsyncAfterInsert();
+
     /// A mutation never adds rows, so an empty source part yields an empty one with no marks to
     /// share. A null manifest disables every claim site of this mutation at once, including the
     /// ones that run before the writer.

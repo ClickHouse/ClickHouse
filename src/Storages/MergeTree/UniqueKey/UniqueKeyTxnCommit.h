@@ -23,6 +23,8 @@ struct UniqueKeyInsertOutcome
 {
     /// Block ids already in the table's insert-deduplication log
     std::vector<std::string> conflicting_blocks;
+    /// The parts that already hold `conflicting_blocks`.
+    std::vector<MergeTreePartInfo> conflicting_parts;
     /// Every incoming row conflicted under `unique_key_conflict_action = 'ignore'`, so there is no part.
     bool part_discarded = false;
 };
