@@ -2651,6 +2651,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
             mutation_ids.push_back(it->second.file_name);
             last_mutation_to_apply = it;
+
+            /// `MutateTask` removes a dropped (or cleared) column, index or projection from the result part after all
+            /// other commands, so a later mutation that writes it again must not be squashed into the same task.
+            if (std::ranges::any_of(*single_mutation_commands, [](const MutationCommand & command) { return command.isDropOrRename(); }))
+                break;
         }
 
         chassert(commands->empty() == (last_mutation_to_apply == mutations_end_it));

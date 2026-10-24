@@ -1,0 +1,21 @@
+clear b, update b
+Wide
+1	1111	5
+2	3333	0
+clear b, update b reading b
+1	1111	7
+2	3333	7
+update a, clear b, update b
+1	1112	1112
+2	3334	3334
+update a, clear b
+1	1112	0
+2	3334	0
+drop b, add b, update b
+1	1111	5
+2	3333	0
+drop index, add index, materialize index
+1
+drop projection, add projection, materialize projection
+['p']
+0
