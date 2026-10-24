@@ -2065,6 +2065,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 if (partial_result_on_first_cancel && query_interrupt_handler.cancelled_status() == signals_before_stop - 1)
                 {
                     sendCancel();
+                    if (keystroke_interceptor)
+                        keystroke_interceptor->takeUnhandledInput();
                     /// First cancel reading request was sent. Next requests will only be with a full cancel
                     partial_result_on_first_cancel = false;
                 }
@@ -3066,6 +3068,9 @@ void ClientBase::cancelQuery()
     sendCancel();
 
     stopKeystrokeInterceptorIfExists();
+    /// Like the terminal on Ctrl+C, drop the keys typed while the interrupted query ran.
+    if (keystroke_interceptor && query_interrupt_handler.cancelled())
+        keystroke_interceptor->takeUnhandledInput();
 
     if (need_render_progress && tty_buf)
     {

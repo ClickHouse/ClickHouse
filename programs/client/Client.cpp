@@ -55,6 +55,7 @@
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/PortsProbe.h>
+#include <Client/TerminalKeystrokeInterceptor.h>
 #include <Common/NetException.h>
 #include <Core/Defines.h>
 
@@ -731,6 +732,9 @@ bool Client::tryExecuteDetachableQuery(
         if (!cancellation_requested && query_interrupt_handler.cancelled())
         {
             cancellation_requested = background_queries.cancelAttached(handle);
+            /// Like the terminal on Ctrl+C, drop the keys typed while the interrupted query ran.
+            if (keystroke_interceptor)
+                keystroke_interceptor->takeUnhandledInput();
         }
 
         const auto wait_status = background_queries.waitAttached(handle, std::chrono::milliseconds(25));
