@@ -105,7 +105,7 @@ namespace
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = {.is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    AggregateFunctionProperties properties = {.is_order_dependent = true};
 
     // stochasticLinearRegression documentation
     FunctionDocumentation::Description description_linear = R"(
