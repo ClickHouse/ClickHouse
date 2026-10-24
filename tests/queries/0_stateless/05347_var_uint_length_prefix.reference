@@ -1,0 +1,20 @@
+toVarUInt
+00	7F	8001	AC02	FF7F	808001	FFFFFFFFFFFFFFFFFF01
+C801	E0D403	80D0ACF30E
+00
+01
+02
+addVarUIntLengthPrefix
+03616263	00	0461620000
+7F61	800161	AC0261
+128	130	16387
+removeVarUIntLengthPrefix
+abc		a
+a padded length is read as RowBinary reads it
+a	a
+a round trip gives the same string
+200	200
+1
+1
+wrong lengths
+wrong argument types

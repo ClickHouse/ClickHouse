@@ -1,0 +1,57 @@
+accuracy
+1
+1
+1	1
+empty and single
+0
+1
+state and merge
+1
+1
+AggregateFunction(uniqApacheHLL(14, \'HLL_8\'), UInt64)
+parameter validation
+argument types
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+20
+3
+nullable and low cardinality
+20
+20
+0
+0
+0
+UInt64	0
+unsupported types
+one argument only
+import sketches built outside ClickHouse
+5
+11
+84
+5
+0
+types wider than the 8 bytes update(long) takes
+1
+1
+DateTime64 is hashed as the epoch time it counts
+1
+export sketches for consumption outside ClickHouse
+1
+1
+1
+store and merge states with a different lg_k
+20
+merging states built with a different lg_k
+1
+1
+relabelling with CAST does not rescale
+1	1
+only the parameters are interchangeable

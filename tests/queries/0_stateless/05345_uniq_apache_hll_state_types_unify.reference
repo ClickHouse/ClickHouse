@@ -1,0 +1,12 @@
+UNION ALL of states with different parameters
+9
+an array of such states has one element type
+Array(AggregateFunction(uniqApacheHLL(8), UInt64))
+if between such states
+AggregateFunction(uniqApacheHLL(8), UInt64)
+a state with a Nullable argument is the same type as well
+Array(AggregateFunction(uniqApacheHLL(8), UInt64))
+a different argument type is a different type
+Array(Variant(AggregateFunction(uniqApacheHLL(8), UInt64), AggregateFunction(uniqApacheHLL, String)))
+changing the parameters of a column is applied
+AggregateFunction(uniqApacheHLL(8), UInt64)	5

@@ -121,6 +121,19 @@ public:
         filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
     }
 
+protected:
+    /// The nested function is the one without `If`, so the state type of the `If` function without Nullable arguments is built here.
+    DataTypePtr getNestedStateType() const override
+    {
+        DataTypes plain_argument_types;
+        plain_argument_types.reserve(this->getArgumentTypes().size());
+        for (const auto & type : this->getArgumentTypes())
+            plain_argument_types.push_back(type->onlyNull() ? type : removeNullable(type));
+
+        return std::make_shared<AggregateFunctionIf>(this->nested_function, plain_argument_types, this->getParameters())->getStateType();
+    }
+
+public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (filter_is_only_null)
@@ -633,6 +646,20 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         return_type_is_nullable = false;
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+
+    /// The function only skips NULL rows: no flag, and the state of the function without Nullable arguments, with its type.
+    if (nested_func->stateIsIndependentOfNullability())
+    {
+        if (!properties.returns_default_when_only_null)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Aggregate function {} cannot have the state independent of nullability unless it returns a default value for NULL values only",
+                nested_function->getName());
+
+        if (arguments.size() <= 2 && arguments.front()->isNullable())
+            return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
+
+        return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
+    }
 
     if (arguments.size() <= 2 && arguments.front()->isNullable())
     {

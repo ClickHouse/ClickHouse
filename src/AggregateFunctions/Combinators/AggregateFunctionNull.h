@@ -50,6 +50,19 @@ protected:
     const AggregateFunctionPtr nested_function;
     const size_t prefix_size;
 
+    /// The type of the state of the nested function, which this wrapper has when the nested function
+    /// says its state does not depend on nullability. See `IAggregateFunction::stateIsIndependentOfNullability`.
+    virtual DataTypePtr getNestedStateType() const { return nested_function->getStateType(); }
+
+    /// Only a wrapper without the flag has the memory layout of the nested state, which the nested function can claim for its own type.
+    bool hasStateOfNestedFunction() const
+    {
+        if constexpr (!result_is_nullable && !serialize_flag)
+            return nested_function->stateIsIndependentOfNullability();
+        else
+            return false;
+    }
+
     /** In addition to data for nested aggregate function, we keep a flag
       *  indicating - was there at least one non-NULL value accumulated.
       * In case of no not-NULL values, the function will return NULL.
@@ -105,6 +118,13 @@ public:
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
         return nested_function->getName();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        if (hasStateOfNestedFunction())
+            return nested_function->getNormalizedStateType();
+        return IAggregateFunction::getNormalizedStateType();
     }
 
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
@@ -364,6 +384,8 @@ public:
 
     DataTypePtr getStateType() const override
     {
+        if (hasStateOfNestedFunction())
+            return getNestedStateType();
         return this->getStateTypeWithVersionOf(*nested_function);
     }
 
