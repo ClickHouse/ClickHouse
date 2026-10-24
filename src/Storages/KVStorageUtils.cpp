@@ -3,11 +3,17 @@
 #include <unordered_map>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Utils.h>
 #include <Common/assert_cast.h>
 
@@ -90,6 +96,77 @@ std::vector<Field> cartesianProduct(const std::vector<FieldVector> & column_valu
     }
 }
 
+/// The type of the value a constant holds, without wrappers. A `Variant` or `Dynamic` constant hands out
+/// the value of its active alternative, so that alternative's type is read from the column; nullptr if unknown.
+DataTypePtr getConstantValueType(const IColumn * column, const DataTypePtr & type)
+{
+    DataTypePtr value_type = type;
+    if (isVariant(type) || isDynamic(type))
+    {
+        value_type = nullptr;
+        if (column)
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+        if (column && column->size() == 1)
+        {
+            if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(column))
+                value_type = dynamic_column->getTypeAt(0);
+            else if (const auto * variant_column = typeid_cast<const ColumnVariant *>(column))
+            {
+                const auto & variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
+                const auto discriminator = variant_column->globalDiscriminatorAt(0);
+                if (discriminator < variants.size())
+                    value_type = variants[discriminator];
+            }
+        }
+        if (!value_type)
+            return nullptr;
+    }
+    return removeNullable(recursiveRemoveLowCardinality(value_type));
+}
+
+/// Whether the constant converted into the key type is the only key `=` can match. `String` compares with
+/// `FixedString` zero-padded, so such a constant equals every `String` that differs from it in trailing zero
+/// bytes. Composite elements are converted without their own types, so only an element whose conversion
+/// does not depend on its type can be looked up.
+bool isCompleteKeyLookup(const DataTypePtr & key_type, const DataTypePtr & value_type, bool is_element)
+{
+    const auto key = removeLowCardinalityAndNullable(key_type);
+    const auto value = removeLowCardinalityAndNullable(value_type);
+
+    const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
+    const auto * value_tuple = typeid_cast<const DataTypeTuple *>(value.get());
+    if (key_tuple || value_tuple)
+    {
+        if (!key_tuple || !value_tuple || key_tuple->getElements().size() != value_tuple->getElements().size())
+            return false;
+        for (size_t i = 0; i < key_tuple->getElements().size(); ++i)
+            if (!isCompleteKeyLookup(key_tuple->getElement(i), value_tuple->getElement(i), true))
+                return false;
+        return true;
+    }
+
+    const auto * key_array = typeid_cast<const DataTypeArray *>(key.get());
+    const auto * value_array = typeid_cast<const DataTypeArray *>(value.get());
+    if (key_array || value_array)
+        return key_array && value_array && isCompleteKeyLookup(key_array->getNestedType(), value_array->getNestedType(), true);
+
+    const auto * key_map = typeid_cast<const DataTypeMap *>(key.get());
+    const auto * value_map = typeid_cast<const DataTypeMap *>(value.get());
+    if (key_map || value_map)
+        return key_map && value_map && isCompleteKeyLookup(key_map->getKeyType(), value_map->getKeyType(), true)
+            && isCompleteKeyLookup(key_map->getValueType(), value_map->getValueType(), true);
+
+    /// Any other type with subtypes (`QBit`, a `Variant` element) is not walked: fail closed.
+    if (key->haveSubtypes() || value->haveSubtypes())
+        return false;
+
+    if (isString(key) && isFixedString(value))
+        return false;
+
+    return !is_element || value->equals(*key) || isString(value) || isNumber(value) || isNothing(value);
+}
+
 /// Single-column version of traverseDAGFilter (legacy)
 bool traverseDAGFilterSingleColumn(
     const std::string & primary_key,
@@ -141,13 +218,16 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
-        /// The type of the literal decides how it converts: a `DateTime` literal compared with a `Date`
-        /// key is a number of seconds, not a day number, so without the source type its raw value is
-        /// reinterpreted in the key's unit space and the lookup probes a key that does not exist.
-        /// The wrappers are stripped from the source type: the conversion branches are chosen by that
-        /// type, and a `Nullable(Date)` or `LowCardinality(Date)` literal would otherwise miss them and
-        /// have its day number reinterpreted as a number of seconds.
-        const auto value_type = removeNullable(recursiveRemoveLowCardinality(value->result_type));
+        /// The literal is converted with the type of the value it holds, without wrappers: the conversion depends
+        /// on it (a `DateTime` literal against a `Date` key is seconds, not days). For a `Variant` or `Dynamic`
+        /// constant that is the type of its active alternative.
+        const auto value_type = getConstantValueType(value->column.get(), value->result_type);
+        if (!value_type)
+            return false;
+
+        if (!isCompleteKeyLookup(primary_key_type, value_type, false))
+            return false;
+
         auto converted_field = tryConvertFieldToType(value->column->getField(), *primary_key_type, value_type.get());
 
         /// A literal the key type cannot represent - `Date = <a DateTime with a time of day>`, or a
@@ -313,14 +393,36 @@ bool traverseDAGFilter(
             // from: without it a date-family literal is reinterpreted in the key's unit space.
             const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
             const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+            const auto * declared_tuple_type = typeid_cast<const DataTypeTuple *>(right->result_type.get());
+
+            const IColumn * value_column = right->column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
+                value_column = &column_const->getDataColumn();
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
+                value_column = &column_nullable->getNestedColumn();
+            const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);
 
             std::vector<Field> converted_values;
             converted_values.reserve(tuple_value.size());
             for (size_t i = 0; i < tuple_value.size(); ++i)
             {
                 DataTypePtr element_type;
-                if (value_tuple_type && i < value_tuple_type->getElements().size())
-                    element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
+                if (declared_tuple_type && i < declared_tuple_type->getElements().size())
+                    element_type = declared_tuple_type->getElement(i);
+                else if (value_tuple_type && i < value_tuple_type->getElements().size())
+                    element_type = value_tuple_type->getElement(i);
+
+                const IColumn * element_column = nullptr;
+                if (value_tuple_column && i < value_tuple_column->tupleSize())
+                    element_column = &value_tuple_column->getColumn(i);
+
+                if (element_type)
+                    element_type = getConstantValueType(element_column, element_type);
+                if (!element_type)
+                    return false;
+
+                if (!isCompleteKeyLookup(primary_key_types[i], element_type, false))
+                    return false;
 
                 auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get());
                 if (converted.isNull())
