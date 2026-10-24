@@ -1,0 +1,13 @@
+ <clickhouse>
+     <mongo_port>27017</mongo_port>
+     <!-- A message of the Mongo endpoint has to arrive within this time before a login. -->
+     <handshake_timeout_milliseconds>5000</handshake_timeout_milliseconds>
+     <protocols>
+         <mongo_anonymous>
+             <type>mongo</type>
+             <port>27018</port>
+             <description>Mongo endpoint with a default session user</description>
+             <default_session_user>mongo_anonymous_user</default_session_user>
+         </mongo_anonymous>
+     </protocols>
+ </clickhouse>

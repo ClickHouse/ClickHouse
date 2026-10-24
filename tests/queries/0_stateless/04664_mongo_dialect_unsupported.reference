@@ -1,0 +1,57 @@
+-- filter operators
+Code: 48. The filter operator '$type' is not supported
+Code: 48. The filter operator '$typo' is not supported
+Code: 48. '$elemMatch' is only supported on an array of values, not on an array of documents
+Code: 36. The argument of '$in' must be an array
+Code: 36. The argument of '$mod' must be an array of a divisor and a remainder
+Code: 36. The argument of '$exists' must be a boolean
+Code: 62. Cannot parse the Mongo query
+-- inputs that used to reach the rest of the server as a malformed tree
+Code: 36. A filter must be a document
+Code: 36. A filter must be a document
+Code: 36. A filter must be a document
+Code: 36. A filter must not name an empty field
+Code: 36. The filter at the position 0 of '$or' holds no condition
+Code: 36. The filter at the position 0 of '$and' holds no condition
+-- arguments MongoDB rejects
+Code: 36. '$or' must be a non empty array of filters
+Code: 36. '$and' must be a non empty array of filters
+Code: 36. The divisor of '$mod' must not be zero
+Code: 36. A bit position of '$bitsAllSet' must be a whole number between 0 and 63
+Code: 36. A bit position of '$bitsAllSet' must be a whole number between 0 and 63
+Code: 36. The argument of '$bitsAllSet' must be a bit mask or an array of bit positions
+-- aggregation stages
+Code: 48. The aggregation stage '$facet' is not supported
+Code: 48. The aggregation stage '$out' is not supported
+Code: 48. The aggregation stage '$lookup' is not supported
+Code: 48. Only a document is supported as the new root of '$replaceWith', because a field path names a column rather than a subdocument
+Code: 36. The path of '$unwind' must be a non-empty field name starting with '$'
+Code: 36. '$unset' must name at least one field
+Code: 36. '$sample' must have a 'size' field
+Code: 36. The argument of '$limit' must be a positive number
+Code: 36. The argument of '$limit' must be a positive number
+Code: 36. The argument of '$limit' must be a whole number
+Code: 36. The argument of '$skip' must be a non negative number
+Code: 36. The argument of '$limit' must be a whole number
+Code: 36. The '$group' stage must have an '_id'
+Code: 48. The direction of '$sort' on 'id' must be 1 or -1
+-- expression operators
+Code: 48. The aggregation operator '$sortArray' is not supported
+Code: 48. The aggregation operator '$function' is not supported
+Code: 48. The aggregation system variable '$$ROOT' is not supported
+Code: 48. The 'chars' of '$trim' is not supported
+Code: 48. '$regexFind' is only supported as the value of a '$project' or a '$set' field, where its result document becomes the columns 'match', 'idx' and 'captures'
+Code: 48. The accumulator '$mergeObjects' is not supported
+Code: 48. The accumulator '$topN' is not supported
+-- update operators
+Code: 48. The update operator '$setOnInsert' is not supported
+Code: 48. The update operator '$bit' is not supported
+Code: 48. Replacing a whole document is not supported; the update statement must hold update operators
+Code: 36. An update statement must be a non empty document of update operators
+Code: 36. The argument of '$pop' must be 1 or -1
+Code: 36. The source and the target field of '$rename' must differ
+Code: 36. The source and the target field of '$rename' must be named
+Code: 36. The update statement writes the field 'id' more than once
+Code: 36. The update statement writes the field 'other' more than once
+-- the server is still healthy
+1	alpha		['red']

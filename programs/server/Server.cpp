@@ -164,6 +164,7 @@
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 
+#include <Server/MongoHandlerFactory.h>
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -578,6 +579,8 @@ namespace ProfileEvents
     extern const Event InterfaceMySQLReceiveBytes;
     extern const Event InterfacePostgreSQLSendBytes;
     extern const Event InterfacePostgreSQLReceiveBytes;
+    extern const Event InterfaceMongoSendBytes;
+    extern const Event InterfaceMongoReceiveBytes;
 }
 
 namespace fs = std::filesystem;
@@ -4095,6 +4098,8 @@ ServerType::Type protocolStackType(const std::string & leaf_type, bool is_secure
         return ServerType::Type::MYSQL;
     if (leaf_type == "postgres")
         return ServerType::Type::POSTGRESQL;
+    if (leaf_type == "mongo")
+        return ServerType::Type::MONGO;
     if (leaf_type == "prometheus")
         return ServerType::Type::PROMETHEUS;
 
@@ -4307,6 +4312,14 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
+        if (type == "mongo")
+        {
+#if USE_MONGODB && USE_RAPIDJSON
+            return TCPServerConnectionFactory::Ptr(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes, default_session_user));
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mongo protocol is disabled because ClickHouse has been built without the MongoDB or the rapidjson library");
+#endif
+        }
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
     };
@@ -4754,6 +4767,40 @@ void Server::createServers(
             });
         }
 
+        if (server_type.shouldStart(ServerType::Type::MONGO))
+        {
+            port_name = "mongo_port";
+#if USE_MONGODB && USE_RAPIDJSON
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                /// The listener is plaintext; a Mongo endpoint over TLS is declared in the `protocols`
+                /// section as a `tls` layer over a `mongo` one.
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ false);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    ServerType::Type::MONGO,
+                    "Mongo compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes),
+                        server_pool,
+                        socket,
+                        makeServerParams(server_settings),
+                        connection_filter));
+            });
+#else
+            /// The port is a known setting in every build, so a configuration that asks for the
+            /// endpoint must not start a server that silently never listens on it. This is checked
+            /// outside of `createServer`, which only logs the errors of its callback when `listen_try`
+            /// is enabled (as it is when `listen_host` is omitted).
+            if (config.has(port_name))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mongo protocol is disabled because ClickHouse has been built without the MongoDB or the rapidjson library");
+#endif
+        }
+
 #if USE_GRPC
         if (server_type.shouldStart(ServerType::Type::GRPC)
             && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
@@ -5065,7 +5112,7 @@ void Server::updateServers(
                             consumes_default_session_user = true;
                             break;
                         }
-                        if (type == "tcp" || type == "mysql" || type == "postgres")
+                        if (type == "tcp" || type == "mysql" || type == "postgres" || type == "mongo")
                             consumes_default_session_user = true;
                         /// The running listener still serves the handler set of the *previous*
                         /// configuration (the shared `prometheus.handlers` section), so consider the

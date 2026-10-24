@@ -465,8 +465,9 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// `formatWithSecretsOneLine`, not text the user typed, so the language it is written in is not the
     /// caller's to choose. The initiator's changed settings travel with the entry, though, and `dialect` would
     /// otherwise be applied to the replay parse in `DDLWorker::tryExecuteQuery`: a session that issues
-    /// `... ON CLUSTER ...` under `clickhouse_json` (or any other alternative dialect, e.g. through an HTTP
-    /// handler whose stored query is executed as ClickHouse SQL regardless of the request `dialect`) would
+    /// `... ON CLUSTER ...` under `clickhouse_json` (or any other alternative dialect, e.g. an `ALTER TABLE ... UPDATE`
+    /// produced by a Mongo `updateMany` under `mongo`, or through an HTTP handler whose stored query is executed
+    /// as ClickHouse SQL regardless of the request `dialect`) would
     /// make every host feed the formatted ClickHouse SQL to the wrong parser. This mirrors
     /// `prepareSecondaryQuerySettings`, which does the same for the interserver path.
     ///
