@@ -108,7 +108,7 @@ ORDER BY key
 Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
-- [Map](/reference/data-types/map), either on the `Map` column using the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, or only on the map keys or values using the [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) function, and
+- [Map](/reference/data-types/map), either on the `Map` column using the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, or only on the map keys or values, using the `keys`/`values` subcolumn or the [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) function, and
 - [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
@@ -916,7 +916,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 Function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
 The behaviour is similar to the `equals` function with a `String` column.
-The text index is only used if it was created on a `mapKeys(map)` expression.
+The text index is only used if it was created on a `mapKeys(map)` expression or on the `map.keys` subcolumn.
 
 Example:
 
@@ -930,7 +930,7 @@ SELECT count() FROM table WHERE mapContains(map, 'clickhouse');
 
 Function [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue) matches against tokens extracted from the searched string in the values of a map.
 The behaviour is similar to the `equals` function with a `String` column.
-The text index is only used if it was created on a `mapValues(map)` expression.
+The text index is only used if it was created on a `mapValues(map)` expression or on the `map.values` subcolumn.
 
 Example:
 
@@ -952,7 +952,7 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 #### `operator[]` {#functions-example-access-operator}
 
 Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values.
-The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression.
+The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression, or on the `map.keys` or `map.values` subcolumn.
 In the former case (`keyValuePairs` tokenizer), direct read can be used, otherwise direct read with hint.
 A `keyValuePairs` index also answers `IN` on a map element, as one index lookup per value of the list.
 
@@ -1090,6 +1090,13 @@ Use [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapVa
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
 ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
+```
+
+Instead of `mapKeys` or `mapValues`, the index can be created on the `keys` or `values` subcolumn of the map.
+It is used by the same `attributes['key']`, `mapContainsKey` and `mapContainsValue` queries:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_keys_idx attributes.keys TYPE text(tokenizer = array);
 ```
 
 Example queries:

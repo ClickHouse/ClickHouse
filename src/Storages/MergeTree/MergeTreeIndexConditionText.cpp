@@ -190,6 +190,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
     NameSet columns_shadowing_map_subcolumns_,
+    NameToNameMap map_subcolumn_index_columns_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(index_sample_block)
@@ -198,6 +199,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , map_subcolumn_index_columns(std::move(map_subcolumn_index_columns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -1218,8 +1220,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
-    bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+    bool has_map_keys_column = hasIndexForColumn(getMapIndexColumnName(map_subcolumn_index_columns, "mapKeys", index_column_name));
+    bool has_map_values_column = hasIndexForColumn(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", index_column_name));
 
     bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
@@ -1253,7 +1255,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, _] = *parsed;
-            if (header.has(fmt::format("mapValues({})", map_column_name))
+            if (header.has(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", map_column_name))
                 && value_field.getType() == Field::Types::String
                 && !isMapValueDefault(value_field.safeGet<String>(), header))
             {
@@ -1345,7 +1347,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         };
 
-        /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
+        /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))` or on its `keys` subcolumn
         if (has_map_keys_column)
         {
             if (function_name == "mapContainsKey" || function_name == "has")
@@ -1354,7 +1356,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return make_map_function(stringLikeToTokens(value_field));
         }
 
-        /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
+        /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))` or on its `values` subcolumn
         if (has_map_values_column)
         {
             if (function_name == "mapContainsValue")
@@ -1975,11 +1977,11 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (required_columns.size() != 1 || outputs.size() != 1)
         return false;
 
-    auto required_column = required_columns.front();
+    const auto & required_column = required_columns.front();
 
     std::optional<String> key_const_value;
 
-    if (isMap(required_column.type) && header.has(fmt::format("mapKeys({})", required_column.name)))
+    if (isMap(required_column.type) && header.has(getMapIndexColumnName(map_subcolumn_index_columns, "mapKeys", required_column.name)))
     {
         /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
         std::vector<const ActionsDAG::Node *> stack;
@@ -2028,7 +2030,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
             return false;
 
         auto & [map_column_name, serialized_key] = *parsed;
-        if (!header.has(fmt::format("mapKeys({})", map_column_name)))
+        if (!header.has(getMapIndexColumnName(map_subcolumn_index_columns, "mapKeys", map_column_name)))
             return false;
 
         key_const_value = std::move(serialized_key);
@@ -2234,7 +2236,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
-            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
+            return hasIndexForColumn(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", column_name));
         }
         return false;
     }
@@ -2244,7 +2246,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
-    return header.has(fmt::format("mapValues({})", map_column_name));
+    return header.has(getMapIndexColumnName(map_subcolumn_index_columns, "mapValues", map_column_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const

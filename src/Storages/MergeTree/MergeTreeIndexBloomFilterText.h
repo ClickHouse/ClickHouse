@@ -73,6 +73,7 @@ public:
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
             NameSet columns_shadowing_map_subcolumns_,
+            NameToNameMap map_subcolumn_index_columns_,
             JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
@@ -158,6 +159,7 @@ private:
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     NameSet columns_shadowing_map_subcolumns;
+    const NameToNameMap map_subcolumn_index_columns;
 
     RPN rpn;
 };
