@@ -49,6 +49,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+extern const int ACCESS_DENIED;
 extern const int NOT_IMPLEMENTED;
 extern const int QUERY_IS_PROHIBITED;
 extern const int LOGICAL_ERROR;
@@ -56,11 +57,16 @@ extern const int LOGICAL_ERROR;
 
 
 /// Adds the databases of the tables an `Alias` chain starting at `table` forwards to.
-static void addAliasTargetDatabases(StoragePtr table, std::vector<String> & target_databases)
+/// Each target must be visible to the user before it is resolved, so the result does not disclose a hidden table.
+static void addAliasTargetDatabases(StoragePtr table, std::vector<String> & target_databases, const ContextPtr & context)
 {
     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
     while (const auto * alias = table ? table->as<StorageAlias>() : nullptr)
     {
+        if (!alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges to access the target table of {}",
+                context->getUserName(), alias->getStorageID().getNameForLogs());
         table = alias->tryGetTargetTable();
         if (!table || !visited.insert(table->getStorageID()).second)
             break;
@@ -95,7 +101,7 @@ void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Stri
             const Strings named_databases(target_databases);
             for (const auto & database_name : named_databases)
                 addAliasTargetDatabases(
-                    DatabaseCatalog::instance().tryGetTable(StorageID(database_name, with_table->getTable()), context), target_databases);
+                    DatabaseCatalog::instance().tryGetTable(StorageID(database_name, with_table->getTable()), context), target_databases, context);
         }
     }
     else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()); rename && !rename->database)
@@ -265,13 +271,14 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     AddDefaultDatabaseVisitor visitor(context, current_database, !use_local_default_database);
     visitor.visitDDL(query_ptr);
 
+    /// Check access rights, assume that all servers have the same users config
+    context->checkAccess(access_to_check);
+
     /// Initiator-side guard; workers re-check in `DDLWorker::tryExecuteQuery`. A table name still bare after the
     /// rewrite above is resolved on each host against its `default_database` from the cluster definition, so it is
     /// checked against those databases rather than against the initiator's current one.
+    /// It runs after the access check so that it does not disclose anything about tables the user may not access.
     checkQueryDatabasesSupportOnClusterDDL(query_ptr, access_check_default_databases, context);
-
-    /// Check access rights, assume that all servers have the same users config
-    context->checkAccess(access_to_check);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);

@@ -32,6 +32,7 @@ void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database);
 
 /// Same, for every database the query targets, including the databases an `Alias` forwards the query to.
 /// A bare table name is checked against each of `default_databases`, the databases the hosts resolve it to.
+/// Following an `Alias` requires `SHOW TABLES` on its target in `context`.
 void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases, const ContextPtr & context);
 
 struct DDLQueryOnClusterParams

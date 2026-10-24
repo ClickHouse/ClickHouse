@@ -2075,6 +2075,43 @@ def test_on_cluster_ddl_rejected_through_alias_to_datalake_catalog(started_clust
             node.query(f"DROP TABLE IF EXISTS default.{alias_name}")
 
 
+def test_on_cluster_ddl_datalake_catalog_check_after_access_check(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    test_ref = f"test_on_cluster_access_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_namespace"
+    alias_name = f"{test_ref}_alias"
+    user = f"user_{uuid.uuid4().hex}"
+
+    create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+    create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node1, namespace, table_name, "(x String)")
+    for node in [node1, node2]:
+        node.query(f"CREATE TABLE default.{alias_name} ENGINE = Alias('{CATALOG_NAME}', '{namespace}.{table_name}')")
+    node1.query(f"CREATE USER {user}")
+    node1.query(f"GRANT CLUSTER ON *.* TO {user}")
+
+    try:
+        err = node1.query_and_get_error(
+            f"OPTIMIZE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` ON CLUSTER cluster_simple", user=user
+        )
+        assert "ACCESS_DENIED" in err, err
+
+        alias_optimize = f"OPTIMIZE TABLE default.{alias_name} ON CLUSTER cluster_simple"
+        err = node1.query_and_get_error(alias_optimize, user=user)
+        assert "ACCESS_DENIED" in err, err
+
+        node1.query(f"GRANT OPTIMIZE ON default.{alias_name} TO {user}")
+        err = node1.query_and_get_error(alias_optimize, user=user)
+        assert "ACCESS_DENIED" in err, err
+    finally:
+        node1.query(f"DROP USER IF EXISTS {user}")
+        for node in [node1, node2]:
+            node.query(f"DROP TABLE IF EXISTS default.{alias_name}")
+
+
 def test_cluster_insert(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]

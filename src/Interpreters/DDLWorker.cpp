@@ -575,9 +575,10 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
     try
     {
-        checkQueryDatabasesSupportOnClusterDDL(task.query, {context->getCurrentDatabase()}, context);
-
         auto query_context = task.makeQueryContext(context, zookeeper);
+
+        /// Uses the query context, so `Alias` targets are resolved with the access rights the query runs with.
+        checkQueryDatabasesSupportOnClusterDDL(task.query, {context->getCurrentDatabase()}, query_context);
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])
