@@ -1,0 +1,41 @@
+-- 28. a second index over the same absent column keeps the column absent
+1
+1
+1
+1
+2
+1
+1
+0
+0
+0
+0
+-- 28b. the same when the sibling reads a SUBCOLUMN whose name prefix is another column
+1
+1
+2
+64
+64
+-- 29. a sibling index whose granules this mutation rebuilds does not keep the column absent
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
+-- 36. a mutation that rewrites the whole part rebuilds a sibling index refused for its column type
+DateTime(\'UTC\')
+DateTime(\'Asia/Tokyo\')
+2
+1
+64
+64
+-- 36b. the same when an UPDATE of another column is what rewrites the whole part
+DateTime(\'Asia/Tokyo\')
+1
+64
+64
