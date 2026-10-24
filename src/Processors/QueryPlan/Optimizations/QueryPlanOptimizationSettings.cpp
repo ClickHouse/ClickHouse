@@ -96,6 +96,7 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool query_plan_lazy_materialization_for_join;
     extern const SettingsBool query_plan_push_down_volume_reducing_functions;
+    extern const SettingsBool query_plan_push_down_expressions_below_window;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
@@ -269,6 +270,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     short_circuit_function_evaluation_disabled = from[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE;
     push_down_volume_reducing_functions
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
+    push_down_expressions_below_window
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_expressions_below_window];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
     convert_outer_join_to_inner_join_transitively = convert_outer_join_to_inner_join && from[Setting::query_plan_convert_outer_join_to_inner_join_transitively];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];

@@ -8030,6 +8030,23 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.8", false, true, "New setting to push volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) below `Sorting` and `Filter` steps, so the wide argument column is replaced by the fixed-size result. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no push down)."}) \
+    DECLARE(Bool, query_plan_push_down_expressions_below_window, true, R"(
+Toggles a query-plan-level optimization which computes the expressions that are computed after window functions
+before them, between the `Window` steps and the `Sorting` step for them, if they read a `String` or `FixedString`
+column and have a small fixed-size result, for example `toUInt64OrZero(splitByString('@', s)[2])` or `length(s)`.
+The window functions buffer their input, so they buffer the result instead of the column.
+
+The rewrite is applied only if nothing else reads the column after the window functions. This is how the old
+query analysis computed such expressions.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, true, "New setting to compute the expressions with a small fixed-size result of a `String` or `FixedString` column before window functions, so that the window functions buffer the result instead of the column. previous_value=false so `compatibility` with versions before 26.11 restores the previous behavior."}) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0, \
