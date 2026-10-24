@@ -125,6 +125,7 @@ static size_t tryTopKForFormatSource(
     auto info = std::make_shared<FormatTopKFilterInfo>();
     info->column_name = sort_column_name;
     info->threshold_tracker = std::move(threshold_tracker);
+    info->single_sort_column = num_sort_columns == 1;
     info->plan_hash = topKPlanHash(sort_column_name, sort_column.type, num_sort_columns, limit, sort_col_desc);
     source_step->setTopKFilter(std::move(info));
 

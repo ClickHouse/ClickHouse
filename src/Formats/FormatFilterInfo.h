@@ -37,6 +37,7 @@ struct FormatTopKFilterInfo
     /// Name of the first ORDER BY column in the format's output block.
     String column_name;
     TopKThresholdTrackerPtr threshold_tracker;
+    bool single_sort_column = false;
     /// Hash of the planning-time parameters of the TopK (sort column and its type, number of sort
     /// columns, `LIMIT`, direction, NULLS FIRST/LAST, collation). Which row groups the filter lets
     /// through depends on these, so a query condition cache entry written by a TopK read is keyed
