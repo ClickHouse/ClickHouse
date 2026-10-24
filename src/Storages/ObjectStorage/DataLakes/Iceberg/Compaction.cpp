@@ -42,6 +42,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN;
     extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -992,7 +993,9 @@ static bool writeConsolidatedManifestFile(
     }
     catch (...)
     {
-        cleanup();
+        /// The catalog may have published the new snapshot, which then references these files.
+        if (getCurrentExceptionCode() != ErrorCodes::DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN)
+            cleanup();
         throw;
     }
 
