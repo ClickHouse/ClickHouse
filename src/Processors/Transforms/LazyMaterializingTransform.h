@@ -59,6 +59,7 @@ public:
         SharedHeader lazy_header,
         ILazyMaterializingRowsPtr lazy_materializing_rows_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        bool preserve_output_order_);
         String index_column_name_ = default_index_column_name);
 
     static constexpr auto default_index_column_name = "__global_row_index";
@@ -97,6 +98,7 @@ private:
     /// with main columns or permuting. Used when main input only has
     /// __global_row_index and output only needs lazy columns.
     bool pass_through = false;
+    bool preserve_output_order;
 
     /// Those functions are called once each after the corresponding port is finished.
     void prepareMainChunk();

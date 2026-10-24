@@ -97,6 +97,51 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+bool hasLimitShuffle(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffle(child))
+            return true;
+    }
+
+    return false;
+}
+
+bool hasLimitShuffleInMutationAlter(const ASTPtr & ast)
+{
+    const auto * alter = ast ? ast->as<ASTAlterQuery>() : nullptr;
+    if (!alter || !alter->command_list)
+        return false;
+
+    for (const auto & command_ast : alter->command_list->children)
+    {
+        const auto * command = command_ast->as<ASTAlterCommand>();
+        if (!command)
+            continue;
+
+        if ((command->type == ASTAlterCommand::DELETE
+            || command->type == ASTAlterCommand::UPDATE
+            || command->type == ASTAlterCommand::APPLY_PATCHES)
+            && hasLimitShuffle(command_ast))
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 InterpreterFactory & InterpreterFactory::instance()
@@ -145,6 +190,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
+
         interpreter_name = "InterpreterSelectQueryAnalyzer";
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
@@ -241,6 +287,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTAlterQuery>())
     {
+        if (hasLimitShuffleInMutationAlter(query))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled in mutation queries");
+
         interpreter_name = "InterpreterAlterQuery";
     }
     else if (query->as<ASTAlterNamedCollectionQuery>())
@@ -385,10 +434,16 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTDeleteQuery>())
     {
+        if (hasLimitShuffle(query))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled in mutation queries");
+
         interpreter_name = "InterpreterDeleteQuery";
     }
     else if (query->as<ASTUpdateQuery>())
     {
+        if (hasLimitShuffle(query))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled in mutation queries");
+
         interpreter_name = "InterpreterUpdateQuery";
     }
     else if (query->as<ASTParallelWithQuery>())

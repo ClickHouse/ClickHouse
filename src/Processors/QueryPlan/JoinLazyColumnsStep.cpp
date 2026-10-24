@@ -15,6 +15,9 @@ JoinLazyColumnsStep::JoinLazyColumnsStep(
     const SharedHeader & left_header_,
     const SharedHeader & right_header_,
     ILazyMaterializingRowsPtr lazy_materializing_rows_,
+    bool preserve_output_order_)
+    : lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , preserve_output_order(preserve_output_order_)
     String index_column_name_)
     : lazy_materializing_rows(std::move(lazy_materializing_rows_))
     , index_column_name(std::move(index_column_name_))
@@ -37,6 +40,7 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
         pipelines[1]->resize(1);
 
     auto transform = std::make_shared<LazyMaterializingTransform>(
+        input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, preserve_output_order);
         input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, index_column_name);
     transform->setPassThrough(pass_through);
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
