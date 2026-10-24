@@ -23,3 +23,15 @@ $CLICKHOUSE_CLIENT --query "DETACH TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glo
 $CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "ATTACH TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob"
 $CLICKHOUSE_CLIENT --query "SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'remote_mixed_glob'"
 $CLICKHOUSE_CLIENT --query "DROP TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob"
+
+# The same for a table defined with the table function: its arguments are parsed by the table function
+# itself, not by the `Remote` table engine.
+$CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf (dummy UInt8) AS remote('$ADDRESSES', system.one)" 2>&1 \
+    | grep -oF -e "Table function 'remote'" -e "too many result addresses: 4, while at most 3 are allowed" \
+    | head -n 2
+
+$CLICKHOUSE_CLIENT --table_function_remote_max_addresses 4 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf (dummy UInt8) AS remote('$ADDRESSES', system.one)"
+$CLICKHOUSE_CLIENT --query "DETACH TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf"
+$CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "ATTACH TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf"
+$CLICKHOUSE_CLIENT --query "SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'remote_mixed_glob_tf'"
+$CLICKHOUSE_CLIENT --query "DROP TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf"
