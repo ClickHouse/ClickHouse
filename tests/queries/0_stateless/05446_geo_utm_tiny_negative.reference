@@ -1,7 +1,7 @@
 -- band letter and round trip for latitudes just below the equator
 M	1
 M	1
-N	1
+M	1
 -- controls: zero and positive latitudes stay northern
 N	1
 N	1

@@ -210,11 +210,11 @@ char utmLatitudeBand(Float64 latitude)
         return 'X';
     if (latitude >= -80.0 && latitude < 72.0)
     {
-        /// Compute in long double so a latitude just below an 8-degree boundary is not rounded up
-        /// into the band above it. Subnormal negatives still evaluate to band 'N' (the equator
-        /// band) here, which is what keeps `geoToMGRS` consistent at the 10,000,000 m boundary.
-        long double index = std::floor((static_cast<long double>(latitude) + 80.0L) / 8.0L);
-        return BAND_LETTERS[static_cast<size_t>(index)];
+        /// Divide by 8 before adding the 80-degree offset: the division is by a power of two and the
+        /// offset is an integer, so both are exact. Adding 80 to the latitude first would round a tiny
+        /// negative value (down to the smallest subnormal) back to 80.0 and put it into band 'N'
+        /// instead of 'M', disagreeing with the southern false northing and with the MGRS row.
+        return BAND_LETTERS[static_cast<size_t>(std::floor(latitude / 8.0) + 10.0)];
     }
     return 0;
 }
@@ -347,6 +347,10 @@ std::string mgrsEncode(Float64 longitude, Float64 latitude, UInt8 precision)
     const Int64 easting_int = static_cast<Int64>(std::floor(utm.easting));
     Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
 
+    /// A latitude just below the equator has a southern false northing that is a tiny negative distance
+    /// from 10,000,000 m. That distance is below the resolution of the double, so the northing rounds up
+    /// to exactly 10,000,000 and would select the northern equatorial square (row 'F'). Take the floor of
+    /// the true value instead, so the row letter stays in the southern hemisphere (row 'E' in set 6).
     if (latitude < 0.0 && northing_int == static_cast<Int64>(FALSE_NORTHING))
         --northing_int;
 

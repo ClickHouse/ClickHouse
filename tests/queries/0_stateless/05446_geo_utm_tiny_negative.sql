@@ -1,5 +1,5 @@
--- Regression test for UTM hemisphere handling just below the equator.
--- https://github.com/ClickHouse/ClickHouse/issues/NNNNN
+-- band letter and round trip for latitudes just below the equator
+-- https://github.com/ClickHouse/ClickHouse/issues/127516
 
 SELECT '-- band letter and round trip for latitudes just below the equator';
 WITH (-3., -1e-15) AS p, geoToUTM(p.1, p.2) AS u, UTMToGeo(u.1, u.2, u.3, u.4) AS g
