@@ -92,6 +92,8 @@ public:
     bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
     StoragePtr getDestinationTable() const;
+    /// The context the nested INSERT into the destination table runs with (a copy of it), see `writeBlockToDestination`.
+    ContextPtr getDestinationWriteContext() const { return getContext(); }
 
     bool supportsParallelInsert() const override { return true; }
 

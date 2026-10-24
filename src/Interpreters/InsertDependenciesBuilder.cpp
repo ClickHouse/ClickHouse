@@ -755,6 +755,95 @@ private:
 /// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
 static constexpr size_t max_insert_forwarding_depth = 16;
 
+namespace
+{
+
+/// Registers the deferred pre-write checks of the tables a nested INSERT into `storage` writes into, see
+/// `collectHiddenPreWriteChecks`. `context` is the context the nested INSERT runs with.
+void registerHiddenPreWriteChecks(
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const InsertStartGatesPtr & gates,
+    const StorageID & forwarded_to,
+    size_t depth,
+    std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
+{
+    if (!storage || depth > max_insert_forwarding_depth)
+        return;
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(alias->tryGetTargetTable(), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(
+            buffer->getDestinationTable(), buffer->getDestinationWriteContext(), gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->hasTarget(kind))
+                registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(proxy->getNested(), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+
+    if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
+    {
+        auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
+        /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
+        auto gate = gates->get(storage->getStorageID());
+        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome});
+        result.push_back({forwarded_to, std::move(gate), std::move(outcome)});
+    }
+}
+
+/// A sink that forwards the write through a nested INSERT - `AliasSink`, `BufferSink` (a direct write) and
+/// `TimeSeriesSink` - creates the sinks of the tables behind it only during the execution, after a sibling
+/// sink of the query writing into the same table may already have made the decision of its gate, so the
+/// checks of these sinks, which may use different limits (e.g. the settings of the `Buffer`), would not
+/// take part in it. Register their checks now, while the pipeline is being built, as deferred checks, and
+/// return them for the forwarding sink to consult before it writes. The dependent views of the tables
+/// behind the forwarding sink are not followed.
+std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
+    const StoragePtr & storage, const ContextPtr & context, const InsertStartGatesPtr & gates)
+{
+    std::vector<SinkToStorage::HiddenPreWriteCheck> result;
+
+    auto add_forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context)
+    {
+        if (target)
+            registerHiddenPreWriteChecks(target, target_context, gates, target->getStorageID(), 1, result);
+    };
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        add_forwarded_to(alias->tryGetTargetTable(), context);
+    else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+        add_forwarded_to(buffer->getDestinationTable(), buffer->getDestinationWriteContext());
+    else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->hasTarget(kind))
+                add_forwarded_to(time_series->tryGetTargetTable(kind, context), context);
+    }
+
+    return result;
+}
+
+}
+
 /// A note on `TimeSeries` in the deduplication probes below. `StorageTimeSeries` does not override
 /// `IStorage::supportsParallelInsert`, so today `all_sinks_support_parallel_insert` already collapses
 /// the write fan-out of any insert whose graph reaches a `TimeSeries` table, and the probes cannot
@@ -2286,6 +2375,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         /// A forwarding sink (`AliasSink`) threads the registry into the nested INSERT it runs, so
         /// the sinks created there share this query's gates. A no-op for the other sinks.
         sink->setInsertStartGateRegistry(insert_start_gates);
+        sink->setHiddenPreWriteChecks(collectHiddenPreWriteChecks(inner_storage, insert_context, insert_start_gates));
         result.addSink(std::move(sink));
     }
 

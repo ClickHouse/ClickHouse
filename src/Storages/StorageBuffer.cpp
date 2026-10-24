@@ -908,6 +908,11 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
+                /// The sinks of the nested INSERT may come too late to take part in the `Too many parts`
+                /// decision of the destination: enforce the checks registered on their behalf, with the
+                /// limits of the buffer's context, while the pipeline was built. Rows that are only
+                /// buffered are not subject to them.
+                runHiddenPreWriteChecks();
                 storage.writeBlockToDestination(block, destination, insert_start_gates);
             }
             return;

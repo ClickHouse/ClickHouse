@@ -402,6 +402,10 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 
     const auto & target_table_id = time_series_storage.getTargetTableID(kind, getContext());
 
+    /// The sinks of the nested INSERT may come too late to take part in the `Too many parts` decision of
+    /// the target table: enforce the checks registered on their behalf while the pipeline was built.
+    runHiddenPreWriteChecks(&target_table_id);
+
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->table_id = target_table_id;
 

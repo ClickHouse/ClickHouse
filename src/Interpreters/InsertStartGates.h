@@ -29,6 +29,19 @@ namespace DB
 class InsertStartGate
 {
 public:
+    /// The outcome of a deferred check. A sink that forwards the write through a nested INSERT (`AliasSink`,
+    /// `BufferSink`, `TimeSeriesSink`) creates the real sinks of the target table only during the execution -
+    /// possibly after the decision has been made - so their checks could not take part in it (see
+    /// `addCheck`). Instead, the forwarding sink registers the checks of the tables behind it while the
+    /// pipeline is being built, as deferred checks. They run together with the other checks, before anything
+    /// is written, but their failure does not reject the query on its own: it is stored here, and the
+    /// forwarding sink rethrows it before it actually writes through the nested INSERT. A `Buffer` may only
+    /// keep the rows in memory, in which case the limits of its destination must not reject the query.
+    struct DeferredOutcome
+    {
+        std::exception_ptr exception;
+    };
+
     /// The pre-write check of one sink. `key` identifies the context the check runs with: the checks of
     /// the parallel sinks of one stream are the same and are run only once. `check` must not keep the
     /// sink alive - the gate may outlive it, see `addCheck`.
@@ -36,6 +49,8 @@ public:
     {
         std::weak_ptr<const void> key;
         std::function<void()> check;
+        /// Set for the check of a write that is hidden behind a forwarding sink, see `DeferredOutcome`.
+        std::shared_ptr<DeferredOutcome> deferred;
     };
 
     /// `InsertStartGates::get` moves the checks of a merged gate without allocating, so it cannot fail half way.
@@ -67,9 +82,11 @@ public:
         if (done)
             return;
 
-        for (const auto & existing : checks)
-            if (!existing.key.owner_before(check.key) && !check.key.owner_before(existing.key))
-                return;
+        /// A deferred check is never deduplicated: its forwarding sink waits for its own outcome.
+        if (!check.deferred)
+            for (const auto & existing : checks)
+                if (!existing.deferred && !existing.key.owner_before(check.key) && !check.key.owner_before(existing.key))
+                    return;
 
         checks.push_back(std::move(check));
     }
@@ -94,7 +111,22 @@ public:
             try
             {
                 for (const auto & check : checks)
-                    check.check();
+                {
+                    if (!check.deferred)
+                    {
+                        check.check();
+                        continue;
+                    }
+
+                    try
+                    {
+                        check.check();
+                    }
+                    catch (...)
+                    {
+                        check.deferred->exception = std::current_exception();
+                    }
+                }
             }
             catch (...)
             {

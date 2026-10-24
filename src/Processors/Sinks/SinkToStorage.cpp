@@ -31,6 +31,23 @@ void SinkToStorage::runPreWriteCheck()
     insert_start_gate->run();
 }
 
+void SinkToStorage::runHiddenPreWriteChecks(const StorageID * forwarded_to) const
+{
+    for (const auto & hidden : hidden_pre_write_checks)
+    {
+        if (forwarded_to
+            && (hidden.forwarded_to.getDatabaseName() != forwarded_to->getDatabaseName()
+                || hidden.forwarded_to.getTableName() != forwarded_to->getTableName()))
+            continue;
+
+        /// The deferred check runs as a part of the decision of the gate, and the outcome is written under
+        /// the lock of the gate that makes it, which `run` acquires as well.
+        hidden.gate->run();
+        if (hidden.outcome->exception)
+            std::rethrow_exception(hidden.outcome->exception);
+    }
+}
+
 void SinkToStorage::onConsume(Chunk chunk)
 {
     consume(chunk);

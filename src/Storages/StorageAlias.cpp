@@ -188,6 +188,10 @@ public:
     {
         StoragePtr target = storage.getTargetTable();
 
+        /// The sinks of the nested INSERT may come too late to take part in the `Too many parts` decision of
+        /// the target table: enforce the checks registered on their behalf while the pipeline was built.
+        runHiddenPreWriteChecks();
+
         std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
         insert->table_id = target->getStorageID();
         ASTPtr query_ptr(insert.release());

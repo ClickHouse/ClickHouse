@@ -33,6 +33,20 @@ public:
     /// creating their own. See InsertStartGates.h.
     virtual void setInsertStartGateRegistry(InsertStartGatesPtr /*gates*/) {}
 
+    /// The deferred pre-write check of a table behind a forwarding sink (see `InsertStartGate::DeferredOutcome`).
+    /// `forwarded_to` is the table the nested INSERT of the forwarding sink writes into, which is not
+    /// necessarily the table of the check: the check may be further down the forwarding chain.
+    struct HiddenPreWriteCheck
+    {
+        StorageID forwarded_to = StorageID::createEmpty();
+        InsertStartGatePtr gate;
+        std::shared_ptr<InsertStartGate::DeferredOutcome> outcome;
+    };
+
+    /// Set by `InsertDependenciesBuilder` for a forwarding sink, which consults them before it writes, see
+    /// `runHiddenPreWriteChecks`.
+    void setHiddenPreWriteChecks(std::vector<HiddenPreWriteCheck> checks) { hidden_pre_write_checks = std::move(checks); }
+
 protected:
     virtual void consume(Chunk & chunk) = 0;
 
@@ -46,11 +60,19 @@ protected:
     /// has just written and reject the query in the middle of it.
     void runPreWriteCheck();
 
+    /// Called by a forwarding sink before it writes through a nested INSERT into `forwarded_to` (or into any
+    /// of its targets, if it is null): makes the decision of the gates of the tables behind it, if it has not
+    /// been made yet, and rethrows the failure of their deferred checks. The sinks created by the nested
+    /// INSERT may come too late to take part in the decision, so this is where the limits of the hidden
+    /// write are enforced.
+    void runHiddenPreWriteChecks(const StorageID * forwarded_to = nullptr) const;
+
 private:
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<const Context>> interpreter_context;
 
     InsertStartGatePtr insert_start_gate;
+    std::vector<HiddenPreWriteCheck> hidden_pre_write_checks;
 
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override;
