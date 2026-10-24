@@ -34,6 +34,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -1036,6 +1037,13 @@ static Block makeBlockWithMinMaxFromStatistics(
 
             auto it = estimates.find(stats_aggregate.column_name);
             if (it == estimates.end())
+                return false;
+
+            /// The statistics hold values of the column's type in the part, which a read converts to the current type.
+            auto part_column = part->tryGetColumn(stats_aggregate.column_name);
+            if (!part_column
+                || !isRepresentationPreservingConversion(
+                    part_column->type.get(), stats_aggregate.aggregate->function->getArgumentTypes().front().get()))
                 return false;
 
             const auto & estimate = it->second;
