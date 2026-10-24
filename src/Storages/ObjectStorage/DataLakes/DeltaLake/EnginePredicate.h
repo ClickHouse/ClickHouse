@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
+#include <Core/Names.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Formats/FormatFactory.h>
@@ -28,9 +29,11 @@ class EnginePredicate : public ffi::EnginePredicate
 public:
     explicit EnginePredicate( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         const DB::ActionsDAG & filter_,
+        const DB::NameSet & binary_columns_,
         std::exception_ptr & exception_,
         DB::ContextPtr context_)
         : filter(filter_)
+        , binary_columns(binary_columns_)
         , exception(exception_)
         , context(context_)
         , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
@@ -49,6 +52,7 @@ public:
     }
 
     const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    bool isBinaryColumn(const std::string & name) const { return binary_columns.contains(name); }
     DB::ContextPtr getContext() const { return context; }
     const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -57,6 +61,7 @@ private:
 
     /// Predicate expression.
     const DB::ActionsDAG & filter;
+    const DB::NameSet & binary_columns;
     /// Exception which will be set during EnginePredicate execution.
     /// Exceptions cannot be rethrown as it will cause
     /// panic from rust and server terminate.
@@ -69,7 +74,7 @@ private:
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context);
+    const DB::ActionsDAG & filter, const DB::NameSet & binary_columns, std::exception_ptr & exception, DB::ContextPtr context);
 }
 
 #endif

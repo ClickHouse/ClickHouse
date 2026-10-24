@@ -182,9 +182,9 @@ namespace
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context)
+    const DB::ActionsDAG & filter, const DB::NameSet & binary_columns, std::exception_ptr & exception, DB::ContextPtr context)
 {
-    return std::make_unique<EnginePredicate>(filter, exception, context);
+    return std::make_unique<EnginePredicate>(filter, binary_columns, exception, context);
 }
 
 /// Contains state for EngineIterator
@@ -428,6 +428,15 @@ static uintptr_t visitLiteralValue(
     }
 }
 
+/// Delta `binary` columns are read as `String`, but delta-kernel compares them only with binary literals.
+static uintptr_t visitBinaryLiteral(const DB::Field & value, ffi::KernelExpressionVisitorState * state)
+{
+    if (value.isNull())
+        return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
+    const auto & bytes = value.safeGet<String>();
+    return ffi::visit_expression_literal_binary(state, reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size());
+}
+
 enum class Junction { And, Or };
 
 /// Builds an AND / OR over two predicate IDs.
@@ -640,6 +649,14 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (literal_node && column_node)
                 {
+                    const bool is_binary = iterator_data.predicate.isBinaryColumn(column_node->result_name);
+                    /// `String` and `FixedString` compare zero-padded, and delta-kernel splits a name at every dot, which can resolve
+                    /// a dotted name to another field: only `String` against `String` on a top-level column has an exact binary form.
+                    if (is_binary
+                        && (!isString(getTypeOrNestedType(column_node)) || !isString(getTypeOrNestedType(literal_node))
+                            || column_node->result_name.contains('.')))
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
+
                     /// If literal node has a different type from column's,
                     /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
@@ -679,11 +696,9 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     DB::Field value = literal_node->column->getField();
 
-                    uintptr_t constant = visitLiteralValue(
-                        value,
-                        comparison_type_index,
-                        getTypeOrNestedType(column_node),
-                        iterator_data.state);
+                    uintptr_t constant = is_binary
+                        ? visitBinaryLiteral(value, iterator_data.state)
+                        : visitLiteralValue(value, comparison_type_index, getTypeOrNestedType(column_node), iterator_data.state);
 
                     if (!constant || constant == VISITOR_FAILED_OR_UNSUPPORTED)
                     {
