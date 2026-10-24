@@ -8,7 +8,9 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -101,6 +103,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.distributed_plan_partial_aggregation_before_shuffle = optimization_settings.distributed_plan_partial_aggregation_before_shuffle;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
@@ -128,6 +131,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     if (memo.getContext().cascades_aggregation_pushdown)
         addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
+    addRule(createMergingAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());
     addRule(createReplicatedReadImplementation());
@@ -376,6 +380,17 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
     return step;
 }
 
+/// The partial aggregation under a merge per bucket produces its result in bucket order only for the
+/// memory-efficient merge on one node, which shares its memo group: the shuffle between them does not
+/// keep any order, and with the order the partial aggregation would send its result from one stream.
+static void dropBucketOrderOfPartialAggregationBelow(QueryPlan::Node * node)
+{
+    while (node->children.size() == 1 && dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
+        node = node->children.front();
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get()); aggregating_step && !aggregating_step->isFinal())
+        aggregating_step->setShouldProduceResultsInBucketOrder(false);
+}
+
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties)
 {
     const auto & cost_config = memo.getContext().cost_config;
@@ -462,6 +477,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         else if (frame.expression->inputs.size() == 1)
         {
             result = std::move(frame.child_plans[0]);
+            if (frame.expression->strategy == strategySingleton<ShuffleMergeStrategy>())
+                dropBucketOrderOfPartialAggregationBelow(result->getRootNode());
             auto step = cloneStepForBestPlan(*frame.expression);
             addConvertingExpression(*result, step->getInputHeaders().at(0));
             result->addStep(std::move(step));
