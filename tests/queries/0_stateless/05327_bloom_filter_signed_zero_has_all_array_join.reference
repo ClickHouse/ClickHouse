@@ -1,0 +1,22 @@
+hasAll(a, [0.0, 42.0])	[100,101]	[100,101]
+hasAll(a, [-0.0])	[0,100,101]	[0,100,101]
+arrayJoin(a) = 0.0	[0,100,101]	[0,100,101]
+arrayJoin(a) = 42	[42,100,101,102]	[42,100,101,102]
+arrayJoin(b) = 0	[0,101]	[0,101]
+arrayJoin(b) = 0.5	[5,100]	[5,100]
+arrayJoin(b) = 0.1	[]	[]
+hasAny(a, [0.0, -0.0])	[0,100,101]	[0,100,101]
+hasAny(a, [-0.0, -0.0, 42.0])	[0,42,100,101,102]	[0,42,100,101,102]
+hasAll(a, [0.0, -0.0, 42.0])	[100,101]	[100,101]
+hasAll(a, [0.0, 0.0])	[0,100,101]	[0,100,101]
+pruned for hasAll(a, [0.0, 42.0])	2
+pruned for hasAll(a, [0.0, -0.0, 42.0])	2
+pruned for hasAny(a, [0.0, -0.0])	3
+pruned for hasAny(a, [-0.0, -0.0, 42.0])	5
+pruned for arrayJoin(a) = 42	4
+pruned for arrayJoin(a) = 0.0	3
+pruned for arrayJoin(b) = 0.5	2
+LEFT ARRAY JOIN a, x = -0.0	50	50
+LEFT ARRAY JOIN a, x = 0.0	50	50
+LEFT ARRAY JOIN b, x = -0.0	50	50
+LEFT ARRAY JOIN a, x = 1	50	50
