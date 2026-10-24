@@ -1553,6 +1553,28 @@ double Dictionary::getAverageValueSize() const
     return 0;
 }
 
+size_t Dictionary::getMaxValueSize() const
+{
+    size_t res = 0;
+    switch (mode)
+    {
+        case Mode::FixedSize:
+            return value_size;
+        case Mode::StringPlain:
+            for (size_t i = 0; i < offsets.size(); ++i)
+                res = std::max(res, size_t(offsets[i] - (i ? offsets[i - 1] : 0)) - 4);
+            return res;
+        case Mode::Column:
+            for (size_t i = 0; i < col->size(); ++i)
+                res = std::max(res, col->byteSizeAt(i));
+            return res;
+        case Mode::Uninitialized:
+            break;
+    }
+    chassert(false);
+    return 0;
+}
+
 size_t Dictionary::allocatedBytes() const
 {
     return decompressed_buf.allocated_bytes() + offsets.allocated_bytes() + string_value_filter_mask.allocated_bytes()

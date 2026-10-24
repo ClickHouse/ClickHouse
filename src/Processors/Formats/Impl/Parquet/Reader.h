@@ -353,6 +353,7 @@ struct Reader
         /// unless they would take too much memory, but the length of its strings is not in the metadata.
         /// So its dictionary is decoded in the `Dictionary` stage, before the row group is split into
         /// row subgroups, to estimate the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
+        /// Only if the dictionary page is small: it is read before `PREWHERE`, even if no row needs the column.
         bool decode_dictionary_early = false;
 
         /// Prefetches.
@@ -759,7 +760,11 @@ struct Reader
     void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, std::vector<PrefetchHandle *> & out);
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
-    double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+    /// With `upper_bound`, dictionary-encoded strings whose length is not in the metadata are estimated by the longest
+    /// value of the dictionary rather than the average one: the rows may repeat a long value much more often than the
+    /// others, so the average of the dictionary does not bound the size of the decoded strings.
+    double estimateColumnMemoryBytesPerRow(
+        const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info, bool upper_bound = false) const;
     /// Whether `estimateColumnMemoryBytesPerRow` can only guess: the column is of dictionary-encoded strings, the
     /// metadata has no length of the strings, and the dictionary is not decoded.
     bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
@@ -829,7 +834,7 @@ private:
         RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);
     void withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const;
     void initializePrefetches();
-    double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
+    double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group, bool upper_bound = false) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
