@@ -52,6 +52,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -4261,29 +4262,10 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
+        if (kind == Kind::RIGHT_CONST)
         {
-            if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
-            {
-                auto time_zone = extractTimeZoneNameFromColumn(const_arg.column.get(), const_arg.name);
-
-                const IDataType * type_ptr = &type;
-                if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
-                    type_ptr = low_cardinality_type->getDictionaryType().get();
-
-                if (type_ptr->isNullable())
-                    type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
-
-                DataTypePtr type_with_time_zone;
-                if (typeid_cast<const DataTypeDateTime *>(type_ptr))
-                    type_with_time_zone = std::make_shared<DataTypeDateTime>(time_zone);
-                else if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
-                    type_with_time_zone = std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
-                else
-                    return {}; /// In case we will have other types with time zone
-
-                return func->getMonotonicityForRange(*type_with_time_zone, left, right);
-            }
+            if (auto type_with_time_zone = getDateTimeTypeWithTimeZoneArgument(*func, type, const_arg))
+                return *type_with_time_zone ? func->getMonotonicityForRange(**type_with_time_zone, left, right) : Monotonicity{};
         }
         return func->getMonotonicityForRange(type, left, right);
     }
@@ -4573,10 +4555,11 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
                     if (!next_node)
                         is_valid_chain = false;
 
-                    /// next_node is the non-constant child of cur_node, so next_node->result_type
-                    /// is the child's output type, which is the input type to cur_node's function.
                     if (is_valid_chain)
-                        is_valid_chain = allow_key_function(*cur_node->function_base, *next_node->result_type);
+                    {
+                        size_t next_pos = cur_node->children.front() == next_node ? 0 : 1;
+                        is_valid_chain = allow_key_function(*cur_node->function_base, *getArgumentTypeForMonotonicity(*cur_node, next_pos));
+                    }
 
                     cur_node = next_node;
                 }

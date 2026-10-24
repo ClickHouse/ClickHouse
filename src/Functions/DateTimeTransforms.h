@@ -2829,6 +2829,7 @@ struct ToYearNumSinceEpochImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+    static constexpr bool is_monotonic_only_on_each_side_of_local_epoch = true;
 };
 
 template <ResultPrecision precision_>
@@ -2926,6 +2927,7 @@ struct ToMonthNumSinceEpochImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+    static constexpr bool is_monotonic_only_on_each_side_of_local_epoch = true;
 };
 
 template <ResultPrecision precision_>
@@ -2995,6 +2997,7 @@ struct ToRelativeDayNumImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+    static constexpr bool is_monotonic_only_on_each_side_of_local_epoch = true;
 };
 
 template <ResultPrecision precision_>
