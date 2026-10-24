@@ -847,6 +847,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       DDL entry (e.g. an `ON CLUSTER` `BACKUP`) and a pending batch of a `Distributed` table both keep the settings
 #       of the query that created them and run again after the restart. Nothing enables fault injection on the
 #       upgraded server itself, so this message is never a compatibility signal, whichever component logs it.
+# `Code: 153` + `Division by zero` in `intDiv(100, x)` + `While executing TTL` is `05073_column_ttl_recompute_materialized`
+#       failing a TTL merge on purpose: the column TTL resets `x` to 0, from which the `MATERIALIZED intDiv(100, x)` column
+#       of `t_column_ttl_materialized_undefined` cannot be computed. In a stress worker's shared `--database=test_N` the
+#       table outlives the test, as `--fake-drop` ignores its `DROP`, and both the previous release and the upgraded server
+#       retry the merge without end (issue #123953). The entry pins the code, the fixture's expression and the TTL context,
+#       so any other failing TTL merge still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -1048,6 +1054,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "No stream (ba1.bin) file checksum for column b" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
            -e "Query memory tracker: fault injected" \
+           -e "Code: 153. DB::Exception: Division by zero: while executing 'FUNCTION intDiv(100 :: 1, x :: 0) -> intDiv(100, x) Int8 : 3': While executing TTL. (ILLEGAL_DIVISION)" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
