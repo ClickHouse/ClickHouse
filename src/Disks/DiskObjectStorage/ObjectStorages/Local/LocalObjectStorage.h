@@ -102,7 +102,12 @@ public:
     bool isRemote() const override { return false; }
 
     /// With `object_storage_write_atomically` the data is written to a temporary file which is then renamed.
+    /// Not on Windows, where `writeObject` refuses atomic and conditional writes.
+#if defined(OS_WINDOWS)
+    bool supportsAtomicWrite() const override { return false; }
+#else
     bool supportsAtomicWrite() const override { return true; }
+#endif
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
