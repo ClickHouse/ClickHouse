@@ -285,6 +285,21 @@ SQLQueryPiece applySortFunction(
     return std::move(argument);
 }
 
+bool isUnderSortByLabel(const PrometheusQueryTree::Node * node, const ConverterContext & context)
+{
+    const auto & range = context.node_range_getter.get(node);
+    if (range.start_time != range.end_time)
+        return false;
+
+    for (const auto * parent = node->parent; parent; parent = parent->parent)
+    {
+        if ((parent->node_type == PrometheusQueryTree::NodeType::Function)
+            && isSortByLabelFunction(static_cast<const PrometheusQueryTree::Function *>(parent)->function_name))
+            return true;
+    }
+    return false;
+}
+
 void setLimitAggregationRank(SQLQueryPiece & query_piece, ASTPtr && bucket_key, bool descending, ConverterContext & context)
 {
     /// The order finalizeSQL() gives a topk() / bottomk() result: by bucket, then by value with NaN last, then by tags.
@@ -345,7 +360,7 @@ void setOrResultWithSortRank(
     {
         if (rank_subquery.empty())
         {
-            /// A side without sort*() has no defined order, as in Prometheus, so its rows share one rank.
+            /// A side without sort*() is in storage order, which is by tags, so its rows share one rank and tie by tags.
             builder.select_list.push_back(make_intrusive<ASTLiteral>(Array{}));
         }
         else

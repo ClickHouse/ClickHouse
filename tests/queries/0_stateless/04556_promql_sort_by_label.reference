@@ -118,6 +118,12 @@
 [('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
 [('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
 [('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(lz{instance='host1'} or lz{instance='host01'}, 'instance'): the sort starts from the left rows, then the right ones, as in Prometheus 3.5
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+-- sort_by_label_desc(lz{instance='host1'} or lz{instance='host01'}, 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
 -- sort_by_label(up, ''): an empty label name is accepted and sorts by all labels, as in Prometheus
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
 [('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10

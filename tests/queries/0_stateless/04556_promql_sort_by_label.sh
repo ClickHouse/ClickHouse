@@ -140,6 +140,12 @@ promql_client -q "sort_by_label(bottomk(3, lz), 'instance')"
 echo "-- sort_by_label_desc(bottomk(3, lz), 'instance'): the order of Prometheus 3.5"
 promql_client -q "sort_by_label_desc(bottomk(3, lz), 'instance')"
 
+echo "-- sort_by_label(lz{instance='host1'} or lz{instance='host01'}, 'instance'): the sort starts from the left rows, then the right ones, as in Prometheus 3.5"
+promql_client -q "sort_by_label(lz{instance='host1'} or lz{instance='host01'}, 'instance')"
+
+echo "-- sort_by_label_desc(lz{instance='host1'} or lz{instance='host01'}, 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label_desc(lz{instance='host1'} or lz{instance='host01'}, 'instance')"
+
 echo "-- sort_by_label(up, ''): an empty label name is accepted and sorts by all labels, as in Prometheus"
 promql_client -q "sort_by_label(up, '')"
 

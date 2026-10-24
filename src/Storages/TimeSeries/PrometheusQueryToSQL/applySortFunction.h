@@ -17,6 +17,10 @@ bool isSortFunction(std::string_view function_name);
 SQLQueryPiece applySortFunction(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
+/// Returns true if `node` is evaluated at one step inside sort_by_label() or sort_by_label_desc(),
+/// whose result depends on the input order where Prometheus's comparator is inconsistent.
+bool isUnderSortByLabel(const PrometheusQueryTree::Node * node, const ConverterContext & context);
+
 /// Gives the result of topk() / bottomk() its order as a rank map, so an outer sort*() call starts from it.
 /// `bucket_key` is the tags of the aggregation group, or nullptr without `by` / `without`.
 void setLimitAggregationRank(SQLQueryPiece & query_piece, ASTPtr && bucket_key, bool descending, ConverterContext & context);

@@ -38,7 +38,8 @@ SQLQueryPiece applyBinaryOperatorOr(
     }
 
     /// Prometheus outputs the left rows in their order, then the right rows in theirs.
-    bool keep_sort_rank = !left_argument.sort_rank_subquery.empty() || !right_argument.sort_rank_subquery.empty();
+    bool keep_sort_rank = !left_argument.sort_rank_subquery.empty() || !right_argument.sort_rank_subquery.empty()
+        || isUnderSortByLabel(operator_node, context);
 
     left_argument = toVectorGrid(std::move(left_argument), context);
     /// The left grid is read twice - by the per-group presence step (Step 1) and by the final merge join (Step 3) -
