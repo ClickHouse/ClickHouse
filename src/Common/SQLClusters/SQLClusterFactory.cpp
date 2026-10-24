@@ -5,11 +5,13 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <base/sleep.h>
 
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 
 namespace DB
@@ -100,7 +102,63 @@ void validateSQLClusterDefinition(const ASTSQLClusterDefinition & definition)
     }
 }
 
-void setConfigValue(Poco::Util::MapConfiguration & config, const String & key, const Field & value)
+/// `MapConfiguration::enumerate` returns keys in lexicographic order, so mixed `shard`/`node`
+/// prefixes and unpadded numbers (`1`, `10`, `2`) would not match the SQL definition order.
+/// `Cluster` assigns shard and replica numbers from that enumeration.
+class OrderedMapConfiguration : public Poco::Util::AbstractConfiguration
+{
+protected:
+    bool getRaw(const std::string & key, std::string & value) const override
+    {
+        auto it = index.find(key);
+        if (it == index.end())
+            return false;
+        value = entries[it->second].second;
+        return true;
+    }
+
+    void setRaw(const std::string & key, const std::string & value) override
+    {
+        auto it = index.find(key);
+        if (it != index.end())
+        {
+            entries[it->second].second = value;
+            return;
+        }
+        index.emplace(key, entries.size());
+        entries.emplace_back(key, value);
+    }
+
+    void enumerate(const std::string & key, Keys & range) const override
+    {
+        const std::string prefix = key.empty() ? std::string() : key + ".";
+        const size_t prefix_size = prefix.size();
+        std::unordered_set<std::string> seen;
+
+        for (const auto & [full_key, _] : entries)
+        {
+            if (prefix_size != 0 && (full_key.size() <= prefix_size || !full_key.starts_with(prefix)))
+                continue;
+
+            const auto end = full_key.find('.', prefix_size);
+            std::string sub_key = end == std::string::npos
+                ? full_key.substr(prefix_size)
+                : full_key.substr(prefix_size, end - prefix_size);
+
+            if (sub_key.empty())
+                continue;
+
+            if (seen.insert(sub_key).second)
+                range.push_back(std::move(sub_key));
+        }
+    }
+
+private:
+    std::vector<std::pair<std::string, std::string>> entries;
+    std::unordered_map<std::string, size_t> index;
+};
+
+void setConfigValue(Poco::Util::AbstractConfiguration & config, const String & key, const Field & value)
 {
     if (value.getType() == Field::Types::String)
         config.setString(key, value.safeGet<String>());
@@ -110,7 +168,7 @@ void setConfigValue(Poco::Util::MapConfiguration & config, const String & key, c
         config.setUInt64(key, applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value));
 }
 
-void applyReplicaProperties(Poco::Util::MapConfiguration & config, const String & prefix, const Properties & properties)
+void applyReplicaProperties(Poco::Util::AbstractConfiguration & config, const String & prefix, const Properties & properties)
 {
     for (const auto & change : properties)
     {
@@ -120,7 +178,7 @@ void applyReplicaProperties(Poco::Util::MapConfiguration & config, const String 
     }
 }
 
-void applyShardOnlyProperties(Poco::Util::MapConfiguration & config, const String & prefix, const Properties & properties)
+void applyShardOnlyProperties(Poco::Util::AbstractConfiguration & config, const String & prefix, const Properties & properties)
 {
     for (const auto & change : properties)
     {
@@ -129,7 +187,7 @@ void applyShardOnlyProperties(Poco::Util::MapConfiguration & config, const Strin
     }
 }
 
-void applyClusterProperties(Poco::Util::MapConfiguration & config, const String & prefix, const Properties & properties)
+void applyClusterProperties(Poco::Util::AbstractConfiguration & config, const String & prefix, const Properties & properties)
 {
     for (const auto & change : properties)
     {
@@ -150,7 +208,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
     const auto & definition = query.definition->as<const ASTSQLClusterDefinition &>();
     const auto & settings = context->getSettingsRef();
 
-    Poco::AutoPtr<Poco::Util::MapConfiguration> config = new Poco::Util::MapConfiguration();
+    Poco::AutoPtr<OrderedMapConfiguration> config = new OrderedMapConfiguration();
     const String cluster_prefix = "cluster." + query.cluster_name;
 
     applyClusterProperties(*config, cluster_prefix, definition.cluster_properties);
