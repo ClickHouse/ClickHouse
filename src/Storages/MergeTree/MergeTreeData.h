@@ -1186,6 +1186,9 @@ public:
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
 
+    /// Partition and sorting key columns, plus the sign and version columns. A key subcolumn is replaced by its storage column.
+    NameSet getKeyStorageColumns(const StorageInMemoryMetadata & metadata) const;
+
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
