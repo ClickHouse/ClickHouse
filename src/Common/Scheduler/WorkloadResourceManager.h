@@ -47,6 +47,10 @@ namespace DB
  * that is the scheduler's single child, and every parentless workload is attached as a child of it.
  * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
  * fairness/priorities via the normal workload policy machinery.
+ * The implicit root node exists in every resource regardless of entities. Its settings come from the root
+ * workload entity, the WORKLOAD with the empty name (see IWorkloadEntityStorage.h). It is handled like any other
+ * workload, except that its node is the implicit root itself: creating or updating the entity sets the root node's
+ * settings in place, and dropping it resets them to defaults.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:

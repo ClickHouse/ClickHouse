@@ -1371,6 +1371,42 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, workloads_respect_server_cpu_limit, false, R"(
+When enabled, the server-wide CPU concurrency limit is applied through the workload scheduler. A CPU resource `__server_cpu__` (for `MASTER THREAD` and `WORKER THREAD`) is created implicitly if no resource is defined for either role, and the `max_concurrent_threads` of the root workload (the workload with an empty name) is derived from `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`, so every workload shares one CPU-slot budget taken from those settings. CPU scheduling then goes through the workload scheduler instead of the built-in concurrency control. Only queries classified into a workload are limited by this budget: a query using the default `workload` setting value counts against it only when a `default` workload exists — created explicitly with `CREATE WORKLOAD default`, or implicitly via `implicit_default_workload`. Otherwise, with the default `throw_on_unknown_workload = 0`, such queries — and the background merges and mutations that use the default workload — run without workload CPU scheduling and are not limited by this setting. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<workloads_respect_server_cpu_limit>true</workloads_respect_server_cpu_limit>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
+    DECLARE(Bool, workloads_respect_server_memory_limit, false, R"(
+When enabled, the server-wide memory limit is applied through the workload scheduler as a memory-reservation budget. A `MEMORY RESERVATION` resource `__server_memory__` is created implicitly if none is defined, and the `max_memory` of the root workload (the workload with an empty name) is derived from `max_server_memory_usage` (and its RAM ratio), so every workload shares one memory-reservation budget taken from that setting. This is a reservation-admission budget and does not replace the process-wide memory limit, which continues to apply. The budget is taken from the configured `max_server_memory_usage` when the configuration is loaded or reloaded; it does not follow runtime adjustments of the process-wide limit made by `memory_worker_dynamic_hard_limit`, so between reloads it may be larger than the limit in effect. Only queries classified into a workload reserve from this budget: a query using the default `workload` setting value counts against it only when a `default` workload exists — created explicitly with `CREATE WORKLOAD default`, or implicitly via `implicit_default_workload`. Otherwise, with the default `throw_on_unknown_workload = 0`, such queries — and the background merges and mutations that use the default workload — do not reserve from this budget and are not limited by this setting. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<workloads_respect_server_memory_limit>true</workloads_respect_server_memory_limit>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
+    DECLARE(Bool, implicit_default_workload, false, R"(
+When enabled, a `default` workload is created implicitly if one is not defined explicitly, so that queries using the default `workload` setting are scheduled. The implicit `default` workload cannot be a parent of other workloads; create `default` explicitly for that. This is also what brings those queries under the budgets set by `workloads_respect_server_cpu_limit` and `workloads_respect_server_memory_limit`. Changeable at runtime. Disabled by default.
+
+**Example**
+
+```xml
+<implicit_default_workload>true</implicit_default_workload>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 

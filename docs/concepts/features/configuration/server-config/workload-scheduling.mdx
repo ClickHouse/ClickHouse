@@ -419,7 +419,7 @@ In addition to SQL-based definitions, workloads and resources can be predefined 
 </clickhouse>
 ```
 
-The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid.
+The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid. A workload defined in the configuration can only have a parent workload and `FOR` resources that are defined in the configuration as well. SQL-defined workloads may be children of configuration-based workloads. Do not remove a workload or a resource from the configuration while SQL-defined workloads reference it: the server cannot load such SQL-defined workloads.
 
 ### Usage recommendations {#config_based_workloads_usage_recommendations}
 
