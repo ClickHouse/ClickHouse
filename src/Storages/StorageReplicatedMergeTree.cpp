@@ -7664,7 +7664,10 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     /// Bump the /metadata ZNode version to match the max parts metadata version.
     /// The table's in-memory metadata_version is derived from the /metadata ZNode stat.version
     /// during startup. Each SET increments the ZNode version by 1.
-    if (max_parts_metadata_version > 0)
+    /// Only the first replica bumps it. The others are created as lost replicas and clone the metadata
+    /// version from a restored replica; bumping it again for each of them, or to their own newer parts,
+    /// would leave the shared version ahead of the replicas and every later ALTER would fail.
+    if (is_first_replica && max_parts_metadata_version > 0)
     {
         auto zookeeper = getZooKeeper();
         /// Each batch logs an ALTER_METADATA entry of the version it reaches, so a replica that cloned an earlier one catches up.

@@ -158,3 +158,104 @@ def test_fix_metadata_version_on_attach_part_after_restore(start_cluster):
 
     for node in [node_1, node_2]:
         node.query("DROP TABLE IF EXISTS test_ttl SYNC")
+
+
+def test_alter_after_restoring_every_replica(start_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+
+    for node in [node_1, node_2]:
+        node.query("DROP TABLE IF EXISTS test_restored_alter SYNC")
+
+    for node in [node_1, node_2]:
+        node.query(
+            """
+            CREATE TABLE test_restored_alter(n UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_restored_alter/', '{replica}')
+            ORDER BY n
+        """.format(
+                replica=node.name
+            )
+        )
+
+    # Two metadata ALTERs bring the table's metadata version to 2 on both replicas
+    node_1.query(
+        "ALTER TABLE test_restored_alter ADD COLUMN Added1 UInt32",
+        settings={"alter_sync": 2},
+    )
+    node_1.query(
+        "ALTER TABLE test_restored_alter DROP COLUMN Added1",
+        settings={"alter_sync": 2},
+    )
+    node_1.query("INSERT INTO test_restored_alter VALUES (1)")
+    node_2.query("SYSTEM SYNC REPLICA test_restored_alter")
+
+    zk_rmr_with_retries(zk, "/clickhouse/tables/test_restored_alter")
+
+    for node in [node_1, node_2]:
+        node.query("SYSTEM RESTART REPLICA test_restored_alter")
+        node.query("SYSTEM RESTORE REPLICA test_restored_alter")
+
+    # Restoring the second replica used to bump the version a second time, to 4
+    _, stat = zk.get("/clickhouse/tables/test_restored_alter/metadata")
+    assert stat.version == 2
+
+    # after which every ALTER failed with CANNOT_ASSIGN_ALTER
+    node_1.query(
+        "ALTER TABLE test_restored_alter ADD COLUMN Added2 UInt32",
+        settings={"alter_sync": 2},
+    )
+    for node in [node_1, node_2]:
+        assert node.query("SELECT n, Added2 FROM test_restored_alter") == "1\t0\n"
+
+    for node in [node_1, node_2]:
+        node.query("DROP TABLE IF EXISTS test_restored_alter SYNC")
+
+
+def test_alter_after_restoring_lagging_replica_first(start_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+    table = "test_restored_lagging_first"
+
+    for node in [node_1, node_2]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    for node in [node_1, node_2]:
+        node.query(
+            f"CREATE TABLE {table}(n UInt32) "
+            f"ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}/', '{node.name}') ORDER BY n"
+        )
+
+    node_1.query(
+        f"ALTER TABLE {table} ADD COLUMN a1 UInt32", settings={"alter_sync": 2}
+    )
+    node_1.query(f"INSERT INTO {table} (n) VALUES (1)")
+    node_2.query(f"SYSTEM SYNC REPLICA {table}")
+    node_1.query(
+        f"ALTER TABLE {table} ADD COLUMN a2 UInt32", settings={"alter_sync": 2}
+    )
+
+    # node_2 lags: its newest part is at metadata version 1, node_1 has one at version 2
+    node_2.query(f"SYSTEM STOP FETCHES {table}")
+    node_1.query(f"INSERT INTO {table} (n) VALUES (2)")
+
+    zk_rmr_with_retries(zk, f"/clickhouse/tables/{table}")
+
+    for node in [node_2, node_1]:
+        node.query(f"SYSTEM START FETCHES {table}")
+        node.query(f"SYSTEM RESTART REPLICA {table}")
+        node.query(f"SYSTEM RESTORE REPLICA {table}")
+    for node in [node_1, node_2]:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+    _, stat = zk.get(f"/clickhouse/tables/{table}/metadata")
+    for node in [node_1, node_2]:
+        version, _ = zk.get(
+            f"/clickhouse/tables/{table}/replicas/{node.name}/metadata_version"
+        )
+        assert int(version) == stat.version
+
+    for i, node in enumerate([node_2, node_1]):
+        node.query(
+            f"ALTER TABLE {table} ADD COLUMN b{i} UInt32", settings={"alter_sync": 2}
+        )
+
+    for node in [node_1, node_2]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
