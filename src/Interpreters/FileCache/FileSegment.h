@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
@@ -288,6 +289,10 @@ private:
     const LoggerPtr & getLog() const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
+    /// Takes the downloader role of a `PARTIALLY_DOWNLOADED` segment that has no downloader.
+    /// Returns a guard which resets the role, or an empty guard if the role is not taken.
+    /// Only the downloader reserves space, so no reservation runs while the guard holds the role.
+    scope_guard tryTakeDownloaderOfPartiallyDownloaded();
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
