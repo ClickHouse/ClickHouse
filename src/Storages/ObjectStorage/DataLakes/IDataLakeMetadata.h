@@ -59,7 +59,8 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
-    /// The rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
+    /// The rows of the live data files left after pruning, without the deleted rows the metadata can count; std::nullopt if
+    /// the metadata is malformed.
     std::optional<UInt64> rows;
     /// The statistics of the requested columns over these files, with their numbers of distinct values, and the estimate of
     /// conditions on them; nullptr if no requested column has statistics.

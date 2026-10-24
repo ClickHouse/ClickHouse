@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <Common/Logger.h>
 #include <Core/Field.h>
 #include <Core/Range.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -11,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -186,6 +188,13 @@ bool operator<(const PartitionSpecification & lhs, const PartitionSpecification 
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);
 
 std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs);
+
+/// Returns the delete files that apply to the data file by partition and sequence number; `deletes_objects` must be sorted.
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger);
 
 }
 
