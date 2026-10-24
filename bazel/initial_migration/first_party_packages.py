@@ -210,25 +210,24 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
 DBMS_PUBLIC_HEADERS = {
     "Access": ("DiskAccessStorage.h", "UsersConfigParser.h", "ZooKeeperReplicator.h"),
     "Analyzer": (
-        "ColumnTransformers.h", "Identifier.h", "QueryNode.h", "TableFunctionNode.h", "TableNode.h",
-        "Utils.h",
+        "ColumnTransformers.h", "ConstantNode.h", "FunctionNode.h", "Identifier.h", "JoinNode.h",
+        "QueryNode.h", "TableFunctionNode.h", "TableNode.h", "Utils.h",
     ),
     "Backups": (
-        "BackupConcurrencyCheck.h", "BackupCoordinationFileInfos.h",
-        "BackupCoordinationKeeperMapTables.h", "BackupCoordinationReplicated*.h",
         "BackupEntryWithChecksumCalculation.h", "BackupFileInfo.h", "IBackupEntry.h",
     ),
+    "BridgeHelper": ("IBridgeHelper.h", "XDBCBridgeHelper.h"),
     "Client": (
         "ClientApplicationBase.h", "ClientBaseHelpers.h", "ConnectionString.h", "PortsProbe.h",
         "ReplxxLineReader.h", "scaleInteractiveDelayByFanout.h",
     ),
-    "Columns": ("ColumnBLOB.h", "ColumnCompressed.h", "ColumnNothing.h", "ReverseIndex.h"),
+    "Columns": ("ColumnBLOB.h", "ColumnNothing.h", "ReverseIndex.h"),
     "Coordination": (
         "FourLetterCommand.h", "KeeperAsynchronousMetrics.h", "KeeperMemNodesStorage.h",
         "LoggerWrapper.h", "ReadBufferFromNuraftBuffer.h", "ZooKeeperDataReader.h",
     ),
     "Coordination/Storage": ("BlockCache.h", "Memtable.h", "NodeRefCache.h", "Sorted*.h"),
-    "Core": ("SortCursor.h",),
+    "Core": ("PostgreSQLProtocol.h", "SortCursor.h"),
     "Core/PostgreSQL": ("Connection.h", "ConnectionHolder.h", "PoolWithFailover.h", "Utils.h"),
     "Core/YTsaurus": ("YTsaurusClient.h",),
     "DataTypes": ("DataTypeSet.h", "FieldToDataType.h", "getMostSubtype.h"),
@@ -250,22 +249,26 @@ DBMS_PUBLIC_HEADERS = {
     "Disks/IO": ("CachedOnDiskWriteBufferFromFile.h",),
     "Formats": ("FormatParserSharedResources.h", "FormatSchemaInfo.h", "ProtobufSchemas.h"),
     "Interpreters": (
-        "AdaptiveAggregationImpl.h", "AggregationUtils.h", "ArrayJoinAction.h", "BloomFilterHash.h",
-        "CancellationChecker.h", "DNSCacheUpdater.h", "EmbeddedDictionaries.h",
-        "FunctionSecretArgumentsFinder.h", "InterpreterExplainQuery.h", "InterpreterSetQuery.h",
-        "JoinExpressionActions.h", "JoinOperator.h", "MaterializedCTE.h",
-        "NormalizeSelectWithUnionQueryVisitor.h", "SelectIntersectExceptQueryVisitor.h",
-        "ServerAsynchronousMetrics.h", "SortedBlocksWriter.h", "TableJoin.h", "convertColumnToType.h",
-        "loadMetadata.h", "parseColumnsListForTableFunction.h",
+        "AdaptiveAggregationImpl.h", "ArrayJoinAction.h", "BloomFilterHash.h",
+        "CancellationChecker.h", "ContextTimeSeriesTagsCollector.h", "DNSCacheUpdater.h",
+        "EmbeddedDictionaries.h", "FunctionSecretArgumentsFinder.h", "InterpreterExplainQuery.h",
+        "InterpreterSetQuery.h", "JoinExpressionActions.h", "JoinOperator.h", "MaterializedCTE.h",
+        "NormalizeSelectWithUnionQueryVisitor.h", "SecretArgumentsRegistry.h",
+        "SelectIntersectExceptQueryVisitor.h", "ServerAsynchronousMetrics.h", "SortedBlocksWriter.h",
+        "TableJoin.h", "convertColumnToType.h", "loadMetadata.h",
+        "parseColumnsListForTableFunction.h",
     ),
     "Interpreters/ClusterProxy": ("executeQuery.h",),
     "Interpreters/HashJoin": ("HashJoin.h",),
+    "Interpreters/WebAssembly": ("WasmTimeRuntime.h",),
     "Planner": ("PlannerContext.h", "PlannerCorrelatedSubqueries.h", "Utils.h"),
     "Processors": ("IAccumulatingTransform.h", "ResizeProcessor.h"),
     "Processors/Executors": ("PushingPipelineExecutor.h",),
     "Processors/Executors/Runtime/V1": ("ExecutionThreadContext.h", "ExecutorTasks.h", "PollingQueue.h"),
     "Processors/Formats": ("IRowInputFormat.h", "RowInputFormatWith*.h"),
-    "Processors/Formats/Impl": ("ArrowGeoTypes.h", "JSONEachRowRowInputFormat.h"),
+    "Processors/Formats/Impl": (
+        "ArrowGeoTypes.h", "CHColumnToArrowColumn.h", "JSONEachRowRowInputFormat.h",
+    ),
     "Processors/Formats/Impl/Parquet": (
         "Decoding.h", "Prefetcher.h", "ReadCommon.h", "Reader.h", "ThriftUtil.h", "Write.h",
     ),
@@ -274,17 +277,17 @@ DBMS_PUBLIC_HEADERS = {
         "DistinctSortedAlgorithm.h", "MergingSortedAlgorithm.h", "RowFilterInfo.h",
     ),
     "Processors/QueryPlan": (
-        "ExpressionStep.h", "JoinEstimation.h", "JoinStep.h", "QueryPlanFormat.h",
+        "ExpressionStep.h", "JoinEstimation.h", "JoinStep.h",
         "QueryPlanStepRegistry.h", "SortingStep.h",
     ),
-    "Processors/QueryPlan/Optimizations": ("RelationStatistics.h", "RuntimeDataflowStatistics.h", "Utils.h"),
+    "Processors/QueryPlan/Optimizations": ("RelationStatistics.h", "Utils.h"),
     "Processors/QueryPlan/Optimizations/Cascades": (
         "Cost.h", "Group*.h", "ImplementationStrategy.h", "OptimizerContext.h", "Properties.h",
         "Statistics.h", "Task.h",
     ),
     "Processors/Sources": (
-        "MySQLSource.h", "ObfuscateSource.h", "PostgreSQLSource.h", "RemoteSource.h",
-        "YTsaurusSource.h",
+        "MongoDBSource.h", "MySQLSource.h", "ObfuscateSource.h", "PostgreSQLSource.h",
+        "RemoteSource.h", "YTsaurusSource.h",
     ),
     "Processors/Transforms": (
         "AddingDefaultsTransform.h", "AggregatingTransform.h", "BlockNestedLoopJoin*.h",
@@ -292,14 +295,15 @@ DBMS_PUBLIC_HEADERS = {
         "SortingTransform.h", "getSourceFromASTInsertQuery.h",
     ),
     "Server": (
-        "HTTPHandlerFactory.h", "HTTPHandlerRequestFilter.h", "HTTPRequestHandlerFactoryMain.h",
-        "KeeperHTTPHandlerFactory.h", "KeeperHTTPStorageHandler.h", "KeeperTCPHandler*.h",
-        "MySQLHandlerFactory.h", "PostgreSQLHandlerFactory.h", "PrometheusRequestHandlerFactory.h",
-        "ProtocolServerAdapter.h", "StartupWarnings.h", "TCPHandler*.h", "TLSHandler*.h",
-        "createServer.h", "socketBindListen.h", "stopServers.h", "waitServersToFinish.h",
+        "GRPCServer.h", "HTTPHandlerFactory.h", "HTTPHandlerRequestFilter.h",
+        "HTTPRequestHandlerFactoryMain.h", "KeeperHTTPHandlerFactory.h",
+        "KeeperHTTPStorageHandler.h", "KeeperTCPHandler*.h", "MySQLHandlerFactory.h",
+        "PostgreSQLHandlerFactory.h", "PrometheusRequestHandlerFactory.h", "ProtocolServerAdapter.h",
+        "StartupWarnings.h", "TCPHandler*.h", "TLSHandler*.h", "createServer.h",
+        "socketBindListen.h", "stopServers.h", "waitServersToFinish.h",
     ),
     "Server/ACME": ("API.h", "Client.h"),
-    "Server/ArrowFlight": ("ArrowFlightServer.h",),
+    "Server/ArrowFlight": ("ArrowFlightServer.h", "commandSelector.h"),
     "Server/DistributedQuery": ("*.h",),
     "Server/HTTP": ("HTTPRequestHandlerFactory.h", "HTTPServer.h", "HTTPServerConnectionFactory.h"),
     "Server/IcebergRESTCatalog": ("IcebergRESTCatalogHandlerFactory.h", "IcebergRESTCatalogWarehouse.h"),
@@ -309,9 +313,9 @@ DBMS_PUBLIC_HEADERS = {
         "HivePartitioningUtils.h", "RedisCommon.h", "StorageArrowFlight.h", "StorageDictionary.h",
         "StorageExecutable.h", "StorageFilesystem.h", "StorageFuzzJSON.h", "StorageFuzzQuery.h",
         "StorageInput.h", "StorageJoin.h", "StorageLoop.h", "StorageMerge.h", "StorageMergeTree*.h",
-        "StorageMySQL.h", "StorageNull.h", "StorageObfuscate.h", "StoragePostgreSQL.h",
-        "StoragePrometheusQuery.h", "StorageRedis.h", "StorageSQLite.h", "StorageSet.h",
-        "StorageTimeSeries*.h", "StorageValues.h", "StorageXDBC.h",
+        "StorageMongoDB.h", "StorageMySQL.h", "StorageNull.h", "StorageObfuscate.h",
+        "StoragePostgreSQL.h", "StoragePrometheusQuery.h", "StorageRedis.h", "StorageSQLite.h",
+        "StorageSet.h", "StorageTimeSeries*.h", "StorageValues.h", "StorageXDBC.h",
     ),
     "Storages/ArrowFlight": ("ArrowFlightConnection.h",),
     "Storages/BigQuery": (
@@ -335,7 +339,7 @@ DBMS_PUBLIC_HEADERS = {
     "Storages/MySQL": ("MySQLHelpers.h",),
     "Storages/ObjectStorage": ("StorageObjectStorageCluster.h",),
     "Storages/ObjectStorage/Azure": ("AzureSecretArguments.h",),
-    "Storages/ObjectStorage/HDFS": ("HDFSErrorWrapper.h",),
+    "Storages/ObjectStorage/HDFS": ("HDFSCommon.h", "HDFSErrorWrapper.h", "ReadBufferFromHDFS.h"),
     "Storages/ObjectStorage/S3": ("S3SecretArguments.h",),
     "Storages/ObjectStorage/Web": ("Configuration.h",),
     "Storages/PostgreSQL": ("PostgreSQLSettings.h",),
@@ -350,12 +354,12 @@ COMMON_IO_PUBLIC_HEADERS = {
         "*BufferFromEncryptedFile.h", "Ask.h", "AsynchronousReadBufferFromFile.h",
         "AsynchronousReadBufferFromFileDescriptor.h", "BoundedReadBuffer.h",
         "BufferWithOwnMemoryImpl.h", "Expect404ResponseScope.h", "LZMA*Buffer.h", "Libdeflate*.h",
-        "LimitSeekableReadBuffer.h", "LocalSourceReader.h", "MySQL*.h", "PackedFilesWriter.h",
-        "PageCacheProvider.h", "PeekableWriteBuffer.h", "PipelineReadBuffer.h",
-        "ReadBufferFromFileDecorator.h", "ReadBufferFromFileView.h", "ReadPipeline.h",
-        "SilkFiberStreamSocketImpl.h", "SocketPeerClosed.h", "SynchronousReader.h",
-        "WriteBufferFromArena.h", "WriteBufferFromS3.h", "Zlib*Buffer.h",
-        "ZstdDeflatingWriteBuffer.h", "parseHTTPDate.h", "writeValidUTF8.h",
+        "LimitSeekableReadBuffer.h", "LocalSourceReader.h", "MMappedFileCache.h", "MySQL*.h",
+        "PackedFilesWriter.h", "PageCacheProvider.h", "PeekableWriteBuffer.h",
+        "PipelineReadBuffer.h", "ReadBufferFromFileDecorator.h", "ReadBufferFromFileView.h",
+        "ReadPipeline.h", "SilkFiberStreamSocketImpl.h", "SilkSecureFiberStreamSocketImpl.h",
+        "SocketPeerClosed.h", "SynchronousReader.h", "WriteBufferFromArena.h", "WriteBufferFromS3.h",
+        "Zlib*Buffer.h", "ZstdDeflatingWriteBuffer.h", "parseHTTPDate.h", "writeValidUTF8.h",
     ),
 }
 
@@ -400,49 +404,84 @@ def declare_dictionary_private_headers(rows, files):
         declare_compiled_headers(rows, files, compilers, list_expr(names), field="srcs")
 
 
-# Headers in these packages are read only by dbms CMake compile group 0.
+# Only these dbms compile groups read these headers from other Bazel packages.
 DBMS_PRIVATE_PACKAGE_HEADERS = {
-    "src/Common": (
+    ("src/Common", (0,)): (
         "BSONCXXHelper.h", "CounterInFile.h", "Increment.h", "LockGuardWithStopWatch.h",
         "NamedCollections/NamedCollectionConfiguration.h", "PrimeGenerator.h",
         "Scheduler/Workload/createWorkloadEntityStorage.h", "SystemAllocatedMemoryHolder.h",
         "saturatedWaitDuration.h",
     ),
-    "src/Functions": (
+    ("src/Functions", (0,)): (
+        "FunctionTopKFilter.h", "TypeMismatchStrictness.h", "castNestedResult.h", "exists.h",
+        "extractKeyValuePairs.h", "generateSnowflakeID.h", "productQuantization.h", "vectorQuantization.h",
         "UserDefined/UserDefinedExecutableFunctionDriver*.h", "UserDefined/UserDefinedSQLObject*.h",
         "UserDefined/UserDefinedSQLFunctionVisitor.h", "UserDefined/UserDefinedWebAssemblyScriptAbi.h",
         "UserDefined/UserDefinedWebAssemblyTypeHelpers.h", "UserDefined/createUserDefinedSQLObjectsStorage.h",
     ),
+    ("src/Functions", (1,)): ("FunctionIfBase.h",),
+    ("src/Functions", (0, 1)): (
+        "FunctionDynamicAdaptor.h", "FunctionVariantAdaptor.h", "if.h", "logical.h", "multiIf.h",
+    ),
+    ("src/Functions/array", (0,)): ("arrayResize.h", "emptyArrayToSingle.h"),
+    ("src/TableFunctions", (0,)): ("TableFunctionView.h",),
 }
 
 
 def declare_dbms_package_headers(rows, inventory):
-    private = {}
-    labels = []
-    for package, patterns in DBMS_PRIVATE_PACKAGE_HEADERS.items():
+    private = defaultdict(set)
+    labels = defaultdict(list)
+    for (package, groups), patterns in DBMS_PRIVATE_PACKAGE_HEADERS.items():
         files = inventory(package)
         globs = GlobFiles(files)
         missing = [pattern for pattern in patterns if not globs.matching(pattern)]
         if missing:
             raise ValueError(f"{package}: missing private dbms headers: {missing}")
-        private[package] = globs.result(patterns, ())
-        declare_compiled_headers(rows[package], files, [], list_expr(private[package]))
-        labels.extend(relative_label(package, name, "src") for name in private[package])
-    declare_compiled_headers(rows["src"], inventory("src"), "dbms__compile_0", list_expr(labels), field="srcs")
-    return private
+        names = globs.result(patterns, ())
+        private[package].update(names)
+        declare_compiled_headers(rows[package], files, (), list_expr(names))
+        labels[groups].extend(relative_label(package, name, "src") for name in names)
+    for groups, paths in labels.items():
+        compilers = [f"dbms__compile_{index}" for index in groups]
+        declare_compiled_headers(rows["src"], inventory("src"), compilers, list_expr(paths), field="srcs")
+    return {package: sorted(names) for package, names in private.items()}
+
+
+# Only programs/server/Server.cpp reads these factories.
+SERVER_PRIVATE_HEADERS = (
+    "Server/ProxyV1HandlerFactory.h", "Server/SSH/SSHPtyHandlerFactory.h",
+    "Server/TCPProtocolStackFactory.h", "Server/TCPProtocolStackHandler.h",
+)
+
+
+def declare_server_private_headers(rows, inventory):
+    declare_compiled_headers(rows["src"], inventory("src"), (), list_expr(SERVER_PRIVATE_HEADERS))
+    labels = [relative_label("src", name, "programs/server") for name in SERVER_PRIVATE_HEADERS]
+    declare_compiled_headers(rows["programs/server"], inventory("programs/server"),
+                             "clickhouse-server-lib", list_expr(labels), field="srcs")
 
 
 def declare_dbms_private_headers(rows, files):
-    hash_join = expr(
-        'glob(["Interpreters/HashJoin/*.h"], exclude=['
+    # CMake dbms group 0 also compiles the handlers whose Bazel sources embed web assets.
+    server_headers = ast.BinOp(left=expr('glob(["Server/ClientEmbedded/*.h"])'), op=ast.Add(), right=list_expr([
+        "Server/HTTPHandler.h", "Server/HTTPResponseHeaderWriter.h", "Server/IndexRequestHandler.h",
+        "Server/KeeperDashboardRequestHandler.h", "Server/KeeperJemallocHandler.h",
+        "Server/StaticRequestHandler.h", "Server/WebTerminalRequestHandler.h", "Server/WebUIRequestHandler.h",
+    ]))
+    declare_compiled_headers(rows, files, ("dbms__compile_0", "dbms_embedded"), server_headers, field="srcs")
+    private_globs = expr(
+        'glob(["Backups/BackupCoordinationReplicated*.h", "Interpreters/HashJoin/*.h"], exclude=['
         '"Interpreters/HashJoin/HashJoin.h", "Interpreters/HashJoin/ScatteredBlock.h"])'
     )
-    dbms_headers = ast.BinOp(left=hash_join, op=ast.Add(), right=list_expr([
+    dbms_headers = ast.BinOp(left=private_globs, op=ast.Add(), right=list_expr([
         "Access/resolveSetting.h",
         "Analyzer/InDepthQueryTreeVisitor.h",
         "Analyzer/RecursiveCTE.h",
         "Analyzer/Resolve/IdentifierLookup.h",
         "Analyzer/UnionNode.h",
+        "Backups/BackupConcurrencyCheck.h",
+        "Backups/BackupCoordinationFileInfos.h",
+        "Backups/BackupCoordinationKeeperMapTables.h",
         "Interpreters/AddDefaultDatabaseVisitor.h",
         "Interpreters/getHeaderForProcessingStage.h",
         "Interpreters/joinDispatch.h",
@@ -459,6 +498,11 @@ def declare_dbms_private_headers(rows, files):
         "Storages/StorageTableProxy.h",
     ]))
     declare_compiled_headers(rows, files, "dbms__compile_0", dbms_headers, field="srcs")
+    declare_compiled_headers(rows, files, ("dbms__compile_0", "dbms__compile_2"), list_expr([
+        "Columns/ColumnCompressed.h", "Interpreters/AggregationUtils.h",
+        "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h", "Processors/QueryPlan/QueryPlanFormat.h",
+        "Processors/Transforms/WindowTransform.h", "WindowFunctions/IWindowFunction.h",
+    ]), field="srcs")
     declare_compiled_headers(rows, files, "unit_tests_dbms", expr('glob(["**/tests/*.h"])'), field="srcs")
 
 
@@ -1033,6 +1077,17 @@ class Migration:
             self.dbms_private_exports = declare_dbms_package_headers(self.rows, self.package_inventory)
             for package, names in self.dbms_private_exports.items():
                 self.exports[package].update(names)
+        if self.from_generator and "programs/server" in self.rows:
+            declare_server_private_headers(self.rows, self.package_inventory)
+            self.exports["src"].update(SERVER_PRIVATE_HEADERS)
+        if self.from_generator:
+            for package, compiler, headers in (
+                ("src/Compression", "clickhouse_compression",
+                 list_expr(["PFor/bitpack.h", "PFor/block.h", "PFor/bulk.h", "PFor/vertical.h"])),
+                ("src/Functions/JSONPath", "clickhouse_functions_jsonpath", expr('glob(["Generator/VisitorJSONPath*.h"])')),
+            ):
+                if package in self.rows:
+                    declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, headers, field="srcs")
         if self.from_generator and "src/Dictionaries" in self.rows:
             declare_dictionary_private_headers(self.rows["src/Dictionaries"], self.package_inventory("src/Dictionaries"))
         data = self.rewrite_consumers()
@@ -1236,6 +1291,9 @@ class Migration:
             if private:
                 lines.append('exports_files(' + json.dumps(private) + ', visibility=["//src:__pkg__"])')
             exported = self.exports[package] - set(private)
+            if package == "src" and (server := sorted(exported.intersection(SERVER_PRIVATE_HEADERS))):
+                lines.append('exports_files(' + json.dumps(server) + ', visibility=["//programs/server:__pkg__"])')
+                exported.difference_update(server)
             if exported:
                 lines.append('exports_files(' + json.dumps(sorted(exported)) + ')')
             lines += [render(row) for row in self.rows[package]]

@@ -61,6 +61,7 @@ cc_library(
 # FunctionTypes sets BOOST_FT_al_path before including its arity loops.
 # MultiIndex pairs define_if_constexpr_macro.hpp with undef_if_constexpr_macro.hpp.
 # Boost.MPL wrappers define AUX778076_OP_NAME or BOOST_MPL_PREPROCESSED_HEADER for each inclusion.
+# Both Outcome coroutine_support.hpp headers supply namespace macros to coroutine_support.ipp.
 # BOOST_PP_ITERATE and BOOST_PP_ASSIGN_SLOT repeatedly include their detail headers.
 _BOOST_MACRO_FRAGMENTS = glob([
     "boost/function_types/detail/components_impl/arity10_*.hpp",
@@ -72,6 +73,7 @@ _BOOST_MACRO_FRAGMENTS = glob([
     "boost/function_types/detail/synthesize_impl/arity20_*.hpp",
     "boost/fusion/algorithm/iteration/detail/preprocessed/*fold.hpp",
     "boost/mpl/**/aux_/include_preprocessed.hpp",
+    "boost/mpl/aux_/preprocessed/gcc/*fold*_impl.hpp",
     "boost/multi_index/detail/*_if_constexpr_macro.hpp",
     "boost/preprocessor/iteration/detail/**/*.hpp",
     "boost/preprocessor/slot/detail/slot*.hpp",
@@ -86,15 +88,21 @@ _BOOST_MACRO_FRAGMENTS = glob([
     "boost/mpl/aux_/arithmetic_op.hpp",
     "boost/mpl/aux_/comparison_op.hpp",
     "boost/mpl/aux_/shift_op.hpp",
+    "boost/outcome/detail/coroutine_support.ipp",
     "boost/preprocessor/slot/detail/counter.hpp",
     "boost/preprocessor/slot/detail/shared.hpp",
     "boost/utility/detail/result_of_iterate.hpp",
     "boost/utility/detail/result_of_variadic.hpp",
 ]
 
-# Boost includes these implementation headers in exactly one translation unit
-# when BOOST_ASIO_SEPARATE_COMPILATION or BOOST_MYSQL_SEPARATE_COMPILATION is set.
-_ASIO_SEPARATE_COMPILATION = ["boost/asio/impl/src.hpp"]
+# Boost.Asio, Beast and JSON supply source entry points for a single translation unit.
+# Beast's lib_test.cpp includes main.ipp to define main.
+_BOOST_SOURCE_ENTRIES = [
+    "boost/asio/impl/src.hpp",
+    "boost/beast/_experimental/unit_test/main.ipp",
+    "boost/beast/src.hpp",
+    "boost/json/src.hpp",
+]
 
 _OPENSSL_SEPARATE_COMPILATION = [
     "boost/asio/ssl/impl/src.hpp",
@@ -130,9 +138,13 @@ _OPENSSL_IMPLEMENTATIONS = glob([
     "boost/redis/**/*.ipp",
 ]) + ["boost/beast/websocket/impl/ssl.hpp"]
 
-_ASIO_IMPLEMENTATIONS = glob(
-    ["boost/asio/**/*.ipp"],
-    exclude = ["boost/asio/ssl/**/*.ipp"],
+_BOOST_IMPLEMENTATIONS = glob(
+    [
+        "boost/asio/**/*.ipp",
+        "boost/beast/**/*.ipp",
+        "boost/json/**/*.ipp",
+    ],
+    exclude = _BOOST_SOURCE_ENTRIES + ["boost/asio/ssl/**/*.ipp"],
 )
 
 # config.hpp and the nested WinAPI helpers are portable. The remaining top-level
@@ -188,14 +200,14 @@ _NON_LINUX_HEADERS = glob(
 
 cc_library(
     name = "boost_headers_no_openssl",
-    srcs = _ASIO_IMPLEMENTATIONS,
+    srcs = _BOOST_IMPLEMENTATIONS,
     hdrs = glob(
         [
             "boost/**/*.h",
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _ASIO_IMPLEMENTATIONS + _ASIO_SEPARATE_COMPILATION + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + [
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _BOOST_IMPLEMENTATIONS + _BOOST_SOURCE_ENTRIES + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + [
             "boost/compute.hpp",
             "boost/compute/**",
             # preprocess_encoding.cpp uses these Boost.Wave templates to generate preprocessed.hpp.
@@ -237,7 +249,7 @@ cc_library(
         "//conditions:default": _WINAPI_HEADERS + _NON_LINUX_HEADERS,
     }),
     features = ["external_include_paths"],
-    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_MACRO_FRAGMENTS + _ASIO_SEPARATE_COMPILATION,
+    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_MACRO_FRAGMENTS + _BOOST_SOURCE_ENTRIES,
     deps = [
         ":boost_asio_options",
         ":boost_config",

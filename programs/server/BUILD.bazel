@@ -36,7 +36,12 @@ ch_cc_library(
     srcs = [
         "MetricsTransmitter.cpp",
         "//bazel:gen/embedded/programs/server/Server.cpp",
-    ] + glob(["**/*.h"]),
+    ] + glob(["**/*.h"]) + [
+        "//src:Server/ProxyV1HandlerFactory.h",
+        "//src:Server/SSH/SSHPtyHandlerFactory.h",
+        "//src:Server/TCPProtocolStackFactory.h",
+        "//src:Server/TCPProtocolStackHandler.h",
+    ],
     additional_compiler_inputs = ["//bazel:gen/embedded/programs/server/embedded.xml"],
     clickhouse_code = True,
     implementation_deps = [
@@ -73,6 +78,7 @@ ch_cc_library(
         "//src/Common:parser_support_api",
         "//src/Common:target_specific",
         "//src/Functions:headers",
+        "//src/Access/Common:headers",
         "//src/Parsers:headers",
     ],
     link_runtime = True,

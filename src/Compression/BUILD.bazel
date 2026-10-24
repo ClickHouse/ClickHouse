@@ -18,6 +18,10 @@ _PRIVATE_COMPRESSION_HEADERS = [
     "CompressionCodecNone.h",
     "CompressionCodecZSTD.h",
     "CompressionCodecZXC.h",
+    "PFor/bitpack.h",
+    "PFor/block.h",
+    "PFor/bulk.h",
+    "PFor/vertical.h",
     "registerCompressionCodecs.h",
 ]
 

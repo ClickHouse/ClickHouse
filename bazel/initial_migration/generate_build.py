@@ -54,7 +54,11 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src", "clickhouse_common_io__compile_0", "implementation_deps"): [
         "//src/Parsers:parser_api", "//src/Parsers:clickhouse_parsers",
     ],
-    ("src", "dbms__compile_0", "deps"): ["@clickhouse_sqlite_amalgamation//:_sqlite"],
+    ("src", "dbms__compile_0", "deps"): [
+        "@clickhouse_sqlite_amalgamation//:_sqlite", "//contrib/cityhash102:_cityhash",
+        "//src/Access/Common:headers", "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_mongo_cxx_driver//:_mongocxx", "//src/AggregateFunctions:aggregate_api",
+    ],
     ("src", "unit_tests_dbms", "deps"): [
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Dictionaries:clickhouse_dictionaries__compile_0",
@@ -70,9 +74,13 @@ FIRST_PARTY_HEADER_DEPS = {
     ("programs/keeper-client", "clickhouse-keeper-client-lib", "implementation_deps"): ["//src:dbms__compile_0"],
     **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): ["//src:headers"]
         for name in ("keeper-converter", "keeper-utils", "packed-io")},
-    **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): [
+    ("programs/local", "clickhouse-local-lib", "implementation_deps"): [
         "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION,
-    ] for name in ("local", "server")},
+    ],
+    ("programs/server", "clickhouse-server-lib", "implementation_deps"): [
+        "//src/Functions:headers", "//src/Access/Common:headers", "//src/Parsers:headers",
+        FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION,
+    ],
     ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_base", "implementation_deps"): ["//src/Parsers:headers"],
     ("src/Common/ZooKeeper", "headers", "deps"): ["//src:column_types"],
     ("src/Compression", "clickhouse_compression", "implementation_deps"): ["//src/Parsers:headers"],
@@ -388,6 +396,9 @@ def declare_common_header_owners(root, rules):
             x86 = next(v for k, v in zip(choices.keys, choices.values) if k.value == "@platforms//cpu:x86_64")
             end = dbms.source.span(x86.elts[-1])[1]
             dbms.path.write_text(dbms.source.rewrite([(end, end, ", " + ", ".join(map(json.dumps, missing)))]))
+    edges["src", "clickhouse_common_io__compile_0", "deps"].extend([
+        "//src/Common:current_metrics", "//src/Common:cache_policy",
+    ])
     return edges
 
 
@@ -470,7 +481,9 @@ def declare_first_party_header_deps(root):
         # The initial CMake packages own these headers before the compiled libraries are split out.
         headers = {
             "//src/Common:parser_support_api": ["BitHelpers.h", "DateLUT.h", "NaNUtils.h", "PODArray.h", "SipHash.h", "iota.h"],
+            "//src/AggregateFunctions:aggregate_api": ["IAggregateFunction.h", "IAggregateFunction_fwd.h"],
             "//src/Common:cache_policy": ["CacheBase.h"],
+            "//src/Common:current_metrics": ["CurrentMetrics.h"],
             "//src/Common:exception_api": ["Exception.h", "typeid_cast.h"],
             "//src/Common:memory_tracking_api": ["VectorWithMemoryTracking.h"],
             "//src/Common:target_specific": ["TargetSpecific.h"],
@@ -521,9 +534,9 @@ def declare_first_party_header_deps(root):
         attrs = {kw.arg: kw.value for kw in rules(doc)[target].keywords}
         if field == "deps" and (package, target) in {
             ("src", "dbms__compile_0"),
+            ("src", "clickhouse_common_io__compile_0"),
             ("src/Storages/System", "clickhouse_storages_system__compile_1"),
         }:
-            # StorageSQLite.h uses sqlite3.h; attachSystemTables.h uses Context_fwd.h and config.h.
             # Remove only this compiler's private references, including shared dict attributes.
             private = attrs.get("implementation_deps")
             if private is not None:
@@ -552,6 +565,17 @@ def declare_first_party_header_deps(root):
         if not missing:
             continue
         literal = common_list(node)
+        if literal is not None and package == "programs/server" and "//src/Access/Common:headers" in missing:
+            parser = next((x for x in literal.elts if getattr(x, "value", None) == "//src/Parsers:headers"), None)
+            if parser is not None:
+                at = doc.source.span(parser)[0]
+                path.write_text(doc.source.rewrite([(at, at, '"//src/Access/Common:headers", ')]))
+                missing.remove("//src/Access/Common:headers")
+                if not missing:
+                    continue
+                doc = Document(path, package=package)
+                node = next(kw.value for kw in rules(doc)[target].keywords if kw.arg == field)
+                literal = common_list(node)
         if literal is not None and package.startswith("programs/") and missing in (
                 ["//src:headers"], ["//src:dbms__compile_0"]):
             # Keep these direct providers before //src:dbms to preserve the order of shared LinkerInputs.

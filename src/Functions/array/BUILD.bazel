@@ -9,6 +9,14 @@ exports_files([
     "has.cpp",
 ])
 
+exports_files(
+    [
+        "arrayResize.h",
+        "emptyArrayToSingle.h",
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
 _PRIVATE_FUNCTIONS_ARRAY_0_HEADERS = [
     "FunctionArrayMapped.h",
     "arrayAll.h",
@@ -466,12 +474,11 @@ cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = glob(
-        [
-            "**/*.h",
-        ],
-        exclude = _PRIVATE_FUNCTIONS_ARRAY_0_HEADERS,
-    ),
+    hdrs = [
+        "arrayIndex.h",
+        "has.h",
+        "length.h",
+    ],
     deps = [
         "//src:headers",
         "//base:common",

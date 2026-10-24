@@ -5,6 +5,7 @@ from collections import Counter
 import json
 
 from initial_migration.first_party_packages import Build, CPUS, attributes, call_name, canonical_dependency
+from initial_migration.factor_build_selections import list_parts
 from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
@@ -54,18 +55,18 @@ DEPENDENCIES = {
         '//src/Functions:headers', '//src/Common:parser_support_api', '//src:headers', '//src:column_types',
     ], []),
     ('src', 'clickhouse_common_io__compile_0'): ([], [
-        TZDATA, '//base:pcg_random', '//src/Common:current_metrics', '//src/Common:string_utils',
+        TZDATA, '//base:pcg_random', '//src/Common:string_utils',
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_fmtlib//:_fmt', '@clickhouse_openssl//:crypto',
     ], []),
     ('src', 'dbms__compile_0'): ([
         '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2', '@clickhouse_xz//:_liblzma',
         '@clickhouse_grpc//:address_sorting', '@clickhouse_mongo_c_driver//:_libbson',
     ], [
-        '//bazel:arrow_flatbuffer_headers', '//contrib/cityhash102:_cityhash',
-        '//contrib/librdkafka-cmake:rdhttp_poco_transport', '//src/Access/Common:headers',
+        '//bazel:arrow_flatbuffer_headers',
+        '//contrib/librdkafka-cmake:rdhttp_poco_transport',
         '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_azure//:_azure_sdk',
-        '@clickhouse_flatbuffers//:_flatbuffers', '@clickhouse_google_protobuf//:_libprotobuf',
-        '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv', '@clickhouse_mongo_cxx_driver//:_mongocxx',
+        '@clickhouse_flatbuffers//:_flatbuffers',
+        '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv',
         '@clickhouse_openssl//:crypto', '@clickhouse_openssl//:ssl', '@clickhouse_sparsehash_c11//:sparsehash_c11',
         '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
     ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
@@ -161,12 +162,21 @@ def embedded_object_edits(build, rule, name, attrs, canonical):
         for k in rule.keywords:
             if k.arg == 'deps':
                 edits.append((source.starts[k.lineno - 1], source.starts[k.end_lineno], ''))
-    inputs = values(attrs['srcs'], CPUS[0])
-    if inputs != values(attrs['srcs'], CPUS[1]):
+    sources = [eval_node(attrs['srcs'], defs, cpu) for cpu in CPUS]
+    if ast.dump(sources[0]) != ast.dump(sources[1]):
         raise ValueError(f'{name}: X86 and ARM source files differ')
+    # Prune inherited literal headers; keep private source globs and their exclusions unchanged.
+    parts = list_parts(sources[0])
+    if any(not isinstance(part, ast.List) and call_name(part) != 'glob' for part in parts):
+        raise ValueError(f'{name}: unexpected embedded source expression')
+    inputs = [label for part in parts if isinstance(part, ast.List) for label in ast.literal_eval(part)]
     drop = inherited_source_headers(build, name, inputs, deps, (':headers', ':column_types'))
     if drop:
-        edits.append((*source.span(attrs['srcs']), json.dumps([v for v in inputs if v not in drop])))
+        for part in parts:
+            if isinstance(part, ast.List):
+                part.elts = [item for item in part.elts if item.value not in drop]
+        kept = [ast.unparse(part) for part in parts if not isinstance(part, ast.List) or part.elts]
+        edits.append((*source.span(attrs['srcs']), ' + '.join(kept) or '[]'))
         for item in ast.walk(attrs['srcs']):
             if isinstance(item, ast.Name) and item.id in defs and sum(
                     isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id == item.id

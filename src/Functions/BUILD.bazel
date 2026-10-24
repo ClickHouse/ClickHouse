@@ -98,10 +98,24 @@ _PRIVATE_DBMS_HEADERS = glob([
     "UserDefined/UserDefinedExecutableFunctionDriver*.h",
     "UserDefined/UserDefinedSQLObject*.h",
 ]) + [
+    "FunctionDynamicAdaptor.h",
+    "FunctionIfBase.h",
+    "FunctionTopKFilter.h",
+    "FunctionVariantAdaptor.h",
+    "TypeMismatchStrictness.h",
     "UserDefined/UserDefinedSQLFunctionVisitor.h",
     "UserDefined/UserDefinedWebAssemblyScriptAbi.h",
     "UserDefined/UserDefinedWebAssemblyTypeHelpers.h",
     "UserDefined/createUserDefinedSQLObjectsStorage.h",
+    "castNestedResult.h",
+    "exists.h",
+    "extractKeyValuePairs.h",
+    "generateSnowflakeID.h",
+    "if.h",
+    "logical.h",
+    "multiIf.h",
+    "productQuantization.h",
+    "vectorQuantization.h",
 ]
 
 exports_files(

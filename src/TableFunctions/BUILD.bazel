@@ -10,6 +10,11 @@ exports_files([
     "TableFunctionView.cpp",
 ])
 
+exports_files(
+    ["TableFunctionView.h"],
+    visibility = ["//src:__pkg__"],
+)
+
 _PRIVATE_TABLE_FUNCTIONS_HEADERS = [
     "TableFunctionArrowFlight.h",
     "TableFunctionDictionary.h",
@@ -149,7 +154,7 @@ cc_library(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS,
+        exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS + ["TableFunctionView.h"],
     ),
     deps = [
         "//src/Common/ZooKeeper:headers",
