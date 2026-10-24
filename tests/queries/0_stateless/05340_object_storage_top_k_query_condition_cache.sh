@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-parallel-replicas
 # Tag no-fasttest: needs S3 (MinIO) and Parquet
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache,
 # which a parallel sibling test can wipe at any moment (see 05243_query_condition_cache_top_k_parquet).
+# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 # The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads of Parquet files in object storage.
 # The first run records the row groups that hold no row of the result, a rerun of the same query skips
@@ -122,12 +123,12 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340_key (k Int64, s String) ENGIN
 run key_1 "SELECT k FROM t_05340_key ORDER BY k DESC LIMIT 3"
 run key_2 "SELECT k FROM t_05340_key ORDER BY k DESC LIMIT 3"
 
-echo "--- format settings changed by a reload of the table"
+echo "--- format settings changed by recreating the table with the same UUID"
 # `c.parquet` keeps the largest values under `K`, `d.parquet` smaller ones under `k`. With case-insensitive
-# column matching, the result comes from `c.parquet`. After the table is attached again without it,
+# column matching, the result comes from `c.parquet`. After the table is created again without it,
 # `c.parquet` supplies defaults for `k`, and the result comes from `d.parquet`, whose row groups the
-# entries of the first load recorded as holding no row of the result. The table keeps its UUID, so the
-# key has to cover the format settings it captured.
+# entries of the first table recorded as holding no row of the result. The entries are keyed by the UUID
+# of the table, so the key has to cover the format settings it captured.
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}_case/c.parquet', format = Parquet)
     SELECT if(number < 1000, 1000000 + number, number % 1000) AS K FROM numbers(20000)
@@ -137,12 +138,17 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT if(number < 1000, 100000 + number, number % 1000) AS k FROM numbers(20000)
     SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_case"
-${CLICKHOUSE_CLIENT} --input_format_parquet_case_insensitive_column_matching 1 --query "
-    CREATE TABLE t_05340_case (k Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_case/*.parquet', format = Parquet)"
+# A table takes its format settings from the server and its `SETTINGS` clause, not from the session.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05340_case (k Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_case/*.parquet', format = Parquet)
+    SETTINGS input_format_parquet_case_insensitive_column_matching = 1"
 run case_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 run case_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_05340_case"
-${CLICKHOUSE_CLIENT} --input_format_parquet_case_insensitive_column_matching 0 --query "ATTACH TABLE t_05340_case"
+CASE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_05340_case'")
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case SYNC"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05340_case UUID '${CASE_UUID}' (k Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_case/*.parquet', format = Parquet)
+    SETTINGS input_format_parquet_case_insensitive_column_matching = 0"
 run case_reloaded_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 run case_reloaded_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 
