@@ -61,6 +61,10 @@ public:
         explicit Settings(size_t max_block_size_);
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
+        /// Resolves the ratio against the memory available where the sort is planned, so the caller
+        /// controls when that reading happens. A ratio outside [0, 1) is rejected, not ignored.
+        static size_t maxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort);
+
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
 
         bool operator==(const Settings & other) const = default;
