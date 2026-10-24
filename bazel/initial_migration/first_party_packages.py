@@ -226,6 +226,7 @@ DBMS_PUBLIC_HEADERS = {
     ),
     "Coordination/Storage": ("BlockCache.h", "Memtable.h", "NodeRefCache.h", "Sorted*.h"),
     "Core": ("SortCursor.h",),
+    "Core/PostgreSQL": ("Connection.h", "ConnectionHolder.h", "PoolWithFailover.h", "Utils.h"),
     "DataTypes": ("getMostSubtype.h",),
     "DataTypes/Serializations": ("SerializationObjectHelpers.h", "SerializationObjectSharedData.h"),
     "Databases": ("DatabaseOverlay.h", "DatabaseURL.h"),
@@ -271,7 +272,7 @@ DBMS_PUBLIC_HEADERS = {
         "Cost.h", "Group*.h", "ImplementationStrategy.h", "OptimizerContext.h", "Properties.h",
         "Statistics.h", "Task.h",
     ),
-    "Processors/Sources": ("ObfuscateSource.h",),
+    "Processors/Sources": ("ObfuscateSource.h", "PostgreSQLSource.h"),
     "Processors/Transforms": (
         "AddingDefaultsTransform.h", "AggregatingTransform.h", "BlockNestedLoopJoin*.h",
         "ChunkRowRange.h", "ColumnGathererTransform.h", "Distinct*.h", "JoiningTransform.h",
@@ -292,10 +293,10 @@ DBMS_PUBLIC_HEADERS = {
     "Storages": (
         "ExecutableSettings.h", "GenerateRandomSettings.h", "HivePartitioningUtils.h",
         "StorageArrowFlight.h", "StorageDictionary.h", "StorageExecutable.h", "StorageFilesystem.h",
-        "StorageFuzzJSON.h", "StorageFuzzQuery.h", "StorageInput.h", "StorageLoop.h",
+        "StorageFuzzJSON.h", "StorageFuzzQuery.h", "StorageInput.h", "StorageJoin.h", "StorageLoop.h",
         "StorageMerge.h", "StorageMergeTree*.h", "StorageNull.h", "StorageObfuscate.h",
-        "StoragePrometheusQuery.h", "StorageRedis.h", "StorageTimeSeries*.h", "StorageValues.h",
-        "StorageXDBC.h",
+        "StoragePrometheusQuery.h", "StorageRedis.h", "StorageSQLite.h", "StorageSet.h",
+        "StorageTimeSeries*.h", "StorageValues.h", "StorageXDBC.h",
     ),
     "Storages/ArrowFlight": ("ArrowFlightConnection.h",),
     "Storages/BigQuery": (

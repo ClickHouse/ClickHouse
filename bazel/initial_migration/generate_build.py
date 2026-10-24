@@ -50,6 +50,7 @@ LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
 SYSTEM_TABLE_REGISTRATION = "//src/Storages/System:clickhouse_storages_system__compile_1"
 FIRST_PARTY_HEADER_DEPS = {
     ("src", "clickhouse_common_io__compile_0", "implementation_deps"): ["//src/Parsers:parser_api"],
+    ("src", "dbms__compile_0", "deps"): ["@clickhouse_sqlite_amalgamation//:_sqlite"],
     ("src", "unit_tests_dbms", "deps"): [
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Dictionaries:clickhouse_dictionaries__compile_0",
@@ -62,6 +63,7 @@ FIRST_PARTY_HEADER_DEPS = {
         "//src/Parsers:parser_api", "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION,
     ],
     ("programs/install", "clickhouse-install-lib", "implementation_deps"): ["//src/Access/Common:headers"],
+    ("programs/keeper-client", "clickhouse-keeper-client-lib", "implementation_deps"): ["//src:dbms__compile_0"],
     **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): ["//src:headers"]
         for name in ("keeper-converter", "keeper-utils", "packed-io")},
     **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): [
@@ -70,11 +72,12 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_base", "implementation_deps"): ["//src/Parsers:headers"],
     ("src/Common/ZooKeeper", "headers", "deps"): ["//src:column_types"],
     ("src/Compression", "clickhouse_compression", "implementation_deps"): ["//src/Parsers:headers"],
+    ("src/Dictionaries", "clickhouse_dictionaries__compile_1", "implementation_deps"): ["//src:dbms__compile_0"],
     ("src/Dictionaries", "headers", "deps"): [
-        "//bazel:clickhouse_config_headers", "@clickhouse_boost//:boost_headers_no_openssl", "@clickhouse_sparsehash_c11//:sparsehash_c11",
+        "//bazel:clickhouse_config_headers", "@clickhouse_boost//:boost_headers_no_openssl",
     ],
     ("src/Functions", "clickhouse_functions_obj__compile_0", "implementation_deps"): [
-        ":headers", "//src/Access/Common:headers", "//src/Functions/GatherUtils:headers",
+        ":headers", "//src/Access/Common:headers", "//src/Functions/GatherUtils:headers", "//src:dbms__compile_0",
     ],
     ("src/Functions/GatherUtils", "clickhouse_functions_gatherutils", "implementation_deps"): ["//src:headers"],
     ("src/Functions/TimeSeries", "clickhouse_functions_time_series", "implementation_deps"): ["//src:headers"],
@@ -178,13 +181,87 @@ def declare_external_compiler_headers(root):
 
 
 
+def declare_int_exp(root, common, rules):
+    """Move the CMake intExp.cpp member together with the two headers that declare its tables."""
+    from initial_migration.prune_inherited_headers import Document
+
+    src = Document(root / "src/BUILD.bazel", package="src")
+    library = rules(common).get("int_exp")
+    owner = rules(src)["clickhouse_common_io__compile_0"]
+    srcs = next(kw.value for kw in owner.keywords if kw.arg == "srcs")
+    inputs = [n for n in ast.walk(srcs) if getattr(n, "value", None) == "//src/Common:intExp.cpp"]
+    if library is not None:
+        if inputs:
+            raise ValueError("intExp.cpp already has two compilation owners")
+        return
+    if len(inputs) != 1:
+        raise ValueError("expected one intExp.cpp in clickhouse_common_io__compile_0")
+
+    def remove(source, node):
+        start, end = source.span(node)
+        return start, end + (source.bytes[end:end + 1] == b","), ""
+
+    src.path.write_text(src.source.rewrite([remove(src.source, inputs[0])]))
+    edits = []
+    headers = ["exp10_i32.h", "intExp.h"]
+    owners = rules(common)
+    aggregate = owners.get("Common") or owners["headers"]
+    hdrs = next(kw.value for kw in aggregate.keywords if kw.arg == "hdrs")
+    glob, = [n for n in ast.walk(hdrs) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "glob"]
+    exclude = next((kw.value for kw in glob.keywords if kw.arg == "exclude"), None)
+    if exclude is None:
+        end = common.source.span(glob)[1] - 1
+        edits.append((end, end, ", exclude = " + json.dumps(headers)))
+    else:
+        tail = exclude.right if isinstance(exclude, ast.BinOp) and isinstance(exclude.op, ast.Add) else exclude
+        if isinstance(tail, ast.List):
+            edits.append((*common.source.span(tail), json.dumps([*ast.literal_eval(tail), *headers])))
+        else:
+            end = common.source.span(exclude)[1]
+            edits.append((end, end, " + " + json.dumps(headers)))
+    if parser_headers := common.constants.get("_PARSER_SUPPORT_HEADERS"):
+        edits.extend(remove(common.source, n) for n in parser_headers.elts if n.value == "exp10_i32.h")
+    for stmt in common.source.module.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call) and getattr(stmt.value.func, "id", None) == "exports_files":
+            edits.extend(remove(common.source, n) for n in ast.walk(stmt.value.args[0])
+                         if getattr(n, "value", None) == "intExp.cpp")
+    loads = {arg.value for st in common.source.module.body if isinstance(st, ast.Expr) and isinstance(st.value, ast.Call)
+             and getattr(st.value.func, "id", None) == "load" for arg in st.value.args[1:] if isinstance(arg, ast.Constant)}
+    for symbol, filename in (("ch_cc_library", "@clickhouse//bazel/rules:ch_cc_library.bzl"),
+                             ("CLICKHOUSE_COMMON_IO_LOCAL_DEFINES", "@clickhouse//src:common_io_flags.bzl")):
+        if symbol not in loads:
+            edits.append((0, 0, f'load("{filename}", "{symbol}")\n'))
+    common.path.write_text(common.source.rewrite(edits) + """
+ch_cc_library(
+    name = "int_exp",
+    srcs = ["intExp.cpp"],
+    hdrs = ["exp10_i32.h", "intExp.h"],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
+)
+""")
+
+
 def declare_common_header_owners(root, rules):
     """Keep Common headers with their memory, parser, and string libraries."""
     from initial_migration.prune_inherited_headers import Document
 
     common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
+    declare_int_exp(root, common, rules)
+    common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
     owners = rules(common)
-    edges = {}
+    # These public headers and translation units include intExp.h or exp10_i32.h directly.
+    edges = {
+        (package, name, field): ["//src/Common:int_exp"] for package, name, field in (
+            ("src", "headers", "deps"),
+            ("src/Functions", "headers", "deps"),
+            ("src", "clickhouse_common_io__compile_0", "implementation_deps"),
+            ("src", "dbms__compile_0", "implementation_deps"),
+            ("src/Functions", "clickhouse_functions_obj__compile_0", "implementation_deps"),
+        )
+    }
     edits = []
 
     def add(source, items, name, anchor, *, before=False):
@@ -226,14 +303,13 @@ def declare_common_header_owners(root, rules):
         add(common.source, headers, "LocalTime.h", "Logger.h", before=True)
         add(common.source, headers, "Logger_fwd.h", "Logger.h")
         add(common.source, headers, "ShellCommandSettings.h", "SipHash.h", before=True)
-        add(common.source, headers, "exp10_i32.h", "logger_useful.h", before=True)
         parser = "//src/Common:parser_support_api"
         for package, target, field in (
             ("programs/client", "clickhouse-client-lib", "implementation_deps"),
             ("src", "dbms__compile_1", "implementation_deps"),
             ("src/Functions", "headers", "deps"),
         ):
-            edges[package, target, field] = [parser]
+            edges.setdefault((package, target, field), []).append(parser)
 
     if edits:
         common.path.write_text(common.source.rewrite(edits))
@@ -317,15 +393,18 @@ def declare_first_party_header_deps(root):
                 path.write_text(source.rewrite(edits))
                 doc = Document(path, package=package)
         attrs = {kw.arg: kw.value for kw in rules(doc)[target].keywords}
-        if (package, target, field) == ("src/Storages/System", "clickhouse_storages_system__compile_1", "deps"):
-            # attachSystemTables.h includes Context_fwd.h and config.h.
+        if field == "deps" and (package, target) in {
+            ("src", "dbms__compile_0"),
+            ("src/Storages/System", "clickhouse_storages_system__compile_1"),
+        }:
+            # StorageSQLite.h uses sqlite3.h; attachSystemTables.h uses Context_fwd.h and config.h.
             # Remove only this compiler's private references, including shared dict attributes.
             private = attrs.get("implementation_deps")
             if private is not None:
                 public = {doc.reference(public_owner(dep)) for dep in deps}
                 edits = editable_dependency_lists(doc, private, public, doc.reference)
                 if edits is None:
-                    raise ValueError("cannot promote the private dependencies of attachSystemTables.h")
+                    raise ValueError(f"cannot promote the private dependencies of //{package}:{target}")
                 if edits:
                     path.write_text(doc.source.rewrite(edits))
                     doc = Document(path, package=package)
@@ -347,8 +426,9 @@ def declare_first_party_header_deps(root):
         if not missing:
             continue
         literal = common_list(node)
-        if literal is not None and package.startswith("programs/") and missing == ["//src:headers"]:
-            # The DBMS libraries share LinkerInputs with //src:headers. Preserve their link order.
+        if literal is not None and package.startswith("programs/") and missing in (
+                ["//src:headers"], ["//src:dbms__compile_0"]):
+            # Keep these direct providers before //src:dbms to preserve the order of shared LinkerInputs.
             dbms = next((item for item in literal.elts if getattr(item, "value", None) == "//src:dbms"), None)
             if dbms is not None:
                 start = doc.source.span(dbms)[0]
@@ -1424,6 +1504,8 @@ def main():
     factor_build_selections(ROOT, selection_builds)
     declare_compiled_parser_headers(ROOT / "src/Parsers/BUILD.bazel")
     declare_unit_test_private_hdrs(ROOT / "src/BUILD.bazel")
+    from initial_migration.openldap import declare_openldap
+    declare_openldap(ROOT, {arch: graph.targets for arch, graph in graphs.items()})
     declare_first_party_header_deps(ROOT)
     declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import share_local_defines

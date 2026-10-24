@@ -945,6 +945,8 @@ ch_cc_library(
         ":headers",
         "//src/Access/Common:headers",
         "//src/Functions/GatherUtils:headers",
+        "//src:dbms__compile_0",
+        "//src/Common:int_exp",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     source_headers = True,
@@ -997,9 +999,9 @@ ch_cc_library(
         "//src:dbms__compile_1",
         "//src:headers",
         "//src/Common",
+        "//base:common",
     ] + select({
         "@platforms//cpu:x86_64": [
-            "//base:common",
             "//bazel:clickhouse_config_headers",
             "//contrib/cityhash102:_cityhash",
             "//contrib/libfarmhash:_farmhash",
@@ -1010,7 +1012,6 @@ ch_cc_library(
             "//contrib/murmurhash:_murmurhash",
         ],
         "@platforms//cpu:aarch64": [
-            "//base:common",
             "@clickhouse_boost//:boost_headers_no_openssl",
             "@clickhouse_xxhash//:xxHash",
         ],
@@ -1039,7 +1040,7 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    implementation_deps = (select({
+    implementation_deps = select({
         "@platforms//cpu:x86_64": [
             ":clickhouse_functions_obj__compile_0",
             "//src:dbms__compile_1",
@@ -1093,7 +1094,7 @@ ch_cc_library(
             "@clickhouse_wordnet_blast//:_wnb",
             "@clickhouse_zmij//:_zmij",
         ],
-    }) + ["//src/Common:current_metrics"]) + select({
+    }) + ["//src/Common:current_metrics"] + select({
         "@platforms//cpu:x86_64": ["//src:column_types"],
         "@platforms//cpu:aarch64": [],
     }),
@@ -1391,6 +1392,7 @@ cc_library(
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
         ":cast_api",
         "//src/Common:parser_support_api",
+        "//src/Common:int_exp",
     ],
 )
 

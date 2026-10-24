@@ -269,7 +269,6 @@ exports_files([
     "getNumberOfCPUCoresToUse.cpp",
     "getRandomASCIIString.cpp",
     "hasLinuxCapability.cpp",
-    "intExp.cpp",
     "iota.cpp",
     "isLocalAddress.cpp",
     "isValidUTF8.cpp",
@@ -658,7 +657,6 @@ _PARSER_SUPPORT_HEADERS = [
     "VariableContext.h",
     "VersionNumber.h",
     "checkStackSize.h",
-    "exp10_i32.h",
     "logger_useful.h",
     "memcpySmall.h",
     "quoteString.h",
@@ -823,6 +821,8 @@ ch_cc_library(
         ] + _PRIVATE_DBMS_HEADERS + _PRIVATE_COMMON_IO_HEADERS + _MEMORY_TRACKING_API_HEADERS + _PARSER_SUPPORT_HEADERS + _CACHE_POLICY_PUBLIC_HEADERS + _CACHE_POLICY_PRIVATE_HEADERS + [
             "Priority.h",
             "GetPriorityForLoadBalancing.h",
+            "exp10_i32.h",
+            "intExp.h",
         ],
     ),
     clickhouse_code = True,
@@ -872,4 +872,17 @@ ch_cc_library(
         "//src/Parsers:parser_api",
         "//src:column_types",
     ],
+)
+
+ch_cc_library(
+    name = "int_exp",
+    srcs = ["intExp.cpp"],
+    hdrs = [
+        "exp10_i32.h",
+        "intExp.h",
+    ],
+    clickhouse_code = True,
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
+    strip_include_prefix = "/src",
+    deps = ["//base:common"],
 )

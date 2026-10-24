@@ -561,6 +561,7 @@ CMAKE_LINK = {
     "//src:with_context",
     "//src:io_string_buffers",
     "//src/Common:load_balancing_priority",
+        "//src/Common:int_exp",
   ],
   "expected_objects": [
     157,
@@ -694,7 +695,7 @@ CMAKE_LINK = {
     1,
     47,
     1,
-    419,
+    418,
     1,
     1,
     1,
@@ -1121,6 +1122,7 @@ CMAKE_LINK = {
     1,
     2,
     1,
+        1,
   ],
   "archives": [
     {
@@ -1933,31 +1935,21 @@ CMAKE_LINK = {
           0,
           1
         ],
-        [
-          131,
-          182,
-          326
-        ],
+        [131, 182, 204],
+            [558, 0, 1],
+            [131, 204, 325],
         [
           556,
           0,
           1
         ],
-        [
-          131,
-          326,
-          373
-        ],
+        [131, 325, 372],
         [
           556,
           1,
           2
         ],
-        [
-          131,
-          373,
-          419
-        ]
+        [131, 372, 418]
       ],
       "name": "src/libclickhouse_common_io.a"
     },

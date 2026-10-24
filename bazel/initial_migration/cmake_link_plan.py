@@ -170,6 +170,19 @@ class Plan:
                     ordinary += 1
         self.embedded_groups.clear()
 
+    def split_int_exp(self):
+        source, = [key for key in self.slots if key[0] == "clickhouse_common_io"
+                   and key[1].removeprefix(self.source + "/") == "src/Common/intExp.cpp"]
+        parent, index, size = self.slots[source]
+        self.ref("//src/Common:int_exp", 1)
+        self.expected[self.ref_index[parent]] = size - 1
+        for key, (label, slot, count) in self.slots.items():
+            if label == parent:
+                if count != size:
+                    raise ValueError(f"{parent} has inconsistent object counts")
+                self.slots[key] = parent, slot - (slot > index), size - 1
+        self.slots[source] = "//src/Common:int_exp", 0, 1
+
     def object(self, path, archive_owner=None):
         path = os.path.normpath(path)
         match = re.search(r"(?:^|/)CMakeFiles/([^/]+)[.]dir/", path)
@@ -299,14 +312,14 @@ class Plan:
             raise ValueError("Ninja and CMake File API archive orders differ")
         def operands():
             return [v for arg in native if (v := self.operand(arg)) is not None]
+        # Discover the original reference numbers, append new owners, then encode
+        # the original Ninja members with the source indexes of their current libraries.
+        operands()
+        self.split_embedded_slots()
+        self.split_int_exp()
+        self.archives.clear()
+        self.archive_index.clear()
         sequence = operands()
-        # Preserve existing CMake ref numbers: discover them first, append the two
-        # new owners, then encode the same Ninja members with their new source slots.
-        if self.embedded_groups:
-            self.split_embedded_slots()
-            self.archives.clear()
-            self.archive_index.clear()
-            sequence = operands()
         return {
             "refs": self.refs,
             "expected_objects": self.expected,

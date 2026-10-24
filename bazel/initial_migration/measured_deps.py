@@ -10,6 +10,7 @@ from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
 
 TZDATA = '@clickhouse_cctz//:tzdata'
+SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
 UNIT_TEST_FUNCTION_DEPS = [
     FUNCTION_REGISTRATION, '//src/Access/Common:headers', '//src/Common/ZooKeeper:headers',
@@ -21,6 +22,7 @@ DEPENDENCIES = {
     ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
+    ('src/Dictionaries', 'headers'): ([SPARSEHASH], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
@@ -44,6 +46,10 @@ DEPENDENCIES = {
     ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (['@clickhouse_icu//:_icudata'], [], []),
     ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/TableFunctions', 'clickhouse_table_functions'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src', 'benchmark_runtime_filter_objects'): ([
+        '@clickhouse_icu//:_icudata', '@clickhouse_icudata//:_icudata',
+        '@clickhouse_libcpuid//:_cpuid', '@clickhouse_simdcomp//:_simdcomp',
+    ], [], []),
     ('src', 'clickhouse_common_io__compile_0'): ([], [
         TZDATA, '//base:pcg_random', '//src/Common:current_metrics', '//src/Common:string_utils',
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_fmtlib//:_fmt', '@clickhouse_openssl//:crypto',
@@ -58,7 +64,7 @@ DEPENDENCIES = {
         '@clickhouse_flatbuffers//:_flatbuffers', '@clickhouse_google_protobuf//:_libprotobuf',
         '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv', '@clickhouse_mongo_cxx_driver//:_mongocxx',
         '@clickhouse_openssl//:crypto', '@clickhouse_openssl//:ssl', '@clickhouse_sparsehash_c11//:sparsehash_c11',
-        '@clickhouse_sqlite_amalgamation//:_sqlite', '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
+        '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
     ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
         '@clickhouse_libhdfs3//:_hdfs3', '//src/Common:string_utils']),
     ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
@@ -165,6 +171,14 @@ def embedded_object_edits(build, rule, name, attrs, canonical):
                 declaration = defs[item.id]
                 edits.append((source.starts[declaration.lineno - 1], source.starts[declaration.end_lineno], ''))
     return edits
+
+
+# HashedDictionary's sparsehash types and Core/Defines.h are private to the
+# three compilers. Only groups 0 and 1 compile CacheDictionary.h's SharedMutex.
+for group in range(3):
+    key = ('src/Dictionaries', f'clickhouse_dictionaries__compile_{group}')
+    private = DEPENDENCIES.setdefault(key, ([], [], []))[1]
+    private.extend([SPARSEHASH, *(['//src/Common:shared_mutex'] if group < 2 else []), '//src:core_defines'])
 
 
 def editable_dependency_lists(build, node, drop, canonical):

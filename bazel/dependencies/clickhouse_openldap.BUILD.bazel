@@ -2,8 +2,6 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
-package(default_visibility = ["//visibility:public"])
-
 exports_files([
     "LICENSE",
     "build/mkversion",
@@ -49,9 +47,8 @@ copy_file(
     allow_symlink = True,
 )
 
-# liblber/debug.c includes ldap_pvt.h -> openldap.h -> ldap.h -> lber.h.
-# libldap also includes liblber/lber-int.h, so the shared declarations cannot
-# be owned by libldap without a dependency cycle between the two archives.
+# liblber/debug.c includes ldap.h through ldap_pvt.h; libldap includes liblber/lber-int.h.
+
 cc_library(
     name = "_api",
     hdrs = [
@@ -64,6 +61,35 @@ cc_library(
     ],
     includes = ["include"],
 )
+
+# liblber and libldap include these implementation headers. portable.h must precede ldap_pvt.h.
+
+_OPENLDAP_PRIVATE_HEADERS = [
+    ":ldap_config",
+    ":portable",
+    "include/ac/assert.h",
+    "include/ac/bytes.h",
+    "include/ac/ctype.h",
+    "include/ac/errno.h",
+    "include/ac/fdset.h",
+    "include/ac/localize.h",
+    "include/ac/socket.h",
+    "include/ac/stdarg.h",
+    "include/ac/stdlib.h",
+    "include/ac/string.h",
+    "include/ac/time.h",
+    "include/ac/unistd.h",
+    "include/lber_pvt.h",
+    "include/ldap_defaults.h",
+    "include/ldap_log.h",
+    "include/ldap_pvt.h",
+    "include/ldap_pvt_uc.h",
+    "include/ldap_queue.h",
+    "include/lutil.h",
+    "include/lutil_lockf.h",
+    "libraries/liblber/lber-int.h",
+    "libraries/liblunicode/ucdata/ucdata.h",
+]
 
 ch_cc_library(
     name = "_lber",
@@ -79,35 +105,10 @@ ch_cc_library(
         "libraries/liblber/sockbuf.c",
         "libraries/liblber/stdio.c",
         "@clickhouse//bazel:gen/contrib/openldap-cmake/lber-version.c",
-    ],
-    hdrs = [
-        ":ldap_config",
-        ":portable",
-        "include/ac/ctype.h",
-        "include/ac/errno.h",
-        "include/ac/signal.h",
-        "include/ac/socket.h",
-        "include/ac/stdarg.h",
-        "include/ac/stdlib.h",
-        "include/ac/string.h",
-        "include/ac/time.h",
-        "include/ac/unistd.h",
-        "include/getopt-compat.h",
-        "include/lber_pvt.h",
-        "include/ldap_defaults.h",
-        "include/ldap_log.h",
-        "include/ldap_queue.h",
-        "include/lutil.h",
-        "include/lutil_lockf.h",
-        "libraries/liblber/lber-int.h",
-        "libraries/liblunicode/ucdata/ucdata.h",
-    ],
+    ] + _OPENLDAP_PRIVATE_HEADERS,
     copts = [
         "-w",
         "-std=gnu11",
-    ],
-    includes = [
-        "include",
     ],
     language = "C",
     libcxx_headers = False,
@@ -119,19 +120,8 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["libraries/liblber"],
-    # These shared headers require portable.h's SIZEOF_* definitions. Both
-    # real libraries enter them after portable.h, including liblber/debug.c.
-    textual_hdrs = [
-        "include/ac/assert.h",
-        "include/ac/bytes.h",
-        "include/ac/fdset.h",
-        "include/ac/localize.h",
-        "include/ldap_pvt.h",
-        "include/ldap_pvt_uc.h",
-    ],
-    deps = [
-        ":_api",
-    ],
+    visibility = ["//visibility:public"],
+    deps = [":_api"],
 )
 
 ch_cc_library(
@@ -194,10 +184,11 @@ ch_cc_library(
         "libraries/libldap/stctrl.c",
         "libraries/libldap/string.c",
         "libraries/libldap/tavl.c",
-    ] + glob(["libraries/libldap/thr_*.c"]) + [
-        "include/ldap_schema.h",
-        "include/ldap_utf8.h",
-        "include/ldif.h",
+        "libraries/libldap/thr_debug.c",
+        "libraries/libldap/thr_nt.c",
+        "libraries/libldap/thr_posix.c",
+        "libraries/libldap/thr_pth.c",
+        "libraries/libldap/thr_thr.c",
         "libraries/libldap/threads.c",
         "libraries/libldap/tls2.c",
         "libraries/libldap/tls_g.c",
@@ -216,17 +207,20 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/openldap-cmake/ldap-version.c",
         "include/ac/dirent.h",
         "include/ac/param.h",
+        "include/ac/signal.h",
         "include/ldap_avl.h",
         "include/ldap_int_thread.h",
         "include/ldap_pvt_thread.h",
         "include/ldap_rq.h",
-    ] + glob(["libraries/libldap/**/*.h"]),
+        "include/ldap_schema.h",
+        "include/ldap_utf8.h",
+        "include/ldif.h",
+    ] + _OPENLDAP_PRIVATE_HEADERS + glob(["libraries/libldap/**/*.h"]),
     copts = [
         "-w",
         "-std=gnu11",
     ],
     implementation_deps = [
-        ":_api",
         ":_lber",
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
@@ -241,4 +235,6 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     local_includes = ["libraries/libldap"],
+    visibility = ["//visibility:public"],
+    deps = [":_api"],
 )

@@ -16,6 +16,7 @@ ch_cc_library(
         "//src/Common/Config:clickhouse_common_config",
         "//src/Common/ZooKeeper:headers",
         "//src/Parsers:clickhouse_parsers",
+        "//src:dbms__compile_0",
         "//src:dbms",
         "//src:headers",
         "//src/Common:parser_support_api",
