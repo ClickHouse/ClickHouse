@@ -10,9 +10,101 @@ read after merge	2	601
 part columns after merge	p	a
 part columns after merge	p	d
 added column via projection	1	42
+default-drift read after drift	1	51
+default-drift read after merge	1	51
+1	51
+default-drift part columns after merge	p	a
+default-drift part columns after merge	p	d
+mat-drift read after drift	1	71
+mat-drift read after merge	1	71
+mat-drift forced after merge	1	71
+mat-drift part columns after merge	p	a
+mat-drift part columns after merge	p	d
+mat-drift rebuilt not merged	0	1
+orphaned-dep read after drift	1	1001
+orphaned-dep read after merge	1	1001
+1	1001
+ignore-drift read after drift	1	51
+ignore-drift read after drift	2	61
+ignore-drift read after merge	1	51
+ignore-drift read after merge	2	61
+ignore-drift part columns after merge	p	a
+ignore-drift part columns after merge	p	d
+ignore-parent-stored read after drift	1	51
+ignore-parent-stored read after drift	2	61
+ignore-parent-stored read after merge	1	51
+ignore-parent-stored read after merge	2	61
+ignore-parent-stored part columns after merge	p	a
+ignore-parent-stored part columns after merge	p	d
+ignore-parent-stored rebuilt not merged	0	1
+subcol-dep read after drift	1	101
+subcol-dep force projection	1	101
+subcol-dep read after merge	1	101
+subcol-dep read after merge	2	301
+subcol-dep force projection after merge	1	101
+subcol-dep force projection after merge	2	301
+subcol-dep merged not rebuilt	1	0
+subcol-unfillable read after drift	1	8
+subcol-unfillable read after merge	1	8
+subcol-unfillable forced after merge	1	8
+subcol-unfillable part columns after merge	p	a
+subcol-unfillable part columns after merge	p	g
+subcol-unfillable rebuilt not merged	0	1
+arrsize-dep read after drift	1	4
+arrsize-dep force projection	1	4
+arrsize-dep read after merge	1	4
+arrsize-dep read after merge	2	3
+arrsize-dep merged not rebuilt	1	0
+chain-dep read	1	43
+chain-dep force projection	1	43
+chain-dep force projection after merge	1	43
+chain-dep force projection after merge	2	43
+chain-dep merged not rebuilt	1	0
+shared-dep force projection	1	87
+shared-dep force projection after merge	1	87
+shared-dep force projection after merge	2	87
+shared-dep merged not rebuilt	1	0
+lambda-dep force projection	1	[2,3,4]
+lambda-dep force projection after merge	1	[2,3,4]
+lambda-dep force projection after merge	2	[11,21]
+lambda-dep merged not rebuilt	1	0
+lambda-shadow-dep force projection	1	3
+lambda-shadow-dep force projection	2	2
+lambda-shadow-dep force projection after merge	1	3
+lambda-shadow-dep force projection after merge	2	2
+lambda-shadow-dep merged not rebuilt	1	0
+chain-unfillable read after drift	1	12
+chain-unfillable read after merge	1	12
+chain-unfillable forced after merge	1	12
+chain-unfillable part columns after merge	p	a
+chain-unfillable part columns after merge	p	d
+chain-unfillable rebuilt not merged	0	1
 agg read after drift	1	501
 agg read after merge	1	501
 agg read after merge	2	601
 1	501
 2	601
 virtual via projection	1	100	1
+parent-stored-dep read after drift	1	71
+parent-stored-dep read after drift	2	91
+parent-stored-dep read after merge	1	71
+parent-stored-dep read after merge	2	91
+parent-stored-dep forced after merge	1	71
+parent-stored-dep forced after merge	2	91
+parent-stored-dep rebuilt not merged	0	1
+ignore-parent-stored-dep part columns after merge	p	a
+ignore-parent-stored-dep part columns after merge	p	d
+ignore-parent-stored-dep part columns after merge	p	x
+ignore-parent-stored-dep parent path	1	71
+ignore-parent-stored-dep parent path	2	91
+ignore-parent-stored-dep forced after merge	1	71
+ignore-parent-stored-dep forced after merge	2	91
+alias-backed-dep part columns before drift	p	a
+alias-backed-dep part columns before drift	p	b
+alias-backed-dep read after drift	1	72
+alias-backed-dep part columns after merge	p	a
+alias-backed-dep part columns after merge	p	b
+alias-backed-dep part columns after merge	p	d
+alias-backed-dep parent path after merge	1	72
+alias-backed-dep forced after merge	1	72
+alias-backed-dep rebuilt not merged	0	1
