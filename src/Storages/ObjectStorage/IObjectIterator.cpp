@@ -223,7 +223,7 @@ String ObjectInfo::getQueryConditionCacheIdentifier() const
     if (!metadata_path)
         return getIdentifier(/*include_file_bucket_info=*/ false);
 
-    const String identifier = getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
+    String identifier = getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
     String redacted_path = metadata_path->substr(0, metadata_path->find_first_of("?#"));
     if (!maskURIUserinfo(redacted_path) && redacted_path.size() == metadata_path->size())
         return identifier;
