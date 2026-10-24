@@ -24,7 +24,7 @@ class QueryNode;
   * If any conjunct contains a window function or a stateful function, nothing is moved.
   * With `keep_pre_aggregation_expressions`, nothing is moved either if any conjunct contains a function with observable
   * side effects, or if any other section of the query, like the projection, `WHERE`, `GROUP BY`, `QUALIFY`, `ORDER BY`
-  * or `LIMIT BY`, contains a stateful function, like `sum(rowNumberInAllBlocks())`, a function that is not deterministic
+  * or `LIMIT BY`, or the join tree, like `JOIN ON` or `ARRAY JOIN`, contains a stateful function, like `sum(rowNumberInAllBlocks())`, a function that is not deterministic
   * in the scope of the query, like `sum(blockSize())`, or a function with observable side effects,
   * like `sum(sleepEachRow(0.001))`: it would be computed on fewer rows before aggregation. The compatibility rewrite of
   * the analyzer does not check it, like the legacy rewrite.

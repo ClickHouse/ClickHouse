@@ -347,10 +347,12 @@ void moveNonAggregateHavingConjunctsToWhere(
     /// would be evaluated fewer times. Aggregate functions may appear in every section after `GROUP BY`,
     /// like `QUALIFY`, `LIMIT BY`, `LIMIT AFTER` and `LIMIT UNTIL`, so all of them are checked. In `HAVING` itself only
     /// the arguments of aggregate functions are computed before aggregation; the rest is classified per conjunct below.
+    /// The join tree is checked as well: the plan optimizer may push the new `WHERE` below the expressions of `JOIN ON`
+    /// and `ARRAY JOIN`, like `ARRAY JOIN range(blockSize())`.
     if (keep_pre_aggregation_expressions)
     {
-        for (const auto & node : {query_node.getProjectionNode(), query_node.getPrewhere(), query_node.getWhere(),
-                 query_node.getGroupByNode(), query_node.getWindowNode(), query_node.getQualify(), query_node.getOrderByNode(),
+        for (const auto & node : {query_node.getProjectionNode(), query_node.getJoinTreeNode(), query_node.getPrewhere(),
+                 query_node.getWhere(), query_node.getGroupByNode(), query_node.getWindowNode(), query_node.getQualify(), query_node.getOrderByNode(),
                  query_node.getInterpolate(), query_node.getLimitByNode(), query_node.getLimitAfter(),
                  query_node.getLimitUntil()})
         {
