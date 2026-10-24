@@ -179,12 +179,11 @@ def test_async_insert_flush_timeout_returns_503():
 
 
 def test_sync_insert_timeout_returns_503():
-    # The constraint sleeps 2 seconds per row, so the insert exceeds a 1-second `max_execution_time`.
+    # The default sleeps 2 seconds per row, so the insert exceeds a 1-second `max_execution_time`.
     node.query(
-        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
-        "CONSTRAINT slow CHECK sleepEachRow(2) = 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES INNER COLUMNS (slow UInt8 DEFAULT sleepEachRow(2))"
     )
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
 
     time_series = [({"__name__": "slow_metric"}, {1724112000: 1.5})]
     response = get_response_to_remote_write(
