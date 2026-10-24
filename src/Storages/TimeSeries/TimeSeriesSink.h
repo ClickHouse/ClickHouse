@@ -21,6 +21,7 @@ class StorageTimeSeries;
 class ExpressionActions;
 class IColumn;
 class PushingPipelineExecutor;
+class PushingAsyncPipelineExecutor;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
@@ -59,21 +60,34 @@ public:
         std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name);
 
 private:
-    /// A persistent pipeline for inserting blocks into one target table.
+    /// A pipeline for inserting blocks into one target table.
+    /// Exactly one of `executor` and `async_executor` is set. The samples pipeline and the
+    /// recent samples pipeline use the asynchronous executor when the insert has more than one thread.
     struct TargetPipeline
     {
         ContextMutablePtr context;
         BlockIO io;
         std::unique_ptr<PushingPipelineExecutor> executor;
+        std::unique_ptr<PushingAsyncPipelineExecutor> async_executor;
         std::shared_ptr<ExpressionActions> converting_actions;
 
         void push(Block block) const;
+        void finish() const;
         ~TargetPipeline();
     };
 
     void initTagsAndSamplesPipelines();
     void initMetricFamiliesPipeline();
-    std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
+    /// `delay_commit` keeps pushed blocks uncommitted until `finish`.
+    std::unique_ptr<TargetPipeline> createTargetPipeline(
+        ViewTarget::Kind kind, const Block & header, bool parallel, bool delay_commit = false, const Block * block = nullptr);
+
+    void ensureTagsPipeline(const Block & block);
+    void ensureTimeRangesPipeline(const Block & block);
+    /// Finishes the tags pipeline and the time ranges pipeline when they hold rows.
+    void commitTagsAndTimeRanges();
+    /// Commits the samples block, then the same block to recent samples.
+    void writeSamplesAndRecent(Block samples_block);
 
     void consumeTagsAndSamples(const Block & block);
     void consumeMetricFamilies(const Block & block);
@@ -102,11 +116,18 @@ private:
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
 
+    Block tags_pipeline_header;
+    Block time_ranges_pipeline_header;
+    Block samples_pipeline_header;
+
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> time_ranges_pipeline;
-    std::unique_ptr<TargetPipeline> samples_pipeline;
-    std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
+
+    bool tags_pipeline_dirty = false;
+    bool time_ranges_pipeline_dirty = false;
+    size_t target_pipeline_sequence = 0;
+    size_t input_block_index = 0;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
