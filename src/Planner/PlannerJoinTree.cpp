@@ -130,6 +130,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_skip_unused_shards;
@@ -195,6 +196,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int ACCESS_DENIED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -1821,27 +1823,33 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
 
 }
 
-void setParallelReplicasImplementationForSubqueries(const QueryTreeNodePtr & node, bool plan_based)
+void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const Settings & settings)
 {
     /// One query reads with replicas using one implementation. The two split the work at different
     /// points, so a plan mixing them does not combine them: the part planned for the other one ends up
     /// reading without parallel replicas at all. Every carrier of a subquery - a table expression, an
     /// `IN` set, a materialized CTE, a correlated subquery - has its own context whose `SETTINGS` clause
     /// can name the other implementation, and the traversal reaches all of them.
-    /// Only where the context disagrees: writing the value it already holds would mark the setting as
-    /// changed on contexts that never asked for it, which is visible in `system.settings`.
-    auto set_if_differs = [plan_based](const ContextMutablePtr & context)
+    /// Without parallel replicas the setting has no effect, so a subquery (or a view) setting it is harmless.
+    if (!settings[Setting::allow_experimental_parallel_reading_from_replicas] && !settings[Setting::automatic_parallel_replicas_mode])
+        return;
+
+    const bool plan_based = settings[Setting::parallel_replicas_plan_based];
+    auto check = [plan_based](const ContextPtr & context)
     {
         if (context->getSettingsRef()[Setting::parallel_replicas_plan_based] != plan_based)
-            context->setSetting("parallel_replicas_plan_based", Field{plan_based});
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "A subquery sets `parallel_replicas_plan_based` = {}, while the query reads with parallel replicas with "
+                "`parallel_replicas_plan_based` = {}. One query uses one implementation of parallel replicas: set it for the whole query",
+                !plan_based, plan_based);
     };
 
-    traverseQueryTree(node, Everything{}, [&set_if_differs](const QueryTreeNodePtr & current_node)
+    traverseQueryTree(node, Everything{}, [&check](const QueryTreeNodePtr & current_node)
     {
-        if (auto * query_node = current_node->as<QueryNode>())
-            set_if_differs(query_node->getMutableContext());
-        else if (auto * union_node = current_node->as<UnionNode>())
-            set_if_differs(union_node->getMutableContext());
+        if (const auto * query_node = current_node->as<QueryNode>())
+            check(query_node->getContext());
+        else if (const auto * union_node = current_node->as<UnionNode>())
+            check(union_node->getContext());
     });
 }
 
