@@ -113,6 +113,18 @@ public:
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
 
+    /// The table this call is only a reference to, empty when it builds a storage of its own.
+    /// See `ITableFunction::getReferencedTableID`. Resolved once and stored, rather than asked of
+    /// `table_function`, because a cloned node does not carry the `ITableFunction` object.
+    const StorageID & getReferencedTableID() const { return referenced_table_id; }
+
+    /// See `ITableFunction::evaluatesArgumentsRemotely`. Stored for the same reason.
+    bool evaluatesArgumentsRemotely() const { return evaluates_arguments_remotely; }
+
+    /// Rewrite the leading arguments that name a table to `'database', 'table'`, so the call resolves to the
+    /// same table on a server whose current database is different. See `ITableFunction::getTableArgument`.
+    void qualifyTableArgument();
+
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
@@ -172,6 +184,10 @@ private:
     TableFunctionPtr table_function;
     StoragePtr storage;
     StorageID storage_id;
+    StorageID referenced_table_id = StorageID::createEmpty();
+    StorageID table_argument_id = StorageID::createEmpty();
+    size_t num_table_arguments = 0;
+    bool evaluates_arguments_remotely = false;
     StorageSnapshotPtr storage_snapshot;
     VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;

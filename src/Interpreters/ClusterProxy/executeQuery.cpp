@@ -29,6 +29,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -1185,7 +1186,10 @@ void executeQueryWithParallelReplicas(
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
             remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
-            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            /// A null plan means the coordinated read could not be marked in it; fall back to sending the
+            /// query text, which every replica plans for itself (see `createRemotePlanForParallelReplicas`).
+            if (remote_query_plan)
+                remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
@@ -1353,6 +1357,7 @@ void executeQueryWithParallelReplicas(
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1430,6 +1435,7 @@ void executeQueryWithParallelReplicasCustomKey(
     /// task-based parallel-replicas path runs for the same reason).
     auto modified_query_tree = query_tree->clone();
     createUniqueAliasesIfNecessary(modified_query_tree, context);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto header
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -1713,7 +1719,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     String formatted_query;
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
-        const auto & query_tree = analyzer.getQueryTree();
+        auto query_tree = analyzer.getQueryTree()->clone();
+        qualifyTableFunctionArguments(query_tree);
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();

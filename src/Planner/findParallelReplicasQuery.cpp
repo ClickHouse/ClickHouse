@@ -3,6 +3,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
@@ -45,7 +46,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
+static bool isStorageEligibleForParallelReplicas(const StoragePtr & storage, bool has_final, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -60,10 +61,31 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
         return false;
 
     /// Parallel replicas not supported with FINAL.
-    if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+    if (has_final)
         return false;
 
     return true;
+}
+
+bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
+{
+    const bool has_final = table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal();
+    return isStorageEligibleForParallelReplicas(storage, has_final, context);
+}
+
+/// A table function that is only a stable reference to an existing table (see
+/// `ITableFunction::getReferencedTableID`) reads that table, so it can anchor a parallel-replicas read just
+/// like a `TableNode` over the same table: every replica resolves the call locally and reads its own copy.
+/// A table function that builds a storage of its own cannot - it is not the same table on every replica -
+/// so it is not enough for the resolved storage to look like a `MergeTree`.
+static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
+{
+    if (table_function_node.getReferencedTableID().empty())
+        return false;
+
+    const bool has_final
+        = table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal();
+    return isStorageEligibleForParallelReplicas(table_function_node.getStorage(), has_final, context);
 }
 
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
@@ -132,6 +154,13 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                /// Kept in step with the `TABLE_FUNCTION` case of `findTableForParallelReplicas` below: a node
+                /// that can anchor the read there must be able to reach this traversal too, otherwise the
+                /// initiator picks an anchor for a query this one has already refused to distribute.
+                const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
+                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                    return res;
+
                 return {};
             }
             case QueryTreeNodeType::QUERY:
@@ -539,7 +568,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     return res;
 }
 
-static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+static const ITableExpressionNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     std::stack<const IQueryTreeNode *> join_nodes;
@@ -572,6 +601,10 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
+                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                    return &table_function_node;
+
                 query_tree_node = nullptr;
                 break;
             }
@@ -647,7 +680,51 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
     return nullptr;
 }
 
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
+StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_expression_node)
+{
+    if (const auto * table_node = table_expression_node.as<TableNode>())
+        return table_node->getStorageID();
+
+    const auto * table_function_node = table_expression_node.as<TableFunctionNode>();
+    chassert(table_function_node);
+    return table_function_node->getStorageID();
+}
+
+namespace
+{
+
+class CollectTableFunctionNodesVisitor : public InDepthQueryTreeVisitor<CollectTableFunctionNodesVisitor>
+{
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * table_function_node = node->as<TableFunctionNode>())
+            table_function_nodes.push_back(table_function_node);
+    }
+
+    /// The arguments of `remote` and `cluster` are evaluated on the servers they name, so a table they
+    /// mention must keep resolving against those servers' databases, not the initiator's.
+    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+    {
+        const auto * table_function_node = parent->as<TableFunctionNode>();
+        return !table_function_node || !table_function_node->evaluatesArgumentsRemotely();
+    }
+
+    std::vector<TableFunctionNode *> table_function_nodes;
+};
+
+}
+
+void qualifyTableFunctionArguments(QueryTreeNodePtr & query_tree_node)
+{
+    /// Collected first: the traversal relies on the argument lists it walks staying as they are.
+    CollectTableFunctionNodesVisitor visitor;
+    visitor.visit(query_tree_node);
+    for (auto * table_function_node : visitor.table_function_nodes)
+        table_function_node->qualifyTableArgument();
+}
+
+const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -767,6 +844,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
@@ -775,14 +853,14 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
-    if (!table_node)
+    const auto * table_expression_node = findTableForParallelReplicas(modified_query_tree.get(), context);
+    if (!table_expression_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        table_node->getStorageID(),
+        getStorageIDForParallelReplicas(*table_expression_node),
         header,
         processed_stage,
         modified_query_ast,

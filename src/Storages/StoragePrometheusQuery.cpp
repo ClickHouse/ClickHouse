@@ -106,6 +106,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    const size_t num_table_arguments = argument_index;
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
@@ -151,6 +152,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     Configuration config;
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
+    config.num_table_arguments = num_table_arguments;
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.time_series_version = time_series_version;
