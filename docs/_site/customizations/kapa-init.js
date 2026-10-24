@@ -144,13 +144,27 @@
     observeDocsTheme();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', insertKapaWidget);
-  } else {
+  function loadKapa() {
     try {
       insertKapaWidget();
     } catch (e) {
       console.log('An error occurred while trying to load the Kapa.ai widget:', e);
     }
   }
+
+  // Kapa is only opened from the Ask AI entry points, so load it when a reader
+  // reaches for one instead of on every page view.
+  window.chLoadKapa = loadKapa;
+  var OPENERS = '.ch-ask-ai-button, #home-assistant-entry, [data-docs-ai-entry]';
+  function onIntent(event) {
+    var target = event.target;
+    if (!target || typeof target.closest !== 'function' || !target.closest(OPENERS)) return;
+    ['pointerover', 'focusin', 'touchstart'].forEach(function (type) {
+      document.removeEventListener(type, onIntent, true);
+    });
+    loadKapa();
+  }
+  ['pointerover', 'focusin', 'touchstart'].forEach(function (type) {
+    document.addEventListener(type, onIntent, { capture: true, passive: true });
+  });
 })();

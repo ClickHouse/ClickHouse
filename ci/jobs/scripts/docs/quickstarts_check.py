@@ -645,6 +645,7 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         "    if (event.defaultPrevented) return;\n"
         "    if (event.metaKey || event.ctrlKey || event.shiftKey || "
         "event.altKey || event.button !== 0) return;\n"
+        "    if (event.currentTarget.getAttribute('href') === href) return;\n"
         "    event.preventDefault();\n"
         "    window.location.href = href;\n"
         "};"

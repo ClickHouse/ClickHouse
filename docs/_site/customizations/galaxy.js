@@ -445,7 +445,15 @@
     if (!isCanonicalDocs) return;
 
     updateCloudLinks();
-    new MutationObserver(updateCloudLinks).observe(document.body, {
+    var scheduled = false;
+    new MutationObserver(function () {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        updateCloudLinks();
+      });
+    }).observe(document.body, {
       childList: true,
       subtree: true,
     });

@@ -22,6 +22,7 @@ export const withDocsBase = (href) => {
 export const navigateTo = (event, href) => {
     if (event.defaultPrevented) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    if (event.currentTarget.getAttribute('href') === href) return;
     event.preventDefault();
     window.location.href = href;
 };
