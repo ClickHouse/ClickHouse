@@ -101,6 +101,22 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// Returns the total size of the values that the string value filters replaced with empty strings since
+    /// the previous call, keyed by the column name in the part, and resets it. The in-memory size of the read
+    /// columns misses these values, although they were read from disk.
+    StringValuesSkippedInBlockByColumn takeStringValuesSkippedByFilters();
+
+    /// Makes it possible to measure the compressed size of the skipped values with the codec that `get_codec` returns
+    /// for the column (by its name in the part), see `measureCompressedSizeOfStringValuesSkippedByFilters`.
+    void setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(const std::function<CompressionCodecPtr(const String &)> & get_codec);
+
+    /// Measures the compressed size of the values skipped in at most this many first rows of the block read next, for the
+    /// columns that have a codec.
+    void measureCompressedSizeOfStringValuesSkippedByFilters(size_t rows)
+    {
+        rows_to_measure_compressed_size_of_string_values_skipped_by_filters = rows;
+    }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -155,10 +171,11 @@ protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
-    /// Returns the string value filter to apply during deserialization of the column, or nullptr.
+    /// Sets the string value filter to apply during deserialization of the column, or resets it if there is none,
+    /// together with the account of the values it skips (see `takeStringValuesSkippedByFilters`).
     /// Takes the column as it is named in the part (an element of `columns_to_read`).
     /// See `MergeTreeReaderSettings::string_value_filters`.
-    StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
+    void setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings);
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -266,9 +283,21 @@ private:
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
 
+    struct CompressedSizeMeasurement;
+
+    struct StringValueFilterForColumn
+    {
+        StringValueFilterPtr filter;
+        StringValuesSkippedByFilter skipped;
+        /// See `measureCompressedSizeOfStringValuesSkippedByFilters`.
+        CompressionCodecPtr codec;
+        std::shared_ptr<CompressedSizeMeasurement> compressed_size_measurement;
+    };
+
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
-    std::unordered_map<String, StringValueFilterPtr> string_value_filters_by_part_column_name;
+    std::unordered_map<String, StringValueFilterForColumn> string_value_filters_by_part_column_name;
+    size_t rows_to_measure_compressed_size_of_string_values_skipped_by_filters = 0;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
