@@ -42,9 +42,10 @@ node = cluster.add_instance(
 
 # ── Query time parameters ────────────────────────────────────────────────────
 
-QUERY_START = BASE_TIME - 120
+# A 10 minute range at 10 second steps, the defaults of the upstream compliance tester.
+QUERY_START = BASE_TIME - 600
 QUERY_END = BASE_TIME
-QUERY_STEP = 60
+QUERY_STEP = 10
 
 FLOAT_FRACTION = 0.00001
 FLOAT_MARGIN = 0.0001
