@@ -1,4 +1,4 @@
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SELECT 1 / 0; -- { serverError ILLEGAL_DIVISION }
 SELECT materialize(1) / 0; -- { serverError ILLEGAL_DIVISION }
 SELECT 1 / materialize(0); -- { serverError ILLEGAL_DIVISION }

@@ -1,4 +1,4 @@
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SET enable_parallel_replicas = 0;
 
 CREATE TABLE exact_division_constant_key (x Int64) ENGINE = MergeTree ORDER BY x;
