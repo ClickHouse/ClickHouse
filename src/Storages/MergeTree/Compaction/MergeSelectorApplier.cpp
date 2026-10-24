@@ -22,6 +22,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
@@ -61,6 +66,91 @@ namespace MergeTreeSetting
 namespace
 {
 
+/// The physical columns that a merge of a range expires instead of merging them: those absent from every source part
+/// and without a default expression, typically added by `ALTER TABLE ... ADD COLUMN` after every source part was
+/// written, see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` and `PartProperties::absent_columns`.
+///
+/// `SimpleMergeSelector` weighs every sub-range of a partition, and intersecting the absent columns of every part of
+/// every candidate grows with the cube of the number of parts on a table with many columns added after its parts were
+/// written. So, for every part of the ranges the selector is given, and every column absent from it, this records how
+/// many parts in a row, starting from that part, lack the column: a range expires the column exactly when the run from
+/// its first part covers the whole range.
+class AbsentColumnRuns
+{
+public:
+    /// The columns expired by a merge of one range, see `AbsentColumnRuns::get`.
+    class Expired
+    {
+    public:
+        bool contains(const String & column) const
+        {
+            auto it = runs->run_by_column.find(column);
+            return it != runs->run_by_column.end() && it->second >= range_size;
+        }
+
+        size_t size() const
+        {
+            return runs->sorted_runs.end() - std::ranges::lower_bound(runs->sorted_runs, range_size);
+        }
+
+    private:
+        friend class AbsentColumnRuns;
+
+        struct Runs
+        {
+            /// The keys point into `PartProperties::absent_columns` of the part.
+            std::unordered_map<std::string_view, size_t> run_by_column;
+            std::vector<size_t> sorted_runs;
+        };
+
+        Expired(const Runs & runs_, size_t range_size_) : runs(&runs_), range_size(range_size_) {}
+
+        const Runs * runs;
+        size_t range_size;
+    };
+
+    explicit AbsentColumnRuns(const PartsRanges & ranges)
+    {
+        for (const auto & range : ranges)
+        {
+            const Expired::Runs * next = nullptr;
+            for (auto part = range.rbegin(); part != range.rend(); ++part)
+            {
+                /// The references to the elements of `std::unordered_map` stay valid when it grows.
+                auto & runs = runs_by_part[&*part];
+                runs.run_by_column.reserve(part->absent_columns.size());
+                runs.sorted_runs.reserve(part->absent_columns.size());
+                for (const auto & column : part->absent_columns)
+                {
+                    size_t run = 1;
+                    if (next)
+                    {
+                        if (auto it = next->run_by_column.find(column); it != next->run_by_column.end())
+                            run += it->second;
+                    }
+                    runs.run_by_column.emplace(column, run);
+                    runs.sorted_runs.push_back(run);
+                }
+                std::ranges::sort(runs.sorted_runs);
+                next = &runs;
+            }
+        }
+    }
+
+    /// `range` has to be a non-empty sub-range of one of the ranges this was built from.
+    Expired get(PartsRangeView range) const
+    {
+        chassert(!range.empty());
+        auto it = runs_by_part.find(range.data());
+        if (it == runs_by_part.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The range of parts to merge does not come from the ranges given to the merge selector");
+        return Expired(it->second, range.size());
+    }
+
+private:
+    std::unordered_map<const PartProperties *, Expired::Runs> runs_by_part;
+};
+
 struct ChooseContext
 {
     const PartsRanges & ranges;
@@ -71,6 +161,10 @@ struct ChooseContext
     const MergeConstraints & merge_constraints;
     const StorageInMemoryMetadata & metadata_snapshot;
     const MergeTreeSettings & merge_tree_settings;
+    /// The names of the physical columns of the table and of every projection. The estimate looks them up for
+    /// every candidate range, and listing them again for each one is slow on a table with thousands of columns.
+    const NameSet & physical_columns;
+    const std::unordered_map<const ProjectionDescription *, NameSet> & projection_physical_columns;
     /// `nullptr` when the storage is not `MergeTreeData`, see `MergeSelectorApplier::chooseMergesFrom`.
     const MergeTreeData * data;
     const MergeTreeData::MergingParams & merging_params;
@@ -126,7 +220,7 @@ size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx, size_t columns
 /// The cap of the parent merge priced as a horizontal one, which holds every column of every source part at once.
 size_t getAffordablePartsToMergeHorizontally(const ChooseContext & ctx)
 {
-    return getAffordablePartsToMergeAtOnce(ctx, ctx.metadata_snapshot.getColumns().getAllPhysical().size());
+    return getAffordablePartsToMergeAtOnce(ctx, ctx.physical_columns.size());
 }
 
 /// The cap for a merge priced as a horizontal one, both the parent merge and the merges of the projection parts
@@ -136,9 +230,9 @@ size_t getAffordablePartsToMergeHorizontally(const ChooseContext & ctx)
 /// width, under-pricing it costs the merge.
 size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx)
 {
-    size_t max_columns = ctx.metadata_snapshot.getColumns().getAllPhysical().size();
-    for (const auto & projection : ctx.metadata_snapshot.getProjections())
-        max_columns = std::max(max_columns, projection.metadata->getColumns().getAllPhysical().size());
+    size_t max_columns = ctx.physical_columns.size();
+    for (const auto & [_, projection_columns] : ctx.projection_physical_columns)
+        max_columns = std::max(max_columns, projection_columns.size());
     return getAffordablePartsToMergeAtOnce(ctx, max_columns);
 }
 
@@ -249,11 +343,10 @@ NameSet getMinMaxIndexColumns(const ChooseContext & ctx)
 /// The storage columns that `key_columns` keep on the horizontal stage, like `MergeTask` does: the alias and
 /// ephemeral columns are not merged at all, and a key column that is a subcolumn keeps its whole storage column,
 /// so several subcolumns of one column count once. The persistent virtual columns `_block_number` and
-/// `_block_offset` of the min-max index are merged as they are, see `getMinMaxIndexColumns`. `metadata` is the one of
-/// the table for the parent merge, or the one of a projection for the merge of its projection parts.
-NameSet getKeyColumnsInStorage(const StorageInMemoryMetadata & metadata, const NameSet & key_columns)
+/// `_block_offset` of the min-max index are merged as they are, see `getMinMaxIndexColumns`. `physical_columns` are
+/// the ones of the table for the parent merge, or the ones of a projection for the merge of its projection parts.
+NameSet getKeyColumnsInStorage(const NameSet & physical_columns, const NameSet & key_columns)
 {
-    const auto physical_columns = metadata.getColumns().getAllPhysical().getNameSet();
     NameSet key_columns_in_storage;
     for (const auto & column : key_columns)
     {
@@ -270,11 +363,10 @@ NameSet getKeyColumnsInStorage(const StorageInMemoryMetadata & metadata, const N
 /// columns move to the horizontal stage, the fewer are left to gather. The rest of the decision depends on the
 /// range itself, see `predictVerticalMerge`.
 /// `num_expired_columns` is the number of the other columns that the merge expires instead of gathering them,
-/// see `getColumnsExpiredByMerge`.
+/// see `AbsentColumnRuns`.
 bool tableCanMergeVertically(const ChooseContext & ctx, size_t num_key_columns, size_t num_expired_columns)
 {
     const auto & settings = ctx.merge_tree_settings;
-    const auto & metadata = ctx.metadata_snapshot;
 
     if (ctx.merge_forced_horizontal || settings[MergeTreeSetting::enable_vertical_merge_algorithm] == 0)
         return false;
@@ -286,7 +378,7 @@ bool tableCanMergeVertically(const ChooseContext & ctx, size_t num_key_columns, 
         return false;
 
     /// Like `MergeTask`, split only the physical columns, and do not gather the expired ones.
-    const size_t num_physical_columns = metadata.getColumns().getAllPhysical().size();
+    const size_t num_physical_columns = ctx.physical_columns.size();
     const size_t num_not_gathered_columns = num_key_columns + num_expired_columns;
     const size_t gathering_columns = num_physical_columns > num_not_gathered_columns ? num_physical_columns - num_not_gathered_columns : 0;
     return gathering_columns >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
@@ -324,18 +416,44 @@ bool tableCanMergeVerticallyWhileRemovingExpiredValues(const ChooseContext & ctx
 /// Whether a merge of `range` that removes expired values may still run vertically: on top of the checks of
 /// `tableCanMergeVerticallyWhileRemovingExpiredValues`, no source part and no patch part applied on the merge
 /// may carry a lightweight delete, see `MergeTask::hasLightweightDelete`. The properties of the patch parts
-/// known here do not tell whether they carry one, so any patch part applied on the merge rules it out.
-bool rangeCanMergeVerticallyWhileRemovingExpiredValues(const ChooseContext & ctx, PartsRangeView range)
+/// known here do not tell whether they carry one, so any patch part applied on the merge rules it out. And no
+/// rows TTL may read a column that the merge expires (`expired_columns`), see `MergeTask::canVerticalTTLDelete`.
+bool rangeCanMergeVerticallyWhileRemovingExpiredValues(
+    const ChooseContext & ctx, PartsRangeView range, const AbsentColumnRuns::Expired & expired_columns)
 {
     if (!tableCanMergeVerticallyWhileRemovingExpiredValues(ctx))
         return false;
+
+    /// Like `Nested::tryGetColumnNameInStorage`: the column itself or the storage column of a subcolumn.
+    auto is_expired = [&](const NameAndTypePair & column)
+    {
+        if (expired_columns.contains(column.name))
+            return true;
+        for (const auto & [column_name, _] : Nested::getAllColumnAndSubcolumnPairs(column.name))
+            if (expired_columns.contains(String(column_name)))
+                return true;
+        return false;
+    };
+    auto reads_expired_column = [&](const TTLDescription & ttl)
+    {
+        return std::ranges::any_of(ttl.expression_columns, is_expired) || std::ranges::any_of(ttl.where_expression_columns, is_expired);
+    };
+
+    const auto & metadata = ctx.metadata_snapshot;
+    if (expired_columns.size())
+    {
+        if (metadata.hasRowsTTL() && reads_expired_column(metadata.getRowsTTL()))
+            return false;
+        if (std::ranges::any_of(metadata.getRowsWhereTTLs(), reads_expired_column))
+            return false;
+    }
 
     for (const auto & part : range)
         if (part.has_lightweight_delete)
             return false;
 
     if (ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]
-        && !ctx.predicate.getPatchesToApplyOnMerge(PartsRange(range.begin(), range.end())).empty())
+        && !ctx.predicate.getPatchesToApplyOnMerge(range).empty())
         return false;
 
     return true;
@@ -379,13 +497,15 @@ bool rangeRemovesExpiredValues(const ChooseContext & ctx, PartsRangeView range)
 
 /// Whether a merge of `range` will run through `MergeAlgorithm::Vertical`, following the rules of
 /// `MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm` that depend on the range: the result
-/// has to be a wide part in full storage, and the range has to carry enough rows and bytes. The bytes are
-/// the uncompressed sizes of the columns, the same as `MergeTask` and `FutureMergedMutatedPart` decide by,
-/// not the sizes on disk: those include marks and indexes and can exceed the uncompressed size of tiny or
+/// has to be a wide part, in either `Full` or `Packed` storage, and the range has to carry enough rows and
+/// bytes. The bytes are the uncompressed sizes of the columns, the same as `MergeTask` and
+/// `FutureMergedMutatedPart` decide by, not the sizes on disk: those include marks and indexes and can exceed the uncompressed size of tiny or
 /// poorly compressed parts, which would predict a vertical merge that then runs horizontally. Without
 /// `allow_vertical_merges_from_compact_to_wide_parts` every source part has to be wide as well.
-/// `removes_expired_values` is `rangeRemovesExpiredValues` of the range.
-bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values)
+/// `removes_expired_values` is `rangeRemovesExpiredValues` of the range, and `expired_columns` are the columns
+/// that the merge expires.
+bool predictVerticalMerge(
+    const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values, const AbsentColumnRuns::Expired & expired_columns)
 {
     const auto & settings = ctx.merge_tree_settings;
 
@@ -412,10 +532,10 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
     /// the result is never of a more compact type than a source part.
     const auto part_format = ctx.data->choosePartFormat(sum_bytes, sum_rows, max_level + 1, /*projection=*/nullptr);
     part_type = std::min(part_type, part_format.part_type);
-    if (part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
+    if (part_type != MergeTreeDataPartType::Wide)
         return false;
 
-    if (removes_expired_values && !rangeCanMergeVerticallyWhileRemovingExpiredValues(ctx, range))
+    if (removes_expired_values && !rangeCanMergeVerticallyWhileRemovingExpiredValues(ctx, range, expired_columns))
         return false;
 
     return sum_rows >= settings[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate]
@@ -432,24 +552,7 @@ bool rangeMayReduceRows(const ChooseContext & ctx, PartsRangeView range, bool re
         if (part.has_lightweight_delete)
             return true;
     return ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]
-        && !ctx.predicate.getPatchesToApplyOnMerge(PartsRange(range.begin(), range.end())).empty();
-}
-
-/// The physical columns that a merge of `range` expires instead of merging them: those absent from every source
-/// part and without a default expression, typically added by `ALTER TABLE ... ADD COLUMN` after every source part
-/// was written, see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` and `PartProperties::absent_columns`.
-NameSet getColumnsExpiredByMerge(PartsRangeView range)
-{
-    NameSet columns;
-    if (range.empty())
-        return columns;
-
-    for (const auto & column : range.front().absent_columns)
-    {
-        if (std::all_of(range.begin() + 1, range.end(), [&](const PartProperties & part) { return part.absent_columns.contains(column); }))
-            columns.insert(column);
-    }
-    return columns;
+        && !ctx.predicate.getPatchesToApplyOnMerge(range).empty();
 }
 
 /// The columns of the projections that a merge of `range` rebuilds on its horizontal stage, following
@@ -457,8 +560,8 @@ NameSet getColumnsExpiredByMerge(PartsRangeView range)
 /// source part already has is, in the common case, merged from the projection parts of the sources after the
 /// parent merge and does not add its columns to the horizontal stage. Like the rest of the estimate, this leans
 /// towards over-counting where the exact answer depends on more than the part properties: any column TTL over
-/// a column of a projection is taken as expiring it, and so is a column absent from every source part (see
-/// `PartProperties::absent_columns`). `may_reduce_rows` is `rangeMayReduceRows` of the range. The projections that
+/// a column of a projection is taken as expiring it, and so is a column the merge expires (`expired_columns`,
+/// see `AbsentColumnRuns`). `may_reduce_rows` is `rangeMayReduceRows` of the range. The projections that
 /// the merge keeps by merging their projection parts are added to `merged_projections`, see
 /// `getAffordablePartsToMergeProjection`.
 NameSet getColumnsOfProjectionsRebuiltByMerge(
@@ -466,6 +569,7 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
     PartsRangeView range,
     bool removes_expired_values,
     bool may_reduce_rows,
+    const AbsentColumnRuns::Expired & expired_columns,
     std::vector<const ProjectionDescription *> & merged_projections)
 {
     NameSet columns;
@@ -483,12 +587,7 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
         return columns;
 
     const auto & column_ttls = metadata.getColumnTTLs();
-
-    /// A column is expired by the merge when it is absent from every source part.
-    auto is_absent_from_all_parts = [&](const String & name)
-    {
-        return std::all_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.absent_columns.contains(name); });
-    };
+    auto is_expired = [&](const String & name) { return expired_columns.contains(name); };
 
     for (const auto & projection : projections)
     {
@@ -501,8 +600,8 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
         else if (removes_expired_values && mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(required_columns.begin(), required_columns.end(), [&](const String & name) { return column_ttls.contains(name); }))
             rebuild = true;
-        else if (mode != DeduplicateMergeProjectionMode::IGNORE && !range.empty()
-            && std::any_of(required_columns.begin(), required_columns.end(), is_absent_from_all_parts))
+        else if (mode != DeduplicateMergeProjectionMode::IGNORE
+            && std::any_of(required_columns.begin(), required_columns.end(), is_expired))
             rebuild = true;
         else if (mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.projections_missing_columns.contains(projection.name); }))
@@ -533,16 +632,20 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(
 }
 
 /// The cap of a vertical merge whose horizontal stage merges `key_columns`, or `affordable_horizontal` when
-/// so many columns are merged there, or expired (`expired_columns`, see `getColumnsExpiredByMerge`), that the
-/// merge does not run vertically at all.
+/// so many columns are merged there, or expired (`expired_columns`, see `AbsentColumnRuns`, `nullptr` for none),
+/// that the merge does not run vertically at all.
 size_t getAffordablePartsToMergeVertically(
-    const ChooseContext & ctx, const NameSet & key_columns, const NameSet & expired_columns, size_t affordable_horizontal)
+    const ChooseContext & ctx, const NameSet & key_columns, const AbsentColumnRuns::Expired * expired_columns, size_t affordable_horizontal)
 {
-    const NameSet key_columns_in_storage = getKeyColumnsInStorage(ctx.metadata_snapshot, key_columns);
+    const NameSet key_columns_in_storage = getKeyColumnsInStorage(ctx.physical_columns, key_columns);
     size_t num_expired_columns = 0;
-    for (const auto & column : expired_columns)
-        if (!key_columns_in_storage.contains(column))
-            ++num_expired_columns;
+    if (expired_columns)
+    {
+        num_expired_columns = expired_columns->size();
+        for (const auto & column : key_columns_in_storage)
+            if (expired_columns->contains(column))
+                --num_expired_columns;
+    }
 
     /// The merge merges at least one column even when the key is empty (`ORDER BY tuple()`), see
     /// `extractMergingAndGatheringColumns`.
@@ -563,8 +666,9 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
 {
     const auto & settings = ctx.merge_tree_settings;
     const auto & projection_metadata = *projection.metadata;
+    const auto & projection_physical_columns = ctx.projection_physical_columns.at(&projection);
 
-    const size_t num_columns = projection_metadata.getColumns().getAllPhysical().size();
+    const size_t num_columns = projection_physical_columns.size();
     const size_t affordable_horizontal = getAffordablePartsToMergeAtOnce(ctx, num_columns);
 
     if (projection.type == ProjectionDescription::Type::Aggregate || ctx.merge_forced_horizontal
@@ -575,7 +679,7 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
     /// Several subcolumns of one column in the sorting key of the projection are merged as that one column.
     NameSet key_columns;
     key_columns.insert_range(projection_metadata.getColumnsRequiredForSortingKey());
-    const size_t num_key_columns = std::max<size_t>(1, getKeyColumnsInStorage(projection_metadata, key_columns).size());
+    const size_t num_key_columns = std::max<size_t>(1, getKeyColumnsInStorage(projection_physical_columns, key_columns).size());
     if (num_columns < num_key_columns + settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate])
         return affordable_horizontal;
 
@@ -602,7 +706,7 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
 
     const auto part_format = ctx.data->choosePartFormat(sum_bytes, sum_rows, max_level + 1, &projection);
     part_type = std::min(part_type, part_format.part_type);
-    if (part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
+    if (part_type != MergeTreeDataPartType::Wide)
         return affordable_horizontal;
 
     if (sum_rows < settings[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate]
@@ -636,12 +740,13 @@ IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ct
     NameSet table_minmax_index_columns = getMinMaxIndexColumns(ctx);
     NameSet table_key_columns = getColumnsMergedOnHorizontalStageOfVerticalMergeSet(ctx, false);
     NameSet table_key_columns_removing_expired_values = getColumnsMergedOnHorizontalStageOfVerticalMergeSet(ctx, true);
-    const size_t affordable_vertical = getAffordablePartsToMergeVertically(ctx, table_key_columns, {}, affordable_horizontal);
+    const size_t affordable_vertical = getAffordablePartsToMergeVertically(ctx, table_key_columns, nullptr, affordable_horizontal);
     const size_t affordable_vertical_removing_expired_values
-        = getAffordablePartsToMergeVertically(ctx, table_key_columns_removing_expired_values, {}, affordable_horizontal);
+        = getAffordablePartsToMergeVertically(ctx, table_key_columns_removing_expired_values, nullptr, affordable_horizontal);
 
     return [&ctx,
             range_filter,
+            absent_column_runs = std::make_shared<const AbsentColumnRuns>(ctx.ranges),
             affordable_at_once,
             affordable_horizontal,
             key_columns = std::move(table_key_columns),
@@ -656,6 +761,7 @@ IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ct
             return true;
 
         const bool removes_expired_values = rangeRemovesExpiredValues(ctx, range);
+        const auto expired_columns = absent_column_runs->get(range);
         const bool parent_merges_vertically = range.size() > affordable_horizontal;
         if (parent_merges_vertically)
         {
@@ -663,25 +769,25 @@ IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ct
             /// an upper bound.
             if (range.size() > (removes_expired_values ? affordable_vertical_removing_expired_values : affordable_vertical))
                 return false;
-            if (!predictVerticalMerge(ctx, range, removes_expired_values))
+            if (!predictVerticalMerge(ctx, range, removes_expired_values, expired_columns))
                 return false;
         }
 
         const bool may_reduce_rows = rangeMayReduceRows(ctx, range, removes_expired_values);
         std::vector<const ProjectionDescription *> merged_projections;
-        NameSet projection_columns = getColumnsOfProjectionsRebuiltByMerge(ctx, range, removes_expired_values, may_reduce_rows, merged_projections);
+        NameSet projection_columns = getColumnsOfProjectionsRebuiltByMerge(
+            ctx, range, removes_expired_values, may_reduce_rows, expired_columns, merged_projections);
 
         /// The parent merge, when it does not fit the cap of a horizontal one and has to merge vertically.
         if (parent_merges_vertically)
         {
-            const NameSet expired_columns = getColumnsExpiredByMerge(range);
-            if (!projection_columns.empty() || (may_reduce_rows && !minmax_index_columns.empty()) || !expired_columns.empty())
+            if (!projection_columns.empty() || (may_reduce_rows && !minmax_index_columns.empty()) || expired_columns.size())
             {
                 NameSet range_key_columns = removes_expired_values ? key_columns_removing_expired_values : key_columns;
                 if (may_reduce_rows)
                     range_key_columns.insert(minmax_index_columns.begin(), minmax_index_columns.end());
                 range_key_columns.merge(projection_columns);
-                if (range.size() > getAffordablePartsToMergeVertically(ctx, range_key_columns, expired_columns, affordable_horizontal))
+                if (range.size() > getAffordablePartsToMergeVertically(ctx, range_key_columns, &expired_columns, affordable_horizontal))
                     return false;
             }
         }
@@ -922,6 +1028,11 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     /// The merging mode of a storage that is not `MergeTreeData`: its merges keep every row.
     static const MergeTreeData::MergingParams no_merging_params{};
 
+    const NameSet physical_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+    std::unordered_map<const ProjectionDescription *, NameSet> projection_physical_columns;
+    for (const auto & projection : metadata_snapshot->getProjections())
+        projection_physical_columns.emplace(&projection, projection.metadata->getColumns().getAllPhysical().getNameSet());
+
     ChooseContext ctx{
         .ranges = ranges,
         .partitions_stats = partitions_stats,
@@ -931,6 +1042,8 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .merge_constraints = merge_constraints,
         .metadata_snapshot = *metadata_snapshot,
         .merge_tree_settings = *merge_tree_settings,
+        .physical_columns = physical_columns,
+        .projection_physical_columns = projection_physical_columns,
         .data = data,
         .merging_params = data ? data->merging_params : no_merging_params,
         .next_delete_times = next_delete_times,
