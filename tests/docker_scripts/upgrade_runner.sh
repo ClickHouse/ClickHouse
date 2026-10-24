@@ -466,6 +466,7 @@ then
         # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
         # One line per covered table: the check of the filter on it and the same check without the filter.
         # A parameterized view is not checked: it cannot be read without the values of its parameters.
+        # Nor is a table created AS a table function: analyzing it runs the function, whose source can be unreachable.
         if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
                 WITH format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0}', char(96),
                     replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
@@ -473,7 +474,7 @@ then
                 SELECT base64Encode(table_check || ' WHERE ' || p.select_filter || ');'), base64Encode(table_check || ');')
                 FROM system.row_policies AS p
                 INNER JOIN system.tables AS t ON t.database = p.database AND (p.table = '' OR t.name = p.table)
-                WHERE p.id = {id:UUID} AND empty(t.parameterized_view_parameters)
+                WHERE p.id = {id:UUID} AND empty(t.parameterized_view_parameters) AND t.engine != 'Proxy'
                 FORMAT TSVRaw" > /tmp/row_policy_checks.tsv 2>> /test_output/unchecked_row_policy_errors.txt
         then
             row_policy_check_failed=1
