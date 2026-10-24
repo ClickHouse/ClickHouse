@@ -1081,6 +1081,22 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
     return schema->physical_names_map;
 }
 
+std::optional<std::string> TableSnapshot::getDomainMetadata(const std::string & domain) const
+{
+    std::lock_guard lock(mutex);
+    auto state = getKernelSnapshotState();
+    auto * configuration = static_cast<std::string *>(KernelUtils::unwrapResult(
+        ffi::get_domain_metadata(
+            state->snapshot.get(),
+            KernelUtils::toDeltaString(domain),
+            state->engine.get(),
+            KernelUtils::allocateString),
+        "get_domain_metadata"));
+    if (!configuration)
+        return std::nullopt;
+    return std::move(*std::unique_ptr<std::string>(configuration));
+}
+
 const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
 {
     std::lock_guard lock(mutex);

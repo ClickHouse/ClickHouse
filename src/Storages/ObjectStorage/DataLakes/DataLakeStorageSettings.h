@@ -71,6 +71,11 @@ Get latest metadata path from version-hint.text file.
     DECLARE(NonZeroUInt64, iceberg_format_version, 2, R"(
 Metadata format version.
 )", 0) \
+    DECLARE(Bool, delta_lake_enable_domain_metadata, false, R"(
+When `CREATE TABLE` creates a new Delta Lake table, enable the `domainMetadata` writer feature in its protocol.
+An incremental refreshable materialized view writing to the table needs it to commit its refresh cursor together with the data.
+Has no effect when the table already exists.
+)", 0) \
     DECLARE(Bool, paimon_incremental_read, false, R"(
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
 in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
