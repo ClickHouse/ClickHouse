@@ -100,7 +100,8 @@ ManifestListPruner::ManifestListPruner(
     Int32 partition_schema_id_,
     const Poco::JSON::Array::Ptr & partition_specs,
     const DB::ActionsDAG * filter_dag,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool require_ready_sets)
 {
     if (filter_dag == nullptr || !partition_specs || partition_specs->size() == 0)
         return;
@@ -126,7 +127,13 @@ ManifestListPruner::ManifestListPruner(
 
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         DB::KeyCondition condition(
-            inverted_dag, context, partition_key.key_description->column_names, partition_key.key_description->expression);
+            inverted_dag,
+            context,
+            partition_key.key_description->column_names,
+            partition_key.key_description->expression,
+            /* single_point_ */ false,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
         conditions_by_spec_id.emplace(
             spec->getValue<Int32>(f_spec_id), SpecCondition{*partition_key.key_description, std::move(condition)});
     }

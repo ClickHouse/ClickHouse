@@ -2,7 +2,7 @@
 -- no-random-detach: the oracle is an exact `SharedPartsLocks` delta between the same query with
 -- statistics on and off. A random `DETACH`/`ATTACH` before a query takes parts locks of its own,
 -- so the delta no longer isolates the statistics loads.
-SET enable_analyzer = 1, optimize_move_to_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 -- Statistics-load counts measure one local planner, without additional parallel-replica candidate plans.
 SET enable_parallel_replicas = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;

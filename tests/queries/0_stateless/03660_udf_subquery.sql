@@ -1,8 +1,6 @@
 -- Tags: no-parallel, no-random-detach
 -- no-random-detach: test uses DETACH/ATTACH itself
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS dict;
 create table dict engine=MergeTree() order by id as
 select 1 as id, 'one' as name union all

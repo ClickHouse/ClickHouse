@@ -2,7 +2,6 @@
 -- no-random-detach: test uses Merge engine reading from multiple tables
 
 drop table if exists merge;
-set enable_analyzer = 1;
 create table merge
 (
     dt Date,
