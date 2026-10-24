@@ -57,6 +57,8 @@ malformed-path-status: 400
 HTTP PUT table uploads require a non-empty request body
 -- mixed-case multipart PUT is not claimed
 HTTP 501
+-- a PUT whose Content-Type only starts with multipart/form-data is not claimed
+HTTP 501
 -- a PUT path without a format suffix is not claimed
 HTTP 501
 -- a missing table is rejected

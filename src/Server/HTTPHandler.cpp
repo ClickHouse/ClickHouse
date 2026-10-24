@@ -1174,6 +1174,7 @@ void HTTPHandler::processQuery(
     customizeContext(request, context, *in_post_maybe_compressed);
     /// Keep a non-owning pointer for the deferred-continue callback. Path uploads transfer ownership of the body
     /// into the second buffer in `in`; the object remains alive until `executeQuery` has finished with the callback.
+    /// The pointer is cleared below if the body is destroyed instead.
     ReadBuffer * path_upload_body = is_path_table_upload ? in_post_maybe_compressed.get() : nullptr;
     std::unique_ptr<ReadBuffer> in;
     /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
@@ -1184,6 +1185,7 @@ void HTTPHandler::processQuery(
     {
         in = std::move(in_param);
         in_post_maybe_compressed.reset();
+        path_upload_body = nullptr;
     }
     else
     {
@@ -1810,7 +1812,7 @@ bool DynamicQueryHandler::allowMutatingIdempotentMethods(const HTTPServerRequest
         && param_name == "query"
         && request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
         && !params.has(param_name)
-        && !isMultipartFormData(request);
+        && !mayBeParsedAsMultipartFormData(request);
 }
 
 bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)

@@ -24,4 +24,12 @@ inline bool isMultipartFormData(const HTTPRequest & request)
     return isContentType(request, "multipart/form-data");
 }
 
+/// Whether any body consumer may treat the body as `multipart/form-data`: either an exact (case-insensitive) media
+/// type match, or the case-sensitive prefix match still used when parsing external data and form fields
+/// (e.g. `multipart/form-datax`). Request shapes that must not have their body parsed as a form check this.
+inline bool mayBeParsedAsMultipartFormData(const HTTPRequest & request)
+{
+    return isMultipartFormData(request) || request.getContentType().starts_with("multipart/form-data");
+}
+
 }

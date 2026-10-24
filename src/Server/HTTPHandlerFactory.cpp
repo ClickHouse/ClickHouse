@@ -696,7 +696,7 @@ void addCatchAllQueryHandlerFactory(
             const bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
                                          || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
             const bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT
-                             && !isMultipartFormData(request);
+                             && !mayBeParsedAsMultipartFormData(request);
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before

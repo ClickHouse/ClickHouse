@@ -187,6 +187,12 @@ echo "-- mixed-case multipart PUT is not claimed"
 curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PUT \
     -H 'Content-Type: Multipart/Form-Data; boundary=unused' --data-binary '' "${BASE_URL}/${DB}/${TABLE}.CSV"
 
+echo "-- a PUT whose Content-Type only starts with multipart/form-data is not claimed"
+printf '1\n' \
+    | curl --http1.1 -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PUT --expect100-timeout 0 --max-time 60 \
+        -H 'Content-Type: multipart/form-datax' -H 'Expect: 100-continue' -H 'X-ClickHouse-100-Continue: defer' \
+        --data-binary @- "${BASE_URL}/${DB}/${TABLE}.CSV"
+
 echo "-- a PUT path without a format suffix is not claimed"
 curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -X PUT --data-binary 'SELECT 1' "${BASE_URL}/${DB}/${TABLE}"
 
