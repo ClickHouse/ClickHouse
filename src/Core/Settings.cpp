@@ -1704,9 +1704,11 @@ Possible values:
 - `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
-Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
+Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas, provided the target table is also a replicated MergeTree or an Iceberg table on remote storage. To enable it:
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
+
+That form, and the one used when the `SELECT` reads a cluster table function such as `s3Cluster`, both run the whole `INSERT` on every node over that node's own slice of the read, so they apply only where each node's write becomes visible on all of the others. The `INSERT` falls back to running on the initiator alone when the target is a Delta Lake table, because the nodes would commit one transaction each and those commits race for a single log version; when it is a local Iceberg table, whose files each node keeps on its own disk; when the target is reached through an `Alias`; and when a dependent materialized view is reachable from it, because a view target that does not replicate would keep a different subset of the rows on each node. Reading stays distributed in all of those cases.
 )", 0, \
         {"25.7", 0, 2, "Enable parallel distributed insert select by default"}) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(

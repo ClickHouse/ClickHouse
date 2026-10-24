@@ -48,6 +48,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
@@ -859,6 +860,29 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 }
 
 
+/// Every node of a distributed write runs the whole INSERT over its own slice of the read, so the writes
+/// add up to a single logical INSERT only where each node's write becomes visible on all of them.
+static bool targetAbsorbsDistributedWrite(const StoragePtr & table)
+{
+    /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
+    /// concurrent writers: the Iceberg sink retries a conflicting commit, the Delta one does not, and a local
+    /// Iceberg table keeps its files on each node's own disk.
+    const auto object_storage = castStorage<StorageObjectStorage>(table, DeferredTable::Load);
+    const bool shared_lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage()
+        && object_storage->getObjectStorage()->isRemote();
+    if (!(table->isMergeTree() || shared_lake_retries_conflicting_commits) || !table->supportsReplication())
+        return false;
+
+    /// `Alias` answers the engine predicates from the table it points at, and an insert into it also pushes
+    /// the views attached to the alias itself, which the walk below skips at that hop.
+    if (dynamic_cast<const StorageAlias *>(table.get()))
+        return false;
+
+    /// A dependent view whose target does not replicate keeps a different subset of the rows on each node.
+    return !InsertDependenciesBuilder::forwardedInsertReachesDependentView(table);
+}
+
+
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
@@ -880,8 +904,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
-    // NOTE: should we limit it more here?
-    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
+    if (!targetAbsorbsDistributedWrite(table))
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
@@ -1291,7 +1314,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         return {};
 
     StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
-    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+    if (!targetAbsorbsDistributedWrite(dst_storage))
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
