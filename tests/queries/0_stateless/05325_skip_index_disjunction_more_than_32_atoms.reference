@@ -1,0 +1,10 @@
+-- 40 atoms (79 RPN elements), default limit
+40
+Name: <Combined skip indexes>	Granules: 40/1563
+-- 500 atoms (999 RPN elements), default limit: the skip indexes are not combined
+0
+-- 500 atoms, raised limit
+500
+Name: <Combined skip indexes>	Granules: 500/1563
+-- 500 atoms, no limit
+Name: <Combined skip indexes>	Granules: 500/1563

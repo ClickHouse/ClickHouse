@@ -1,4 +1,5 @@
--- A 16-leaf `OR` has 31 template elements; a 17-leaf `OR` has 33 and exceeds the 32-element limit. Each leaf
+-- A 16-leaf `OR` has 31 template elements; a 17-leaf `OR` has 33 and exceeds the limit of 32 elements, set by
+-- `max_rpn_elements_for_skip_indexes_with_disjunctions` below. Each leaf
 -- expands into two index atoms. The combined skip-index result must retain the original template positions:
 -- individual indexes cannot prune the disjunction on their own. Count projections, trivial counts and
 -- PREWHERE are disabled, so the counts are plain reads of the selected granules, and the query condition
@@ -12,6 +13,7 @@ SET optimize_move_to_prewhere = 0;
 SET analyze_index_with_multiple_key_columns_per_condition = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET optimize_min_equality_disjunction_chain_length = 1000;
+SET max_rpn_elements_for_skip_indexes_with_disjunctions = 32;
 
 {#- Each check prints the predicate, the count with index analysis, the count of a full scan and the parts and
     granules selected by each index. `settings` apply to the whole check. -#}

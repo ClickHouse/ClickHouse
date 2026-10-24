@@ -2257,6 +2257,18 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"25.12", false, true, "New setting"}) \
+    DECLARE(UInt64, max_rpn_elements_for_skip_indexes_with_disjunctions, 128, R"(
+Maximum number of elements in the internal representation (RPN) of a WHERE filter for which `use_skip_indexes_for_disjunctions` is applied.
+Every condition and every `AND`, `OR` and `NOT` counts as one element: for example, `A = 5 OR B = 5 OR C = 5` has 5 elements, and a chain of N conditions connected by `OR` has 2N - 1 elements.
+Filters with more elements are evaluated with each skip index on its own, which cannot skip granules for conditions connected by `OR` on different columns.
+The partial results take one bit per element per granule of each data part during index analysis.
+
+Possible values:
+
+- 0 — No limit.
+- Positive integer — Maximum number of elements.
+)", 0, \
+        {"26.11", 32, 128, "New setting, previously the limit was hard-coded to 32"}) \
     DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
 Enable using data skipping indexes for TopK filtering.
 

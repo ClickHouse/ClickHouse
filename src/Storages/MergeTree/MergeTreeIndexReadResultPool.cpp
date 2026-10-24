@@ -99,7 +99,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
-        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+        partial_eval_results.resize(
+            part_info->getIndexGranularity().getMarksCountWithoutFinal() * key_condition_rpn_template->generateForPart(*part_info).getRPN().size(),
+            true);
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
