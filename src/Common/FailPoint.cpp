@@ -467,6 +467,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(wasm_module_manager_pause_after_compile) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
+    PAUSEABLE_ONCE(distinct_sorted_stream_transform_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
     PAUSEABLE_ONCE(limit_by_transform_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
