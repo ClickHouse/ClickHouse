@@ -81,7 +81,11 @@ public:
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 
     /// Delta tables only: Iceberg tables get write credentials from the Iceberg REST catalog.
-    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(
+        const DB::StorageID & table_id, StorageType storage_type) override;
+
+    /// Applies to the embedded Iceberg REST catalog.
+    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override;
 
     /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
     /// Without this, a write would leave metadata files in the table location before failing.
@@ -128,6 +132,7 @@ private:
     /// Lazy-initialized RestCatalog for Iceberg table metadata,
     /// pointing to {base_url}/iceberg-rest.
     mutable std::shared_ptr<RestCatalog> iceberg_rest_catalog TSA_GUARDED_BY(token_mutex);
+    std::chrono::seconds vended_credentials_cache_ttl TSA_GUARDED_BY(token_mutex){std::chrono::seconds::zero()};
 
     /// Retries `make_request` once with a fresh token when the catalog rejects the cached one.
     template <typename Func>
@@ -179,7 +184,8 @@ private:
     std::shared_ptr<IStorageCredentials> getDeltaCredentials(
         const std::string & table_id, StorageType storage_type, const std::string & operation) const;
 
-    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation);
+    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(
+        const std::string & unity_table_id, StorageType storage_type, const std::string & operation);
 
     /// Return `nullptr` when the response carries no credentials of that kind.
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;

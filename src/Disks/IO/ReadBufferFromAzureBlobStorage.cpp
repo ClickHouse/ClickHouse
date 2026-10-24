@@ -79,9 +79,11 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     BlobStorageLogWriterPtr blob_storage_log_,
     String container_for_logging_,
     String expected_etag_,
-    std::optional<size_t> file_size_)
+    std::optional<size_t> file_size_,
+    AzureClientRefreshCallback credentials_refresh_callback_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
+    , credentials_refresh_callback(std::move(credentials_refresh_callback_))
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)
@@ -103,6 +105,36 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
         data_ptr = tmp_buffer.data();
         data_capacity = tmp_buffer_size;
     }
+}
+
+std::pair<ReadBufferFromAzureBlobStorage::ContainerClientPtr, ReadBufferFromAzureBlobStorage::BlobClientPtr>
+ReadBufferFromAzureBlobStorage::tryGetRefreshedClient(const Azure::Core::RequestFailedException & e) const
+{
+    if (!credentials_refresh_callback || !isAzureAccessTokenExpiredError(e))
+        return {};
+
+    auto new_container = credentials_refresh_callback();
+    if (!new_container)
+        return {};
+
+    BlobClientPtr new_blob = std::make_unique<Azure::Storage::Blobs::BlobClient>(new_container->GetBlobClient(path));
+    return {std::move(new_container), std::move(new_blob)};
+}
+
+bool ReadBufferFromAzureBlobStorage::tryRefreshCredentials(const Azure::Core::RequestFailedException & e, bool & refreshed_in_request)
+{
+    if (refreshed_in_request)
+        return false;
+
+    auto [new_container, new_blob] = tryGetRefreshedClient(e);
+    if (!new_container)
+        return false;
+
+    blob_container_client = std::move(new_container);
+    blob_client = std::move(new_blob);
+    refreshed_in_request = true;
+    LOG_DEBUG(log, "Refreshed Azure credentials for {} after an authentication failure", path);
+    return true;
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
@@ -188,6 +220,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     size_t sleep_time_with_backoff_milliseconds = 100;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureMicroseconds);
+    bool credentials_refreshed = false;
 
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
@@ -221,6 +254,14 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
+
+            if (tryRefreshCredentials(e, credentials_refreshed))
+            {
+                initialized = false;
+                initialize(i + 1);
+                --i; /// Don't count the refreshed retry against the budget (refresh happens at most once per request).
+                continue;
+            }
 
             if (i + 1 == max_single_read_retries || !isRetryableAzureException(e))
                 throw;
@@ -367,6 +408,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
     size_t sleep_time_with_backoff_milliseconds = 100;
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureInitMicroseconds);
+    bool credentials_refreshed = false;
 
     for (size_t i = 0; i < max_single_download_retries; ++i)
     {
@@ -412,6 +454,12 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+
+            if (tryRefreshCredentials(e, credentials_refreshed))
+            {
+                --i; /// Don't count the refreshed retry against the budget (refresh happens at most once per request).
+                continue;
+            }
 
             rethrowIfGenerationChanged(e);
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
@@ -521,21 +569,60 @@ void ReadBufferFromAzureBlobStorage::rethrowIfGenerationChanged(const Azure::Cor
 
 std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
 {
-    if (!file_size)
-        file_size = getBlobClient().GetProperties().Value.BlobSize;
+    if (file_size)
+        return file_size;
 
-    return file_size;
+    bool credentials_refreshed = false;
+    while (true)
+    {
+        try
+        {
+            file_size = getBlobClient().GetProperties().Value.BlobSize;
+            return file_size;
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            if (tryRefreshCredentials(e, credentials_refreshed))
+                continue;
+            throw;
+        }
+    }
 }
 
 std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileMetadata() const
 {
-    const auto properties = blob_container_client->GetBlobClient(path).GetProperties().Value;
-    const auto last_modification_time = std::chrono::duration_cast<std::chrono::seconds>(
-        static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch())
-        .count();
-    return RemoteFileMetadata{
-        .size = static_cast<size_t>(properties.BlobSize),
-        .last_modification_time = static_cast<time_t>(last_modification_time)};
+    ContainerClientPtr refreshed_container_client;
+    BlobClientPtr refreshed_blob_client;
+    auto initial_blob_client = blob_container_client->GetBlobClient(path);
+    const AzureBlobStorage::BlobClient * current_blob_client = &initial_blob_client;
+
+    for (size_t attempt = 0; ; ++attempt)
+    {
+        try
+        {
+            const auto properties = current_blob_client->GetProperties().Value;
+            const auto last_modification_time = std::chrono::duration_cast<std::chrono::seconds>(
+                static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch())
+                .count();
+            return RemoteFileMetadata{
+                .size = static_cast<size_t>(properties.BlobSize),
+                .last_modification_time = static_cast<time_t>(last_modification_time)};
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            if (attempt == 0)
+            {
+                if (auto [new_container, new_blob] = tryGetRefreshedClient(e); new_container)
+                {
+                    refreshed_container_client = std::move(new_container);
+                    refreshed_blob_client = std::move(new_blob);
+                    current_blob_client = refreshed_blob_client.get();
+                    continue;
+                }
+            }
+            throw;
+        }
+    }
 }
 
 const AzureBlobStorage::BlobClient & ReadBufferFromAzureBlobStorage::getBlobClient() const
@@ -554,6 +641,11 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureMicroseconds);
 
+    ContainerClientPtr refreshed_container_client;
+    BlobClientPtr refreshed_blob_client;
+    const AzureBlobStorage::BlobClient * current_blob_client = &getBlobClient();
+    bool credentials_refreshed_locally = false;
+
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
@@ -570,7 +662,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setAccessConditions(download_options);
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
-            auto download_response = getBlobClient().Download(download_options, azure_context);
+            auto download_response = current_blob_client->Download(download_options, azure_context);
             checkReturnedRange(download_response.Value, range_begin, path);
             checkReturnedGeneration(download_response.Value.Details);
 
@@ -609,6 +701,20 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
             LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+
+            if (!credentials_refreshed_locally)
+            {
+                if (auto [new_container, new_blob] = tryGetRefreshedClient(e); new_container)
+                {
+                    refreshed_container_client = std::move(new_container);
+                    refreshed_blob_client = std::move(new_blob);
+                    current_blob_client = refreshed_blob_client.get();
+                    credentials_refreshed_locally = true;
+                    LOG_DEBUG(log, "Refreshed Azure credentials for {} after an authentication failure in readBigAt", path);
+                    --i; /// Don't count the refreshed retry against the budget.
+                    continue;
+                }
+            }
 
             rethrowIfGenerationChanged(e);
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))

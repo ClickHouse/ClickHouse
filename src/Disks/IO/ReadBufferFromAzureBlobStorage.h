@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include "config.h"
@@ -24,6 +25,7 @@ class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
 public:
     using ContainerClientPtr = std::shared_ptr<const AzureBlobStorage::ContainerClient>;
     using BlobClientPtr = std::unique_ptr<const AzureBlobStorage::BlobClient>;
+    using AzureClientRefreshCallback = AzureBlobStorage::ContainerClientRefreshCallback;
 
     ReadBufferFromAzureBlobStorage(
         ContainerClientPtr blob_container_client_,
@@ -41,7 +43,8 @@ public:
         /// `tryGetFileSize` instead of the size a live `GetProperties` request would return, so that
         /// a wrapper that sizes itself by `getFileSize` (the page cache, for one) sees the very size
         /// the read is bounded by, rather than that of a generation the caller has never seen.
-        std::optional<size_t> file_size_ = {});
+        std::optional<size_t> file_size_ = {},
+        AzureClientRefreshCallback credentials_refresh_callback_ = {});
 
     /// The `ETag` of one generation of a blob arrives in two spellings: quoted in HTTP headers
     /// (`ETag: "0x8DA..."`), as RFC 9110 requires, and unquoted in the XML body of a blob listing
@@ -107,10 +110,16 @@ private:
     /// Creates the client on first use. Thread-safe.
     const AzureBlobStorage::BlobClient & getBlobClient() const;
 
+    std::pair<ContainerClientPtr, BlobClientPtr> tryGetRefreshedClient(const Azure::Core::RequestFailedException & e) const;
+
+    /// Sequential reads only; `refreshed_in_request` bounds refreshes to one per request retry loop.
+    bool tryRefreshCredentials(const Azure::Core::RequestFailedException & e, bool & refreshed_in_request);
+
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
     mutable BlobClientPtr blob_client;
     mutable std::once_flag blob_client_created;
+    const AzureClientRefreshCallback credentials_refresh_callback;
 
     const String path;
     size_t max_single_read_retries;
