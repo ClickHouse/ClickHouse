@@ -12,6 +12,7 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1785,6 +1786,34 @@ String decimalFieldToText(const Field & field)
     return wb.str();
 }
 
+/// `String -> Decimal` rejects more digits than the precision of the type, while the type holds every value of
+/// its native integer, so a value beyond the precision is sent as that integer.
+template <typename T>
+ASTPtr makeDecimalLiteralASTImpl(const Field & field, const IDataType & type)
+{
+    using NativeType = typename T::NativeType;
+    const NativeType raw = field.safeGet<DecimalField<T>>().getValue().value;
+    const NativeType bound = DecimalUtils::scaleMultiplier<NativeType>(getDecimalPrecision(type));
+    if (raw > -bound && raw < bound)
+        return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(decimalFieldToText(field)), make_intrusive<ASTLiteral>(type.getName()));
+
+    auto native = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(toString(raw)), make_intrusive<ASTLiteral>(String(TypeName<NativeType>)));
+    auto value = makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
+    return makeASTFunction("_CAST", std::move(value), make_intrusive<ASTLiteral>(type.getName()));
+}
+
+ASTPtr makeDecimalLiteralAST(const Field & field, const IDataType & type)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32: return makeDecimalLiteralASTImpl<Decimal32>(field, type);
+        case Field::Types::Decimal64: return makeDecimalLiteralASTImpl<Decimal64>(field, type);
+        case Field::Types::Decimal128: return makeDecimalLiteralASTImpl<Decimal128>(field, type);
+        case Field::Types::Decimal256: return makeDecimalLiteralASTImpl<Decimal256>(field, type);
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
+    }
+}
+
 ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
 {
     auto function = make_intrusive<ASTFunction>();
@@ -1854,9 +1883,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
             /// Reconstruct with the value's exact decimal type so it stays a valid Variant member.
-            return makeASTFunction(
-                "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
-                make_intrusive<ASTLiteral>(type->getName()));
+            return makeDecimalLiteralAST((*column)[row], *type);
         case TypeIndex::QBit:
         {
             /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
