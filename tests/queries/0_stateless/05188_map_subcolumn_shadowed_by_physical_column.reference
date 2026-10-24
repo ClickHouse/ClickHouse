@@ -11,3 +11,4 @@ genuine key subcolumn still prunes	Granules: 0/1
 index applied: shadowed, genuine	0	1
 nested genuine key subcolumn still prunes	1	1
 json genuine key subcolumn still prunes	1	1
+ephemeral claimant, genuine key subcolumn still prunes	1	1

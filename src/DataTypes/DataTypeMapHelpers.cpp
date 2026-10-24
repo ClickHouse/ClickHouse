@@ -11,6 +11,7 @@
 #include <Columns/LowCardinalityValueIndex.h>
 #include <Core/CompareHelper.h>
 #include <Common/assert_cast.h>
+#include <Storages/ColumnsDescription.h>
 #include <base/memcmpSmall.h>
 
 
@@ -573,19 +574,17 @@ constexpr std::string_view map_key_marker = ".key_";
 
 }
 
-bool looksLikeMapSubcolumnName(const String & column_name)
-{
-    return column_name.contains(map_key_marker);
-}
-
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
-    const String & column_name, const NameSet & shadowing_columns)
+    const String & column_name, const ColumnsDescription & columns)
 {
     auto pos = column_name.find(map_key_marker);
     if (pos == String::npos)
         return std::nullopt;
 
-    if (shadowing_columns.contains(column_name))
+    /// A column or a static subcolumn claims the name, except a subcolumn of an EPHEMERAL column, which is
+    /// not readable. A dynamic lookup would resolve the Map key subcolumn itself.
+    if (columns.has(column_name)
+        || columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withRegularSubcolumns(), column_name))
         return std::nullopt;
 
     auto map_column_name = column_name.substr(0, pos);
