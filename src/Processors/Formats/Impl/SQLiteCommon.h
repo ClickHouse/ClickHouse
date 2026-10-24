@@ -406,7 +406,7 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 /// both sides (`isPushdownSafeType` above). Second, the *remote* column must actually compare the way
 /// ClickHouse does for every cell it can hold. Declared affinity and collation alone cannot prove that:
 /// SQLite is dynamically typed per cell, so an arbitrary pre-existing INTEGER-declared column can still hold
-/// the TEXT cell `'abc'`, which ClickHouse reads through `sqlite3_column_int64` as `0` while the pushed-down
+/// the TEXT cell `'abc'`, which fails the local read of an `Int64` column while the pushed-down
 /// `x = 0` compares against the TEXT storage class on the SQLite side and drops the row. The gate therefore
 /// requires the table to be STRICT (`isStrictTable` above), which pins the storage class of every cell to
 /// the declared column type, and then requires the exact representation-preserving pairing of the declared
@@ -415,8 +415,7 @@ inline bool isStrictTable(sqlite3 * db, const String & table_name)
 /// values):
 ///   - `Int64` requires a declared INT or INTEGER column: every cell is a signed 64-bit integer, which the
 ///     read path returns losslessly, and both sides compare it numerically. A REAL column is not eligible -
-///     `sqlite3_column_int64` truncates the cell `1.9` to `1`, so `x = 1` matches locally but the
-///     pushed-down `x = 1` is false remotely;
+///     the local read rejects the cell `1.9`, which the pushed-down `x = 1` would silently drop instead;
 ///   - `Float64` requires a declared REAL column: every cell is an IEEE 754 double, returned losslessly. An
 ///     INTEGER column is not eligible - `sqlite3_column_double` rounds cells above 2^53 to the nearest
 ///     double, so the pushed-down exact integer comparison disagrees with the local one;

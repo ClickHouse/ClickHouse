@@ -334,7 +334,7 @@ When you explicitly define a table with specific ClickHouse types using the [SQL
 - All integer types ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/reference/data-types/int-uint))
 - [Float32, Float64](/reference/data-types/float)
 
-SQLite has dynamic typing, and its type access functions perform automatic type coercion. For example, reading a TEXT column as an integer will return 0 if the text cannot be parsed as a number. This means that if a ClickHouse table is defined with a different type than the underlying SQLite column, values may be silently coerced rather than causing an error.
+SQLite has dynamic typing: in an ordinary (non-`STRICT`) table, a column can hold a value of any storage class, whatever its declared type. A value read into an integer column must be an integer: a `REAL` value with a fractional part or outside the `Int64` range, a `TEXT` value that is not an integer literal, or a `BLOB` value fails the read. To read such values, declare the column as `String` (or `Float64` for `REAL` values) in a table with the [SQLite](/reference/engines/table-engines/integrations/sqlite) engine, or cast it to text in a query passed to SQLite. Other conversions into a ClickHouse type that differs from the declared SQLite type follow the SQLite and ClickHouse conversion rules: for example, an `INTEGER` value that does not fit into a narrower integer type wraps around.
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
