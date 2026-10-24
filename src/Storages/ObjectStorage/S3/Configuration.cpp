@@ -73,6 +73,8 @@ namespace S3AuthSetting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsString storage_class_name;
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 namespace ErrorCodes
@@ -111,6 +113,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
+    "delete_checksum_algorithm",
     "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
@@ -885,6 +888,18 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
 
+    /// Explicit arguments take priority over the `<s3>` config, both here and when the storage refreshes its settings
+    /// (see `StorageS3Configuration::getExplicitRequestSettings`).
+    /// Writes re-apply the `s3_*` session settings on top, so `s3_upload_checksum_algorithm` still wins for uploads.
+    for (const auto * name : {"upload_checksum_algorithm", "delete_checksum_algorithm"})
+    {
+        if (auto value = getFromPositionOrKeyValue<String>(name, args, {}, key_value_args); value.has_value())
+        {
+            s3_settings->request_settings.setByName(name, value.value());
+            explicit_request_settings[name] = value.value();
+        }
+    }
+
     if (extra_credentials)
         args.push_back(extra_credentials);
 
@@ -1178,6 +1193,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     url = std::move(parsed_arguments.url);
     s3_settings = std::move(parsed_arguments.s3_settings);
+    explicit_request_settings = std::move(parsed_arguments.explicit_request_settings);
     s3_capabilities = std::move(parsed_arguments.s3_capabilities);
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 }

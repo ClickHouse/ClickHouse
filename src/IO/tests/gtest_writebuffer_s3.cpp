@@ -1398,7 +1398,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
             catch (const DB::Exception & e)
             {
                 ASSERT_EQ(ErrorCodes::INVALID_SETTING_VALUE, e.code());
-                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 when FIPS mode is enabled"));
+                EXPECT_THAT(e.what(), testing::HasSubstr("cannot be MD5 because the MD5 digest is not available"));
                 throw;
             }
         }, DB::Exception);

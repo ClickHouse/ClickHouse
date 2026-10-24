@@ -78,6 +78,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
 
     S3::URI url;
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
@@ -116,6 +117,8 @@ public:
     bool supportsFullyQualifiedPaths() const override { return isDataLakeConfiguration(); }
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
+
+    std::map<String, String> getExplicitRequestSettings() const override { return explicit_request_settings; }
 
     Path getRawPath() const override { return url.key; }
     void setRawPath(const Path & path) override { url.key = path.path; }
@@ -156,6 +159,7 @@ public:
     Paths keys;
 
     std::unique_ptr<S3Settings> s3_settings;
+    std::map<String, String> explicit_request_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.

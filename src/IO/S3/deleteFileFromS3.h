@@ -8,6 +8,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -16,6 +17,7 @@ namespace DB
 namespace S3
 {
     class Client;
+    struct S3RequestSettings;
 }
 
 class S3Capabilities;
@@ -35,12 +37,14 @@ void deleteFileFromS3(
     std::optional<ProfileEvents::Event> profile_event = std::nullopt);
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
+/// `request_settings` selects the checksum algorithm sent with `DeleteObjects` (`delete_checksum_algorithm`).
 void deleteFilesFromS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
     const Strings & keys,
     bool if_exists,
     S3Capabilities & s3_capabilities,
+    const S3::S3RequestSettings & request_settings,
     size_t batch_size = 1000,
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const Strings & local_paths_for_blob_storage_log = {},
