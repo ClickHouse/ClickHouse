@@ -160,6 +160,22 @@ namespace ErrorCodes
 namespace
 {
 
+/// True if `scope` is the query that owns the source table expression of one of the given
+/// correlated columns, i.e. the outer query whose GROUP BY keys may wrap them as Nullable.
+/// Mirrors the source-ownership test in `checkCorrelatedColumn`: a column's source can be a
+/// registered table expression or one still being resolved (alias columns).
+bool ownsCorrelatedSource(const IdentifierResolveScope & scope, const QueryTreeNodes & correlated_columns)
+{
+    for (const auto & column : correlated_columns)
+    {
+        auto column_source = column->as<ColumnNode>()->getColumnSource();
+        if (scope.registered_table_expression_nodes.contains(column_source)
+            || scope.table_expressions_in_resolve_process.contains(column_source.get()))
+            return true;
+    }
+    return false;
+}
+
 /// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
 /// Must run for every reference: clones of one body can resolve differently.
 void checkMaterializedCTESubqueryIsNotCorrelated(
@@ -3016,19 +3032,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    /// When an APPLY transformer creates an aggregate function (e.g. `* APPLY x -> argMax(x, number)`
-    /// or `* APPLY x -> toString(argMax(x, number))`), the matched columns must NOT be converted to
-    /// Nullable here. Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable
-    /// wrapping is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
-    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the actual
-    /// columns in the Aggregating step are non-Nullable.
-    /// This causes a crash in AggregateFunctionNullVariadic::addBatchSinglePlace.
+    /// When an APPLY transformer creates an aggregate or `grouping` function (e.g.
+    /// `* APPLY x -> argMax(x, number)`, `* APPLY x -> toString(argMax(x, number))` or
+    /// `* APPLY x -> grouping(x)`), the matched columns must NOT be converted to Nullable here.
+    /// Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable wrapping
+    /// is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
+    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the
+    /// actual columns in the Aggregating step are non-Nullable (crash in
+    /// AggregateFunctionNullVariadic::addBatchSinglePlace). A `grouping` argument only identifies a
+    /// GROUP BY key and is matched against the keys in their original form by
+    /// GroupingFunctionsResolvePass, so wrapping it Nullable makes the rewritten argument stop
+    /// matching the key and raises a spurious "GROUPING function ... is not in GROUP BY keys" error.
+    /// This mirrors the suppression the sibling scalar path applies via
+    /// `hasAggregateOrGroupingFunction()` (see applyGroupByUseNullsToExpression).
     ///
-    /// We traverse the APPLY expression tree because the aggregate function may be nested
+    /// We traverse the APPLY expression tree because the aggregate/grouping function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
-    /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
-    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    /// We match names (not `FunctionNode::isAggregateFunction`) because APPLY expressions have not
+    /// been resolved yet at this point (`FunctionNode::kind` is still `UNKNOWN`). The grouping check
+    /// is an exact name comparison, matching ExpressionsStack::isAggregateOrGroupingFunction (the
+    /// parser always lowercases the `grouping` function name).
+    auto has_aggregate_or_grouping_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
         if (!root)
             return false;
@@ -3043,7 +3067,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
             if (const auto * func = subtree_node->as<FunctionNode>())
             {
-                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
+                    || func->getFunctionName() == "grouping")
                     return true;
             }
 
@@ -3057,7 +3082,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         return false;
     };
 
-    bool has_aggregate_apply_transformer = false;
+    bool has_aggregate_or_grouping_apply_transformer = false;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
         if (auto * apply = transformer->as<ApplyColumnTransformerNode>())
@@ -3072,9 +3097,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 expr_to_check = apply->getExpressionNode().get();
             }
-            if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
+            if (expr_to_check && has_aggregate_or_grouping_function_in_tree(expr_to_check))
             {
-                has_aggregate_apply_transformer = true;
+                has_aggregate_or_grouping_apply_transformer = true;
                 break;
             }
         }
@@ -3082,7 +3107,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
 
-    if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
+    if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_or_grouping_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -3334,6 +3359,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
+
+                /// An APPLY transformer builds its result through resolveFunction/resolveLambda
+                /// directly, bypassing the applyGroupByUseNullsToExpression call that
+                /// resolveExpressionNode applies to plain columns and REPLACE results. When the
+                /// APPLY result is itself a GROUP BY key under group_by_use_nulls (e.g.
+                /// `* APPLY isNull` with GROUPING SETS keyed on the first projection), it must be
+                /// wrapped Nullable to match the post-rollup runtime type. Without this the
+                /// analyzer types it non-Nullable while execution yields Nullable(...), and a
+                /// consuming aggregate bad-casts the column. Aggregate/grouping APPLYs are
+                /// excluded (their arguments use pre-aggregation types, handled post-aggregation
+                /// by the Rollup/Cube/GroupingSets transforms), mirroring the pre-transform loop.
+                if (execute_apply_transformer && !has_aggregate_or_grouping_apply_transformer)
+                    applyGroupByUseNullsToExpression(node, scope);
 
                 /// The natural resolved name of `node` after this transformer (e.g. `toString(a)`,
                 /// `identity(a)`). A later chained transformer must see this as its argument name,
@@ -3841,6 +3879,154 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     return result_projection_names;
 }
 
+/** Apply `group_by_use_nulls` Nullable wrapping to a just-resolved expression `node`.
+  *
+  * Under `group_by_use_nulls = 1`, a GROUP BY key produces NULL in the extra rollup/cube/
+  * grouping-sets rows, so any reference to that key outside the aggregate must become
+  * `Nullable`. The set of keys for a query is `scope.nullable_group_by_keys`.
+  *
+  * Two shapes are handled by the same scope walk:
+  *
+  * 1. Non-correlated reference. The key is owned by `scope` itself (e.g. the projection
+  *    `c0` in `SELECT max(c0), c0 ... GROUP BY c0`). `c0` inside `max(...)` must keep its
+  *    original type because the aggregate sees per-group raw rows, so the walk skips a
+  *    scope whose expression-resolve stack already contains an aggregate or `grouping`
+  *    function (the latter matches its arguments against the keys in their original form).
+  *
+  * 2. Correlated reference. A subquery references an outer query's GROUP BY key (e.g.
+  *    `SELECT (SELECT c0) ... GROUP BY c0 WITH ROLLUP`). The values fed into the subquery
+  *    are the outer query's post-rollup `Nullable`s, so the reference must be wrapped using
+  *    the OWNING outer scope's `nullable_group_by_keys`. We therefore continue the walk past
+  *    the inner `QUERY` boundary, but only for an expression that is actually correlated and
+  *    only up to the scope that owns the correlated column's source.
+  *
+  * Whether `node` is correlated relative to `scope` is a property of the columns inside it,
+  * not of its top-level node type: `c0` and `c0 % 2` are both correlated if `c0` resolves to
+  * an outer table expression. `CorrelatedColumnsCollector` answers exactly this (it descends
+  * into subqueries via `node_to_scope_map` and uses `checkCorrelatedColumn`), so we use it to
+  * drive the walk instead of inspecting `node->as<ColumnNode>()`.
+  *
+  * A correlated match wraps `node` in place rather than replacing it with a clone of the key.
+  * The same `shared_ptr` is referenced by the owning `QueryNode`'s correlated-columns list, so
+  * cloning would leave the planner's `correlated_columns_set` pointing at the original
+  * non-Nullable node and decorrelation would not recognise it.
+  */
+void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    /// Fast path: nothing to wrap unless some enclosing scope is under `group_by_use_nulls`.
+    /// `nullable_group_by_keys` is only populated when `group_by_use_nulls = 1`, so this skips
+    /// the whole walk (and the correlated-columns analysis below) for the common case.
+    bool has_nullable_group_by_keys = false;
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (!scope_ptr->nullable_group_by_keys.empty())
+        {
+            has_nullable_group_by_keys = true;
+            break;
+        }
+    }
+    if (!has_nullable_group_by_keys)
+        return;
+
+    /// Columns inside `node` whose source table expression lives in an outer scope (`node` is a
+    /// correlated expression). Computed lazily: it is only needed to decide whether to walk past
+    /// an enclosing `QUERY` boundary, which the common non-correlated query never does. Empty
+    /// optional means "not computed yet".
+    std::optional<QueryTreeNodes> correlated_columns;
+    auto is_correlated = [&]() -> bool
+    {
+        if (!correlated_columns)
+            correlated_columns = CorrelatedColumnsCollector{node, &scope, node_to_scope_map}.get();
+        return !correlated_columns->empty();
+    };
+
+    /// `is_aggregate_or_grouping_argument` is OR-accumulated across the LAMBDA scopes of a single
+    /// query: a reference inside an aggregate's arguments (including `* APPLY x -> agg(x, key)`,
+    /// where the aggregate is on the lambda's stack while the key set is on the enclosing query's
+    /// scope) must not be wrapped. The same holds for `grouping(...)` arguments, which only
+    /// identify GROUP BY keys and are matched against them in their original form. It is reset and
+    /// no longer accumulated once the walk crosses into an outer query for a correlated expression:
+    /// neither the inner query's aggregate context nor the outer query's one constrains how the
+    /// outer query's GROUP BY keys wrap the reference. The correlated values are fed into the
+    /// subquery from the outer query's post-aggregation rows, where they are already Nullable. The
+    /// outer query's stack can hold an aggregate when the subquery is reached through an alias that
+    /// was first resolved inside it, e.g. `SELECT (SELECT c0) AS x ... GROUP BY GROUPING SETS
+    /// ((if(1, c0, covarSamp(x, y) > 0)), ())`, where the aggregate later disappears together with
+    /// the constant-folded branch but `x` stays shared with the projection.
+    bool is_aggregate_or_grouping_argument = false;
+    bool crossed_into_outer_query = false;
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (!crossed_into_outer_query)
+            is_aggregate_or_grouping_argument = is_aggregate_or_grouping_argument
+                || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
+
+        /// `find(node)` computes `node`'s hash, so skip scopes with no keys (avoids the hash for
+        /// the common scope that is not under `group_by_use_nulls`).
+        if (!is_aggregate_or_grouping_argument && !scope_ptr->nullable_group_by_keys.empty())
+        {
+            auto it = scope_ptr->nullable_group_by_keys.find(node);
+            if (it != scope_ptr->nullable_group_by_keys.end())
+            {
+                /// Non-correlated reference: the matched key belongs to the same query as `node`.
+                /// That is either `scope_ptr == &scope` (resolved directly in the query) or, when
+                /// the reference sits inside a lambda body, an enclosing non-`QUERY` scope of that
+                /// same query (e.g. `arrayMap(x -> intDiv(x, key), ...)` where `key` is a GROUP BY
+                /// key of the surrounding query). In both cases the reference is not correlated, so
+                /// replace it with a clone of the key to pick up the post-rollup Nullable type.
+                /// The `scope_ptr == &scope` check short-circuits the correlated-columns analysis
+                /// for the common direct-projection match.
+                ///
+                /// `nullable_group_by_keys` maps each registered shape to the original key node
+                /// (`it->second`), so clone that to pick up the post-rollup Nullable type. For a
+                /// constant we clone the matched `node` itself instead: two constants equal in value
+                /// and type but with different source expressions share a single map entry, and the
+                /// source expression determines the action node name (hence which aggregation key
+                /// column the projection reads), so the matched node's own one must be preserved.
+                if (scope_ptr == &scope || !is_correlated())
+                {
+                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                    node->convertToNullable();
+                    break;
+                }
+
+                /// Correlated reference to an outer query's key. `nullable_group_by_keys` matches
+                /// ignoring types and column source (`IQueryTreeNode` hash/equality), so an
+                /// intermediate query with a same-named key could match a correlated reference
+                /// whose real source is further out. Only the scope that owns the correlated
+                /// source may apply its keys.
+                if (ownsCorrelatedSource(*scope_ptr, *correlated_columns))
+                {
+                    node->convertToNullable();
+                    break;
+                }
+            }
+
+            /// A correlated column that `IfConstantConditionPass` collapses an outer query's key to
+            /// (e.g. `if(1, c0, c1)` becomes `c0`) is also `Nullable` after that query's aggregation.
+            if (scope_ptr != &scope && node->getNodeType() == QueryTreeNodeType::COLUMN
+                && scope_ptr->nullable_collapsed_group_by_key_columns.contains(node)
+                && is_correlated() && ownsCorrelatedSource(*scope_ptr, *correlated_columns))
+            {
+                node->convertToNullable();
+                break;
+            }
+        }
+
+        /// Within a query (LAMBDA scopes), keep walking towards the enclosing query scope.
+        if (scope_ptr->scope_node->getNodeType() != QueryTreeNodeType::QUERY)
+            continue;
+
+        /// At an enclosing query scope: only a correlated expression continues outwards, and only
+        /// until we reach the scope that owns its source. A non-correlated expression stops here.
+        if (!is_correlated() || ownsCorrelatedSource(*scope_ptr, *correlated_columns))
+            break;
+
+        is_aggregate_or_grouping_argument = false;
+        crossed_into_outer_query = true;
+    }
+}
+
 /** Resolve expression node.
   * Argument node can be replaced with different node, or even with list node in case of matcher resolution.
   * Example: SELECT * FROM test_table;
@@ -4342,123 +4528,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
     validateTreeSize(node, scope.context->getSettingsRef()[Setting::max_expanded_ast_elements], node_to_tree_size);
 
-    /// Lambda can be inside the aggregate function, so we should check parent scopes.
-    /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
-    bool in_aggregate_or_grouping_function_scope = false;
-    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
-    {
-        in_aggregate_or_grouping_function_scope
-            = in_aggregate_or_grouping_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction();
-
-        /// Check parent scopes until find current query scope.
-        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-            break;
-    }
-
-    /// For correlated column references, the relevant `nullable_group_by_keys`
-    /// live in the ancestor scope where the column is actually defined.
-    /// During decorrelation a CROSS JOIN feeds those columns from the outer
-    /// scope, where they have already been wrapped to `Nullable` due to
-    /// `group_by_use_nulls` + ROLLUP/CUBE. If we stopped the lookup at the
-    /// inner QUERY scope (the standard behavior for non-correlated references),
-    /// the inner expression DAG, function bindings, and aggregate function
-    /// bindings would all be built with the pre-Nullable type and later fail
-    /// with a type mismatch at runtime.
-    ///
-    /// The `in_aggregate_or_grouping_function_scope` guard is also bypassed for correlated
-    /// columns: a `local` aggregate computes over pre-aggregation rows, but an
-    /// aggregate inside an inner correlated subquery operates on rows produced
-    /// by the outer post-aggregation step, where the correlated column has
-    /// already become `Nullable`.
-    bool is_correlated_column_node = false;
-    QueryTreeNodePtr correlated_column_source;
-    if (auto * column_node = node->as<ColumnNode>())
-    {
-        auto column_source = column_node->getColumnSourceOrNull();
-        if (column_source)
-        {
-            auto source_type = column_source->getNodeType();
-            if (source_type != QueryTreeNodeType::LAMBDA && source_type != QueryTreeNodeType::INTERPOLATE)
-            {
-                for (const auto * sp = &scope; sp; sp = sp->parent_scope)
-                {
-                    if (sp->registered_table_expression_nodes.contains(column_source)
-                        || sp->table_expressions_in_resolve_process.contains(column_source.get()))
-                        break;
-                    if (isQueryOrUnionNode(sp->scope_node))
-                    {
-                        is_correlated_column_node = true;
-                        correlated_column_source = column_source;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!in_aggregate_or_grouping_function_scope || is_correlated_column_node)
-    {
-        for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
-        {
-            /// `nullable_group_by_keys` is keyed by query-tree structure
-            /// (`ColumnNode::isEqualImpl` compares column name and type only,
-            /// ignoring source identity), so a same-shaped key in an
-            /// intermediate ancestor scope can match a correlated column whose
-            /// real source lives further out. For correlated columns we
-            /// therefore consult `nullable_group_by_keys` only at the scope
-            /// that owns the column source: that is the only scope whose
-            /// `group_by_use_nulls` actually applied to this column.
-            const bool at_source_scope = is_correlated_column_node && correlated_column_source
-                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
-                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
-
-            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
-            {
-                auto it = scope_ptr->nullable_group_by_keys.find(node);
-                if (it != scope_ptr->nullable_group_by_keys.end())
-                {
-                    if (is_correlated_column_node)
-                    {
-                        /// Modify the correlated column in place so the same pointer
-                        /// stored in the outer `QueryNode::correlated_columns_list`
-                        /// (added by `checkCorrelatedColumn`) and the planner's
-                        /// `correlated_columns_set` (which hashes by column type)
-                        /// remains consistent with the inner expression's reference.
-                        /// Cloning here would yield a distinct ColumnNode that the
-                        /// planner would no longer recognize as correlated.
-                        /// A correlated column is always a `ColumnNode`, never a
-                        /// constant, so the constant special-casing below does not apply.
-                        node->convertToNullable();
-                    }
-                    else
-                    {
-                        /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                        /// matched node itself rather than the stored key `it->second`: two constants equal
-                        /// in value and type but with different source expressions share a single map entry,
-                        /// and the source expression determines the action node name (hence which aggregation
-                        /// key column the projection reads), so the matched node's own one must be preserved.
-                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
-                        node->convertToNullable();
-                    }
-                    break;
-                }
-
-                if (is_correlated_column_node && scope_ptr->nullable_collapsed_group_by_key_columns.contains(node))
-                {
-                    node->convertToNullable();
-                    break;
-                }
-            }
-
-            /// For local references stop at the first surrounding QUERY scope.
-            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY && !is_correlated_column_node)
-                break;
-
-            /// For correlated references stop once we reach the source-owning scope.
-            if (at_source_scope)
-                break;
-        }
-    }
+    applyGroupByUseNullsToExpression(node, scope);
 
     resolved_expressions.emplace(node, result_projection_names);
 
