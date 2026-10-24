@@ -1351,13 +1351,15 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// the forwarded query as a secondary query does not convert it again: it creates a plain storage that
     /// expands the globs and reads every file on its own instead of taking its share of the read tasks from
     /// the initiator, so N nodes insert the data N times. Rewrite the source the same way `IStorageCluster::read`
-    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument, and the
-    /// structure and format arguments are added so that the nodes do not infer the schema again.
+    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument. The other
+    /// arguments stay as written, so that the nodes take the structure from the insertion table with its `DEFAULT`
+    /// expressions unless the query gives one.
     {
         auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
         /// The query is forwarded to the nodes of `src_cluster`, which is the source storage's own cluster.
         src_storage_cluster->updateQueryToSendIfNeeded(
-            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName());
+            select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName(),
+            /*add_structure_and_format=*/false);
     }
 
     String query_str;
