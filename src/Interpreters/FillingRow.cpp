@@ -281,8 +281,9 @@ void FillingRow::checkFillingTowardsConstraintFitsColumnType(size_t i)
 
     /// `doLongJump` advances by many steps at once, which lands exactly where the filling would get one step
     /// at a time only for a step of a fixed length: a calendar step over months or years saturates the day
-    /// of the month, and a day step over `DateTime` follows the time zone. These are long enough to reach the
-    /// boundary of the type in a few thousand steps anyway, so they are left to the per-value check.
+    /// of the month, and a day step over `DateTime` follows the time zone. These are at least a day long, so
+    /// they reach the boundary of the type in at most tens of thousands of steps (about 50000 day steps over
+    /// `DateTime`, 65536 over `Date`) anyway, and are left to the per-value check.
     if (descr.step_kind && descr.step_kind->getKind() > IntervalKind::Kind::Hour)
         return;
 

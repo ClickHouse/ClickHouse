@@ -454,12 +454,15 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * it ends at 13, and an empty input generates nothing at all. Such a fill is left to the per-value check in
   * `FillingRow::next`, which rejects it exactly when it generates a value the column cannot hold.
   *
-  * An INTERVAL step makes an out-of-range TO in the fill direction fatal, so TO itself is the value required to fit.
-  * Over Date and DateTime the step does not wrap around the storage type but continues in the wider calendar of
-  * Date32 / DateTime64 (see `calendarStepOutOfStorageType`), which does not stop anywhere near the boundary of the
-  * storage type, so the sequence always generates a value past that boundary before it could reach such a TO:
-  * `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01, 2070-01-01 and then 2170-01-01,
-  * which a Date column cannot hold. (A TO on the other side - out of range against the fill direction - cannot reach
+  * Over Date and DateTime an INTERVAL step does not wrap around the storage type but continues in the wider
+  * calendar of Date32 / DateTime64 (see `calendarStepOutOfStorageType`), so the first step past the boundary of the
+  * storage type may land at or beyond an out-of-range TO, which ends the filling without generating anything the
+  * column cannot hold: `WITH FILL FROM toDate('2149-06-01') TO 65540 STEP INTERVAL 1 MONTH` generates only
+  * 2149-06-01, since the next value 2149-07-01 (day 65560) is not before TO. So the filling is walked from FROM up
+  * to the boundary of the storage type (see `walkIntervalFillToStorageTypeBoundary`), and the value required to fit
+  * is the first one past the boundary when it is still before TO, or the last value within the boundary otherwise:
+  * `WITH FILL FROM toDate(0) TO 80000 STEP INTERVAL 100 YEAR` generates 1970-01-01, 2070-01-01 and then 2170-01-01
+  * (day 73049), which a Date column cannot hold. (A TO on the other side - out of range against the fill direction - cannot reach
   * this check: the FROM would lie even further out of range and is rejected first.)
   *
   * For Date32 and DateTime64 the calendar arithmetic clamps at the boundaries of the representable calendar instead
@@ -469,6 +472,65 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * `FillingRow::next`), so a TO beyond the calendar boundary simply lets the filling run up to the last value it can
   * reach, and nothing is required to fit there.
   */
+/** Walks a fill with an INTERVAL step over Date or DateTime from FROM towards the boundary of the storage type in
+  * the fill direction, and returns the last value the filling generates within the boundary. The fill is anchored
+  * at FROM, so the walk does not depend on the data. A step of a fixed length (a day or week over Date, a second,
+  * minute or hour over DateTime) advances by many steps at once, as `FillingRow::doLongJump` does, which is exact
+  * for such a step; any other step is a calendar step of at least a day, so the boundary is at most tens of
+  * thousands of steps away and the walk takes them one at a time. Returns nothing for the kinds finer than a
+  * second over DateTime, whose results are not of the storage type.
+  */
+static std::optional<Field> walkIntervalFillToStorageTypeBoundary(const FillColumnDescription & descr, int direction)
+{
+    const WhichDataType which(descr.fill_column_type);
+    const auto kind = descr.step_kind->getKind();
+    if (which.isDateTime() && kind < IntervalKind::Kind::Second)
+        return {};
+
+    const bool fixed_length = which.isDate()
+        ? kind == IntervalKind::Kind::Day || kind == IntervalKind::Kind::Week
+        : kind <= IntervalKind::Kind::Hour;
+
+    const Field & boundary = direction > 0 ? descr.fill_representable_max : descr.fill_representable_min;
+
+    /// Whether `next` is a step of the filling from `value` that stays within the boundary. A step that does not
+    /// advance the value ends the filling.
+    const auto advances_within_boundary = [&](const Field & value, const Field & next)
+    {
+        return less(value, next, direction) && !less(boundary, next, direction);
+    };
+
+    Field value = descr.fill_from;
+    if (fixed_length)
+    {
+        Int64 jumps_count = 1;
+        for (size_t i = 0; i < 500 && jumps_count > 0; ++i)
+        {
+            Field next = value;
+            descr.step_func(next, jumps_count);
+            if (advances_within_boundary(value, next))
+            {
+                value = std::move(next);
+                jumps_count = jumps_count <= INT64_MAX / 2 ? jumps_count * 2 : jumps_count;
+            }
+            else
+                jumps_count /= 2;
+        }
+    }
+    else
+    {
+        while (true)
+        {
+            Field next = value;
+            descr.step_func(next, 1);
+            if (!advances_within_boundary(value, next))
+                break;
+            value = std::move(next);
+        }
+    }
+    return value;
+}
+
 static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
 {
     /// Every column type reaching this point is filled either through Int64 or, for DateTime64, through a Decimal64
@@ -509,7 +571,15 @@ static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDes
         if (which.isDate32() || which.isDateTime64())
             return {};
 
-        return descr.fill_to;
+        const auto last_value = walkIntervalFillToStorageTypeBoundary(descr, direction);
+        if (!last_value)
+            return descr.fill_to;
+
+        Field next_value = *last_value;
+        descr.step_func(next_value, 1);
+        if (less(*last_value, next_value, direction) && less(next_value, descr.fill_to, direction))
+            return next_value;
+        return last_value;
     }
 
     const auto step_raw = raw_value(descr.fill_step);
@@ -564,9 +634,9 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
     /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
     /// on the data (no FROM), the bound is accepted and the generated values are checked in `FillingRow::next`.
-    /// An INTERVAL step over Date or DateTime always passes the boundary of the column type before it could reach
-    /// a TO that is out of range in the fill direction, so there the bound itself is required to fit; over Date32
-    /// and DateTime64 it stops at the calendar boundary, so any TO is accepted.
+    /// An INTERVAL step over Date or DateTime with FROM is walked up to the boundary of the column type, and the
+    /// bound is rejected only when the first step past it is still before TO; over Date32 and DateTime64 it stops
+    /// at the calendar boundary, so any TO is accepted.
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
         const auto required_value = fillValueRequiredToFitColumnType(descr, direction);

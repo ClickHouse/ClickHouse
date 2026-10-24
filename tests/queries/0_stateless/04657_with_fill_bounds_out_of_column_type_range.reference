@@ -19,7 +19,9 @@ STALENESS caps the sequence before TO, so the TO bound is not rejected
 7	5	23
 [250,251,252,253,254]
 [250]
-an INTERVAL step over Date and DateTime leaves the column type before it could reach a TO out of range in the fill direction
+an INTERVAL step over Date and DateTime is rejected when it leaves the column type before reaching a TO out of range in the fill direction
+['1970-01-01','2070-01-01']
+['1970-01-01 00:00:00','2020-01-01 00:00:00','2070-01-01 00:00:00']
 2	1970-03-05	2070-03-05
 51	1970-01-01	2020-01-01
 1	2020-01-01	2020-01-01
@@ -158,3 +160,8 @@ a numeric STALENESS bound past the storage does not wrap around behind the ancho
 [9223372036854775805,9223372036854775806,9223372036854775807]
 [-9223372036854775806,-9223372036854775807]
 [-9223372036854775806,-9223372036854775807,-9223372036854775808]
+['2149-06-01']
+['2149-05-30','2149-06-06']
+32768	1970-01-02	2149-06-06
+['2106-01-01 00:00:00']
+[4294967290]
