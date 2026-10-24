@@ -64,6 +64,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/ABR/StorageABR.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
@@ -293,6 +294,10 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (dynamic_cast<const IStorageCluster *>(raw))
             return true;
         if (typeid_cast<const StorageView *>(raw))
+            return true;
+        /// `ABR` routes the query by the bounds of the `WHERE` / `PREWHERE` on its time column, and executes
+        /// the full query on the chosen underlying table, so there is no `Filter` step above its read either.
+        if (typeid_cast<const StorageABR *>(raw))
             return true;
         return false;
     };
@@ -1170,16 +1175,11 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         settings[Setting::enable_packed_string_keys_in_aggregation]);
 
-    bool is_remote_storage = false;
-    bool parallel_replicas_from_merge_tree = false;
+    bool produces_mergeable_state = false;
 
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
     if (table_expression_node_to_data.size() == 1)
-    {
-        auto it = table_expression_node_to_data.begin();
-        is_remote_storage = it->second.isRemote();
-        parallel_replicas_from_merge_tree = it->second.isMergeTree() && query_context->canUseParallelReplicasOnInitiator();
-    }
+        produces_mergeable_state = table_expression_node_to_data.begin()->second.producesMergeableState();
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentHeader(),
@@ -1187,7 +1187,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         aggregation_analysis_result.grouping_sets_parameters_list,
         query_analysis_result.aggregate_final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings[Setting::distributed_aggregation_memory_efficient] && (is_remote_storage || parallel_replicas_from_merge_tree)
+        settings[Setting::distributed_aggregation_memory_efficient] && produces_mergeable_state
             && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
         settings[Setting::aggregation_memory_efficient_merge_threads],
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,

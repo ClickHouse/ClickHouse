@@ -31,6 +31,7 @@ void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageElasticsearch(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory);
+void registerStorageABR(StorageFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerStorageArrowFlight(StorageFactory & factory);
@@ -145,6 +146,7 @@ void registerStorages()
     registerStorageTimeSeries(factory);
     registerStorageElasticsearch(factory);
     registerStorageAlias(factory);
+    registerStorageABR(factory);
 
 #if USE_ARROWFLIGHT
     registerStorageArrowFlight(factory);

@@ -1,0 +1,22 @@
+test 1: count through distributed
+338
+test 2: count distributed wider range
+1490
+test 3: sum through distributed
+28392
+test 4: group by through distributed
+200	338
+test 5: min/max through distributed
+2026-01-01 00:00:00	2026-01-08 00:00:00
+test 6: aliases with remote execution through distributed
+2026-01-08 00:00:00	200	0
+2026-01-08 00:00:00	200	0
+2026-01-07 23:00:00	200	1
+test 7: aliases in WHERE with remote execution
+2026-01-08 00:00:00	200	0
+2026-01-08 00:00:00	200	0
+2026-01-07 23:00:00	200	1
+test 8: aliases in SELECT + WHERE + ORDER BY with remote execution
+2026-01-08 00:00:00	200	0
+2026-01-08 00:00:00	200	0
+2026-01-07 23:00:00	200	1

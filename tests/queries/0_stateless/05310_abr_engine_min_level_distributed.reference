@@ -1,0 +1,20 @@
+test 1: default min_level through distributed
+146	1
+test 2: first_table_suffix=10 through distributed
+146	10
+test 3: first_table_suffix=100 through distributed
+146	100
+test 4: first_table_suffix=10 wider range through distributed
+674	10
+test 5: first_table_suffix=10 remote execution
+146	10
+test 6: sum with first_table_suffix=100 through distributed
+14600
+test 7: last_table_suffix=10 caps fallback through distributed
+1490	10
+test 8: last_table_suffix=1 caps fallback through distributed
+338	1
+test 9: last_table_suffix=10 remote execution
+1490	10
+test 10: first=10 last=10 through distributed
+146	10
