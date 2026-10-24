@@ -17,6 +17,7 @@
 #if USE_ROCKSDB
 
 #include <rocksdb/env.h>
+#include <rocksdb/iterator.h>
 #include <rocksdb/sst_file_reader.h>
 
 #include <IO/ReadSettings.h>
@@ -47,6 +48,9 @@ public:
 
     std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
 
+    /// Every entry in key order, for a sequential scan that leaves no blocks in a cache.
+    std::unique_ptr<rocksdb::Iterator> newIterator() const;
+
     /// Delegates to `SstFileReader::VerifyChecksum` - re-reads every block.
     rocksdb::Status verifyChecksum() const;
 
@@ -57,6 +61,9 @@ private:
 };
 
 using SSTFileReaderPtr = std::shared_ptr<SSTFileReader>;
+
+/// The part row an SST value holds, as written by `SSTIndexWriter`; any other size throws `CORRUPTED_DATA`.
+UInt64 decodeRowNumberBE(const char * data, size_t size);
 
 /// `read_settings` is forwarded to every `IDataPartStorage::readFile`, so the
 /// caller's filesystem-cache / remote-read policy applies to the sidecar too.
