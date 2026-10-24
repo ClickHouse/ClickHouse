@@ -1085,13 +1085,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// keeps its already-materialized types. A full-definition `ATTACH TABLE ... (...) ENGINE = ...`
     /// (including `ATTACH ... FROM '/path/'`) is create-like user input rather than a replay of stored
     /// metadata, so it takes the same materialization; the short `ATTACH TABLE t` syntax and internal
-    /// server-issued queries replay already-materialized metadata and are excluded.
+    /// server-issued queries (including an internal `CREATE`, such as the inner table of a materialized view or a
+    /// system log table, built from already resolved types) replay already-materialized metadata and are excluded.
     /// This must run before `setEngine`: the storage definition (or the table function) it copies from the table of
     /// the `AS` / `CLONE AS` clause is stored metadata, where a bare `UUID` already denotes the historical type, so it
     /// must be inherited as is - otherwise the inherited keys would silently change their semantics, and
     /// `CLONE AS` would reject a source table with a `UUID` in its keys.
     const bool is_create_like_attach = create.attach && !create.attach_short_syntax && !internal;
-    if ((mode < LoadingStrictnessLevel::SECONDARY_CREATE || is_create_like_attach)
+    if (((mode < LoadingStrictnessLevel::SECONDARY_CREATE && !internal) || is_create_like_attach)
         && !getContext()->isDDLOrOnClusterInternal()
         && !is_restore_from_backup)
     {
@@ -1131,8 +1132,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// target metadata), so a default over a virtual column is inert there and must not be rejected.
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+            /// An internal query replays already resolved metadata (e.g. the inner table of a materialized view, or a
+            /// system log table), where a bare `UUID` denotes the historical type.
             properties.columns = getColumnsDescription(
-                *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns,
+                /*materialize_uuid_type_version=*/ !internal);
         }
         else if (create.columns_list->codec_declarations)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec declarations require a list of columns");

@@ -1,9 +1,12 @@
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
@@ -160,6 +163,28 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_vie
     return true;
 }
 
+/// Rewrites a bare `UUID` in a data type name given as a string, such as the declared type of a query parameter
+/// (`{p:Array(UUID)}`). A string that does not parse as a data type is left as is.
+bool substituteBareUUIDInTypeNameString(String & type_name, std::string_view replacement)
+{
+    if (!containsCaseInsensitive(type_name, "uuid"))
+        return false;
+
+    Tokens tokens(type_name.data(), type_name.data() + type_name.size());
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+    ASTPtr type_ast;
+
+    if (!ParserDataType{}.parse(pos, type_ast, expected) || !type_ast || pos->type != TokenType::EndOfStream)
+        return false;
+
+    if (!substituteBareUUIDInPlace(*type_ast, false, replacement))
+        return false;
+
+    type_name = type_ast->formatWithSecretsOneLine();
+    return true;
+}
+
 /** Rewrites a string literal that holds a whole columns declaration list ("a UInt8, id UUID").
   *
   * Table functions such as `file`, `url`, `s3`, `format`, `input` and `generateRandom` take the schema of the
@@ -280,15 +305,17 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
         || equalsCaseInsensitiveString(table_function.name, "paimonS3") || equalsCaseInsensitiveString(table_function.name, "deltaLake")
         || equalsCaseInsensitiveString(table_function.name, "deltaLakeS3") || equalsCaseInsensitiveString(table_function.name, "hudi")
         || equalsCaseInsensitiveString(table_function.name, "iceberg") || equalsCaseInsensitiveString(table_function.name, "icebergS3")
-        || equalsCaseInsensitiveString(table_function.name, "icebergAzure")
-        || equalsCaseInsensitiveString(table_function.name, "deltaLakeAzure")
-        || equalsCaseInsensitiveString(table_function.name, "paimonAzure")
         || equalsCaseInsensitiveString(table_function.name, "icebergHDFS") || equalsCaseInsensitiveString(table_function.name, "paimonHDFS")
         || equalsCaseInsensitiveString(table_function.name, "icebergLocal")
         || equalsCaseInsensitiveString(table_function.name, "deltaLakeLocal")
         || equalsCaseInsensitiveString(table_function.name, "paimonLocal"))
         return all_columns_list_arguments(2);
-    if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorage"))
+    /// The Azure data-lake table functions reuse the positional signatures of `azureBlobStorage`, where argument 2
+    /// is the blob path, not the structure.
+    if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorage")
+        || equalsCaseInsensitiveString(table_function.name, "icebergAzure")
+        || equalsCaseInsensitiveString(table_function.name, "deltaLakeAzure")
+        || equalsCaseInsensitiveString(table_function.name, "paimonAzure"))
         return azure_structure_argument(0);
     if (equalsCaseInsensitiveString(table_function.name, "fileCluster") || equalsCaseInsensitiveString(table_function.name, "urlCluster")
         || equalsCaseInsensitiveString(table_function.name, "hdfsCluster") || equalsCaseInsensitiveString(table_function.name, "s3Cluster")
@@ -299,14 +326,14 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
         || equalsCaseInsensitiveString(table_function.name, "hudiCluster")
         || equalsCaseInsensitiveString(table_function.name, "icebergCluster")
         || equalsCaseInsensitiveString(table_function.name, "icebergS3Cluster")
-        || equalsCaseInsensitiveString(table_function.name, "icebergAzureCluster")
-        || equalsCaseInsensitiveString(table_function.name, "deltaLakeAzureCluster")
-        || equalsCaseInsensitiveString(table_function.name, "paimonAzureCluster")
         || equalsCaseInsensitiveString(table_function.name, "icebergHDFSCluster")
         || equalsCaseInsensitiveString(table_function.name, "paimonHDFSCluster")
         || equalsCaseInsensitiveString(table_function.name, "icebergLocalCluster"))
         return all_columns_list_arguments(3);
-    if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorageCluster"))
+    if (equalsCaseInsensitiveString(table_function.name, "azureBlobStorageCluster")
+        || equalsCaseInsensitiveString(table_function.name, "icebergAzureCluster")
+        || equalsCaseInsensitiveString(table_function.name, "deltaLakeAzureCluster")
+        || equalsCaseInsensitiveString(table_function.name, "paimonAzureCluster"))
         return azure_structure_argument(1);
     if (equalsCaseInsensitiveString(table_function.name, "mongodb"))
         return arguments.size() == 3 || arguments.size() == 4 ? std::vector{argument_at(2)}
@@ -537,6 +564,29 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std:
     {
         data_type->name = String(replacement);
         substituted = true;
+    }
+
+    /// The declared type of a query parameter is stored as a string. In a parameterized view, the parameters are
+    /// substituted only when the view is used, and the type is then resolved from the stored definition.
+    if (auto * query_parameter = ast.as<ASTQueryParameter>())
+        substituted |= substituteBareUUIDInTypeNameString(query_parameter->type, replacement);
+
+    /// Some nodes own expressions that are not stored in `children`.
+    if (auto * ttl_element = ast.as<ASTTTLElement>())
+    {
+        for (const auto & expression : ttl_element->group_by_key)
+            if (expression)
+                substituted |= substituteBareUUIDInPlace(*expression, false, replacement);
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            if (assignment)
+                substituted |= substituteBareUUIDInPlace(*assignment, false, replacement);
+    }
+    else if (auto * apply_transformer = ast.as<ASTColumnsApplyTransformer>())
+    {
+        if (apply_transformer->parameters)
+            substituted |= substituteBareUUIDInPlace(*apply_transformer->parameters, false, replacement);
+        if (apply_transformer->lambda)
+            substituted |= substituteBareUUIDInPlace(*apply_transformer->lambda, false, replacement);
     }
 
     auto * function = ast.as<ASTFunction>();
