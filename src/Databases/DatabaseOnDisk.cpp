@@ -28,10 +28,12 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -41,6 +43,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
@@ -88,6 +91,14 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char database_remove_detached_permanently_flag_fail[];
+    extern const char database_rename_table_fail_before_create_in_destination[];
+    extern const char database_rename_table_fail_before_removing_source_metadata[];
 }
 
 
@@ -162,6 +173,8 @@ std::pair<String, StoragePtr> createTableFromAST(
         /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
             NamedCollectionFactory::instance().addDependency(collection_name, storage->getStorageID());
+        if (const auto * table_function_node = table_function_ast->as<ASTFunction>())
+            addNestedTableFunctionNamedCollectionDependencies(table_function_node->arguments, storage->getStorageID());
 
         return {ast_create_query.getTable(), storage};
     }
@@ -355,6 +368,10 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        fiu_do_on(FailPoints::database_remove_detached_permanently_flag_fail,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the permanent-detach flag");
+        });
         db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
@@ -574,6 +591,11 @@ void DatabaseOnDisk::renameTable(
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+    /// A dictionary that was never loaded has no named collection dependencies registered, so the
+    /// failure paths below would have nothing to keep protected for the surviving source metadata.
+    if (const auto * dictionary_storage = typeid_cast<const StorageDictionary *>(table.get()))
+        dictionary_storage->addNamedCollectionDependencies();
+
     detachTable(local_context, table_name);
 
     UUID prev_uuid = UUIDHelpers::Nil;
@@ -630,9 +652,59 @@ void DatabaseOnDisk::renameTable(
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    try
+    {
+        fiu_do_on(FailPoints::database_rename_table_fail_before_create_in_destination,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to create the table in the destination database");
+        });
+        to_database.createTable(local_context, to_table_name, table, attach_query);
+    }
+    catch (...)
+    {
+        /// `createTable` can publish the table and its metadata in the destination and throw afterwards
+        /// (e.g. from `removeDetachedPermanentlyFlag`). The table then lives under its destination identity,
+        /// which neither the re-keying below nor the rename interpreter applies to the named collection
+        /// dependencies, while the source metadata file is left behind as well. Move the entries to the
+        /// published table and keep the source metadata protected like the one of a detached table:
+        /// otherwise `DROP NAMED COLLECTION` takes the entries for leftovers and drops a collection that
+        /// both definitions still reference.
+        /// If the destination did not publish the table (e.g. writing its metadata failed), the table is
+        /// left detached and its source metadata survives, so it is attached from there at the next start:
+        /// keep the collections it references protected like the ones of a detached table.
+        const StorageID source_table_id(getDatabaseName(), table_name, prev_uuid);
+        if (to_database.tryGetTable(to_table_name, local_context) == table)
+            NamedCollectionFactory::instance().rekeyDependencies(source_table_id, table->getStorageID(), /*keep_source_as_detached=*/ true);
+        else
+            NamedCollectionFactory::instance().markDependenciesDetached(source_table_id);
+        throw;
+    }
 
-    db_disk->removeFileIfExists(table_metadata_path);
+    try
+    {
+        fiu_do_on(FailPoints::database_rename_table_fail_before_removing_source_metadata,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the source metadata of the renamed table");
+        });
+        db_disk->removeFileIfExists(table_metadata_path);
+    }
+    catch (...)
+    {
+        /// The table is published in the destination, but the source metadata survives as well: move the
+        /// entries to the published table and keep the source metadata protected, like above.
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID(), /*keep_source_as_detached=*/ true);
+        throw;
+    }
+
+    /// A move between an `Ordinary` and an `Atomic` database changes the identity the named collection
+    /// dependencies of the table are keyed by: the move into `Atomic` assigns a fresh UUID, the move out
+    /// of it drops the UUID. The rename interpreter only knows the names, so re-key the entries here,
+    /// where both identities are known - otherwise a later `DETACH` of the moved table finds no
+    /// dependency and `DROP NAMED COLLECTION` is allowed while the metadata still references it.
+    if (from_ordinary_to_atomic || from_atomic_to_ordinary)
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID());
 
     if (from_atomic_to_ordinary)
     {

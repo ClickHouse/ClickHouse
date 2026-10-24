@@ -811,12 +811,13 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
 
+        const StorageID database_id = StorageID::createDatabaseOnly(args.database_name);
         if (auto named_collection = tryGetNamedCollectionWithOverrides(
                 arguments,
                 args.context,
                 /*throw_unknown_collection=*/ true,
                 /*complex_args=*/ nullptr,
-                /*dependent_table_id=*/ nullptr,
+                /*dependent_table_id=*/ &database_id,
                 engine_define->settings))
         {
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);

@@ -45,6 +45,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     bool is_cluster_function,
     bool secure,
     const PreformattedMessage & help_message,
-    const StorageID * dependent_table_id = nullptr);
+    const StorageID * dependent_table_id = nullptr,
+    String * used_named_collection_name = nullptr);
 
 }

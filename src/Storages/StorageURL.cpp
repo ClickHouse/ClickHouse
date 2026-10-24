@@ -2983,7 +2983,7 @@ void StorageURL::overrideURLInEngineArgs(
     /// this function is also called for collections of other engines (e.g. `S3`), whose keys
     /// would not pass the `URL` engine validation.
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
-            args, context, /*throw_unknown_collection=*/false, nullptr, nullptr, /* settings= */ nullptr, is_replayed_definition))
+            args, context, /*throw_unknown_collection=*/false, nullptr, nullptr, /* settings= */ nullptr, /* used_named_collection_name= */ nullptr, is_replayed_definition))
     {
         if (named_collection->getOrDefault<String>("url", "") == resolved_url)
             return;
@@ -3018,7 +3018,7 @@ StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, cons
     const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
-            args, local_context, true, nullptr, table_id, /* settings= */ nullptr, is_replayed_definition))
+            args, local_context, true, nullptr, table_id, /* settings= */ nullptr, /* used_named_collection_name= */ nullptr, is_replayed_definition))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
@@ -3578,6 +3578,7 @@ void registerStorageURL(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
         },

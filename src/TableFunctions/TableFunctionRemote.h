@@ -27,6 +27,11 @@ public:
 
     bool needStructureConversion() const override { return false; }
 
+    /// `cluster` and `clusterAllReplicas` take a cluster name as the first argument and do not support
+    /// named collections. `remote` and `remoteSecure` follow the `Remote` / `RemoteSecure` engines, not
+    /// `Distributed` returned by `getStorageEngineName`, which does not support named collections.
+    std::optional<String> getNamedCollectionReferencedByArguments(const ASTs & args) const override;
+
 private:
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;

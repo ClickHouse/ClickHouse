@@ -136,9 +136,14 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
     return configuration;
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(
+    ASTs engine_args,
+    const YTsaurusSettings & settings,
+    ContextPtr context,
+    const StorageID * table_id,
+    String * used_named_collection_name)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id, /*settings=*/ nullptr, used_named_collection_name))
     {
         return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
     }
@@ -185,6 +190,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
     SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}},
     {
         .supports_settings = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
     },

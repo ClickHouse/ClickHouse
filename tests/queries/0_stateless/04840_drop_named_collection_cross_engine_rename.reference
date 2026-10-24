@@ -1,0 +1,11 @@
+--- a table moved from Ordinary to Atomic still holds the collection while attached ---
+--- and after it is detached ---
+1
+--- and when its database is detached altogether ---
+1
+--- the collection is released once the moved table is dropped ---
+0
+--- the same for a table moved from Atomic to Ordinary ---
+1
+--- and it is released when that table is dropped ---
+0

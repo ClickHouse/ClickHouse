@@ -5,13 +5,87 @@
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Storages/IStorage.h>
+#include <Storages/NamedCollectionsHelpers.h>
+
+#include <algorithm>
 
 
 namespace DB
 {
+
+namespace
+{
+
+/// The table the dependency was registered for, looked up by its UUID. Only a table that is in the
+/// catalog is returned: while a `CREATE` is in flight, the UUID is already reserved, but no table
+/// belongs to it yet.
+StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
+{
+    if (!dependency.hasUUID())
+        return nullptr;
+
+    auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(dependency.uuid);
+    if (!database || !table)
+        return nullptr;
+
+    /// The UUID identifies the table the entry was registered for, with one exception:
+    /// `CREATE TABLE ... UUID` can reuse the UUID of a failed create under a different table name. The
+    /// two cases are told apart by the name the live table's own dependencies are recorded under - the
+    /// name is set at the registration and follows the table across `RENAME` (`renameDependencies`):
+    /// - an entry that carries another name while the live table has entries under its current name
+    ///   belongs to a create that failed - it is left to the stale-entry cleanup;
+    /// - when the live table has no entry under its current name (its names went stale without being
+    ///   re-keyed - an `EXCHANGE` - or it registered no dependency at all), the
+    ///   entries under the UUID are treated as its own, which can only refuse the drop, never allow it.
+    const auto live_table_id = table->getStorageID();
+    if (live_table_id.database_name != dependency.database_name || live_table_id.table_name != dependency.table_name)
+    {
+        if (NamedCollectionFactory::instance().hasDependencyRegisteredFor(live_table_id))
+            return nullptr;
+    }
+
+    return table;
+}
+
+/// Dictionaries whose source references the collection by its `name` key. A dictionary registers its
+/// dependency only when it is loaded, which may never have happened: it stays unloaded under
+/// `dictionaries_lazy_load` / `dictionary_lazy_load` until its first access, and after a restart that
+/// followed a drop with `check_named_collection_dependencies = 0`, its last load could not resolve the
+/// collection. Its next (re)load resolves the collection again, so it is found from the definition the
+/// loader holds, independently of whether it has ever been loaded. This covers both the dictionaries
+/// defined in the configuration files and the ones created with DDL: the loader holds the definition of
+/// the latter, built from the `CREATE DICTIONARY` query, for as long as the dictionary is attached.
+std::vector<String> getDictionariesReferencingCollection(const ContextPtr & context, const String & collection_name)
+{
+    std::vector<String> dictionary_names;
+    for (const auto & load_result : context->getExternalDictionariesLoader().getLoadResults())
+    {
+        if (!load_result.config)
+            continue;
+
+        const auto & config = *load_result.config->config;
+        const auto referenced_collections = getNamedCollectionsReferencedByDictionaryConfig(config, load_result.config->key_in_config);
+        if (std::find(referenced_collections.begin(), referenced_collections.end(), collection_name) == referenced_collections.end())
+            continue;
+
+        /// The loader keys a dictionary created with DDL by its UUID, if any, so name it by the
+        /// identifier from the definition instead.
+        const auto dictionary_id = StorageID::fromDictionaryConfig(config, load_result.config->key_in_config);
+        const auto dictionary_name = dictionary_id.database_name.empty()
+            ? dictionary_id.table_name
+            : dictionary_id.database_name + "." + dictionary_id.table_name;
+        dictionary_names.push_back(fmt::format("dictionary `{}`", dictionary_name));
+    }
+    return dictionary_names;
+}
+
+}
+
 
 namespace Setting
 {
@@ -40,6 +114,13 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
     if (current_context->getSettingsRef()[Setting::check_named_collection_dependencies])
     {
+        /// `IF EXISTS` of a collection that is already gone is a no-op: there is nothing to drop, so
+        /// the leftover dependencies (e.g. of a detached table after a drop with the check disabled)
+        /// must not make it fail. A concurrent drop after this check is handled the same way by
+        /// `removeFromSQLIfNoDependencies`.
+        if (query.if_exists && !NamedCollectionFactory::instance().exists(query.collection_name))
+            return {};
+
         auto dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
         if (!dependents.empty())
         {
@@ -50,10 +131,133 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
             dependent_names.reserve(dependents.size());
             for (const auto & dep : dependents)
             {
-                if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                /// A dependency with an empty table name belongs to a database engine. Its metadata
+                /// is replayed on every server start just like table metadata, so it must keep the
+                /// collection alive while that database exists. The entry is keyed by the database name
+                /// only, which suffices: a `CREATE DATABASE` that fails after the engine registered the
+                /// entry removes it again (`InterpreterCreateQuery::createDatabase`), so a database that
+                /// exists under the recorded name is the one the entry was registered for.
+                if (dep.table_name.empty())
+                {
+                    if (DatabaseCatalog::instance().tryGetDatabase(dep.database_name))
+                    {
+                        dependent_names.push_back(fmt::format("database `{}`", dep.database_name));
+                        continue;
+                    }
+
+                    /// `CREATE DATABASE` holds the `DDLGuard` of the database name (with an empty table
+                    /// name) for its whole duration, from before the engine resolves the collection and
+                    /// registers the entry until the database is published or the entry is removed on
+                    /// failure. The exclusive database guard is taken by the creator only after the
+                    /// registration, so it does not cover that window by itself. Acquire the same guards
+                    /// in the same order as the creator: once both are held, no create of this name is in
+                    /// flight, and an absent database dependency can only be a failed create.
+                    auto database_name_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, "", nullptr);
+                    auto ddl_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(dep.database_name);
+                    if (DatabaseCatalog::instance().tryGetDatabase(dep.database_name))
+                    {
+                        dependent_names.push_back(fmt::format("database `{}`", dep.database_name));
+                        continue;
+                    }
+
+                    NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
+                    continue;
+                }
+
+                /// A dictionary defined in the configuration files is not created through DDL and
+                /// never appears in `DatabaseCatalog`: it lives in `ExternalDictionariesLoader` for
+                /// as long as its definition stays in the configuration, and every (re)load of it
+                /// resolves the collection again. Its dependency is recorded under the identifier
+                /// from the definition (`StorageID::fromDictionaryConfig`), which is also how the
+                /// loader keys it: `db.name` when the definition sets a `<database>` and the bare
+                /// name otherwise. Consult the loader before the catalog, and, for an entry that can
+                /// belong to nothing else (no table has an empty database name), prune it only when
+                /// the definition is gone.
+                const auto dictionary_name
+                    = dep.database_name.empty() ? dep.table_name : dep.database_name + "." + dep.table_name;
+                if (current_context->getExternalDictionariesLoader().has(dictionary_name))
+                {
+                    dependent_names.push_back(fmt::format("dictionary `{}`", dictionary_name));
+                    continue;
+                }
+
+                if (dep.database_name.empty())
+                {
+                    NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
+                    continue;
+                }
+
+                /// A table of an `Atomic` database is identified by its UUID: `RENAME` and
+                /// `EXCHANGE` change its name but keep the UUID recorded in the dependency, so the
+                /// name of the entry goes stale while the table is still there and still uses the
+                /// collection. Resolve such an entry by its UUID, and fall back to the name only
+                /// when no table has that UUID any more (a failed `CREATE`, or a `DROP` of a table
+                /// whose name was taken by another one afterwards).
+                if (const auto table_by_uuid = tryGetLiveTableByUUID(dep))
+                {
+                    dependent_names.push_back(table_by_uuid->getStorageID().getFullTableName());
+                    continue;
+                }
+
+                const auto table = DatabaseCatalog::instance().tryGetTable(
+                    StorageID{dep.database_name, dep.table_name}, current_context);
+                if (table && (!dep.hasUUID() || table->getStorageID().uuid == dep.uuid))
+                {
                     dependent_names.push_back(dep.getFullTableName());
-                else
-                    NamedCollectionFactory::instance().removeDependencies(dep);
+                    continue;
+                }
+
+                /// The table is also absent while the `CREATE`/`ATTACH` that registered the dependency
+                /// is still in flight: the registration happens while the engine arguments are resolved,
+                /// before the table is committed to the catalog. Classifying such an entry as stale would
+                /// let the drop proceed while the create later succeeds, leaving metadata that references
+                /// a collection that no longer exists. The creating query holds the `DDLGuard` of the
+                /// table name for the whole window between the registration and the commit, so re-check
+                /// under that guard: once it is acquired, no create is in flight, and the table's absence
+                /// proves the earlier create failed and left a stale entry.
+                auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
+                if (const auto table_by_uuid = tryGetLiveTableByUUID(dep))
+                {
+                    dependent_names.push_back(table_by_uuid->getStorageID().getFullTableName());
+                    continue;
+                }
+
+                const auto updated_table = DatabaseCatalog::instance().tryGetTable(
+                    StorageID{dep.database_name, dep.table_name}, current_context);
+                if (updated_table && (!dep.hasUUID() || updated_table->getStorageID().uuid == dep.uuid))
+                {
+                    dependent_names.push_back(dep.getFullTableName());
+                    continue;
+                }
+
+                /// A failed CREATE of an Atomic table can leave an entry with the old UUID. Before
+                /// this guard was acquired, another CREATE of the same table name may have completed
+                /// with a new UUID and a dependency on this collection. The old StorageID cannot find
+                /// that table, so check the current dependencies by name before pruning the stale one.
+                /// The DDLGuard keeps a new CREATE of this name from registering between this check and
+                /// the removal below.
+                const auto updated_dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
+                const auto same_name_live_dependency = std::any_of(
+                    updated_dependents.begin(),
+                    updated_dependents.end(),
+                    [&](const auto & candidate)
+                    {
+                        return candidate.database_name == dep.database_name
+                            && candidate.table_name == dep.table_name
+                            && candidate.uuid != dep.uuid
+                            && DatabaseCatalog::instance().isTableExist(candidate, current_context);
+                    });
+                if (same_name_live_dependency)
+                {
+                    dependent_names.push_back(dep.getFullTableName());
+                    continue;
+                }
+
+                /// Only this exact entry: the guard proves that no create is in flight for the recorded
+                /// table name, but `CREATE TABLE ... UUID` can reuse the UUID of the failed create under
+                /// a different name, and erasing everything under the UUID would remove the live
+                /// dependency of such an in-flight create.
+                NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
             }
 
             if (!dependent_names.empty())
@@ -65,9 +269,57 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                     fmt::join(dependent_names, ", "));
             }
         }
-    }
 
-    NamedCollectionFactory::instance().removeFromSQL(query);
+        /// A detached table is not in `DatabaseCatalog`, but the metadata it is attached from still
+        /// references the collection: if the collection is dropped, the `ATTACH` replayed at the next
+        /// server start throws `NAMED_COLLECTION_DOESNT_EXIST` and the server does not start.
+        /// Every entry blocks the drop, even when a table with that name exists in `DatabaseCatalog`
+        /// again. The entry cannot be pruned here based on the table's existence: a concurrent `ATTACH`
+        /// registers its live dependency after the check above already ran, and a concurrent `DETACH`
+        /// records the entry while the table is still in the catalog - in both windows the table exists,
+        /// yet nothing in this query has validated the live dependency. Entries are removed only by the
+        /// events that prove the metadata under the recorded name is gone or harmless: `DROP TABLE`,
+        /// `DETACH TABLE ... PERMANENTLY`, `RENAME` of the table, and `DROP DATABASE`.
+        auto detached_dependents = NamedCollectionFactory::instance().getDetachedDependents(query.collection_name);
+        if (!detached_dependents.empty())
+        {
+            std::vector<String> detached_names;
+            detached_names.reserve(detached_dependents.size());
+            for (const auto & dep : detached_dependents)
+            {
+                /// An entry of a database engine has no table name.
+                if (dep.table_name.empty())
+                    detached_names.push_back(fmt::format("database `{}`", dep.database_name));
+                else
+                    detached_names.push_back(dep.getFullTableName());
+            }
+
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_IS_USED,
+                "Named collection `{}` may still be used by detached tables: {}",
+                query.collection_name,
+                fmt::join(detached_names, ", "));
+        }
+
+        /// A collection that does not exist is left to `removeFromSQLIfNoDependencies`, which honors `IF EXISTS`.
+        if (NamedCollectionFactory::instance().exists(query.collection_name))
+        {
+            auto dictionaries = getDictionariesReferencingCollection(current_context, query.collection_name);
+            if (!dictionaries.empty())
+                throw Exception(
+                    ErrorCodes::NAMED_COLLECTION_IS_USED,
+                    "Named collection `{}` is used by dictionaries: {}",
+                    query.collection_name,
+                    fmt::join(dictionaries, ", "));
+        }
+
+        if (!NamedCollectionFactory::instance().removeFromSQLIfNoDependencies(query))
+            throw Exception(ErrorCodes::NAMED_COLLECTION_IS_USED, "Named collection `{}` is used by a table", query.collection_name);
+    }
+    else
+    {
+        NamedCollectionFactory::instance().removeFromSQL(query);
+    }
 
     return {};
 }

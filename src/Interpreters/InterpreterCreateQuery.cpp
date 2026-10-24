@@ -15,6 +15,7 @@
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Parsers/stripQuerySettings.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -42,6 +43,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -175,9 +177,12 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
+    extern const char create_table_pause_before_commit[];
+    extern const char create_database_pause_after_engine[];
     extern const char atomic_populate_fail_before_subscription[];
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
+    extern const char attach_database_fail_after_load[];
     extern const char atomic_populate_pause_before_source_guard[];
     extern const char atomic_populate_pause_before_population[];
     extern const char attach_from_path_pause_before_relocation[];
@@ -434,8 +439,31 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
+    /// A database engine that takes a named collection registers the dependency of this database on the
+    /// collection while `DatabaseFactory` resolves the engine arguments - before the database is attached,
+    /// and before anything that can still fail. Such an entry must not outlive a failed create: it is keyed
+    /// by the database name only, and `DROP NAMED COLLECTION` would take a database created under that name
+    /// later (with another engine, or another collection) for a user of the collection, refusing the drop
+    /// while no metadata references the collection any more. The database-level `DDLGuard` acquired above
+    /// is held until this function returns, so no other create of this name is in flight, and, as the
+    /// database does not exist, every live entry under the name belongs to this or an earlier failed create.
+    /// A failed `ATTACH DATABASE` of a detached database is covered as well: `DETACH DATABASE` recorded
+    /// the entries of the database and of its tables in the detached list, which nothing here touches,
+    /// and those entries keep refusing the drop while the metadata can be attached back (a database
+    /// cannot be detached permanently, so every database with metadata is attached at the server start).
+    bool created = false;
+    SCOPE_EXIT({
+        if (!created)
+            NamedCollectionFactory::instance().removeDependencies(StorageID::createDatabaseOnly(database_name));
+    });
+
     DatabasePtr database = DatabaseFactory::instance().get(
         create, metadata_path / "", getContext(), mode, internal, is_metadata_replay, is_restore_from_backup);
+
+    /// The engine has resolved its named collection and registered the dependency, but the database is
+    /// not published yet. Internal queries (e.g. of the server startup) do not stop here.
+    if (!internal)
+        FailPointInjection::pauseFailPoint(FailPoints::create_database_pause_after_engine);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -491,6 +519,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
+
+        if (create.attach)
+        {
+            fiu_do_on(FailPoints::attach_database_fail_after_load,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to attach the database after its tables were loaded");
+            });
+        }
     }
     catch (...)
     {
@@ -505,6 +541,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw;
     }
 
+    created = true;
     return {};
 }
 
@@ -2913,6 +2950,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
+    /// The named collection dependencies of the table are registered while the engine arguments are
+    /// resolved, before anything below that can still fail. An entry left behind by a failed create would
+    /// be taken for a dependency of a table created later under the same name and UUID with another
+    /// collection (`CREATE TABLE ... UUID`), refusing `DROP NAMED COLLECTION` of the old collection while
+    /// no metadata references it any more. The `DDLGuard` of the table name is held by this query, so the
+    /// entries recorded under the exact name and UUID are its own. A failed `ATTACH` of a detached table
+    /// keeps its detached entry, which is not touched here and keeps refusing the drop.
+    bool committed = false;
+    const StorageID created_table_id{create.getDatabase(), create.getTable(), create.uuid};
+    SCOPE_EXIT({
+        if (!committed)
+            NamedCollectionFactory::instance().removeDependenciesOfFailedCreate(created_table_id);
+    });
+
     bool only_replicated_engine_allowed = isOnlyReplicatedEngineAllowed(create, database, getContext());
 
     StoragePtr res;
@@ -2950,8 +3001,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// The table is permanent, so it must hold its named collection (if any) the same way a table
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
+        /// The table function looked the collection up without registering a dependency, so a concurrent
+        /// `DROP NAMED COLLECTION` may have removed it since then. Re-check its existence atomically with
+        /// the registration (under the same mutex as the final check of the drop): otherwise the create
+        /// could commit metadata that references a collection which no longer exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
-            NamedCollectionFactory::instance().addDependency(collection_name, res->getStorageID());
+            NamedCollectionFactory::instance().getAndAddDependency(collection_name, /*throw_unknown_collection=*/ true, res->getStorageID());
+        /// A nested table function target, e.g. `remote('addr', url(nc, ...))`, is persisted along with
+        /// the outer function and can reference collections of its own.
+        if (const auto * table_function_node = table_function_ast->as<ASTFunction>())
+            addNestedTableFunctionNamedCollectionDependencies(table_function_node->arguments, res->getStorageID());
     }
     else
     {
@@ -3007,13 +3066,34 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
+    /// Between the construction of the storage above and the commit below the table is not in the
+    /// catalog yet, while its side effects (e.g. the named collection dependencies registered when
+    /// the engine arguments were resolved) are already visible; the `DDLGuard` held by this query is
+    /// what makes the window invisible to the queries that synchronize on it. The pause lets tests
+    /// keep a create in this window. Internal creates (e.g. of the system log tables) are exempt:
+    /// they may run at any moment and would consume the failpoint behind the test's back.
+    if (!internal)
+        FailPointInjection::pauseFailPoint(FailPoints::create_table_pause_before_commit);
+
     /// rename() requires the exclusive lock, and createTable() makes the table visible to other queries.
     TableExclusiveLockHolder attach_from_lock;
     if (from_path)
         attach_from_lock
             = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    database->createTable(getContext(), create.getTable(), res, query_ptr);
+    try
+    {
+        database->createTable(getContext(), create.getTable(), res, query_ptr);
+    }
+    catch (...)
+    {
+        /// An exception does not prove that the table was not published: e.g. `DatabaseOnDisk::createTable`
+        /// commits the table and only then removes the permanent-detach flag, which can throw. A table that
+        /// is in the database keeps its metadata, so it must keep its named collection dependencies.
+        committed = database->isTableExist(create.getTable(), getContext());
+        throw;
+    }
+    committed = true;
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
