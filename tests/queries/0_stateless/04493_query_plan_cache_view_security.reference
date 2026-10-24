@@ -19,3 +19,24 @@
 1	10
 2	20
 -- hits (still not cached): 0
+-- 3. SQL SECURITY DEFINER view: correct result, never cached
+1	10
+2	20
+-- hits: 0
+1	10
+2	20
+-- hits (still a miss, not cached): 0
+-- 3b. INVOKER view: miss then hit
+1	10
+2	20
+-- hits: 0
+1	10
+2	20
+-- hits: 1
+-- 3c. MODIFY SQL SECURITY DEFINER invalidates the entry; query is no longer cached
+1	10
+2	20
+-- hits: 0
+1	10
+2	20
+-- hits (still not cached): 0

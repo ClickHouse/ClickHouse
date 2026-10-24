@@ -7,6 +7,8 @@
 #   2. Changing a view from `INVOKER` to `SQL SECURITY NONE` must invalidate a cached entry (the
 #      SQL security type is part of the dependency fingerprint and is re-checked on validation),
 #      after which the query is no longer cached.
+#   3. The same holds for `SQL SECURITY DEFINER`: a query over a `DEFINER` view is never cached, and
+#      changing a view from `INVOKER` to `DEFINER` invalidates a cached entry.
 # The plan cache is a single, server-wide cache inspected via SYSTEM DROP QUERY PLAN CACHE and
 # exact `QueryPlanCacheHits`, so this test runs in isolation (see 04489 for the tag rationale).
 
@@ -20,10 +22,14 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_base;
     DROP VIEW IF EXISTS v_none;
     DROP VIEW IF EXISTS v_inv;
+    DROP VIEW IF EXISTS v_def;
+    DROP VIEW IF EXISTS v_alt;
     CREATE TABLE t_base (id UInt64, x UInt64) ENGINE = MergeTree ORDER BY id;
     INSERT INTO t_base VALUES (1, 10), (2, 20);
     CREATE VIEW v_none SQL SECURITY NONE AS SELECT id, x FROM t_base;
     CREATE VIEW v_inv AS SELECT id, x FROM t_base;
+    CREATE VIEW v_def DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id, x FROM t_base;
+    CREATE VIEW v_alt SQL SECURITY INVOKER AS SELECT id, x FROM t_base;
 "
 
 run()
@@ -66,8 +72,29 @@ echo "-- hits: $(hits_of 'SELECT id, x FROM v_inv')"
 run "SELECT id, x FROM v_inv ORDER BY id"
 echo "-- hits (still not cached): $(hits_of 'SELECT id, x FROM v_inv')"
 
+echo "-- 3. SQL SECURITY DEFINER view: correct result, never cached"
+run "SELECT id, x FROM v_def ORDER BY id"
+echo "-- hits: $(hits_of 'SELECT id, x FROM v_def')"
+run "SELECT id, x FROM v_def ORDER BY id"
+echo "-- hits (still a miss, not cached): $(hits_of 'SELECT id, x FROM v_def')"
+
+echo "-- 3b. INVOKER view: miss then hit"
+run "SELECT id, x FROM v_alt ORDER BY id"
+echo "-- hits: $(hits_of 'SELECT id, x FROM v_alt')"
+run "SELECT id, x FROM v_alt ORDER BY id"
+echo "-- hits: $(hits_of 'SELECT id, x FROM v_alt')"
+
+echo "-- 3c. MODIFY SQL SECURITY DEFINER invalidates the entry; query is no longer cached"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE v_alt MODIFY DEFINER = CURRENT_USER SQL SECURITY DEFINER"
+run "SELECT id, x FROM v_alt ORDER BY id"
+echo "-- hits: $(hits_of 'SELECT id, x FROM v_alt')"
+run "SELECT id, x FROM v_alt ORDER BY id"
+echo "-- hits (still not cached): $(hits_of 'SELECT id, x FROM v_alt')"
+
 $CLICKHOUSE_CLIENT --query "
     DROP VIEW v_none;
     DROP VIEW v_inv;
+    DROP VIEW v_def;
+    DROP VIEW v_alt;
     DROP TABLE t_base;
 "
