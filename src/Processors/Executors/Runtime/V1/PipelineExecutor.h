@@ -57,22 +57,12 @@ private:
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
     std::unique_ptr<ThreadPool> pool;
-    std::mutex spawn_mutex;
 
     /// Pipeline's max thread count (captured from execute(num_threads)).
     size_t max_pipeline_threads = 1;
 
-    /// Current setMax target. Written by initializeExecution before any worker thread exists,
-    /// then read and updated only under `spawn_mutex` from the upscaling block. Non-atomic
-    /// because all mutations are serialized by spawn_mutex and initial write happens-before
-    /// any spawned worker via the ThreadPool barrier in initializeExecution.
-    size_t desired_threads = 1;
-
-    /// Accumulates spawn_count from pushTasks calls that couldn't acquire `spawn_mutex`
-    /// (another thread was already handling the spawn). The thread that owns the mutex
-    /// drains this counter before deciding the new setMax target, so no demand is ever
-    /// silently dropped.
-    std::atomic<size_t> pending_demand{0};
+    /// Current `setMax` target. Only grows, see `growDesiredThreads`.
+    std::atomic<size_t> desired_threads = 1;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -106,7 +96,11 @@ private:
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
-    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
+    /// Raise the `setMax` target by `threads`, up to `max_pipeline_threads`.
+    void growDesiredThreads(size_t threads);
+    /// Start a thread for `slot` (if any) and for every other granted slot, until `tasks` has no capacity left.
+    /// Lock-free: any thread calls it after a task while `tasks` has requested threads.
+    void spawnThreads(AcquiredSlotPtr slot);
 };
 
 }
