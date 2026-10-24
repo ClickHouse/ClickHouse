@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS t_size_substreams_nested;
 CREATE TABLE t_size_substreams
 (
     s String,               -- jittered sizes 10..49 -> `.size` goes T64
-    e String CODEC(ZSTD(1)) -- explicit codec -> `.size` stays generic-only ZSTD
+    e String CODEC(ZSTD(1)) -- explicit codec -> not adaptive, `.size` gets `string_size_stream_codec` (T64) before ZSTD
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1, default_compression_codec = 'LZ4';

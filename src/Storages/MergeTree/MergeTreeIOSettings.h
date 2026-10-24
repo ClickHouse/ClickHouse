@@ -214,6 +214,7 @@ struct MergeTreeWriterSettings
     size_t adaptive_write_buffer_initial_size{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
+    MergeTreeStringSizeStreamCodec string_size_stream_codec = MergeTreeStringSizeStreamCodec::NONE;
 };
 
 }

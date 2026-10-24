@@ -528,6 +528,12 @@ IMPLEMENT_SETTING_ENUM(
      {"pfor", TextIndexPostingListCodec::PFor}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeStringSizeStreamCodec,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"NONE", MergeTreeStringSizeStreamCodec::NONE},
+     {"T64", MergeTreeStringSizeStreamCodec::T64}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},
