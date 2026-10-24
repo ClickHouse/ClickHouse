@@ -7265,7 +7265,10 @@ void StorageReplicatedMergeTree::alter(
         std::map<std::string, MutationCommands> unfinished_mutations;
         for (const auto & command : commands)
         {
-            if (command.isDropOrRename())
+            const bool can_change_mutation_reads = command.type == AlterCommand::ADD_COLUMN
+                || command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::MODIFY_TTL
+                || command.type == AlterCommand::ADD_INDEX || command.type == AlterCommand::ADD_PROJECTION;
+            if (command.isDropOrRename() || can_change_mutation_reads)
             {
                 if (shutdown_called || partial_shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
@@ -7278,9 +7281,13 @@ void StorageReplicatedMergeTree::alter(
                     pulled_queue = true;
                 }
 
-                checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
+                if (command.isDropOrRename())
+                    checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
             }
         }
+
+        if (pulled_queue)
+            checkAlterDoesntReorderInProgressMutationReads(commands, unfinished_mutations, *metadata_snapshot, future_metadata, query_context);
 
         /// Clear nodes from previous iteration
         alter_entry.emplace();
