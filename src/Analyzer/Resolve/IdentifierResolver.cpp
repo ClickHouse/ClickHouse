@@ -530,6 +530,23 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
 }
 
+/// A use inside a subquery of the body is a correlated reference to the value after aggregation.
+static bool isLookupInsideAggregateFunctionOfLambdaBody(
+    const IdentifierResolveScope & lambda_scope, const IdentifierResolveContext & identifier_resolve_context)
+{
+    const IdentifierResolveScope * initial_scope = identifier_resolve_context.scope_to_resolve_alias_expression
+        ? identifier_resolve_context.scope_to_resolve_alias_expression
+        : &lambda_scope;
+
+    for (const auto * scope_ptr = initial_scope; scope_ptr != &lambda_scope; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (!scope_ptr || isQueryOrUnionNode(scope_ptr->scope_node))
+            return false;
+    }
+
+    return initial_scope->isInAggregateOrGroupingFunctionScope();
+}
+
 /** Resolve identifier from expression arguments.
   *
   * Expression arguments can be initialized during lambda analysis or they could be provided externally.
@@ -547,7 +564,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   *
   * 3. If identifier is compound and identifier lookup is in expression context use `tryResolveIdentifierFromCompoundExpression`.
   */
-IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
+IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(
+    const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, const IdentifierResolveContext & identifier_resolve_context)
 {
     auto it = scope.expression_argument_name_to_node.find(identifier_lookup.identifier.getFullName());
     bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
@@ -565,7 +583,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
     if (scope.hidden_expression_arguments.contains(it->first))
         return {};
 
-    auto node_type = it->second->getNodeType();
+    QueryTreeNodePtr argument_node = it->second;
+    if (auto inside_aggregate_it = scope.expression_argument_name_to_node_inside_aggregate_function.find(it->first);
+        inside_aggregate_it != scope.expression_argument_name_to_node_inside_aggregate_function.end()
+        && isLookupInsideAggregateFunctionOfLambdaBody(scope, identifier_resolve_context))
+        argument_node = inside_aggregate_it->second();
+
+    auto node_type = argument_node->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
     if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
@@ -575,12 +599,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
-        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope))
+        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, argument_node, {}, scope))
             return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
         return {};
     }
 
-    return { .resolved_identifier = it->second, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
+    return { .resolved_identifier = argument_node, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
 }
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)

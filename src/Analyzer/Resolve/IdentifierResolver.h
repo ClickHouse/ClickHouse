@@ -142,7 +142,8 @@ public:
 
     IdentifierResolveResult tryResolveIdentifierFromExpressionArguments(
         const IdentifierLookup & identifier_lookup,
-        IdentifierResolveScope & scope);
+        IdentifierResolveScope & scope,
+        const IdentifierResolveContext & identifier_resolve_context);
 
     QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(
         const QueryTreeNodePtr & resolved_expression,

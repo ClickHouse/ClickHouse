@@ -207,6 +207,20 @@ private:
 
     QueryTreeNodePtr castNodeToType(const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & scope);
 
+    struct UnresolvedLambdaCallArguments
+    {
+        QueryTreeNodePtr arguments;
+        std::vector<size_t> expanded_node_counts;
+    };
+
+    void bindLambdaArgumentsInsideAggregateFunction(
+        IdentifierResolveScope & lambda_scope,
+        const Names & lambda_argument_names,
+        const UnresolvedLambdaCallArguments & unresolved_arguments,
+        IdentifierResolveScope & scope,
+        bool allow_table_expressions,
+        bool allow_niladic_functions);
+
     /// Resolve identifier functions
 
     IdentifierResolveResult tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
@@ -264,7 +278,8 @@ private:
         bool allow_niladic_functions = true,
         bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
+    /// `expanded_node_counts` receives the number of nodes each node of the list is expanded into, like `*`.
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, std::vector<size_t> * expanded_node_counts = nullptr);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -394,6 +409,11 @@ private:
     /// Set during early short-circuit type inference when a scalar subquery needs runtime
     /// cardinality or value information. The optimization must then fall back to normal analysis.
     bool early_short_circuit_type_inference_failed = false;
+
+    /// The query whose clauses the `REPLACE` transformers of the expressions being resolved again must not rewrite a second time.
+    const IQueryTreeNode * query_with_replace_transformer_rewrite_done = nullptr;
+
+    std::unordered_map<QueryTreeNodePtr, UnresolvedLambdaCallArguments> unresolved_lambda_call_arguments;
 
     /// True while arguments of a table function are resolved. Table functions are resolved
     /// into storages even in only-analyze mode (the storage is required to infer the query

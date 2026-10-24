@@ -19,13 +19,13 @@ public:
             alias_name_to_expressions[node_alias].push_back(node);
         }
 
-        if (const auto * function = node->as<FunctionNode>())
-        {
-            if (isAggregateOrGroupingFunction(*function))
-                ++aggregate_or_grouping_functions_counter;
-        }
+        const auto * function = node->as<FunctionNode>();
+        const bool is_counted = function && isAggregateOrGroupingFunction(*function);
+        if (is_counted)
+            ++aggregate_or_grouping_functions_counter;
 
         expressions.emplace_back(node);
+        expression_is_counted.push_back(is_counted);
     }
 
     void pop()
@@ -43,14 +43,25 @@ public:
                 alias_name_to_expressions.erase(it);
         }
 
-        if (const auto * function = top_expression->as<FunctionNode>())
-        {
-            if (isAggregateOrGroupingFunction(*function))
-                --aggregate_or_grouping_functions_counter;
-        }
+        if (expression_is_counted.back())
+            --aggregate_or_grouping_functions_counter;
 
         expressions.pop_back();
+        expression_is_counted.pop_back();
     }
+
+    /// A call of a lambda or SQL user defined function is not an aggregate function, even if its name is one.
+    void uncountTopIfAggregateOrGroupingFunction(const IQueryTreeNode * node)
+    {
+        if (expressions.empty() || expressions.back().get() != node || !expression_is_counted.back())
+            return;
+
+        expression_is_counted.back() = false;
+        --aggregate_or_grouping_functions_counter;
+    }
+
+    void enterAggregateFunctionArguments() { ++aggregate_or_grouping_functions_counter; }
+    void leaveAggregateFunctionArguments() { --aggregate_or_grouping_functions_counter; }
 
     [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
@@ -149,6 +160,8 @@ private:
     }
 
     QueryTreeNodes expressions;
+    /// Whether the expression at the same position is counted in `aggregate_or_grouping_functions_counter`.
+    std::vector<bool> expression_is_counted;
     size_t aggregate_or_grouping_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
