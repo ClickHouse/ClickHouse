@@ -1192,7 +1192,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     auto statistics_cache = getContext()->getStatisticsCache();
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context, /*require_complete_part_statistics_=*/ true);
     for (const auto & part : parts)
     {
         ProfileEvents::increment(ProfileEvents::LoadedStatistics);
