@@ -140,6 +140,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
+/// Version 21 also adds the bloom-filter settings of the preliminary `DISTINCT` (`distinct_set_limit_for_enabling_bloom_filter`,
+/// `distinct_bloom_filter_bytes`, `distinct_pass_ratio_threshold_for_disabling_bloom_filter` and
+/// `distinct_bloom_filter_max_ratio_of_set_bits`) to the `DISTINCT` step settings.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -232,6 +235,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First query-plan serialization version that knows the bloom-filter settings of the preliminary `DISTINCT`.
+/// Below it, the names are not written, because a strict named schema makes an older peer throw on an unknown
+/// name; that peer then runs its exact `DISTINCT` without the bloom filter, which gives the same result.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_DISTINCT_BLOOM_FILTER = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
