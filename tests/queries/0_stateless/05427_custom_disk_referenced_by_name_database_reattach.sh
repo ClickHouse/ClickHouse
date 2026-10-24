@@ -28,13 +28,13 @@ CREATE TABLE $db.a_defining (a Int32) ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/');
 
 CREATE TABLE $db.b_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', path = '$cache_disk/', disk = '$inner_disk');
+SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$cache_disk/', disk = '$inner_disk');
 
 CREATE TABLE $db.z_defining (a Int32) ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(name = '$inner_disk2', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk2/');
 
 CREATE TABLE $db.a_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk2', type = cache, max_size = '1Mi', path = '$cache_disk2/', disk = '$inner_disk2');
+SETTINGS disk = disk(name = '$cache_disk2', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$cache_disk2/', disk = '$inner_disk2');
 
 INSERT INTO $db.a_defining SELECT number FROM numbers(5);
 INSERT INTO $db.b_cache SELECT number FROM numbers(6);

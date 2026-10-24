@@ -39,7 +39,7 @@ $CLIENT -q "CREATE TABLE test_policy (a Int32) ENGINE = MergeTree() ORDER BY tup
     | grep -o -m1 'UNKNOWN_DISK'
 $CLIENT -q "
 CREATE TABLE test_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', path = '$cache_disk/', disk = '$disk')" 2>&1 \
+SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$cache_disk/', disk = '$disk')" 2>&1 \
     | grep -o -m1 'UNKNOWN_DISK'
 
 $CLIENT -q "SYSTEM DISABLE FAILPOINT custom_disk_registration_pause_before_release"

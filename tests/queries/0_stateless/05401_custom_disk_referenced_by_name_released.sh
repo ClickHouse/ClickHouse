@@ -27,7 +27,7 @@ SETTINGS disk = disk(name = '$disk', type = 'local_blob_storage', path = '${CLIC
 CREATE TABLE test_policy (a Int32) ENGINE = MergeTree() ORDER BY tuple() SETTINGS storage_policy = '__$disk';
 
 CREATE TABLE test_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', path = '$cache_disk/', disk = '$disk');
+SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$cache_disk/', disk = '$disk');
 
 DROP TABLE test_defining SYNC;
 SELECT 'disks after dropping the defining table', count() FROM system.disks WHERE name IN ('$disk', '$cache_disk');
@@ -49,11 +49,11 @@ DROP TABLE IF EXISTS test_wrapper SYNC;
 DROP TABLE IF EXISTS test_other_wrapper SYNC;
 
 CREATE TABLE test_wrapper (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$wrapper_disk', type = cache, max_size = '1Mi', path = '$wrapper_disk/',
+SETTINGS disk = disk(name = '$wrapper_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$wrapper_disk/',
                      disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/'));
 
 CREATE TABLE test_other_wrapper (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$wrapper_disk', type = cache, max_size = '1Mi', path = '$wrapper_disk/',
+SETTINGS disk = disk(name = '$wrapper_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$wrapper_disk/',
                      disk = disk(name = '$other_inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$other_inner_disk/')); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'disks after the rejected wrapper', count() FROM system.disks WHERE name IN ('$wrapper_disk', '$inner_disk', '$other_inner_disk');

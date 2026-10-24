@@ -22,12 +22,12 @@ DROP TABLE IF EXISTS test_cache_disk SYNC;
 DROP TABLE IF EXISTS test_other_cache_disk SYNC;
 
 CREATE TABLE test_cache_disk (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', path = '$cache_disk/',
+SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$cache_disk/',
                      disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/'));
 
 -- The same inner definition, shared by both wrappers.
 CREATE TABLE test_other_cache_disk (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$other_cache_disk', type = cache, max_size = '1Mi', path = '$other_cache_disk/',
+SETTINGS disk = disk(name = '$other_cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '$other_cache_disk/',
                      disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/'));
 
 INSERT INTO test_cache_disk SELECT number FROM numbers(5);

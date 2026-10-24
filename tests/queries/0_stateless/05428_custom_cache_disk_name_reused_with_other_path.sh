@@ -18,14 +18,14 @@ $CLIENT -q "
 DROP TABLE IF EXISTS test_cache SYNC;
 
 CREATE TABLE test_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', path = '${cache_disk}_first/',
+SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '${cache_disk}_first/',
                      disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/'));
 INSERT INTO test_cache SELECT number FROM numbers(5);
 SELECT 'rows with the first cache path', count() FROM test_cache;
 DROP TABLE test_cache SYNC;
 
 CREATE TABLE test_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', path = '${cache_disk}_second/',
+SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '${cache_disk}_second/',
                      disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/'));
 INSERT INTO test_cache SELECT number FROM numbers(6);
 SELECT 'rows with the second cache path', count() FROM test_cache;
