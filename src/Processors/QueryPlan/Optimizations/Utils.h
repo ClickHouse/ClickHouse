@@ -5,11 +5,13 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <type_traits>
+#include <unordered_set>
 
 namespace DB
 {
 
 class ActionsDAG;
+class JoinStepLogical;
 
 struct IDescriptionHolder
 {
@@ -91,10 +93,24 @@ enum class FilterResult
     const Block & input_stream_header,
     bool allow_unknown_function_arguments = false);
 
+/// Evaluate the filter on one row given the columns known in `input`. It is FALSE if one of its conjunction atoms is.
+[[nodiscard]] FilterResult evaluateFilterResult(
+    ActionsDAG::IntermediateExecutionResult & input, const ActionsDAG::Node * filter_node, bool allow_unknown_function_arguments);
+
+/// `not_null_columns` are outputs of `pre_actions_dag` known to be not NULL in every matched row,
+/// so `isNull` / `isNotNull` of them are constants there.
 [[nodiscard]] FilterResult filterResultForMatchedRows(
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
-    const String & filter_column_name);
+    const String & filter_column_name,
+    const NameSet & not_null_columns = {});
+
+/// `Nullable` inputs of the expression `root` which make it NULL when they are NULL.
+[[nodiscard]] std::unordered_set<const ActionsDAG::Node *> collectNullPropagatingInputs(const ActionsDAG::Node * root);
+
+/// Collect the input columns of `join` which cannot be NULL in a row the join keeps for the side that discards
+/// its unmatched rows, because a null-rejecting condition of the `ON` clause would not hold for a NULL there.
+void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right);
 
 struct NoOp
 {

@@ -8043,7 +8043,8 @@ Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replaci
 )", 0, \
         {"26.8", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."}) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
-Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
+Allow to convert `ANY JOIN` to `SEMI` or `ANTI JOIN` if filter after `JOIN` always evaluates to false for not-matched or matched rows.
+`ALL JOIN` is converted to `ANTI JOIN` if the filter always evaluates to false for matched rows, as in `t1 LEFT JOIN t2 ON t1.key = t2.key WHERE t2.key IS NULL`.
 )", 0, \
         {"25.9", true, true, "New setting."}) \
     DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
