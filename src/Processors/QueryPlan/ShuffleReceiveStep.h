@@ -15,6 +15,8 @@ public:
         , exchange_id(exchange_id_)
         , source_shards(source_shards_)
     {
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
     String getName() const override { return "ShuffleReceive"; }

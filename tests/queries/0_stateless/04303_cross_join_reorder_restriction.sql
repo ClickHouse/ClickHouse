@@ -5,8 +5,6 @@
 -- fallback "join two smallest components" step selected a pair the (bogus) restriction forbade.
 -- A CROSS join imposes no reordering constraint, so the query must just run.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t04303;
 CREATE TABLE t04303 (minute DateTime, value Float64) ENGINE = MergeTree ORDER BY minute;
 INSERT INTO t04303 VALUES ('2025-05-04 10:00:02', 1.0);
