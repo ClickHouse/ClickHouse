@@ -7,14 +7,28 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+}
+
 namespace
 {
+
+bool isFoldableIf(const QueryTreeNodePtr & node)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    return function_node && (function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf")
+        && function_node->getArguments().getNodes().size() == 3;
+}
 
 /// The planner tells GROUP BY keys apart by expression and by column source, not by the aliases in the expression.
 /// A column is named after the unique alias of its source instead, so that comparing keys does not compare sources.
@@ -55,12 +69,25 @@ class IfConstantConditionVisitor : public InDepthQueryTreeVisitorWithContext<IfC
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>;
-    using Base::Base;
+
+    explicit IfConstantConditionVisitor(ContextPtr context)
+        : Base(std::move(context))
+    {
+        query_folding.emplace_back();
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (const auto * query_node = node->as<QueryNode>())
-            skip_query_folding.push_back(ifConstantConditionFoldingMergesGroupingKeys(*query_node, getContext()));
+        const auto * query_node = node->as<QueryNode>();
+        if (!query_node)
+            return;
+
+        QueryFolding folding;
+        folding.skip = ifConstantConditionFoldingMergesGroupingKeys(*query_node, getContext());
+        if (!folding.skip && getSettings()[Setting::group_by_use_nulls]
+            && (query_node->isGroupByWithRollup() || query_node->isGroupByWithCube() || query_node->isGroupByWithGroupingSets()))
+            folding.nullable_keys = collectGroupByKeyNodesAfterAggregation(*query_node, isFoldableIf);
+        query_folding.push_back(std::move(folding));
     }
 
     /// After the arguments, so that a chain collapses in one visit and visiting a shared node again is a no-op.
@@ -68,20 +95,18 @@ public:
     {
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
         {
-            skip_query_folding.pop_back();
+            query_folding.pop_back();
             return;
         }
 
-        if (!skip_query_folding.empty() && skip_query_folding.back())
+        const auto & folding = query_folding.back();
+        if (folding.skip)
+            return;
+
+        if (!isFoldableIf(node))
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
-            return;
-
-        if (function_node->getArguments().getNodes().size() != 3)
-            return;
-
         auto & first_argument = function_node->getArguments().getNodes()[0];
         const auto * first_argument_constant_node = first_argument->as<ConstantNode>();
         if (!first_argument_constant_node)
@@ -104,6 +129,11 @@ public:
         else
             argument_node = function_node->getArguments().getNodes()[2];
 
+        /// After aggregation the planner finds a `Nullable` ROLLUP, CUBE or GROUPING SETS key by name, both for the key's copies
+        /// and for equal constants, so such a key does not become a constant.
+        if (argument_node->getNodeType() == QueryTreeNodeType::CONSTANT && folding.nullable_keys.contains(node))
+            return;
+
         if (node->getResultType()->equals(*argument_node->getResultType()))
         {
             node = argument_node;
@@ -123,8 +153,15 @@ public:
     }
 
 private:
-    /// Whether folding is skipped in the expressions of each enclosing query; nested queries decide for themselves.
-    std::vector<bool> skip_query_folding;
+    struct QueryFolding
+    {
+        bool skip = false;
+        std::unordered_set<QueryTreeNodePtr> nullable_keys;
+    };
+
+    /// For each enclosing query, whether folding is skipped in its expressions and its `group_by_use_nulls` keys that are
+    /// `if` or `multiIf`; nested queries decide for themselves. The first entry is for an expression outside of any query.
+    std::vector<QueryFolding> query_folding;
 };
 
 }
