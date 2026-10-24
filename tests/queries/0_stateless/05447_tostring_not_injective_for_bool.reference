@@ -1,0 +1,24 @@
+saf bytes	[0,1,2]
+saf not in	2	2
+saf not has	2	2
+saf in	1	1
+saf group by	2
+saf uniq	2
+saf limit by	2
+saf concat	2
+saf max not in	2
+saf skip index not in	2
+saf partition key not in	2
+bool bytes	[0,1,2]
+bool group by	2
+bool uniq	2
+bool key not in	2
+saf nullable bytes	[0,1,2]
+saf nullable group by	2
+saf array bytes	[[0],[1],[2]]
+saf array group by	2
+array saf bytes	[[0],[1],[2]]
+array saf not in	2
+uint8 key	1
+saf uint8 key	1
+bool key	2
