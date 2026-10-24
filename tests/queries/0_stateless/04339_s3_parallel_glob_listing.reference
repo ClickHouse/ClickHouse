@@ -1,0 +1,5 @@
+year=*/month=*/data.csv match=1 rows=40 files=4
+year=2021/month=*/data.csv match=1 rows=20 files=2
+year=*/month=01/*.csv match=1 rows=25 files=3
+year=*/month=*/* match=1 rows=46 files=6
+**/data.csv match=1 rows=40 files=4
