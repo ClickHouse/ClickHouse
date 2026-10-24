@@ -191,7 +191,8 @@ private:
 
     void loadMutations();
     /// Reads a `mutation_*.txt` entry, reporting an entry that the owner of a shared directory removed meanwhile.
-    MergeTreeMutationEntry loadMutationEntry(const DiskPtr & disk, const String & file_name) const;
+    /// Returns nothing for such an entry if `skip_if_removed`.
+    std::optional<MergeTreeMutationEntry> loadMutationEntry(const DiskPtr & disk, const String & file_name, bool skip_if_removed) const;
     /// Removes the mutation entries and the deduplication log, which `dropAllData` leaves alone when the table
     /// occupies the whole disk (`table_disk`).
     void removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk) override;
