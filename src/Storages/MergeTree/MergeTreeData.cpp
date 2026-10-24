@@ -1173,7 +1173,12 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         local_context->getSettingsRef()[Setting::max_threads],
         [&](size_t part_index)
         {
-            return !parts[part_index].data_part->areStatisticsCached(required_columns_set, statistics_cache.get());
+            auto statistics = parts[part_index].data_part->tryLoadStatisticsFromCache(required_columns_set, statistics_cache.get());
+            if (!statistics)
+                return false;
+            ProfileEvents::increment(ProfileEvents::LoadedStatistics);
+            parts_statistics[part_index] = std::move(*statistics);
+            return true;
         },
         [&](size_t part_index)
         {
@@ -1194,26 +1199,38 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 void MergeTreeData::loadStatisticsOfPartsInParallel(
     size_t num_parts,
     size_t max_threads,
-    const std::function<bool(size_t)> & needs_loading,
+    const std::function<bool(size_t)> & try_load_part_from_memory,
     const std::function<void(size_t)> & load_part,
     const std::function<void(size_t)> & consume_part)
 {
-    /// The parts whose statistics are already in memory are loaded in the calling thread right before they are consumed:
-    /// that is only a copy, much cheaper than scheduling a job, so a warm query does not use the pool at all.
-    std::vector<size_t> parts_to_load;
-    if (max_threads > 1)
-    {
-        for (size_t part_index = 0; part_index < num_parts; ++part_index)
-            if (needs_loading(part_index))
-                parts_to_load.push_back(part_index);
-    }
-
-    const size_t num_threads = std::min(max_threads, parts_to_load.size());
-    if (num_threads <= 1)
+    if (max_threads <= 1)
     {
         for (size_t part_index = 0; part_index < num_parts; ++part_index)
         {
             load_part(part_index);
+            consume_part(part_index);
+        }
+        return;
+    }
+
+    /// The parts whose statistics are already in memory are loaded in the calling thread in a single pass, without
+    /// checking first whether they are in memory: that is only a copy, much cheaper than scheduling a job, so a warm
+    /// query does not use the pool at all, and it does not look up the statistics twice.
+    std::vector<size_t> parts_to_load;
+    for (size_t part_index = 0; part_index < num_parts; ++part_index)
+        if (!try_load_part_from_memory(part_index))
+            parts_to_load.push_back(part_index);
+
+    const size_t num_threads = std::min(max_threads, parts_to_load.size());
+    if (num_threads <= 1)
+    {
+        for (size_t part_index = 0, index = 0; part_index < num_parts; ++part_index)
+        {
+            if (index < parts_to_load.size() && parts_to_load[index] == part_index)
+            {
+                load_part(part_index);
+                ++index;
+            }
             consume_part(part_index);
         }
         return;
@@ -1280,8 +1297,8 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
 
         pool.wait();
 
-        /// Consume the parts in their order up to the last loaded part of the batch, loading the parts in between,
-        /// which did not need loading, in this thread.
+        /// Consume the parts in their order up to the last loaded part of the batch, together with the parts in between,
+        /// which were loaded from memory.
         const size_t batch_consumed_end = batch_end == parts_to_load.size() ? num_parts : parts_to_load[batch_end - 1] + 1;
         for (size_t index = batch_begin; consumed_end < batch_consumed_end; ++consumed_end)
         {
@@ -1291,8 +1308,6 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
                     std::rethrow_exception(exception);
                 ++index;
             }
-            else
-                load_part(consumed_end);
 
             consume_part(consumed_end);
         }

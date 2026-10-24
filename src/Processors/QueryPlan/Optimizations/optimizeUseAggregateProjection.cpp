@@ -1021,22 +1021,31 @@ static Block makeBlockWithMinMaxFromStatistics(
         return part->rows_count != 0;
     };
 
-    auto load_part_estimates = [&](size_t part_index)
+    /// Returns false only if `only_from_memory` and the estimates of the part need reads from disk.
+    auto load_part_estimates = [&](size_t part_index, bool only_from_memory)
     {
         if (!part_may_use_statistics(part_index))
-            return;
+            return true;
 
         const auto & part = parts_with_ranges[part_index].data_part;
         try
         {
             /// An empty set would mean all columns, but `count` needs no statistics.
-            parts_estimates[part_index] = required_columns.empty() ? Estimates{} : part->getEstimates(required_columns);
+            if (required_columns.empty())
+                parts_estimates[part_index] = Estimates{};
+            else if (!only_from_memory)
+                parts_estimates[part_index] = part->getEstimates(required_columns);
+            else if (auto estimates = part->tryGetEstimatesFromMemory(required_columns))
+                parts_estimates[part_index] = std::move(*estimates);
+            else
+                return false;
         }
         catch (const Exception &)
         {
             tryLogCurrentException(logger, fmt::format(
                 "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
         }
+        return true;
     };
 
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, const Estimates & estimates)
@@ -1110,11 +1119,8 @@ static Block makeBlockWithMinMaxFromStatistics(
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts_with_ranges.size(),
         required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
-        [&](size_t part_index)
-        {
-            return part_may_use_statistics(part_index) && !parts_with_ranges[part_index].data_part->areEstimatesCached(required_columns);
-        },
-        load_part_estimates,
+        [&](size_t part_index) { return load_part_estimates(part_index, /* only_from_memory = */ true); },
+        [&](size_t part_index) { load_part_estimates(part_index, /* only_from_memory = */ false); },
         consume_part_estimates);
     parts_with_ranges = std::move(parts_to_read);
 

@@ -1598,6 +1598,16 @@ String IMergeTreeDataPart::getPathForCacheKey() const
 
 Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
 {
+    return *getEstimatesImpl(required_columns, /* only_from_memory = */ false);
+}
+
+std::optional<Estimates> IMergeTreeDataPart::tryGetEstimatesFromMemory(const NameSet & required_columns) const
+{
+    return getEstimatesImpl(required_columns, /* only_from_memory = */ true);
+}
+
+std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(const NameSet & required_columns, bool only_from_memory) const
+{
     std::lock_guard lock(estimates_mutex);
 
     if (estimates_complete)
@@ -1616,7 +1626,19 @@ Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) con
     /// The statistics themselves are owned by the statistics cache; only the estimates map is
     /// kept on the part (until reload), so build it in the dedicated arena, like the rest of the
     /// part's metadata.
-    auto statistics = loadStatistics(columns_to_load, storage.getContext()->getStatisticsCache().get());
+    auto statistics_cache = storage.getContext()->getStatisticsCache();
+    ColumnsStatistics statistics;
+    if (only_from_memory)
+    {
+        auto cached_statistics = tryLoadStatisticsFromCache(columns_to_load, statistics_cache.get());
+        if (!cached_statistics)
+            return std::nullopt;
+        statistics = std::move(*cached_statistics);
+    }
+    else
+    {
+        statistics = loadStatistics(columns_to_load, statistics_cache.get());
+    }
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -1636,46 +1658,32 @@ Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) con
     return estimates;
 }
 
-bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const
+std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const
 {
     if (!cache || cleared_data_in_caches)
-        return false;
+        return std::nullopt;
 
-    /// The index of the packed archive is read from disk on first access, so the statistics are not cached until it is read.
+    /// The index of the packed archive is read from disk on first access, so the statistics are not in memory until it is read.
     const PackedFilesReader * packed_reader = nullptr;
     if (checksums.has(String(ColumnsStatistics::FILENAME)))
     {
         std::lock_guard lock(statistics_reader_mutex);
         if (!statistics_reader)
-            return false;
+            return std::nullopt;
         packed_reader = statistics_reader.get();
     }
 
     const String part_path = getPathForCacheKey();
+    ColumnsStatistics result;
     for (const auto & [filename, column_desc] : getStatisticsFilesToLoad(required_columns, packed_reader))
-        if (!cache->contains(StatisticsCache::hash(part_path, column_desc->name)))
-            return false;
-    return true;
-}
-
-bool IMergeTreeDataPart::areEstimatesCached(const NameSet & required_columns) const
-{
-    NameSet columns_to_load;
     {
-        std::lock_guard lock(estimates_mutex);
-
-        if (estimates_complete)
-            return true;
-
-        for (const auto & column_name : required_columns)
-            if (!estimates_loaded_columns.contains(column_name))
-                columns_to_load.insert(column_name);
-
-        if (!required_columns.empty() && columns_to_load.empty())
-            return true;
+        auto cell = cache->get(StatisticsCache::hash(part_path, column_desc->name));
+        if (!cell)
+            return std::nullopt;
+        if (cell->stats)
+            result.emplace(column_desc->name, cell->stats);
     }
-
-    return areStatisticsCached(columns_to_load, storage.getContext()->getStatisticsCache().get());
+    return result;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)

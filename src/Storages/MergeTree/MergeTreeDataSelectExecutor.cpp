@@ -872,7 +872,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         settings[Setting::max_threads],
         [&](size_t part_index)
         {
-            return !parts[part_index].data_part->areEstimatesCached(required_columns);
+            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
+            if (!estimates)
+                return false;
+            parts_estimates[part_index] = std::move(*estimates);
+            return true;
         },
         [&](size_t part_index)
         {

@@ -266,11 +266,11 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
-    /// Whether `loadStatistics(required_columns, cache)` would read nothing from disk, because every statistics
-    /// file it would read is in the cache. It is a cheap hint: an entry may be evicted right after the check.
-    bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
-    /// Whether `getEstimates(required_columns)` would read nothing from disk. It is a cheap hint as well.
-    bool areEstimatesCached(const NameSet & required_columns) const;
+    /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
+    /// otherwise `std::nullopt`. It never reads from disk.
+    std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
+    /// The result of `getEstimates(required_columns)` if it needs nothing read from disk, otherwise `std::nullopt`.
+    std::optional<Estimates> tryGetEstimatesFromMemory(const NameSet & required_columns) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -1027,12 +1027,15 @@ private:
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
 
-    /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
-    /// statistics file separately instead of in the packed archive.
     /// The statistics files that `loadStatistics(required_columns)` reads, with the columns they belong to.
     std::vector<std::pair<String, const ColumnDescription *>> getStatisticsFilesToLoad(
         const NameSet & required_columns, const PackedFilesReader * packed_reader) const;
 
+    /// `getEstimates`, or `tryGetEstimatesFromMemory` if `only_from_memory`.
+    std::optional<Estimates> getEstimatesImpl(const NameSet & required_columns, bool only_from_memory) const;
+
+    /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
+    /// statistics file separately instead of in the packed archive.
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
         const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
