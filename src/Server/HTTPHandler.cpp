@@ -60,6 +60,9 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
 #include <Poco/Net/HTTPMessage.h>
+#include <Poco/Net/MessageHeader.h>
+#include <Poco/Net/NameValueCollection.h>
+#include <Poco/String.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
@@ -125,6 +128,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
+    extern const int UNSUPPORTED_MEDIA_TYPE;
 }
 
 namespace FailPoints
@@ -145,7 +149,7 @@ bool requestDeclaresFormBody(const HTTPServerRequest & request)
         || startsWith(content_type, "multipart/form-data");
 }
 
-void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config, bool allow_content_type = false)
 {
     if (!config.has("http_options_response"))
         return;
@@ -160,18 +164,26 @@ void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::U
             if (config.getString("http_options_response." + config_key + ".name", "").empty())
                 LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
             else
-                response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                             config.getString("http_options_response." + config_key + ".value", ""));
+            {
+                const String name = config.getString("http_options_response." + config_key + ".name", "");
+                String value = config.getString("http_options_response." + config_key + ".value", "");
+                if (allow_content_type && boost::iequals(name, "Access-Control-Allow-Headers") && value != "*"
+                    && !boost::icontains(value, "content-type"))
+                    value += value.empty() ? "Content-Type" : ", Content-Type";
+                response.add(name, value);
+            }
 
         }
     }
 }
 
 /// Process options request. Useful for CORS.
-void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+void processOptionsRequest(const HTTPServerRequest & request, HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     /// Add extra response headers (e.g. for CORS) when an `http_options_response` section is configured.
-    addHTTPOptionHeadersFromConfig(response, config);
+    /// `QUERY` requires `Content-Type`, and `application/sql` is not CORS-safelisted, so allow the header for `QUERY` only.
+    const bool is_query_method_preflight = request.get("Access-Control-Request-Method", "") == HTTPRequest::HTTP_QUERY;
+    addHTTPOptionHeadersFromConfig(response, config, is_query_method_preflight);
 
     /// Always answer an OPTIONS request, even when there is nothing to add from the config. Otherwise the
     /// connection is closed without any HTTP response and the client sees an empty reply. The default
@@ -1583,7 +1595,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     {
         if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
         {
-            processOptionsRequest(response, server.config());
+            processOptionsRequest(request, response, server.config());
             return;
         }
 
@@ -1652,16 +1664,30 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// misread as the next request on the connection (pinned by 04826_handler_lengthless_body_keep_alive).
         const auto & method = request.getMethod();
         const bool is_body_carrying_method
-            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_QUERY
+            || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
         const bool body_may_be_consumed = body_contract_known
             ? (consumes_request_body || requestDeclaresFormBody(request))
-            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+            : (method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_QUERY || requestDeclaresFormBody(request));
         const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
         if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
                             "is no Content-Length header for a {} request", method);
+        }
+
+        /// RFC 10008, section 2.1: the media type of `QUERY` content is mandatory and must not be inferred from the content.
+        if (method == HTTPRequest::HTTP_QUERY)
+        {
+            std::string media_type;
+            Poco::Net::NameValueCollection media_type_params;
+            Poco::Net::MessageHeader::splitParameters(request.getContentType(), media_type, media_type_params);
+            media_type = Poco::toLower(media_type);
+            if (media_type.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "A QUERY request must have a Content-Type header");
+            if (!supportsQueryMethodMediaType(media_type))
+                throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE, "Unsupported Content-Type '{}' for a QUERY request", media_type);
         }
 
         processQuery(request, params, response, used_output, query_scope, write_event);
@@ -1735,6 +1761,11 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
     }
 
     return false;
+}
+
+bool DynamicQueryHandler::supportsQueryMethodMediaType(const std::string & media_type) const
+{
+    return media_type == "application/sql" || media_type == "text/plain" || media_type == "multipart/form-data";
 }
 
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
@@ -1905,8 +1936,8 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
         const bool wants_form_body_params = std::any_of(
             receive_params.begin(), receive_params.end(), [](const String & name) { return name != "_request_body"; });
         const auto & method = request.getMethod();
-        const bool body_carrying_method
-            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        const bool body_carrying_method = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_QUERY
+            || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
         if (wants_form_body_params && body_carrying_method)
         {
             if (wants_request_body)

@@ -626,6 +626,8 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         http_method = ClientInfo::HTTPMethod::DELETE;
     else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
         http_method = ClientInfo::HTTPMethod::HEAD;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_QUERY)
+        http_method = ClientInfo::HTTPMethod::QUERY;
 
     http_user_agent = request.get("User-Agent", "");
     http_referer = request.get("Referer", "");
@@ -659,6 +661,8 @@ String toString(ClientInfo::HTTPMethod method)
             return "DELETE";
         case ClientInfo::HTTPMethod::HEAD:
             return "HEAD";
+        case ClientInfo::HTTPMethod::QUERY:
+            return "QUERY";
     }
 }
 
@@ -718,6 +722,7 @@ constexpr std::array http_method_names
     std::pair{std::string_view{"PUT"}, ClientInfo::HTTPMethod::PUT},
     std::pair{std::string_view{"DELETE"}, ClientInfo::HTTPMethod::DELETE},
     std::pair{std::string_view{"HEAD"}, ClientInfo::HTTPMethod::HEAD},
+    std::pair{std::string_view{"QUERY"}, ClientInfo::HTTPMethod::QUERY},
 };
 
 /// Assert that the mapping covers the enum rather than that it has some size: a count is satisfiable by editing the count.

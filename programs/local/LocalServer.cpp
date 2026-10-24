@@ -2082,7 +2082,7 @@ void LocalServer::processConfig()
         {
             {"Access-Control-Allow-Origin", "*"},
             {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
-            {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
+            {"Access-Control-Allow-Methods", "POST, GET, QUERY, OPTIONS"},
             {"Access-Control-Max-Age", "86400"},
         };
 
