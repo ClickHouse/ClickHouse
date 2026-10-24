@@ -392,7 +392,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
                 if constexpr (throw_exception)
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
                 else
-                    return ReturnType(true);
+                    return ReturnType(false);
             }
         }
 
@@ -412,7 +412,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
             else
-                return ReturnType(true);
+                return ReturnType(false);
         }
 
         result = static_cast<CastTo>(whole);
