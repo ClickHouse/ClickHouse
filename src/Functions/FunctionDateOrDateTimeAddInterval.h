@@ -96,7 +96,7 @@ struct AddNanosecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -144,7 +144,7 @@ struct AddMicrosecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -192,7 +192,7 @@ struct AddMillisecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -241,7 +241,7 @@ struct AddSecondsImpl
     {
         return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta));
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -290,7 +290,7 @@ struct AddMinutesImpl
     {
         return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 60);
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -339,7 +339,7 @@ struct AddHoursImpl
     {
         return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 3600);
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -437,7 +437,7 @@ struct AddDaysImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -546,7 +546,7 @@ struct AddWeeksImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -591,7 +591,7 @@ struct AddMonthsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -636,7 +636,7 @@ struct AddQuartersImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
@@ -681,7 +681,7 @@ struct AddYearsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
     }
-    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
         DateTime64 t;
