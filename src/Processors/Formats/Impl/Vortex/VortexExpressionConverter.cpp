@@ -280,8 +280,15 @@ bool VortexExpressionConverter::conversionPreservesNulls(const DataTypePtr & cmp
 }
 
 VortexExpressionPtr VortexExpressionConverter::makeLiteral(
-    const arrow::DataType & file_type, const DataTypePtr & cmp_type, const Field & value, const DataTypePtr & value_type) const
+    const arrow::DataType & file_type,
+    const DataTypePtr & cmp_type,
+    const Field & value,
+    const DataTypePtr & value_type,
+    bool * is_float_zero) const
 {
+    if (is_float_zero)
+        *is_float_zero = false;
+
     /// A comparison with NULL matches nothing; there is no literal to build.
     if (value.isNull())
         return nullptr;
@@ -338,6 +345,12 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
         Float64 float_value = converted.safeGet<Float64>();
         if (!std::isfinite(float_value))
             return nullptr;
+        if (float_value == 0)
+        {
+            float_value = 0.0;
+            if (is_float_zero)
+                *is_float_zero = true;
+        }
         return VortexExpressionPtr(vortex_ffi_expr_literal_float(ptype, float_value));
     };
 
@@ -418,6 +431,51 @@ VortexExpressionPtr VortexExpressionConverter::makeLiteral(
         case arrow::Type::BINARY_VIEW: return make_string(/* is_utf8 */ false);
         default: return nullptr;
     }
+}
+
+VortexExpressionPtr VortexExpressionConverter::makeFloatComparison(
+    const ResolvedColumn & column,
+    FFI_VortexComparisonOperator op,
+    VortexExpressionPtr literal,
+    bool literal_is_zero,
+    bool allow_widening) const
+{
+    const bool is_range = op != FFI_VortexComparisonOperator::Eq && op != FFI_VortexComparisonOperator::NotEq;
+    if (is_range && !allow_widening)
+        return nullptr;
+
+    if (!literal_is_zero)
+        return VortexExpressionPtr(vortex_ffi_expr_compare(op, column.expr.get(), literal.get()));
+
+    const auto ptype = column.field->type()->id() == arrow::Type::FLOAT ? FFI_VortexPrimitiveType::F32 : FFI_VortexPrimitiveType::F64;
+    VortexExpressionPtr negative_zero(vortex_ffi_expr_literal_float(ptype, -0.0));
+    if (!negative_zero)
+        return nullptr;
+
+    switch (op)
+    {
+        /// `literal` is `+0.0`: in the total order `x < +0.0` and `x <= +0.0` hold for both zeros.
+        case FFI_VortexComparisonOperator::Lt:
+        case FFI_VortexComparisonOperator::Lte:
+            return VortexExpressionPtr(vortex_ffi_expr_compare(op, column.expr.get(), literal.get()));
+        /// And `x > -0.0` and `x >= -0.0` hold for both zeros.
+        case FFI_VortexComparisonOperator::Gt:
+        case FFI_VortexComparisonOperator::Gte:
+            return VortexExpressionPtr(vortex_ffi_expr_compare(op, column.expr.get(), negative_zero.get()));
+        case FFI_VortexComparisonOperator::Eq:
+        case FFI_VortexComparisonOperator::NotEq: {
+            VortexExpressionPtr equals_positive(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column.expr.get(), literal.get()));
+            VortexExpressionPtr equals_negative(
+                vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column.expr.get(), negative_zero.get()));
+            if (!equals_positive || !equals_negative)
+                return nullptr;
+            VortexExpressionPtr equals_zero(vortex_ffi_expr_or(equals_positive.get(), equals_negative.get()));
+            if (!equals_zero || op == FFI_VortexComparisonOperator::Eq)
+                return equals_zero;
+            return VortexExpressionPtr(vortex_ffi_expr_not(equals_zero.get()));
+        }
+    }
+    return nullptr;
 }
 
 VortexExpressionPtr
@@ -564,9 +622,13 @@ VortexExpressionPtr VortexExpressionConverter::convertComparison(const RPNBuilde
         value_type = column->cmp_type;
     }
 
-    auto literal = makeLiteral(*column->field->type(), column->cmp_type, value, value_type);
+    bool literal_is_float_zero = false;
+    auto literal = makeLiteral(*column->field->type(), column->cmp_type, value, value_type, &literal_is_float_zero);
     if (!literal)
         return nullptr;
+
+    if (isFloat(column->cmp_type))
+        return makeFloatComparison(*column, *op, std::move(literal), literal_is_float_zero, allow_widening);
 
     return keepUndecodableRows(*column, VortexExpressionPtr(vortex_ffi_expr_compare(*op, column->expr.get(), literal.get())), allow_widening);
 }
@@ -657,10 +719,17 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
         /// either side, so it may be skipped exactly.
         if (element.isNull())
             continue;
-        auto literal = makeLiteral(*column->field->type(), column->cmp_type, element, set_types.front());
+        bool literal_is_float_zero = false;
+        auto literal = makeLiteral(*column->field->type(), column->cmp_type, element, set_types.front(), &literal_is_float_zero);
         if (!literal)
             return nullptr;
-        VortexExpressionPtr equals(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column->expr.get(), literal.get()));
+        /// Whether `-0.0` finds the key `0` depends on how the set hashes and compares its keys.
+        /// Matching both zeros keeps every row either way, but is exact neither way.
+        if (literal_is_float_zero && (negated || !allow_widening))
+            return nullptr;
+        VortexExpressionPtr equals = literal_is_float_zero
+            ? makeFloatComparison(*column, FFI_VortexComparisonOperator::Eq, std::move(literal), true, allow_widening)
+            : VortexExpressionPtr(vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Eq, column->expr.get(), literal.get()));
         if (!equals)
             return nullptr;
         if (result)

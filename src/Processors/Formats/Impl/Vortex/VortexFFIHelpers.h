@@ -25,6 +25,7 @@ class RandomAccessFile;
 struct FFI_VortexExpression;
 struct FFI_VortexReader;
 struct FFI_VortexRuntime;
+enum class FFI_VortexComparisonOperator : int32_t;
 
 namespace DB
 {

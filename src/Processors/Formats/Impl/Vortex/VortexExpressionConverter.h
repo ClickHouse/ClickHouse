@@ -99,9 +99,28 @@ private:
 
     /// Builds a literal in the file column's own type. `value` is converted into `cmp_type` first,
     /// exactly or not at all. Returns null when the value does not fit, and the atom is then not
-    /// pushed down.
-    VortexExpressionPtr
-    makeLiteral(const arrow::DataType & file_type, const DataTypePtr & cmp_type, const Field & value, const DataTypePtr & value_type) const;
+    /// pushed down. A floating-point zero always becomes `+0.0`, and `is_float_zero`, when given,
+    /// tells whether the literal is such a zero.
+    VortexExpressionPtr makeLiteral(
+        const arrow::DataType & file_type,
+        const DataTypePtr & cmp_type,
+        const Field & value,
+        const DataTypePtr & value_type,
+        bool * is_float_zero = nullptr) const;
+
+    /// Vortex compares floating-point values in their total order, and equal only when the bits
+    /// are: `-0.0` is less than `+0.0`, and `NaN` is greater (or, negative, less) than every
+    /// number. ClickHouse compares them as IEEE 754 does: the zeros are equal, and every comparison
+    /// with `NaN` but `notEquals` is false. Builds `column op literal` so that it keeps at least
+    /// every row the ClickHouse comparison keeps: an equality with zero matches both zeros, a range
+    /// bound at zero is taken on the side that includes both. A range comparison still lets `NaN`
+    /// through, which is only a widening, so it is not pushed where `allow_widening` is false.
+    VortexExpressionPtr makeFloatComparison(
+        const ResolvedColumn & column,
+        FFI_VortexComparisonOperator op,
+        VortexExpressionPtr literal,
+        bool literal_is_zero,
+        bool allow_widening) const;
 
     /// `column >= prefix AND column < firstStringThatIsGreaterThanAllStringsWithPrefix(prefix)`:
     /// exactly the strings starting with `prefix`. When the right bound does not exist or cannot
