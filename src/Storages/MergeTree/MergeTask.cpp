@@ -821,9 +821,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// stores the new values with no outstanding conversions, so a later metadata-only `MATERIALIZE TTL`
     /// could not tell that its bounds are stale. Drop the rows-TTL provenance in that case, so that the
     /// next materialization rescans the part instead of shifting the bounds.
-    if (global_ctx->metadata_snapshot->hasRowsTTL())
+    ///
+    /// This must hold even when the bounds were computed under a rows TTL other than the current one,
+    /// or when the table has no rows TTL at all any more (after `REMOVE TTL`, or a `MODIFY TTL` that was
+    /// not materialized): the saved fingerprint still describes the old expression, and a later
+    /// `MODIFY TTL` back to a shift of it would trust the bounds. The source columns of that old
+    /// expression are not known here, so every physical column of the table is checked instead.
+    if (!global_ctx->new_data_part->ttl_infos.table_ttl_expression.empty())
     {
-        const auto & rows_ttl = global_ctx->metadata_snapshot->getRowsTTL();
+        const auto & metadata_snapshot = global_ctx->metadata_snapshot;
+        const bool fingerprint_is_current = metadata_snapshot->hasRowsTTL()
+            && global_ctx->new_data_part->ttl_infos.table_ttl_expression == getRowsTTLExpressionFingerprint(metadata_snapshot->getRowsTTL());
+        const NamesAndTypesList columns_to_check = fingerprint_is_current
+            ? metadata_snapshot->getRowsTTL().expression_source_columns
+            : metadata_snapshot->getColumns().getAllPhysical();
+
         bool rows_ttl_source_may_change = false;
         for (size_t i = 0; i < global_ctx->future_part->parts.size() && !rows_ttl_source_may_change; ++i)
         {
@@ -838,7 +850,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 break;
             }
 
-            for (const auto & column : rows_ttl.expression_source_columns)
+            for (const auto & column : columns_to_check)
             {
                 auto part_column = part->tryGetColumn(column.name);
                 if (!part_column || !part_column->type->equals(*column.type))

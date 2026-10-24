@@ -2273,7 +2273,7 @@ static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
-    ExecuteTTLType execute_ttl_type,
+    bool write_ttl_infos,
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
@@ -2292,7 +2292,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out));
     }
 
-    if (execute_ttl_type != ExecuteTTLType::NONE)
+    if (write_ttl_infos)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
@@ -2587,6 +2587,8 @@ struct MutationContext
 
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    /// Write `ttl.txt` from `new_data_part->ttl_infos` even though the mutation does not execute TTL.
+    bool rewrite_ttl_infos{false};
 
     MergeTreeTransactionPtr txn;
 
@@ -3660,7 +3662,7 @@ private:
                 ctx->statistics_to_build.emplace(stat_name, it->second);
         }
 
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->new_data_part->getDataPartStorage().createDirectories();
@@ -4059,7 +4061,7 @@ private:
             ctx->source_part,
             ctx->new_data_part,
             ctx->all_gathered_data,
-            ctx->execute_ttl_type,
+            ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos,
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
@@ -5233,6 +5235,30 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+
+    /// The TTL infos were copied from the source part above and are recalculated only when the mutation
+    /// executes TTL, which `shouldExecuteTTL` decides from the CURRENT TTLs of the table. The saved rows-TTL
+    /// fingerprint may however describe another expression: the table may have no rows TTL any more (after
+    /// `REMOVE TTL`), or a different one (after a `MODIFY TTL` that was not materialized). The mutation can
+    /// then change or rename the columns that old expression reads without touching the bounds, and a later
+    /// `MODIFY TTL` back to a shift of it would trust them. The columns the old expression reads are not
+    /// known here, so drop the fingerprint of such a part whenever the mutation does not recalculate TTL,
+    /// and rewrite `ttl.txt` to persist that (it is hardlinked from the source part otherwise). The same
+    /// applies when the mutation applies patch parts: they may update the columns of the current rows TTL
+    /// as well, and leave no outstanding patches for the fast path to notice.
+    if (ctx->execute_ttl_type == ExecuteTTLType::NONE)
+    {
+        auto & ttl_infos = ctx->new_data_part->ttl_infos;
+        const bool fingerprint_is_current = ctx->metadata_snapshot->hasRowsTTL()
+            && ttl_infos.table_ttl_expression == getRowsTTLExpressionFingerprint(ctx->metadata_snapshot->getRowsTTL());
+        if (!ttl_infos.table_ttl_expression.empty() && (!fingerprint_is_current || alter_conversions->hasPatches()))
+        {
+            ttl_infos.table_ttl_expression.clear();
+            ttl_infos.table_ttl_timezone.clear();
+            ttl_infos.has_unknown_rows_ttl_provenance = true;
+            ctx->rewrite_ttl_infos = true;
+        }
+    }
 
     if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
     {
