@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();
@@ -56,7 +55,7 @@ SELECT *
 FROM tab
 FULL JOIN mem4 AS t1 ON tab.k1 = t1.k1 AND tab.k2 = t1.k2
 FULL JOIN mem4 AS t2 ON tab.k1 = t2.k1 AND tab.k2 = t2.k2
-ORDER BY tab.v, t1.k1 -- `t1.k1` orders the two rows with an empty `tab.v`, whatever order the joins run in
+ORDER BY tab.v
 ;
 
 SELECT '-----';

@@ -13,9 +13,7 @@ class MetadataStorageFromCacheObjectStorage : public IMetadataStorage
     friend class MetadataStorageFromCacheObjectStorageTransaction;
 
 public:
-    /// `object_storage_` is the object storage of the wrapped disk. It is asked whether it is read-only on every
-    /// call of `hasDeadBlobsQueue`, because its `readonly` setting may change on config reload.
-    MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_);
+    explicit MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_);
     ~MetadataStorageFromCacheObjectStorage() override = default;
 
     MetadataStoragePtr getUnderlying() const;
@@ -28,10 +26,7 @@ public:
     std::string getZooKeeperPath() const override;
 
     bool supportsEmptyFilesWithoutBlobs() const override;
-    bool supportsInlineData() const override;
-    bool appliesOperationsEagerly() const override;
     bool areBlobPathsRandom() const override;
-    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -68,24 +63,18 @@ public:
     std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     bool isReadOnly() const override;
-    bool isRemote() const override;
     bool isTransactional() const override;
     bool isPlain() const override;
     bool isWriteOnce() const override;
-    bool supportsHardLinks() const override;
     bool supportWritingWithAppend() const override;
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
     bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
-    int64_t getDeadBlobsQueueEstimate() override;
-    bool hasDeadBlobsQueue() const override;
-    void setDeadBlobsQueuedCallback(std::function<void()> callback) override;
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override;
     bool hasUnreplicatedBlobs(const Location & location_to_check) override;
-    bool hasMissingBlobsQueue() const override;
 
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override;
     void updateCacheFromSerializedDescription(const std::string & serialized_cache_update_description) override;
@@ -96,16 +85,9 @@ public:
 
 private:
     const MetadataStoragePtr underlying;
-    const ObjectStoragePtr object_storage;
 
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
-
-    /// Queues the blobs removed by a committed transaction and wakes up the blob killer.
-    void submitForRemoval(const StoredObjects & blobs);
-
-    std::mutex dead_blobs_queued_callback_mutex;
-    std::function<void()> dead_blobs_queued_callback TSA_GUARDED_BY(dead_blobs_queued_callback_mutex);
 };
 
 class MetadataStorageFromCacheObjectStorageTransaction : public IMetadataTransaction
@@ -146,10 +128,6 @@ public:
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
     void truncateFile(const std::string & path, size_t size) override;
-
-    void incrementBlobRefCount(const std::string & blob) override;
-    void decrementBlobRefCount(const std::string & blob) override;
-    void submitBlobForRemoval(const std::string & remote_path) override;
 
 private:
     const MetadataTransactionPtr underlying;

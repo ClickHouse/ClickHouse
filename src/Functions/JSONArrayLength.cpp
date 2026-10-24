@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
     /// JSONArrayLength(json)
-    class FunctionJSONArrayLength final : public IFunction
+    class FunctionJSONArrayLength : public IFunction
     {
     public:
         static constexpr auto name = "JSONArrayLength";
@@ -42,9 +42,14 @@ namespace
         size_t getNumberOfArguments() const override { return 1; }
         bool useDefaultImplementationForConstants() const override { return true; }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            return "(String) -> Nullable(UInt64)";
+            auto args = FunctionArgumentDescriptors{
+                {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            };
+
+            validateFunctionArguments(*this, arguments, args);
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

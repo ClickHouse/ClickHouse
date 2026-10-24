@@ -19,7 +19,6 @@ private:
 
 public:
     static constexpr auto name = "extractURLParameters";
-    static constexpr auto signature = "(String) -> Array(String)";
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
@@ -134,9 +133,9 @@ The values are not decoded.
 SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
         )",
         R"(
-┌─extractURLParameters('http://example.com/?param1=value1&param2=value2')─┐
-│ ['param1=value1','param2=value2']                                       │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─extractURLParame⋯&param2=value2')─┐
+│ ['param1=value1','param2=value2'] │
+└───────────────────────────────────┘
         )"
     }
     };

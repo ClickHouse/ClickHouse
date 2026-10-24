@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -25,9 +26,9 @@ def start_cluster():
 def test_check_part_with_cache(start_cluster):
     if node.is_built_with_sanitizer() or node.is_debug_build():
         pytest.skip(
-            "Skip with debug build and sanitizers. "
-            "This test manually corrupts cache which triggers LOGICAL_ERROR "
-            "and leads to crash with those builds"
+            "Skip with debug build and sanitizers. \
+            This test manually corrupts cache which triggers LOGICAL_ERROR \
+            and leads to crash with those builds"
         )
 
     node.query(
@@ -83,24 +84,17 @@ def test_check_part_with_cache(start_cluster):
         == "2\n"
     )
 
-    # Reading the truncated cache file no longer raises any error (and never a `LOGICAL_ERROR`, which
-    # previously aborted debug/sanitizer builds): the broken segment is bypassed and the read is
-    # transparently re-routed to the source, so the query still returns the correct result.
-    assert (
+    with pytest.raises(Exception):
         node.query(
             "SELECT count() FROM s3_test WHERE NOT ignore(*)",
             settings={"enable_filesystem_cache": 1},
         )
-        == "2\n"
-    )
 
     assert node.query("CHECK TABLE s3_test SETTINGS check_query_single_value_result = 1") == "1\n"
 
-    # The truncated cache file of all_1_1_0 is bypassed (not removed) by the read above and stays in
-    # place, so its cache entry is still present; CHECK TABLE reads the data from the source and reports
-    # the part as intact. The cache of the untouched part all_2_2_0 is unaffected.
+    # Check that cache is removed only for one part after CHECK TABLE
     cache_path = get_cache_path_of_data_file("all_1_1_0")
-    assert len(cache_path) > 0
+    assert len(cache_path) == 0
 
     cache_path = get_cache_path_of_data_file("all_2_2_0")
     assert len(cache_path) > 0

@@ -1,5 +1,3 @@
-SET optimize_use_projections = 1;
-
 -- Test for "Block structure mismatch in UnionStep" bug
 -- When projection optimization creates a Union between projection and non-projection reads,
 -- the branches may have different headers (e.g., due to different query DAGs being applied).
@@ -18,7 +16,6 @@ INSERT INTO t0 SELECT number FROM numbers(1);
 -- instead of crashing with "Block structure mismatch in UnionStep".
 -- Disable unused column removal as it makes using the projection possible, because it can remove
 -- all columns, making the headers empty.
--- `identity` keeps the filter from being folded away, otherwise the headers match and the projection is used.
-SELECT 1 FROM t0 WHERE identity(materialize(1)) SETTINGS force_optimize_projection = 1, query_plan_remove_unused_columns = 0; -- { serverError PROJECTION_NOT_USED }
+SELECT 1 FROM t0 WHERE materialize(1) SETTINGS force_optimize_projection = 1, query_plan_remove_unused_columns = 0; -- { serverError PROJECTION_NOT_USED }
 
 DROP TABLE t0;

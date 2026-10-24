@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -16,7 +15,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <bool is_utf8>
-class SparseGramsHashes final : public IFunction
+class SparseGramsHashes : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsHashesUTF8" : "sparseGramsHashes";
@@ -31,18 +30,12 @@ public:
     bool useDefaultImplementationForVariant() const override { return false; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<SparseGramsHashes>(); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
-        /// `SparseGramsImpl::init` reads the optional `min_ngram_length` / `max_ngram_length` /
-        /// `min_cutoff_length` arguments exactly once per block with `getUInt(0)`, so they must be
-        /// constant integers, and the body only handles a `ColumnString` input. Spell the contract
-        /// precisely instead of `(Any, ...)`, which used to accept non-`String` input and
-        /// row-varying option columns (the latter silently hashing every row with the first row's
-        /// option values). This mirrors the validation the removed `SparseGramsImpl::checkArguments`
-        /// performed via `validateFunctionArguments`.
-        return "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(UInt32)";
+        SparseGramsImpl<is_utf8>::checkArguments(*this, args);
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -115,9 +108,9 @@ Uses `CRC32` as a hash function.
         "Usage example",
         "SELECT sparseGramsHashes('alice', 3)",
         R"(
-┌─sparseGramsHashes('alice', 3)────────────────┐
-│ [3851133533,3120039944,646693941,2577359366] │
-└──────────────────────────────────────────────┘
+┌─sparseGramsHashes('alice', 3)──────────────────────┐
+│ [1481062250,2450405249,4012725991,1918774096]      │
+└────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -135,9 +128,9 @@ Uses `CRC32` as a hash function.
         "Usage example",
         "SELECT sparseGramsHashesUTF8('алиса', 3)",
         R"(
-┌─sparseGramsHashesUTF8('алиса', 3)───────────────────────┐
-│ [1328958118,547287748,4155892324,2403052185,1673399070] │
-└─────────────────────────────────────────────────────────┘
+┌─sparseGramsHashesUTF8('алиса', 3)─┐
+│ [4178533925,3855635300,561830861] │
+└───────────────────────────────────┘
         )"
     }
     };

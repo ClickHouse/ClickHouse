@@ -17,10 +17,6 @@
 #include <Poco/JSON/Parser.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
-
-#include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -50,7 +46,7 @@ public:
 
     struct ConnectionInfo
     {
-        VectorWithMemoryTracking<String> http_proxy_urls;
+        std::vector<String> http_proxy_urls;
         String oauth_token;
         String api_version = "v3";
         bool encode_utf8 = false;
@@ -68,7 +64,7 @@ public:
 
     ReadBufferPtr readTable(const String & cypress_path, const std::pair<size_t, size_t> & rows_range);
 
-    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler = nullptr);
+    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
 
     ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
 
@@ -89,7 +85,7 @@ public:
     struct SchemaDescription
     {
         bool is_strict;
-        UnorderedMapWithMemoryTracking<String, DataTypePtr> columns;
+        std::unordered_map<String, DataTypePtr> columns;
     };
 
     SchemaDescription getTableSchema(const String & cypress_path);
@@ -105,11 +101,8 @@ private:
     Poco::Dynamic::Var getMetadata(const String & path);
 
 
-    ReadBufferPtr createQueryRWBuffer(const URI & uri, const ReadWriteBufferFromHTTP::OutStreamCallback & out_callback, const std::string & http_method);
-    /// `request_throttler` (if set) is consumed once per actual HTTP attempt, i.e. also for every retry against
-    /// another http proxy, so a configured requests-per-second limit holds under proxy failover as well.
-    ReadBufferPtr executeQuery(
-        YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr, const ThrottlerPtr & request_throttler = nullptr);
+    ReadBufferPtr createQueryRWBuffer(const URI& uri,  const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method);
+    ReadBufferPtr executeQuery(YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr);
 
     URI getHeavyProxyURI(const URI& uri);
 
@@ -117,10 +110,7 @@ private:
 
     const ConnectionInfo connection_info;
     LoggerPtr log;
-    /// `CacheDictionary` can call `loadIds` / `loadKeys` concurrently on the same `YTsarususDictionarySource`,
-    /// so a single `YTsaurusClient` can be used by several threads at once. This index is only a round-robin hint
-    /// for proxy selection, but it must still be accessed atomically to avoid a data race.
-    std::atomic<size_t> recently_used_url_index = 0;
+    size_t recently_used_url_index = 0;
     constexpr static String LOCKS_STORAGE_CYPRESS_PATH = "//sys/locks";
 };
 

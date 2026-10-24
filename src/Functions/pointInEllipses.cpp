@@ -3,7 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -36,7 +35,7 @@ namespace
  * so the last success ellipse index is remembered to check this ellipse first for next point.
  *
  */
-class FunctionPointInEllipses final : public IFunction
+class FunctionPointInEllipses : public IFunction
 {
 public:
     static constexpr auto name = "pointInEllipses";
@@ -59,18 +58,6 @@ private:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
-
-    /// No declarative signature. The contract is `pointInEllipses(x, y, x1, y1, a1, b1,
-    /// ..., xN, yN, aN, bN)` — `2 + 4*N` `Float64` arguments with `N >= 1` — which the DSL
-    /// cannot express: the ellipsis repeats a unit grouped by variable index, so it cannot
-    /// repeat a fixed run of four bare `Float64`, and an Optional `[...]` group would also
-    /// permit the invalid `N == 0` case. Leave the signature empty so the
-    /// `getReturnTypeImpl(DataTypes)` override below stays authoritative on both the
-    /// column and the types-only paths.
-    String getSignatureString() const override
-    {
-        return "";
-    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -111,7 +98,7 @@ private:
     {
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
-        VectorWithMemoryTracking<Ellipse> ellipses(ellipses_count);
+        std::vector<Ellipse> ellipses(ellipses_count);
 
         for (const auto ellipse_idx : collections::range(0, ellipses_count))
         {

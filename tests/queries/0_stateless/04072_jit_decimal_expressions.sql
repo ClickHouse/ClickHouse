@@ -25,8 +25,6 @@ SELECT abs(d32), abs(d64), abs(d128) FROM test_jit_dec_expr ORDER BY d32;
 SELECT 'Test sign on Decimal types';
 SELECT sign(d32), sign(d64), sign(d128) FROM test_jit_dec_expr ORDER BY d32;
 
--- Of the conversions below only `Decimal` to float and `Decimal` to a signed integer at least as wide
--- as its storage are JIT-compiled; the rest are evaluated by the interpreter (#117442, #118958).
 SELECT 'Test Decimal to integer conversions';
 SELECT toInt32(d32), toInt64(d64), toInt64(d128) FROM test_jit_dec_expr ORDER BY d32;
 

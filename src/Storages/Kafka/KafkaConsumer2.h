@@ -74,7 +74,7 @@ public:
         CurrentOffsetsMap current_offsets;
         std::string consumer_id;
         std::string rdkafka_stat;
-        UInt64 num_messages_read{};
+        UInt64 num_messages_read;
         ExceptionsBuffer exceptions_buffer;
     };
 
@@ -109,9 +109,6 @@ public:
     inline bool hasMorePolledMessages() const { return (stalled_status == StalledStatus::NOT_STALLED) && (current != messages.end()); }
 
     inline bool isStalled() const { return stalled_status != StalledStatus::NOT_STALLED; }
-
-    /// True when the last `consume` was cut short by a stop, leaving the batch incomplete.
-    inline bool wasStoppedWhileConsuming() const { return stalled_status == StalledStatus::CONSUMER_STOPPED; }
 
     void updateOffsets(TopicPartitionOffsets && topic_partition_offsets);
 

@@ -1,6 +1,4 @@
 #include <Storages/IPartitionStrategy.h>
-#include <Formats/FormatFactory.h>
-#include <IO/CompressionMethod.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/TreeRewriter.h>
@@ -10,8 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/KeyDescription.h>
 #include <Poco/String.h>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -26,8 +22,6 @@ extern const int BAD_ARGUMENTS;
 
 namespace
 {
-    using PartitionExpressionActionsAndColumnName = IPartitionStrategy::PartitionExpressionActionsAndColumnName;
-
     /// Builds AST for hive partition path format
     ///  `partition_column_1=toString(partition_value_expr_1)/ ... /partition_column_N=toString(partition_value_expr_N)/`
     /// for given partition columns list and a partition by AST.
@@ -44,7 +38,7 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "The partition by expression has a different number of columns than what is expected by ClickHouse. "
+                    "The partition by expression has a different number of columns than what is expected by ClickHouse."
                     "This is a bug.");
             }
 
@@ -95,35 +89,6 @@ namespace
         return result;
     }
 
-    ASTPtr buildToStringPartitionAST(ASTPtr partition_by)
-    {
-        ASTs arguments(1, partition_by);
-        return makeASTFunction("toString", std::move(arguments));
-    }
-
-    template <typename BuildAST>
-    PartitionExpressionActionsAndColumnName getCachedOrBuildActions(
-        const std::optional<PartitionExpressionActionsAndColumnName> & cached_result,
-        const IPartitionStrategy & partition_strategy,
-        BuildAST && build_ast)
-    {
-        /// The cache write happens in the cacheDeterministicActions function, which is called from the constructor of the partition strategy.
-        /// If the actions are not deterministic, it will not be cached.
-        if (cached_result)
-            return *cached_result;
-
-        auto expression_ast = build_ast();
-        return partition_strategy.getPartitionExpressionActions(expression_ast);
-    }
-
-    void cacheDeterministicActions(
-        std::optional<PartitionExpressionActionsAndColumnName> & cached_result,
-        const PartitionExpressionActionsAndColumnName & actions_with_column)
-    {
-        if (!actions_with_column.actions->getActionsDAG().hasNonDeterministic())
-            cached_result = actions_with_column;
-    }
-
     std::shared_ptr<IPartitionStrategy> createHivePartitionStrategy(
         ASTPtr partition_by,
         const Block & sample_block,
@@ -131,8 +96,7 @@ namespace
         const std::string & file_format,
         bool globbed_path,
         bool contains_partition_wildcard,
-        bool partition_columns_in_data_file,
-        const std::string & compression_method)
+        bool partition_columns_in_data_file)
     {
         if (!partition_by)
         {
@@ -154,7 +118,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File format can't be empty for hive style partitioning");
         }
 
-        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context);
+        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context);
 
         for (const auto & partition_expression_column : partition_key_description.sample_block)
         {
@@ -183,8 +147,7 @@ namespace
             sample_block,
             context,
             file_format,
-            partition_columns_in_data_file,
-            compression_method);
+            partition_columns_in_data_file);
     }
 
     std::shared_ptr<IPartitionStrategy> createWildcardPartitionStrategy(
@@ -212,7 +175,7 @@ namespace
         }
 
         return std::make_shared<WildcardPartitionStrategy>(
-            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context),
+            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context),
             sample_block,
             context);
     }
@@ -234,8 +197,11 @@ const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
 }
 
 IPartitionStrategy::PartitionExpressionActionsAndColumnName
-IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast) const
+IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast)
 {
+    if (cached_result)
+        return *cached_result;
+
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, sample_block.getNamesAndTypesList());
     auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false);
 
@@ -243,6 +209,9 @@ IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast) const
     result.actions = std::make_shared<ExpressionActions>(
         std::move(actions_dag), ExpressionActionsSettings(context), false);
     result.column_name = expression_ast->getColumnName();
+
+    if (!result.actions->getActionsDAG().hasNonDeterministic())
+        cached_result = result;
 
     return result;
 }
@@ -254,8 +223,7 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                                                                  const std::string & file_format,
                                                                  bool globbed_path,
                                                                  bool contains_partition_wildcard,
-                                                                 bool partition_columns_in_data_file,
-                                                                 const std::string & compression_method)
+                                                                 bool partition_columns_in_data_file)
 {
     Block block;
     for (const auto & partition_column : partition_columns)
@@ -280,8 +248,7 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 file_format,
                 globbed_path,
                 contains_partition_wildcard,
-                partition_columns_in_data_file,
-                compression_method);
+                partition_columns_in_data_file);
         case StrategyType::NONE:
         {
             if (!partition_columns_in_data_file && strategy == PartitionStrategyFactory::StrategyType::NONE)
@@ -299,19 +266,13 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
 WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_)
 {
-    auto actions_with_column = getCachedOrBuildActions(
-        cached_result,
-        *this,
-        [&] { return buildToStringPartitionAST(partition_key_description.definition_ast); });
-    cacheDeterministicActions(cached_result, actions_with_column);
 }
 
-ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk) const
+ColumnPtr WildcardPartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
-    auto actions_with_column = getCachedOrBuildActions(
-        cached_result,
-        *this,
-        [&] { return buildToStringPartitionAST(partition_key_description.definition_ast); });
+    ASTs arguments(1, partition_key_description.definition_ast);
+    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
+    auto actions_with_column = getPartitionExpressionActions(partition_by_string);
 
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());
@@ -338,12 +299,10 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
-    bool partition_columns_in_data_file_,
-    const std::string & compression_method_)
+    bool partition_columns_in_data_file_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_),
     file_format(file_format_),
-    partition_columns_in_data_file(partition_columns_in_data_file_),
-    compression_method(compression_method_)
+    partition_columns_in_data_file(partition_columns_in_data_file_)
 {
     const auto partition_columns = getPartitionColumns();
     for (const auto & partition_column : partition_columns)
@@ -352,68 +311,11 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     }
 
     block_without_partition_columns = buildBlockWithoutPartitionColumns(sample_block, partition_columns_name_set);
-
-    auto actions_with_column = getCachedOrBuildActions(
-        cached_result,
-        *this,
-        [&] { return buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns()); });
-    cacheDeterministicActions(cached_result, actions_with_column);
 }
 
 std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
 {
-    /// Match every file extension registered for the format, not only the lowercased format
-    /// name: for most formats the name is not the extension real files carry (`JSONEachRow`
-    /// files are named `.jsonl` / `.ndjson`, `CSVWithNames` files are named `.csv`), and a
-    /// glob built from the format name alone silently matches nothing over such a lake.
-    /// The lowercased format name is always one of the registered extensions, so the files
-    /// ClickHouse itself writes (see getPathForWrite) keep matching.
-    const auto extensions = FormatFactory::instance().getFileExtensionsForFormat(file_format);
-
-    /// The glob is matched against the object key as it is stored, before anything decompresses it
-    /// (`GlobIterator` filters the listing, while the compression method is derived much later, in
-    /// `ReadBufferIterator`), so a compressed lake of `key=1/data.jsonl.gz` objects is invisible to
-    /// a glob of bare extensions. The glob has to accept exactly the names the reader would accept,
-    /// which is the rule of `chooseCompressionMethod`:
-    ///  - `auto` (the default): the file name decides, so spell out every suffix it recognizes;
-    ///  - an explicit codec: the file name is ignored, so a `gzip` lake of `data.jsonl.custom` objects
-    ///    is as readable as one of `data.jsonl.gz` objects, and anything after the format extension
-    ///    must match. The bare extension is kept too, because an explicit codec also applies to
-    ///    files named without any suffix - and that is what `getPathForWrite` produces;
-    ///  - `none`: the files carry no compression layer, so a suffix after the format extension is
-    ///    not a compression spelling to accept but foreign data (`.parquet.crc` sidecars and the
-    ///    like), and only the bare extensions match.
-    Strings alternatives = extensions;
-
-    std::string compression_hint = compression_method;
-    boost::algorithm::to_lower(compression_hint);
-
-    if (compression_hint.empty() || compression_hint == "auto")
-    {
-        for (const auto & compression_suffix : getFileSuffixesForCompressionMethodHint(compression_method))
-            for (const auto & extension : extensions)
-                alternatives.push_back(extension + "." + compression_suffix);
-    }
-    else if (compression_hint != "none")
-    {
-        /// A misspelled codec is not validated here: this runs on `ATTACH` and at server startup too,
-        /// where throwing would make existing metadata unloadable. `CREATE TABLE` rejects it in
-        /// `StorageObjectStorageConfiguration::initPartitionStrategy`, and a table attached from older
-        /// metadata keeps the suffix alternatives, so its reads reach `chooseCompressionMethod` and
-        /// fail loudly with `Unknown compression method` instead of silently matching nothing.
-        ///
-        /// The suffix is arbitrary, but it has to be a suffix: `.csv.*` and not `.csv*`, which is a
-        /// prefix match on the extension and would hand the `data.csvwithnames.gz` files of a sibling
-        /// `CSVWithNames` lake to the `CSV` parser (the reader trusts the explicit codec and never looks
-        /// at the name). The format boundary is the `.` after the extension.
-        for (const auto & extension : extensions)
-            alternatives.push_back(extension + ".*");
-    }
-
-    if (alternatives.size() == 1)
-        return prefix + "**." + alternatives.front();
-
-    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}";
+    return prefix + "**." + Poco::toLower(file_format);
 }
 
 std::string HiveStylePartitionStrategy::getPathForWrite(
@@ -446,12 +348,10 @@ std::string HiveStylePartitionStrategy::getPathForWrite(
     return path;
 }
 
-ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const
+ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk)
 {
-    auto actions_with_column = getCachedOrBuildActions(
-        cached_result,
-        *this,
-        [&] { return buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns()); });
+    auto hive_ast = buildHivePartitionAST(partition_key_description.definition_ast, getPartitionColumns());
+    auto actions_with_column = getPartitionExpressionActions(hive_ast);
 
     Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(chunk.getColumns());

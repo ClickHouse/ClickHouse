@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-flaky-check
+# Tags: no-fasttest
 
 set -e
 

@@ -27,7 +27,7 @@ struct IPartitionStrategy
 
     virtual ~IPartitionStrategy() = default;
 
-    virtual ColumnPtr computePartitionKey(const Chunk & chunk) const = 0;
+    virtual ColumnPtr computePartitionKey(const Chunk & chunk) = 0;
 
     virtual std::string getPathForRead(const std::string & prefix) = 0;
     virtual std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) = 0;
@@ -49,7 +49,7 @@ struct IPartitionStrategy
     NamesAndTypesList getPartitionColumns() const;
     const KeyDescription & getPartitionKeyDescription() const;
 
-    PartitionExpressionActionsAndColumnName getPartitionExpressionActions(ASTPtr & expression_ast) const;
+    PartitionExpressionActionsAndColumnName getPartitionExpressionActions(ASTPtr & expression_ast);
 
 protected:
     const KeyDescription partition_key_description;
@@ -80,9 +80,7 @@ struct PartitionStrategyFactory
         const std::string & file_format,
         bool globbed_path,
         bool contains_partition_wildcard,
-        bool partition_columns_in_data_file,
-        /// Only used by the `hive` strategy, to make the read glob match compressed files as well.
-        const std::string & compression_method = "auto");
+        bool partition_columns_in_data_file);
 };
 
 /*
@@ -94,7 +92,7 @@ struct WildcardPartitionStrategy : IPartitionStrategy
 {
     WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_);
 
-    ColumnPtr computePartitionKey(const Chunk & chunk) const override;
+    ColumnPtr computePartitionKey(const Chunk & chunk) override;
     std::string getPathForRead(const std::string & prefix) override;
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
 };
@@ -111,10 +109,9 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
         const Block & sample_block_,
         ContextPtr context_,
         const std::string & file_format_,
-        bool partition_columns_in_data_file_,
-        const std::string & compression_method_);
+        bool partition_columns_in_data_file_);
 
-    ColumnPtr computePartitionKey(const Chunk & chunk) const override;
+    ColumnPtr computePartitionKey(const Chunk & chunk) override;
     std::string getPathForRead(const std::string & prefix) override;
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
 
@@ -124,7 +121,6 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
 private:
     const std::string file_format;
     const bool partition_columns_in_data_file;
-    const std::string compression_method;
     std::unordered_set<std::string> partition_columns_name_set;
     Block block_without_partition_columns;
 };

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <IO/CompressionMethod.h>
 #include <base/defines.h>
+#include <Common/Logger.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -11,7 +12,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Poco/JSON/Object.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
@@ -36,9 +36,9 @@ namespace Iceberg
 {
 struct MetadataFileWithInfo
 {
-    Int32 version{};
+    Int32 version;
     String path;
-    CompressionMethod compression_method{};
+    CompressionMethod compression_method;
 };
 }
 
@@ -55,16 +55,11 @@ using LatestMetadataVersionPtr = std::shared_ptr<LatestMetadataVersion>;
 /// And we can get `ManifestFileContent` from cache by ManifestFileEntry.
 struct ManifestFileCacheKey
 {
-    Iceberg::IcebergPathFromMetadata manifest_file_path;
+    String manifest_file_path;
     size_t manifest_file_byte_size;
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Iceberg::ManifestFileContentType content_type;
-    /// Partition spec the manifest was written with, needed to rewrite each manifest under its own spec during compaction after partition evolution.
-    Int32 partition_spec_id;
-    Iceberg::PartitionFieldSummaries partition_summaries;
-    Int64 live_files_count;
-    std::optional<UInt64> first_row_id;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
@@ -75,15 +70,15 @@ struct IcebergMetadataFilesCacheCell : private boost::noncopyable
 {
     /// The cached entities can be:
     /// - reference to the latest metadata version (metadata.json path) [table_path --> LatestMetadataVersionPtr]
-    /// - parsed metadata.json [file_path --> Poco::JSON::Object::Ptr]
+    /// - metadata.json content [file_path --> String]
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]
-    std::variant<Poco::JSON::Object::Ptr, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
-    size_t memory_bytes;
+    std::variant<String, LatestMetadataVersionPtr, ManifestFileCacheKeys, Iceberg::ManifestFileCacheableInfo> cached_element;
+    Int64 memory_bytes;
 
-    IcebergMetadataFilesCacheCell(Poco::JSON::Object::Ptr metadata_json_object, size_t metadata_json_str_size)
-        : cached_element(std::move(metadata_json_object))
-        , memory_bytes(4 * metadata_json_str_size + SIZE_IN_MEMORY_OVERHEAD)
+    explicit IcebergMetadataFilesCacheCell(String && metadata_json_str)
+        : cached_element(std::move(metadata_json_str))
+        , memory_bytes(std::get<String>(cached_element).capacity() + SIZE_IN_MEMORY_OVERHEAD)
     {
     }
     explicit IcebergMetadataFilesCacheCell(LatestMetadataVersionPtr latest_metadata_version)
@@ -115,15 +110,7 @@ private:
          size_t total_size = 0;
          for (const auto & entry: manifest_file_cache_keys)
          {
-             total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.serialize().capacity();
-             total_size += entry.partition_summaries.capacity() * sizeof(Iceberg::PartitionFieldSummary);
-             for (const auto & summary : entry.partition_summaries)
-             {
-                 if (summary.lower_bound.has_value())
-                     total_size += summary.lower_bound->capacity();
-                 if (summary.upper_bound.has_value())
-                     total_size += summary.upper_bound->capacity();
-             }
+             total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.capacity();
          }
          return total_size;
     }
@@ -150,14 +137,19 @@ public:
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
     template <typename LoadFunc>
-    Poco::JSON::Object::Ptr getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
+    String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
     {
-        auto result = Base::getOrSet(data_path, load_fn);
+        auto load_fn_wrapper = [&]()
+        {
+            auto metadata_json_str = load_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(std::move(metadata_json_str));
+        };
+        auto result = Base::getOrSet(data_path, load_fn_wrapper);
         if (result.second)
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
-        return std::get<Poco::JSON::Object::Ptr>(result.first->cached_element);
+        return std::get<String>(result.first->cached_element);
     }
 
     template <typename LoadFunc>

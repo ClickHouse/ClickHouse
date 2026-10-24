@@ -9,12 +9,3 @@ SELECT arrayCompact(arrayMap(x -> toString(intDiv(x, 3)), range(number))) FROM n
 SELECT arrayCompact(x -> x.2, groupArray((number, intDiv(number, 3) % 3))) FROM numbers(10);
 SELECT arrayCompact(x -> x.2, groupArray((toString(number), toString(intDiv(number, 3) % 3)))) FROM numbers(10);
 SELECT arrayCompact(x -> x.2, groupArray((toString(number), intDiv(number, 3) % 3))) FROM numbers(10);
-SELECT arrayCompact(CAST([], 'Array(Decimal32(2))'));
-SELECT arrayCompact([toDecimal32('-1.20', 2)]);
-SELECT arrayCompact([toDecimal64('3.14', 2), toDecimal64('3.14', 2), toDecimal64('3.14', 2)]);
-SELECT arrayCompact([toDecimal32('1.20', 2), toDecimal32('1.20', 2), toDecimal32('-2.30', 2), toDecimal32('-2.30', 2), toDecimal32('3.40', 2)]);
-SELECT arrayCompact([toDecimal64('1.2000', 4), toDecimal64('1.2000', 4), toDecimal64('-2.3000', 4), toDecimal64('-2.3000', 4), toDecimal64('3.4000', 4)]);
-SELECT arrayCompact([toDecimal128('1.20000000', 8), toDecimal128('1.20000000', 8), toDecimal128('-2.30000000', 8), toDecimal128('-2.30000000', 8), toDecimal128('3.40000000', 8)]);
-SELECT arrayCompact([toDecimal256('1.200000000000', 12), toDecimal256('1.200000000000', 12), toDecimal256('-2.300000000000', 12), toDecimal256('-2.300000000000', 12), toDecimal256('3.400000000000', 12)]);
-SELECT arrayCompact(x -> toInt32(x), [toDecimal64('1.10', 2), toDecimal64('1.10', 2), toDecimal64('2.20', 2)]);
-SELECT arrayCompact([toDecimal64('1.10', 2), NULL, NULL, toDecimal64('2.20', 2), toDecimal64('2.20', 2)]);

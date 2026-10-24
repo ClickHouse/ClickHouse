@@ -1,3 +1,0 @@
-core_dump:
-    # 100GiB
-    size_limit: 107374182400
