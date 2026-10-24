@@ -222,8 +222,6 @@ A sparse `Nullable(T)` column is a special case, because the default value of `N
 
 **Replicated wire format.** When the compact `kind_stack` code is `0x04` (`REPLICATED`; the nested enum spells the same kind as `0x03`), the column `data` is a dictionary: a list of distinct element values plus a per-row index into that list (the same lookup shape as `LowCardinality`). When the inner type is itself versioned — for example `LowCardinality(T)` — its state prefix is written **first**, ahead of the index stream: the replicated serialization delegates the prefix phase to the inner type before writing `num_rows`. Inners with an empty prefix (the leaf types and the plain composites) contribute no bytes here.
 
-**Automatic `LowCardinality` wire format.** A `String` or `FixedString` column can be stored dictionary-encoded while its declared type remains unchanged. Its `kind_stack` is the `COMBINATION` sequence described above: `0x05, 0x02, 0x00, 0x04`. Its data uses the usual `LowCardinality` dictionary and index streams; this serialization is transparent to the declared column type.
-
 ```text
 [inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
 [VarUInt num_rows]
@@ -234,6 +232,8 @@ A sparse `Nullable(T)` column is a special case, because the default value of `N
 ```
 
 A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for each output row `i`. Composite inner types recurse: the element list is materialized in the inner type, then indexed. Supported inner types include the leaf types, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)` (each field expanded like an `Array`), and `LowCardinality(T)` (the shared dictionary is kept; only the per-element keys are indexed).
+
+**Automatic `LowCardinality` wire format.** A `String` or `FixedString` column can be stored dictionary-encoded while its declared type remains unchanged. Its `kind_stack` is the `COMBINATION` sequence described above: `0x05, 0x02, 0x00, 0x04`. Its data is not the replicated payload above: it uses exactly the `LowCardinality` layout described in [`LowCardinality(T)`](#lowcardinality) — the `Int64` state prefix, then the `UInt64` metadata, the `UInt64` `dict_size` and the dictionary values, then the `UInt64` `keys_count` and the keys — with the declared `String` or `FixedString` as the dictionary type. This serialization is transparent to the declared column type.
 
 **Detached wire format.** `DETACHED` (`0x02`) and `DETACHED_OVER_SPARSE` (`0x03`) *do* appear over the wire — they are not purely internal. On the TCP path, when compression is enabled and the negotiated revision is at least `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), the column goes through three steps:
 
