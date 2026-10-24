@@ -1,0 +1,8 @@
+<clickhouse>
+    <kafka>
+        <kafka_topic>
+            <name>kip848</name>
+            <group_protocol>consumer</group_protocol>
+        </kafka_topic>
+    </kafka>
+</clickhouse>

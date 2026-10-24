@@ -768,6 +768,16 @@ Example:
 </kafka>
 ```
 
+### Consumer group protocol (KIP-848) {#kafka-consumer-group-protocol}
+
+To use the consumer group protocol of [KIP-848](https://cwiki.apache.org/confluence/display/KAFKA/KIP-848%3A+The+Next+Generation+of+the+Consumer+Rebalance+Protocol), where the broker computes the assignment, set `group_protocol` to `consumer`. It requires Kafka 4.0 or newer. The session timeout and the heartbeat interval are then configured on the broker, so `session_timeout_ms`, `heartbeat_interval_ms` and `partition_assignment_strategy` must not be set; use `group_remote_assignor` to choose the assignor.
+
+```xml
+<kafka>
+    <group_protocol>consumer</group_protocol>
+</kafka>
+```
+
 ## Virtual columns {#virtual-columns}
 
 - `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
