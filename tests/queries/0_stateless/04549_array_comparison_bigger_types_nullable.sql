@@ -92,3 +92,25 @@ SELECT [tuple(tuple('1'))]::Array(Tuple(Tuple(String))) = [tuple(tuple(1))]::Arr
 -- ORDERING still throws.
 SELECT [tuple('a', CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(String, Nullable(UInt64))) = [tuple('a', CAST(1, 'Nullable(Int64)'))]::Array(Tuple(String, Nullable(Int64)));
 SELECT [tuple('a', CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(String, Nullable(UInt64))) < [tuple('a', CAST(1, 'Nullable(Int64)'))]::Array(Tuple(String, Nullable(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- An element pair with no least supertype where one side is `Nullable(Nothing)` (an untyped NULL
+-- or an empty array cast to it) is decided by that side's null map, so it answers instead of
+-- aborting. The values match the supertype path (`[NULL] = [1]` etc.).
+SELECT [NULL] = [[1]], [NULL] != [[1]], [NULL] < [[1]], [NULL] <= [[1]], [NULL] > [[1]], [NULL] >= [[1]];
+SELECT [[1]] = [NULL], [[1]] > [NULL];
+SELECT isNotDistinctFrom([NULL], [[1]]), isDistinctFrom([NULL], [[1]]);
+SELECT [NULL] = [map(toUInt8(1), toUInt8(1))];
+-- the same with an empty aligned prefix, where the length tie-break alone decides
+SELECT CAST([], 'Array(Nullable(Nothing))') = [[1]], CAST([], 'Array(Nullable(Nothing))') != [[1]],
+       CAST([], 'Array(Nullable(Nothing))') < [[1]], CAST([], 'Array(Nullable(Nothing))') <= [[1]],
+       CAST([], 'Array(Nullable(Nothing))') > [[1]], CAST([], 'Array(Nullable(Nothing))') >= [[1]];
+SELECT isNotDistinctFrom(CAST([], 'Array(Nullable(Nothing))'), [[1]]), isDistinctFrom(CAST([], 'Array(Nullable(Nothing))'), [[1]]);
+
+-- `Array(Nothing)` and `Nullable(Nothing)` inside a tuple element share a supertype with their
+-- partner, so those positions never reach the element path and keep answering.
+SELECT [tuple(CAST([], 'Array(Nothing)'), toUInt64(1))] =  [tuple([1], toInt64(-1))];
+SELECT [tuple(CAST([], 'Array(Nothing)'), toUInt64(1))] != [tuple([1], toInt64(-1))];
+SELECT [tuple(NULL, toUInt64(1))] = [tuple([1], toInt64(-1))];
+SELECT [CAST([], 'Array(Nothing)')] = [[1]], [CAST([], 'Array(Nullable(Nothing))')] = [[1]];
+-- an accepted pair declares a plain `UInt8`, matching what the comparison actually produces
+SELECT toTypeName([NULL] = [[1]]), toTypeName(CAST([], 'Array(Nullable(Nothing))') > [[1]]);

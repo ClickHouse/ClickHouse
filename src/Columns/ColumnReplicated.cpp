@@ -157,7 +157,7 @@ ColumnPtr convertToFullColumnArrayImpl(const ColumnArray & src, const PaddedPODA
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+        res_data->insertRangeFrom(src_data,/*start*/src_offsets[row - 1], /*length*/src_offsets[row] - src_offsets[row - 1]);
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
@@ -222,11 +222,6 @@ void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const ICol
 {
     nested_column->deserializeAndInsertFromArena(in, settings);
     indexes.insertIndex(nested_column->size() - 1);
-}
-
-void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
-{
-    nested_column->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -825,14 +820,44 @@ void transformColumnsWithSharedIndex(
         positions);
 }
 
+namespace
+{
+
+/// An upper bound of the nested rows the indexes refer to.
+size_t getReferencedRowsBound(const ColumnReplicated & column)
+{
+    if (column.empty())
+        return 0;
+    Field min;
+    Field max;
+    column.getIndexesColumn()->getExtremes(min, max, 0, column.size());
+    size_t span = max.safeGet<UInt64>() - min.safeGet<UInt64>() + 1;
+    if (span < column.size())
+        return span;
+
+    /// the runs of equal indexes are exact for sorted indexes, as after a filtered ARRAY JOIN
+    const auto & indexes = column.getIndexes();
+    size_t runs = 1;
+    for (size_t row = 1, previous = indexes.getIndexAt(0); row < column.size() && runs < span; ++row)
+    {
+        size_t index = indexes.getIndexAt(row);
+        runs += index != previous;
+        previous = index;
+    }
+    return runs;
+}
+
+}
+
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
 {
     if (!column->isReplicated())
         return column;
 
     const auto & replicated = typeid_cast<const ColumnReplicated &>(*column);
-    /// Materialize if the type doesn't benefit from lazy replication, or if nested data isn't smaller than output.
-    if (!isLazyReplicationUseful(replicated.getNestedColumn()) || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size()))
+    /// Materialize if the type doesn't benefit from lazy replication, or if the referenced nested data isn't smaller than output.
+    if (!isLazyReplicationUseful(replicated.getNestedColumn())
+        || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size() && getReferencedRowsBound(replicated) >= replicated.size()))
         return replicated.convertToFullColumnIfReplicated();
 
     return column;

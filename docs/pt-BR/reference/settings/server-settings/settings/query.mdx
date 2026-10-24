@@ -47,11 +47,13 @@ As configurações a seguir estão disponíveis:
   ## query_log
 </div>
 
-Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings).
+Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings/log-queries#log_queries).
 
 As consultas são registradas na tabela [system.query&#95;log](/pt-BR/reference/system-tables/query_log), e não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
 <SystemLogParameters />
+
+O parâmetro `enable_user_query_log` (ativado por padrão) cria [`system.user_query_log`](/pt-BR/reference/system-tables/user_query_log), que mostra a cada usuário seus próprios registros da tabela de log de consultas configurada, sem exigir acesso à própria tabela. Isso funciona apenas quando o log de consultas é armazenado localmente: se `engine` delegar a outro servidor (por exemplo, `Distributed`), desative `enable_user_query_log`, pois `system.user_query_log` não consegue aplicar a verificação de acesso por usuário além do limite de um servidor que usa o protocolo ClickHouse e se recusa a ler de um backend desse tipo.
 
 Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de consultas tiver sido alterada quando o servidor ClickHouse foi atualizado, a tabela com a estrutura antiga será renomeada, e uma nova tabela será criada automaticamente.
 
@@ -67,6 +69,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de consu
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -146,7 +149,7 @@ Para desativar a configuração `query_metric_log`, crie o seguinte arquivo `/et
   ## query_thread_log
 </div>
 
-Configuração para registrar threads de consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings#log_query_threads).
+Configuração para registrar threads de consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings/log-query#log_query_threads).
 
 As consultas são registradas na tabela [system.query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log), e não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -173,7 +176,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de threa
   ## query_views_log
 </div>
 
-Configuração para registrar views (live, materializadas etc.) de acordo com as consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings#log_query_views).
+Configuração para registrar views (live, materializadas etc.) de acordo com as consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings/log-query#log_query_views).
 
 As consultas são registradas na tabela [system.query&#95;views&#95;log](/pt-BR/reference/system-tables/query_views_log), não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 

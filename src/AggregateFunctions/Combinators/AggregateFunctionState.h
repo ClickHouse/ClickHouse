@@ -3,12 +3,23 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 
 
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char aggregate_function_state_transfer_throw[];
+}
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,
@@ -23,13 +34,19 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, nested_->getStateType())
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, createResultType(nested_))
         , nested_func(nested_)
     {}
 
     String getName() const override
     {
         return nested_func->getName() + "State";
+    }
+
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
+    {
+        DataTypeAggregateFunction::checkSupportedFunctions(nested_);
+        return nested_->getStateType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -115,6 +132,12 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_func->isLargeMergePair(place, rhs);
+    }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -137,6 +160,16 @@ public:
         nested_func->serialize(place, buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_func->deserialize(place, buf, version, arena);
@@ -144,12 +177,30 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
+        auto & column = assert_cast<ColumnAggregateFunction &>(to);
+
+        /// Only once the column holds an aliased state, which is the partial transfer to undo.
+        if (unlikely(!column.empty()))
+        {
+            fiu_do_on(FailPoints::aggregate_function_state_transfer_throw,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionState::insertResultInto");
+            });
+        }
+
+        column.getData().push_back(place);
     }
 
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const noexcept override
+    {
+        /// insertResultInto aliased a state that `place` still owns, so the row must go without the
+        /// destroy that ColumnAggregateFunction::popBack performs.
+        assert_cast<ColumnAggregateFunction &>(to).popBackWithoutDestroy(1);
     }
 
     /// Aggregate function or aggregate function state.
@@ -158,11 +209,6 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return nested_func->getArgumentsThatCanBeOnlyNull();
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

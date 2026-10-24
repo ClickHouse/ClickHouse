@@ -28,9 +28,17 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
+        /** The last argument is the condition, and saying only that its type is illegal helps nobody: the
+          * most common way to get here is forgetting the condition altogether - `sumIf(x)` - where the
+          * argument being blamed is a perfectly good argument of `sum`. Name what the argument is for and
+          * what it has to be.
+          */
         if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of last argument for "
-                            "aggregate function with {} suffix", arguments.back()->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the last argument of an aggregate function with the {} "
+                            "suffix: the last argument is the condition and must be UInt8. If the condition "
+                            "is missing, it goes after the arguments of the aggregate function",
+                            arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
@@ -113,13 +121,6 @@ public:
         filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
-        arguments.insert(num_arguments - 1);
-        return arguments;
-    }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (filter_is_only_null)
@@ -177,17 +178,29 @@ public:
 
         filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
 
+        if (!filter_null_map)
+        {
+            /// The nested function skips the rows that are NULL or fail the condition at position 1.
+            const IColumn * columns_with_filter[] = {columns_param[0], filter_column};
+            if constexpr (result_is_nullable)
+            {
+                if (!countBytesInFilterWithNull(assert_cast<const ColumnUInt8 &>(*filter_column).getData(), null_map, row_begin, row_end))
+                    return;
+                this->setFlag(place);
+            }
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), columns_with_filter, null_map, arena, 1);
+            return;
+        }
+
         /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
         /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
 
-        auto final_nulls = std::make_unique<UInt8[]>(row_end);
+        /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+        auto final_nulls = std::make_unique_for_overwrite<UInt8[]>(row_end);
 
-        if (filter_null_map)
-            for (size_t i = row_begin; i < row_end; ++i)
-                final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
-        else
-            for (size_t i = row_begin; i < row_end; ++i)
-                final_nulls[i] = (!!null_map[i]) | (!filter_values[i]);
+        for (size_t i = row_begin; i < row_end; ++i)
+            final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
 
         if constexpr (result_is_nullable)
         {
@@ -282,16 +295,13 @@ public:
                 "Maximum number of arguments for aggregate function with Nullable types is {}", toString(MAX_ARGS));
 
         for (size_t i = 0; i < number_of_arguments; ++i)
+        {
             is_nullable[i] = arguments[i]->isNullable();
+            if (is_nullable[i])
+                ++num_nullable_arguments;
+        }
 
         filter_is_only_null = arguments.back()->onlyNull();
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
-        arguments.insert(number_of_arguments - 1);
-        return arguments;
     }
 
     static bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
@@ -334,7 +344,35 @@ public:
         if (filter_is_only_null)
             return;
 
-        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique<UInt8[]>(row_end);
+        if (num_nullable_arguments == 1)
+        {
+            absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+            const UInt8 * null_map = nullptr;
+            for (size_t arg = 0; arg < number_of_arguments; ++arg)
+            {
+                if (is_nullable[arg])
+                {
+                    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                    null_map = nullable_col.getNullMapData().data();
+                    nested_columns[arg] = &nullable_col.getNestedColumn();
+                }
+                else
+                    nested_columns[arg] = columns[arg];
+            }
+
+            const auto & condition = assert_cast<const ColumnUInt8 &>(*nested_columns[number_of_arguments - 1]).getData();
+            if (!countBytesInFilterWithNull(condition, null_map, row_begin, row_end))
+                return;
+
+            /// `nested_function` is the -If function, which applies the condition itself.
+            this->setFlag(place);
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), nested_columns.data(), null_map, arena, -1);
+            return;
+        }
+
+        /// Default-init: the loops below fill [row_begin, row_end) and nothing reads the rest.
+        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
         const size_t filter_column_num = number_of_arguments - 1;
 
         if (is_nullable[filter_column_num])
@@ -383,6 +421,30 @@ public:
             this->nested_function->addBatchSinglePlaceNotNull(
                 row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_null_flags.get(), arena, -1);
         }
+    }
+
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t) const final
+    {
+        addBatchImpl<false>(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t) const final
+    {
+        addBatchImpl<true>(row_begin, row_end, places, place_offset, columns, arena);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -470,9 +532,79 @@ private:
         serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag>>;
 
+    /// The grouped counterpart of `addBatchSinglePlace`: fold the condition and the null maps of the
+    /// arguments into one `UInt8` condition and pass the whole batch to the nested `-If`, which reads the
+    /// condition from its last argument. Without this, `IAggregateFunctionHelper` calls `add` row by row.
+    template <bool places_are_non_null>
+    void addBatchImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const
+    {
+        if (filter_is_only_null)
+            return;
+
+        const size_t filter_column_num = number_of_arguments - 1;
+
+        /// Only [row_begin, row_end) is filled, and nothing reads the rest.
+        auto condition_column = ColumnUInt8::create(row_end);
+        auto & condition = condition_column->getData();
+
+        if (is_nullable[filter_column_num])
+        {
+            const ColumnNullable & nullable_column = assert_cast<const ColumnNullable &>(*columns[filter_column_num]);
+            const UInt8 * filter_null_map = nullable_column.getNullMapData().data();
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(nullable_column.getNestedColumn()).getData().data();
+            for (size_t i = row_begin; i < row_end; ++i)
+                condition[i] = !filter_null_map[i] && filter_values[i];
+        }
+        else
+        {
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(*columns[filter_column_num]).getData().data();
+            for (size_t i = row_begin; i < row_end; ++i)
+                condition[i] = filter_values[i] != 0;
+        }
+
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        for (size_t arg = 0; arg < filter_column_num; ++arg)
+        {
+            if (is_nullable[arg])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                const UInt8 * col_null_map = nullable_col.getNullMapData().data();
+                for (size_t i = row_begin; i < row_end; ++i)
+                    condition[i] &= !col_null_map[i];
+                nested_columns[arg] = &nullable_col.getNestedColumn();
+            }
+            else
+                nested_columns[arg] = columns[arg];
+        }
+        nested_columns[filter_column_num] = condition_column.get();
+
+        /// `add` sets the flag only for a row that reaches the nested function.
+        if constexpr (result_is_nullable)
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (condition[i] && (places_are_non_null || places[i]))
+                    this->setFlag(places[i] + place_offset);
+        }
+
+        /// `prefix_size` is 0 unless the result is nullable, matching `nestedPlace`.
+        if constexpr (places_are_non_null)
+            this->nested_function->addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset + this->prefix_size, nested_columns.data(), arena, -1);
+        else
+            this->nested_function->addBatch(
+                row_begin, row_end, places, place_offset + this->prefix_size, nested_columns.data(), arena, -1);
+    }
+
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
     std::array<char, MAX_ARGS> is_nullable{};    /// Plain array is better than std::vector due to one indirection less.
+    size_t num_nullable_arguments = 0;
 };
 
 

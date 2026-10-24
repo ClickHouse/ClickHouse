@@ -1,7 +1,7 @@
 ---
 title: 'Visão geral'
 slug: /cloud/reference/byoc/overview
-sidebarTitle: 'Visão geral'
+sidebarTitle: 'Bring Your Own Cloud'
 keywords: ['BYOC', 'nuvem', 'bring your own cloud']
 description: 'Implante o ClickHouse na infraestrutura da sua própria nuvem'
 doc_type: 'reference'
@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 Bring Your Own Cloud (BYOC) permite implantar serviços do ClickHouse e armazenar seus dados diretamente nas suas próprias contas de nuvem, em vez de depender da infraestrutura padrão do ClickHouse Cloud. Essa abordagem é especialmente adequada para organizações com políticas de segurança rigorosas ou requisitos de conformidade regulatória que exigem controle total e soberania sobre seus dados.
 
@@ -30,15 +28,21 @@ Em linhas gerais, o BYOC separa o plano de controle do ClickHouse, que é execut
 * Azure (GA)
 
 **Regiões de Cloud compatíveis:**
-Todas as **regiões públicas** listadas em nossa documentação de [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) estão disponíveis para implantações de BYOC. No momento, regiões privadas não são compatíveis.
+Todas as **regiões públicas** listadas em nossa documentação de [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) estão disponíveis para implantações de BYOC. Regiões privadas estão disponíveis para BYOC mediante solicitação. Entre em contato com seu representante da ClickHouse para solicitar uma.
 
-<div id="features">
-  ## Funcionalidades
-</div>
+## Pré-requisitos {#prerequisites}
 
-<div id="supported-features">
-  ### Recursos compatíveis
-</div>
+Os requisitos a seguir são fundamentais para a criação e a operação do BYOC. Eles se aplicam a todas as implantações e não podem ser dispensados nem contornados:
+
+* **Uma região compatível.** O BYOC é implantado nas regiões públicas listadas na documentação de [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions). Regiões privadas estão disponíveis mediante solicitação. AWS Local Zones e regiões com uma única zona não são compatíveis. Se a região de que você precisa não estiver listada, fale com seu representante da ClickHouse antes de planejar uma implantação.
+* **Três zonas de disponibilidade.** Toda infraestrutura de BYOC abrange três zonas de disponibilidade — é assim que a alta disponibilidade dos servidores ClickHouse e do ClickHouse Keeper é garantida. Regiões com menos de três zonas não podem hospedar o BYOC, e não são oferecidas implantações com uma ou duas zonas.
+* **Os artefatos de onboarding, aplicados sem alterações.** O template do CloudFormation ou o módulo do Terraform deve ser aplicado exatamente como fornecido — os nomes dos recursos (como a função IAM `ClickHouseManagementRole`) e as [permissões de referência documentadas](/pt-BR/products/bring-your-own-cloud/reference/privilege) estão codificados na automação do ClickHouse. Qualquer modificação requer aprovação explícita da ClickHouse; as personalizações compatíveis são disponibilizadas como parâmetros do template. Consulte o [onboarding padrão](/pt-BR/products/bring-your-own-cloud/onboarding/standard).
+* **Um cluster do Kubernetes gerenciado pela ClickHouse.** O cluster EKS/GKE/AKS é criado e totalmente operado pela ClickHouse. Não há suporte para instalação em um cluster do Kubernetes existente, e controladores de admissão ou mecanismos de políticas aplicáveis a todo o cluster não devem ser instalados nele.
+* **Noções básicas de rede.** Resolução de DNS funcional e acesso de saída à internet (diretamente ou via NAT) são necessários em toda configuração. Para uma VPC/VNet gerenciada pela ClickHouse, o intervalo CIDR deve ser de pelo menos `/23` na AWS e no Azure e de pelo menos `/20` no GCP, sendo que metade do intervalo é atribuída ao intervalo de pods do cluster GKE. Esses são os mínimos, não recomendações: cada réplica consome endereços IP, portanto, implantações maiores exigem um intervalo maior. VPCs gerenciadas pelo cliente têm requisitos de sub-rede específicos para cada Cloud — consulte os guias de personalização da [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws) e do [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp).
+
+## Funcionalidades {#features}
+
+### Recursos compatíveis {#supported-features}
 
 * **SharedMergeTree**: ClickHouse Cloud e BYOC usam o mesmo binário e a mesma configuração. Portanto, o BYOC oferece suporte a todos os recursos do núcleo do ClickHouse, como SharedMergeTree.
 * **Shared Catalog**
@@ -59,14 +63,12 @@ Todas as **regiões públicas** listadas em nossa documentação de [regiões co
 * **[Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
 * **Integrations**: Veja a lista completa [nesta página](/pt-BR/integrations/home).
 
-<div id="planned-features-currently-unsupported">
-  ### Funcionalidades planejadas (atualmente sem suporte)
-</div>
+### Funcionalidades planejadas (atualmente sem suporte) {#planned-features-currently-unsupported}
 
 As funcionalidades a seguir têm limitações ou ainda não contam com suporte completo em implantações Bring Your Own Cloud (BYOC).
 
-* SQL Console: O SQL Console padrão não está disponível para implantações BYOC, mas está no nosso roadmap.
-* Suporte ao ClickPipes: Atualmente disponível em prévia privada, com suporte a integrações de streaming, como Kafka e Kinesis. Integrações adicionais (CDC, armazenamento de objetos etc.) estão no roadmap.
+* SQL Console: Não está disponível para implantações BYOC, mas está no roadmap.
+* ClickPipes: Não está disponível para implantações BYOC, mas está no roadmap.
 * Escalonamento automático: Está no roadmap e será adicionado em lançamentos futuros.
 * interface MySQL
 * AWS KMS, também conhecido como CMEK (chaves de criptografia gerenciadas pelo cliente)

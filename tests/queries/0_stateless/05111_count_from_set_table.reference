@@ -1,0 +1,13 @@
+empty
+0
+filled
+3
+a set stores distinct rows, so duplicates do not add to the count
+3
+and agrees with system.tables
+3
+the count is usable in a subquery with an outer filter
+3
+truncate empties it
+0
+reading a column is still not supported

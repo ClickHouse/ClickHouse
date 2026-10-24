@@ -137,7 +137,7 @@ Peak memory usage: 4.99 MiB.
 <Info>
   **パーティションの移動**
 
-  [テーブル間でパーティションを移動する](/ja/reference/statements/alter/partition#move-partition-to-table)には、いくつかの条件を満たす必要があります。特に、テーブルの構造、パーティションキー、主キー、インデックス/プロジェクションが同一でなければなりません。`ALTER` DDL でパーティションをどのように指定するかについての詳しい注意事項は、[こちら](/ja/reference/statements/alter/partition#how-to-set-partition-expression)を参照してください。
+  [テーブル間でパーティションを移動する](/ja/reference/statements/alter/partition#move-partition-to-table)には、いくつかの条件を満たす必要があります。特に、テーブルの構造、パーティションキー、主キー、索引/projectionsが同一でなければなりません。`ALTER` DDL でパーティションをどのように指定するかについての詳しい注意事項は、[こちら](/ja/reference/statements/alter/partition#how-to-set-partition-expression)を参照してください。
 </Info>
 
 さらに、データはパーティション単位で効率的に削除できます。これは代替手法 (mutation や論理削除) よりもはるかにリソース効率が高いため、こちらを優先すべきです。
@@ -163,7 +163,7 @@ ORDER BY c DESC
 ```
 
 <Note>
-  この機能は、設定 [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings#ttl_only_drop_parts) を使用すると、有効期限 (TTL) によって利用されます。詳細については、[有効期限 (TTL) を使用したデータ管理](#data-management-with-ttl-time-to-live) を参照してください。
+  この機能は、設定 [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) を使用すると、有効期限 (TTL) によって利用されます。詳細については、[有効期限 (TTL) を使用したデータ管理](#data-management-with-ttl-time-to-live) を参照してください。
 </Note>
 
 <div id="applications">
@@ -221,7 +221,7 @@ SETTINGS ttl_only_drop_parts = 1
   有効期限 (TTL) は、前述のとおり即座には適用されず、スケジュールに従って適用されます。MergeTree テーブル設定 `merge_with_ttl_timeout` は、delete 有効期限 (TTL) を伴うマージを再実行するまでの最小待機時間を秒単位で設定します。デフォルト値は 14400 秒 (4 時間) です。ただし、これはあくまで最小待機時間にすぎず、有効期限 (TTL) マージがトリガーされるまでさらに時間がかかることがあります。値が低すぎると、リソースを大量に消費する可能性のあるスケジュール外のマージが多数実行されます。有効期限 (TTL) の期限切れは、コマンド `ALTER TABLE my_table MATERIALIZE TTL` で強制できます。
 </Info>
 
-**重要: [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings#ttl_only_drop_parts) 設定の使用を推奨します** (デフォルトのスキーマで適用されます) 。この設定を有効にすると、ClickHouse は、その中のすべての行の有効期限が切れている場合、パーツ全体を削除します。有効期限 (TTL) 切れの行を部分的にクリーンアップする代わりにパーツ全体を削除することで (`ttl_only_drop_parts=0` の場合は、リソース負荷の高い mutation によって処理されます) 、`merge_with_ttl_timeout` をより短く設定でき、システム性能への影響も抑えられます。有効期限 (TTL) の期限切れを行う単位 (たとえば日単位) と同じ単位でデータをパーティション化していれば、パーツには自然にその期間のデータだけが含まれるようになります。これにより、`ttl_only_drop_parts=1` を効率よく適用できます.
+**重要: [`ttl_only_drop_parts=1`](/ja/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 設定の使用を推奨します** (デフォルトのスキーマで適用されます) 。この設定を有効にすると、ClickHouse は、その中のすべての行の有効期限が切れている場合、パーツ全体を削除します。有効期限 (TTL) 切れの行を部分的にクリーンアップする代わりにパーツ全体を削除することで (`ttl_only_drop_parts=0` の場合は、リソース負荷の高い mutation によって処理されます) 、`merge_with_ttl_timeout` をより短く設定でき、システム性能への影響も抑えられます。有効期限 (TTL) の期限切れを行う単位 (たとえば日単位) と同じ単位でデータをパーティション化していれば、パーツには自然にその期間のデータだけが含まれるようになります。これにより、`ttl_only_drop_parts=1` を効率よく適用できます.
 
 <div id="column-level-ttl">
   ### カラムレベルの有効期限 (TTL)

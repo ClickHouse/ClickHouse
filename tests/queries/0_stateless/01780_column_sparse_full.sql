@@ -1,6 +1,10 @@
 -- This test checks, that common SQL operations work
 -- with mixed columns (sparse and full) in table.
 
+-- `SELECT DISTINCT u ... ORDER BY id` below sorts by the id of whichever duplicate
+-- survives DISTINCT; per-partition DISTINCT makes the survivor timing-dependent.
+SET force_distinct_partitions_independently = 0;
+
 DROP TABLE IF EXISTS t_sparse_full;
 
 CREATE TABLE t_sparse_full (id UInt64, u UInt64, s String)

@@ -16,6 +16,8 @@ def clickhouse_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
+            # A remote database disk would share the `Disk` connection group whose hard limit this test saturates.
+            with_remote_database_disk=False,
         )
         cluster.start()
         yield cluster
@@ -53,7 +55,9 @@ def test_disk_hard_limit_hit(clickhouse_cluster):
             a19 String)
         ENGINE = MergeTree()
         ORDER BY id
-        SETTINGS storage_policy = 's3', min_bytes_for_wide_part=1000000;
+        -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default writes an
+        -- extra statistics file on INSERT, needing one more S3 connection that trips the hard limit.
+        SETTINGS storage_policy = 's3', min_bytes_for_wide_part=1000000, auto_statistics_types='';
     """)
 
     node.query("SYSTEM STOP MERGES test_table")
@@ -72,8 +76,8 @@ def test_disk_hard_limit_hit(clickhouse_cluster):
         SELECT ProfileEvents['S3PutObject'], ProfileEvents['DiskConnectionsCreated'] FROM system.query_log WHERE query_id = '{insert_query_id}' AND type = 'QueryFinish'
     """
     ).strip().split("\t")
-    assert(int(puts) <= 10)
-    assert(int(connections) <= 10)
+    assert(0 < int(puts) <= 10)
+    assert(0 < int(connections) <= 10)
 
     select_query_id = f"select_compact_{int(random.random() * 1000000)}"
     result = node.query(

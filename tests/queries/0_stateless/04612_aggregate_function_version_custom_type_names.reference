@@ -1,0 +1,12 @@
+Row 1:
+──────
+toTypeName(n):            Nested(x AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))
+toTypeName(s):            SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
+toTypeName(w):            SimpleAggregateFunction(anyLast, Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))
+finalizeAggr⋯(n, 1), 1)): ([1,2],[10,20])
+finalizeAggregation(s):   ([1,2],[10,20])
+finalizeAggr⋯ment(w, 1)): ([1,2],[10,20])
+n	Nested(x AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
+s	SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
+w	SimpleAggregateFunction(anyLast, Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))
+deep nested ok

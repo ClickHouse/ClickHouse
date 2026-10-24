@@ -29,6 +29,8 @@ BlockIO InterpreterCreateNamedCollectionQuery::execute()
     const auto & query = updated_query->as<const ASTCreateNamedCollectionQuery &>();
 
     current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION, query.collection_name);
+    if (query.or_replace)
+        current_context->checkAccess(AccessType::DROP_NAMED_COLLECTION, query.collection_name);
 
     UInt64 limit = getContext()->getGlobalContext()->getMaxNamedCollectionNumToThrow();
     UInt64 count = CurrentMetrics::get(CurrentMetrics::NamedCollection);

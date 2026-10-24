@@ -10,6 +10,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
 #include <map>
@@ -238,6 +239,9 @@ public:
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
+    /// Propagated like the tracing context: a job scheduled under `QueryCancellationBlocker` runs under one.
+    bool query_cancellation_blocked = false;
+
     /// Call stacks of all jobs' schedulings leading to this one
     std::vector<FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
@@ -253,11 +257,12 @@ public:
 
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
-        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
+        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
-        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+        thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
+        enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
             return;
@@ -401,7 +406,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -462,19 +467,24 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (CannotAllocateThreadFaultInjector::injectFault())
             return on_error("fault injected");
 
-        auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
+        auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || finished; };
 
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
-            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
+            /// The timeout is user-controlled: it comes from settings such as `lock_acquire_timeout`, whose
+            /// Int64 microsecond value can be negative or huge. `wait_for` turns the duration into
+            /// nanoseconds (x 1'000) on top of `steady_clock::now()`, which overflows Int64 for such a
+            /// count. Clamping keeps the wait well-defined: a negative timeout has already expired, so it
+            /// gives up at once, and a count above the cap keeps meaning "wait until a thread frees up".
+            if (!job_finished.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
             job_finished.wait(lock, pred);
 
-        if (shutdown)
-            return on_error("shutdown");
+        if (finished)
+            return on_error("finished");
 
         /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
         /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
@@ -542,6 +552,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// Not for pool worker threads (created without propagation), which outlive the scheduling scope
+                    propagate_opentelemetry_tracing_context && DB::ThreadStatus::QueryCancellationBlocker::isActive(),
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
@@ -583,7 +595,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 template <typename Thread>
 void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 {
-    if (shutdown)
+    if (finished)
         return;
 
     /// Start new threads while there are more scheduled jobs in the queue and the limit `max_threads` is not reached.
@@ -644,13 +656,13 @@ void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority)
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, Int64 wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, Int64 wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }
@@ -680,6 +692,17 @@ void ThreadPoolImpl<Thread>::wait()
 }
 
 template <typename Thread>
+bool ThreadPoolImpl<Thread>::waitUntil(std::chrono::steady_clock::time_point deadline)
+{
+    Stopwatch watch;
+    std::unique_lock lock(mutex);
+    ProfileEvents::increment(
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+        watch.elapsedMicroseconds());
+    return job_finished.wait_until(lock, deadline, [this] { return scheduled_jobs == 0; });
+}
+
+template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
     /// Note: should not use logger from here,
@@ -691,24 +714,38 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
+{
+    finished = true;
+
+    /// scheduleImpl doesn't check for `finished` outside the critical section,
+    /// so we set remaining_pool_capacity to a large negative value
+    /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
+    /// This effectively prevents any new threads from being started during shutdown.
+    remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
+
+    /// Wake up all idle threads so they can see it and exit gracefully.
+    wakeUpAllIdleThreadsNoLock();
+    job_finished.notify_all();
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::finish()
+{
+    std::lock_guard lock(mutex);
+    finishNoLock(lock);
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::finalize()
 {
     {
         std::lock_guard lock(mutex);
-        shutdown = true;
-
-        /// scheduleImpl doesn't check for shutdown outside the critical section,
-        /// so we set remaining_pool_capacity to a large negative value
-        /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
-        /// This effectively prevents any new threads from being started during shutdown.
-        remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
+        finishNoLock(lock);
 
         /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
         /// the thread.join() operation will fail later in this function.
         threads_remove_themselves = false;
-
-        /// Wake up all idle threads so they can see shutdown and exit gracefully.
-        wakeUpAllIdleThreadsNoLock();
     }
 
     /// Join all threads before clearing the list
@@ -844,10 +881,10 @@ size_t ThreadPoolImpl<Thread>::active() const
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::finished() const
+bool ThreadPoolImpl<Thread>::isFinished() const
 {
     std::lock_guard lock(mutex);
-    return shutdown;
+    return finished;
 }
 
 
@@ -990,9 +1027,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                         parent_pool.first_exception = exception_from_job;
                     if (parent_pool.shutdown_on_exception)
                     {
-                        parent_pool.shutdown = true;
+                        parent_pool.finished = true;
 
-                        // Prevent new thread creation, as explained in finalize.
+                        // Prevent new thread creation, as explained in finishNoLock.
                         parent_pool.remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
                     }
                     exception_from_job = {};
@@ -1001,8 +1038,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 --parent_pool.scheduled_jobs;
 
                 parent_pool.job_finished.notify_all();
-                if (parent_pool.shutdown)
-                    parent_pool.wakeUpAllIdleThreadsNoLock(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                if (parent_pool.finished)
+                    parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
             }
 
             /// LIFO idle thread scheduling: link this thread into the intrusive
@@ -1028,7 +1065,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// wait. When the worker wakes via the LIFO path the notifier has
             /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
-                && !parent_pool.shutdown
+                && !parent_pool.finished
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 idle_wakeup_flag = false;
@@ -1037,7 +1074,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
-                        || parent_pool.shutdown
+                        || parent_pool.finished
                         || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
                 });
 
@@ -1065,8 +1102,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
                 job_data->elapsedMicroseconds());
 
-            /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
-            if (parent_pool.shutdown)
+            /// We don't run jobs after `finished` is set, but we have to properly dequeue all jobs and finish them.
+            if (parent_pool.finished)
             {
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -1082,6 +1119,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
+
+        /// The job may attach to the thread group of the scheduling thread and inherit its cancellation predicates.
+        std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+        if (job_data->query_cancellation_blocked)
+            cancellation_blocker.emplace();
 
         DB::Exception::enable_job_stack_trace = job_data->enable_job_stack_trace;
         if (DB::Exception::enable_job_stack_trace)

@@ -1,6 +1,5 @@
 -- Session SET (not per-statement SETTINGS) so it also covers the oracle subqueries
 -- and is not overridden by `compatibility` randomization.
-SET enable_analyzer = 1;
 SET allow_experimental_join_condition = 1;
 
 DROP TABLE IF EXISTS t1;
@@ -170,7 +169,7 @@ DROP TABLE IF EXISTS t3;
 CREATE TABLE t3 (key UInt64, a UInt32) ENGINE = Memory;
 INSERT INTO t3 VALUES (1, 1), (2, 2), (3, 3);
 
--- join_algorithm defaults to 'direct,parallel_hash,hash', so DirectKeyValueJoin is tried
+-- join_algorithm defaults to 'direct,parallel_hash,hash,ie_join', so DirectKeyValueJoin is tried
 -- first and used to drop the residual. No pair satisfies a * 10 < d.a here, so every left
 -- row is unmatched. A dictionary fills unmatched rows with the attribute default (0)
 -- rather than NULL, so the oracle uses 0 for them too => count 3, sum 0.

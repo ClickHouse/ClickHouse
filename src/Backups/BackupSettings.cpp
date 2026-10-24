@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Core/SettingsFields.h>
@@ -6,6 +8,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -17,6 +21,14 @@ namespace ErrorCodes
     extern const int WRONG_BACKUP_SETTINGS;
 }
 
+#if CLICKHOUSE_CLOUD
+#define LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
+    M(UInt64, resumable_backup_batch_size) \
+    M(UInt64, resumable_backup_batch_size_bytes)
+#else
+#define LIST_OF_CLOUD_BACKUP_SETTINGS(M)
+#endif
+
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
     M(String, id) \
@@ -27,6 +39,7 @@ namespace ErrorCodes
     M(Bool, async) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
+    M(Bool, fsync_backup_files) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
@@ -42,19 +55,46 @@ namespace ErrorCodes
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
+    LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid) \
     /// M(Int64, compression_level)
 
+namespace
+{
+    /// `s3_storage_class_name` is an alias of the `s3_storage_class` field, so a reset of either drops a
+    /// change written as the other.
+    std::string_view canonicalBackupSettingName(std::string_view name)
+    {
+        if (name == "s3_storage_class_name")
+            return "s3_storage_class";
+        return name;
+    }
+
+    /// The backup-specific names. The last two are fields kept out of the macro; unlisted, they would be
+    /// reset on the query context.
+    constexpr std::string_view BACKUP_SPECIFIC_SETTING_NAMES[] = {
+#define BACKUP_SETTING_NAME(TYPE, NAME) #NAME,
+        LIST_OF_BACKUP_SETTINGS(BACKUP_SETTING_NAME)
+#undef BACKUP_SETTING_NAME
+        "compression_level",
+        "data_file_name_prefix_length",
+    };
+
+    SettingsWithDefaultsResolved resolveBackupSettings(const ASTBackupQuery & query)
+    {
+        return resolveDefaultedSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);
+    }
+}
+
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 {
     BackupSettings res;
 
-    if (query.settings)
     {
-        const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+        const auto & settings = resolveBackupSettings(query).changes;
         for (const auto & setting : settings)
         {
             if (setting.name == "compression_level")
@@ -66,6 +106,13 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             /// both spellings in both places so they are interchangeable. See issue #68551.
             else if (setting.name == "s3_storage_class_name")
                 res.s3_storage_class = SettingFieldString{setting.value}.value;
+            /// Handled before the macro below so that naming the setting is recorded even when the
+            /// value given equals the default one.
+            else if (setting.name == "fsync_backup_files")
+            {
+                res.fsync_backup_files = SettingFieldBool{setting.value}.value;
+                res.fsync_backup_files_specified = true;
+            }
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -81,61 +128,53 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         }
     }
 
+    /// `fsync_backup_files = DEFAULT` names the setting too, although its change was dropped above.
+    if (query.settings)
+    {
+        const auto & default_settings = query.settings->as<const ASTSetQuery &>().default_settings;
+        if (std::ranges::find(default_settings, "fsync_backup_files") != default_settings.end())
+            res.fsync_backup_files_specified = true;
+    }
+
     if (query.base_backup_name)
         res.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
 
     if (query.cluster_host_ids)
         res.cluster_host_ids = Util::clusterHostIDsFromAST(*query.cluster_host_ids);
 
+#if CLICKHOUSE_CLOUD
+    if (res.resumable_backup_batch_size == 0)
+        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size` must be greater than 0");
+    if (res.resumable_backup_batch_size_bytes == 0)
+        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size_bytes` must be greater than 0");
+#endif
+
     return res;
 }
 
 bool BackupSettings::isAsync(const ASTBackupQuery & query)
 {
+    /// Runs before `fromBackupQuery` and must agree with it: a reset wins, else the last change, converted
+    /// as the field converts it.
     if (query.settings)
     {
-        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
-        if (field)
-            return field->safeGet<bool>();
+        const auto & settings = query.settings->as<const ASTSetQuery &>();
+        if (std::ranges::find(settings.default_settings, "async") == settings.default_settings.end())
+        {
+            auto it = std::find_if(
+                settings.changes.rbegin(),
+                settings.changes.rend(),
+                [](const SettingChange & change) { return change.name == "async"; });
+            if (it != settings.changes.rend())
+                return SettingFieldBool{it->value}.value;
+        }
     }
     return false; /// `async` is false by default.
 }
 
-SettingsChanges BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
+CoreSettingsFromQuery BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
 {
-    SettingsChanges core;
-
-    if (!query.settings)
-        return core;
-
-    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
-    for (const auto & setting : settings)
-    {
-        /// These two are handled specially in `fromBackupQuery` and are not
-        /// part of `LIST_OF_BACKUP_SETTINGS`, so list them explicitly.
-        if (setting.name == "compression_level")
-            continue;
-        if (setting.name == "data_file_name_prefix_length")
-            continue;
-        /// Alias for `s3_storage_class`, handled specially in `fromBackupQuery` and not part of
-        /// `LIST_OF_BACKUP_SETTINGS`, so it would otherwise be treated as a core setting. See issue #68551.
-        if (setting.name == "s3_storage_class_name")
-            continue;
-
-        bool is_backup_specific = false;
-
-#define CHECK_BACKUP_SETTING_NAME(TYPE, NAME) \
-        if (setting.name == #NAME) \
-            is_backup_specific = true;
-
-        LIST_OF_BACKUP_SETTINGS(CHECK_BACKUP_SETTING_NAME)
-#undef CHECK_BACKUP_SETTING_NAME
-
-        if (!is_backup_specific)
-            core.emplace_back(setting);
-    }
-
-    return core;
+    return extractCoreSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);
 }
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
@@ -152,8 +191,27 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
 
+    /// A host that does not know `fsync_backup_files` must reject the query rather than write its
+    /// share of the backup without fsync, so an explicitly requested value is sent even when the
+    /// loop above omitted it for equalling the default. An unnamed one stays omitted.
+    if (fsync_backup_files_specified && fsync_backup_files == default_settings.fsync_backup_files)
+        query_settings->changes.emplace_back(
+            "fsync_backup_files", static_cast<Field>(SettingFieldBool{fsync_backup_files}));
+
+    /// Only the `checksum` generator uses it, and not sending it otherwise keeps hosts that do not know this setting working.
+    if (data_file_name_generator == BackupDataFileNameGeneratorType::Checksum && data_file_name_prefix_length)
+        query_settings->changes.emplace_back("data_file_name_prefix_length", Field(static_cast<UInt64>(*data_file_name_prefix_length)));
+
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
+
+    /// Other hosts re-parse this clause as text, and older parsers reject `name = DEFAULT` after a comma, so no reset is sent.
+    ///
+    /// Nor is a core reset sent as its default: that marks it changed on the receiver, where e.g. `BackupWriterS3` then overrides `<s3>`.
+    /// The DDL settings packet already omits it, so only its overrides are dropped.
+    ///
+    /// A backup-specific reset is not sent: the rebuild carries resolved state, and resolving it again would lose `backup_uuid`.
+    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())
         query_settings = nullptr;

@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: '쿼리 인사이트'
 title: 'Postgres 쿼리 인사이트'
-description: 'Managed Postgres용 구문별 텔레메트리: 데이터베이스에서 실행되는 모든 쿼리 패턴을 영향도순으로 보여주고, 각 쿼리가 느린 이유를 설명하는 진단 카운터를 함께 제공합니다'
+description: 'ClickHouse Managed Postgres용 구문별 텔레메트리: 데이터베이스에서 실행되는 모든 쿼리 패턴을 영향도순으로 보여주고, 각 쿼리가 느린 이유를 설명하는 진단 카운터를 함께 제공합니다'
 keywords: ['Managed Postgres', '쿼리 인사이트', 'pg_stat_ch', '느린 쿼리', 'p99 지연 시간', '쿼리 패턴', 'Postgres 성능', '임시 블록', '병렬 worker', 'wal']
 doc_type: 'guide'
 ---
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
-쿼리 인사이트는 [Managed Postgres](/ko/products/managed-postgres/overview) 인스턴스에서 SQL 문별 텔레메트리를 수집하고
+쿼리 인사이트는 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 인스턴스에서 SQL 문별 텔레메트리를 수집하고
 영향도가 큰 순서대로 모든 쿼리 패턴의 순위를 매기므로,
 Cloud Console을 벗어나지 않고도 &quot;p99가 서서히 증가하고 있다&quot;에서 &quot;이 패턴에서 디스크 스필이 발생하고 있다&quot;까지
 바로 파악할 수 있습니다.
@@ -27,13 +27,13 @@ Postgres 내부에서 정규화되며, 리터럴은 제거되고 플레이스홀
   ## 쿼리 인사이트 열기
 </div>
 
-Cloud Console에서 Managed Postgres 인스턴스를 열고 왼쪽 사이드바에서
+Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 사이드바에서
 **쿼리 인사이트**를 클릭합니다. 페이지는 실제 사용 순서에 맞춰 네 개의
 영역으로 나뉩니다:
 
 * 한 화면에서 데이터베이스 상태를 점검할 수 있는 **개요**.
 * 데이터베이스에서 실행된 모든 쿼리 패턴의 순위를 보여 주며,
-  의심되는 기준으로 정렬할 수 있는 **느린 패턴** 테이블.
+  의심되는 기준으로 정렬할 수 있는 **느린 쿼리 패턴** 테이블.
 * 개별 실행 내역을 최신순으로 나열하는 **최근 쿼리** 패널.
 * 단일 패턴에 대한 모든 카운터를 집계해 보여 주는 **세부 정보 플라이아웃**.
 
@@ -253,6 +253,6 @@ ClickHouse로든 전송할 수 있습니다. 소스 코드와 이슈는 다음�
 
 * [모니터링 대시보드](/ko/products/managed-postgres/monitoring/dashboard) — 기본 제공 리소스 및 활동 차트
 * [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — 호스트 수준 메트릭을 자체 관측성 스택으로 스크레이프
-* [Managed Postgres OpenAPI](/ko/products/managed-postgres/openapi#query-insights) — 느린 패턴과 최근 실행 내역을 프로그래밍 방식으로 조회
-* [확장 기능](/ko/products/managed-postgres/extensions) — Managed Postgres 인스턴스에서 사용할 수 있는 확장 기능
-* [GitHub의 `pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) — Query Insights를 지원하는 오픈소스 확장 기능
+* [ClickHouse Managed Postgres OpenAPI](/ko/products/managed-postgres/openapi#query-insights) — 느린 패턴과 최근 실행 내역을 프로그래밍 방식으로 조회
+* [확장 기능](/ko/products/managed-postgres/extensions) — ClickHouse Managed Postgres 인스턴스에서 사용할 수 있는 확장 기능
+* [`pg_stat_ch` on GitHub](https://github.com/clickhouse/pg_stat_ch) — Query Insights를 지원하는 오픈소스 확장 기능

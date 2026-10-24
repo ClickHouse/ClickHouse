@@ -157,12 +157,11 @@ def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
 
-    # `doinst.sh` copies the unpacked tree into the system instead of moving it, so a
-    # package occupies twice its size - 6.8 GiB for `clickhouse-common-static-dbg` -
-    # until the tree is removed. These are by far the most disk hungry tests of the
-    # job, and they used to fail with `No space left on device`. The debug symbols also
-    # take more than a minute to install, and the same tarballs are installed in both
-    # images, so unpack them only in the first one - see `main`.
+    # `doinst.sh` renames the unpacked tree into place, so a package occupies its unpacked
+    # size - around 3.7 GiB for `clickhouse-common-static-dbg` - until the tree is removed.
+    # These are by far the most disk hungry tests of the job. The debug symbols also take
+    # more than a minute to install, and the same tarballs are installed in both images, so
+    # unpack them only in the first one - see `main`.
     server_packages = (
         "clickhouse-{common,client,server}*tgz"
         if debug_symbols
@@ -348,6 +347,17 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
         )
         print(f"Running docker container: [{run_command}]")
         container_id = Shell.get_output(run_command, verbose=True, strict=True)
+        # The image boots systemd, whose `systemd-tmpfiles-setup.service` unlinks the dnf lock
+        # files (`/usr/lib/tmpfiles.d/dnf.conf`). Wait for the bus first: while it is down
+        # `systemctl` cannot reach systemd, so a gate built on it alone silently does nothing.
+        Shell.check(
+            f"docker exec {container_id} bash -c '"
+            f"for _ in $(seq 1 600); do systemctl show -p Version --value >/dev/null 2>&1 "
+            f"&& break; sleep 0.1; done; "
+            f"systemctl start systemd-tmpfiles-setup.service'",
+            verbose=True,
+            strict=True,
+        )
         test_script_path = TEMP_PATH / "install.sh"
         test_script_path.write_text(command)
         # Shell.check(f"chmod +x {test_script_path}")
@@ -372,9 +382,8 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
 def free_packages(pattern: str) -> None:
     """Delete the packages that have already been tested.
 
-    All the package flavours are downloaded into the same directory, which is mounted
-    into every container, and together they take more than 6 GiB - as much as a single
-    container needs to install them. Nothing reads a package once its own tests are
+    The packages are downloaded into one directory, which is mounted into every container,
+    and a flavour takes gigabytes there. Nothing reads a package once its own tests are
     done, so drop it to leave room for the tests that follow.
     """
     Shell.check(f"rm -f {TEMP_PATH}/{pattern}", verbose=True)
@@ -419,10 +428,22 @@ def main():
 
     args = parse_args()
 
-    deb_image = DockerImage.get_docker_image(DEB_IMAGE).pull_image()
-    rpm_image = DockerImage.get_docker_image(RPM_IMAGE).pull_image()
+    # The same tarballs are installed in both images, so the tgz group needs both of them.
+    deb_image = (
+        DockerImage.get_docker_image(DEB_IMAGE).pull_image(timeout_s=120)
+        if args.deb or args.tgz
+        else None
+    )
+    rpm_image = (
+        DockerImage.get_docker_image(RPM_IMAGE).pull_image(timeout_s=120)
+        if args.rpm or args.tgz
+        else None
+    )
 
-    Shell.check(f"chmod +x {Utils.cwd()}/ci/tmp/clickhouse", verbose=True, strict=True)
+    if args.deb or args.rpm:
+        Shell.check(
+            f"chmod +x {Utils.cwd()}/ci/tmp/clickhouse", verbose=True, strict=True
+        )
 
     prepare_test_scripts()
 
@@ -447,9 +468,8 @@ def main():
 
     # The binary tests need nothing but `/packages/clickhouse`, and they need around 7 GiB
     # of disk for it, more than twice as much as any other test here. The runners hand the
-    # job as little as 4 GiB of free space, so run these tests once every package has been
-    # deleted, which is worth 7 GiB on its own. Keeping the binary packed until the very
-    # end leaves 3 GiB more for the tgz tests as well.
+    # job as little as 4 GiB of free space, so run these tests last, once the job's own
+    # packages have been deleted.
     print("Test the binary")
     if args.deb:
         test_results.extend(

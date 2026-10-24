@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -19,6 +20,9 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ErrnoException.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/credentials/credentials.hpp>
+#endif
 #include <Poco/Net/NetException.h>
 
 
@@ -84,6 +88,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return isRetryableAzureException(e);
     }
+    catch (const Azure::Core::Credentials::AuthenticationException &)
+    {
+        /// AuthenticationException (token/RBAC not ready) is transient; separate catch — it isn't a RequestFailedException.
+        return true;
+    }
 #endif
     catch (const ErrnoException & e)
     {
@@ -142,6 +151,27 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         /// In fact, there can be other similar situations.
         /// But it is OK, because there is a safety guard against deleting too many parts.
+        return false;
+    }
+}
+
+bool isIOErrorException(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const ErrnoException & e)
+    {
+        return e.getErrno() == EIO;
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        return e.code() == std::errc::io_error;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is not an I/O error.
         return false;
     }
 }
@@ -239,6 +269,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
+            if (isIOErrorException(std::current_exception()))
+                throw;
+
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",
@@ -355,12 +388,23 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_name = it->name();
 
+        /// Skip temporary metadata files (e.g. checksums.txt.tmp) that an interrupted metadata
+        /// rewrite may have left behind. They are not part of the part's data and must not be
+        /// checksummed: doing so would record a file that the next rewrite deletes, making the
+        /// recalculated checksums self-invalidating.
+        if (file_name.ends_with(".tmp"))
+            continue;
+
         /// We will check projections later.
         if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
         }
+
+        /// Written next to `txn_version.txt` and renamed over it while the part's version changes.
+        if (file_name == VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME)
+            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
@@ -460,14 +504,34 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     /// Handle unknown projections: on disk and in checksums but not in the
     /// part's projection list (e.g. a projection was dropped while the part
-    /// was detached, then re-attached).  Remove them from checksums_txt so
-    /// that the checkEqual below does not fail, and mark the part as having
-    /// a broken projection so the caller can handle it gracefully.
+    /// was detached, then re-attached, or an INSERT that had started before
+    /// `DROP PROJECTION` committed wrote the part afterwards).  Remove them
+    /// from checksums_txt so that the checkEqual below does not fail, and mark
+    /// the part as having a broken projection so the caller can handle it
+    /// gracefully.
     if (!projections_on_disk.empty())
     {
         is_broken_projection = true;
-        for (const auto & projection_file : projections_on_disk)
-            checksums_txt.remove(projection_file);
+
+        for (auto it = projections_on_disk.begin(); it != projections_on_disk.end();)
+        {
+            /// A directory the part itself lists in its `checksums.txt` was written deliberately, with
+            /// a projection the table has since dropped; the part is intact and has to keep passing the
+            /// check. Drop it from the unexpected set as well, or the `require_checksums` branch below
+            /// reports the part as broken - which is what happens to every mutation descendant of such
+            /// a part, because a mutation hardlinks the directory and is checked with checksums
+            /// required. A directory that the part does not list is a leftover nobody wrote as part of
+            /// it, so it stays unexpected.
+            if (checksums_txt.files.contains(*it))
+            {
+                checksums_txt.remove(*it);
+                it = projections_on_disk.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
     }
 
     /// Also handle leftover checksums entries for projections that are unknown to the current metadata

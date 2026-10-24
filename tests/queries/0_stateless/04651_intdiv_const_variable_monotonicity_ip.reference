@@ -1,0 +1,18 @@
+c9i ipv4 const neg	1
+c9i ipv4 const span	1
+c9i ipv6 const neg	1
+c9i ipv4 divide neg	1
+c9ii ip key g1 intDiv	1
+c9ii ip key g1 divide	1
+c9ii ip key g8 intDiv	1
+c9ii ip key g8 divide	1
+c9iii ip plus	1
+c9iii ip var right	1
+c9iii ipv4 divisor intDiv	1
+c9iii ipv4 divisor divide	1
+c9iii ipv eq	1
+c9iv ipv4 signed divisor wrap	1
+c9iv ipv6 signed divisor wrap	1
+c9iv ipv4 signed divisor unbounded	1
+c9iv ipv6 signed divisor unbounded	1
+c8 live ip var	1

@@ -2,9 +2,9 @@
 -- H_{2^k} (x) H_m for dimensions of the form 2^k * m (m in {12, 20}), instead of zero-padding to the next power of two.
 -- This exercises that path with dimension 96 = 8 * 12 (which would otherwise pad to 128): encode and query must use the
 -- same rotation, so the codes path still reproduces the exact brute-force top-k and ranks the query vector first.
--- The codec is gated behind `allow_experimental_codecs`.
+-- The codec is gated behind `enable_quantized_codec`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 -- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
 -- the test harness randomizes the latter, which would shrink the full-coverage shortlist and make the exact check flaky. Pin it.

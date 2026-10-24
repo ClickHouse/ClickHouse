@@ -9,6 +9,7 @@ namespace DB
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
+    M(AI_REQUEST, "AIRequest") \
     M(ARROW_FILE, "ArrowFile") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
@@ -25,6 +26,7 @@ namespace DB
     M(AZURE_COPY_POOL, "AzureObjCopy") \
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
+    M(BACKGROUND_QUERY, "BackgroundQuery") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
     M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
@@ -33,6 +35,7 @@ namespace DB
     M(BACKUP_COORDINATION, "BackupCoord") \
     M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_WORKER, "BackupWorker") \
+    M(BUCKETED_METRIC_LOG, "BMetricLog") \
     M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
@@ -60,6 +63,7 @@ namespace DB
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
+    M(SHUTDOWN_TABLES, "ShutdownTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
@@ -70,6 +74,7 @@ namespace DB
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
+    M(ICEBERG_DELETE_DECODE, "IcebergDelDec") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
@@ -155,6 +160,7 @@ namespace DB
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
     M(SIGNAL_LISTENER, "SignalListnr") \
+    M(SNAPSHOT_ASYNC, "SnapshotAsync") \
     M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
@@ -162,6 +168,7 @@ namespace DB
     M(TCP_HANDLER, "TCPHandler") \
     M(TEST_KEEPER_PROC, "TestKeeperProc") \
     M(TEST_SCHEDULER, "TestScheduler") \
+    M(TIMER_DESCRIPTOR, "TimerDescriptor") \
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
@@ -177,6 +184,7 @@ namespace DB
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
+    M(DISK_OBJECT_STORAGE_WRITE_BLOB, "DiskObjStWrBlob") \
     M(DISTRIBUTED_CACHE, "DistribCache") \
     M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
 

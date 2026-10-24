@@ -16,6 +16,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
 bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(std::exception_ptr exception_ptr);
+/// True for an I/O error (`EIO`) of a read, open or stat: the access failed, which does not mean that the data is wrong.
+bool isIOErrorException(std::exception_ptr exception_ptr);
 
 /// True for an object store answering "this object does not exist" (S3 NoSuchKey, Azure HTTP 404).
 /// Disjoint from isRetryableException: both providers classify not-found as non-retryable.
