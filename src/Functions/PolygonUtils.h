@@ -23,12 +23,12 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
 #include <boost/geometry/index/rtree.hpp>
-#include <boost/geometry/strategy/cartesian/side_robust.hpp>
 
 #include <array>
 #include <vector>
 #include <iterator>
 #include <cmath>
+#include <limits>
 #include <algorithm>
 
 
@@ -47,6 +47,83 @@ inline constexpr Float64 max_abs_polygon_coordinate = 1e150;
 [[noreturn]] inline void throwPolygonCoordinateIsTooLarge()
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: a coordinate exceeds {} in absolute value", max_abs_polygon_coordinate);
+}
+
+/// Exact sign of the orientation for the rare inputs the fast path cannot decide, 0 for non-finite coordinates.
+[[gnu::cold]] NO_INLINE inline int orientationSignExact(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
+{
+    if (!(isFinite(ax) && isFinite(ay) && isFinite(bx) && isFinite(by) && isFinite(cx) && isFinite(cy)))
+        return 0;
+
+    /// The orientation is ax * by - ay * bx + bx * cy - by * cx + cx * ay - cy * ax. Each product of two Float64 values
+    /// is an integer below 2^106 times a power of two, so the products are added exactly, from the largest power down.
+    struct Term
+    {
+        __int128 value;
+        int exponent;
+    };
+    std::array<Term, 6> terms{};
+    size_t num_terms = 0;
+    auto add_product = [&](Float64 u, Float64 v, int sign)
+    {
+        if (u == 0 || v == 0)
+            return;
+        int u_exponent = 0;
+        int v_exponent = 0;
+        auto u_mantissa = static_cast<Int64>(std::frexp(u, &u_exponent) * 0x1p53);
+        auto v_mantissa = static_cast<Int64>(std::frexp(v, &v_exponent) * 0x1p53);
+        terms[num_terms++] = {static_cast<__int128>(u_mantissa) * v_mantissa * sign, u_exponent + v_exponent};
+    };
+    add_product(ax, by, 1);
+    add_product(ay, bx, -1);
+    add_product(bx, cy, 1);
+    add_product(by, cx, -1);
+    add_product(cx, ay, 1);
+    add_product(cy, ax, -1);
+    std::sort(terms.begin(), terms.begin() + num_terms, [](const Term & l, const Term & r) { return l.exponent > r.exponent; });
+
+    __int128 sum = 0;
+    int sum_exponent = 0;
+    for (size_t i = 0; i < num_terms; ++i)
+    {
+        if (sum != 0)
+        {
+            /// In units of 2^terms[i].exponent, the terms from i on add up to less than 2^109 and cannot change the sign of a larger sum.
+            int shift = sum_exponent - terms[i].exponent;
+            if (shift >= 110 || (sum < 0 ? -sum : sum) >> (109 - shift) != 0)
+                break;
+            sum *= static_cast<__int128>(1) << shift;
+        }
+        sum += terms[i].value;
+        sum_exponent = terms[i].exponent;
+    }
+    return (sum > 0) - (sum < 0);
+}
+
+/// Sign of the orientation of (cx, cy) relative to the line (ax, ay) -> (bx, by): positive on the left, 0 on the line.
+/// Exact unless products of coordinate differences overflow.
+inline int orientationSign(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 cx, Float64 cy)
+{
+    Float64 left = (ax - cx) * (by - cy);
+    Float64 right = (ay - cy) * (bx - cx);
+    Float64 det = left - right;
+    /// Shewchuk's error bound of the rounded determinant plus the error of products that underflow: above it, its sign is exact.
+    constexpr Float64 epsilon = std::numeric_limits<Float64>::epsilon();
+    if (std::abs(det) >= (1.5 + 4 * epsilon) * epsilon * (std::abs(left) + std::abs(right)) + 2 * std::numeric_limits<Float64>::min())
+        return det > 0 ? 1 : (det < 0 ? -1 : 0);
+    return orientationSignExact(ax, ay, bx, by, cx, cy);
+}
+
+/// Whether (x, y) is strictly left of the edge a - b directed upwards. Exactly one endpoint of the edge must be above y.
+inline bool isLeftOfUpwardEdge(Float64 ax, Float64 ay, Float64 bx, Float64 by, Float64 x, Float64 y)
+{
+    /// The edge crosses the row y between the x coordinates of its endpoints; a NaN x is left of no edge.
+    if (x < ax && x < bx)
+        return true;
+    if (!(x < ax || x < bx))
+        return false;
+    int point_side = orientationSign(ax, ay, bx, by, x, y);
+    return by > ay ? point_side > 0 : point_side < 0;
 }
 
 namespace bgi = boost::geometry::index;
@@ -299,25 +376,23 @@ private:
 
     struct HalfPlane
     {
-        /// Left closed half-plane of the line through (x0, y0) with direction (dx, dy), evaluated relative to (x0, y0).
-        CoordinateType x0;
-        CoordinateType y0;
-        CoordinateType dx;
-        CoordinateType dy;
+        /// Closed left half-plane of the line from -> to.
+        CoordinateType from_x;
+        CoordinateType from_y;
+        CoordinateType to_x;
+        CoordinateType to_y;
 
         HalfPlane() = default;
 
-        /// Take left half-plane.
         HalfPlane(const Point & from, const Point & to)
         {
-            x0 = from.x();
-            y0 = from.y();
-            dx = to.x() - from.x();
-            dy = to.y() - from.y();
+            from_x = from.x();
+            from_y = from.y();
+            to_x = to.x();
+            to_y = to.y();
         }
 
-        /// Inner part of the HalfPlane is the left side of initialized vector.
-        bool contains(CoordinateType x, CoordinateType y) const { return dx * (y - y0) - dy * (x - x0) >= 0; }
+        bool contains(CoordinateType x, CoordinateType y) const { return orientationSign(from_x, from_y, to_x, to_y, x, y) >= 0; }
     };
 
     struct Cell
@@ -627,8 +702,7 @@ bool PointInPolygonWithGrid<CoordinateType>::crossesBox(
 template <typename CoordinateType>
 int PointInPolygonWithGrid<CoordinateType>::side(const Point & a, const Point & b, const Point & c)
 {
-    using Side = boost::geometry::strategy::side::side_robust<CoordinateType, boost::geometry::strategy::side::fp_equals_policy>;
-    return Side::apply(a, b, c);
+    return orientationSign(a.x(), a.y(), b.x(), b.y(), c.x(), c.y());
 }
 
 template <typename CoordinateType>
@@ -641,7 +715,7 @@ bool PointInPolygonWithGrid<CoordinateType>::isInside(const Polygon & poly, Coor
         {
             const Point & a = ring[i];
             const Point & b = ring[j];
-            if ((a.y() > y) != (b.y() > y) && x < (b.x() - a.x()) * (y - a.y()) / (b.y() - a.y()) + a.x())
+            if ((a.y() > y) != (b.y() > y) && isLeftOfUpwardEdge(a.x(), a.y(), b.x(), b.y(), x, y))
                 inside = !inside;
         }
         return inside;
