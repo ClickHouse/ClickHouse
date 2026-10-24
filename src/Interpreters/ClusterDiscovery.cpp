@@ -232,6 +232,18 @@ ClusterDiscovery::ClusterDiscovery(
         String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
         String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
+        /// Advertise the port peers must actually dial: with `secure` enabled that is `tcp_port_secure`, not `tcp_port`.
+        bool is_secure_connection = config.getBool(cluster_config_prefix + ".secure", false);
+        UInt16 advertised_port = context->getTCPPort();
+        if (is_secure_connection)
+        {
+            auto secure_port = context->getTCPPortSecure();
+            if (!secure_port)
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "Cluster '{}' has 'secure' enabled in its discovery config, but 'tcp_port_secure' is not set", key);
+            advertised_port = *secure_port;
+        }
+
         clusters_info.emplace(
             key,
             ClusterInfo(
@@ -242,8 +254,8 @@ ClusterDiscovery::ClusterDiscovery(
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
                 /* password= */ password,
                 /* cluster_secret= */ cluster_secret,
-                /* port= */ context->getTCPPort(),
-                /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
+                /* port= */ advertised_port,
+                /* secure= */ is_secure_connection,
                 /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
                 /* observer_mode= */ is_observer,
                 /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
@@ -894,6 +906,7 @@ String ClusterDiscovery::NodeInfo::serialize() const
     Poco::JSON::Object json;
     json.set("version", data_ver);
     json.set("address", address);
+    json.set("secure", secure);
     json.set("shard_id", shard_id);
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
