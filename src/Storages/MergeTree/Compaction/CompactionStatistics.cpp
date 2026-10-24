@@ -555,10 +555,38 @@ ColumnSize partReadBytes(const IMergeTreeDataPart & part, const NamesAndTypesLis
     if (part.getType() != MergeTreeDataPartType::Wide)
         return part.getTotalColumnsSize();
 
+    /// A legacy wide part predating columns_substreams.txt sizes a JSON / Dynamic column by its default
+    /// serialization (MergeTreeDataPartWide::getColumnSizeImpl), which cannot enumerate the dynamic substreams,
+    /// so the files of its JSON paths are missing from the column size. Recover them from the column's actual
+    /// .bin files on disk, so the same data is priced the same whether the part records its substreams or not.
+    const bool recover_dynamic_sizes = part.getColumnsSubstreams().empty();
     ColumnSize read_size;
     for (const auto & column : part.getColumns())
-        if (read_columns.contains(column.name))
-            read_size.add(part.getColumnSize(column.name));
+    {
+        if (!read_columns.contains(column.name))
+            continue;
+        ColumnSize column_size = part.getColumnSize(column.name);
+        if (recover_dynamic_sizes && column.type->hasDynamicStructure())
+        {
+            const auto escaped_column_name = escapeForFileName(column.name);
+            UInt64 data_compressed = 0;
+            UInt64 data_uncompressed = 0;
+            for (const auto & [file_name, checksum] : part.checksums.files)
+            {
+                if (!file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
+                    continue;
+                const std::string stream_name(
+                    file_name.data(), file_name.size() - std::string_view(IMergeTreeDataPart::DATA_FILE_EXTENSION).size());
+                if (!streamFileBelongsToColumn(stream_name, escaped_column_name))
+                    continue;
+                data_compressed += checksum.file_size;
+                data_uncompressed += checksum.uncompressed_size;
+            }
+            column_size.data_compressed = std::max(column_size.data_compressed, data_compressed);
+            column_size.data_uncompressed = std::max(column_size.data_uncompressed, data_uncompressed);
+        }
+        read_size.add(column_size);
+    }
     return read_size;
 }
 
@@ -604,14 +632,6 @@ bool tryCollectColumnSubstreamsFromParts(
         }
     }
     return recorded;
-}
-
-std::optional<size_t> tryCountColumnSubstreamsFromParts(const String & column_name, const MergeTreeDataPartsVector & source_parts)
-{
-    std::unordered_set<std::string_view> union_substreams;
-    if (!tryCollectColumnSubstreamsFromParts(column_name, source_parts, union_substreams))
-        return std::nullopt;
-    return union_substreams.size();
 }
 
 /// Upper bound on the on-disk streams one shared-data bucket of a JSON column serializes. The ADVANCED
@@ -803,8 +823,15 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
     /// The recorded union carries the column's static skeleton; the recovered legacy files deliberately do
     /// not. When only legacy parts store the column, charge the skeleton once so the result stays a full
     /// per-column footprint (the rebuilt column writes its static streams too, not just the dynamic ones).
+    /// A modern part may record the same dynamic stream a legacy part stores as a file (the same path resolved
+    /// to the same type is named identically), and the rebuilt column writes it once: count only the recovered
+    /// files the recorded union does not already contain.
     const size_t recorded_or_skeleton_streams = recorded ? union_substreams.size() : countColumnStreams({column});
-    return recorded_or_skeleton_streams + legacy_dynamic_files.size();
+    size_t unrecorded_legacy_files = 0;
+    for (const auto & file_name : legacy_dynamic_files)
+        if (!union_substreams.contains(file_name))
+            ++unrecorded_legacy_files;
+    return recorded_or_skeleton_streams + unrecorded_legacy_files;
 }
 
 /// The streams demonstrably visible in the source parts for a rebuilt projection output column, whatever
@@ -819,17 +846,21 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
 /// ground truth for exactly that case, the same way countOutputStreams prices a type-widened base column.
 /// Like there, each arm is a FULL per-column footprint: the recorded union carries the source skeleton,
 /// and when no part records the column the output column's own skeleton is charged instead
-/// (tryCountColumnSubstreamsFromParts returns nullopt), so legacy dynamic files - whose recovery
+/// (tryCollectColumnSubstreamsFromParts returns false), so legacy dynamic files - whose recovery
 /// subtracted the static skeleton - stack on a skeleton either way.
 size_t countVisibleProjectionColumnStreams(
     const NameAndTypePair & column,
     const MergeTreeDataPartsVector & source_parts,
     const MergeTreeSettings & settings)
 {
-    size_t visible_streams = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
+    std::unordered_set<std::string_view> recorded_substreams;
+    const size_t visible_streams = tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams)
+        ? recorded_substreams.size()
+        : countColumnStreams({column});
 
     const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
     const auto escaped_column_name = escapeForFileName(column.name);
+    /// A recovered file that a modern part also records is the same stream, written once: skip it.
     std::unordered_set<std::string> legacy_dynamic_files;
     for (const auto & part : source_parts)
     {
@@ -844,7 +875,8 @@ size_t countVisibleProjectionColumnStreams(
         /// for the type the part was written with, not for the current projection output type.
         const auto static_files = collectStaticStreamFileNames({*part_column}, stream_file_name_settings);
         for (const auto & file_name : collectWidePartDataFileNames(*part))
-            if (!static_files.contains(file_name) && streamFileBelongsToColumn(file_name, escaped_column_name))
+            if (!static_files.contains(file_name) && !recorded_substreams.contains(file_name)
+                && streamFileBelongsToColumn(file_name, escaped_column_name))
                 legacy_dynamic_files.insert(file_name);
     }
     return visible_streams + legacy_dynamic_files.size();
@@ -894,7 +926,7 @@ WriterStreamCounts countRebuiltProjectionStreams(
 }
 
 /// Number of on-disk column streams the merged wide part will write. Its substream set is estimated per output
-/// column as the union, by name, of the source parts' recorded substreams (tryCountColumnSubstreamsFromParts),
+/// column as the union, by name, of the source parts' recorded substreams (tryCollectColumnSubstreamsFromParts),
 /// falling back to the default serialization for a column no part records. A column that some source part
 /// stores under a DIFFERENT type than the merged metadata cannot be priced from that union: a metadata-only
 /// ALTER MODIFY COLUMN widening (plain JSON / Dynamic(max_types=0) later widened, then merged with newer parts
@@ -1082,7 +1114,10 @@ WriterStreamCounts countOutputStreams(
 
             for (const auto & file_name : collectWidePartDataFileNames(*part))
             {
-                if (static_files.contains(file_name))
+                /// A file whose stream a modern part already records is in the union above under the same name
+                /// (the same JSON path resolved to the same type is named identically in every part), and the
+                /// writer opens it once, so it must not be charged again as an unrecorded dynamic file.
+                if (static_files.contains(file_name) || output_stream_names.contains(file_name))
                     continue;
                 const auto recoverable = std::find_if(
                     recoverable_escaped_columns.begin(), recoverable_escaped_columns.end(),
@@ -1133,7 +1168,7 @@ WriterStreamCounts countOutputStreams(
     non_adaptive_streams += unrecorded_non_adaptive_files.size();
 
     /// Price the capacity-priced (widened / default-filled) columns now that every stream visible for them in
-    /// the source parts is known: the recorded substream union by name (tryCountColumnSubstreamsFromParts does
+    /// the source parts is known: the recorded substream union by name (tryCollectColumnSubstreamsFromParts does
     /// not require type equality, so it sees the old, narrower type's recorded substreams too) plus the real
     /// dynamic .bin files recovered above from unrecorded legacy wide parts. Each arm of the max is a FULL
     /// per-column footprint: the output type's static skeleton plus its write-time dynamic capacity, or the
@@ -1156,10 +1191,16 @@ WriterStreamCounts countOutputStreams(
     {
         if (!capacity_priced_columns.contains(column.name))
             continue;
-        size_t visible_streams
-            = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
+        std::unordered_set<std::string_view> recorded_substreams;
+        size_t visible_streams = tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams)
+            ? recorded_substreams.size()
+            : countColumnStreams({column});
+        /// Union the recovered legacy files with the recorded substreams by name: a stream both kinds of
+        /// parts store is written once.
         if (const auto it = capacity_priced_dynamic_files.find(column.name); it != capacity_priced_dynamic_files.end())
-            visible_streams += it->second.size();
+            for (const auto & file_name : it->second)
+                if (!recorded_substreams.contains(file_name))
+                    ++visible_streams;
         const size_t column_streams
             = std::max(countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings), visible_streams);
         streams += column_streams;
