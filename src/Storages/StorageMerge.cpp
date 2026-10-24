@@ -266,6 +266,7 @@ StorageMerge::StorageMerge(
         database_is_regexp_,
         source_database_name_or_regexp_,
         source_table_regexp_, {})
+    , refresh_children_in_read(keep_inferred_source_metadata && columns_.empty())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty()
@@ -710,6 +711,42 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     }
 
     return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals)));
+}
+
+void StorageMerge::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    if (refresh_children_in_read)
+        return;
+
+    /// The planner checks pushed-down filters against the children's metadata, so a data lake child takes its new snapshot here, not in `read`.
+    const auto & access = query_context->getAccess();
+    QueryStatusPtr query_status = query_context->getProcessListElementSafe();
+    try
+    {
+        traverseTablesUntilImpl(query_context, this, database_name_or_regexp, [&](const StoragePtr & table)
+        {
+            /// A child left unrefreshed by `timeout_overflow_mode = 'break'` is not read: `createChildrenPlans` stops at the same check.
+            if (query_status && !query_status->checkTimeLimit())
+                return true;
+
+            const auto id = table->getStorageID();
+            if (!access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+                return false;
+
+            /// An unreachable child must not fail `DESCRIBE` or a query that skips it by `_table`.
+            child_refresh_errors.refresh(query_context, table, [&]
+            {
+                resolveStorageProxyLoading(table)->updateExternalDynamicMetadataIfExists(query_context);
+            });
+            return false;
+        });
+    }
+    catch (const Exception & e)
+    {
+        /// As in `getInMemoryMetadataPtr`: a missing source database must not fail `DESCRIBE`, and a read still throws.
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED)
+            throw;
+    }
 }
 
 void StorageMerge::read(
@@ -1193,16 +1230,19 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
             StorageMetadataHandle storage_metadata_snapshot;
-            const auto & inferred_source_metadata = assert_cast<const StorageMerge &>(*storage_merge).inferred_source_metadata;
-            if (auto it = inferred_source_metadata.find(storage->getStorageID());
-                it != inferred_source_metadata.end() && (it->first.hasUUID() || it->second.storage.lock() == storage))
+            const auto & merge = assert_cast<const StorageMerge &>(*storage_merge);
+            if (auto it = merge.inferred_source_metadata.find(storage->getStorageID());
+                it != merge.inferred_source_metadata.end() && (it->first.hasUUID() || it->second.storage.lock() == storage))
             {
                 storage_metadata_snapshot = it->second.metadata;
             }
             else
             {
-                /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
-                resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
+                /// Otherwise `StorageMerge::updateExternalDynamicMetadataIfExists` refreshed the child before planning.
+                if (merge.refresh_children_in_read)
+                    resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
+                else
+                    merge.child_refresh_errors.rethrow(context, storage);
                 storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
             }
 

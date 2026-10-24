@@ -509,6 +509,22 @@ StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr
     return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals_desc)));
 }
 
+void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    if (!fixed_uuid)
+        return;
+
+    if (auto target = tryGetTargetTable())
+    {
+        /// An unreachable target must not fail `DESCRIBE`.
+        target_refresh_errors.refresh(query_context, target, [&]
+        {
+            auto view_metadata = getInMemoryMetadataPtr(query_context, false);
+            resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(view_metadata->getSQLSecurityOverriddenContext(query_context));
+        });
+    }
+}
+
 void StorageMaterializedView::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -529,19 +545,16 @@ void StorageMaterializedView::readImpl(
     {
         storage = getTargetTable();
         lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        /// Not refreshed again, the planner checked the snapshot of `updateExternalDynamicMetadataIfExists`.
+        /// Another query can still make a newer schema visible in between; that race is not handled here.
+        target_refresh_errors.rethrow(local_context, storage);
     }
     else
     {
         std::tie(storage, lock) = refresher->getAndLockTargetTable(getTargetTableId(), context);
+        /// A refresh may have replaced the target since `updateExternalDynamicMetadataIfExists`.
+        storage->updateExternalDynamicMetadataIfExists(context);
     }
-
-    /// For datalake target tables (e.g. IcebergLocal), we must refresh external metadata
-    /// before reading. Without this call the storage snapshot will lack the
-    /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
-    /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
-    /// on the outermost storage, but for materialized views that is the view itself
-    /// (which is a no-op), not the target table.
-    storage->updateExternalDynamicMetadataIfExists(context);
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
