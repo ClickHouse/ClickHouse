@@ -768,6 +768,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
+        postgresql_replication_settings->applyDefaultsForNewOrExistingObject(*args.storage_def, args.mode >= LoadingStrictnessLevel::ATTACH);
 
         /// A definition stored by an older version, which did not check it, must still be loaded.
         if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))

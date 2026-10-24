@@ -3,6 +3,7 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -52,6 +53,8 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unique_replication_consumer_server_uuid;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
@@ -162,8 +165,47 @@ namespace
             getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
     }
 
-    String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    String normalizeReplicationSlot(String name)
     {
+        name = Poco::toLower(name);
+        for (auto & c : name)
+            if (c == '-')
+                c = '_';
+        return name;
+    }
+
+    bool useUniqueReplicationConsumerIdentifierMixedWithServerUUID(const MaterializedPostgreSQLSettings & replication_settings)
+    {
+        return replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier]
+            && replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid];
+    }
+
+    /// The ClickHouse object UUID alone is not unique per server: a `CREATE ... ON CLUSTER` query assigns the same UUID
+    /// to the object on every replica, so all replicas would use the same replication slot and publication
+    /// (see https://github.com/ClickHouse/ClickHouse/issues/58726). Mixing in the persistent `ServerUUID` makes it unique
+    /// per server. The combination is hashed back into a UUID to stay within the PostgreSQL identifier length limit.
+    /// The server UUID is taken from the definition of the object, where it is written on creation, so that the names
+    /// do not change if `ServerUUID` is regenerated.
+    String getUniqueReplicationIdentifierMixedWithServerUUID(
+        const String & clickhouse_uuid, const MaterializedPostgreSQLSettings & replication_settings)
+    {
+        const String & server_uuid = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_unique_replication_consumer_server_uuid];
+        if (server_uuid.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Setting `materialized_postgresql_unique_replication_consumer_server_uuid` is not set for a unique replication consumer identifier");
+        return normalizeReplicationSlot(toString(UUIDHelpers::makeUUIDv4FromHash(fmt::format("{}_{}", clickhouse_uuid, server_uuid))));
+    }
+
+    String getPublicationName(
+        const String & postgres_database,
+        const String & postgres_schema,
+        const String & postgres_table,
+        const String & clickhouse_uuid,
+        const MaterializedPostgreSQLSettings & replication_settings)
+    {
+        if (useUniqueReplicationConsumerIdentifierMixedWithServerUUID(replication_settings))
+            return fmt::format("{}_ch_publication", getUniqueReplicationIdentifierMixedWithServerUUID(clickhouse_uuid, replication_settings));
+
         /// The publication name preserves the case of the database/table name. It is created via
         /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
         /// so it must not be folded to lower case here — otherwise two tables whose names differ
@@ -209,15 +251,6 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Too big replication slot size: {}", name);
     }
 
-    String normalizeReplicationSlot(String name)
-    {
-        name = Poco::toLower(name);
-        for (auto & c : name)
-            if (c == '-')
-                c = '_';
-        return name;
-    }
-
     String getReplicationSlotName(
         const String & postgres_database,
         const String & postgres_schema,
@@ -228,7 +261,9 @@ namespace
         String slot_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot];
         if (slot_name.empty())
         {
-            if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
+            if (useUniqueReplicationConsumerIdentifierMixedWithServerUUID(replication_settings))
+                slot_name = getUniqueReplicationIdentifierMixedWithServerUUID(clickhouse_uuid, replication_settings);
+            else if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
                 slot_name = clickhouse_uuid;
             else if (!isDefaultPostgreSQLSchema(postgres_schema))
                 /// Include the schema for the same reason as in getPublicationName(), via the same
@@ -277,9 +312,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , user_provided_snapshot(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot])
     , replication_slot(getReplicationSlotName(postgres_database_, postgres_schema, postgres_table_, clickhouse_uuid_, replication_settings))
     , tmp_replication_slot(replication_slot + "_tmp")
-    , publication_name(getPublicationName(postgres_database_, postgres_schema, postgres_table_))
+    , publication_name(getPublicationName(postgres_database_, postgres_schema, postgres_table_, clickhouse_uuid_, replication_settings))
     , legacy_replication_slot(getReplicationSlotName(postgres_database_, /* postgres_schema */ "", postgres_table_, clickhouse_uuid_, replication_settings))
-    , legacy_publication_name(getPublicationName(postgres_database_, /* postgres_schema */ "", postgres_table_))
+    , legacy_publication_name(getPublicationName(postgres_database_, /* postgres_schema */ "", postgres_table_, clickhouse_uuid_, replication_settings))
     , reschedule_backoff_min_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_min_ms])
     , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
     , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])

@@ -2542,6 +2542,7 @@ def test_publication_name_case_collision_single_storage(started_cluster):
     # replication. The publication name is kept case-preserving (and quoted when handed to the
     # `pgoutput` plugin), so there is no collision. A unique replication consumer identifier is used
     # so the (always lower-cased) replication slot names do not collide for this same-case-fold pair.
+    # The server UUID is not mixed in, so that the publication name is still derived from the table name.
     # Related: https://github.com/ClickHouse/ClickHouse/issues/64891
     upper = "Pub_Case_Collision"
     lower = "pub_case_collision"
@@ -2565,7 +2566,8 @@ def test_publication_name_case_collision_single_storage(started_cluster):
             CREATE TABLE `{name}` (key Int32, value Int32)
             ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{name}', 'postgres', '{pg_pass}')
             ORDER BY key
-            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1
+            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1,
+                     materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = 0
             """
         )
 

@@ -827,6 +827,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
+        postgresql_replica_settings->applyDefaultsForNewOrExistingObject(*engine_define, args.create_query.attach);
 
         /// A definition stored by an older version, which did not check it, must still be loaded.
         if (!is_internal_metadata_replay && isFreshTableDefinition(args.mode, args.create_query.attach_short_syntax))
@@ -1069,6 +1070,16 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
 Cannot be used together with `materialized_postgresql_replication_slot`: a user-managed replication slot has a single fixed name and cannot be unique per consumer. Such a combination is rejected on `CREATE` and on `ATTACH` with a full definition, but a database or table that was already created with it can still be loaded.
+
+### `materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid` {#materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid}
+
+Mix the server UUID into the unique replication consumer identifier. Default: `1`. Has effect only together with `materialized_postgresql_use_unique_replication_consumer_identifier`.
+
+A `CREATE ... ON CLUSTER` query assigns the same ClickHouse UUID to the database or table on every replica. With this setting, the names of the replication slot and the publication are derived from both the ClickHouse UUID and the server UUID, so each replica has its own replication slot and publication and replicates independently. Without this setting, all replicas would use the same replication slot and publication, and only one of them would replicate.
+
+The setting is written explicitly into the definition of a newly created database or table. A database or table created by an older version does not have it in its definition and is treated as if it is set to `0`, so it continues to use its existing replication slot and publication.
+
+The server UUID is written into the definition as well, in the setting `materialized_postgresql_unique_replication_consumer_server_uuid`, so the names of the replication slot and the publication do not change if the server UUID is regenerated (for example, if the `uuid` file in the server data directory is lost). This setting is not supposed to be set manually.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 
