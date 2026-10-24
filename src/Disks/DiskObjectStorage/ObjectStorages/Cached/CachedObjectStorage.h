@@ -119,6 +119,8 @@ public:
         return object_storage->getWriteBufferMemory(write_settings);
     }
 
+    bool supportsAtomicWrite() const override { return object_storage->supportsAtomicWrite(); }
+
     bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }

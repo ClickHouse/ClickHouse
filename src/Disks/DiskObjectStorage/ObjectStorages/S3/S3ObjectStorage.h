@@ -155,6 +155,9 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    /// An object becomes visible only on the completion of `PutObject` or `CompleteMultipartUpload`.
+    bool supportsAtomicWrite() const override { return true; }
+
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
