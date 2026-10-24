@@ -23,6 +23,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.jobs.scripts.buildx import build_rotating_apt_mirrors
 from ci.jobs.scripts.create_release import (
     ReleaseContextManager,
     ReleaseInfo,
@@ -575,8 +576,11 @@ def main():
                     target_arg = (
                         " --target=production" if variant == "distroless" else ""
                     )
-                    Shell.check(
-                        f"docker buildx build"
+                    log_files.append(build_log)
+                    result = build_rotating_apt_mirrors(
+                        f"{image}:{label_version}",
+                        "us-east-1",
+                        lambda apt_mirror_args: f"docker buildx build"
                         f" --platform=linux/amd64,linux/arm64"
                         f" --provenance=true"
                         # Pinned scanner: the floating stable-1 tag can move to a
@@ -587,6 +591,7 @@ def main():
                         f" --label=com.clickhouse.build.version={label_version}"
                         f" {' '.join(tags)}"
                         f" --build-arg=VERSION={version_string}"
+                        f" {' '.join(apt_mirror_args)}"
                         f" --progress=plain"
                         f" --file={dockerfile}"
                         f" {context}"
@@ -594,8 +599,8 @@ def main():
                         f" || (echo '=== docker buildx build failed for"
                         f" {image}:{label_version}; tail of {build_log}: ==='"
                         f" >&2; tail -n 200 {build_log} >&2; exit 1)",
-                        strict=True,
                     )
+                    assert result.is_ok(), f"got [{result.info[-2000:]}]"
 
                 Shell.check("git checkout -", strict=True)
 
