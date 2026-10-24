@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Disable parallel replicas in case of correleated subquery
+/** Disable parallel replicas in case of correleated subquery or recursive CTE
  */
 class DisableParallelReplicasPass final : public IQueryTreePass
 {
@@ -14,7 +14,7 @@ public:
 
     String getDescription() override
     {
-        return "Disable parallel replicas if correlated subquery is present";
+        return "Disable parallel replicas if correlated subquery or recursive CTE is present";
     }
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
