@@ -439,6 +439,27 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));
     }
+
+    /// Make the replicas read the table state this query iterates.
+    const auto & table_state = storage_snapshot->metadata->datalake_table_state;
+    if (configuration->isDataLakeConfiguration() && table_state.has_value())
+    {
+        if (auto metadata = configuration->getExternalMetadata())
+        {
+            if (auto changes = metadata->getSettingsToResolveState(*table_state); !changes.empty())
+            {
+                if (!settings_temporary_storage)
+                {
+                    auto settings_ast = make_intrusive<ASTSetQuery>();
+                    settings_ast->is_standalone = false;
+                    settings_temporary_storage = std::move(settings_ast);
+                }
+                for (const auto & change : changes)
+                    settings_temporary_storage->as<ASTSetQuery &>().changes.setSetting(change.name, change.value);
+            }
+        }
+    }
+
     if (settings_temporary_storage)
     {
         args.insert(args.end(), std::move(settings_temporary_storage));
