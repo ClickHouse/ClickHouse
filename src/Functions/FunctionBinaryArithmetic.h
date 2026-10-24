@@ -2394,6 +2394,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// The settings decide whether an overflow throws and what an out-of-range date gives, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(check_decimal_overflow);
+        hash.update(date_time_overflow_behavior);
+    }
+
     bool isNameInsensitive() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override

@@ -96,6 +96,7 @@ public:
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
     const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
+    JoinExpressionActions & getExpressionActions() { return expression_actions; }
 
     std::vector<JoinActionRef> getInputActions() const;
     std::vector<JoinActionRef> getOutputActions() const;

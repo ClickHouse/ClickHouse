@@ -7922,7 +7922,7 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_merge_expressions, true, R"(
-Toggles a query-plan-level optimization which merges consecutive filters.
+Toggles query-plan-level optimizations which merge consecutive expressions and let a JOIN key read an expression already computed by the steps below the JOIN.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 <Note>
