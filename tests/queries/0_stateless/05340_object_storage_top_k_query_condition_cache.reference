@@ -1,0 +1,151 @@
+--- no predicate
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+1000996
+40000	1119980000
+0
+0
+0
+--- with a predicate
+1000998	1000998
+1000995	1000995
+1000992	1000992
+1000998	1000998
+1000995	1000995
+1000992	1000992
+13358
+--- one object of the glob is rewritten
+100999
+100998
+100997
+100998	100998
+100995	100995
+100992	100992
+100999
+100998
+100997
+--- reads not pinned to the listed ETag
+100999
+100998
+100997
+100996
+100995
+100999
+100998
+100997
+100996
+100995
+--- a predicate on the tags of the objects
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+--- a predicate on the modification time of the objects
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+100992
+100999
+100998
+100997
+100996
+100995
+100994
+100993
+100992
+--- a predicate on a column with a read-time default
+100999
+100998
+100997
+999
+999
+999
+--- explicit keys
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
+--- format settings changed by recreating the table with the same UUID
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+100999
+100998
+100997
+100999
+100998
+100997
+--- use_query_condition_cache_for_top_k = 0
+100999
+100998
+100997
+100996
+100995
+100994
+100999
+100998
+100997
+100996
+100995
+100994
+--- query condition cache lookups
+nowhere_1	1	0
+nowhere_2	1	1
+nowhere_limit	1	0
+nowhere_plain	0	0
+nowhere_asc	1	0
+where_1	1	0
+where_2	1	1
+rewritten_nowhere_1	1	0
+rewritten_where_1	1	0
+rewritten_nowhere_2	1	1
+unpinned_1	0	0
+unpinned_2	0	0
+tags_1	0	0
+tags_2	0	0
+time_1	0	0
+time_2	0	0
+default_1	1	0
+default_2	1	0
+keys_1	0	0
+keys_2	0	0
+key_1	1	0
+key_2	1	1
+case_1	1	0
+case_2	1	1
+case_reloaded_1	1	0
+case_reloaded_2	1	1
+gate_1	0	0
+gate_2	0	0

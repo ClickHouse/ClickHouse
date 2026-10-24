@@ -22,7 +22,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/functional/hash.hpp>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -181,22 +180,36 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     /// Iceberg reads the row lineage columns from the data file.
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()),
-        context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-        query_info.row_level_filter,
-        query_info.prewhere_info);
+    auto format_filter_actions_dag = info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration());
+    auto make_format_filter_info = [&]
+    {
+        return std::make_shared<FormatFilterInfo>(
+            format_filter_actions_dag,
+            context,
+            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+            query_info.row_level_filter,
+            query_info.prewhere_info);
+    };
+    auto format_filter_info = make_format_filter_info();
     format_filter_info->top_k_filter = top_k_filter;
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
         /// The verdicts written under the key also cover row groups whose rows were all returned
-        /// before the threshold got tight enough to drop them.
+        /// before the threshold got tight enough to drop them. Tracking the best values costs work
+        /// per row group, so only the files that actually use the key are read with it (for plain
+        /// object storage, the key may turn out not to be made, see `createReader`).
         auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
-        format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
+        auto format_filter_info_tracking_best_values = make_format_filter_info();
+        format_filter_info_tracking_best_values->top_k_filter = std::move(top_k_filter_tracking_best_values);
+        top_k_query_condition_cache_key->format_filter_info_tracking_best_values = std::move(format_filter_info_tracking_best_values);
     }
+
+    auto file_iterator = iterator_wrapper;
+    if (top_k_query_condition_cache_key && !top_k_query_condition_cache_key->condition_hash)
+        file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(
+            file_iterator, top_k_query_condition_cache_key, context->getProcessListElement());
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -210,7 +223,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_settings,
             context,
             max_block_size,
-            iterator_wrapper,
+            file_iterator,
             parser_shared_resources,
             format_filter_info,
             need_only_count,
@@ -249,13 +262,16 @@ void ReadFromObjectStorageStep::createIterator()
 
     auto context = getContext();
 
+    /// The TopK query condition cache key is made from the same table state the files are read from.
+    iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
+        configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
-ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
+std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !allow_top_k_query_condition_cache
@@ -274,18 +290,46 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     /// The threshold of the TopN filter comes from the rows of every file of the query, so the key
     /// must identify the set of files and their contents. A data lake snapshot does: it lists the data
     /// files (and the deletes applied to them), which are never modified in place, and the read
-    /// iterates exactly the snapshot pinned in the storage metadata (see `createFileIterator`). Plain
-    /// object storage has no such identity before the objects are listed.
-    if (!configuration->isDataLakeConfiguration())
+    /// iterates exactly the snapshot pinned in the storage metadata (see `createFileIterator`). For
+    /// plain object storage, the key covers the ETags of all objects as they are listed (see
+    /// `ObjectIteratorListingAllForTopKQueryConditionCache`). An object can be overwritten after it is
+    /// listed, so the read of every object must be pinned to the listed ETag: otherwise an entry of
+    /// one file could be used while another file is read in a version the key does not describe.
+    const bool is_data_lake = configuration->isDataLakeConfiguration();
+    const auto & datalake_table_state = iterator_metadata->datalake_table_state;
+    if (is_data_lake ? !datalake_table_state : !isReadPinnedToListedGeneration())
         return {};
-    const auto & datalake_table_state = storage_snapshot->metadata->datalake_table_state;
-    if (!datalake_table_state)
+
+    /// Listing explicit keys (or a brace expansion) takes a `HEAD` request for each object, which the
+    /// sources issue concurrently otherwise, while listing all objects ahead of the read serializes them.
+    if (!is_data_lake && iterator_wrapper->estimatedKeysCount() > 1
+        && dynamic_cast<const StorageObjectStorageSource::KeysIterator *>(iterator_wrapper.get()))
+        return {};
+
+    /// Which column of a file is read and how its values are decoded depend on the format settings (e.g.
+    /// `input_format_parquet_case_insensitive_column_matching`). A table captures them when it is loaded,
+    /// so a `DETACH` / `ATTACH`, which keeps the UUID, may change them, and the hash of the filter does
+    /// not cover them.
+    if (!format_settings || !format_settings->source_settings_hash)
         return {};
 
     /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
     /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
     /// yields different sets of files from query to query.
-    if ((*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
+    if (is_data_lake && (*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
+        return {};
+
+    /// The members of an archive make no key (see `ObjectIteratorListingAllForTopKQueryConditionCache`),
+    /// and listing them ahead would keep a reader of the archive open for each of them.
+    if (configuration->isArchive())
+        return {};
+
+    /// The tags and the modification time of an object can change without changing its `ETag` (a copy
+    /// of an object onto itself with replaced metadata keeps the contents) or the snapshot of a data lake,
+    /// so neither the key of the files nor the hash of the filter describes them. Likewise `_table` comes
+    /// from the name of the table, while the entries are keyed by its UUID, which a `RENAME TABLE` keeps.
+    if (info.requested_virtual_columns.contains("_tags") || info.requested_virtual_columns.contains("_time")
+        || info.requested_virtual_columns.contains("_table"))
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
@@ -298,6 +342,29 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     /// on settings) does not matter: it only removes files without rows passing the filter, which do not
     /// make the threshold either.
     if (query_info.row_level_filter)
+        return {};
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` expression is computed above the format by
+    /// `AddingDefaultsTransform` when a file lacks it, and the hash of the filter sees it only as an
+    /// input, not the expression (which may be `queryID()`, `now()`, or depend on other columns). So
+    /// the same files and filter could let other rows through from query to query. The sort column
+    /// itself never has one (see `supportsTopKDynamicFilter`).
+    auto has_default = [&](const String & name)
+    {
+        if (info.columns_description.hasDefault(name))
+            return true;
+        /// A subcolumn (`t.a`) is read from its column.
+        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+            if (info.columns_description.hasDefault(name.substr(0, pos)))
+                return true;
+        return false;
+    };
+    auto filter_reads_column_with_default = [&](const ActionsDAG & dag)
+    {
+        return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return has_default(input->result_name); });
+    };
+    if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
+        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
         return {};
 
     /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
@@ -332,17 +399,48 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
 
     key->condition += fmt::format("TopK by {}", top_k_filter->column_name);
 
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(top_k_filter->plan_hash);
+    hash.update(*format_settings->source_settings_hash);
+
+    if (!is_data_lake)
+    {
+        key->condition_hash_without_files = hash.get64();
+        return key;
+    }
+
     WriteBufferFromOwnString table_state;
     serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
     table_state.finalize();
 
-    SipHash hash;
-    hash.update(condition_hash);
-    hash.update(top_k_filter->plan_hash);
     hash.update(table_state.str().size());
     hash.update(table_state.str());
     key->condition_hash = hash.get64();
     return key;
+}
+
+bool ReadFromObjectStorageStep::isReadPinnedToListedGeneration() const
+{
+    /// On most backends a read is unconditional: `HDFSObjectStorage` and the local disk ignore
+    /// `StoredObject::etag`, so a concurrent in-place overwrite after the object was listed goes
+    /// unnoticed. A read is pinned to the listed generation when the backend issues it with the
+    /// captured `ETag` and rejects a response whose `ETag` drifted from it, which is atomic with respect
+    /// to an overwrite: S3 with `s3_validate_etag_on_read` (see `ReadBufferFromS3`), and Azure with
+    /// `azure_validate_etag_on_read` (see `ReadBufferFromAzureBlobStorage`). The pin only takes effect
+    /// when the captured metadata actually carries a non-empty `ETag` (see `createReadBuffer`), and
+    /// `GCS` accessed through the S3 API is documented to legitimately return objects without one -
+    /// so a `GCS`-provider client is not considered pinned even with the setting on.
+#if USE_AWS_S3
+    if (object_storage->getType() == ObjectStorageType::S3
+        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        const auto s3_client = object_storage->tryGetS3StorageClient();
+        return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
+    return object_storage->getType() == ObjectStorageType::Azure
+        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read];
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
@@ -378,36 +476,16 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     if (!object_storage->supportsObjectGenerationComparison())
         return false;
 
-    /// Even when the two generations are comparable, on most backends the second pass opens an
-    /// unconditional read: `HDFSObjectStorage` and the local disk ignore `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
-    /// read could still stitch together rows of two versions of the file. The reread is only
-    /// generation-safe when either:
+    /// Even when the two generations are comparable, the second pass could still stitch together rows
+    /// of two versions of a file overwritten in place between the metadata probe and the read. The
+    /// reread is only generation-safe when either:
     ///   - the data files are immutable by the format's contract — a data lake never overwrites a
     ///     data file in place, so a file identified by path is always the same generation; or
-    ///   - the backend pins the actual read to the captured generation — S3 with
-    ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
-    ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
-    ///     with respect to an overwrite; Azure with `azure_validate_etag_on_read` does the same
-    ///     (see `ReadBufferFromAzureBlobStorage`).
-    /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
-    /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
-    /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
-    /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
+    ///   - the backend pins the actual read to the captured generation (see `isReadPinnedToListedGeneration`).
+    /// Any provider that unexpectedly yields an empty `ETag` at read time fails close in
     /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
     /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    bool reread_is_generation_pinned = false;
-#if USE_AWS_S3
-    if (object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
-    {
-        const auto s3_client = object_storage->tryGetS3StorageClient();
-        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
-    }
-#endif
-    if (object_storage->getType() == ObjectStorageType::Azure
-        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
-        reread_is_generation_pinned = true;
-    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
+    if (!configuration->dataFilesAreImmutable() && !isReadPinnedToListedGeneration())
         return false;
 
 #if CLICKHOUSE_CLOUD

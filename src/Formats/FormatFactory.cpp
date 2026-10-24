@@ -456,6 +456,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
     format_settings.input_format_column_matching_case_sensitivity = settings[Setting::input_format_column_name_matching_mode];
+    format_settings.source_settings_hash = getFormatSettingsHash(settings);
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

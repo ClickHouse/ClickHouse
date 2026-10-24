@@ -159,6 +159,11 @@ struct FormatSettings
 
     UInt64 client_protocol_version = 0;
 
+    /// The hash of the settings `getFormatSettings` derived this from (see `getFormatSettingsHash`), for
+    /// keying a value by the format settings it was read with. Unset when the struct was not built by
+    /// `getFormatSettings`. A member changed afterwards is not reflected in it.
+    std::optional<UInt64> source_settings_hash = std::nullopt;
+
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     size_t max_threads = 1;
