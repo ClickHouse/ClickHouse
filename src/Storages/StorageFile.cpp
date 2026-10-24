@@ -2907,9 +2907,23 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     table_name_hash.update(table_name.size());
     table_name_hash.update(table_name);
 
+    /// The key covers the whole filter including the conjuncts on hive partition columns, and whether a column
+    /// is read from the path or from the file depends on `use_hive_partitioning` of the query that created the
+    /// storage (for the `file` table function it is created per query), which the `table_id` does not cover.
+    SipHash hive_columns_hash;
+    for (const auto & column : storage->hive_partition_columns_to_read_from_file_path)
+    {
+        hive_columns_hash.update(column.name.size());
+        hive_columns_hash.update(column.name);
+        const String type_name = column.type->getName();
+        hive_columns_hash.update(type_name.size());
+        hive_columns_hash.update(type_name);
+    }
+
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
     boost::hash_combine(condition_hash, files_hash.get64());
     boost::hash_combine(condition_hash, table_name_hash.get64());
+    boost::hash_combine(condition_hash, hive_columns_hash.get64());
     key->condition_hash = condition_hash;
     return key;
 }
