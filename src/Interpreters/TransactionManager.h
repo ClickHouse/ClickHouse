@@ -135,7 +135,12 @@ public:
     /// Releases locks that were acquired by transaction, releases snapshot, removes transaction from the list of active transactions.
     /// Normally it should not throw, but if it does for some reason (global memory limit exceeded, disk failure, etc)
     /// then we should terminate server and reinitialize it to avoid corruption of data structures. That's why it's noexcept.
-    void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept;
+    /// `already_claimed` means the caller already won the rollback CAS via `claimRollbackFor`.
+    void rollbackTransaction(const MergeTreeTransactionPtr & txn, bool already_claimed = false) noexcept;
+
+    /// Claims the rollback without performing it. A successful claim obliges the caller to call
+    /// `rollbackTransaction` with `already_claimed`.
+    static bool claimRollbackFor(const MergeTreeTransactionPtr & txn) noexcept { return txn->claimRollback(); }
 
     /// Returns CSN if transaction with specified ID was committed and UnknownCSN if it was not.
     /// Returns NonTransactionalCSN for any non-transactional TID (sentinel or host-stamped)
