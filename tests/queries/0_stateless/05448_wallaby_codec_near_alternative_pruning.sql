@@ -11,11 +11,11 @@ DROP TABLE IF EXISTS near_wallaby32;
 DROP TABLE IF EXISTS near_wallaby64;
 
 CREATE TABLE near_base (i UInt32 CODEC(NONE), f64 Float64 CODEC(NONE), f32 Float32 CODEC(NONE)) ENGINE = MergeTree ORDER BY i
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 CREATE TABLE near_wallaby64 (i UInt32 CODEC(NONE), f Float64 CODEC(Wallaby)) ENGINE = MergeTree ORDER BY i
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576;
 CREATE TABLE near_wallaby32 (i UInt32 CODEC(NONE), f Float32 CODEC(Wallaby)) ENGINE = MergeTree ORDER BY i
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 1048576;
 
 INSERT INTO near_base SELECT number, 1000000.00400001 + (number % 2) * 0.001, if(number % 2 = 0, toFloat32(8192.01), toFloat32(8193.01)) FROM numbers(102400);
 INSERT INTO near_wallaby64 SELECT i, f64 FROM near_base;
