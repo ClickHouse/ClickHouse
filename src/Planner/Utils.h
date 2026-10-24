@@ -46,7 +46,7 @@ void addConvertingToCommonHeaderActionsIfNeeded(
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
 
 /// Convert query node to ASTSelectQuery for distributed processing
-ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node, const ContextPtr & context);
 
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
