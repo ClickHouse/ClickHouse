@@ -23,6 +23,10 @@ NameSet injectRequiredColumns(
 bool isSubcolumnReadFromConvertedColumn(
     const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part);
 
+/// Whether the virtual columns of a text index can be read from the index in a part (direct read).
+/// Otherwise they are computed by their default expressions.
+bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
+
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
 void addPatchPartsColumns(

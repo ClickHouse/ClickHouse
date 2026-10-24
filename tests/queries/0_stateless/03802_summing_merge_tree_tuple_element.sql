@@ -227,7 +227,8 @@ SELECT id, data FROM test_summing_tuple_before_sort_key ORDER BY id;
 DROP TABLE test_summing_tuple_before_sort_key;
 
 -- Test 8: SummingMergeTree - Zero row deletion with flattened Tuple
--- When all summable sub-columns of a flattened Tuple sum to zero, the row should be deleted.
+-- When all summable sub-columns of a flattened Tuple sum to zero, a merge deletes the row.
+-- `SELECT ... FINAL` sums the rows but keeps the zero rows.
 DROP TABLE IF EXISTS test_summing_zero_row;
 
 SELECT '=== Test 8: SummingMergeTree Zero Row Deletion ===';
@@ -244,6 +245,9 @@ CREATE TABLE test_summing_zero_row (
 ) ENGINE = SummingMergeTree() ORDER BY id
 SETTINGS allow_tuple_element_aggregation = 1;
 
+-- A background merge would remove the zero rows before `SELECT ... FINAL`.
+SYSTEM STOP MERGES test_summing_zero_row;
+
 -- Insert rows that cancel each other out (sum to zero)
 INSERT INTO test_summing_zero_row VALUES (1, (100, 50, (10))), (2, (200, 80, (20)));
 INSERT INTO test_summing_zero_row VALUES (1, (-100, -50, (-10))), (2, (-200, -80, (-20)));
@@ -254,6 +258,7 @@ INSERT INTO test_summing_zero_row VALUES (3, (100, 10, (-30)));
 SELECT 'Zero row - with FINAL:';
 SELECT id, metrics FROM test_summing_zero_row FINAL ORDER BY id;
 
+SYSTEM START MERGES test_summing_zero_row;
 OPTIMIZE TABLE test_summing_zero_row FINAL;
 
 SELECT 'Zero row - after OPTIMIZE:';

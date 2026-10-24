@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -35,6 +36,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 backup_restore_s3_retry_attempts;
+    extern const SettingsUInt64 backup_s3_expired_token_retry_timeout_ms;
     extern const SettingsUInt64 backup_restore_s3_retry_initial_backoff_ms;
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
@@ -100,6 +102,7 @@ public:
             .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
             .jitter_factor = static_cast<double>(local_settings[Setting::backup_restore_s3_retry_jitter_factor])};
         slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
+        expired_token_retry_timeout_ms = local_settings[Setting::backup_s3_expired_token_retry_timeout_ms];
     }
 
     S3BackupDiskClientFactory::Entry operator()(DiskPtr disk) const
@@ -109,6 +112,7 @@ public:
         auto config = disk_client->getClientConfiguration();
         config.retry_strategy = retry_strategy;
         config.s3_slow_all_threads_after_retryable_error = slow_all_threads_after_retryable_error;
+        config.expired_token_retry_timeout_ms = expired_token_retry_timeout_ms;
 
         return {disk_client->cloneWithConfigurationOverride(config), disk_client};
     }
@@ -116,6 +120,7 @@ public:
 private:
     S3::PocoHTTPClientConfiguration::RetryStrategy retry_strategy;
     bool slow_all_threads_after_retryable_error = false;
+    UInt64 expired_token_retry_timeout_ms = 0;
 };
 
     std::shared_ptr<S3::Client> makeS3Client(
@@ -219,6 +224,7 @@ private:
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
+        client_configuration.expired_token_retry_timeout_ms = local_settings[Setting::backup_s3_expired_token_retry_timeout_ms];
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -277,6 +283,13 @@ private:
         /// BACKUP/RESTORE TO S3 is driven by user SQL, so it must not be able to reuse the server's own
         /// S3 credentials.
         credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
+
+        /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
+        {
+            HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
+            context->getHTTPHeaderFilter().checkHeaders(gcp_oauth_headers);
+        }
 
         auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
 
