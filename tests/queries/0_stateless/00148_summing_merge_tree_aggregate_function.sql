@@ -14,15 +14,15 @@ create table summing_merge_tree_aggregate_function (
 insert into summing_merge_tree_aggregate_function
 select today() as d,
        number as k,
-       uniqState(toUInt64(number % 500))
-from numbers(5000)
+       uniqState(toUInt64(number % 50))
+from numbers(500)
 group by d, k;
 
 insert into summing_merge_tree_aggregate_function
 select today() as d,
-       number + 5000 as k,
-       uniqState(toUInt64(number % 500))
-from numbers(5000)
+       number + 500 as k,
+       uniqState(toUInt64(number % 50))
+from numbers(500)
 group by d, k;
 
 select count() from summing_merge_tree_aggregate_function;
