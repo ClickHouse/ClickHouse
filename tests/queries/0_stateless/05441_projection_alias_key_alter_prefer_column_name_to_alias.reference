@@ -1,0 +1,15 @@
+ADD PROJECTION
+['minus(100, v)','k']
+['minus(100, v)','k']
+4
+4
+8
+8
+unrelated ALTER, normal projection
+['minus(100, v)','k']
+['minus(100, v)','k']
+4
+4
+unrelated ALTER, aggregate projection
+[(91,4),(92,4),(93,4),(94,4),(95,4),(96,4),(97,4),(98,4),(99,4),(100,4)]
+[(91,4),(92,4),(93,4),(94,4),(95,4),(96,4),(97,4),(98,4),(99,4),(100,4)]
