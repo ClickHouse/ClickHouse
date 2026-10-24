@@ -6,7 +6,6 @@
 -- in another lambda as well - it is such a folded carrier inside the outer lambda's `ActionsDAG`.
 
 -- The plan is what is asserted here, and it is a plan of the analyzer; parallel replicas build another one.
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 -- 100 blocks, so both values occur unless a single draw is frozen for the whole query (2^-99).

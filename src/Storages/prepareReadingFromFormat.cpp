@@ -317,6 +317,21 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         }
     }
 
+    /// A subcolumn that the format does not read itself is extracted from its column after reading: `t.x` requested
+    /// together with `t` (see `filterTupleColumnsToRead`), or a dynamic subcolumn like `j.a` of a JSON column. Keep
+    /// requesting it while its column is still read, otherwise the filter left after PREWHERE cannot find it.
+    /// It goes before the hive partition and virtual columns, which the source appends after extracting.
+    size_t position = new_info.format_header.columns();
+    for (const auto & column : info.requested_columns)
+    {
+        if (!column.isSubcolumn() || new_info.format_header.has(column.name)
+            || !new_info.format_header.has(column.getNameInStorage()))
+            continue;
+        new_info.requested_columns.push_back(column);
+        new_info.source_header.insert(position, {column.type->createColumn(), column.type, column.name});
+        ++position;
+    }
+
     return new_info;
 }
 

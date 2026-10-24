@@ -23,6 +23,8 @@
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -49,6 +51,29 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
+bool hasClusterVariant(std::string_view engine_name)
+{
+    static constexpr std::string_view engines[] = {
+        AzureClusterDefinition::non_clustered_storage_engine_name,
+        S3ClusterDefinition::non_clustered_storage_engine_name,
+        HDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergClusterDefinition::non_clustered_storage_engine_name,
+        IcebergS3ClusterDefinition::non_clustered_storage_engine_name,
+        IcebergAzureClusterDefinition::non_clustered_storage_engine_name,
+        IcebergHDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergLocalClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeS3ClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeAzureClusterDefinition::non_clustered_storage_engine_name,
+        HudiClusterDefinition::non_clustered_storage_engine_name,
+        PaimonClusterDefinition::non_clustered_storage_engine_name,
+        PaimonS3ClusterDefinition::non_clustered_storage_engine_name,
+        PaimonAzureClusterDefinition::non_clustered_storage_engine_name,
+        PaimonHDFSClusterDefinition::non_clustered_storage_engine_name,
+    };
+    return std::ranges::find(engines, engine_name) != std::end(engines);
+}
+
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
@@ -56,20 +81,23 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
+    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
+    // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
+    // on server startup.
+    const auto global_context = args.getContext();
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
-        Settings settings = context->getSettingsCopy();
+        Settings settings = global_context->getSettingsCopy();
 
         // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
-        format_settings = getFormatSettings(context, settings);
+        format_settings = getFormatSettings(global_context, settings);
     }
     else
     {
-        format_settings = getFormatSettings(context);
+        format_settings = getFormatSettings(global_context);
     }
 
     ASTPtr partition_by;
@@ -133,6 +161,9 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         metadata.settings_changes = args.storage_def->settings->ptr();
         storage->setInMemoryMetadata(metadata);
     }
+
+    if (hasClusterVariant(args.engine_name))
+        storage->setHasClusterVariant();
 
     return storage;
 }
@@ -1979,7 +2010,7 @@ The Keeper cursor at `paimon_keeper_path` records how far the stream has consume
 
 Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
 
-**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
+**Rewinding the warehouse requires resetting the cursor in the same operation.** The cursor also records which snapshot it points at, so once the writer has reused the cursor's snapshot id, the read fails with `INVALID_STATE`: nothing is read and the cursor is left untouched. To recover, point the cursor at the snapshot the warehouse was rewound to, which reads every snapshot written since the rewind, or set it to its current value, which skips the snapshots at the reused ids. A cursor set by hand, or written by an older version, is trusted as written until a read advances it. Nothing can be checked once Paimon has expired the snapshot the cursor points at, nor for a rewind that keeps the cursor's snapshot and lands while a read is loading the snapshots after it.
 
 When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
 

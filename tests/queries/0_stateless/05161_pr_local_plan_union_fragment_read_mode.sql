@@ -29,7 +29,6 @@ CREATE VIEW v_pr_union_mode AS
 CREATE VIEW v_pr_union_mode_ordered AS SELECT tenant, ts FROM v_pr_union_mode ORDER BY ts;
 
 -- For runs with the old analyzer
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;
