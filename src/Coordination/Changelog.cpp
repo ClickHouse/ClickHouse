@@ -2,6 +2,8 @@
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -35,6 +37,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <IO/copyData.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
@@ -133,6 +136,20 @@ void moveChangelogBetweenDisks(
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
+
+/// The S3 changelog writer uploads the active segment under this prefix and publishes it under its final
+/// `changelog_*` name only on flush. Startup never treats such objects as changelogs and removes them.
+constexpr auto S3_IN_PROGRESS_PREFIX = "s3_in_progress_";
+
+/// The S3 changelog writer never publishes over the object it replaces: a failed `copyFile` rolls back by removing
+/// the destination, and a plain object storage disk may cache the size of the replaced object. When a rewrite keeps
+/// the range of the segment (`changelog_1_16.bin` rewritten from index 16), the new version is published under the
+/// same name with this extra component (`changelog_1_16_rewrite.bin`), and the next one without it again.
+/// `Changelog::getChangelogFileDescription` ignores the components after the range.
+constexpr auto S3_REWRITE_SUFFIX = "rewrite";
+
+/// The S3 changelog writer starts merging the published objects once this many of them are not merged yet.
+constexpr ptrdiff_t S3_COMPACTION_BACKLOG_THRESHOLD = 16;
 
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
@@ -244,6 +261,934 @@ std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint
     return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
+class IChangelogWriter
+{
+public:
+    IChangelogWriter(
+        std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
+        LogEntryStorage & entry_storage_,
+        KeeperContextPtr keeper_context_,
+        LogFileSettings log_file_settings_)
+        : existing_changelogs(existing_changelogs_)
+        , entry_storage(entry_storage_)
+        , log_file_settings(log_file_settings_)
+        , keeper_context(std::move(keeper_context_))
+        , log(getLogger("Changelog"))
+    {}
+
+    virtual void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode) = 0;
+    virtual bool isFileSet() const = 0;
+
+    virtual bool appendRecord(ChangelogRecord && record) = 0;
+    virtual void flush() = 0;
+    virtual void rotate(uint64_t new_start_log_index) = 0;
+
+    virtual uint64_t getStartIndex() const = 0;
+
+    virtual void finalize() = 0;
+
+    /// Called by `Changelog::writeAt` under `writer_mutex` before it rewrites or supersedes any existing
+    /// segment, after every scheduled relink was applied by `LogEntryStorage::refreshCache`.
+    /// `index` is the first log index that is rewritten.
+    virtual void prepareRewrite(uint64_t /* index */) {}
+
+    ChangelogFileDescriptionPtr getCurrentFileDescription() const { return current_file_description; }
+
+    virtual ~IChangelogWriter() = default;
+
+protected:
+    std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs;
+    LogEntryStorage & entry_storage;
+
+    LogFileSettings log_file_settings;
+    KeeperContextPtr keeper_context;
+    LoggerPtr const log;
+
+    std::vector<std::pair<uint64_t, LogLocation>> unflushed_indices_with_log_location;
+    ChangelogFileDescriptionPtr current_file_description{nullptr};
+    std::optional<uint64_t> last_index_written;
+};
+
+class S3ChangelogWriter : public IChangelogWriter
+{
+public:
+    S3ChangelogWriter(
+        std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
+        LogEntryStorage & entry_storage_,
+        KeeperContextPtr keeper_context_,
+        LogFileSettings log_file_settings_,
+        std::mutex & writer_mutex_)
+        : IChangelogWriter(
+            existing_changelogs_,
+            entry_storage_,
+            keeper_context_,
+            log_file_settings_)
+        , s3_compaction_shutdown(false)
+        , s3_compaction_requests(std::make_shared<S3CompactionRequests>())
+        , writer_mutex(writer_mutex_)
+        , last_merged_index(0)
+    {
+        s3_compaction_thread = std::make_unique<ThreadFromGlobalPool>([this] { s3CompactionThread(); });
+    }
+
+    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode) override
+    {
+        if (current_file_description && last_index_written)
+        {
+            flushImpl(*last_index_written + 1);
+        }
+
+        /// `flushImpl` always leaves a freshly opened writer behind, and a writer may also still
+        /// be live when nothing was written since the previous `setFile`. Either way it targets a
+        /// different object than the one requested here, so discard it explicitly: overwriting
+        /// `write_buffer` below would destroy a live `WriteBufferFromS3` that was neither
+        /// finalized nor canceled, which trips the `chassert` in `WriteBuffer`'s destructor.
+        /// `cancel` rather than `finalize`, because that intermediate object holds no records and
+        /// must not be published to S3.
+        if (write_buffer)
+        {
+            write_buffer->cancel();
+            write_buffer.reset();
+        }
+
+        auto disk = getDisk();
+
+        if (mode == WriteMode::Append)
+        {
+            /// The writer produces raw records only, so appending them to a compressed segment (for example one
+            /// carried over from an `old_log_storage_disk`) would leave an object the next startup cannot decode.
+            if (file_description->is_compressed)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot append to compressed changelog {} with the experimental S3 changelog (s3_experimental_changelog)",
+                    file_description->path);
+
+            chassert(file_description->disk == disk);
+
+            /// An S3 object cannot be appended in place: `writeFile` replaces it. Carry the existing bytes over
+            /// first, so that, like the local append, a rewrite keeps the earlier records and adds the new ones
+            /// after them. The description itself is reused, so the `LogLocation`s already recorded for this
+            /// segment keep pointing at the same offsets. Bumping the epoch makes a concurrent merge that copied
+            /// the previous contents of this object discard its result.
+            ++rewrite_epoch;
+
+            /// Keep the new writer local until the carry-over succeeds. If the copy fails, the writer is left
+            /// without an open segment (`appendRecord` refuses to write then), so a failed rewrite cannot be
+            /// resumed after a truncated copy of the old segment and published under the live path.
+            current_file_description = nullptr;
+            last_index_written.reset();
+            auto new_in_progress_path = makeInProgressPath(file_description->path);
+            auto new_write_buffer = disk->writeFile(new_in_progress_path);
+            try
+            {
+                auto reader = disk->readFile(file_description->path, getReadSettings());
+                copyData(*reader, *new_write_buffer);
+            }
+            catch (...)
+            {
+                new_write_buffer->cancel();
+                throw;
+            }
+            current_file_description = std::move(file_description);
+            write_buffer = std::move(new_write_buffer);
+            write_buffer_in_progress_path = std::move(new_in_progress_path);
+        }
+        else
+        {
+            current_file_description = std::make_shared<ChangelogFileDescription>();
+            current_file_description->prefix = file_description->prefix;
+            current_file_description->from_log_index = file_description->from_log_index;
+            current_file_description->to_log_index = file_description->to_log_index;
+            current_file_description->extension = file_description->extension;
+            current_file_description->disk = disk;
+            current_file_description->path = Changelog::formatChangelogPath(
+                current_file_description->prefix,
+                current_file_description->from_log_index,
+                current_file_description->to_log_index,
+                current_file_description->extension);
+
+            write_buffer_in_progress_path = makeInProgressPath(current_file_description->path);
+            write_buffer = disk->writeFile(write_buffer_in_progress_path);
+        }
+
+        last_index_written.reset();
+
+        LOG_TRACE(log, "Initialize S3 changelog file: {}", current_file_description->path);
+    }
+
+    bool isFileSet() const override
+    {
+        return write_buffer != nullptr;
+    }
+
+    bool appendRecord(ChangelogRecord && record) override
+    {
+        if (!write_buffer)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot append log entry {} to the S3 changelog: no segment is open (a previous rewrite failed)",
+                record.header.index);
+
+        LOG_TRACE(log, "Writing to s3 buffer before {}", write_buffer->count());
+
+        auto current_position{write_buffer->count()};
+
+        auto & cur_write_buffer = *write_buffer;
+        writeIntBinary(computeRecordChecksum(record), cur_write_buffer);
+        writeIntBinary(record.header.version, cur_write_buffer);
+        writeIntBinary(record.header.index, cur_write_buffer);
+        writeIntBinary(record.header.term, cur_write_buffer);
+        writeIntBinary(record.header.value_type, cur_write_buffer);
+        writeIntBinary(record.header.blob_size, cur_write_buffer);
+
+        if (record.header.blob_size != 0)
+        {
+            cur_write_buffer.write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+        }
+
+        unflushed_indices_with_log_location.emplace_back(
+            record.header.index,
+            LogLocation{
+                .file_description = current_file_description,
+                .position = current_position,
+                .entry_size = record.header.blob_size,
+                .size_in_file = write_buffer->count() - current_position
+        });
+
+        LOG_TRACE(log, "Writing to s3 buffer after {}", write_buffer->count());
+
+        last_index_written = record.header.index;
+
+        return true;
+    }
+
+    void flush() override
+    {
+        /// `Changelog::writeThread` issues a `Flush` operation for every flush request, including
+        /// ones where no record was appended since the previous flush (an empty batch right after
+        /// startup, or right after a flush that already opened the next, still empty, S3 object).
+        /// In that state `last_index_written` is empty, so the old unconditional
+        /// `flushImpl(*last_index_written + 1)` read an empty `std::optional` and then passed the
+        /// resulting garbage start index to `flushImpl`, which would also reassign the live,
+        /// neither-finalized-nor-canceled `write_buffer` of the currently open object.
+        ///
+        /// There is nothing to publish when no record was appended, and the object that is already
+        /// open must stay open to receive the following appends, so an empty flush is a no-op.
+        if (!last_index_written)
+            return;
+
+        flushImpl(*last_index_written + 1);
+    }
+
+    void rotate(uint64_t new_start_log_index) override
+    {
+        flushImpl(new_start_log_index);
+    }
+
+    uint64_t getStartIndex() const override
+    {
+        chassert(current_file_description);
+        return current_file_description->from_log_index;
+    }
+
+    void finalize() override
+    {
+        LOG_TRACE(log, "Finalize S3 buffer");
+
+        /// Stop the compaction thread before touching shared state. `flushImpl` below
+        /// mutates `existing_changelogs` and `entry_storage` without holding `writer_mutex`,
+        /// while the compaction thread reads, erases and inserts into `existing_changelogs`.
+        /// Joining it first removes that data race during shutdown.
+        stopCompactionThread();
+
+        /// Nothing was ever written when `last_index_written` is empty (e.g. immediate
+        /// shutdown after startup), so there is nothing to publish — mirrors the
+        /// `isFileSet() && prealloc_done` guard in the local `ChangelogWriter`. `flush`
+        /// is a no-op in that state anyway; the explicit check keeps the intent local.
+        if (last_index_written)
+            flush();
+
+        if (write_buffer)
+        {
+            write_buffer->cancel();
+            write_buffer.reset();
+        }
+
+        removeRelinkedSources(/* force */ true);
+    }
+
+    ~S3ChangelogWriter() override
+    {
+        stopCompactionThread();
+
+        LOG_TRACE(log, "S3 changelogs map contents:");
+        for (const auto & [index, description] : existing_changelogs)
+        {
+            LOG_TRACE(log, "S3 changelog: index={}, path={}, from={}, to={}",
+                index, description->path, description->from_log_index, description->to_log_index);
+        }
+    }
+
+private:
+    std::unique_ptr<WriteBufferFromFileBase> write_buffer;
+    /// The staging key `write_buffer` uploads to, published under the final name by `flushImpl`.
+    std::string write_buffer_in_progress_path;
+    std::atomic<uint64_t> in_progress_object_counter{0};
+
+    std::unique_ptr<ThreadFromGlobalPool> s3_compaction_thread;
+    std::atomic<bool> s3_compaction_shutdown;
+
+    /// Wake-up requests of the compaction thread. Shared with the `on_applied` callbacks of the scheduled
+    /// relinks, which `entry_storage` may still hold after this writer is destroyed.
+    struct S3CompactionRequests
+    {
+        ConcurrentBoundedQueue<bool> queue{std::numeric_limits<size_t>::max()};
+        std::atomic<bool> compaction_requested{false};
+        std::atomic<bool> cleanup_requested{false};
+    };
+    std::shared_ptr<S3CompactionRequests> s3_compaction_requests;
+    std::mutex & writer_mutex;
+    uint64_t last_merged_index;
+
+    /// Merges whose sources are not removed yet. Appended to under `writer_mutex`, so `prepareRewrite` sees every
+    /// published merge. Lock order: `writer_mutex`, then `relinked_sources_mutex`.
+    std::mutex relinked_sources_mutex;
+    std::vector<LogEntryStorage::ChangelogRelinkPtr> relinked_sources TSA_GUARDED_BY(relinked_sources_mutex);
+
+    /// Incremented whenever an already published object is reopened for append. Published objects are
+    /// otherwise immutable, so an unchanged epoch proves that the sources of a merge were not rewritten.
+    std::atomic<uint64_t> rewrite_epoch{0};
+
+    void stopCompactionThread()
+    {
+        if (s3_compaction_thread && s3_compaction_thread->joinable())
+        {
+            s3_compaction_shutdown = true;
+            if (!s3_compaction_requests->queue.push(true))
+                LOG_WARNING(log, "Failed to push shutdown signal to S3 compaction queue");
+            s3_compaction_thread->join();
+        }
+    }
+
+    void s3CompactionThread()
+    {
+        LOG_INFO(log, "S3 compaction thread started");
+
+        bool dummy = false;
+        while (!s3_compaction_shutdown && s3_compaction_requests->queue.pop(dummy))
+        {
+            /// Reset the flags before acting on them, so a request that arrives meanwhile queues another wake-up.
+            const bool compaction_requested = s3_compaction_requests->compaction_requested.exchange(false);
+            s3_compaction_requests->cleanup_requested = false;
+            removeRelinkedSources(/* force */ false);
+
+            /// A cleanup-only wake-up: the relink of a previous merge was applied, so its sources are removed above.
+            if (!compaction_requested)
+                continue;
+
+            std::vector<ChangelogFileDescriptionPtr> to_merge;
+            std::vector<ChangelogFileDescriptionPtr> to_remove;
+            ChangelogFileDescriptionPtr merged_changelog;
+            uint64_t planned_rewrite_epoch = 0;
+
+            /// Planning phase: choose adjacent S3 changelogs to merge.
+            /// The lock is released before the slow S3 I/O so the write thread,
+            /// which also holds `writer_mutex` to call `appendRecord`/`flush`,
+            /// is not blocked for the duration of the merge.
+            {
+                std::lock_guard<std::mutex> lock(writer_mutex);
+
+                if (existing_changelogs.empty())
+                    continue;
+
+                /// The segment the writer has open (it is already listed when `writeAt` reopened it for append)
+                /// and everything after it are still changing, so only the segments before it are merged.
+                const auto is_open_for_write = [&](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    return current_file_description && changelog->from_log_index >= current_file_description->from_log_index;
+                };
+
+                /// A compressed changelog (carried over from `old_log_storage_disk`) is never merged: its recorded
+                /// positions are offsets into the decompressed stream, so the relink would point into the wrong
+                /// bytes of the merged object, and the raw concatenation could not be decoded on restart.
+                /// A changelog broken at end is never merged either: its physical tail is corrupt, and its name
+                /// covers indices that the following segments (started after its readable prefix) also contain.
+                const auto is_never_merged = [](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    return changelog->is_compressed || changelog->broken_at_end;
+                };
+
+                const auto can_be_merged = [&](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    return !is_never_merged(changelog) && changelog->to_log_index - changelog->from_log_index + 1 < log_file_settings.rotate_interval;
+                };
+
+                /// A merged object whose sources are not removed yet must not be extended: if the removal fails and
+                /// the server restarts, the sources replay over the extended object and truncate it to their end.
+                const auto has_pending_sources = [&](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    std::lock_guard relinked_sources_lock(relinked_sources_mutex);
+                    return std::ranges::any_of(relinked_sources, [&](const auto & relink) { return relink->merged == changelog; });
+                };
+
+                /// Skip the segments that are never merged, so they do not hold back the ones after them.
+                /// Also skip the sources of an interrupted merge that are listed after the merged object (see below):
+                /// they are covered by a segment the cursor has already passed.
+                auto it = existing_changelogs.upper_bound(last_merged_index);
+                while (it != existing_changelogs.end() && !is_open_for_write(it->second)
+                    && (!can_be_merged(it->second) || it->second->to_log_index <= last_merged_index))
+                {
+                    /// The name of a broken segment overlaps the segments after it, so advance only past its start:
+                    /// advancing to its `to_log_index` would skip the following segments forever.
+                    const auto passed_index = it->second->broken_at_end ? it->second->from_log_index : it->second->to_log_index;
+                    last_merged_index = std::max(last_merged_index, passed_index);
+                    ++it;
+                }
+
+                /// Retried on a later wake-up, after the sources are removed.
+                if (it == existing_changelogs.end() || is_open_for_write(it->second) || has_pending_sources(it->second))
+                    continue;
+
+                uint64_t current_from_index = it->second->from_log_index;
+                uint64_t current_to_index = it->second->to_log_index;
+
+                to_merge.push_back(it->second);
+
+                /// Set when the segment after the merged range can never be appended to it, as opposed to one that
+                /// is still being written or not published yet.
+                bool range_is_final = false;
+
+                ++it;
+                while (it != existing_changelogs.end())
+                {
+                    auto next_changelog = it->second;
+
+                    if (is_open_for_write(next_changelog))
+                        break;
+
+                    /// A crash after a merge was published but before its sources were removed leaves the sources
+                    /// listed after the merged object: startup removes only the one with the same start index. They
+                    /// stay listed, so the locations read from them on startup remain valid until retention removes
+                    /// them. Startup replays them over the merged object, truncating it to the end of each source, so
+                    /// they always have to end at the end of the object that covers them: never extend that object.
+                    /// The range is final, so the planner moves past it instead of picking it on every wake-up.
+                    if (next_changelog->from_log_index > current_from_index && next_changelog->to_log_index <= current_to_index
+                        && !is_never_merged(next_changelog))
+                    {
+                        range_is_final = true;
+                        break;
+                    }
+
+                    /// Not final: the segment can be merged once its sources are removed.
+                    if (has_pending_sources(next_changelog))
+                        break;
+
+                    if (next_changelog->from_log_index != current_to_index + 1)
+                        break;
+
+                    /// `rotate_interval` caps the number of entries in a merged object, so check the candidate
+                    /// before taking it rather than after it has already pushed the range past the cap.
+                    if (is_never_merged(next_changelog) || next_changelog->to_log_index - current_from_index + 1 > log_file_settings.rotate_interval)
+                    {
+                        range_is_final = true;
+                        break;
+                    }
+
+                    to_merge.push_back(next_changelog);
+                    current_to_index = next_changelog->to_log_index;
+
+                    if (current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
+                        break;
+
+                    ++it;
+                }
+
+                if (to_merge.size() <= 1)
+                {
+                    /// Nothing can ever be merged into this segment, so do not let it stall the planner.
+                    if (range_is_final)
+                        last_merged_index = current_to_index;
+                    continue;
+                }
+
+                merged_changelog = std::make_shared<ChangelogFileDescription>();
+                merged_changelog->prefix = to_merge.front()->prefix;
+                merged_changelog->from_log_index = to_merge.front()->from_log_index;
+                merged_changelog->to_log_index = to_merge.back()->to_log_index;
+                merged_changelog->extension = to_merge.front()->extension;
+                merged_changelog->disk = getDisk();
+
+                merged_changelog->path = Changelog::formatChangelogPath(
+                    merged_changelog->prefix,
+                    merged_changelog->from_log_index,
+                    merged_changelog->to_log_index,
+                    merged_changelog->extension);
+
+                LOG_INFO(log, "Merging {} S3 changelogs into range [{}, {}]",
+                    to_merge.size(), merged_changelog->from_log_index, merged_changelog->to_log_index);
+
+                to_remove = to_merge;
+                planned_rewrite_epoch = rewrite_epoch.load();
+            }
+
+            if (!merged_changelog)
+                continue;
+
+            /// The merged data is uploaded under an in-progress name first: `writeFile` on the object storage
+            /// writes straight to the final key, and startup keeps a single object per start index, so a merged
+            /// object published before the sources are known to be unchanged could shadow the intact first
+            /// source on the next startup. Startup ignores and removes in-progress objects.
+            const auto merged_in_progress_path = makeInProgressPath(merged_changelog->path);
+
+            try
+            {
+                auto new_file = getDisk()->writeFile(merged_in_progress_path);
+
+                auto relink = std::make_shared<LogEntryStorage::ChangelogRelink>();
+                relink->merged = merged_changelog;
+                relink->on_applied = [requests = s3_compaction_requests] { requestRelinkedSourcesCleanup(*requests); };
+                bool source_removed = false;
+                for (const auto & changelog : to_merge)
+                {
+                    relink->sources.emplace_back(changelog, new_file->count());
+
+                    /// `writer_mutex` is released here, so the source's `disk` and `path` may be changed by a rewrite
+                    /// and the object may be removed meanwhile. The shared lock keeps them stable for the whole copy,
+                    /// the same way `executeReadPlan` reads a changelog, and `removed_from_disk` is published under the
+                    /// exclusive lock before an object is removed.
+                    changelog->withReadLock(
+                        [&]
+                        {
+                            if (changelog->removed_from_disk)
+                            {
+                                source_removed = true;
+                                return;
+                            }
+
+                            auto reader = changelog->disk->readFile(changelog->path, getReadSettings());
+                            copyData(*reader, *new_file);
+                        });
+
+                    if (source_removed)
+                        break;
+                }
+
+                if (source_removed)
+                {
+                    LOG_INFO(log, "A planned S3 changelog source was removed during merge, discarding merged file {}", merged_in_progress_path);
+                    new_file->cancel();
+                    removeInProgressObject(merged_in_progress_path);
+                    continue;
+                }
+
+                new_file->sync();
+                new_file->finalize();
+
+                /// Publish the merged changelog and unlist the merged sources.
+                /// The sources are removed only after `entry_storage` stops pointing into them,
+                /// see `removeRelinkedSources`.
+                {
+                    std::lock_guard<std::mutex> lock(writer_mutex);
+
+                    /// Re-validate that every planned source is still present and unchanged.
+                    /// The lock was released for the slow S3 copy, so `writeAt`/`compact`
+                    /// could have removed or replaced these ranges in the meantime. Publishing
+                    /// the merged file unconditionally would reintroduce stale/truncated entries
+                    /// (TOCTOU). If anything changed, discard the merge and try again later.
+                    /// The pointer check alone is not enough: `writeAt` reopens a source through
+                    /// `setFile` with the same description, which the epoch catches.
+                    bool sources_unchanged = rewrite_epoch.load() == planned_rewrite_epoch;
+                    for (const auto & changelog : to_remove)
+                    {
+                        if (!sources_unchanged)
+                            break;
+
+                        auto it = existing_changelogs.find(changelog->from_log_index);
+                        if (it == existing_changelogs.end() || it->second != changelog)
+                        {
+                            sources_unchanged = false;
+                            break;
+                        }
+                    }
+
+                    if (!sources_unchanged)
+                    {
+                        LOG_INFO(log, "Planned S3 changelog sources changed during merge, discarding merged file {}", merged_in_progress_path);
+                        removeInProgressObject(merged_in_progress_path);
+                        continue;
+                    }
+
+                    /// Publish under the final name only now. `writer_mutex` stays held until the merge is listed,
+                    /// so the sources cannot be rewritten between the validation above and the publication.
+                    /// `copyFile` within the same object storage disk is a server-side copy, so the merged bytes
+                    /// are not streamed through Keeper while the write thread is blocked on `writer_mutex`.
+                    try
+                    {
+                        auto disk = getDisk();
+                        disk->copyFile(merged_in_progress_path, *disk, merged_changelog->path, getReadSettings());
+                    }
+                    catch (...)
+                    {
+                        /// Do not leave a partially written merged object behind to compete with the intact sources.
+                        try
+                        {
+                            getDisk()->removeFileIfExists(merged_changelog->path);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, fmt::format("Failed to remove unpublished merged S3 changelog: {}", merged_changelog->path));
+                        }
+                        removeInProgressObject(merged_in_progress_path);
+                        throw;
+                    }
+
+                    removeInProgressObject(merged_in_progress_path);
+
+                    for (const auto & changelog : to_remove)
+                        existing_changelogs.erase(changelog->from_log_index);
+
+                    existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
+                    last_merged_index = merged_changelog->to_log_index;
+
+                    /// `entry_storage` still locates the entries of the sources in the source objects, so they
+                    /// cannot be removed yet: the next `refreshCache` switches those locations to the merged object.
+                    entry_storage.scheduleRelink(relink);
+                    std::lock_guard relinked_sources_lock(relinked_sources_mutex);
+                    relinked_sources.push_back(relink);
+                }
+
+                LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error while merging S3 changelogs");
+            }
+        }
+
+        LOG_INFO(log, "S3 compaction thread stopped");
+    }
+
+    /// The in-progress object is ignored and removed on startup, so leaving it behind is harmless.
+    void removeInProgressObject(const std::string & path)
+    {
+        try
+        {
+            getDisk()->removeFileIfExists(path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to remove in-progress S3 changelog {}", path));
+        }
+    }
+
+    /// Removes the sources of the merges whose locations were already switched to the merged object.
+    /// With `force` it removes all of them: used on shutdown, when nothing reads the changelog anymore,
+    /// so the next startup does not find both the merged object and its sources.
+    /// A merge stays in `relinked_sources` until all of its sources are removed, so a failed removal is
+    /// retried on the next wake-up of the compaction thread or on shutdown. A stale source left behind
+    /// would replay over the merged object on the next startup after a `writeAt` into it.
+    void removeRelinkedSources(bool force)
+    {
+        std::lock_guard lock(relinked_sources_mutex);
+        removeRelinkedSourcesLocked(force);
+    }
+
+    void removeRelinkedSourcesLocked(bool force) TSA_REQUIRES(relinked_sources_mutex)
+    {
+        std::erase_if(
+            relinked_sources,
+            [&](const LogEntryStorage::ChangelogRelinkPtr & relink)
+            {
+                if (!force && !relink->applied)
+                    return false;
+
+                /// The sources are removed in order and the removal stops at the first failure, so the sources that
+                /// survive a crash always end at the end of the merged object: startup replays them over it, and a
+                /// surviving source followed by removed ones would truncate the entries after it.
+                bool all_removed = true;
+                for (const auto & [changelog, offset] : relink->sources)
+                {
+                    if (!all_removed)
+                        break;
+
+                    LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
+
+                    /// Go through the same fence as `Changelog::backgroundChangelogOperationsThread`: take the
+                    /// descriptor's exclusive lock and publish `removed_from_disk` before the object disappears.
+                    /// `executeReadPlan` / `serveReadAhead` hold shared locks on these descriptors and check the
+                    /// flag, so they return `nullptr` instead of calling `readFile` on an already-removed path.
+                    changelog->withWriteLock(
+                        [&]
+                        {
+                            changelog->removed_from_disk = true; /// set BEFORE removeFile
+                            try
+                            {
+                                /// The object may already be gone when this is a retry after a partial failure.
+                                changelog->disk->removeFileIfExists(changelog->path);
+                            }
+                            catch (...)
+                            {
+                                all_removed = false;
+                                tryLogCurrentException(log, fmt::format("Failed to remove merged S3 changelog: {}, will retry", changelog->path));
+                            }
+                        });
+                }
+
+                return all_removed;
+            });
+    }
+
+    /// The cleanup wake-up sent by `on_applied` is asynchronous, so the sources of a merge may still exist when
+    /// `writeAt` rewrites the merged object, or removes it as superseded. A crash after that rewrite would let the
+    /// next startup replay the stale sources over the rewritten range and resurrect the overwritten entries.
+    /// So the sources are removed synchronously here, before anything is rewritten. `writeAt` applied every
+    /// relink under `writer_mutex` right before, and new relinks are scheduled only under `writer_mutex`.
+    void prepareRewrite(uint64_t index) override
+    {
+        /// The segments from the one containing `index` onwards are rewritten and published anew, so move the
+        /// compaction cursor back before them: otherwise the planner and the backlog count, which only look past
+        /// `last_merged_index`, would never consider the rewritten segments until the log grows past it again.
+        if (auto it = existing_changelogs.upper_bound(index); it != existing_changelogs.begin())
+            last_merged_index = std::min(last_merged_index, std::prev(it)->second->from_log_index - 1);
+        else
+            last_merged_index = std::min(last_merged_index, index - 1);
+
+        std::lock_guard lock(relinked_sources_mutex);
+        if (relinked_sources.empty())
+            return;
+
+        for (const auto & relink : relinked_sources)
+            if (!relink->applied)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Relink of merged S3 changelog {} is not applied before a rewrite", relink->merged->path);
+
+        removeRelinkedSourcesLocked(/* force */ false);
+
+        if (!relinked_sources.empty())
+            throw Exception(
+                ErrorCodes::SYSTEM_ERROR,
+                "Cannot rewrite the S3 changelog: failed to remove the sources of merged S3 changelog {}",
+                relinked_sources.front()->merged->path);
+    }
+
+    void triggerS3Compaction()
+    {
+        /// One pending request is enough: the compaction thread looks at the whole backlog when it wakes up.
+        if (s3_compaction_requests->compaction_requested.exchange(true))
+            return;
+
+        if (!s3_compaction_requests->queue.push(true))
+            LOG_WARNING(log, "Failed to push to S3 compaction queue, queue might be full or shutdown");
+    }
+
+    /// Removes the sources of applied relinks right away instead of on the next compaction request: until they
+    /// are gone, a restart after a `writeAt` into the merged object would replay their stale entries over it.
+    static void requestRelinkedSourcesCleanup(S3CompactionRequests & requests)
+    {
+        if (requests.cleanup_requested.exchange(true))
+            return;
+
+        /// Fails only after shutdown, when `finalize` removes all the sources anyway.
+        (void)requests.queue.push(true);
+    }
+
+    DiskPtr getDisk() const
+    {
+        return keeper_context->getS3LogDisk();
+    }
+
+    ReadSettings getReadSettings() const
+    {
+        return ReadSettings{};
+    }
+
+    /// Every upload gets its own staging key. The writer and the compaction thread can stage different versions
+    /// of the same segment at the same time (a merge into `changelog_1_16.bin` still uploading while `writeAt`
+    /// rewrites a published `changelog_1_16.bin`), and with a shared key the foreground flush could publish the
+    /// payload of the other upload. Startup removes every leftover in-progress object before the writer starts,
+    /// so a counter is enough to keep the keys of one process apart.
+    std::string makeInProgressPath(const std::string & path)
+    {
+        return fmt::format("{}{}_{}", S3_IN_PROGRESS_PREFIX, in_progress_object_counter.fetch_add(1), path);
+    }
+
+    void flushImpl(uint64_t new_start_log_index)
+    {
+        if (current_file_description && last_index_written && current_file_description->from_log_index <= *last_index_written)
+        {
+            LOG_TRACE(log, "Flushing s3 buffer {}", write_buffer->count());
+
+            auto new_path = Changelog::formatChangelogPath(
+                current_file_description->prefix,
+                current_file_description->from_log_index,
+                *last_index_written,
+                current_file_description->extension);
+
+            /// The path of a segment that was not published yet is only a placeholder.
+            auto listed_it = existing_changelogs.find(current_file_description->from_log_index);
+            const bool is_published = listed_it != existing_changelogs.end() && listed_it->second == current_file_description;
+            if (is_published && new_path == current_file_description->path)
+                new_path = fmt::format(
+                    "{}_{}_{}_{}.{}",
+                    current_file_description->prefix,
+                    current_file_description->from_log_index,
+                    *last_index_written,
+                    S3_REWRITE_SUFFIX,
+                    current_file_description->extension);
+
+            LOG_TRACE(log, "Writing s3 buffer old path: {} new path: {}", current_file_description->path, new_path);
+
+            /// Finalize the upload of the in-progress object first so the data is fully persisted
+            /// to S3. We cannot reconstruct the payload from `write_buffer`'s in-memory
+            /// buffer because most of the bytes have already been streamed out via
+            /// multipart upload and are no longer addressable in process memory.
+            ///
+            /// Any failure here must propagate to `Changelog::writeThread`: it treats a
+            /// returned `flush` as durable and advances `last_durable_idx`, acknowledging
+            /// the segment to NuRaft as persisted. Swallowing the error would falsely
+            /// report data as durable while it was not safely published.
+            write_buffer->sync();
+            write_buffer->finalize();
+            write_buffer.reset();
+
+            auto disk = getDisk();
+            const auto in_progress_path = write_buffer_in_progress_path;
+
+            /// `new_path` never names the segment reopened by `writeAt` (see `S3_REWRITE_SUFFIX`), so the old object
+            /// stays intact whatever happens to the upload: `copyFile` removes its destination when it fails. The upload
+            /// is atomic (startup requires an `s3_plain` disk), so a failure leaves nothing at `new_path`. A crash after
+            /// the upload but before the old object is removed below leaves two objects for the same start index:
+            /// startup keeps the larger one, which is the new one, because it starts with a copy of the old one, and
+            /// removes the other. The in-progress object is not needed for recovery in either case.
+            chassert(!is_published || new_path != current_file_description->path);
+            try
+            {
+                /// A server-side copy within the object storage, so the segment is not downloaded and uploaded again.
+                disk->copyFile(in_progress_path, *disk, new_path, getReadSettings());
+            }
+            catch (...)
+            {
+                /// Do not leave an unacknowledged object behind to compete with the intact old one for the same
+                /// start index.
+                try
+                {
+                    disk->removeFileIfExists(new_path);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Failed to remove unpublished S3 changelog {}", new_path));
+                }
+                throw;
+            }
+
+            /// A segment reopened by `writeAt` was published under its old name. The object at `new_path`
+            /// now holds all of its records plus the rewrite, at the same positions. Switch the descriptor to it
+            /// under the exclusive lock, which waits out the readers of the old path, and only then remove the
+            /// old object. A stale copy left behind would compete with the new one for the same start index on
+            /// the next startup, so its removal must not be best-effort.
+            current_file_description->withWriteLock(
+                [&]
+                {
+                    const auto old_path = current_file_description->path;
+                    current_file_description->path = new_path;
+                    current_file_description->to_log_index = *last_index_written;
+
+                    if (old_path != new_path && disk->existsFile(old_path))
+                        disk->removeFile(old_path);
+                });
+
+            /// The in-progress object is ignored and removed on startup, so leaving it behind is harmless.
+            try
+            {
+                disk->removeFile(in_progress_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to remove in-progress S3 changelog {}", in_progress_path));
+            }
+
+            /// `writeAt` removes a broken segment that starts at the rewritten index before rotating to a new one with
+            /// the same start index, so normally nothing else is listed here. If another object is still listed under
+            /// this start index, remove it now, so it does not compete with the new one on the next startup.
+            auto & listed = existing_changelogs[current_file_description->from_log_index];
+            if (listed && listed != current_file_description && listed->disk == disk && listed->path != new_path)
+            {
+                listed->withWriteLock(
+                    [&]
+                    {
+                        listed->removed_from_disk = true;
+                        disk->removeFileIfExists(listed->path);
+                    });
+            }
+            listed = current_file_description;
+
+            entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
+            unflushed_indices_with_log_location.clear();
+        }
+        else if (current_file_description && last_index_written)
+        {
+            /// `from_log_index > last_index_written`: nothing was written into the current file
+            /// since it was opened. Discard the empty object and fall through to open a fresh
+            /// writer at `new_start_log_index`; do not return early, otherwise the requested
+            /// start index would never be installed and a later `rotate`/`writeAt` would keep
+            /// writing under the stale `current_file_description`.
+            LOG_TRACE(log, "Close empty s3 writing buffer");
+
+            existing_changelogs.erase(current_file_description->from_log_index);
+            if (write_buffer)
+            {
+                write_buffer->cancel();
+                write_buffer.reset();
+            }
+        }
+        else
+        {
+            /// Nothing was appended since the open object was installed: right after startup, after a previous
+            /// flush (which resets `last_index_written`), or after `setFile`.
+            LOG_TRACE(log, "Flush S3 changelog with no records appended to the open object");
+
+            /// Nothing was appended to the open object, so drop it rather than destroy a live writer below.
+            if (write_buffer)
+            {
+                write_buffer->cancel();
+                write_buffer.reset();
+            }
+        }
+
+        auto new_s3_description = std::make_shared<ChangelogFileDescription>();
+        new_s3_description->prefix = DEFAULT_PREFIX;
+        new_s3_description->from_log_index = new_start_log_index;
+        new_s3_description->to_log_index = new_s3_description->from_log_index + log_file_settings.rotate_interval - 1;
+        new_s3_description->extension = "bin";
+        new_s3_description->disk = getDisk();
+
+        auto s3_cur_path = Changelog::formatChangelogPath(
+            new_s3_description->prefix,
+            new_s3_description->from_log_index,
+            new_s3_description->to_log_index,
+            new_s3_description->extension);
+
+        new_s3_description->path = s3_cur_path;
+        current_file_description = new_s3_description;
+
+        /// Nothing is written into the fresh object yet. Keeping the last index of the previous object would let a
+        /// following empty `flush` reopen the object at `*last_index_written + 1`, undoing a `rotate` to a later
+        /// index (e.g. by `compact` on snapshot recovery), so the next append would be published under a stale range.
+        last_index_written.reset();
+
+        LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
+        write_buffer_in_progress_path = makeInProgressPath(s3_cur_path);
+        write_buffer = getDisk()->writeFile(write_buffer_in_progress_path);
+
+        /// Every flush publishes a separate object, so compact once enough of them were published since the last merge.
+        /// `rotate_interval` bounds the number of entries in a merged object, not the number of objects.
+        const auto unmerged_objects = std::distance(existing_changelogs.upper_bound(last_merged_index), existing_changelogs.end());
+        if (unmerged_objects >= S3_COMPACTION_BACKLOG_THRESHOLD)
+            triggerS3Compaction();
+    }
+};
+
 namespace
 {
 
@@ -274,7 +1219,7 @@ void syncParentDirectory(const DiskPtr & disk, const std::string & file_path)
 /// - we have already "rotation_interval" amount of logs in a single file
 /// - maximum log file size is reached
 /// At least 1 log record should be contained in each log
-class ChangelogWriter
+class ChangelogWriter : public IChangelogWriter
 {
     using MoveChangelogCallback = std::function<void(ChangelogFileDescriptionPtr, std::string, DiskPtr)>;
 public:
@@ -284,16 +1229,16 @@ public:
         KeeperContextPtr keeper_context_,
         LogFileSettings log_file_settings_,
         MoveChangelogCallback move_changelog_cb_)
-        : existing_changelogs(existing_changelogs_)
-        , entry_storage(entry_storage_)
-        , log_file_settings(log_file_settings_)
-        , keeper_context(std::move(keeper_context_))
-        , log(getLogger("Changelog"))
+        : IChangelogWriter(
+            existing_changelogs_,
+            entry_storage_,
+            std::move(keeper_context_),
+            log_file_settings_)
         , move_changelog_cb(std::move(move_changelog_cb_))
     {
     }
 
-    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
+    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode) override
     {
         auto disk = getDisk();
 
@@ -372,11 +1317,9 @@ public:
     }
 
     /// There is bug when compressed_buffer has value, file_buf's ownership transfer to compressed_buffer
-    bool isFileSet() const { return compressed_buffer != nullptr || file_buf != nullptr; }
+    bool isFileSet() const override { return compressed_buffer != nullptr || file_buf != nullptr; }
 
-    ChangelogFileDescriptionPtr getCurrentFileDescription() const { return current_file_description; }
-
-    bool appendRecord(ChangelogRecord && record)
+    bool appendRecord(ChangelogRecord && record) override
     {
         const auto * file_buffer = tryGetFileBaseBuffer();
         if (!file_buffer || !current_file_description)
@@ -451,7 +1394,7 @@ public:
         return true;
     }
 
-    void flush()
+    void flush() override
     {
         auto * file_buffer = tryGetFileBaseBuffer();
         if (file_buffer)
@@ -479,13 +1422,13 @@ public:
         unflushed_indices_with_log_location.clear();
     }
 
-    uint64_t getStartIndex() const
+    uint64_t getStartIndex() const override
     {
         chassert(current_file_description);
         return current_file_description->from_log_index;
     }
 
-    void rotate(uint64_t new_start_log_index)
+    void rotate(uint64_t new_start_log_index) override
     {
         /// Start new one
         auto new_description = std::make_shared<ChangelogFileDescription>();
@@ -511,7 +1454,7 @@ public:
         setFile(it->second, WriteMode::Rewrite);
     }
 
-    void finalize()
+    void finalize() override
     {
         if (isFileSet() && prealloc_done)
             finalizeCurrentFile();
@@ -657,15 +1600,7 @@ private:
 
     bool isLocalDisk() const { return dynamic_cast<DiskLocal *>(getDisk().get()) != nullptr; }
 
-    std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs;
-
-    LogEntryStorage & entry_storage;
-
-    std::vector<std::pair<uint64_t, LogLocation>> unflushed_indices_with_log_location;
-
-    ChangelogFileDescriptionPtr current_file_description{nullptr};
     std::unique_ptr<WriteBufferFromFileBase> file_buf;
-    std::optional<uint64_t> last_index_written;
     size_t initial_file_size{0};
 
     std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
@@ -674,12 +1609,6 @@ private:
 
     /// A file fsync does not persist its directory entry, which is not known to be durable even for a segment left by a previous run.
     bool directory_sync_pending{false};
-
-    LogFileSettings log_file_settings;
-
-    KeeperContextPtr keeper_context;
-
-    LoggerPtr const log;
 
     MoveChangelogCallback move_changelog_cb;
 };
@@ -1765,6 +2694,53 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
         std::make_move_iterator(indices_with_log_locations.end()));
 }
 
+void LogEntryStorage::scheduleRelink(const ChangelogRelinkPtr & relink)
+{
+    /// No locations are kept with unlimited latest logs cache, so nothing points into the sources.
+    if (latest_logs_cache.hasUnlimitedSpace())
+    {
+        relink->applied = true;
+        if (relink->on_applied)
+            relink->on_applied();
+        return;
+    }
+
+    std::lock_guard lock(logs_location_mutex);
+    unapplied_relinks.push_back(relink);
+}
+
+void LogEntryStorage::applyRelink(ChangelogRelink & relink)
+{
+    auto & merged_runs = relink.merged->valid_runs;
+    merged_runs.clear();
+
+    for (const auto & [source, offset] : relink.sources)
+    {
+        for (uint64_t index = source->from_log_index; index <= source->to_log_index; ++index)
+        {
+            auto it = logs_location.find(index);
+            if (it == logs_location.end() || it->second.file_description != source)
+                continue;
+
+            it->second.file_description = relink.merged;
+            it->second.position += offset;
+        }
+
+        /// The sources are concatenated in index order, so their runs stay sorted by `first_index`.
+        const auto & source_runs = source->valid_runs;
+        for (const auto & run : source_runs.runs)
+            merged_runs.runs.push_back({.start_position = run.start_position + offset, .first_index = run.first_index});
+
+        if (source_runs.end_index != 0)
+        {
+            merged_runs.end_index = source_runs.end_index;
+            merged_runs.end_position = source_runs.end_position + offset;
+        }
+
+        source->valid_runs.clear();
+    }
+}
+
 void LogEntryStorage::refreshCache()
 {
     /// The only scan opportunity for deployments where serveReadAhead never runs (single-node,
@@ -1776,9 +2752,11 @@ void LogEntryStorage::refreshCache()
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
+    std::vector<ChangelogRelinkPtr> new_unapplied_relinks;
     {
         std::lock_guard lock(logs_location_mutex);
         new_unapplied_indices_with_log_locations.swap(unapplied_indices_with_log_locations);
+        new_unapplied_relinks.swap(unapplied_relinks);
     }
 
     for (auto & [index, log_location] : new_unapplied_indices_with_log_locations)
@@ -1789,6 +2767,24 @@ void LogEntryStorage::refreshCache()
         log_location.file_description->valid_runs.addLocatedRecord(index, log_location.position, log_location.size_in_file);
         logs_location.emplace(index, std::move(log_location));
         max_index_with_location = index;
+    }
+
+    /// The locations of the merged sources were added before their relink was scheduled,
+    /// so they are all in `logs_location` at this point.
+    if (!new_unapplied_relinks.empty())
+    {
+        /// In-flight plans and read-ahead cursors may still point into the sources, which are removed
+        /// right after the relink is applied. Make them stale, like a truncation does.
+        ++truncation_epoch;
+        closeAllReaders();
+
+        for (const auto & relink : new_unapplied_relinks)
+        {
+            applyRelink(*relink);
+            relink->applied = true;
+            if (relink->on_applied)
+                relink->on_applied();
+        }
     }
 
     if (logs_location.empty())
@@ -3623,8 +4619,14 @@ Changelog::Changelog(
         if (log_file_settings.startup_read_buffer_size == 0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "startup_read_buffer_size must be greater than 0");
 
+        /// In the experimental S3 changelog mode the active changelog disk is `s3_log_disk`, not the local
+        /// `latest_log_storage_disk`, and durability is guaranteed by finalizing the S3 object on flush rather
+        /// than by an `fsync` on a local disk. The `DiskLocal` requirement below would otherwise reject any
+        /// object-storage-only log configuration (the "run Keeper without a local data volume" use case), so it
+        /// must not apply when the S3 changelog writer is in charge.
         if (auto latest_log_disk = getLatestLogDisk();
-            log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
+            !keeper_context->isS3ExperimentalChangelog() && log_file_settings.force_sync
+            && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
@@ -3634,6 +4636,102 @@ Changelog::Changelog(
                 "supported disk and 'keeper_server.latest_log_storage_disk' to a local disk.\n"
                 "Otherwise, disable force_sync",
                 latest_log_disk->getName());
+        }
+
+        if (keeper_context->isS3ExperimentalChangelog())
+        {
+            /// The S3 writer only knows how to produce uncompressed records, and `flushImpl` always opens the
+            /// next object with the `bin` extension. Accepting `compress_logs` here would silently ignore the
+            /// setting, and a carried-over `bin.zstd` segment reopened by `writeAt` would be filled with raw
+            /// bytes that the next startup cannot decompress. Reject the combination instead.
+            if (log_file_settings.compress_logs)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "compress_logs is not supported together with the experimental S3 changelog "
+                    "(s3_experimental_changelog). Please disable one of them.");
+            }
+
+            /// The writer publishes a segment by uploading it to its final `changelog_*` key, sometimes over the
+            /// object that holds the previous version of the same segment (a rewrite by `writeAt`). That is crash-safe
+            /// only because an object storage upload is atomic: a failed or interrupted upload never leaves a partial
+            /// object visible, and a replaced object is either the old or the new one. A local disk gives neither.
+            /// An object storage disk with local metadata (such as `s3`) does not either: the file is located through
+            /// a local metadata file that is truncated and rewritten in place, without a sync, so a crash can leave an
+            /// empty locator for an already durable segment. Only a plain object storage disk, where the object key is
+            /// the file identity, publishes a complete file atomically and durably.
+            if (!getS3LogDisk()->isRemote() || getS3LogDisk()->getDataSourceDescription().metadata_type != MetadataStorageType::Plain)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Disk '{}' configured as s3_log_disk is not a plain object storage disk. "
+                    "The experimental S3 changelog (s3_experimental_changelog) requires a disk of type `s3_plain`",
+                    getS3LogDisk()->getName());
+            }
+
+            /// In this mode startup scans only `old_log_storage_disk*` and `s3_log_disk`; the regular local log
+            /// disks are not read. Leftover changelogs there would be durable history silently dropped from
+            /// recovery, so fail closed instead: the operator has to declare those disks as old log disks (they
+            /// are always scanned) or move the files away. This PR does not implement local-to-S3 migration.
+            const auto reject_local_changelogs = [&](const DiskPtr & local_disk)
+            {
+                if (!local_disk || local_disk == getS3LogDisk() || !local_disk->existsDirectory(""))
+                    return;
+
+                /// Old log disks are scanned on startup, so their changelogs are not dropped from recovery.
+                const auto old_log_disks = keeper_context->getOldLogDisks();
+                if (std::find(old_log_disks.begin(), old_log_disks.end(), local_disk) != old_log_disks.end())
+                    return;
+
+                for (auto it = local_disk->iterateDirectory(""); it->isValid(); it->next())
+                {
+                    if (!it->name().starts_with(DEFAULT_PREFIX))
+                        continue;
+
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Disk '{}' still contains changelog file '{}', but s3_experimental_changelog is enabled, so "
+                        "only old log disks and s3_log_disk are read on startup and this file would be ignored. "
+                        "Migration from local changelogs to S3 is not supported: declare '{}' as "
+                        "keeper_server.old_log_storage_disk (it is always scanned) or move the files away.",
+                        local_disk->getName(),
+                        it->name(),
+                        local_disk->getName());
+                }
+            };
+
+            reject_local_changelogs(getDisk());
+            reject_local_changelogs(getLatestLogDisk());
+        }
+        else if (keeper_context->hasS3LogDisk())
+        {
+            /// Once the experimental S3 changelog has written to `s3_log_disk`, that disk is part of the durable log
+            /// even if the setting is turned off later. With the setting off only the regular and old log disks are
+            /// read on startup, so a rollback or a config typo would silently drop the only copy of the log. Fail
+            /// closed, as for leftover local changelogs above, unless that disk is scanned anyway.
+            const auto s3_log_disk = keeper_context->getS3LogDisk();
+            const auto old_log_disks = keeper_context->getOldLogDisks();
+            const bool is_scanned = s3_log_disk == getDisk() || s3_log_disk == getLatestLogDisk()
+                || std::find(old_log_disks.begin(), old_log_disks.end(), s3_log_disk) != old_log_disks.end();
+
+            if (!is_scanned && s3_log_disk->existsDirectory(""))
+            {
+                for (auto it = s3_log_disk->iterateDirectory(""); it->isValid(); it->next())
+                {
+                    if (!it->name().starts_with(DEFAULT_PREFIX))
+                        continue;
+
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Disk '{}' configured as s3_log_disk still contains changelog file '{}', but s3_experimental_changelog "
+                        "is disabled, so this disk is not read on startup and the file would be ignored. "
+                        "Enable s3_experimental_changelog, declare '{}' as keeper_server.old_log_storage_disk "
+                        "(it is always scanned) or move the files away.",
+                        s3_log_disk->getName(),
+                        it->name(),
+                        s3_log_disk->getName());
+                }
+            }
         }
 
         /// Load all files on changelog disks
@@ -3663,11 +4761,20 @@ Changelog::Changelog(
             };
 
             std::vector<std::string> changelog_files;
+            std::vector<std::string> s3_in_progress_files;
             for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
             {
                 const auto & file_name = it->name();
                 if (file_name == changelogs_detached_dir)
                     continue;
+
+                /// An unfinished upload of the S3 changelog writer: its records were never acknowledged as durable,
+                /// or they were already published under a `changelog_*` name.
+                if (file_name.starts_with(S3_IN_PROGRESS_PREFIX))
+                {
+                    s3_in_progress_files.push_back(it->path());
+                    continue;
+                }
 
                 if (file_name.starts_with(tmp_keeper_file_prefix))
                 {
@@ -3695,6 +4802,38 @@ Changelog::Changelog(
                 file_description->disk = disk;
 
                 LOG_TRACE(log, "Found {} on {}", changelog_file, disk->getName());
+
+                /// The S3 changelog writer publishes a new version of a segment (a rewrite by `writeAt`, or a merge
+                /// starting at the same index) before it removes the old one, so a crash in between leaves two
+                /// objects with the same start index on the same disk. The new version always starts with a full
+                /// copy of the old one (a broken segment rewritten from its start index is removed before the new one
+                /// is written, see `Changelog::writeAt`), so keep the larger object and remove the other, rather than let the listing
+                /// order decide. The removed one must not survive: it would come back once the kept one is removed.
+                if (keeper_context->isS3ExperimentalChangelog())
+                {
+                    auto existing_it = existing_changelogs.find(file_description->from_log_index);
+                    if (existing_it != existing_changelogs.end() && existing_it->second->disk == disk)
+                    {
+                        const auto existing_size = disk->getFileSize(existing_it->second->path);
+                        const auto new_size = disk->getFileSize(file_description->path);
+                        const bool keep_existing = existing_size >= new_size;
+                        const auto & stale_path = keep_existing ? file_description->path : existing_it->second->path;
+                        LOG_WARNING(
+                            log,
+                            "Found two S3 changelogs starting at index {}: {} ({} bytes) and {} ({} bytes), removing the smaller {}",
+                            file_description->from_log_index,
+                            existing_it->second->path,
+                            existing_size,
+                            file_description->path,
+                            new_size,
+                            stale_path);
+                        disk->removeFile(stale_path);
+                        if (keep_existing)
+                            continue;
+                        existing_it->second = std::move(file_description);
+                        continue;
+                    }
+                }
                 auto [changelog_it, inserted] = existing_changelogs.insert_or_assign(file_description->from_log_index, std::move(file_description));
 
                 if (!inserted)
@@ -3704,6 +4843,12 @@ Changelog::Changelog(
             for (const auto & [name, path] : incomplete_files)
                 disk->removeFile(path);
 
+            for (const auto & path : s3_in_progress_files)
+            {
+                LOG_INFO(log, "Removing in-progress S3 changelog {} from {}", path, disk->getName());
+                disk->removeFile(path);
+            }
+
             read_disks.insert(disk);
         };
 
@@ -3711,10 +4856,11 @@ Changelog::Changelog(
         for (const auto & disk : keeper_context->getOldLogDisks())
             load_from_disk(disk);
 
-        auto disk = getDisk();
+        auto disk = (keeper_context->isS3ExperimentalChangelog()) ? getS3LogDisk() : getDisk();
+
         load_from_disk(disk);
 
-        auto latest_log_disk = getLatestLogDisk();
+        auto latest_log_disk = (keeper_context->isS3ExperimentalChangelog()) ? getS3LogDisk() : getLatestLogDisk();
         if (disk != latest_log_disk)
             load_from_disk(latest_log_disk);
 
@@ -3727,13 +4873,20 @@ Changelog::Changelog(
 
         append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
 
-        current_writer = std::make_unique<ChangelogWriter>(
-            existing_changelogs,
-            entry_storage,
-            keeper_context,
-            log_file_settings,
-            /*move_changelog_cb=*/[&](ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
-            { moveChangelogAsync(std::move(changelog), std::move(new_path), std::move(new_disk)); });
+        if (keeper_context->isS3ExperimentalChangelog())
+        {
+            current_writer = std::make_unique<S3ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings, writer_mutex);
+        }
+        else
+        {
+            current_writer = std::make_unique<ChangelogWriter>(
+                existing_changelogs,
+                entry_storage,
+                keeper_context,
+                log_file_settings,
+                /*move_changelog_cb=*/[&](ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
+                { moveChangelogAsync(std::move(changelog), std::move(new_path), std::move(new_disk)); });
+        }
     }
     catch (...)
     {
@@ -3894,7 +5047,7 @@ void Changelog::finalizeChangelogsAfterRead(
         auto latest_log_disk = getLatestLogDisk();
         auto disk = getDisk();
 
-        if (latest_log_disk != disk && latest_log_disk == description->disk)
+        if (latest_log_disk != disk && latest_log_disk == description->disk && !keeper_context->isS3ExperimentalChangelog())
             moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
@@ -3951,10 +5104,14 @@ void Changelog::finalizeChangelogsAfterRead(
             move_from_latest_logs_disks(description);
         }
         /// don't mix compressed and uncompressed writes
-        else if (compress_logs == last_log_read_outcome->compressed_log)
+        else if (compress_logs == last_log_read_outcome->compressed_log && !keeper_context->isS3ExperimentalChangelog())
         {
             initWriter(description);
         }
+        /// In S3 mode we cannot append in place: `S3ChangelogWriter::setFile` opens the object
+        /// in rewrite mode, which would truncate the readable-but-incomplete last log and drop
+        /// already-recovered entries on the next restart. Leave the recovered object untouched
+        /// and let the writer start a fresh file from `max_log_id + 1` below.
     }
     else if (last_log_read_outcome.has_value())
     {
@@ -3965,21 +5122,28 @@ void Changelog::finalizeChangelogsAfterRead(
     if (!current_writer->isFileSet())
         current_writer->rotate(max_log_id.load(std::memory_order_relaxed) + 1);
 
-    /// Move files to correct disks
-    auto latest_start_index = current_writer->getStartIndex();
-    auto latest_log_disk = getLatestLogDisk();
-    auto disk = getDisk();
-    for (const auto & [start_index, description] : existing_changelogs)
+    /// Move files to correct disks.
+    /// In S3 mode all changelogs live on the single S3 log disk, while `getDisk()`/
+    /// `getLatestLogDisk()` return the local log disks. Running this migration would try to
+    /// move every S3 object onto a local disk (and trip the `latest_log_disk` assertion), so
+    /// skip it entirely — there is nothing to rebalance across disks for the S3 backend.
+    if (!keeper_context->isS3ExperimentalChangelog())
     {
-        /// latest log should already be on latest_log_disk
-        if (start_index == latest_start_index)
+        auto latest_start_index = current_writer->getStartIndex();
+        auto latest_log_disk = getLatestLogDisk();
+        auto disk = getDisk();
+        for (const auto & [start_index, description] : existing_changelogs)
         {
-            chassert(description->disk == latest_log_disk);
-            continue;
-        }
+            /// latest log should already be on latest_log_disk
+            if (start_index == latest_start_index)
+            {
+                chassert(description->disk == latest_log_disk);
+                continue;
+            }
 
-        if (description->disk != disk)
-            moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+            if (description->disk != disk)
+                moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+        }
     }
 }
 
@@ -4107,9 +5271,16 @@ DiskPtr Changelog::getLatestLogDisk() const
     return keeper_context->getLatestLogDisk();
 }
 
+DiskPtr Changelog::getS3LogDisk() const
+{
+    return keeper_context->getS3LogDisk();
+}
+
 void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 {
-    auto disk = getDisk();
+    /// In S3 mode detach changelogs within `s3_log_disk`: copying them to the local log disk would make recovery
+    /// depend on local space, and startup reads only `s3_log_disk` (it skips the `detached` directory there).
+    auto disk = keeper_context->isS3ExperimentalChangelog() ? getS3LogDisk() : getDisk();
 
     const auto timestamp_folder = (fs::path(changelogs_detached_dir) / getCurrentTimestampFolder()).generic_string();
 
@@ -4125,7 +5296,11 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 
         LOG_WARNING(log, "Removing changelog {}", changelog_description->path);
         const std::filesystem::path & path = changelog_description->path;
-        const auto new_path = timestamp_folder / path.filename();
+        /// A changelog with the same name may already have been detached into the same timestamp folder within
+        /// the same second (e.g. when the log is reloaded repeatedly), so pick a free name.
+        auto new_path = fs::path(timestamp_folder) / path.filename();
+        for (size_t suffix = 1; disk->existsFile(new_path.generic_string()); ++suffix)
+            new_path = fs::path(timestamp_folder) / fmt::format("{}.{}", path.filename().generic_string(), suffix);
 
         auto changelog_disk = changelog_description->disk;
         if (changelog_disk == disk)
@@ -4136,8 +5311,10 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+                /// Do not forget a changelog that is still on the disk: it would come back on the next startup.
+                if (e.code() != DB::ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
+                moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
             }
         }
         else
@@ -4378,6 +5555,15 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     {
         std::lock_guard lock(writer_mutex);
+
+        if (keeper_context->isS3ExperimentalChangelog())
+        {
+            /// The S3 compaction thread may have scheduled a relink after the `refreshCache` in `flush` above.
+            /// It schedules them only under `writer_mutex`, so this applies all of them before `prepareRewrite`.
+            entry_storage.refreshCache();
+            current_writer->prepareRewrite(index);
+        }
+
         /// This write_at require to overwrite everything in this file and also in previous file(s)
         const bool go_to_previous_file = index < current_writer->getStartIndex();
 
@@ -4387,10 +5573,14 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
             ChangelogFileDescriptionPtr description{nullptr};
 
-            if (index_changelog->first == index) /// exactly this file starts from index
+            /// In S3 mode the segment the writer has open is listed only once it is published, so `index` may be
+            /// past the start of every listed segment: it then belongs to the last one.
+            if (index_changelog != existing_changelogs.end() && index_changelog->first == index) /// exactly this file starts from index
                 description = index_changelog->second;
-            else
+            else if (index_changelog != existing_changelogs.begin())
                 description = std::prev(index_changelog)->second;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find a changelog containing index {} to rewrite", index);
 
             description->waitAllAsyncOperations();
             /// if the changelog is broken at end, we cannot append it with new logs
@@ -4398,12 +5588,31 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             if (description->broken_at_end)
             {
                 LOG_INFO(log, "Cannot write into {} because it has broken changelog at end, rotating", description->path);
+
+                /// The S3 writer publishes the rotated segment before it removes the old one with the same start index,
+                /// and after a crash in between startup keeps the larger of the two. The new segment does not start with
+                /// a copy of the broken one, so it can be the smaller one, and the overwritten entries would come back.
+                /// Every entry of a broken segment that starts at `index` is overwritten and is no longer acknowledged
+                /// as durable, so remove it before writing the new one.
+                if (keeper_context->isS3ExperimentalChangelog() && description->from_log_index == index)
+                {
+                    description->withWriteLock(
+                        [&]
+                        {
+                            description->removed_from_disk = true;
+                            description->disk->removeFileIfExists(description->path);
+                        });
+                    existing_changelogs.erase(index);
+                }
+
                 current_writer->rotate(index);
             }
             else
             {
                 auto log_disk = description->disk;
-                auto latest_log_disk = getLatestLogDisk();
+                /// In S3 mode startup only loads `s3_log_disk`, so the preserved segment must never be
+                /// migrated to the local latest log disk - recovery would not see it there.
+                auto latest_log_disk = keeper_context->isS3ExperimentalChangelog() ? getS3LogDisk() : getLatestLogDisk();
                 if (log_disk != latest_log_disk)
                     moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
@@ -4488,6 +5697,17 @@ void Changelog::compact(uint64_t up_to_log_index)
         }
         else /// Files are ordered, so all subsequent should exist
             break;
+    }
+
+    /// In S3 mode the segment the writer has open is listed only once it is published, so the loop above does not
+    /// see it. When all logs are removed, it starts at or before the compacted index, and the next entry is
+    /// `up_to_log_index + 1`. Without a rotation the next flush would publish the new entries under the stale start
+    /// index, and the next startup would consider that segment incomplete and never merge it.
+    if (keeper_context->isS3ExperimentalChangelog() && remove_all_logs && current_writer
+        && current_writer->getCurrentFileDescription() && current_writer->getStartIndex() <= up_to_log_index)
+    {
+        LOG_INFO(log, "Rotating the active S3 changelog segment because this node recovers from snapshot");
+        need_rotate = true;
     }
 
     entry_storage.cleanUpTo(up_to_log_index + 1);

@@ -24,6 +24,8 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <base/types.h>
+
 namespace DB
 {
 
@@ -123,6 +125,11 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
             "then re-enable it after a successful startup");
 
     initializeFeatureFlags(config);
+
+    /// Read before `initializeDisks`, so that the node storage overlap check can see the S3 log disk.
+    s3_experimental_changelog = config.getBool("keeper_server.coordination_settings.s3_experimental_changelog", false);
+    s3_log_disk_name = config.getString("keeper_server.coordination_settings.s3_log_disk", "");
+
     initializeDisks(config);
 
     if (config.has("keeper_server.precommit_sleep_ms_for_testing"))
@@ -134,14 +141,38 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
 }
 
+bool KeeperContext::isS3ExperimentalChangelog() const
+{
+    return s3_experimental_changelog;
+}
+
+DiskPtr KeeperContext::getS3LogDisk() const
+{
+    if (s3_log_disk_name.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "S3 experimental changelog is enabled but `keeper_server.coordination_settings.s3_log_disk` is not configured");
+    return disk_selector->get(s3_log_disk_name);
+}
+
+bool KeeperContext::hasS3LogDisk() const
+{
+    return !s3_log_disk_name.empty();
+}
+
 namespace
 {
 
-/// Local filesystem directory a disk stores its files in, or nullopt for a remote disk (whose
-/// `getPath` is not a filesystem path and is not comparable with one).
+/// Local filesystem directory a disk stores its files in, or nullopt if there is none. For an object
+/// storage disk with local metadata (e.g. `s3`), `getPath` is the local metadata directory, and wiping
+/// a directory containing it loses the disk's files just as for a local disk. Other remote disks have
+/// no local directory: their `getPath` is not a filesystem path and is not comparable with one.
 std::optional<fs::path> localDiskPath(const DiskPtr & disk)
 {
-    if (!disk || disk->isRemote())
+    if (!disk)
+        return {};
+
+    if (disk->isRemote() && disk->getDataSourceDescription().metadata_type != MetadataStorageType::Local)
         return {};
 
     std::string path = disk->getPath();
@@ -246,6 +277,9 @@ void KeeperContext::initializeDataDisk(const String & config_elem, const Poco::U
                 other_storages.emplace_back(disk_name);
             for (const auto & disk_name : old_snapshot_disk_names)
                 other_storages.emplace_back(disk_name);
+            /// The S3 changelog disk may still hold changelogs even if the feature is currently disabled.
+            if (!s3_log_disk_name.empty())
+                other_storages.emplace_back(s3_log_disk_name);
 
             const auto * data_disk_name = std::get_if<std::string>(&data_storage);
             const std::optional<fs::path> data_path = localDiskPath(getDisk(data_storage));
