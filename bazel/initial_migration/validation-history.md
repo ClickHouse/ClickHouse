@@ -1495,3 +1495,34 @@ ARM64 other outcomes: 1 `header_pp_not_verified`, 1 `link_extra_lib_only`, 1 `un
 Rust import reports for C++ targets: x86-64 0 of 5 reports verified (`observed`; 5 `held`); ARM64 0 of 5 reports verified (`observed`; 5 `held`). x86-64 produced 5 reports with no import findings whose C++ owners failed strict DWYU; ARM64 produced 5 reports with no import findings whose C++ owners failed strict DWYU. These reports do not qualify any Rust target or confer a compiled DWYU pass.
 
 An omitted target has no DWYU result for this source. Only the compiled clean column counts a successful compile and strict dependency report.
+
+## ab0569eff
+
+Source: [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0). Eleven Dictionary implementation headers move from public header lists into the source lists of the compile groups that read them. Abseil Status owns optional_ref.h; CRoaring's roaring.c owns its forced alignment header. These changes remove two header libraries. ISA-L's C compiler no longer receives libc++ ABI headers. The unused Bazel header library and its migration declarations are removed. DBMS embedded and AggregateFunctions drop four and five redundant dependencies, respectively. The commit changes only BUILD files and migration scripts or templates.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/2cc9151c-2416-4150-a2f3-fe1070dad84b) | ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | ClickHouse, normalized | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | `unit_tests_dbms` | `bc523ef4436f034fe89df4a85f84b6056aa61b54825fe405bc51f7a9f5683398` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/13f1da26-75a7-417a-9d98-2781c93a86d3) | ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | ClickHouse, normalized | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | `unit_tests_dbms` | `24603ddfc53c3eae1efbcea14eaab78ead22de00f2195aa345c9ec1b9df2f4a8` | 795,060,896 |
+
+All 59 native Bazel targets passed on each CPU. The normalized ClickHouse ELF matched native CMake; the raw ClickHouse and unit-test ELFs matched [698fea052](https://github.com/dzbarsky/clickhouse/commit/698fea052686835908931fce25669b703b220b84). Each CPU passed the same 26 selected, seven MergeTree and five header-ownership GoogleTests, plus the same six SQL cases. The two dependency lists compared for DBMS and Common I/O produced equal values for all 17 ordered CcInfo fields. The configured Boost provider report matched all 12 expected fields on both CPUs. In each native CRoaring archive, roaring_bitmap_and_cardinality resides in an executable section aligned to at least 4096 bytes, at an offset divisible by 4096.
+
+| Hosted run | Hosted status | Ordinary DWYU build | Strict DWYU build |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/ae9d0a52-ee8b-417a-87a7-b07c60efa4d9) | `Failed` | [ordinary DWYU](https://app.buildbuddy.io/invocation/87ed04b2-994c-479e-9f17-020e3ebf04b7) (exit 0) | [strict DWYU](https://app.buildbuddy.io/invocation/3a018e8d-e1cc-447f-bda6-e636e607e366) (exit 1) |
+| [ARM64](https://app.buildbuddy.io/invocation/e3797e46-403f-4354-a66e-295184fc5d73) | `Failed` | [ordinary DWYU](https://app.buildbuddy.io/invocation/888b85ea-967e-47ac-821b-299848e625d6) (exit 0) | [strict DWYU](https://app.buildbuddy.io/invocation/e3d2dc45-f505-4091-b210-949b6eb65f29) (exit 1) |
+
+| Production DWYU | Selected | Compiled clean | Findings | Failed | Other outcomes | Selected without verified records | Omitted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | 23 | 4 | 13 | 4 | 2 | 0 | 758 |
+| ARM64 | 19 | 4 | 11 | 4 | 0 | 0 | 762 |
+
+x86-64 other outcomes: 1 `unchecked_link_inputs`, 1 `unentered_owned_files`. Poco JSON passed; the intentionally negative fixture reported its unused implementation dependency.
+
+ARM64 other outcomes: none. Poco JSON passed; the intentionally negative fixture reported its unused implementation dependency.
+
+An omitted target has no DWYU result for this source. Only the compiled clean column counts a successful compile and strict dependency report.

@@ -47,14 +47,14 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-[698fea052](https://github.com/dzbarsky/clickhouse/commit/698fea052686835908931fce25669b703b220b84) completed 58 native Bazel targets on each architecture. The normalized ClickHouse SHA-256 and byte count matched native CMake.
+[ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0) completed 59 native Bazel targets on each architecture. The normalized ClickHouse SHA-256 and byte count matched native CMake.
 
 | Native Bazel build | Normalized SHA-256 | Bytes |
 | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/a9e28792-5995-4653-8a89-5b83662a61da) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
-| [ARM64](https://app.buildbuddy.io/invocation/f72461ad-2f14-4662-8c8a-b1451e6fd30b) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+| [x86-64](https://app.buildbuddy.io/invocation/2cc9151c-2416-4150-a2f3-fe1070dad84b) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+| [ARM64](https://app.buildbuddy.io/invocation/13f1da26-75a7-417a-9d98-2781c93a86d3) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
 
-The raw ClickHouse and unit-test executables also matched [ea022a835](https://github.com/dzbarsky/clickhouse/commit/ea022a835034c61e89eb4c0170570bd6a9e23990). Each CPU passed 38 GoogleTests and six SQL cases. The SHA-256 and byte counts come from BuildBuddy output metadata; the executables were not downloaded.
+The raw ClickHouse and unit-test executables also matched [698fea052](https://github.com/dzbarsky/clickhouse/commit/698fea052686835908931fce25669b703b220b84). Each CPU passed 38 GoogleTests and six SQL cases. The SHA-256 and byte counts come from BuildBuddy output metadata; the executables were not downloaded.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -173,4 +173,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-At `698fea052`, DWYU reported x86-64: 4 compiled targets clean, 9 with findings, 4 failed (42 of 784 selected); ARM64: 4 compiled targets clean, 7 with findings, 4 failed (40 of 784 selected). The full repository has not passed DWYU. The [validation history](bazel/initial_migration/validation-history.md#698fea052) lists all outcome counts and links the builds.
+At `ab0569eff`, DWYU reported x86-64: 4 compiled targets clean, 13 with findings, 4 failed (23 of 781 selected); ARM64: 4 compiled targets clean, 11 with findings, 4 failed (19 of 781 selected). The full repository has not passed DWYU. The [validation history](bazel/initial_migration/validation-history.md#ab0569eff) lists all outcome counts and links the builds.
