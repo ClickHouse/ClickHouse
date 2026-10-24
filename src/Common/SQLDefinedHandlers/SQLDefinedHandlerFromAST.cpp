@@ -401,6 +401,13 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// apply the default parser depth/backtrack limits and could reject a query the user's parser settings accepted.
     handler->receive_params = analyzeReceiveQueryParams(create.query);
 
+    /// A named capture group `_request_body` of the `URL REGEXP` binds the parameter from the URL (see
+    /// `PredefinedQueryHandler::customizeContext`), so the handler never reads it from the request body. Drop it
+    /// from the parameters bound by the handler layer, so that the body-consumption contract below (the methods
+    /// check and `411 Length Required`) matches the execution, and the body is never read for it.
+    if (handler->url_regex && handler->url_regex->NamedCapturingGroups().contains("_request_body"))
+        handler->receive_params.erase("_request_body");
+
     /// A statement that takes the request body as its data must be the handler's own query: neither `EXECUTE AS`
     /// nor `PARALLEL WITH` forwards the request tail to the statements it runs, so a wrapped one would silently
     /// receive no data at all. Reject it here instead of creating a handler that discards every upload.
@@ -432,7 +439,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
     /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).
-    handler->consumes_request_body = queryConsumesRequestBody(*create.query)
+    handler->feeds_request_body_to_query = queryConsumesRequestBody(*create.query);
+    handler->consumes_request_body = handler->feeds_request_body_to_query
         || handler->receive_params.contains("_request_body");
 
     /// A handler whose query reads the HTTP request body can never receive one over a safe method:

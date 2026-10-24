@@ -1034,6 +1034,7 @@ max_threads    1
 
 In addition to URL parameters, headers, and query parameters, `predefined_query_handler` supports a special virtual parameter `_request_body`.
 It contains the raw HTTP request body as a string.
+It is always bound from the request body: passing `_request_body` (or `param__request_body`) in the URL, or capturing it with a named group of `url` or `headers` regular expressions, is rejected with an exception.
 This allows you to create flexible REST APIs that can accept arbitrary data formats and process them within your queries.
 
 For example, you can use `_request_body` to implement a REST endpoint that accepts JSON data in a POST request and inserts it into a table:

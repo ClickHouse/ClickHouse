@@ -1797,8 +1797,18 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
     };
 
+    /// `_request_body` is bound from the request body (see `customizeContext`). Supplying it in the URL would leave
+    /// the body unread, so that the body would be appended to the text of the handler's query instead.
+    const auto check_not_request_body = [&](const String & name)
+    {
+        if (name == "_request_body")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The query parameter `_request_body` is bound from the HTTP request body and cannot be passed in the URL");
+    };
+
     if (receive_params.contains(key))
     {
+        check_not_request_body(key);
         set_query_parameter(key, value);
         return true;
     }
@@ -1809,7 +1819,10 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
         const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (receive_params.contains(parameter_name))
+        {
+            check_not_request_body(parameter_name);
             set_query_parameter(parameter_name, value);
+        }
         return true;
     }
 
@@ -1832,6 +1845,16 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
             {
                 const auto & capturing_value = matches[capturing_index];
+
+                /// A capture binding `_request_body` would leave the body unread (see below). A configuration-defined
+                /// handler appends an unread body to the query text, because its query is not analyzed and the body
+                /// may be the data of an `INSERT`, so the body would extend the handler's SQL. A SQL-defined handler
+                /// never has a captured `_request_body` in `receive_params` (see `makeSQLDefinedHandler`): it binds
+                /// the capture and appends the body only to an `INSERT`, so it is not rejected here.
+                if (capturing_value.data() && capturing_name == "_request_body" && receive_params.contains(capturing_name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The query parameter `_request_body` is bound from the HTTP request body and cannot be captured "
+                        "from the URL or a header");
 
                 if (capturing_value.data())
                     context->setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
@@ -1954,7 +1977,7 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
         std::nullopt)
 {
     setIntrospectionHandlerName(handler.name);
-    setConsumesRequestBody(handler.consumes_request_body);
+    setRequestBodyContract(handler.consumes_request_body, handler.feeds_request_body_to_query);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
