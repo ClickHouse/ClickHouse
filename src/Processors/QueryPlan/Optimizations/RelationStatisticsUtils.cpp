@@ -100,10 +100,11 @@ RelationStats parseTableStatsHint(ContextPtr context, const String & table_name)
 
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header)
 {
+    /// Not keyed on `table_name`: it is a display label spelled differently on the initiator and on
+    /// each replica, while every node planning the same query must make up the same statistics.
     SipHash hasher;
     hasher.update(seed);
     hasher.update(relation_index);
-    hasher.update(table_name);
     UInt64 hash = hasher.get64();
 
     RelationStats stats;
