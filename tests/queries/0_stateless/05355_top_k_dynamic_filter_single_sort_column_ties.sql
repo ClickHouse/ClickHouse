@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+-- Tag no-parallel: the `cache read` and `cache entries with ties kept` checks read entries that earlier queries wrote to the server-wide query condition cache, which other tests clear
 -- Random settings limits: query_plan_max_limit_for_top_k_optimization=(20000, None); use_top_k_dynamic_filtering=(1, None); use_top_k_dynamic_filtering_for_single_string_sort_column=(1, None)
 
 -- With a single `String` `ORDER BY` column, the top-K dynamic filter (`__topKFilter`) also drops the rows equal to the
