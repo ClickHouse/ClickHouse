@@ -25,7 +25,7 @@ public:
     static constexpr auto family_name = "Time64";
     static constexpr auto type_id = TypeIndex::Time64;
 
-    explicit DataTypeTime64(UInt32 scale_);
+    explicit DataTypeTime64(UInt64 scale_);
 
     DataTypeTime64()
         : DataTypeTime64(default_scale)

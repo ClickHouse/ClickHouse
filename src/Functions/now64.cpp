@@ -105,7 +105,7 @@ public:
     /// accepted and the result becomes tz-less `DateTime64`, mirroring `now`.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        UInt32 scale = DataTypeDateTime64::default_scale;
+        UInt64 scale = DataTypeDateTime64::default_scale;
         String timezone_name;
 
         if (arguments.size() > 2)
@@ -119,7 +119,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 0 argument of function {}. "
                                 "Expected const integer.", argument.type->getName(), getName());
 
-            scale = static_cast<UInt32>(argument.column->get64(0));
+            scale = argument.column->get64(0);
         }
         if (arguments.size() == 2)
             timezone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
