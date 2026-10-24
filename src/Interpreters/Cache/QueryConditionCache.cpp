@@ -266,6 +266,7 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : cache(cache_policy, CurrentMetrics::QueryConditionCacheBytes, CurrentMetrics::QueryConditionCacheEntries, max_size_in_bytes, 0, size_ratio)
+    , max_bounds_variants_bytes(max_size_in_bytes / bounds_variants_size_ratio)
 {
 }
 
@@ -373,6 +374,31 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
 }
 
+size_t QueryConditionCache::boundsVariantsWeight(const BoundsVariants & variants)
+{
+    /// The node of the list (with two pointers) and the node of the index (with the key, the iterator and the next pointer).
+    size_t memory = sizeof(BoundsVariants) + 2 * sizeof(void *) + sizeof(Key) + 2 * sizeof(void *);
+    memory += variants.second.capacity() * sizeof(BoundsVariant);
+    for (const auto & variant : variants.second)
+    {
+        memory += variant.values.capacity() * sizeof(Field);
+        for (const auto & value : variant.values)
+            if (value.getType() == Field::Types::String)
+                memory += value.safeGet<String>().capacity();
+    }
+    return memory;
+}
+
+void QueryConditionCache::evictBoundsVariants()
+{
+    while (!bounds_variants.empty() && (bounds_variants_bytes > max_bounds_variants_bytes || bounds_variants.size() > max_bounds_conditions))
+    {
+        bounds_variants_bytes -= boundsVariantsWeight(bounds_variants.back());
+        bounds_variants_index.erase(bounds_variants.back().first);
+        bounds_variants.pop_back();
+    }
+}
+
 void QueryConditionCache::addBoundsVariant(const UUID & table_id, UInt64 structure_hash, BoundsVariant variant)
 {
     if (table_id == UUIDHelpers::Nil)
@@ -382,6 +408,9 @@ void QueryConditionCache::addBoundsVariant(const UUID & table_id, UInt64 structu
 
     std::lock_guard lock(bounds_mutex);
 
+    if (max_bounds_variants_bytes == 0)
+        return;
+
     if (auto it = bounds_variants_index.find(key); it != bounds_variants_index.end())
     {
         bounds_variants.splice(bounds_variants.begin(), bounds_variants, it->second);
@@ -390,18 +419,22 @@ void QueryConditionCache::addBoundsVariant(const UUID & table_id, UInt64 structu
     {
         bounds_variants.emplace_front(key, std::vector<BoundsVariant>{});
         bounds_variants_index.emplace(key, bounds_variants.begin());
-        if (bounds_variants.size() > max_bounds_conditions)
-        {
-            bounds_variants_index.erase(bounds_variants.back().first);
-            bounds_variants.pop_back();
-        }
+        bounds_variants_bytes += boundsVariantsWeight(bounds_variants.front());
     }
 
-    auto & variants = bounds_variants.front().second;
+    auto & front = bounds_variants.front();
+    bounds_variants_bytes -= boundsVariantsWeight(front);
+
+    auto & variants = front.second;
     std::erase_if(variants, [&](const BoundsVariant & existing) { return existing.condition_hash == variant.condition_hash; });
     variants.insert(variants.begin(), std::move(variant));
     if (variants.size() > max_bounds_variants)
         variants.resize(max_bounds_variants);
+
+    bounds_variants_bytes += boundsVariantsWeight(front);
+
+    /// This may forget the condition just added if it alone does not fit, which is fine.
+    evictBoundsVariants();
 }
 
 std::vector<QueryConditionCache::BoundsVariant> QueryConditionCache::getBoundsVariants(const UUID & table_id, UInt64 structure_hash) const
@@ -429,11 +462,16 @@ void QueryConditionCache::clear()
     std::lock_guard lock(bounds_mutex);
     bounds_variants.clear();
     bounds_variants_index.clear();
+    bounds_variants_bytes = 0;
 }
 
 void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
 {
     cache.setMaxSizeInBytes(max_size_in_bytes);
+
+    std::lock_guard lock(bounds_mutex);
+    max_bounds_variants_bytes = max_size_in_bytes / bounds_variants_size_ratio;
+    evictBoundsVariants();
 }
 
 size_t QueryConditionCache::maxSizeInBytes() const

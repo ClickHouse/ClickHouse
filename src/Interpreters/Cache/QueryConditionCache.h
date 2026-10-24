@@ -147,9 +147,17 @@ private:
     static constexpr size_t max_bounds_variants = 4;
     /// The number of conditions with remembered variants, the least recently used are forgotten.
     static constexpr size_t max_bounds_conditions = 10000;
+    /// The remembered variants take at most this part of the memory of the cache. They are useless
+    /// without entries in the cache, so nothing is remembered when the cache is disabled.
+    static constexpr size_t bounds_variants_size_ratio = 16;
 
     using BoundsVariants = std::pair<Key, std::vector<BoundsVariant>>;
+    static size_t boundsVariantsWeight(const BoundsVariants & variants);
+    void evictBoundsVariants() TSA_REQUIRES(bounds_mutex);
+
     mutable std::mutex bounds_mutex;
+    size_t bounds_variants_bytes TSA_GUARDED_BY(bounds_mutex) = 0;
+    size_t max_bounds_variants_bytes TSA_GUARDED_BY(bounds_mutex) = 0;
     std::list<BoundsVariants> bounds_variants TSA_GUARDED_BY(bounds_mutex);
     std::unordered_map<Key, std::list<BoundsVariants>::iterator, UInt128TrivialHash> bounds_variants_index TSA_GUARDED_BY(bounds_mutex);
 
