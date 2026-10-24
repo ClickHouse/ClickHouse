@@ -2936,6 +2936,21 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     auto actions_dag = expression_actions.getActionsDAG();
     actions_dag->serialize(ctx.out, ctx.registry);
 
+    /// Inputs of both sides can share a name (`__join_result_dummy`), so the side cannot be inferred from it.
+    if (ctx.step_version >= 1)
+    {
+        for (const auto * input : actions_dag->getInputs())
+        {
+            JoinActionRef input_ref(input, expression_actions);
+            if (input_ref.fromLeft())
+                writeIntBinary(UInt8(0), ctx.out);
+            else if (input_ref.fromRight())
+                writeIntBinary(UInt8(1), ctx.out);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Input {} of the join has no single source side", input->result_name);
+        }
+    }
+
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
@@ -2998,7 +3013,22 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
     auto left_header = ctx.input_headers.front();
     auto right_header = ctx.input_headers.back();
-    JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
+    JoinExpressionActions expression_actions;
+    if (ctx.step_version >= 1)
+    {
+        std::vector<JoinTableSide> input_sides(actions_dag.getInputs().size());
+        for (auto & side : input_sides)
+        {
+            UInt8 value = 0;
+            readIntBinary(value, ctx.in);
+            if (value > 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid side {} of a join input", UInt32(value));
+            side = value == 0 ? JoinTableSide::Left : JoinTableSide::Right;
+        }
+        expression_actions = JoinExpressionActions(*left_header, *right_header, std::move(actions_dag), input_sides);
+    }
+    else
+        expression_actions = JoinExpressionActions(*left_header, *right_header, std::move(actions_dag));
 
     auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
@@ -3106,7 +3136,7 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registry.registerStep("Join", JoinStepLogical::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_INPUT_SIDES}});
 }
 
 
