@@ -4922,8 +4922,13 @@ bool MutateTask::prepare()
 
     /// Like the clone, a mutation that changes no row of the part applies nothing to it but the rebuilds.
     if (!is_storage_touched.any_rows_affected && !ctx->changes_storage_type)
+    {
         ctx->commands_for_part.clear();
+        commands_for_execution = &ctx->commands_for_part;
+    }
     ctx->commands_for_part.insert(ctx->commands_for_part.end(), stale_projections.begin(), stale_projections.end());
+    if (commands_for_execution == &coalesced_commands)
+        coalesced_commands.insert(coalesced_commands.end(), stale_projections.begin(), stale_projections.end());
 
     LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
 

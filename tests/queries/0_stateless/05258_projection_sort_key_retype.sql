@@ -157,3 +157,22 @@ SYSTEM START MERGES th2;
 OPTIMIZE TABLE th2 FINAL;
 SELECT 'H2 projection', count() FROM th2 WHERE v = '10' SETTINGS force_optimize_projection = 1;
 SELECT 'H2 projection parts', count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 'th2' AND name = 'p' AND active;
+
+-- A mutation that changes no row rebuilds such a projection and keeps the others, also with coalesced row-mask updates.
+CREATE TABLE ti (project_id UInt64, id String, v UInt32,
+    PROJECTION p (SELECT project_id, id, v ORDER BY v), PROJECTION q (SELECT project_id, id ORDER BY id))
+ENGINE = MergeTree ORDER BY (project_id, id)
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
+    enable_block_number_column = 0, enable_block_offset_column = 0, use_primary_key_cache = 0, prewarm_primary_key_cache = 0,
+    auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1,
+    enable_row_mask_update_coalescing = 1, lightweight_mutation_projection_mode = 'drop';
+INSERT INTO ti SELECT 1, toString(number), number FROM numbers(100);
+ALTER TABLE ti DELETE WHERE project_id = 0;
+SYSTEM STOP MERGES ti;
+ALTER TABLE ti MODIFY COLUMN v String SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 'ti' SYNC FORMAT Null;
+SYSTEM START MERGES ti;
+ALTER TABLE ti UPDATE _row_exists = 0 WHERE project_id = 1 AND id IN ('a'), UPDATE _row_exists = 0 WHERE project_id = 1 AND id IN ('b');
+SELECT 'I rows', count() FROM ti;
+SELECT 'I projection', name FROM system.projection_parts WHERE database = currentDatabase() AND table = 'ti' AND active ORDER BY name;
+SELECT 'I projection type', type FROM system.projection_parts_columns WHERE database = currentDatabase() AND table = 'ti' AND name = 'p' AND column = 'v' AND active;

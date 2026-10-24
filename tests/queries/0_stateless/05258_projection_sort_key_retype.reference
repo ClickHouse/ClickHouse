@@ -28,3 +28,7 @@ H table	1
 H projection	1
 H2 projection	1
 H2 projection parts	1
+I rows	100
+I projection	p
+I projection	q
+I projection type	String
