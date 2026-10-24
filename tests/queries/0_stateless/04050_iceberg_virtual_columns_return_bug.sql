@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test: addRequestedFileLikeStorageVirtualsToChunk used `return`
 -- instead of `continue` after adding _row_number, skipping subsequent virtual
 -- columns like _data_lake_snapshot_version and causing

@@ -53,7 +53,7 @@
 #include <numeric>
 #include <fmt/ranges.h>
 #include <lz4.h>
-#include <arrow/util/crc32.h>
+#include <zlib.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -1428,23 +1428,15 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     cached_column_chunks.clear();
 }
 
-/// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
-/// duplicate them for some reason. Our parquetTryHashColumn is called from both the
-/// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
-/// Warning: this requires that we use the same thrift-generated types as arrow; if we
-/// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
-/// newer version), this will stop working.
-static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData & file_metadata, const Reader::PrimitiveColumnInfo & column_info)
+static const parq::SchemaElement & getSchemaElement(const parq::FileMetaData & file_metadata, const Reader::PrimitiveColumnInfo & column_info)
 {
-    const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
-    auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
-    return parquet::ColumnDescriptor(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+    return file_metadata.schema.at(column_info.schema_idx);
 }
 
 void Reader::prepareBloomFilterCondition()
 {
-    /// Index in output block -> arrow column info.
-    std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
+    /// Index in output block -> primitive column info.
+    std::vector<std::optional<std::pair</*primitive_idx*/ size_t, const parq::SchemaElement *>>>
         bf_eligible_columns(extended_sample_block.columns());
     /// Index in output block -> whether at least one surviving row group can use the dictionary page
     /// for this column. Used below to exempt the exact dictionary filter from the bloom filter's
@@ -1486,8 +1478,7 @@ void Reader::prepareBloomFilterCondition()
         if (!any_row_group_eligible)
             continue;
 
-        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata(), column_info);
-        bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
+        bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, &getSchemaElement(file_metadata(), column_info));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
     }
@@ -1501,8 +1492,8 @@ void Reader::prepareBloomFilterCondition()
             const auto & pair = bf_eligible_columns.at(column_idx);
             if (!pair.has_value())
                 return std::nullopt;
-            const auto & [primitive_idx, descriptor] = *pair;
-            auto hash = parquetTryHashField(f, &descriptor);
+            const auto & [primitive_idx, schema_element] = *pair;
+            auto hash = parquetTryHashField(f, *schema_element);
             if (!hash.has_value())
                 return std::nullopt;
 
@@ -1529,8 +1520,8 @@ void Reader::prepareBloomFilterCondition()
             bool exceeds_bloom_filter_cap = column->size() > options.bloom_filter_max_set_size;
             if (exceeds_bloom_filter_cap && !dict_filter_eligible_columns[column_idx])
                 return std::nullopt;
-            const auto & [primitive_idx, descriptor] = *pair;
-            auto hashes = parquetTryHashColumn(column.get(), &descriptor);
+            const auto & [primitive_idx, schema_element] = *pair;
+            auto hashes = parquetTryHashColumn(column.get(), *schema_element);
             if (!hashes.has_value())
                 return std::nullopt;
 
@@ -2485,13 +2476,13 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     SCOPE_EXIT({ if (!committed) reservation.release(estimated_value_set_bytes); });
 
     /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
-    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+    const parq::SchemaElement & schema_element = getSchemaElement(file_metadata, column_info);
     std::optional<std::vector<uint64_t>> hashes;
     if (column.dictionary.mode == Dictionary::Mode::Column)
     {
         /// The values already exist as a decoded column (built from `column_info.decoded_type`, same
         /// as `values` below), so hash it in place instead of materializing an identical second copy.
-        hashes = parquetTryHashColumn(column.dictionary.col.get(), &desc);
+        hashes = parquetTryHashColumn(column.dictionary.col.get(), schema_element);
     }
     else
     {
@@ -2508,7 +2499,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
         /// Pruning sees each distinct value once, which says nothing about how often the scan will
         /// meet it, so this materialization must not feed the shared `StringValueFilter` statistics.
         column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
-        hashes = parquetTryHashColumn(values.get(), &desc);
+        hashes = parquetTryHashColumn(values.get(), schema_element);
     }
     if (!hashes.has_value())
         return std::nullopt;
@@ -2535,7 +2526,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
             /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
             /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
             /// column read as non-nullable `UInt64`). So add the default value's hash.
-            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
+            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), schema_element);
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
@@ -3587,7 +3578,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
 
     if (header.__isset.crc && options.format.parquet.verify_checksums)
     {
-        uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
+        uint32_t crc = static_cast<uint32_t>(crc32_z(0, reinterpret_cast<const Bytef *>(page_data.data()), page_data.size()));
         if (crc != uint32_t(header.crc))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page CRC checksum verification failed");
     }

@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>

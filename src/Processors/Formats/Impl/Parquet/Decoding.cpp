@@ -8,9 +8,7 @@
 #include <Common/StringValueFilter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
-
-#include <arrow/util/bit_stream_utils_internal.h>
-#include <arrow/util/byte_stream_split_internal.h>
+#include <base/unaligned.h>
 
 namespace DB::ErrorCodes
 {
@@ -22,6 +20,107 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
+
+namespace
+{
+
+template <typename T, size_t bit_width>
+void unpackBitsImpl(const UInt8 * in, size_t bit_offset, T * out, size_t count)
+{
+    if constexpr (bit_width == 0)
+    {
+        std::fill(out, out + count, T(0));
+        return;
+    }
+    static constexpr UInt64 mask = []
+    {
+        if constexpr (bit_width == 64)
+            return ~UInt64(0);
+        else
+            return (UInt64(1) << bit_width) - 1;
+    }();
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t bit = bit_offset + i * bit_width;
+        const UInt8 * p = in + bit / 8;
+        const size_t shift = bit % 8;
+        UInt64 x = unalignedLoadLittleEndian<UInt64>(p) >> shift;
+        /// After the shift, the 8-byte load holds at least 57 bits of the value.
+        if constexpr (bit_width > 57)
+            if (shift)
+                x |= UInt64(p[8]) << (64 - shift);
+        out[i] = static_cast<T>(x & mask);
+    }
+}
+
+template <typename T, size_t... widths>
+constexpr auto makeUnpackBitsTable(std::index_sequence<widths...>)
+{
+    return std::array<void (*)(const UInt8 *, size_t, T *, size_t), sizeof...(widths)>{&unpackBitsImpl<T, widths>...};
+}
+
+template <size_t num_streams>
+void byteStreamSplitDecodeImpl(const UInt8 * in, size_t num_values, size_t stride, UInt8 * out)
+{
+    for (size_t i = 0; i < num_values; ++i)
+        for (size_t stream = 0; stream < num_streams; ++stream)
+            out[i * num_streams + stream] = in[stream * stride + i];
+}
+
+/// Interleaves `num_streams` byte streams, each `stride` bytes apart in `in`, back into
+/// `num_values` values of `num_streams` bytes: byte `stream` of value `i` is `in[stream * stride + i]`.
+void byteStreamSplitDecode(const UInt8 * in, size_t num_streams, size_t num_values, size_t stride, UInt8 * out)
+{
+    switch (num_streams)
+    {
+        case 2: byteStreamSplitDecodeImpl<2>(in, num_values, stride, out); return;
+        case 4: byteStreamSplitDecodeImpl<4>(in, num_values, stride, out); return;
+        case 8: byteStreamSplitDecodeImpl<8>(in, num_values, stride, out); return;
+        case 16: byteStreamSplitDecodeImpl<16>(in, num_values, stride, out); return;
+        default:
+            for (size_t i = 0; i < num_values; ++i)
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                    out[i * num_streams + stream] = in[stream * stride + i];
+    }
+}
+
+}
+
+template <typename T>
+void unpackBits(const UInt8 * in, const UInt8 * in_end, size_t bit_offset, size_t bit_width, T * out, size_t count)
+{
+    static constexpr auto table = makeUnpackBitsTable<T>(std::make_index_sequence<sizeof(T) * 8 + 1>());
+    chassert(bit_width < table.size());
+    chassert(count == 0 || bit_offset + count * bit_width <= size_t(in_end - in) * 8);
+    const auto unpack = table[bit_width];
+
+    /// The value starting at bit `b` loads 9 bytes from byte `b / 8`; that is in bounds if `b < (in_size - 8) * 8`.
+    static constexpr size_t load_size = 9;
+    const size_t in_size = in_end - in;
+    size_t fast_count = 0;
+    if (bit_width == 0)
+        fast_count = count;
+    else if (in_size >= load_size)
+    {
+        const size_t safe_bits = (in_size - load_size + 1) * 8;
+        if (bit_offset < safe_bits)
+            fast_count = std::min(count, (safe_bits - bit_offset + bit_width - 1) / bit_width);
+    }
+    unpack(in, bit_offset, out, fast_count);
+    if (fast_count == count)
+        return;
+
+    /// The remaining values start in the last `load_size - 1` bytes of the input.
+    const size_t tail_bit = bit_offset + fast_count * bit_width;
+    const size_t tail_byte = tail_bit / 8;
+    chassert(in_size - tail_byte < load_size);
+    UInt8 tail[2 * load_size] = {};
+    memcpy(tail, in + tail_byte, in_size - tail_byte);
+    unpack(tail, tail_bit % 8, out + fast_count, count - fast_count);
+}
+
+template void unpackBits<UInt32>(const UInt8 *, const UInt8 *, size_t, size_t, UInt32 *, size_t);
+template void unpackBits<UInt64>(const UInt8 *, const UInt8 *, size_t, size_t, UInt64 *, size_t);
 
 /// Used for dictionary indices and repetition/definition levels.
 /// Throws if any decoded value is >= `limit`.
@@ -684,7 +783,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     size_t miniblock_idx = 0; // within block
     /// Initially set to 1 as a special case to report the first value.
     size_t miniblock_values_remaining = 1;
-    arrow::bit_util::BitReader bit_reader{};
+    /// Bit-packed deltas of the current miniblock, and the position of the next one in bits.
+    const UInt8 * miniblock_data = nullptr;
+    size_t miniblock_bit_offset = 0;
 
     PODArray<UInt64> temp_values;
 
@@ -752,6 +853,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             nextBlock();
         chassert(miniblock_idx < miniblocks_per_block);
 
+        if (miniblock_bit_widths[miniblock_idx] > 64)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED miniblock bit width: {}", size_t(miniblock_bit_widths[miniblock_idx]));
+
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
         size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
 
@@ -772,7 +876,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data in DELTA_BINARY_PACKED miniblock");
         }
 
-        bit_reader.Reset(reinterpret_cast<const uint8_t *>(data), int(bytes));
+        miniblock_data = reinterpret_cast<const UInt8 *>(data);
+        miniblock_bit_offset = 0;
         data += bytes;
     }
 
@@ -896,9 +1001,12 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             num_values -= n;
             miniblock_values_remaining -= n;
 
-            int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
-            int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
-            chassert(read_count == int(n));
+            size_t bits_per_delta = miniblock_bit_widths[miniblock_idx];
+            if (bits_per_delta > sizeof(T) * 8)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED bit width {} is too big for {}-byte values", bits_per_delta, sizeof(T));
+            /// `nextMiniblock` made sure that the values are in bounds.
+            unpackBits(miniblock_data, reinterpret_cast<const UInt8 *>(end), miniblock_bit_offset, bits_per_delta, out_values, n);
+            miniblock_bit_offset += n * bits_per_delta;
 
             /// Locals, because `out_values` may alias the members.
             UInt64 value = current_value;
@@ -1307,10 +1415,8 @@ struct ByteStreamSplitDecoder : public PageDecoder
         temp_buffer.resize(num_values * num_streams);
         char * to = temp_buffer.data();
         requireRemainingBytes(num_values);
-        arrow::util::internal::ByteStreamSplitDecode(
-            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
-            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
-            reinterpret_cast<uint8_t *>(to));
+        byteStreamSplitDecode(
+            reinterpret_cast<const UInt8 *>(data), num_streams, num_values, stream_size, reinterpret_cast<UInt8 *>(to));
         data += num_values;
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
@@ -1349,12 +1455,9 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
         requireRemainingBytes(num_values);
 
-        /// De-interleave the byte streams back into values. Arrow has SIMD (NEON/AVX2/SSE4.2) implementations of
-        /// exactly this transpose, gated behind the ARROW_HAVE_* defines enabled in contrib/arrow-cmake.
-        arrow::util::internal::ByteStreamSplitDecode(
-            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
-            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
-            reinterpret_cast<uint8_t *>(to));
+        /// De-interleave the byte streams back into values.
+        byteStreamSplitDecode(
+            reinterpret_cast<const UInt8 *>(data), num_streams, num_values, stream_size, reinterpret_cast<UInt8 *>(to));
         data += num_values;
 
         if (!direct)

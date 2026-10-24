@@ -67,6 +67,14 @@ def clone_submodules():
         "contrib/heks",
         "contrib/sql-console",
         "contrib/optimized-routines",
+        # Parquet: the native reader and writer need the Thrift-generated structures from Arrow's
+        # source tree and the Thrift runtime; the Arrow formats need FlatBuffers. Snappy (with crc32c,
+        # which it requires) is the default compression of Parquet files written by other tools.
+        "contrib/arrow",
+        "contrib/thrift",
+        "contrib/flatbuffers",
+        "contrib/snappy",
+        "contrib/crc32c",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -274,6 +282,7 @@ def main():
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -DENABLE_PARQUET=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )

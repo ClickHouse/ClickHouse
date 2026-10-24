@@ -8,7 +8,7 @@
 #include <Poco/JSON/Parser.h>
 #include <base/types.h>
 
-#if USE_ARROW
+#if USE_ARROW_LIBRARY
 #    include <arrow/util/key_value_metadata.h>
 #    include <arrow/array/array_binary.h>
 #endif
@@ -51,7 +51,7 @@ struct GeoColumnMetadata
     std::optional<BboxCovering> covering_bbox;
 };
 
-#if USE_ARROW
+#if USE_ARROW_LIBRARY
 const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
 #endif
 

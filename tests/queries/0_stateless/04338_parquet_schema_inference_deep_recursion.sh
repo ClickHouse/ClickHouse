@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # Regression test: Parquet schema conversion (SchemaConverter::processSubtree) recurses over nested
 # groups. Its only guard counts definition levels (def), which are only incremented for OPTIONAL/
 # REPEATED nodes - so a chain of REQUIRED (non-nullable) groups bypasses the def==255 limit and

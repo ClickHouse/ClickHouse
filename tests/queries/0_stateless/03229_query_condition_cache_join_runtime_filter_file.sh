@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# Tag no-fasttest: needs Parquet
+# Tags: no-parallel
 # Tag no-parallel: asserts query condition cache profile events. A parallel sibling test dropping or
 # renaming any UUID-less (path-keyed) `MergeTree` table calls `Context::clearCaches`, which wipes the
 # query condition cache and turns an expected hit into a miss.

@@ -1,13 +1,9 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
-#include <arrow/util/key_value_metadata.h>
-#include <parquet/encoding.h>
-#include <parquet/geospatial/statistics.h>
-#include <parquet/schema.h>
-#include <arrow/util/rle_encoding_internal.h>
-#include <arrow/util/crc32.h>
 #include <lz4.h>
+#include <zlib.h>
+#include <variant>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <xxhash.h>
@@ -26,7 +22,14 @@
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
+#include <base/unaligned.h>
 #include <bit>
+#include <cmath>
+#include <limits>
+#include <set>
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -48,6 +51,32 @@ namespace DB::Parquet
 
 namespace
 {
+
+/// Values of Parquet physical types, as the converters below produce them.
+
+struct ByteArray
+{
+    UInt32 len = 0;
+    const uint8_t * ptr = nullptr;
+
+    ByteArray() = default;
+    ByteArray(UInt32 len_, const uint8_t * ptr_) : len(len_), ptr(ptr_) {}
+};
+
+/// The length is the same for all values of a column and is known from the converter.
+struct FixedLenByteArray
+{
+    const uint8_t * ptr = nullptr;
+};
+
+/// Parquet physical types, by the type of their values.
+struct BooleanType { using c_type = bool; };
+struct Int32Type { using c_type = Int32; };
+struct Int64Type { using c_type = Int64; };
+struct FloatType { using c_type = Float32; };
+struct DoubleType { using c_type = Float64; };
+struct ByteArrayType { using c_type = ByteArray; };
+struct FLBAType { using c_type = FixedLenByteArray; };
 
 template <typename T, typename SourceType>
 struct StatisticsNumeric
@@ -99,7 +128,7 @@ struct StatisticsFixedStringRef
     const uint8_t * min = nullptr;
     const uint8_t * max = nullptr;
 
-    void add(parquet::FixedLenByteArray a)
+    void add(FixedLenByteArray a)
     {
         chassert(fixed_string_size != UINT64_MAX);
         addMin(a.ptr);
@@ -150,7 +179,7 @@ struct StatisticsFixedStringCopy
     std::array<uint8_t, S> min {};
     std::array<uint8_t, S> max {};
 
-    void add(parquet::FixedLenByteArray a)
+    void add(FixedLenByteArray a)
     {
         addMin(a.ptr);
         addMax(a.ptr);
@@ -202,10 +231,10 @@ struct StatisticsFixedStringCopy
 
 struct StatisticsStringRef
 {
-    parquet::ByteArray min;
-    parquet::ByteArray max;
+    ByteArray min;
+    ByteArray max;
 
-    void add(parquet::ByteArray x)
+    void add(ByteArray x)
     {
         addMin(x);
         addMax(x);
@@ -237,19 +266,19 @@ struct StatisticsStringRef
         return s;
     }
 
-    void addMin(parquet::ByteArray x)
+    void addMin(ByteArray x)
     {
         if (min.ptr == nullptr || compare(x, min) < 0)
             min = x;
     }
 
-    void addMax(parquet::ByteArray x)
+    void addMax(ByteArray x)
     {
         if (max.ptr == nullptr || compare(x, max) > 0)
             max = x;
     }
 
-    static int compare(parquet::ByteArray a, parquet::ByteArray b)
+    static int compare(ByteArray a, ByteArray b)
     {
         int t = memcmp(a.ptr, b.ptr, std::min(a.len, b.len));
         if (t != 0)
@@ -264,7 +293,7 @@ struct StatisticsStringCopy
     String min;
     String max;
 
-    void add(parquet::ByteArray x)
+    void add(ByteArray x)
     {
         addMin(x);
         addMax(x);
@@ -275,8 +304,8 @@ struct StatisticsStringCopy
     {
         if (s.empty)
             return;
-        addMin(parquet::ByteArray(static_cast<UInt32>(s.min.size()), reinterpret_cast<const uint8_t *>(s.min.data())));
-        addMax(parquet::ByteArray(static_cast<UInt32>(s.max.size()), reinterpret_cast<const uint8_t *>(s.max.data())));
+        addMin(ByteArray(static_cast<UInt32>(s.min.size()), reinterpret_cast<const uint8_t *>(s.min.data())));
+        addMax(ByteArray(static_cast<UInt32>(s.max.size()), reinterpret_cast<const uint8_t *>(s.max.data())));
         empty = false;
     }
 
@@ -298,7 +327,7 @@ struct StatisticsStringCopy
         return s;
     }
 
-    void addMin(parquet::ByteArray x)
+    void addMin(ByteArray x)
     {
         if (empty || compare(x, min) < 0)
         {
@@ -307,7 +336,7 @@ struct StatisticsStringCopy
         }
     }
 
-    void addMax(parquet::ByteArray x)
+    void addMax(ByteArray x)
     {
         if (empty || compare(x, max) > 0)
         {
@@ -316,7 +345,7 @@ struct StatisticsStringCopy
         }
     }
 
-    static int compare(parquet::ByteArray a, const String & b)
+    static int compare(ByteArray a, const String & b)
     {
         int t = memcmp(a.ptr, b.data(), std::min(a.len, static_cast<UInt32>(b.size())));
         if (t != 0)
@@ -328,23 +357,54 @@ struct StatisticsStringCopy
 /// For WKB values of a `GEOMETRY` column: the sort order of this logical type is undefined, so no
 /// min/max are produced. Instead, the bounding box and the set of geometry types are accumulated
 /// for `GeospatialStatistics` of the column chunk.
+/// The semantics follow `parquet::geospatial::GeoStatistics` of Arrow: ISO WKB with Z, M and ZM
+/// variants of the types is accepted, and if any value is not a valid WKB, no statistics are written.
 struct StatisticsGeometry
 {
-    /// Held by pointer, because `GeoStatistics` is not movable. The methods below modify the
-    /// pointee, so they are not const, although clang-tidy suggests it.
-    std::unique_ptr<parquet::geospatial::GeoStatistics> geo = std::make_unique<parquet::geospatial::GeoStatistics>();
+    static constexpr double inf = std::numeric_limits<double>::infinity();
 
-    void add(parquet::ByteArray x) // NOLINT(readability-make-member-function-const)
+    /// X, Y, Z, M.
+    std::array<double, 4> min {inf, inf, inf, inf};
+    std::array<double, 4> max {-inf, -inf, -inf, -inf};
+    /// WKB geometry type codes of the top-level values, e.g. 1 for `POINT`, 3002 for `LINESTRING ZM`.
+    std::set<Int32> geometry_types;
+    bool is_valid = true;
+
+    void add(ByteArray x)
     {
-        geo->Update(&x, 1);
+        if (!is_valid)
+            return;
+        const uint8_t * pos = x.ptr;
+        const uint8_t * end = x.ptr + x.len;
+        if (!addGeometry(pos, end, /*record_type=*/ true, /*depth=*/ 0) || pos != end)
+            is_valid = false;
     }
 
-    void merge(const StatisticsGeometry & s) // NOLINT(readability-make-member-function-const)
+    void merge(const StatisticsGeometry & s)
     {
-        geo->Merge(*s.geo);
+        is_valid = is_valid && s.is_valid;
+        if (!is_valid)
+            return;
+        for (size_t i = 0; i < 4; ++i)
+        {
+            if (std::isnan(min[i]) || std::isnan(max[i]) || std::isnan(s.min[i]) || std::isnan(s.max[i]))
+            {
+                min[i] = std::numeric_limits<double>::quiet_NaN();
+                max[i] = std::numeric_limits<double>::quiet_NaN();
+            }
+            else
+            {
+                min[i] = std::min(min[i], s.min[i]);
+                max[i] = std::max(max[i], s.max[i]);
+            }
+        }
+        geometry_types.insert(s.geometry_types.begin(), s.geometry_types.end());
     }
 
-    void clear() { geo->Reset(); } // NOLINT(readability-make-member-function-const)
+    void clear()
+    {
+        *this = StatisticsGeometry();
+    }
 
     parq::Statistics get(const WriteOptions &) const
     {
@@ -354,33 +414,144 @@ struct StatisticsGeometry
     /// Returns nullopt if a value could not be parsed as WKB, then no statistics are written.
     std::optional<parq::GeospatialStatistics> getGeospatial() const
     {
-        auto encoded = geo->Encode();
-        if (!encoded)
+        if (!is_valid)
             return std::nullopt;
 
         parq::GeospatialStatistics res;
         /// An empty list means that the types are unknown, this is the case only if all values are NULL.
-        res.__set_geospatial_types(encoded->geospatial_types);
-        if (encoded->xy_bounds_present)
+        res.__set_geospatial_types(std::vector<Int32>(geometry_types.begin(), geometry_types.end()));
+
+        const bool write_x = hasBound(0);
+        const bool write_y = hasBound(1);
+        if (write_x && write_y)
         {
             parq::BoundingBox bbox;
-            bbox.__set_xmin(encoded->xmin);
-            bbox.__set_xmax(encoded->xmax);
-            bbox.__set_ymin(encoded->ymin);
-            bbox.__set_ymax(encoded->ymax);
-            if (encoded->z_bounds_present)
+            bbox.__set_xmin(min[0]);
+            bbox.__set_xmax(max[0]);
+            bbox.__set_ymin(min[1]);
+            bbox.__set_ymax(max[1]);
+            if (hasBound(2))
             {
-                bbox.__set_zmin(encoded->zmin);
-                bbox.__set_zmax(encoded->zmax);
+                bbox.__set_zmin(min[2]);
+                bbox.__set_zmax(max[2]);
             }
-            if (encoded->m_bounds_present)
+            if (hasBound(3))
             {
-                bbox.__set_mmin(encoded->mmin);
-                bbox.__set_mmax(encoded->mmax);
+                bbox.__set_mmin(min[3]);
+                bbox.__set_mmax(max[3]);
             }
             res.__set_bbox(bbox);
         }
         return res;
+    }
+
+private:
+    /// The bound is neither empty (no coordinates seen) nor invalid (NaN).
+    bool hasBound(size_t i) const
+    {
+        return !std::isinf(min[i] - max[i]) && !std::isnan(min[i]) && !std::isnan(max[i]);
+    }
+
+    template <typename T>
+    static bool read(const uint8_t *& pos, const uint8_t * end, bool little_endian, T & out)
+    {
+        if (static_cast<size_t>(end - pos) < sizeof(T))
+            return false;
+        out = little_endian ? unalignedLoadEndian<std::endian::little, T>(pos) : unalignedLoadEndian<std::endian::big, T>(pos);
+        pos += sizeof(T);
+        return true;
+    }
+
+    /// `dimensions`: 0 - XY, 1 - XYZ, 2 - XYM, 3 - XYZM.
+    bool addCoordinates(const uint8_t *& pos, const uint8_t * end, bool little_endian, UInt32 dimensions, UInt32 count)
+    {
+        const size_t num_values = (dimensions == 0) ? 2 : (dimensions == 3 ? 4 : 3);
+        if (static_cast<UInt64>(end - pos) < static_cast<UInt64>(count) * num_values * sizeof(Float64))
+            return false;
+        for (UInt32 i = 0; i < count; ++i)
+        {
+            Float64 coord[4];
+            for (size_t j = 0; j < num_values; ++j)
+                read(pos, end, little_endian, coord[j]);
+            /// For XYM, the third value is M.
+            if (dimensions == 2)
+            {
+                coord[3] = coord[2];
+                updateBound(0, coord[0]);
+                updateBound(1, coord[1]);
+                updateBound(3, coord[3]);
+            }
+            else
+            {
+                for (size_t j = 0; j < num_values; ++j)
+                    updateBound(j, coord[j]);
+            }
+        }
+        return true;
+    }
+
+    void updateBound(size_t i, Float64 value)
+    {
+        /// The order of the arguments matters for NaN: a NaN coordinate does not change the bounds.
+        min[i] = std::min(min[i], value);
+        max[i] = std::max(max[i], value);
+    }
+
+    bool addGeometry(const uint8_t *& pos, const uint8_t * end, bool record_type, size_t depth)
+    {
+        if (depth > 128)
+            return false;
+
+        UInt8 endian = 0;
+        if (!read(pos, end, true, endian))
+            return false;
+        const bool little_endian = endian == 0x01;
+
+        UInt32 wkb_type = 0;
+        if (!read(pos, end, little_endian, wkb_type))
+            return false;
+        const UInt32 geometry_type = wkb_type % 1000;
+        const UInt32 dimensions = wkb_type / 1000;
+        if (geometry_type < 1 || geometry_type > 7 || dimensions > 3)
+            return false;
+
+        if (record_type)
+            geometry_types.insert(static_cast<Int32>(wkb_type));
+
+        switch (geometry_type)
+        {
+            case 1: /// POINT
+                return addCoordinates(pos, end, little_endian, dimensions, 1);
+            case 2: /// LINESTRING
+            {
+                UInt32 count = 0;
+                return read(pos, end, little_endian, count) && addCoordinates(pos, end, little_endian, dimensions, count);
+            }
+            case 3: /// POLYGON
+            {
+                UInt32 num_rings = 0;
+                if (!read(pos, end, little_endian, num_rings))
+                    return false;
+                for (UInt32 i = 0; i < num_rings; ++i)
+                {
+                    UInt32 count = 0;
+                    if (!read(pos, end, little_endian, count) || !addCoordinates(pos, end, little_endian, dimensions, count))
+                        return false;
+                }
+                return true;
+            }
+            default: /// MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, GEOMETRYCOLLECTION
+            {
+                UInt32 num_parts = 0;
+                if (!read(pos, end, little_endian, num_parts))
+                    return false;
+                /// Only the type of the top-level geometry is recorded, e.g. `MULTIPOINT`, not `POINT`.
+                for (UInt32 i = 0; i < num_parts; ++i)
+                    if (!addGeometry(pos, end, /*record_type=*/ false, depth + 1))
+                        return false;
+                return true;
+            }
+        }
     }
 };
 
@@ -470,17 +641,17 @@ struct ConverterString
     using Statistics = StatisticsStringRef;
 
     const ColumnString & column;
-    PODArray<parquet::ByteArray> buf;
+    PODArray<ByteArray> buf;
 
     explicit ConverterString(const ColumnPtr & c) : column(assert_cast<const ColumnString &>(*c)) {}
 
-    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    const ByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
             std::string_view s = column.getDataAt(offset + i);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            buf[i] = ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
         return buf.data();
     }
@@ -504,9 +675,9 @@ struct ConverterEnumAsString
 
     const ColumnVector<T> & column;
     const DataTypeEnum<T> * enum_type;
-    PODArray<parquet::ByteArray> buf;
+    PODArray<ByteArray> buf;
 
-    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    const ByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
 
@@ -516,7 +687,7 @@ struct ConverterEnumAsString
         {
             const T value = data[offset + i];
             const std::string_view s = enum_type->getNameForValue(value);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            buf[i] = ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
         return buf.data();
     }
@@ -532,12 +703,12 @@ struct ConverterUUID
     using Statistics = StatisticsFixedStringCopy<sizeof(UUID), /*SIGNED=*/ false>;
 
     const ColumnVector<UUID> & column;
-    PODArray<parquet::FixedLenByteArray> buf;
+    PODArray<FixedLenByteArray> buf;
     PODArray<UUID> swapped_buf;
 
     explicit ConverterUUID(const ColumnPtr & c) : column(assert_cast<const ColumnVector<UUID> &>(*c)) {}
 
-    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    const FixedLenByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         swapped_buf.resize(count);
@@ -571,11 +742,11 @@ struct ConverterFixedString
     using Statistics = StatisticsFixedStringRef;
 
     const ColumnFixedString & column;
-    PODArray<parquet::FixedLenByteArray> buf;
+    PODArray<FixedLenByteArray> buf;
 
     explicit ConverterFixedString(const ColumnPtr & c) : column(assert_cast<const ColumnFixedString &>(*c)) {}
 
-    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    const FixedLenByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
@@ -591,15 +762,15 @@ struct ConverterFixedStringAsString
     using Statistics = StatisticsStringRef;
 
     const ColumnFixedString & column;
-    PODArray<parquet::ByteArray> buf;
+    PODArray<ByteArray> buf;
 
     explicit ConverterFixedStringAsString(const ColumnPtr & c) : column(assert_cast<const ColumnFixedString &>(*c)) {}
 
-    const parquet::ByteArray * getBatch(size_t offset, size_t count)
+    const ByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(column.getN()), reinterpret_cast<const uint8_t *>(column.getChars().data() + (offset + i) * column.getN()));
+            buf[i] = ByteArray(static_cast<UInt32>(column.getN()), reinterpret_cast<const uint8_t *>(column.getChars().data() + (offset + i) * column.getN()));
         return buf.data();
     }
 };
@@ -612,11 +783,11 @@ struct ConverterNumberAsFixedString
     using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false>;
 
     const ColumnVector<T> & column;
-    PODArray<parquet::FixedLenByteArray> buf;
+    PODArray<FixedLenByteArray> buf;
 
     explicit ConverterNumberAsFixedString(const ColumnPtr & c) : column(assert_cast<const ColumnVector<T> &>(*c)) {}
 
-    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    const FixedLenByteArray * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
@@ -640,11 +811,11 @@ struct ConverterWideIntegerAsDecimal
 
     const ColumnVector<T> & column;
     PODArray<uint8_t> data_buf;
-    PODArray<parquet::FixedLenByteArray> ptr_buf;
+    PODArray<FixedLenByteArray> ptr_buf;
 
     explicit ConverterWideIntegerAsDecimal(const ColumnPtr & c) : column(assert_cast<const ColumnVector<T> &>(*c)) {}
 
-    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    const FixedLenByteArray * getBatch(size_t offset, size_t count)
     {
         data_buf.resize(count * encoded_size);
         ptr_buf.resize(count);
@@ -688,7 +859,7 @@ struct ConverterJSON
     DataTypePtr data_type;
     /// Created once: for `Object` it is not a cheap accessor, and `valueSize` is called per value.
     SerializationPtr serialization;
-    PODArray<parquet::ByteArray> buf;
+    PODArray<ByteArray> buf;
     std::vector<String> stash;
     const FormatSettings & format_settings;
 
@@ -720,7 +891,7 @@ struct ConverterJSON
         return buf[i].len;
     }
 
-    const parquet::ByteArray * finishBatch(size_t count)
+    const ByteArray * finishBatch(size_t count)
     {
         materializeUpTo(count);
         return buf.data();
@@ -739,7 +910,7 @@ private:
             stash.emplace_back(std::move(wb.str()));
             const String & s = stash.back();
 
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            buf[i] = ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
     }
 };
@@ -753,11 +924,11 @@ struct ConverterDecimal
 
     const ColumnDecimal<T> & column;
     PODArray<uint8_t> data_buf;
-    PODArray<parquet::FixedLenByteArray> ptr_buf;
+    PODArray<FixedLenByteArray> ptr_buf;
 
     explicit ConverterDecimal(const ColumnPtr & c) : column(assert_cast<const ColumnDecimal<T> &>(*c)) {}
 
-    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    const FixedLenByteArray * getBatch(size_t offset, size_t count)
     {
         data_buf.resize(count * sizeof(T));
         ptr_buf.resize(count);
@@ -860,44 +1031,449 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
     }
 }
 
-/// The most bytes the RLE / bit-packed hybrid encoding of `size` values of `bit_width` bits can take.
-size_t maxRLESize(int bit_width, size_t size)
+/// The most bytes the RLE / bit-packed hybrid encoding of `size` values of `bit_width` bits can take,
+/// with some slack: the size of the longest single run on top.
+size_t maxRLESize(size_t bit_width, size_t size)
 {
-    using arrow::util::RleBitPackedEncoder;
-    return static_cast<size_t>(
-        RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int64_t>(size)) + RleBitPackedEncoder::MinBufferSize(bit_width));
+    const size_t num_groups = (size + 7) / 8;
+    const size_t value_bytes = (bit_width + 7) / 8;
+    /// In the worst case, each group of 8 values is either bit-packed with an indicator byte of its own,
+    /// or is a repeated run of its own: an indicator byte and the value.
+    const size_t max_runs_size = num_groups * (1 + std::max(bit_width, value_bytes));
+    /// A bit-packed run of the most groups an indicator byte can count, or a repeated run with the longest indicator.
+    const size_t max_run_size = std::max(1 + 64 * bit_width, 5 + value_bytes);
+    return max_runs_size + max_run_size;
 }
+
+/// The RLE / bit-packed hybrid encoding:
+/// https://parquet.apache.org/docs/file-format/data-pages/encodings/#run-length-encoding--bit-packing-hybrid-rle--3
+/// Values are taken in groups of 8. A value repeated at least 8 times, starting at the beginning of a
+/// group, becomes a repeated run, everything else is bit-packed. This produces the same bytes as the
+/// encoder of Apache Arrow.
+class RLEEncoder
+{
+public:
+    /// Appends the encoded values to `out_`.
+    RLEEncoder(PODArray<char> & out_, size_t bit_width_) : out(out_), bit_width(bit_width_)
+    {
+        /// Bit-packing assumes this, see `flushLiteralRun`.
+        chassert(bit_width <= 32);
+    }
+
+    void put(UInt64 value)
+    {
+        chassert(bit_width == 64 || value < (UInt64(1) << bit_width));
+
+        if (value == current_value)
+        {
+            ++repeat_count;
+            /// Continuation of a repeated run, the fast path for long runs.
+            if (repeat_count > 8)
+                return;
+        }
+        else
+        {
+            /// A repeated run, which was long enough, has ended.
+            if (repeat_count >= 8)
+            {
+                chassert(literal_count == 0);
+                flushRepeatedRun();
+            }
+            repeat_count = 1;
+            current_value = value;
+        }
+
+        buffered_values[num_buffered_values] = value;
+        ++num_buffered_values;
+        if (num_buffered_values == 8)
+            flushBufferedValues();
+    }
+
+    /// Writes out everything that is buffered. The encoder must not be used after that.
+    void flush()
+    {
+        if (literal_count == 0 && repeat_count == 0 && num_buffered_values == 0)
+            return;
+
+        bool all_repeat = literal_count == 0 && (repeat_count == num_buffered_values || num_buffered_values == 0);
+        if (repeat_count > 0 && all_repeat)
+        {
+            flushRepeatedRun();
+        }
+        else
+        {
+            /// Pad the last group with zeros: the reader knows the number of values.
+            if (num_buffered_values != 0)
+            {
+                for (; num_buffered_values < 8; ++num_buffered_values)
+                    buffered_values[num_buffered_values] = 0;
+            }
+            literal_count += num_buffered_values;
+            flushLiteralRun(/*update_indicator_byte*/ true);
+            repeat_count = 0;
+        }
+    }
+
+private:
+    /// Called when a group of 8 values is buffered.
+    void flushBufferedValues()
+    {
+        if (repeat_count >= 8)
+        {
+            /// The buffered values are a part of a repeated run now, it will be written when it ends.
+            num_buffered_values = 0;
+            /// The values of the preceding bit-packed run are written out, but its indicator byte is not.
+            if (literal_count != 0)
+            {
+                chassert(repeat_count == 8);
+                flushLiteralRun(/*update_indicator_byte*/ true);
+            }
+            return;
+        }
+
+        literal_count += num_buffered_values;
+        /// The indicator byte of a bit-packed run counts at most 63 groups.
+        flushLiteralRun(/*update_indicator_byte*/ literal_count / 8 + 1 >= 64);
+        repeat_count = 0;
+    }
+
+    void flushLiteralRun(bool update_indicator_byte)
+    {
+        /// The indicator byte is written in place when the run ends, so that the values could be written
+        /// out as they come.
+        if (!literal_indicator_byte_pos)
+        {
+            literal_indicator_byte_pos = out.size();
+            out.push_back(char(0));
+        }
+
+        chassert(num_buffered_values == 0 || num_buffered_values == 8);
+        if (num_buffered_values == 8)
+        {
+            /// 8 values of `bit_width` bits take exactly `bit_width` bytes, least significant bits first.
+            size_t pos = out.size();
+            out.resize(pos + bit_width);
+            char * dst = out.data() + pos;
+            /// At most 7 + 32 bits are buffered at a time.
+            UInt64 bits = 0;
+            size_t num_bits = 0;
+            for (UInt64 value : buffered_values)
+            {
+                bits |= value << num_bits;
+                num_bits += bit_width;
+                for (; num_bits >= 8; num_bits -= 8)
+                {
+                    *dst = static_cast<char>(bits & 0xff);
+                    ++dst;
+                    bits >>= 8;
+                }
+            }
+            chassert(num_bits == 0);
+            num_buffered_values = 0;
+        }
+
+        if (update_indicator_byte)
+        {
+            chassert(literal_count % 8 == 0);
+            size_t num_groups = literal_count / 8;
+            chassert(num_groups < 64);
+            out[*literal_indicator_byte_pos] = static_cast<char>((num_groups << 1) | 1);
+            literal_indicator_byte_pos.reset();
+            literal_count = 0;
+        }
+    }
+
+    void flushRepeatedRun()
+    {
+        chassert(repeat_count > 0);
+        /// The indicator is a ULEB128 number, with the least significant bit 0 for a repeated run.
+        UInt64 indicator = UInt64(repeat_count) << 1;
+        while (indicator >= 0x80)
+        {
+            out.push_back(static_cast<char>((indicator & 0x7f) | 0x80));
+            indicator >>= 7;
+        }
+        out.push_back(static_cast<char>(indicator));
+        /// The value takes the least number of whole bytes, little endian.
+        for (size_t i = 0; i < (bit_width + 7) / 8; ++i)
+            out.push_back(static_cast<char>((current_value >> (i * 8)) & 0xff));
+        num_buffered_values = 0;
+        repeat_count = 0;
+    }
+
+    PODArray<char> & out;
+    const size_t bit_width;
+
+    UInt64 buffered_values[8] {};
+    size_t num_buffered_values = 0;
+
+    /// The last value and the number of times in a row it was seen. Maintained in bit-packed runs too,
+    /// to switch to a repeated run once it is repeated enough.
+    UInt64 current_value = 0;
+    size_t repeat_count = 0;
+
+    /// The number of values in the current bit-packed run, excluding `buffered_values`.
+    size_t literal_count = 0;
+    /// Position in `out` of the indicator byte of the current bit-packed run, if any.
+    std::optional<size_t> literal_indicator_byte_pos;
+};
 
 /// The most bytes `encodeRepDefLevelsRLE` can write for `size` levels, including the length prefix.
 size_t maxEncodedRepDefLevelsSize(size_t size, UInt8 max_level)
 {
-    int bit_width = bitScanReverse(max_level) + 1;
+    size_t bit_width = bitScanReverse(max_level) + 1;
     return sizeof(Int32) + maxRLESize(bit_width, size);
 }
 
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
-    using arrow::util::RleBitPackedEncoder;
-
     chassert(max_level > 0);
     size_t offset = out.size();
     size_t prefix_size = sizeof(Int32);
 
-    int bit_width = bitScanReverse(max_level) + 1;
-    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
-                        RleBitPackedEncoder::MinBufferSize(bit_width);
+    size_t bit_width = bitScanReverse(max_level) + 1;
+    out.reserve(offset + maxEncodedRepDefLevelsSize(size, max_level));
+    out.resize(offset + prefix_size);
 
-    out.resize(offset + prefix_size + max_rle_size);
-
-    RleBitPackedEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), static_cast<int>(max_rle_size), bit_width);
+    RLEEncoder encoder(out, bit_width);
     for (size_t i = 0; i < size; ++i)
-        encoder.Put(data[i]);
-    encoder.Flush();
-    Int32 len = encoder.len();
+        encoder.put(data[i]);
+    encoder.flush();
 
-    memcpy(out.data() + offset, &len, prefix_size);
-    out.resize(offset + prefix_size + len);
+    size_t len = out.size() - offset - prefix_size;
+    if (len > INT32_MAX)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Encoded levels are too big: {}", len);
+    unalignedStoreLittleEndian<Int32>(out.data() + offset, static_cast<Int32>(len));
 }
+
+/// Appends the PLAIN encoding of the values to `out`.
+template <typename ParquetDType>
+void encodePlain(const typename ParquetDType::c_type * values, size_t count, size_t fixed_string_size, PODArray<char> & out)
+{
+    using T = typename ParquetDType::c_type;
+    static_assert(!std::is_same_v<ParquetDType, BooleanType>, "booleans are bit-packed, see PlainEncoder");
+
+    if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
+    {
+        /// The length as 4 bytes little endian, followed by the bytes.
+        size_t total_size = 0;
+        for (size_t i = 0; i < count; ++i)
+            total_size += sizeof(UInt32) + values[i].len;
+        size_t pos = out.size();
+        out.resize(pos + total_size);
+        char * dst = out.data() + pos;
+        for (size_t i = 0; i < count; ++i)
+        {
+            unalignedStoreLittleEndian<UInt32>(dst, values[i].len);
+            dst += sizeof(UInt32);
+            /// An empty string may have a null pointer, which `memcpy` does not accept.
+            if (values[i].len)
+                memcpy(dst, values[i].ptr, values[i].len);
+            dst += values[i].len;
+        }
+    }
+    else if constexpr (std::is_same_v<ParquetDType, FLBAType>)
+    {
+        size_t pos = out.size();
+        out.resize(pos + count * fixed_string_size);
+        char * dst = out.data() + pos;
+        for (size_t i = 0; i < count; ++i)
+        {
+            memcpy(dst, values[i].ptr, fixed_string_size);
+            dst += fixed_string_size;
+        }
+    }
+    else
+    {
+        /// Numbers, little endian.
+        size_t pos = out.size();
+        out.resize(pos + count * sizeof(T));
+        char * dst = out.data() + pos;
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            if (count)
+                memcpy(dst, values, count * sizeof(T));
+        }
+        else
+        {
+            for (size_t i = 0; i < count; ++i)
+                unalignedStoreLittleEndian<T>(dst + i * sizeof(T), values[i]);
+        }
+    }
+}
+
+/// Accumulates the PLAIN encoding of the values of a page.
+template <typename ParquetDType>
+class PlainEncoder
+{
+public:
+    using T = typename ParquetDType::c_type;
+
+    explicit PlainEncoder(size_t fixed_string_size_) : fixed_string_size(fixed_string_size_) {}
+
+    void put(const T * values, size_t count)
+    {
+        if constexpr (std::is_same_v<ParquetDType, BooleanType>)
+        {
+            /// Bit-packed, least significant bit first.
+            buf.resize_fill((num_booleans + count + 7) / 8, 0);
+            for (size_t i = 0; i < count; ++i, ++num_booleans)
+                buf[num_booleans / 8] |= static_cast<char>(UInt8(values[i]) << (num_booleans % 8));
+        }
+        else
+        {
+            encodePlain<ParquetDType>(values, count, fixed_string_size, buf);
+        }
+    }
+
+    size_t estimatedDataEncodedSize() const { return buf.size(); }
+
+    /// Appends the encoded values to `out` and starts a new page.
+    void flush(PODArray<char> & out)
+    {
+        out.insert(buf.begin(), buf.end());
+        buf.clear();
+        num_booleans = 0;
+    }
+
+private:
+    const size_t fixed_string_size;
+    PODArray<char> buf;
+    size_t num_booleans = 0;
+};
+
+/// Collects distinct values into a dictionary, and accumulates the indexes of the values of a page in
+/// the dictionary. The dictionary is in the order of the first occurrence of each value.
+/// Not used for booleans.
+template <typename ParquetDType>
+class DictionaryEncoder
+{
+public:
+    using T = typename ParquetDType::c_type;
+
+    explicit DictionaryEncoder(size_t fixed_string_size_) : fixed_string_size(fixed_string_size_) {}
+
+    void put(const T * values, size_t count)
+    {
+        size_t pos = indexes.size();
+        indexes.resize(pos + count);
+        for (size_t i = 0; i < count; ++i)
+            indexes[pos + i] = getOrInsert(values[i]);
+    }
+
+    size_t numEntries() const { return dictionary.size(); }
+
+    /// The size of the PLAIN-encoded dictionary, which `writeDictionary` writes.
+    size_t dictionaryEncodedSize() const { return dictionary_encoded_size; }
+
+    /// An upper bound of the size of what `flush` writes.
+    size_t estimatedDataEncodedSize() const { return 1 + maxRLESize(bitWidth(), indexes.size()); }
+
+    /// Appends the encoded indexes to `out` and starts a new page: the bit width as a byte, and the
+    /// RLE / bit-packed hybrid encoding of the indexes.
+    void flush(PODArray<char> & out)
+    {
+        size_t bit_width = bitWidth();
+        out.reserve(out.size() + estimatedDataEncodedSize());
+        out.push_back(static_cast<char>(bit_width));
+        RLEEncoder encoder(out, bit_width);
+        for (UInt32 index : indexes)
+            encoder.put(index);
+        encoder.flush();
+        indexes.clear();
+    }
+
+    /// Appends the PLAIN-encoded dictionary to `out`.
+    void writeDictionary(PODArray<char> & out) const
+    {
+        out.reserve(out.size() + dictionary_encoded_size);
+        if constexpr (std::is_same_v<ParquetDType, ByteArrayType> || std::is_same_v<ParquetDType, FLBAType>)
+        {
+            for (std::string_view value : dictionary)
+            {
+                if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
+                {
+                    ByteArray x(static_cast<UInt32>(value.size()), reinterpret_cast<const uint8_t *>(value.data()));
+                    encodePlain<ParquetDType>(&x, 1, fixed_string_size, out);
+                }
+                else
+                {
+                    FixedLenByteArray x{reinterpret_cast<const uint8_t *>(value.data())};
+                    encodePlain<ParquetDType>(&x, 1, fixed_string_size, out);
+                }
+            }
+        }
+        else
+        {
+            encodePlain<ParquetDType>(dictionary.data(), dictionary.size(), fixed_string_size, out);
+        }
+    }
+
+private:
+    static constexpr bool is_byte_array = std::is_same_v<ParquetDType, ByteArrayType> || std::is_same_v<ParquetDType, FLBAType>;
+
+    /// Numbers are compared by their bits, so that e.g. 0 and -0, or different NaNs, are kept apart.
+    using NumberBits = std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
+    using Map = std::conditional_t<is_byte_array, HashMapWithSavedHash<std::string_view, UInt32>, HashMap<NumberBits, UInt32>>;
+    /// Points into `arena` for byte arrays.
+    using DictionaryValue = std::conditional_t<is_byte_array, std::string_view, T>;
+
+    /// Ceiling of log2 of the number of entries, but at least 1 for a single entry.
+    size_t bitWidth() const
+    {
+        size_t num_entries = dictionary.size();
+        if (num_entries <= 1)
+            return num_entries;
+        return 64 - std::countl_zero(UInt64(num_entries - 1));
+    }
+
+    UInt32 getOrInsert(const T & value)
+    {
+        typename Map::LookupResult it = nullptr;
+        bool inserted = false;
+
+        if constexpr (is_byte_array)
+        {
+            std::string_view key;
+            if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
+                key = std::string_view(reinterpret_cast<const char *>(value.ptr), value.len);
+            else
+                key = std::string_view(reinterpret_cast<const char *>(value.ptr), fixed_string_size);
+
+            map.emplace(ArenaKeyHolder{key, arena}, it, inserted);
+            if (inserted)
+            {
+                dictionary.push_back(it->getKey());
+                dictionary_encoded_size += std::is_same_v<ParquetDType, ByteArrayType> ? sizeof(UInt32) + key.size() : fixed_string_size;
+            }
+        }
+        else
+        {
+            map.emplace(std::bit_cast<NumberBits>(value), it, inserted);
+            if (inserted)
+            {
+                dictionary.push_back(value);
+                dictionary_encoded_size += sizeof(T);
+            }
+        }
+
+        if (inserted)
+        {
+            if (dictionary.size() > std::numeric_limits<UInt32>::max())
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many distinct values for a Parquet dictionary");
+            it->getMapped() = static_cast<UInt32>(dictionary.size() - 1);
+        }
+        return it->getMapped();
+    }
+
+    const size_t fixed_string_size;
+    Arena arena;
+    Map map;
+    PODArray<DictionaryValue> dictionary;
+    size_t dictionary_encoded_size = 0;
+    /// Indexes of the values of the current page.
+    PODArray<UInt32> indexes;
+};
 
 void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
 {
@@ -1078,7 +1654,8 @@ void writeColumnImpl(
     typename Converter::Statistics page_statistics;
     typename Converter::Statistics total_statistics;
 
-    bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
+    static constexpr bool can_use_dictionary = !std::is_same_v<ParquetDType, BooleanType>;
+    bool use_dictionary = can_use_dictionary && options.use_dictionary_encoding && !s.is_bool;
 
     /// `ALP` is used without a dictionary. Other writers (Arrow, parquet-java, arrow-rs) treat `ALP`
     /// like any other non-dictionary encoding: as the fallback when the dictionary gets too big. But
@@ -1089,9 +1666,9 @@ void writeColumnImpl(
     /// fewer bits per value than the dictionary indexes once the values are not very repetitive,
     /// and it doesn't store the dictionary itself. The user opts into `ALP` explicitly, so it is
     /// what they get. The values that `ALP` can't encode don't make the page bigger than `PLAIN`:
-    /// such pages are written as `PLAIN` (see `makeALPFloatEncoder`).
+    /// such pages are written as `PLAIN` (see `ALPEncoder`).
     static constexpr bool is_floating_point
-        = std::is_same_v<ParquetDType, parquet::FloatType> || std::is_same_v<ParquetDType, parquet::DoubleType>;
+        = std::is_same_v<ParquetDType, FloatType> || std::is_same_v<ParquetDType, DoubleType>;
     if constexpr (is_floating_point)
     {
         if (options.use_alp_encoding)
@@ -1112,13 +1689,10 @@ void writeColumnImpl(
     /// If there are no arrays, record boundaries are everywhere.
     pages_change_on_record_boundaries &= s.max_rep > 0;
 
-    std::optional<parquet::ColumnDescriptor> fixed_string_descr;
-    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+    size_t fixed_string_size = 0;
+    if constexpr (std::is_same_v<ParquetDType, FLBAType>)
     {
-        /// This just communicates one number to MakeTypedEncoder(): the fixed string length.
-        fixed_string_descr.emplace(parquet::schema::PrimitiveNode::Make(
-            "", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY,
-            parquet::ConvertedType::NONE, static_cast<int>(converter.fixedStringSize())), 0, 0);
+        fixed_string_size = converter.fixedStringSize();
 
         if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringRef>)
             page_statistics.fixed_string_size = converter.fixedStringSize();
@@ -1127,7 +1701,7 @@ void writeColumnImpl(
     s.column_chunk.meta_data.__isset.size_statistics = true;
     auto reset_size_statistics = [&]
     {
-        if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+        if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
             s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
         if (s.max_rep > 0)
             s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
@@ -1136,29 +1710,50 @@ void writeColumnImpl(
     };
     reset_size_statistics();
 
-    /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
-    /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
-    /// ColumnLowCardinality instead. It would work basically the same way as what this function
-    /// currently does: add values to the ColumnRowCardinality (instead of `encoder`) in batches,
-    /// checking dictionary size after each batch. That might be faster.
-    auto make_encoder = [&](bool dictionary) -> std::unique_ptr<parquet::TypedEncoder<ParquetDType>>
+    /// The only non-dictionary encodings we write are PLAIN and ALP.
+    if (encoding != parq::Encoding::PLAIN && !(is_floating_point && encoding == parq::Encoding::ALP))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Parquet encoding for writing: {}", static_cast<int>(encoding));
+
+    /// Exactly one of these is used at a time, depending on `use_dictionary` and `encoding`.
+    std::optional<DictionaryEncoder<ParquetDType>> dict_encoder;
+    std::optional<PlainEncoder<ParquetDType>> plain_encoder;
+    using ALPEncoderType = std::conditional_t<is_floating_point, ALPEncoder<typename ParquetDType::c_type>, std::monostate>;
+    std::optional<ALPEncoderType> alp_encoder;
+
+    auto make_non_dictionary_encoder = [&]
     {
-        if constexpr (std::is_same_v<ParquetDType, parquet::FloatType>)
+        if constexpr (is_floating_point)
         {
-            if (encoding == parq::Encoding::ALP && !dictionary)
-                return makeALPFloatEncoder();
+            if (encoding == parq::Encoding::ALP)
+            {
+                alp_encoder.emplace();
+                return;
+            }
         }
-        if constexpr (std::is_same_v<ParquetDType, parquet::DoubleType>)
-        {
-            if (encoding == parq::Encoding::ALP && !dictionary)
-                return makeALPDoubleEncoder();
-        }
-        return parquet::MakeTypedEncoder<ParquetDType>(
-            // ignored if using dictionary
-            static_cast<parquet::Encoding::type>(encoding),
-            dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+        plain_encoder.emplace(fixed_string_size);
     };
-    auto encoder = make_encoder(use_dictionary);
+
+    if (use_dictionary)
+        dict_encoder.emplace(fixed_string_size);
+    else
+        make_non_dictionary_encoder();
+
+    /// Calls `f` with the encoder in use. They have the same interface for the values of a page.
+    auto with_encoder = [&](auto && f)
+    {
+        if constexpr (can_use_dictionary)
+            if (use_dictionary)
+                return f(*dict_encoder);
+        if constexpr (is_floating_point)
+            if (alp_encoder)
+                return f(*alp_encoder);
+        return f(*plain_encoder);
+    };
+
+    auto estimated_data_encoded_size = [&]
+    {
+        return with_encoder([](const auto & encoder) { return encoder.estimatedDataEncodedSize(); });
+    };
 
     struct PageData
     {
@@ -1194,8 +1789,8 @@ void writeColumnImpl(
         /// There appear to be undocumented requirements:
         ///  * number of blocks must be a power of two,
         ///  * bloom filter size must be at most 128 MiB.
-        /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
-        /// requires this. A column chunk that would need a bigger filter gets none.
+        /// At least arrow's `parquet::BlockSplitBloomFilter::Init` requires this.
+        /// A column chunk that would need a bigger filter gets none.
         /// Only the entries at the maximum definition level are hashed into the filter, so size it for the number of
         /// leaf values in the primitive column, not for `num_values`, which also counts the null and empty-array
         /// placeholders of a repeated or nullable leaf (a sparse `Array(Nullable(T))` may have hundreds of
@@ -1263,18 +1858,16 @@ void writeColumnImpl(
                 ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
         }
 
-        std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
+        /// Append the values, and reset the encoder for the next page.
+        with_encoder([&](auto & encoder) { encoder.flush(encoded); });
 
         /// The `ALP` encoder writes the pages it can't compress as `PLAIN`.
         parq::Encoding::type page_encoding = use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding;
-        if (page_encoding == parq::Encoding::ALP)
-            page_encoding = static_cast<parq::Encoding::type>(encoder->encoding());
+        if constexpr (is_floating_point)
+            if (page_encoding == parq::Encoding::ALP)
+                page_encoding = alp_encoder->lastPageEncoding();
         if (!use_dictionary && !std::count(data_page_encodings.begin(), data_page_encodings.end(), page_encoding))
             data_page_encodings.push_back(page_encoding);
-
-        encoded.resize(encoded.size() + values->size());
-        memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
-        values.reset();
 
         if (encoded.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
@@ -1298,7 +1891,7 @@ void writeColumnImpl(
 
         if (options.write_checksums)
         {
-            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            uint32_t crc = static_cast<uint32_t>(crc32_z(0, reinterpret_cast<const Bytef *>(compressed.data()), compressed.size()));
             header.__set_crc(crc);
         }
 
@@ -1345,52 +1938,53 @@ void writeColumnImpl(
         row_idx += row_count;
     };
 
-    auto flush_dict = [&] -> bool
+    auto flush_dict = [&]
     {
-        auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        int dict_size = dict_encoder->dict_encoded_size();
-
-        encoded.resize(static_cast<size_t>(dict_size));
-        dict_encoder->WriteDict(reinterpret_cast<uint8_t *>(encoded.data()));
-
-        auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
-
-        if (compressed.size() > INT32_MAX)
-            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed dictionary page is too big: {}", compressed.size());
-
-        parq::PageHeader header;
-        header.__set_type(parq::PageType::DICTIONARY_PAGE);
-        header.__set_uncompressed_page_size(dict_size);
-        header.__set_compressed_page_size(static_cast<int>(compressed.size()));
-        header.__isset.dictionary_page_header = true;
-        header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
-        header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
-
-        if (options.write_checksums)
+        if constexpr (can_use_dictionary)
         {
-            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
-            header.__set_crc(crc);
+            encoded.clear();
+            dict_encoder->writeDictionary(encoded);
+            size_t dict_size = encoded.size();
+            chassert(dict_size == dict_encoder->dictionaryEncodedSize());
+
+            if (dict_size > INT32_MAX)
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed dictionary page is too big: {}", dict_size);
+
+            auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
+
+            if (compressed.size() > INT32_MAX)
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Compressed dictionary page is too big: {}", compressed.size());
+
+            parq::PageHeader header;
+            header.__set_type(parq::PageType::DICTIONARY_PAGE);
+            header.__set_uncompressed_page_size(static_cast<int>(dict_size));
+            header.__set_compressed_page_size(static_cast<int>(compressed.size()));
+            header.__isset.dictionary_page_header = true;
+            header.dictionary_page_header.__set_num_values(static_cast<Int32>(dict_encoder->numEntries()));
+            header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
+
+            if (options.write_checksums)
+            {
+                uint32_t crc = static_cast<uint32_t>(crc32_z(0, reinterpret_cast<const Bytef *>(compressed.data()), compressed.size()));
+                header.__set_crc(crc);
+            }
+
+            writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
+
+            for (auto & p : dict_encoded_pages)
+                writePage(p.header, p.data, s, options.write_page_index, p.first_row_index, out);
+
+            dict_encoded_pages.clear();
+            dict_encoder.reset();
         }
-
-        writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
-
-        for (auto & p : dict_encoded_pages)
-            writePage(p.header, p.data, s, options.write_page_index, p.first_row_index, out);
-
-        dict_encoded_pages.clear();
-        encoder.reset();
-
-        return true;
     };
-
-    static constexpr bool dict_uses_binary_builder
-        = std::is_same_v<ParquetDType, parquet::ByteArrayType> || std::is_same_v<ParquetDType, parquet::FLBAType>;
-    static constexpr size_t arrow_binary_builder_limit = 2147483646;
 
     auto dict_encoded_size = [&]
     {
-        auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        return static_cast<size_t>(dict_encoder->dict_encoded_size());
+        if constexpr (can_use_dictionary)
+            return dict_encoder->dictionaryEncodedSize();
+        else
+            return 0uz;
     };
 
     auto is_dict_too_big = [&]
@@ -1398,12 +1992,11 @@ void writeColumnImpl(
         return dict_encoded_size() >= options.max_dictionary_size;
     };
 
-    auto would_overflow_dict = [&](size_t batch_byte_size)
+    /// The size of the dictionary page must fit in Int32. The batch can add at most `batch_encoded_bytes`
+    /// to the dictionary.
+    auto would_overflow_dict = [&](size_t batch_encoded_bytes)
     {
-        if constexpr (dict_uses_binary_builder)
-            return dict_encoded_size() + batch_byte_size >= arrow_binary_builder_limit;
-        else
-            return false;
+        return dict_encoded_size() + batch_encoded_bytes > INT32_MAX;
     };
 
     /// Fallback to non-dictionary encoding.
@@ -1430,19 +2023,14 @@ void writeColumnImpl(
         page_statistics.clear();
         total_statistics.clear();
 
-#ifndef NDEBUG
-        /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
-        /// call it even though we don't need its output.
-        encoder->FlushValues();
-#endif
-
-        encoder = make_encoder(/* dictionary */ false);
+        dict_encoder.reset();
+        make_non_dictionary_encoder();
     };
 
     /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
     /// otherwise carry gigabytes into a single page, which overruns both the page's own 32-bit size
-    /// and the 32-bit offsets of the builder behind the dictionary encoder, and stages the whole
-    /// column chunk in memory on the way.
+    /// and the 32-bit size of the dictionary page, and stages the whole column chunk in memory on
+    /// the way.
     ///
     /// The budget only has to keep those 32-bit quantities out of reach, so it sits far above any
     /// page a caller would ask for: a batch of 1024 values stays under it unless the values average
@@ -1478,19 +2066,19 @@ void writeColumnImpl(
 
     auto dictionary_entries = [&]
     {
-        if (!use_dictionary)
+        if constexpr (can_use_dictionary)
+            return use_dictionary ? dict_encoder->numEntries() : 0uz;
+        else
             return 0uz;
-        auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        return static_cast<size_t>(dict_encoder->num_entries());
     };
 
-    /// Like `EstimatedDataEncodedSize` of a dictionary encoder, for `count` indexes into a dictionary
+    /// Like `estimatedDataEncodedSize` of a dictionary encoder, for `count` indexes into a dictionary
     /// of up to `max_entries`: a byte of bit width and the RLE of the indexes.
     auto max_dictionary_indexes_size = [&](size_t count, size_t max_entries)
     {
         if (!use_dictionary)
             return 0uz;
-        int bit_width = std::min(32, static_cast<int>(bitScanReverse(std::max(max_entries, 1uz))) + 1);
+        size_t bit_width = std::min(32uz, static_cast<size_t>(bitScanReverse(std::max(max_entries, 1uz))) + 1);
         return 1 + maxRLESize(bit_width, count);
     };
 
@@ -1577,7 +2165,7 @@ void writeColumnImpl(
             const typename ParquetDType::c_type * converted = nullptr;
 
             BatchSize batch_size;
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
             {
                 if constexpr (requires { converter.startBatch(next_data_offset, data_count); })
                 {
@@ -1597,7 +2185,7 @@ void writeColumnImpl(
                         [&](size_t i) { return static_cast<size_t>(converted[i].len); });
                 }
             }
-            else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+            else if constexpr (std::is_same_v<ParquetDType, FLBAType>)
             {
                 batch_size = limit_batch_by_bytes(
                     next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
@@ -1621,7 +2209,7 @@ void writeColumnImpl(
                 const size_t page_values = next_data_offset - data_offset + data_count;
                 const size_t page_values_bytes = use_dictionary
                     ? max_dictionary_indexes_size(page_values, dictionary_entries() + data_count)
-                    : static_cast<size_t>(encoder->EstimatedDataEncodedSize()) + batch_size.encoded;
+                    : estimated_data_encoded_size() + batch_size.encoded;
 
                 if (page_values_bytes + max_levels_size(next_def_offset - def_offset + def_count) > max_record_bytes)
                 {
@@ -1630,7 +2218,7 @@ void writeColumnImpl(
                 }
             }
 
-            if constexpr (!std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            if constexpr (!std::is_same_v<ParquetDType, ByteArrayType>)
                 converted = converter.getBatch(next_data_offset, data_count);
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
@@ -1655,9 +2243,9 @@ void writeColumnImpl(
                 {
                     UInt64 h = 0;
                     constexpr UInt64 seed = 0;
-                    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+                    if constexpr (std::is_same_v<ParquetDType, FLBAType>)
                         h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
-                    else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                    else if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
                         h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
@@ -1677,16 +2265,16 @@ void writeColumnImpl(
 #pragma clang diagnostic pop
             }
 
-            if (use_dictionary && would_overflow_dict(batch_size.payload))
+            if (use_dictionary && would_overflow_dict(batch_size.encoded))
             {
                 restart_without_dictionary();
                 break;
             }
 
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
                 s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += batch_size.payload;
 
-            encoder->Put(converted, static_cast<int>(data_count));
+            with_encoder([&](auto & encoder) { encoder.put(converted, data_count); });
 
             next_def_offset += def_count;
             next_data_offset += data_count;
@@ -1702,7 +2290,7 @@ void writeColumnImpl(
                 || s.rep[next_def_offset] == 0;
             const size_t page_target = std::min(options.data_page_size, max_record_bytes);
             if (next_def_offset == num_values ||
-                (at_record_boundary && static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= page_target))
+                (at_record_boundary && estimated_data_encoded_size() >= page_target))
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
@@ -1772,13 +2360,13 @@ void writeColumnChunkBody(
     {
         /// Numeric conversion to Int32 or Int64.
         #define N(source_type, parquet_dtype) \
-            writeColumnImpl<parquet::parquet_dtype>(s, options, out, \
-                ConverterNumeric<ColumnVector<source_type>, parquet::parquet_dtype::c_type>( \
+            writeColumnImpl<parquet_dtype>(s, options, out, \
+                ConverterNumeric<ColumnVector<source_type>, parquet_dtype::c_type>( \
                     s.primitive_column))
 
         case TypeIndex::UInt8:
             if (s.is_bool)
-                writeColumnImpl<parquet::BooleanType>(s, options, out,
+                writeColumnImpl<BooleanType>(s, options, out,
                     ConverterNumeric<ColumnVector<UInt8>, bool, bool>(s.primitive_column));
             else
                 N(UInt8, Int32Type);
@@ -1788,7 +2376,7 @@ void writeColumnChunkBody(
         case TypeIndex::Int8:
         {
             if (options.output_enum_as_byte_array && isEnum8(s.type))
-                writeColumnImpl<parquet::ByteArrayType>(
+                writeColumnImpl<ByteArrayType>(
                     s, options, out, ConverterEnumAsString<Int8>(s.primitive_column, s.type));
             else
                 N(Int8, Int32Type);
@@ -1797,7 +2385,7 @@ void writeColumnChunkBody(
         case TypeIndex::Int16:
         {
             if (options.output_enum_as_byte_array && isEnum16(s.type))
-                writeColumnImpl<parquet::ByteArrayType>(
+                writeColumnImpl<ByteArrayType>(
                     s, options, out, ConverterEnumAsString<Int16>(s.primitive_column, s.type));
             else
                 N(Int16, Int32Type);
@@ -1813,68 +2401,68 @@ void writeColumnChunkBody(
             {
                 /// It's actually a DateTime that needs to be converted to milliseconds.
                 chassert(s.datetime_multiplier == 1000);
-                writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterDateTime(s.primitive_column));
+                writeColumnImpl<Int64Type>(s, options, out, ConverterDateTime(s.primitive_column));
             }
             break;
 
         #undef N
 
         case TypeIndex::Float32:
-            writeColumnImpl<parquet::FloatType>(
+            writeColumnImpl<FloatType>(
                 s, options, out, ConverterNumeric<ColumnVector<Float32>, Float32, Float32>(
                     s.primitive_column));
             break;
 
         case TypeIndex::Float64:
-            writeColumnImpl<parquet::DoubleType>(
+            writeColumnImpl<DoubleType>(
                 s, options, out, ConverterNumeric<ColumnVector<Float64>, Float64, Float64>(
                     s.primitive_column));
             break;
 
         case TypeIndex::DateTime64:
             if (s.datetime_multiplier == 1)
-                writeColumnImpl<parquet::Int64Type>(
+                writeColumnImpl<Int64Type>(
                     s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
                         s.primitive_column));
             else
-                writeColumnImpl<parquet::Int64Type>(
+                writeColumnImpl<Int64Type>(
                     s, options, out, ConverterDateTime64WithMultiplier(
                         s.primitive_column, s.datetime_multiplier));
             break;
 
         case TypeIndex::IPv4:
-            writeColumnImpl<parquet::Int32Type>(
+            writeColumnImpl<Int32Type>(
                 s, options, out, ConverterNumeric<ColumnVector<IPv4>, Int32, UInt32>(
                     s.primitive_column));
             break;
 
         case TypeIndex::String:
             if (s.is_geometry)
-                writeColumnImpl<parquet::ByteArrayType>(
+                writeColumnImpl<ByteArrayType>(
                     s, options, out, ConverterGeometry(s.primitive_column));
             else
-                writeColumnImpl<parquet::ByteArrayType>(
+                writeColumnImpl<ByteArrayType>(
                     s, options, out, ConverterString(s.primitive_column));
             break;
 
         case TypeIndex::FixedString:
             if (options.output_fixed_string_as_fixed_byte_array)
-                writeColumnImpl<parquet::FLBAType>(
+                writeColumnImpl<FLBAType>(
                 s, options, out, ConverterFixedString(s.primitive_column));
             else
-                writeColumnImpl<parquet::ByteArrayType>(
+                writeColumnImpl<ByteArrayType>(
                 s, options, out, ConverterFixedStringAsString(s.primitive_column));
             break;
         case TypeIndex::Object:
-            writeColumnImpl<parquet::ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type, format_settings));
+            writeColumnImpl<ByteArrayType>(s, options, out, ConverterJSON(s.primitive_column, s.type, format_settings));
             break;
 
         #define F(source_type) \
             if (options.output_wide_integer_as_decimal) \
-                writeColumnImpl<parquet::FLBAType>( \
+                writeColumnImpl<FLBAType>( \
                     s, options, out, ConverterWideIntegerAsDecimal<source_type>(s.primitive_column)); \
             else \
-                writeColumnImpl<parquet::FLBAType>( \
+                writeColumnImpl<FLBAType>( \
                     s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
         case TypeIndex::UInt128: F(UInt128); break;
         case TypeIndex::UInt256: F(UInt256); break;
@@ -1883,19 +2471,19 @@ void writeColumnChunkBody(
         #undef F
 
         case TypeIndex::IPv6:
-            writeColumnImpl<parquet::FLBAType>(
+            writeColumnImpl<FLBAType>(
                 s, options, out, ConverterNumberAsFixedString<IPv6>(s.primitive_column));
             break;
 
         case TypeIndex::UUID:
-            writeColumnImpl<parquet::FLBAType>(s,
+            writeColumnImpl<FLBAType>(s,
                 options,
                 out,
                 ConverterUUID(s.primitive_column));
         break;
 
         #define D(source_type) \
-            writeColumnImpl<parquet::FLBAType>( \
+            writeColumnImpl<FLBAType>( \
                 s, options, out, ConverterDecimal<source_type>(s.primitive_column))
         case TypeIndex::Decimal32:  D(Decimal32); break;
         case TypeIndex::Decimal64:  D(Decimal64); break;
@@ -2142,7 +2730,7 @@ void writeFileFooter(FileWriteState & file,
                 oss;
             Poco::JSON::Stringifier::stringify(geo, oss, 4);
 
-            parquet::format::KeyValue key_value;
+            parq::KeyValue key_value;
             key_value.__set_key("geo");
             key_value.__set_value(oss.str());
 

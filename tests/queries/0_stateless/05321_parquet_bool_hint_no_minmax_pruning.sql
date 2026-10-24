@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the Parquet format is not built in the fast-test image.
-
 -- A Parquet integer column holding 2, read with a `LowCardinality(Bool)` hint: every nonzero value is
 -- read as `true`, but the row group and page min/max statistics still say [2, 2], so pruning by them
 -- dropped the rows equal to `true`. The same holds for a plain `Bool`.

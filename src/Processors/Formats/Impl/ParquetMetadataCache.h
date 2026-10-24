@@ -10,8 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <parquet/file_reader.h>
-#include <parquet/metadata.h>
 #include <boost/noncopyable.hpp>
 #include <IO/WithFileName.h>
 #include <generated/parquet_types.h>

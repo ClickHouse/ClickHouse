@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # The dictionary-filter push-down evaluates all predicate columns of a row group in one
 # `applyBloomAndDictionaryFilters` call. Each dictionary-filtered column builds a value set (a

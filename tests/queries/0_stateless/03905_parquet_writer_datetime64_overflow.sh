@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 # Parquet writer should not produce signed integer overflow when writing DateTime64 values
 # near the boundary of representable range.
 # https://github.com/ClickHouse/ClickHouse/issues/79261

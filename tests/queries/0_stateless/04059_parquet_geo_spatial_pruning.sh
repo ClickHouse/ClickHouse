@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 #
 # Test GeoParquet spatial row group pruning via covering.bbox column statistics.
 # The test file has 2 row groups:
