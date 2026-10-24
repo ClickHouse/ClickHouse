@@ -341,6 +341,10 @@ private:
     /// in mutation entries.
     void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name);
 
+    /// Add the rows affected by the commands of mutations in a mutated part to the mutation entries.
+    /// Must be called after the part is committed.
+    void addAffectedRowsToMutationEntries(const AffectedRowsByMutationCommandsMap & affected_rows);
+
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
     /// is_done. mutation_ids filled with mutations with the same errors,

@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -30,6 +31,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/CountAffectedRowsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -47,6 +49,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -215,9 +218,38 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 namespace
 {
 
-QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+/// Returns `sumMap([multiIf(NOT isZeroOrNull(condition_1), 1, NOT isZeroOrNull(condition_2), 2, ..., 0)], [1])` that counts
+/// the rows deleted by each `DELETE` command the same way as `MutationsInterpreter`: a row is attributed to the first command
+/// that deletes it. The result maps the 1-based index of a command to its count, and the commands that delete no rows are
+/// omitted. One `sumMap` keeps the query size linear in the number of commands.
+ASTPtr makeDeletedRowsByCommandsExpression(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+{
+    auto multi_if = makeASTFunction("multiIf");
+    for (size_t i = 0; i < commands.size(); ++i)
+    {
+        auto alter = commands[i].ast();
+        auto condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context);
+        if (!condition)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A DELETE mutation command has no condition");
+
+        multi_if->arguments->children.push_back(makeASTFunction("not", makeASTFunction("isZeroOrNull", std::move(condition))));
+        multi_if->arguments->children.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)));
+    }
+    multi_if->arguments->children.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(0)));
+
+    auto keys = makeASTFunction("array", std::move(multi_if));
+    auto values = makeASTFunction("array", make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+    return makeASTFunction("sumMap", std::move(keys), std::move(values));
+}
+
+/// Builds `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...`, or with `count_deleted_rows_by_commands`,
+/// the same query that selects only the expression of `makeDeletedRowsByCommandsExpression` instead of `count()`.
+QueryTreeNodePtr prepareQueryAffectedQueryTree(
+    const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context, bool count_deleted_rows_by_commands = false)
 {
     auto ast = prepareQueryAffectedAST(commands, storage, context);
+    if (count_deleted_rows_by_commands)
+        ast->as<ASTSelectQuery &>().select()->children = {makeDeletedRowsByCommandsExpression(commands, storage, context)};
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
@@ -228,6 +260,51 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     query_tree_pass_manager.run(query_tree);
 
     return query_tree;
+}
+
+/// Executes a query built by `prepareQueryAffectedQueryTree` and returns its block of one row, or an empty block if the query
+/// returned no rows. `expression_name` is the selected expression, for the error message.
+Block executeQueryAffected(
+    const QueryTreeNodePtr & select_query_tree,
+    ContextPtr context,
+    const std::function<void(const Progress & value)> & check_operation_is_not_cancelled,
+    std::string_view expression_name)
+{
+    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
+    BlockIO io = interpreter.execute();
+
+    PullingAsyncPipelineExecutor executor(io.pipeline);
+    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+    /// It's actually not a progress callback, but a cancellation check.
+    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
+    executor.setCancelCallback(
+        [&executor, &check_operation_is_not_cancelled]
+        {
+            try
+            {
+                check_operation_is_not_cancelled(Progress{});
+            }
+            catch (...)
+            {
+                /// Stop and join the pipeline here: `cancel` rethrows the pipeline's pending exception, which the destructor would log.
+                executor.cancel();
+                throw;
+            }
+            return false;
+        },
+        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+
+    Block block;
+    while (block.rows() == 0 && executor.pull(block));
+
+    if (block.rows() && block.rows() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} expression returned {} rows, not 1", expression_name, block.rows());
+
+    Block tmp_block;
+    while (executor.pull(tmp_block));
+
+    return block;
 }
 
 ColumnDependencies getAllColumnDependencies(
@@ -326,41 +403,9 @@ IsStorageTouched isStorageTouchedByMutations(
         return no_rows;
 
     auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
-    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
-    BlockIO io = interpreter.execute();
-
-    PullingAsyncPipelineExecutor executor(io.pipeline);
-    io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
-    /// It's actually not a progress callback, but a cancellation check.
-    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
-    /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
-    executor.setCancelCallback(
-        [&executor, &check_operation_is_not_cancelled]
-        {
-            try
-            {
-                check_operation_is_not_cancelled(Progress{});
-            }
-            catch (...)
-            {
-                /// Stop and join the pipeline here: `cancel` rethrows the pipeline's pending exception, which the destructor would log.
-                executor.cancel();
-                throw;
-            }
-            return false;
-        },
-        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
-
-    Block block;
-    while (block.rows() == 0 && executor.pull(block));
-
+    Block block = executeQueryAffected(select_query_tree, context, check_operation_is_not_cancelled, "count()");
     if (!block.rows())
         return no_rows;
-    if (block.rows() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
-
-    Block tmp_block;
-    while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);
@@ -369,6 +414,38 @@ IsStorageTouched isStorageTouchedByMutations(
     result.any_rows_affected = (count != 0);
     result.all_rows_affected = (count == source_part->rows_count);
     return result;
+}
+
+std::vector<UInt64> countDeletedRowsByCommands(
+    MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    const std::vector<MutationCommand> & commands,
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+{
+    chassert(std::ranges::all_of(commands, [](const auto & command) { return command.type == MutationCommand::DELETE; }), "Only DELETE commands can be counted");
+
+    std::vector<UInt64> deleted_rows_by_command(commands.size(), 0);
+    if (commands.empty())
+        return deleted_rows_by_command;
+
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
+    auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context, /*count_deleted_rows_by_commands=*/ true);
+    Block block = executeQueryAffected(select_query_tree, context, check_operation_is_not_cancelled, "sumMap");
+    if (!block.rows())
+        return deleted_rows_by_command;
+
+    const auto deleted_rows_map = (*block.getByPosition(0).column)[0].safeGet<Tuple>();
+    const auto & command_indices = deleted_rows_map[0].safeGet<Array>();
+    const auto & deleted_rows = deleted_rows_map[1].safeGet<Array>();
+    for (size_t i = 0; i < command_indices.size(); ++i)
+    {
+        const auto command_index = command_indices[i].safeGet<UInt64>();
+        if (command_index == 0 || command_index > commands.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected index {} of a DELETE command, there are {} commands", command_index, commands.size());
+        deleted_rows_by_command[command_index - 1] = deleted_rows[i].safeGet<UInt64>();
+    }
+    return deleted_rows_by_command;
 }
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -1125,6 +1202,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
                 predicate = makeASTFunction("isZeroOrNull", predicate);
                 stages.back().filters.push_back(predicate);
+
+                if (command.command_identifier)
+                    stages.back().affected_rows_counting.command_identifiers.push_back(*command.command_identifier);
             }
 
             /// ALTER DELETE can change the number of rows in the part, so we need to rebuild indexes and projection
@@ -1150,6 +1230,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             ASTPtr base_condition = condition_checked_by_prefilter
                 ? nullptr
                 : getPartitionAndPredicateExpressionForMutationCommand(alter.get());
+
+            /// The stage has no other `UPDATE` commands: a stage with updated columns is followed by a new stage.
+            if (!settings.return_mutated_rows && command.command_identifier)
+            {
+                stages.back().affected_rows_counting.command_identifiers.push_back(*command.command_identifier);
+                stages.back().affected_rows_counting.update_condition = (base_condition ? base_condition->clone() : nullptr);
+            }
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -1881,6 +1968,18 @@ void MutationsInterpreter::addStageIfNeeded(std::optional<UInt64> mutation_versi
     }
 }
 
+/// The index of a command in a stage needs values from 0 to `num_commands`, use the smallest type that fits.
+static DataTypePtr getCommandIndexType(size_t num_commands)
+{
+    if (num_commands <= std::numeric_limits<UInt8>::max())
+        return std::make_shared<DataTypeUInt8>();
+    if (num_commands <= std::numeric_limits<UInt16>::max())
+        return std::make_shared<DataTypeUInt16>();
+    if (num_commands <= std::numeric_limits<UInt32>::max())
+        return std::make_shared<DataTypeUInt32>();
+    return std::make_shared<DataTypeUInt64>();
+}
+
 void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, settings.can_execute);
@@ -1940,6 +2039,17 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         }
     }
 
+    /// Since stage loop goes backward, we find the first stage that applies a lightweight delete here
+    std::optional<size_t> first_lightweight_delete_stage;
+    for (size_t i = 0; i < prepared_stages.size(); ++i)
+    {
+        if (prepared_stages[i].column_to_updated.contains(RowExistsColumn::name))
+        {
+            first_lightweight_delete_stage = i;
+            break;
+        }
+    }
+
     /// Now, calculate the chain of actions for each stage except the first.
     /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
     for (int64_t i = prepared_stages.size() - 1; i >= 0; --i)
@@ -1954,9 +2064,41 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         for (const auto & kv : stage.column_to_updated)
             all_asts->children.push_back(kv.second);
 
+        /// The condition for the rows counted as updated by the `UPDATE` command of the stage.
+        ASTPtr counted_update_condition;
+        if (stage.affected_rows_counting.needToCountUpdatedRows())
+        {
+            counted_update_condition = stage.affected_rows_counting.update_condition;
+
+            /// The rows deleted by a lightweight delete stay in the part with `_row_exists = 0`, unless the deleted mask
+            /// is applied while reading the part. Such rows are updated, but they are not counted.
+            /// The mask is either persisted in the part or stored in patch parts.
+            const auto part = source.getMergeTreeDataPart();
+            const auto & alter_conversions = source.getAlterConversions();
+            const bool has_lightweight_delete = part
+                && (part->hasLightweightDelete() || (alter_conversions && alter_conversions->hasLightweightDelete()));
+            if (deleted_mask_updated || (!settings.apply_deleted_mask && has_lightweight_delete))
+                counted_update_condition = makeASTOperator(
+                    "and", std::move(counted_update_condition), make_intrusive<ASTIdentifier>(RowExistsColumn::name));
+
+            /// Add it, so that resolving the expression list keeps the columns it uses among the source columns.
+            all_asts->children.push_back(counted_update_condition);
+        }
+
         /// Add all output columns, so that resolving the expression list keeps them among the source columns.
         for (const auto & column : stage.output_columns)
             all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
+
+        /// The rows deleted by a lightweight delete of a previous stage are still in this stage, because the deleted mask
+        /// is applied only while reading the part. Such rows are deleted, but they are not counted, so `_row_exists`
+        /// is added to be resolved with the expression list.
+        std::optional<size_t> row_exists_position;
+        if (stage.affected_rows_counting.needToCountDeletedRows() && first_lightweight_delete_stage
+            && static_cast<size_t>(i) > *first_lightweight_delete_stage)
+        {
+            row_exists_position = all_asts->children.size();
+            all_asts->children.push_back(make_intrusive<ASTIdentifier>(RowExistsColumn::name));
+        }
 
         /// Executing scalar subquery on that stage can lead to deadlock
         /// e.g. ALTER referencing the same table in scalar subquery
@@ -2044,7 +2186,62 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// correspond 1:1 to all_asts->children.
             /// First num_filters children are the filter expressions.
             QueryTreeNodePtr filter_node;
-            if (num_filters == 1)
+            QueryTreeNodePtr deleting_filter_index_node;
+            const auto & affected_rows_counting = stage.affected_rows_counting;
+            if (affected_rows_counting.needToCount() && affected_rows_counting.getNumDeleteCommands() != num_filters)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The number of counted DELETE commands ({}) does not match the number of filters ({}) of a mutation stage",
+                    affected_rows_counting.getNumDeleteCommands(), num_filters);
+
+            if (affected_rows_counting.needToCountDeletedRows())
+            {
+
+                /// To count the rows deleted by each filter, calculate the 1-based index of the first filter that deletes the row
+                /// `deleting_filter_index = multiIf(NOT filter_1, 1, NOT filter_2, 2, ..., 0)` and keep the rows with
+                /// `deleting_filter_index = 0`. `multiIf` may evaluate a filter only for the rows kept by the previous filters.
+                /// The index is 1-based to reserve 0 for the kept rows: the filter is a comparison with a constant,
+                /// and `CountAffectedRowsTransform` counts all rows into `rows_by_command_index[index]` without a branch.
+                auto filter_index_type = getCommandIndexType(affected_rows_counting.command_identifiers.size());
+
+                auto multi_if_node = std::make_shared<FunctionNode>("multiIf");
+                auto & multi_if_arguments = multi_if_node->getArguments().getNodes();
+                for (size_t fi = 0; fi < num_filters; ++fi)
+                {
+                    auto not_node = std::make_shared<FunctionNode>("not");
+                    not_node->getArguments().getNodes().push_back(expression->getChildren()[fi]);
+                    resolveOrdinaryFunctionNodeByName(*not_node, "not", execution_context);
+                    multi_if_arguments.push_back(std::move(not_node));
+                    multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(fi + 1)), filter_index_type));
+                }
+                multi_if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), filter_index_type)); // If row should be kept, the index is 0.
+                resolveOrdinaryFunctionNodeByName(*multi_if_node, "multiIf", execution_context);
+
+                auto equals_node = std::make_shared<FunctionNode>("equals");
+                auto & equals_arguments = equals_node->getArguments().getNodes();
+                equals_arguments.push_back(multi_if_node);
+                equals_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), filter_index_type));
+                resolveOrdinaryFunctionNodeByName(*equals_node, "equals", execution_context);
+
+                /// The rows deleted by a lightweight delete of a previous stage should not be counted as deleted
+                /// Accordingly, we add a condition  if(_row_exists, multiIf(NOT f1, 1, …, 0), 0) to the filter.
+                if (row_exists_position)
+                {
+                    auto if_node = std::make_shared<FunctionNode>("if");
+                    auto & if_arguments = if_node->getArguments().getNodes();
+                    if_arguments.push_back(expression->getChildren()[*row_exists_position]);
+                    if_arguments.push_back(multi_if_node);
+                    if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), filter_index_type));
+                    resolveOrdinaryFunctionNodeByName(*if_node, "if", execution_context);
+                    deleting_filter_index_node = std::move(if_node);
+                }
+                else
+                {
+                    /// No rows deleted in the previous stage as a lightweight delete, so keep the original multiIf node.
+                    deleting_filter_index_node = std::move(multi_if_node);
+                }
+                filter_node = std::move(equals_node);
+            }
+            else if (num_filters == 1)
             {
                 filter_node = expression->getChildren()[0];
             }
@@ -2074,6 +2271,18 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions->dag, filter_node);
             correlated_subtrees.assertEmpty("in mutation filter");
             chassert(expression_nodes.size() == 1);
+
+            /// Retrieve the pointer to the node that contains the index of the first filter that deletes the row
+            const ActionsDAG::Node * deleting_filter_index_dag_node = nullptr;
+            if (deleting_filter_index_node)
+            {
+                /// The visitor reuses the nodes already added for the filter expression.
+                auto [deleting_filter_index_nodes, deleting_filter_index_correlated_subtrees]
+                    = actions_visitor.visit(filter_actions->dag, deleting_filter_index_node);
+                deleting_filter_index_correlated_subtrees.assertEmpty("in mutation filter");
+                chassert(deleting_filter_index_nodes.size() == 1);
+                deleting_filter_index_dag_node = deleting_filter_index_nodes[0];
+            }
 
             /// Build a map from the current outputs for O(1) lookup,
             /// then keep only columns in stage.output_columns + the filter.
@@ -2105,6 +2314,13 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     if (auto it = output_map.find(name); it != output_map.end())
                         dag_outputs.push_back(it->second);
             }
+
+            if (deleting_filter_index_dag_node)
+            {
+                dag_outputs.push_back(deleting_filter_index_dag_node);
+                stage.affected_rows_counting.deleting_command_index_column_name = deleting_filter_index_dag_node->result_name;
+            }
+
             dag_outputs.push_back(expression_nodes[0]);
 
             stage.filter_column_names.push_back(expression_nodes[0]->result_name);
@@ -2123,6 +2339,9 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             auto update_expr_list = make_intrusive<ASTExpressionList>();
             for (const auto & kv : stage.column_to_updated)
                 update_expr_list->children.push_back(kv.second);
+            /// The last child, after the update expressions.
+            if (counted_update_condition)
+                update_expr_list->children.push_back(counted_update_condition);
 
             auto update_tree = buildQueryTree(update_expr_list, execution_context);
             QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
@@ -2134,6 +2353,31 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             PlannerActionsVisitor update_visitor(planner_context, empty_correlated_columns, false);
             auto [update_expression_nodes, update_correlated_subtrees] = update_visitor.visit(update_actions->dag, update_tree);
             update_correlated_subtrees.assertEmpty("in mutation update");
+
+            /// Retrieve the pointer to the node that contains the index of the `UPDATE` command for the rows it updates.
+            const ActionsDAG::Node * updating_command_index_dag_node = nullptr;
+            if (counted_update_condition)
+            {
+                /// To count the updated rows, calculate `updating_command_index = if(condition, index, 0)`,
+                /// where `index` is the 1-based index of the `UPDATE` command in `command_identifiers`.
+                /// The index is a constant of the same type as `deleting_filter_index`, see the comment there.
+                auto command_index_type = getCommandIndexType(stage.affected_rows_counting.command_identifiers.size());
+
+                auto if_node = std::make_shared<FunctionNode>("if");
+                auto & if_arguments = if_node->getArguments().getNodes();
+                if_arguments.push_back(update_tree->getChildren().back());
+                if_arguments.push_back(std::make_shared<ConstantNode>(
+                    Field(static_cast<UInt64>(stage.affected_rows_counting.command_identifiers.size())), command_index_type));
+                if_arguments.push_back(std::make_shared<ConstantNode>(Field(static_cast<UInt64>(0)), command_index_type));
+                resolveOrdinaryFunctionNodeByName(*if_node, "if", execution_context);
+
+                /// The visitor reuses the nodes already added for the condition.
+                auto [updating_command_index_nodes, updating_command_index_correlated_subtrees]
+                    = update_visitor.visit(update_actions->dag, if_node);
+                updating_command_index_correlated_subtrees.assertEmpty("in mutation update");
+                chassert(updating_command_index_nodes.size() == 1);
+                updating_command_index_dag_node = updating_command_index_nodes[0];
+            }
 
             /// Add aliases: expression result name -> target column name.
             size_t idx = 0;
@@ -2182,6 +2426,12 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     continue;
                 if (auto it = update_output_map.find(kv.first); it != update_output_map.end())
                     update_dag_outputs.push_back(it->second);
+            }
+
+            if (updating_command_index_dag_node)
+            {
+                update_dag_outputs.push_back(updating_command_index_dag_node);
+                stage.affected_rows_counting.updating_command_index_column_name = updating_command_index_dag_node->result_name;
             }
 
             actions_chain.addStep(
@@ -2252,6 +2502,10 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         /// column is updated across multiple stages.
         if (i == 0 && actions_chain.getStepsSize() > 0)
             actions_chain[0]->getActions()->project_input = false;
+
+        if (stage.affected_rows_counting.needToCount())
+            stage.affected_rows_counting.counter
+                = std::make_shared<AffectedRowsCounter>(stage.affected_rows_counting.command_identifiers.size());
 
         /// 8. Store prepared sets (aliasing shared_ptr keeps planner_context alive).
         stage.new_prepared_sets = std::shared_ptr<PreparedSets>(
@@ -2347,6 +2601,29 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
     /// the `Planner` provides for a `SELECT`. This plan is assembled here, so plant that step here.
     for (const auto & materialized_ctes : materialized_ctes_per_subquery)
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, SelectQueryOptions{}, materialized_ctes);
+}
+
+AffectedRowsByMutationCommandsMap MutationsInterpreter::getAffectedRows() const
+{
+    AffectedRowsByMutationCommandsMap result;
+    for (const auto & stage : stages)
+    {
+        const auto & affected_rows_counting = stage.affected_rows_counting;
+        if (!affected_rows_counting.needToCount())
+            continue;
+
+        /// The index 0 counts the rows not affected by any command.
+        auto rows_by_counted_command_index = affected_rows_counting.counter->get();
+        for (size_t i = 0; i < affected_rows_counting.command_identifiers.size(); ++i)
+        {
+            const auto & [mutation_version, command_index] = affected_rows_counting.command_identifiers[i];
+            auto & rows_by_command = result[mutation_version];
+            if (rows_by_command.size() <= command_index)
+                rows_by_command.resize(command_index + 1);
+            rows_by_command[command_index] += rows_by_counted_command_index[i + 1];
+        }
+    }
+    return result;
 }
 
 std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
@@ -2506,13 +2783,29 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             if (step->getActions()->project_input)
                 dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
 
-            if (i < stage.filter_column_names.size())
+            const auto & affected_rows_counting = stage.affected_rows_counting;
+            if (i < stage.filter_column_names.size() && affected_rows_counting.needToCountDeletedRows())
+            {
+                /// Calculate the filter, count the rows deleted by each filter, and only then remove them.
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+                plan.addStep(std::make_unique<CountAffectedRowsStep>(
+                    plan.getCurrentHeader(), affected_rows_counting.deleting_command_index_column_name, affected_rows_counting.counter));
+                plan.addStep(std::make_unique<FilterStep>(
+                    plan.getCurrentHeader(), ActionsDAG(plan.getCurrentHeader()->getColumnsWithTypeAndName()),
+                    stage.filter_column_names[i], false));
+            }
+            else if (i < stage.filter_column_names.size())
                 plan.addStep(std::make_unique<FilterStep>(
                     plan.getCurrentHeader(), std::move(dag),
                     stage.filter_column_names[i], false));
             else
                 plan.addStep(std::make_unique<ExpressionStep>(
                     plan.getCurrentHeader(), std::move(dag)));
+
+            /// The update step follows the filter step, count the rows updated by it.
+            if (i == stage.filter_column_names.size() && affected_rows_counting.needToCountUpdatedRows())
+                plan.addStep(std::make_unique<CountAffectedRowsStep>(
+                    plan.getCurrentHeader(), affected_rows_counting.updating_command_index_column_name, affected_rows_counting.counter));
         }
 
         buildSubqueryPlansForSetsAndAdd(plan, stage.new_prepared_sets, context);

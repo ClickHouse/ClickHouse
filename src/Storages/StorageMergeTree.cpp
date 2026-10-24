@@ -1379,6 +1379,32 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
     mutation_wait_event.notify_all();
 }
 
+void StorageMergeTree::addAffectedRowsToMutationEntries(const AffectedRowsByMutationCommandsMap & affected_rows)
+{
+    if (affected_rows.empty())
+        return;
+
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    for (const auto & [mutation_version, rows_by_command] : affected_rows)
+    {
+        /// The mutation is removed if it is killed while the part is mutated.
+        auto it = current_mutations_by_version.find(mutation_version);
+        if (it == current_mutations_by_version.end())
+            continue;
+
+        auto & entry = it->second;
+        /// The part is already committed, so the mutation must not fail because of the counts.
+        if (rows_by_command.size() > entry.commands->size())
+        {
+            LOG_WARNING(log, "Command index for mutation {} is out of bounds: mutation has {} commands, but rows are affected by the command {}",entry.file_name, entry.commands->size(), rows_by_command.size() - 1);
+            continue;
+        }
+
+        for (size_t command_index = 0; command_index < rows_by_command.size(); ++command_index)
+            entry.affected_rows_by_command[command_index] += rows_by_command[command_index];
+    }
+}
+
 void StorageMergeTree::waitForMutation(Int64 version, bool wait_for_another_mutation)
 {
     String mutation_id = MergeTreeMutationEntry::versionToFileName(version);
@@ -1789,12 +1815,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             }
         }
 
-        for (const MutationCommand & command : *entry.commands)
+        for (size_t command_index = 0; command_index < entry.commands->size(); ++command_index)
         {
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                command.ast_text,
+                (*entry.commands)[command_index].ast_text,
                 entry.create_time,
                 entry.finish_time,
                 block_numbers_map,
@@ -1806,6 +1832,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
                 entry.latest_fail_error_code_name,
+                /* is_killed = */ false,
+                entry.affected_rows_by_command[command_index],
             });
         }
     }
@@ -2576,6 +2604,17 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         Strings mutation_ids;
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
+
+        /// Add commands to the list and remember which mutation each command comes from to count the rows it affects.
+        auto add_mutation_commands = [&commands](UInt64 mutation_version, const MutationCommands & mutation_commands)
+        {
+            for (size_t i = 0; i < mutation_commands.size(); ++i)
+            {
+                auto & command = commands->emplace_back(mutation_commands[i]);
+                command.command_identifier = MutationCommandIdentifier{mutation_version, i};
+            }
+        };
+
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
@@ -2640,7 +2679,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             {
                 if (commands->empty())
                 {
-                    commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
+                    add_mutation_commands(it->first, *single_mutation_commands);
                     mutation_ids.push_back(it->second.file_name);
                     last_mutation_to_apply = it;
                 }
@@ -2648,7 +2687,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             }
 
             current_ast_elements += commands_size;
-            commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
+            add_mutation_commands(it->first, *single_mutation_commands);
             mutation_ids.push_back(it->second.file_name);
             last_mutation_to_apply = it;
         }

@@ -43,6 +43,9 @@ struct MergeTreeMutationEntry
     /// before the table was loaded (e.g. before a server restart).
     time_t finish_time = 0;
 
+    /// The number of rows affected by each command of the mutation in the parts mutated so far.
+    std::vector<UInt64> affected_rows_by_command;
+
     UInt64 block_number = 0;
 
     String latest_failed_part;

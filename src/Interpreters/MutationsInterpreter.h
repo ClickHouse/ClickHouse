@@ -19,6 +19,9 @@ class QueryPlan;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+class AffectedRowsCounter;
+using AffectedRowsCounterPtr = std::shared_ptr<AffectedRowsCounter>;
+
 struct IsStorageTouched
 {
     bool any_rows_affected = false;
@@ -39,6 +42,16 @@ IsStorageTouched isStorageTouchedByMutations(
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
+
+/// Returns the number of rows of the part deleted by each `DELETE` command, attributed to the first command that deletes the row
+/// as in `MutationsInterpreter`. Only the columns of the conditions are read, and the rows already deleted by a lightweight
+/// delete are not counted. It is used when the commands delete all rows of the part, which is then replaced by an empty part.
+std::vector<UInt64> countDeletedRowsByCommands(
+    MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    const std::vector<MutationCommand> & commands,
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled);
 
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
@@ -169,6 +182,10 @@ public:
     /// applied to block to execute mutation commands.
     std::vector<MutationActions> getMutationActions() const;
 
+    /// The number of rows affected by each `DELETE` and `UPDATE` command. A row is counted for the
+    /// first command that deletes it, and for each command that updates it.
+    AffectedRowsByMutationCommandsMap getAffectedRows() const;
+
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
     /// The main idea is to create a dedicated reading from MergeTree part.
@@ -282,6 +299,46 @@ private:
         PreparedSetsPtr new_prepared_sets;
 
         Names filter_column_names;
+
+        /// Counting of the rows affected by the commands of the stage (see `affected_rows` in `system.mutations`).
+        struct AffectedRowsCounting
+        {
+            /// Identifiers of the commands in this stage. Each identifier records the source mutation
+            /// and the command's index within that mutation.
+            std::vector<MutationCommandIdentifier> command_identifiers;
+
+            /// The condition of the counted `UPDATE` command: the rows that satisfy it are counted as updated.
+            ASTPtr update_condition;
+
+            /// Name of the temporary column containing the 1-based index in `command_identifiers` of the first
+            /// `DELETE` command that deletes each row, or 0 if no `DELETE` command deletes it.
+            String deleting_command_index_column_name;
+
+            /// Name of the temporary column containing the 1-based index in `command_identifiers` of the `UPDATE`
+            /// command that updates each row, or 0 if the row is not updated.
+            String updating_command_index_column_name;
+
+            /// Accumulates the number of affected rows attributed to each command of `command_identifiers`.
+            AffectedRowsCounterPtr counter;
+
+            /// Whether the rows affected by the commands of the stage are counted.
+            bool needToCount() const { return !command_identifiers.empty(); }
+
+            /// Whether the rows updated by the `UPDATE` command of the stage are counted.
+            /// If so, the update step is followed by a `CountAffectedRowsStep`.
+            bool needToCountUpdatedRows() const { return update_condition != nullptr; }
+
+            /// A stage might contain multiple `DELETE` commands, but only one `UPDATE` command in the end. Multiple update
+            ///commands cannot be in the same stage. Then the number of cascaded delete commands can be calculated as the
+            /// number of commands minus one if there is an update command.
+            size_t getNumDeleteCommands() const { return command_identifiers.size() - (needToCountUpdatedRows() ? 1 : 0); }
+
+            /// Whether the rows deleted by each filter of the stage are counted.
+            /// If so, the filter step is executed as an `ExpressionStep`, a `CountAffectedRowsStep` and a `FilterStep`.
+            bool needToCountDeletedRows() const { return getNumDeleteCommands() > 0; }
+        };
+
+        AffectedRowsCounting affected_rows_counting;
 
         bool affects_all_columns = false;
         std::optional<UInt64> mutation_version;
