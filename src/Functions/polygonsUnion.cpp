@@ -79,19 +79,16 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
             else
             {
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                forEachCorrectedGeometryPair<LeftConverter, RightConverter>(
+                    arguments[0].column, arguments[1].column, input_rows_count, name,
+                    [&](const auto & left, const auto & right)
+                    {
+                        MultiPolygon<Point> polygons_union{};
+                        /// Main work here.
+                        boost::geometry::union_(left, right, polygons_union);
 
-                /// We are not interested in some pitfalls in third-party libraries
-                /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
-                for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    MultiPolygon<Point> polygons_union{};
-                    /// Main work here.
-                    boost::geometry::union_(first.get(i), second.get(i), polygons_union);
-
-                    serializer.add(polygons_union);
-                }
+                        serializer.add(polygons_union);
+                    });
             }
         });
 
