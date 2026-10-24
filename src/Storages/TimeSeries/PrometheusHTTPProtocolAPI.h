@@ -41,6 +41,7 @@ public:
         String end_param;
         String step_param;
         String lookback_delta_param;
+        UInt64 limit = 0;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
@@ -112,16 +113,27 @@ private:
         QueryFinishCallback query_finish_callback);
 
     /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    void writeQueryResponse(
+        WriteBuffer & response,
+        PullingAsyncPipelineExecutor & pulling_executor,
+        PrometheusQueryResultType result_type,
+        UInt64 limit);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
-    void writeQueryResponseFooter(WriteBuffer & response);
-    void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
+    void writeQueryResponseFooter(WriteBuffer & response, bool truncated);
+    void writeQueryResponseBlock(
+        WriteBuffer & response,
+        PrometheusQueryResultType result_type,
+        const Block & result_block,
+        bool first,
+        size_t rows_to_write);
     void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseInstantVectorBlock(
+        WriteBuffer & response, const Block & result_block, bool first, size_t rows_to_write);
+    void writeQueryResponseRangeVectorBlock(
+        WriteBuffer & response, const Block & result_block, bool first, size_t rows_to_write);
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
