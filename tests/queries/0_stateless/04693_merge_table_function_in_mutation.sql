@@ -122,13 +122,11 @@ SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwd_plain ORDER BY id;
 -- The old analyzer resolves a common table expression in a subquery of a mutation as a table, so
 -- the analyzer is requested explicitly in the arms that use one.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
-    SET v = 6 WHERE id IN (WITH c AS (SELECT id FROM t_lwu_src) SELECT id FROM c)
-    SETTINGS enable_analyzer = 1;
+    SET v = 6 WHERE id IN (WITH c AS (SELECT id FROM t_lwu_src) SELECT id FROM c);
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE v = 6;
 
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
-    SET v = (WITH c AS (SELECT max(id) AS m FROM t_lwu_src) SELECT m FROM c) WHERE id = 2
-    SETTINGS enable_analyzer = 1;
+    SET v = (WITH c AS (SELECT max(id) AS m FROM t_lwu_src) SELECT m FROM c) WHERE id = 2;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 2;
 
 -- The name of a recursive common table expression in the predicate is not the name of a table, so it
@@ -137,8 +135,7 @@ SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 2;
 -- also fails if the statement does not update the row at all.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu
     SET v = (SELECT max(id) FROM t_lwu_src) + 20
-    WHERE id IN (WITH RECURSIVE t_lwu_src AS (SELECT 3 AS id UNION ALL SELECT id + 1 FROM t_lwu_src WHERE id < 3) SELECT id FROM t_lwu_src)
-    SETTINGS enable_analyzer = 1;
+    WHERE id IN (WITH RECURSIVE t_lwu_src AS (SELECT 3 AS id UNION ALL SELECT id + 1 FROM t_lwu_src WHERE id < 3) SELECT id FROM t_lwu_src);
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_lwu WHERE id = 3;
 
 DROP TABLE t_lwu_src;
