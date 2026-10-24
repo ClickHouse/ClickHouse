@@ -149,9 +149,8 @@ void MergeTreeIndexGranularityConstant::fixFromRowsCount(size_t rows_count)
         return;
 
     /// Calculate the expected number of data marks for the given row count.
-    size_t expected_data_marks = (rows_count + constant_granularity - 1) / constant_granularity;
-    if (rows_count == 0)
-        expected_data_marks = 0;
+    /// Round up without `rows_count + constant_granularity - 1`, which wraps for a huge `index_granularity`.
+    size_t expected_data_marks = rows_count / constant_granularity + (rows_count % constant_granularity != 0);
 
     /// If we have more marks than expected data marks, the extra mark is a final mark.
     if (num_marks_without_final > expected_data_marks && !has_final_mark)
