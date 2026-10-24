@@ -43,6 +43,7 @@ public:
 
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void onPipelineFinished() override;
 
     /// Sorts tags by name, removes exact duplicates and tags with empty values,
     /// and throws if the `__name__` tag is missing or appears with conflicting values.

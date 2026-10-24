@@ -369,7 +369,7 @@ void TimeSeriesSink::TargetPipeline::push(Block block) const
 
 TimeSeriesSink::TargetPipeline::~TargetPipeline()
 {
-    /// On cancellation without an exception (e.g. `timeout_overflow_mode='break'`) neither
+    /// On cancellation without an exception (e.g. `KILL QUERY`) neither
     /// `onFinish` nor `onException` runs, leaving the executor started but unfinished.
     /// Cancel it so `~PushingPipelineExecutor`'s finished-or-unwinding invariant holds.
     if (executor)
@@ -924,6 +924,13 @@ void TimeSeriesSink::onFinish()
         if (metric_families_deduplication_cache && !pending_metric_families.empty())
             metric_families_deduplication_cache->markRowsAsWritten(std::move(pending_metric_families));
     }
+}
+
+void TimeSeriesSink::onPipelineFinished()
+{
+    /// Stopped by `timeout_overflow_mode = 'break'`: the target INSERTs finish as if the input had ended.
+    if (isCancelled() && stage != Stage::Exception)
+        onFinish();
 }
 
 }
