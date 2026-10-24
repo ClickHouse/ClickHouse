@@ -46,8 +46,8 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
 Resources are classified by sharing mode:
-* **Time-shared resources** (CPU, IO, Query slots) - manage resource requests that are enqueued at scheduling hierarchy leafs. Requests are scheduled according to policies and constraints defined by hierarchy. Resource requests are created when a query accesses the corresponding resource. For example, when a query reads data from disk, or accesses the CPU for processing, resource requests are created for every quantum of work done or number of bytes sent or received through a socket.
-* **Space-shared resources** (Memory) - manage resource allocations at scheduling hierarchy leafs. Allocations could be running or pending. Pending allocations are blocked until enough space is freed or other allocation is evicted (killed). Decisions are based on limits and policies defined by the hierarchy. There is one-to-one correspondence between allocations and queries (or background activities). An allocation is created when a query starts execution and is released when it finishes. Running allocations can increase or decrease their size dynamically.
+* **Time-shared resources** (CPU, IO) - manage resource requests that are enqueued at scheduling hierarchy leafs. Requests are scheduled according to policies and constraints defined by hierarchy. Resource requests are created when a query accesses the corresponding resource. For example, when a query reads data from disk, or accesses the CPU for processing, resource requests are created for every quantum of work done or number of bytes sent or received through a socket.
+* **Space-shared resources** (Memory, Query slots) - manage resource allocations at scheduling hierarchy leafs. Allocations could be running or pending. Pending allocations are blocked until enough space is freed or other allocation is evicted (killed). Decisions are based on limits and policies defined by the hierarchy. There is one-to-one correspondence between allocations and queries (or background activities). An allocation is created when a query starts execution and is released when it finishes. Running allocations can increase or decrease their size dynamically.
 
 ## Workload hierarchy {#workloads}
 
@@ -104,7 +104,7 @@ graph LR
 The name of a leaf workload without children can be used in query settings `SETTINGS workload = 'name'`. See [Workload markup](#workload-markup) for details.
 
 To customize workload the following settings could be used:
-* `priority` - (time-shared only) sibling workloads are served according to static values (lower value means higher priority). Drives preemption.
+* `priority` - (time-shared only) sibling workloads are served according to static values (lower value means higher priority). Drives preemption. For query slots see [Query slot scheduling](#query_scheduling).
 * `precedence` - (space-shared only) sibling workloads are admitted according to static values (lower value means higher precedence). Drives eviction and admission.
 * `weight` - sibling workloads having the same static priority or precedence share resources according to weights in a fair manner. Affects preemption, eviction and admission.
 * `max_io_requests` - the limit on the number of concurrent IO requests in this workload.
@@ -393,6 +393,10 @@ Workload settings `max_queries_per_second` and `max_burst_queries` limit the num
 
 Workload setting `max_waiting_queries` limits the number of waiting queries for the workload. When the limit is reached, the server returns an error `SERVER_OVERLOADED`. Note that `max_waiting_queries` is not inherited by children workloads and makes sense only for leaf workloads.
 
+Query slots are a space-shared resource: every query holds an allocation of one slot while it runs. The slot is acquired on admission and released as soon as the query execution finishes, before the final cleanup of the query. A query waiting for a slot is admitted when a slot is released; a running query is never evicted to admit another one. When multiple workloads have waiting queries, they are admitted according to `precedence` and `weight`: higher precedence workloads are served first, and sibling workloads with the same precedence share slots according to weights in a max-min fair manner (a workload with a lower number of running queries divided by its weight is served first). Queries of a single workload are admitted in FIFO order.
+
+For backward compatibility, the server setting `query_slot_admission_uses_priority` is enabled by default, and then the `priority` workload setting is used for query slots instead of `precedence`. Set it to `false` to order query admission by `precedence`, the same way as memory reservations.
+
 <Note>
 Blocked queries will wait indefinitely and do not appear in `SHOW PROCESSLIST` until all constraints are satisfied.
 </Note>
@@ -485,7 +489,8 @@ graph TD
 * `queue` - leaf of the hierarchy capable of holding requests that exceed resource capacity.
 
 **Space-shared node types:**
-* `limit` - makes sure child total allocation never exceeds a limit, initiates eviction procedure in a subtree if necessary; must have a single child.
+* `limit` - makes sure child total allocation never exceeds a limit, initiates eviction procedure in a subtree if necessary (query slots are never evicted, a pending allocation waits instead); must have a single child.
+* `allocation_rate_limit` - blocks admission and growth of allocations if their rate exceeds `max_speed` or burst exceeds `max_burst` (token bucket, used for `max_queries_per_second`); must have a single child.
 * `fair_allocation` - enforces eviction according to max-min fairness; pending allocation never evict running; children nodes may specify `weight` (default is 1).
 * `precedence_allocation` - enforces eviction according to static precedence (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
 * `queue` - leaf of the hierarchy capable of holding running and pending allocations.

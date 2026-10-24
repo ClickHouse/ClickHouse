@@ -14,6 +14,7 @@
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationRateLimit.h>
 #include <Interpreters/Context.h>
 
 
@@ -94,21 +95,21 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
             "For `inflight_limit` nodes only. Upper limit for inflight_requests leading to constraint violation."
         },
         {"max_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `inflight_limit` nodes only. Upper limit for inflight_cost leading to constraint violation."
+            "For `inflight_limit` nodes, upper limit for inflight_cost leading to constraint violation. For `allocation_limit` nodes, upper limit for `allocated`."
         },
 
         // ThrottlerConstraint
         {"max_speed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` nodes only. Upper limit for bandwidth in tokens per second."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for bandwidth in tokens per second."
         },
         {"max_burst", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` nodes only. Upper limit for tokens available in token-bucket throttler."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for tokens available in token-bucket throttler."
         },
         {"throttling_us", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For `bandwidth_limit` nodes only. Total number of microseconds this node was in throttling state."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Total number of microseconds this node was in throttling state."
         },
         {"tokens", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` nodes only. Number of tokens currently available in token-bucket throttler."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Number of tokens currently available in token-bucket throttler."
         },
 
         // ISpaceSharedNode
@@ -259,6 +260,12 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             throttling_us = ptr->getThrottlingDuration().count() / 1000;
             tokens = ptr->getTokens();
         }
+        if (auto * ptr = dynamic_cast<AllocationRateLimit *>(node))
+        {
+            std::tie(max_speed, max_burst) = ptr->getParams();
+            throttling_us = ptr->getThrottlingDuration().count() / 1000;
+            tokens = ptr->getTokens();
+        }
         if (auto * ptr = dynamic_cast<ISpaceSharedNode *>(node))
         {
             allocated = ptr->allocated;
@@ -275,7 +282,10 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
             spills = ptr->spills;
         }
         if (auto * ptr = dynamic_cast<AllocationLimit *>(node))
+        {
+            max_cost = ptr->getLimit();
             soft_limit = ptr->getSoftLimit();
+        }
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
         {
             rejects = ptr->getRejects();

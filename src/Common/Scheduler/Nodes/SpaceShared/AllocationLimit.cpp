@@ -16,10 +16,11 @@ namespace ErrorCodes
 }
 
 AllocationLimit::AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
-    ResourceCost soft_limit_)
+    ResourceCost soft_limit_, bool evict_)
     : ISpaceSharedNode(event_queue_, info_)
     , max_allocated(max_allocated_)
     , soft_limit(soft_limit_)
+    , evict(evict_)
 {}
 
 AllocationLimit::~AllocationLimit()
@@ -258,12 +259,12 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     {
         if (allocated + new_increase->size > max_allocated)
         {
-            // Limit would be violated, so we have to reclaim resource.
+            // Limit would be violated, so we have to reclaim resource (unless eviction is disabled).
             // Do not select a victim while a decrease is pending below: `allocated` still contains
             // memory that is about to be released, so the eviction may be unnecessary. The increase
             // stays blocked, and every decrease approval re-runs this via `reapply_constraint`; once
             // the releases prove insufficient and no decrease is pending, the eviction fires.
-            if (!allocation_to_kill && decrease == nullptr)
+            if (evict && !allocation_to_kill && decrease == nullptr)
             {
                 String details;
                 allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);

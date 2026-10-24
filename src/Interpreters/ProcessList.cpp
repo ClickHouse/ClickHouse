@@ -164,7 +164,14 @@ ProcessList::EntryPtr ProcessList::insert(
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
+            {
+                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
+                if (!link.allocation_queue)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Resource '{}' configured for query slots is not a `QUERY` resource",
+                        query_resource_name);
+                query_slot = std::make_unique<QuerySlot>(link, admission_deadline, client_info.current_query_id);
+            }
         }
         String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())

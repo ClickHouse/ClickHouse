@@ -1371,6 +1371,23 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, query_slot_admission_uses_priority, true, R"(
+Defines which workload setting orders the admission of waiting queries between sibling workloads for the `QUERY` resource.
+
+- If `true` (default), queries are admitted according to the `priority` workload setting. This is the compatibility mode that keeps the behavior of previous versions.
+- If `false`, queries are admitted according to the `precedence` workload setting, the same way as memory reservations. Query slots are never evicted, so `precedence` only affects the order of admission.
+
+The default is going to change to `false` in a future release. The setting is applied on server startup.
+
+**Example**
+
+```xml
+<query_slot_admission_uses_priority>false</query_slot_admission_uses_priority>
+```
+
+**See Also**
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
+)", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 
