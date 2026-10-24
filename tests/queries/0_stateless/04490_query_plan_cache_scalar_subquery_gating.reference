@@ -1,0 +1,9 @@
+-- IN with a set subquery on the right is cacheable without the opt-in
+-- hits: 1
+-- scalar subquery in the LEFT operand of IN is gated (not cached without the opt-in)
+-- hits: 0
+-- with the opt-in, the same query is cacheable
+-- hits: 1
+-- the opt-in setting is part of the cache key: =1 entry is not reused under =0
+-- hits with opt-in (warm): 1
+-- hits without opt-in (must be 0): 0

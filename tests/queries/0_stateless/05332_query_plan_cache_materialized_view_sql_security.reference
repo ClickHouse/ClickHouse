@@ -1,0 +1,17 @@
+-- mv_definer, run 1: correct result, never cached
+1	10
+2	20
+-- hits, misses: 0	1
+-- mv_definer, run 2: correct result, never cached
+1	10
+2	20
+-- hits, misses: 0	1
+-- mv_none, run 1: correct result, never cached
+1	10
+2	20
+-- hits, misses: 0	1
+-- mv_none, run 2: correct result, never cached
+1	10
+2	20
+-- hits, misses: 0	1
+-- entries: 0

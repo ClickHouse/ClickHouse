@@ -14,6 +14,7 @@ namespace DB
 
 void enableAllExperimentalSettings(ContextMutablePtr context)
 {
+    context->setSetting("allow_experimental_query_plan_cache", 1);
     for (const auto & name : CompressionCodecFactory::instance().getGateSettingNames())
         context->setSetting(name, 1);
     context->setSetting("allow_experimental_funnel_functions", 1);

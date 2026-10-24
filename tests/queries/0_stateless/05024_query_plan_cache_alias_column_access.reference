@@ -1,0 +1,18 @@
+-- 1. revoking the grant on the alias column denies the next hit
+-- miss (allowed):
+2
+3
+-- hit (allowed):
+2
+3
+-- the same query without the cache is denied:
+ACCESS_DENIED
+-- hit after revoking SELECT(b) must be denied too:
+ACCESS_DENIED
+-- 2. a grant on the alias column alone is enough for a hit
+-- miss (allowed):
+2
+3
+-- hit (allowed, SELECT(a) is not required):
+2
+3

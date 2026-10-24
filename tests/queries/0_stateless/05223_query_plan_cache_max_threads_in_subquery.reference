@@ -1,0 +1,8 @@
+-- reference: max_threads = 4 on a miss
+500000
+hits: 0	MergeTree read streams: 8
+-- warm up with max_threads = 1, then hit with max_threads = 4
+500000
+hits: 0	MergeTree read streams: 2
+500000
+hits: 1	MergeTree read streams: 8

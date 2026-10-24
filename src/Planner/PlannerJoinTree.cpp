@@ -92,6 +92,7 @@
 
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -816,14 +817,17 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
   * `SELECT count() FROM t` passes with a grant on any one column, while these names are always required.
   */
 void checkAccessRightsForColumnsResolvedAway(
-    const TableNode & table_node, const TableExpressionData & table_expression_data, const ContextPtr & query_context)
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const TableExpressionData & table_expression_data,
+    const ContextPtr & query_context)
 {
     const auto & column_names = table_expression_data.getAccessCheckedColumnsNames();
     if (column_names.empty())
         return;
 
-    checkAccessRights(
-        table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), column_names, query_context);
+    checkAccessRights(storage, storage_id, storage_snapshot, column_names, query_context);
 }
 
 void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, const SelectQueryOptions & select_query_options, PlannerContextPtr & planner_context)
@@ -849,7 +853,8 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         columns_names_allowed_to_select = checkAccessRights(
             table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
 
-        checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
+        checkAccessRightsForColumnsResolvedAway(
+            table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), table_expression_data, query_context);
     }
     else if (table_function_node)
     {
@@ -863,6 +868,9 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
             columns_names_allowed_to_select = checkAccessRights(
                 storage, table_function_node->getStorageID(), table_function_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+
+            checkAccessRightsForColumnsResolvedAway(
+                storage, table_function_node->getStorageID(), table_function_node->getStorageSnapshot(), table_expression_data, query_context);
         }
     }
     else if ((query_node || union_node) && select_query_options.check_subquery_table_access)
@@ -882,6 +890,9 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
+            /// The injected column is picked among the currently granted ones and stands for "read
+            /// any column"; access re-checks must not require that specific column (see the getter).
+            table_expression_data.setReadsOnlyInjectedColumn(true);
         }
         else if (query_node || union_node)
         {
@@ -990,11 +1001,12 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
     std::set<std::string> & used_row_policies,
-    NameSet required_names_without_filter = {})
+    NameSet required_names_without_filter = {},
+    RowPolicyFilterPtr * own_row_policy_filter = nullptr)
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context, own_row_policy_filter);
     if (!row_policy_filter)
         return {};
 
@@ -2076,6 +2088,46 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             }
         }
 
+        /// Record the identity of every storage the cacheable plan is built from, so that the
+        /// query plan cache can bind both the stored dependencies and the execution of the plan
+        /// to exactly the storages that were analyzed here - a name can start resolving to a
+        /// different table right after this point (see `Context::PlanCacheStorageIdentities`).
+        /// Besides the UUID, the identity carries a fingerprint of the semantics the plan bakes
+        /// in from the analysis-time metadata snapshot (schema, row policy): an in-place
+        /// `ALTER` keeps the UUID but changes what the plan means, and dependency collection
+        /// runs only after the whole plan is built (see
+        /// `computeQueryPlanCacheSemanticsFingerprint`).
+        /// The collector pointer is set only while a cacheable logical plan is being built, but
+        /// it is deliberately not gated on `select_query_options.cacheable_logical_plan` here:
+        /// scalar subqueries are executed during that same analysis through a nested regular
+        /// interpreter whose options do not carry the flag, while their contexts are copies
+        /// that share the pointer. Their results are baked into the plan as constants, so the
+        /// tables they read are analyzed storages in exactly the same sense. Such a nested
+        /// interpreter may also answer from the trivial count shortcut below, which reads no
+        /// data, so the shortcut records the storage as well.
+        /// Temporary tables are never cacheable dependencies, so they are not recorded.
+        /// The preliminary filter-collection pass (see `collectFiltersForAnalysis`) plans
+        /// over `StorageDummy` stand-ins that carry the real storage's `StorageID` but a
+        /// columns-only metadata (no view `select`, no constraints), so recording them
+        /// would pin a wrong semantics fingerprint for the name; only the real pass
+        /// records.
+        /// The row-policy part of the fingerprint is the storage's own policy exactly as it was
+        /// combined into the filter built below (`plan_cache_row_policy_filter`), not a second
+        /// lookup: `ALTER ROW POLICY` can replace the policy in between, and a fresh lookup would
+        /// pair the old filter with the new fingerprint, so a stale entry would validate. It stays
+        /// nullptr on the trivial count path, which applies only when no row policy filters the table.
+        RowPolicyFilterPtr plan_cache_row_policy_filter;
+        auto record_plan_cache_storage_identity = [&]()
+        {
+            if (table_node && table_node->getTemporaryTableName().empty()
+                && !typeid_cast<const StorageDummy *>(storage.get()))
+                if (auto identities = query_context->getPlanCacheStorageIdentities())
+                    identities->add(
+                        table_node->getStorageID(),
+                        computeQueryPlanCacheSemanticsFingerprint(
+                            storage_snapshot->metadata, plan_cache_row_policy_filter, query_context));
+        };
+
         /// Apply trivial_count if possible. The plain variant requires no `WHERE`; the
         /// sparsity-filter variant requires a `WHERE`, so at most one of them fires.
         QueryTreeNodePtr trivial_count_aggregate;
@@ -2110,6 +2162,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         if (is_trivial_count_applied)
         {
             till_stage = QueryProcessingStage::WithMergeableState;
+            record_plan_cache_storage_identity();
 
             /// Log table access even when trivial count optimization skips reading
             if (query_context->hasQueryContext() && !select_query_options.is_internal)
@@ -2132,6 +2185,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
+                /// In a cacheable logical plan the row policy is an explicit filter step right above the read,
+                /// applied before the `ALIAS` columns are computed: the regular read applies the policy inside
+                /// the storage, so an `ALIAS` expression (e.g. `throwIf(id = 2)`) never sees the excluded rows.
+                std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> row_policy_filter_before_aliases;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -2216,7 +2273,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
-                    storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
+                    storage,
+                    table_expression_query_info,
+                    planner_context,
+                    used_row_policies,
+                    std::move(row_policy_required_names),
+                    &plan_cache_row_policy_filter);
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
@@ -2253,12 +2315,32 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// explicit filter step of the plan, ahead of the PREWHERE filter step, so that the
                     /// user's conditions never see the excluded rows.
                     /// A table function read directly on that node loses a pushed-down policy whatever its contract.
-                    if (select_query_options.build_logical_plan
+                    if (select_query_options.build_logical_plan && !select_query_options.cacheable_logical_plan
                         && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
                         where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                    /// For the query plan cache, `row_level_filter` is only consumed by `storage->read()`, which is
+                    /// skipped when building a cacheable logical plan (a storage-agnostic `ReadFromTableStep`
+                    /// placeholder is used instead, see below); materialization later calls `storage->read()` afresh
+                    /// with a bare `SelectQueryInfo` that never carries it over, so the policy would be silently
+                    /// dropped. Route it through the WHERE-filter path instead (like `prewhere_actions` already does
+                    /// above), which becomes an explicit `FilterStep` that survives materialization unchanged.
+                    /// This must be gated on `cacheable_logical_plan`, not `build_logical_plan`: the latter is also
+                    /// set for parallel-replicas and distributed local plans, which do carry `row_level_filter`
+                    /// through their own materialization and must keep using PREWHERE (moving the row policy out of
+                    /// PREWHERE there breaks index/mark estimation, e.g. `03006_parallel_replicas_prewhere`).
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    else if (can_push_down_filter)
+                    else if (can_push_down_filter && !select_query_options.cacheable_logical_plan)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
+                    /// A cacheable logical plan turns an explicit `PREWHERE` into a filter step of `where_filters`
+                    /// (see above), and computes the `ALIAS` columns in a step of its own, so the policy must go
+                    /// before both: neither the user's conditions nor the `ALIAS` expressions may see the rows
+                    /// the policy excludes (`PREWHERE throwIf(...)` or an `ALIAS` column `throwIf(...)` would
+                    /// otherwise reveal them through an exception).
+                    else if (select_query_options.cacheable_logical_plan)
+                    {
+                        row_policy_filter_before_aliases.emplace(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_not_pushed = true;
+                    }
                     else
                     {
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
@@ -2300,6 +2382,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
+
+                /// In logical plan mode views are still expanded at plan time: a `ReadFromTable`
+                /// placeholder for a view would defer the expensive view-body analysis to plan
+                /// materialization, defeating the query plan cache. The expansion itself recurses
+                /// in logical mode (see `SelectQueryInfo::build_logical_plan`), so leaf reads of
+                /// the expanded sub-plan stay storage-agnostic.
+                const bool expand_view_in_logical_plan = select_query_options.build_logical_plan
+                    && select_query_options.cacheable_logical_plan
+                    && table_node && typeid_cast<const StorageView *>(storage.get());
+
+                if (expand_view_in_logical_plan)
+                {
+                    table_expression_query_info.build_logical_plan = true;
+                    table_expression_query_info.cacheable_logical_plan = true;
+                }
+
+                record_plan_cache_storage_identity();
 
                 /// For trivial views over Distributed tables, inline the view body and use the
                 /// underlying StorageDistributed directly. StorageDistributed will substitute the
@@ -2729,7 +2828,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
-                if (!select_query_options.build_logical_plan)
+                if (!select_query_options.build_logical_plan || expand_view_in_logical_plan)
                 {
                     /// Use effective_context (not query_context) so the processing stage is computed
                     /// under the same SQL-security context the read runs in. For SQL SECURITY NONE the
@@ -2754,7 +2853,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             storage->getStorageID().getNameForLogs());
                 }
 
-                if (select_query_options.build_logical_plan)
+                if (select_query_options.build_logical_plan && !expand_view_in_logical_plan)
                 {
                     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
 
@@ -2770,6 +2869,26 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             sample_block,
                             table_name,
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                        /// Tell the query plan cache that the single output column was injected for
+                        /// an empty projection and is not a required column of this read (see
+                        /// `ReadFromTableStep::readsOnlyInjectedColumn`).
+                        reading_from_table->setReadsOnlyInjectedColumn(table_expression_data.readsOnlyInjectedColumn());
+                        /// The plan cache records the dependency's required columns from this set, not
+                        /// from the step's output header: access was checked for the selected columns
+                        /// (`ALIAS` columns included) and for the columns resolved away before planning
+                        /// (`PREWHERE`-only `ALIAS` columns, `indexHint` arguments - see
+                        /// `checkAccessRightsForColumnsResolvedAway`), while the header lists the physical
+                        /// read columns (see `ReadFromTableStep::getAccessCheckedColumns`). For a zero-column
+                        /// read the only selected column is the injected helper one, which is not part of the
+                        /// access contract, so only the resolved-away columns are recorded.
+                        Names access_checked_columns;
+                        if (!table_expression_data.readsOnlyInjectedColumn())
+                            access_checked_columns = table_expression_data.getSelectedColumnsNames();
+                        NameSet access_checked_columns_set(access_checked_columns.begin(), access_checked_columns.end());
+                        for (const auto & column_name : table_expression_data.getAccessCheckedColumnsNames())
+                            if (access_checked_columns_set.insert(column_name).second)
+                                access_checked_columns.push_back(column_name);
+                        reading_from_table->setAccessCheckedColumns(std::move(access_checked_columns));
 
                         query_plan.addStep(std::move(reading_from_table));
                     }
@@ -3019,6 +3138,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_plan = std::move(query_plan_no_parallel_replicas);
                         }
                     }
+                }
+
+                if (row_policy_filter_before_aliases && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
+                {
+                    auto & [filter_info, description] = *row_policy_filter_before_aliases;
+                    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
+                        std::move(filter_info.actions),
+                        filter_info.column_name,
+                        filter_info.do_remove_column);
+                    description->setStepDescription(*filter_step);
+                    query_plan.addStep(std::move(filter_step));
                 }
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
@@ -3485,7 +3615,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             "Cannot join table {} with the Join engine because a row policy is applied on it",
             prepared_join.storage_join->getStorageID().getNameForLogs());
 
-    bool allow_storage_join = !right_table_has_row_policy
+    /// Key-value lookup joins (`JoinStepLogicalLookup`) bind a live storage into the plan, so a
+    /// cacheable logical plan must not use them: a regular join over a `ReadFromTable` leaf is
+    /// produced instead and the physical join algorithm is chosen at materialization.
+    bool allow_storage_join = !planner_context->isBuildingCacheableLogicalPlan()
+        && !right_table_has_row_policy
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (!allow_storage_join)
@@ -3497,7 +3631,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         right_join_tree_query_plan.query_plan = {};
         right_join_tree_query_plan.query_plan.addStep(std::move(join_lookup_step));
     }
-    else
+    else if (!planner_context->isBuildingCacheableLogicalPlan())
     {
         tryMakeDirectJoinWithMergeTree(join_step_logical->getJoinOperator(), right_join_tree_query_plan.query_plan, prepared_join, planner_context);
     }
