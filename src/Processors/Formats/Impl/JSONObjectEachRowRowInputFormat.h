@@ -27,7 +27,7 @@ public:
 
 private:
     void readPrefix() override;
-    void readSuffix() override {}
+    void readSuffix() override;
     void readRowStart(MutableColumns & columns) override;
     void skipRowStart() override;
     bool checkEndOfData(bool is_first_row) override;

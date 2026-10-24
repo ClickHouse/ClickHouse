@@ -96,6 +96,8 @@ protected:
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
 
+    /// Cleared once the end of the data (`;`, `]`, or the closing `}` of `JSONObjectEachRow`) has been consumed,
+    /// so that the next block does not try to read the bytes after it as rows.
     bool allow_new_rows = true;
 };
 
