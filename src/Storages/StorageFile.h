@@ -59,6 +59,8 @@ bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_
 /// page cache is disabled and `mmap` is replaced by `pread`, as the legacy local-file path does.
 ReadSettings getUserFilesDiskReadSettings(ReadSettings settings);
 
+struct ParquetCachedStatisticsFilter;
+
 class StorageFile final : public IStorage
 {
 public:
@@ -395,7 +397,8 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -427,6 +430,9 @@ private:
     /// key was made for; `still_holds` is false if the file has changed since it was opened.
     void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
 
+    /// Whether the cached Parquet statistics of the current file version show that no row group can match the filter.
+    bool canSkipFileByCachedStatistics();
+
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
 
@@ -447,6 +453,8 @@ private:
     /// settle check in `generate`). The query condition cache skips data based on the
     /// token, so it must fail close and stay bypassed while this is false.
     bool current_file_version_settled = false;
+    bool cached_statistics_filter_prepared = false;
+    std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
@@ -456,6 +464,8 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     /// A file read by a TopN read, whose query condition cache entry is written only when the source
