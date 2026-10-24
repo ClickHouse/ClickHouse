@@ -34,8 +34,13 @@
 #include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageSet.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1097,6 +1102,56 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         refresher->rename(new_table_id, getTargetTableId());
 }
 
+using StorageIDSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
+static bool keepsDataOnlyInMemory(StoragePtr table, bool follow_dependent_views, const ContextPtr & context, StorageIDSet & visited)
+{
+    /// `Alias` and a materialized view keep their rows in the table they point to.
+    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+    {
+        /// A `Buffer` holds inserted rows in memory until it flushes them, even with a destination.
+        if (castStorage<StorageMemory>(table, DeferredTable::Load) || castStorage<StorageBuffer>(table, DeferredTable::Load))
+            return true;
+        /// A `TimeSeries` table writes into target tables that need not be loaded yet when this view starts up.
+        if (castStorage<StorageTimeSeries>(table, DeferredTable::Load))
+            return true;
+        /// An insert also writes its rows to the targets of the materialized views over the table.
+        if (follow_dependent_views && visited.insert(table->getStorageID()).second)
+        {
+            for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(table->getStorageID()))
+            {
+                auto view = castStorage<StorageMaterializedView>(DatabaseCatalog::instance().tryGetTable(view_id, context), DeferredTable::Load);
+                if (view && keepsDataOnlyInMemory(view->tryGetTargetTable(), true, context, visited))
+                    return true;
+            }
+        }
+        /// For `Set` and `Join` this is `persistent = 0`.
+        if (auto set_or_join = castStorage<StorageSetOrJoinBase>(table, DeferredTable::Load))
+            return !set_or_join->hasUnreplicatedTableDataOnDisk();
+        /// A `Distributed` table inserts into a local shard's table directly and resolves that table only then.
+        if (auto distributed = castStorage<StorageDistributed>(table, DeferredTable::Load))
+        {
+            try
+            {
+                return distributed->getCluster()->getLocalShardCount() > 0;
+            }
+            catch (...)
+            {
+                /// Ok: a cluster that cannot be resolved counts as having a local shard.
+                return true;
+            }
+        }
+        if (auto view = castStorage<StorageMaterializedView>(table, DeferredTable::Load))
+        {
+            table = view->tryGetTargetTable();
+            continue;
+        }
+        auto underlying = table->getUnderlyingStorages();
+        table = underlying.size() == 1 ? underlying.front() : nullptr;
+    }
+    return false;
+}
+
 void StorageMaterializedView::startup()
 {
     if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
@@ -1108,7 +1163,13 @@ void StorageMaterializedView::startup()
     }
 
     if (refresher)
-        refresher->startup();
+    {
+        /// Only an uncoordinated view persists its schedule itself. A non-APPEND refresh fills a new table
+        /// and exchanges it, so the views over the target never see its rows.
+        auto target = refresher->isCoordinated() ? nullptr : tryGetTargetTable();
+        StorageIDSet visited;
+        refresher->startup(target && keepsDataOnlyInMemory(target, refresher->isAppend(), getContext(), visited));
+    }
 }
 
 void StorageMaterializedView::flushAndPrepareForShutdown()
