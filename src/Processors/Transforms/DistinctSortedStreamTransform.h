@@ -45,14 +45,15 @@ protected:
 
 private:
     void initChunkProcessing(const Columns & input_columns);
-    std::pair<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumnFilter & filter);
-    template<bool clear_data>
-    size_t ordinaryDistinctOnRange(IColumnFilter & filter, size_t range_begin, size_t range_end);
     inline void saveLatestKey(size_t row_pos);
     inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
 
     template <typename Method>
-    size_t buildFilterForRange(Method & method, IColumnFilter & filter, size_t range_begin, size_t range_end);
+    size_t buildFilter(Method & method, IColumnFilter & filter, size_t continued_rows, size_t chunk_rows);
+
+    /// Inlined so that `state` stays in registers in the row loop.
+    template <typename Method, typename State>
+    ALWAYS_INLINE size_t buildFilterForRange(Method & method, State & state, IColumnFilter & filter, size_t range_begin, size_t range_end);
 
 
     ClearableSetVariants data;
