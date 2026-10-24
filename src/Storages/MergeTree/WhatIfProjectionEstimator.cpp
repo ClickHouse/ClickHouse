@@ -215,7 +215,7 @@ bool buildProjectionPart(
     /// a projection part keeps only the rows that exist, `calculate` drops the deleted ones by this column
     Names columns_to_read = projection.required_columns;
     const bool has_delete_mask = part->hasLightweightDelete();
-    if (has_delete_mask)
+    if (has_delete_mask && std::ranges::find(columns_to_read, RowExistsColumn::name) == columns_to_read.end())
         columns_to_read.push_back(RowExistsColumn::name);
 
     Pipe pipe = makePartPipe(part, ranges, columns_to_read, read_step, context);

@@ -1,0 +1,32 @@
+compact storage	Compact	Full
+compact base rows	90
+compact projection rows	90
+compact deleted leaked via projection	0
+compact projection read	[2,9,16,23,30,37,51,58,65,72,79,86,93,3,10,17,24,31,38,45]
+compact base read	[2,9,16,23,30,37,51,58,65,72,79,86,93,3,10,17,24,31,38,45]
+compact second delete base rows	83
+compact second delete projection rows	83
+compact second delete deleted leaked via projection	0
+compact second delete projection read	[2,9,16,23,30,37,51,58,72,79,86,93,3,10,17,24,31,38,45,59]
+compact second delete base read	[2,9,16,23,30,37,51,58,72,79,86,93,3,10,17,24,31,38,45,59]
+wide storage	Wide	Full
+wide base rows	90
+wide projection rows	90
+wide deleted leaked via projection	0
+wide projection read	[2,9,16,23,30,37,51,58,65,72,79,86,93,3,10,17,24,31,38,45]
+wide base read	[2,9,16,23,30,37,51,58,65,72,79,86,93,3,10,17,24,31,38,45]
+wide apply_deleted_mask = 0	56	5
+wide second delete base rows	83
+wide second delete projection rows	83
+wide second delete deleted leaked via projection	0
+wide second delete projection read	[2,9,16,23,30,37,51,58,72,79,86,93,3,10,17,24,31,38,45,59]
+wide second delete base read	[2,9,16,23,30,37,51,58,72,79,86,93,3,10,17,24,31,38,45,59]
+aggregate apply_deleted_mask = 0	0	4
+aggregate apply_deleted_mask = 0	1	4
+aggregate apply_deleted_mask = 0	2	4
+aggregate projection	0	2
+aggregate projection	1	2
+aggregate projection	2	2
+index projection rows	90	0
+index parent-offset matches	90	90
+count projection	7

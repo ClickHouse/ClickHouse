@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -931,39 +932,10 @@ Block ProjectionDescription::calculateByQuery(
     /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
     mut_context->setQueryKindInitial();
 
-    ASTPtr query_ast_copy = nullptr;
-
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
         source_block.insert(block.getByName(column));
-
-    /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
-    {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
-
-        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
-
-        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
-        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
-        /// Otherwise the projection's own filter would be lost during mutations.
-        auto existing_where = select_row_exists->where();
-        if (existing_where)
-        {
-            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
-        }
-        else
-        {
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
-        }
-
-        source_block.insert(block.getByName(RowExistsColumn::name));
-    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
@@ -990,6 +962,18 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
+    /// Drop lightweight-deleted rows, after `_part_offset` is generated so the survivors keep their parent offsets
+    if (block.has(RowExistsColumn::name))
+    {
+        FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+        const size_t existing_rows = row_exists_filter.countBytesInFilter();
+        if (existing_rows == 0)
+            return sample_block.cloneEmpty();
+        if (existing_rows != block.rows())
+            for (auto & column : source_block)
+                column.column = row_exists_filter.filter(*column.column, static_cast<ssize_t>(existing_rows));
+    }
+
     const auto processing_stage = type == ProjectionDescription::Type::Normal && !where_clause_ast
         ? QueryProcessingStage::FetchColumns
         : QueryProcessingStage::WithMergeableState;
@@ -1000,15 +984,9 @@ Block ProjectionDescription::calculateByQuery(
       * the expressions which are constant by the types of their arguments (`isNull` of a column which
       * is not `Nullable`), so it would not read the columns they use, while the projection metadata,
       * built by the required columns of the query, still describes them.
-      * The rows deleted by a lightweight delete are filtered out by `_row_exists` here, because the
-      * `_row_exists = 1` condition added to the query above is not applied at `FetchColumns`.
       */
     if (processing_stage == QueryProcessingStage::FetchColumns)
     {
-        ColumnPtr row_exists_column;
-        if (source_block.has(RowExistsColumn::name))
-            row_exists_column = source_block.getByName(RowExistsColumn::name).column->convertToFullIfWrapped();
-
         Block projection_block;
         for (const auto & column : sample_block)
         {
@@ -1016,8 +994,6 @@ Block ProjectionDescription::calculateByQuery(
                 = with_parent_part_offset && column.name == "_parent_part_offset" ? String("_part_offset") : column.name;
             auto source_column = source_block.getColumnOrSubcolumnByName(source_column_name);
             source_column.name = column.name;
-            if (row_exists_column)
-                source_column.column = source_column.column->filter(assert_cast<const ColumnUInt8 &>(*row_exists_column).getData(), -1);
             projection_block.insert(std::move(source_column));
         }
         return projection_block;
@@ -1025,15 +1001,15 @@ Block ProjectionDescription::calculateByQuery(
 
     /// A projection query has no `FROM` clause, the source block is provided by a fake storage.
     /// Note that the columns of the source block are not necessarily the physical columns of the
-    /// table: `_row_exists` and `_part_offset` are added above, so they are exposed as ordinary
-    /// columns instead of virtual ones.
+    /// table: `_part_offset` is added above, so it is exposed as an ordinary column instead of a
+    /// virtual one.
     ColumnsDescription source_columns(source_block.getNamesAndTypesList());
     auto source = createProjectionQuerySource(source_columns, /*virtuals=*/{}, std::move(source_block));
 
     auto select_query_options = SelectQueryOptions{processing_stage}.ignoreASTOptimizations().ignoreSettingConstraints();
 
     ProjectionUnresolvedNodeNames unresolved_node_names;
-    auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context, &unresolved_node_names);
+    auto query_tree = buildProjectionQueryTree(query_ast, source, mut_context, &unresolved_node_names);
     auto removed_projection_nodes = removeDuplicateProjectionColumns(query_tree);
 
     InterpreterSelectQueryAnalyzer interpreter(query_tree, mut_context, select_query_options);
