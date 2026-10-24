@@ -13,3 +13,7 @@
 --- s3 with parallel replicas into Distributed ---
 1	2000-01-01	7	unknown	10
 2	2001-02-03	5	x	6
+--- s3Cluster, explicit structure ---
+1	1.50
+--- s3Cluster, explicit structure as key-value argument ---
+1	1.50
