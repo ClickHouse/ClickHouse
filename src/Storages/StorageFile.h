@@ -36,6 +36,21 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 
 struct ParquetCachedStatisticsFilter;
 
+/// Confine special File(stdin) schema inference to clickhouse-local's combined
+/// --queries-file / --query mode, without affecting ordinary File tables.
+class ScopedLocalFileDescriptorInference
+{
+public:
+    ScopedLocalFileDescriptorInference(bool enabled, bool preserve_inherited_offset);
+    ~ScopedLocalFileDescriptorInference();
+    ScopedLocalFileDescriptorInference(const ScopedLocalFileDescriptorInference &) = delete;
+    ScopedLocalFileDescriptorInference & operator=(const ScopedLocalFileDescriptorInference &) = delete;
+
+private:
+    bool previous_enabled;
+    bool previous_preserve_offset;
+};
+
 class StorageFile final : public IStorage
 {
 public:
@@ -92,6 +107,10 @@ public:
     /// The concrete data format resolved for this table (after schema/format inference).
     /// Used by the unified `URL` engine to persist the delegate's inferred format.
     const String & getFormatName() const { return format_name; }
+
+    /// Drop the schema-inference read buffer before the first clickhouse-local query
+    /// after a query-file prelude, which may have rewritten the backing stdin file.
+    void discardInferredFileDescriptorReadBuffer();
 
     void read(
         QueryPlan & query_plan,
@@ -246,6 +265,9 @@ private:
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
+    bool inferred_fd_reader_is_positional = false;
+    bool inferred_fd_reader_uses_mmap = false;
+    std::optional<off_t> inferred_fd_start_offset;
 
     // Counts the number of readers
     std::atomic<int32_t> readers_counter = 0;

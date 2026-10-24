@@ -117,6 +117,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <csignal>
+#include <sys/stat.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -4749,8 +4750,8 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("proto_caps", po::value<std::string>(), "Enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines. In clickhouse-local, --queries-file inputs run first regardless of command-line order.)")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...). In clickhouse-local, all query files run before --query regardless of argument order; clickhouse-client rejects combining these options.")
         ("multiquery,n", "Obsolete, does nothing")
         ("multiline,m", "If specified, allow multi-line queries (Enter does not send the query)")
         ("database,d", po::value<std::string>(), "Database")
@@ -5444,6 +5445,18 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
+    /// Also detect nested \\i /dev/stdin. Otherwise local's inferred input table
+    /// would interpret SQL redirected from a regular file as data for --query.
+    if (supportsLocalMetaCommands() && !queries.empty())
+    {
+        struct stat stdin_stat{};
+        struct stat file_stat{};
+        if (::fstat(stdin_fd, &stdin_stat) == 0 && S_ISREG(stdin_stat.st_mode)
+            && ::stat(file_name.c_str(), &file_stat) == 0
+            && stdin_stat.st_dev == file_stat.st_dev && stdin_stat.st_ino == file_stat.st_ino)
+            query_file_reads_stdin = true;
+    }
+
     /// For `clickhouse-local` only: same entry point as `-q` / stdin so meta-commands (`clear`, `ls`,
     /// `\i`, …) work for whole-file input. Remote `clickhouse-client` keeps `executeMultiQuery` so
     /// `--queries-file` does not apply `exit_strings` and other text-level metas (avoids silent
@@ -5475,7 +5488,12 @@ void ClientBase::runNonInteractive()
                 return;
         }
 
-        return;
+        if (queries.empty())
+            return;
+
+        /// clickhouse-local runs all query files before --query regardless of argument order.
+        /// clickhouse-client still rejects this combination in Client::processConfig().
+        beforeExecutingCommandLineQueries();
     }
 
     if (buzz_house)

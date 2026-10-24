@@ -162,6 +162,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
@@ -180,6 +181,28 @@ namespace FailPoints
 }
 
 using String = std::string;
+
+namespace
+{
+/// Restrict special stdin inference bookkeeping to the synthetic local table.
+/// Normal File tables and standalone --query must keep their reader behavior.
+thread_local bool local_file_descriptor_inference = false;
+thread_local bool preserve_inherited_file_descriptor_offset = false;
+}
+
+ScopedLocalFileDescriptorInference::ScopedLocalFileDescriptorInference(bool enabled, bool preserve_inherited_offset)
+    : previous_enabled(local_file_descriptor_inference)
+    , previous_preserve_offset(preserve_inherited_file_descriptor_offset)
+{
+    local_file_descriptor_inference = enabled;
+    preserve_inherited_file_descriptor_offset = enabled && preserve_inherited_offset;
+}
+
+ScopedLocalFileDescriptorInference::~ScopedLocalFileDescriptorInference()
+{
+    local_file_descriptor_inference = previous_enabled;
+    preserve_inherited_file_descriptor_offset = previous_preserve_offset;
+}
 
 namespace
 {
@@ -565,7 +588,8 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     bool use_table_fd,
     int table_fd,
     const struct stat & file_stat,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<off_t> descriptor_start_offset)
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
@@ -614,7 +638,14 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+        {
+            auto reader = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
+            /// A positional reader must use the schema inference boundary, not a
+            /// mutable descriptor offset advanced by an earlier query-file statement.
+            if (descriptor_start_offset)
+                reader->seek(*descriptor_start_offset, SEEK_SET);
+            res = std::move(reader);
+        }
         else
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, read_buffer_size);
 
@@ -741,7 +772,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     bool use_table_fd,
     int table_fd,
     const String & compression_method,
-    ContextPtr context)
+    ContextPtr context,
+    std::optional<off_t> descriptor_start_offset = std::nullopt)
 {
     CompressionMethod method = {};
     if (use_table_fd)
@@ -749,7 +781,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     else
         method = chooseCompressionMethod(current_path, compression_method);
 
-    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
+    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context, descriptor_start_offset);
 
     const auto & file_settings = context->getSettingsRef();
     int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
@@ -1271,6 +1303,18 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     return res;
 }
 
+void StorageFile::discardInferredFileDescriptorReadBuffer()
+{
+    if (!inferred_fd_reader_is_positional)
+        return;
+
+    /// Query files may rewrite stdin after schema inference. Drop the cached
+    /// positional reader so the first -q query sees the updated bytes too.
+    has_peekable_read_buffer_from_fd = false;
+    peekable_read_buffer_from_fd.reset();
+    read_buffer_from_fd.reset();
+}
+
 std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context)
 {
     /// If we want to read schema from file descriptor we should create
@@ -1281,9 +1325,24 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     /// start reading data from the beginning after reading some data for
     /// schema inference.
     auto file_stat = getFileStat("", true, table_fd, getName());
+    const auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
+    /// Only mixed-mode inferred stdin tables track how their reader was opened.
+    /// When inference temporarily uses pread, save the inherited offset so
+    /// subsequent positional reads start from the same boundary.
+    inferred_fd_reader_is_positional = local_file_descriptor_inference
+        && S_ISREG(file_stat.st_mode)
+        && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);
+    inferred_fd_reader_uses_mmap = inferred_fd_reader_is_positional && read_method == LocalFSReadMethod::mmap;
+    if (inferred_fd_reader_is_positional && preserve_inherited_file_descriptor_offset)
+    {
+        const off_t offset = ::lseek(table_fd, 0, SEEK_CUR);
+        if (offset < 0)
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot get current position of file descriptor {}", table_fd);
+        inferred_fd_start_offset = offset;
+    }
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
-    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, inferred_fd_start_offset);
     auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
@@ -2101,7 +2160,15 @@ Chunk StorageFileSource::generate()
                 }
                 else
                 {
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                    /// Later positional reads must start at the same inherited stdin offset as schema inference.
+                    read_buf = createReadBuffer(
+                        current_path,
+                        file_stat,
+                        storage->use_table_fd,
+                        storage->table_fd,
+                        storage->compression_method,
+                        getContext(),
+                        storage->inferred_fd_start_offset);
 
                     /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
                     /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
@@ -2979,7 +3046,22 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         /// to prevent data race in case of parallel reads.
         std::unique_ptr<ReadBuffer> read_buffer;
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
-            read_buffer = std::move(storage->peekable_read_buffer_from_fd);
+        {
+            /// A positional inference buffer must not replace a consuming descriptor
+            /// reader (read, io_uring, or pread_threadpool) or a different positional
+            /// read method selected by the query files.
+            const auto read_method = ctx->getSettingsRef()[Setting::storage_file_read_method];
+            const bool consumes_fd = read_method != LocalFSReadMethod::pread && read_method != LocalFSReadMethod::mmap;
+            const bool switched_positional_method =
+                storage->inferred_fd_reader_uses_mmap != (read_method == LocalFSReadMethod::mmap);
+            if (storage->inferred_fd_reader_is_positional && (consumes_fd || switched_positional_method))
+            {
+                storage->peekable_read_buffer_from_fd.reset();
+                storage->read_buffer_from_fd.reset();
+            }
+            else
+                read_buffer = std::move(storage->peekable_read_buffer_from_fd);
+        }
 
         auto source = std::make_shared<StorageFileSource>(
             info,

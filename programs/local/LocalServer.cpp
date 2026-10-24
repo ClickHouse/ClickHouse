@@ -2,6 +2,7 @@
 
 #include <Server/StartupWarnings.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <exception>
 #include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
@@ -64,6 +65,7 @@
 #include <Loggers/OwnSplitChannel.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -79,6 +81,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Storages/StorageFile.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
@@ -134,11 +137,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsString database;
     extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool implicit_select;
+    extern const SettingsString implicit_table_at_top_level;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
@@ -281,9 +286,11 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
@@ -1140,17 +1147,87 @@ void LocalServer::cleanup()
 }
 
 
+namespace
+{
+/// Query files may contain a single \i directive, and that file may include stdin.
+/// Detect it before schema inference so SQL from stdin is not used as data.
+bool queryFileReadsStdin(const String & path, const struct stat & stdin_stat, size_t depth = 0)
+{
+    if (depth >= 32)
+        return false;
+
+    struct stat file_stat{};
+    if (::stat(path.c_str(), &file_stat) != 0)
+        return false;
+
+    if (file_stat.st_dev == stdin_stat.st_dev && file_stat.st_ino == stdin_stat.st_ino)
+        return true;
+
+    /// A meta-command contains one file name, not a large SQL script.
+    /// Never read a FIFO during this preflight check.
+    if (!S_ISREG(file_stat.st_mode) || file_stat.st_size < 0 || file_stat.st_size > 4096)
+        return false;
+
+    String contents;
+    try
+    {
+        ReadBufferFromFile in(path);
+        readStringUntilEOF(contents, in);
+    }
+    catch (...)
+    {
+        /// Ok to skip failed preflight reads: normal query-file execution reports the error.
+        return false;
+    }
+
+    /// Match ClientBase::processQueryText's whole-text \i dispatch.
+    const auto first = contents.find_first_not_of(" \t\r\n\v\f;");
+    const auto last = contents.find_last_not_of(" \t\r\n\v\f;");
+    if (first == String::npos || contents.compare(first, 2, "\\i") != 0)
+        return false;
+
+    const auto file_begin = contents.find_first_not_of(" \t\r\n\v\f", first + 2);
+    if (file_begin == String::npos || file_begin > last)
+        return false;
+
+    return queryFileReadsStdin(contents.substr(file_begin, last - file_begin + 1), stdin_stat, depth + 1);
+}
+}
+
+bool LocalServer::hasExplicitTableInput()
+{
+    const auto & client_config = getClientConfiguration();
+    return client_config.has("table-structure")
+        || client_config.has("table-file")
+        || client_config.has("table-data-format");
+}
+
+
 std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 {
     /// The input data can be specified explicitly with any of the `file`, `structure`, `input-format` command line arguments,
     /// or it can be implicitly specified in stdin - then the structure and format is autodetected.
-    /// But if queries were not specified in the command line, they might me in stdin, and this means that stdin is not input data.
+    /// Without command-line queries, stdin might contain SQL rather than table data.
 
-    if (!getClientConfiguration().has("table-structure")
-        && !getClientConfiguration().has("table-file")
-        && !getClientConfiguration().has("table-data-format")
-        && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd))) /// In we know that there is data in stdin, we can auto-detect the format.
+    if (!hasExplicitTableInput() && (queries.empty() || !isFileDescriptorSuitableForInput(stdin_fd)))
         return {};
+
+    /// A query file may be stdin itself (e.g. /dev/stdin or a path redirected to fd 0).
+    /// Do not infer a data table from the SQL that the query file will execute.
+    if (!hasExplicitTableInput() && !queries_files.empty())
+    {
+        struct stat stdin_stat{};
+        if (::fstat(stdin_fd, &stdin_stat) == 0)
+        {
+            for (const auto & query_file : queries_files)
+                if (queryFileReadsStdin(query_file, stdin_stat))
+                    return {};
+
+            for (const auto & query_file : interleave_queries_files)
+                if (queryFileReadsStdin(query_file, stdin_stat))
+                    return {};
+        }
+    }
 
     auto table_name = getClientConfiguration().getString("table-name", "table");
     auto table_structure = getClientConfiguration().getString("table-structure", "auto");
@@ -1328,6 +1405,210 @@ void LocalServer::connect()
 }
 
 
+void LocalServer::executeInitialTableQuery(const String & initial_query, bool preserve_stdin_for_query_files)
+{
+    /// The generated CREATE should not appear in query timing output.
+    const bool print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
+    getClientConfiguration().setBool("print-time-to-stderr", false);
+    SCOPE_EXIT({ getClientConfiguration().setBool("print-time-to-stderr", print_time_to_stderr); });
+
+    const auto read_method = client_context->getSettingsRef()[Setting::storage_file_read_method];
+    const bool needs_positional_override = read_method != LocalFSReadMethod::pread && read_method != LocalFSReadMethod::mmap;
+    /// Only the synthetic File(stdin) table for mixed queries changes its inference reader.
+    /// Standalone -q and other File tables retain their existing behavior.
+    ScopedLocalFileDescriptorInference inference_scope(preserve_stdin_for_query_files, needs_positional_override);
+    if (preserve_stdin_for_query_files && needs_positional_override)
+    {
+        /// Only consuming descriptor readers require a temporary positional reader.
+        /// pread and mmap already leave stdin available to the query files.
+        const Settings original_settings = client_context->getSettingsCopy();
+        SCOPE_EXIT({ client_context->setSettings(original_settings); });
+        client_context->setSetting("storage_file_read_method", String{"pread"});
+        processQueryText(initial_query);
+    }
+    else
+        processQueryText(initial_query);
+}
+
+/// Mixed --queries-file/--query mode has three phases for inferred stdin:
+/// initialize before query-file settings can change schema detection, hide
+/// the table while query files run, then expose its name to command-line
+/// queries only when it cannot shadow a user table.
+void LocalServer::connectAndInitializeInputTable()
+{
+    auto [table_name, initial_query] = getInitialCreateTableQuery();
+
+    /// Implicit stdin selection is only for --query, not preceding query files.
+    /// Explicit input-table options keep their existing behavior in both phases.
+    const bool defer_implicit_stdin_table_activation = !table_name.empty()
+        && !queries.empty() && !queries_files.empty() && !hasExplicitTableInput();
+
+    if (defer_implicit_stdin_table_activation)
+        implicit_stdin_table_to_activate = table_name;
+    else if (!table_name.empty())
+        client_context->setSetting("implicit_table_at_top_level", table_name);
+
+    connect();
+
+    /// Initialize before query-file settings (such as readonly or dialect) take effect.
+    if (!table_name.empty())
+    {
+        try
+        {
+            executeInitialTableQuery(initial_query, defer_implicit_stdin_table_activation);
+        }
+        catch (const Exception & e)
+        {
+            if (!defer_implicit_stdin_table_activation || e.code() != ErrorCodes::CANNOT_DETECT_FORMAT)
+                throw;
+
+            /// An SQL file may read stdin with an explicit format that cannot be
+            /// autodetected. Let the file run, but remember the absent inferred
+            /// table so implicit command-line reads cannot silently use system.one.
+            return;
+        }
+
+        if (defer_implicit_stdin_table_activation)
+        {
+            /// Keep schema inference ready without exposing its table to query files.
+            auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
+            auto inferred_table = session_context->removeExternalTable(table_name);
+            if (!inferred_table)
+            {
+                /// The synthetic CREATE can fail without throwing under --ignore-error.
+                /// Query files may still read stdin with an explicitly specified format.
+                if (ignore_error)
+                    return;
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to defer the inferred stdin table {}", backQuote(table_name));
+            }
+
+            /// Keep the holder in the session so early errors clean it up before
+            /// the temporary database is destroyed.
+            String private_name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
+            std::replace(private_name.begin(), private_name.end(), '-', '_');
+            session_context->addExternalTable(private_name, std::move(inferred_table));
+            private_stdin_table_name = std::move(private_name);
+        }
+    }
+}
+
+void LocalServer::beforeExecutingCommandLineQueries()
+{
+    /// A nested query file may read SQL from stdin after inferred data was hidden.
+    /// Never make that SQL source available as the command-line input table.
+    if (!implicit_stdin_table_to_activate || query_file_reads_stdin)
+        return;
+
+    auto & local_connection = static_cast<LocalConnection &>(*connection);
+    auto session_context = local_connection.getSessionContext();
+    if (!private_stdin_table_name)
+    {
+        /// Autodetection failed before the query files. Explicit FROM queries
+        /// may still work; FROM-less queries must not silently read system.one.
+        /// Preserve an intentional implicit-table override from the SQL files.
+        if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
+            && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
+            client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
+        return;
+    }
+
+    const String & private_name = *private_stdin_table_name;
+    auto inferred_table = session_context->findExternalTable(private_name);
+    if (!inferred_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(private_name));
+
+    /// Query files can truncate or rewrite stdin after schema inference.
+    /// The first command-line query must read the current bytes, not the
+    /// positional buffer that was populated before the query files ran.
+    if (auto * file_storage = inferred_table->getTable()->as<StorageFile>())
+        file_storage->discardInferredFileDescriptorReadBuffer();
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table is not a File storage");
+
+    const String public_name = *implicit_stdin_table_to_activate;
+    /// Only expose the public alias when it cannot shadow a table in the query's
+    /// effective database. Check per query because SET/USE and query-level
+    /// SETTINGS database can change that database within the same -q argument.
+    /// Query contexts copy the session's external-table map when sendQuery starts.
+    /// Update both copies so a database collision cannot leave a stale alias in the current query.
+    /// Remember why the public alias disappeared: collision-driven hiding can
+    /// be undone when the database changes, but a user DROP/replacement cannot.
+    /// Keep only one name registered for the inferred table to avoid counting
+    /// it twice against max_temporary_tables.
+    local_connection.setBeforeQueryCallback(
+        [session_context, inferred_table, public_name, private_name, alias_was_exposed = false, alias_overridden_by_user = false, inferred_alias_retired = false]
+        (ContextMutablePtr query_context) mutable
+    {
+        auto database_name = query_context->getSettingsRef()[Setting::database].value;
+        if (database_name.empty())
+            database_name = query_context->getCurrentDatabase();
+
+        const auto public_alias = session_context->findExternalTable(public_name);
+        /// After exposure, a missing or replaced alias belongs to user DDL.
+        /// Collision handling below resets alias_was_exposed, allowing a
+        /// later statement in another database to restore our public name.
+        if (alias_was_exposed && public_alias != inferred_table)
+            inferred_alias_retired = true;
+        if ((alias_was_exposed && !public_alias) || (public_alias && public_alias != inferred_table))
+            alias_overridden_by_user = true;
+
+        if (alias_overridden_by_user)
+        {
+            /// Follow a subsequent public DROP / CREATE, as in standalone -q.
+            /// Explicit implicit-table settings from the user still win.
+            if (inferred_alias_retired
+                && query_context->getSettingsRef()[Setting::implicit_table_at_top_level].value == private_name)
+                query_context->setSetting("implicit_table_at_top_level", public_name);
+            return;
+        }
+
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        const bool database_collision = database && database->isTableExist(public_name, query_context);
+        if (database_collision)
+        {
+            if (public_alias == inferred_table)
+            {
+                /// Keep exactly one alias in the session. When a real table
+                /// shadows the public name, retain the private implicit source.
+                session_context->removeExternalTable(public_name);
+                query_context->removeExternalTable(public_name);
+                session_context->addExternalTable(private_name, inferred_table);
+                query_context->addExternalTable(private_name, inferred_table);
+            }
+            alias_was_exposed = false;
+        }
+        else if (!public_alias)
+        {
+            /// The public input name replaces, rather than duplicates, its
+            /// private holder. Both aliases refer to the same temporary table;
+            /// counting them separately incorrectly exhausts max_temporary_tables.
+            if (session_context->findExternalTable(private_name) == inferred_table)
+            {
+                session_context->removeExternalTable(private_name);
+                query_context->removeExternalTable(private_name);
+            }
+            session_context->addExternalTable(public_name, inferred_table);
+            query_context->addExternalTable(public_name, inferred_table);
+            alias_was_exposed = true;
+        }
+        else
+            alias_was_exposed = true;
+
+        /// FROM-less queries must resolve to the visible public name whenever
+        /// the inferred input is exposed. An explicit user setting still wins.
+        if (!database_collision
+            && query_context->getSettingsRef()[Setting::implicit_table_at_top_level].value == private_name)
+            query_context->setSetting("implicit_table_at_top_level", public_name);
+    });
+
+    /// The inferred table stays addressable by its private name for FROM-less
+    /// queries, even when an explicit user table owns the public name.
+    /// An explicit setting supplied by query files or a profile wins.
+    if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
+        && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
+        client_context->setSetting("implicit_table_at_top_level", private_name);
+}
+
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -1435,22 +1716,7 @@ try
         std::cerr << std::endl;
     }
 
-    auto [table_name, initial_query] = getInitialCreateTableQuery();
-    if (!table_name.empty())
-        client_context->setSetting("implicit_table_at_top_level", table_name);
-
-    connect();
-
-    if (!table_name.empty())
-    {
-        // Set option to false for hidden query to prevent double-printing time
-        bool orig_print_time_to_stderr = getClientConfiguration().getBool("print-time-to-stderr", false);
-        getClientConfiguration().setBool("print-time-to-stderr", false);
-
-        processQueryText(initial_query);
-
-        getClientConfiguration().setBool("print-time-to-stderr", orig_print_time_to_stderr);
-    }
+    connectAndInitializeInputTable();
 
 #if USE_FUZZING_MODE
     runLibFuzzer();
@@ -1499,9 +1765,6 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 void LocalServer::processConfig()
 {
     auto component_guard = Coordination::setCurrentComponent("LocalServer::processConfig");
-    if (!queries.empty() && !queries_files.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
-
     pager = getClientConfiguration().getString("pager", "");
 
     delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
@@ -2335,6 +2598,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
     {
         if (!queries.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--query' cannot be specified at the same time");
+        if (!queries_files.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--copy' and '--queries-file' cannot be specified at the same time");
         queries.emplace_back("SELECT * FROM table");
     }
 }

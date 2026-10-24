@@ -231,8 +231,8 @@ Arguments:
 - `-S`, `--structure` — table structure for input data.
 - `--input-format` — input format, `TSV` by default.
 - `-F`, `--file` — path to data, `stdin` by default.
-- `-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
+- `-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Can be combined with `--queries-file`; all query files execute first regardless of argument order.
+- `--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--queries-file queries1.sql --queries-file queries2.sql`. When used with `--query`, files execute first in the same session, so they can define SQL UDFs for subsequent queries. This combination is supported by `clickhouse-local` but not `clickhouse-client`.
 - `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
 - `-N`, `--table` — table name where to put output data, `table` by default.
 - `-f`, `--format`, `--output-format` — output format, `TSV` by default.
