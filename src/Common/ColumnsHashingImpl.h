@@ -8,6 +8,7 @@
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -87,9 +88,9 @@ namespace columns_hashing_impl
 
 struct LastElementCacheBase
 {
+    UInt64 misses = 0;
     bool empty = true;
     bool found = false;
-    UInt64 misses = 0;
 
     void onNewValue(bool is_found)
     {
@@ -106,7 +107,7 @@ template <typename Value, bool nullable> struct LastElementCache;
 template <typename Value>
 struct LastElementCache<Value, true> : public LastElementCacheBase
 {
-    Value value{};
+    alignas(std::max(alignof(Value), alignof(UInt64))) Value value{};
     bool is_null = false;
 
     template <typename Key>
@@ -118,7 +119,7 @@ struct LastElementCache<Value, true> : public LastElementCacheBase
 template <typename Value>
 struct LastElementCache<Value, false> : public LastElementCacheBase
 {
-    Value value{};
+    alignas(std::max(alignof(Value), alignof(UInt64))) Value value{};
 
     template <typename Key>
     bool check(const Key & key) const { return value.first == key; }
@@ -402,7 +403,8 @@ public:
     }
 
 protected:
-    Cache cache;
+    /// No per-row store into the cache crosses a 16-byte boundary, whatever the caller's stack depth.
+    alignas(consecutive_keys_optimization ? 16 : alignof(Cache)) Cache cache;
     /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
     /// Bypasses the virtual `IColumn` dispatch on the per-row hot path in `emplaceKey` / `findKey`.
     const UInt8 * null_map_data = nullptr;
