@@ -481,9 +481,13 @@ private:
     mutable std::unordered_map<String, UInt64> mutation_initial_bytes_dropped;
     mutable std::set<UInt64> mutation_initial_bytes_readers;
     mutable UInt64 mutation_initial_bytes_next_reader = 0;
+    /// Mutations Keeper showed with no older INSERT still committing; such an INSERT cannot appear later.
+    mutable std::unordered_set<String> mutations_without_older_inserts;
     /// Called by the queue when a mutation is done or leaves it: a done mutation reports progress 1
     /// whatever the denominator was, so the bookkeeping goes at the transition, not on the next read.
     void dropMutationInitialBytes(const String & mutation_id);
+    /// Unsets `progress` of mutations that still wait for an older INSERT to publish its part.
+    void resetProgressWhileOlderInsertsCommit(std::vector<MergeTreeMutationStatus> & statuses) const;
 
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;

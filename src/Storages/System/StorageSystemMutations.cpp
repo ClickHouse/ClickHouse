@@ -118,7 +118,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "discovered work, and a merge can also retire pending parts at any moment, which makes `progress` jump forward. "
             "`NULL` when the remaining work is not known yet. On either table kind that happens while a mutation that is not done waits for an uncommitted lower-numbered block whose "
             "part still lands in its scope - a long-running INSERT, or `ATTACH`/`REPLACE`/`MOVE PARTITION` on a non-replicated table - and `parts_to_do` can read 0 meanwhile. "
-            "A replicated table only sees such a block once no other part is left to do, so until then `progress` can show a number that later turns into `NULL`. "
+            "A replicated table looks such blocks up in Keeper, and `progress` is also `NULL` while Keeper cannot be read. "
             "On a replicated table it also happens while any part the mutation still has to rewrite has not been fetched or merged here: neither has a size on disk to weigh."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
