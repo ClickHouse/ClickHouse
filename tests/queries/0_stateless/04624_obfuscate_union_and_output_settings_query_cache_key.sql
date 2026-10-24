@@ -20,7 +20,6 @@
 -- Unique `query_cache_tag` values isolate the entries from other tests sharing the server-global query
 -- cache; the cleanup `SYSTEM DROP QUERY CACHE TAG` keeps the test repeatable across re-runs.
 
-SET allow_experimental_analyzer = 1;
 SET obfuscate_seed = 'stable';
 
 SYSTEM DROP QUERY CACHE TAG '04624_obfuscate_union';

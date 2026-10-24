@@ -2,7 +2,6 @@
 -- resolves to the alias with the same name under prefer_column_name_to_alias = 1,
 -- as the old analyzer did.
 
-SET enable_analyzer = 1;
 SET prefer_column_name_to_alias = 1;
 
 DROP TABLE IF EXISTS ranged_items;

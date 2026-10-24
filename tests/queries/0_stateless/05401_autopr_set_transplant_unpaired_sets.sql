@@ -1,3 +1,7 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- Every query reads the whole table in one thread with tiny read tasks, so the run time grows with the
+-- number of granules: small randomized granules push the test past the timeout.
+
 -- When automatic parallel replicas switches a query, the sets the single-node plan has already
 -- prepared are handed to the parallel-replicas plan, paired by hash. A set that has no counterpart
 -- used to fail the query with "Cannot find a matching set in the map of sets from single-replica plan";
@@ -16,7 +20,6 @@ INSERT INTO r_autopr_unpaired_sets SELECT toString(number * 2) FROM numbers(1000
 -- One part, so that the plan the decision is matched against does not depend on how the insert was split.
 OPTIMIZE TABLE t_autopr_unpaired_sets FINAL;
 
-SET enable_analyzer = 1;
 -- With one reading thread the cost model sees replicas as a win on a table of this size, which is what
 -- makes the optimization actually rewrite the query rather than decline.
 SET max_threads = 1;
