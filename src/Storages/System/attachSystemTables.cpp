@@ -137,6 +137,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
+#include <Storages/System/StorageSystemTemplateQueries.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemIcebergFiles.h>
@@ -3742,6 +3743,25 @@ Contains information about the settings of [S3Queue](/reference/engines/table-en
 Contains information about settings of [AzureQueue](/reference/engines/table-engines/integrations/azure-queue) tables.
 Available from `24.10` server version.
 )DOCS_MD");
+    attach<StorageSystemTemplateQueries>(context, system_database, "template_queries", R"DOCS_MD(
+.description
+Contains a catalog of template queries: built-in ones shipped with the server (read-only) and user-defined ones.
+
+User queries are added with `INSERT` and persisted in the file `template_queries.tsv` in the server data directory, so they survive restarts.
+Names are unique: inserting a name that already exists (including a built-in one) throws an exception.
+A user query is removed with `DELETE FROM system.template_queries WHERE name = '...'` (only equality on `name` is supported).
+Built-in queries cannot be deleted. `is_builtin` and `created_at` are ignored on `INSERT`.
+
+.examples
+```sql
+INSERT INTO system.template_queries (name, category, description, query)
+VALUES ('my_query', 'custom', 'Count rows in system.numbers', 'SELECT count() FROM numbers(10)');
+
+SELECT name, category, is_builtin FROM system.template_queries WHERE name = 'my_query';
+
+DELETE FROM system.template_queries WHERE name = 'my_query';
+```
+)DOCS_MD", context->getPath() + "template_queries.tsv");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", R"DOCS_MD(
 .description
 Contains queries used by `/dashboard` page accessible though [HTTP interface](/concepts/features/interfaces/http).

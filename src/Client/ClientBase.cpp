@@ -194,6 +194,7 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
@@ -4552,6 +4553,28 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
     }
 }
 
+#if USE_REPLXX
+std::vector<ReplxxLineReader::TemplateQuery> ClientBase::fetchTemplateQueries()
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block block = fetchDocumentation(
+        "SELECT name, query FROM system.template_queries ORDER BY category, name", "");
+
+    std::vector<ReplxxLineReader::TemplateQuery> result;
+    if (block.rows() == 0)
+        return result;
+
+    const auto & names = *block.getByName("name").column;
+    const auto & query_texts = *block.getByName("query").column;
+    result.reserve(block.rows());
+    for (size_t i = 0; i < block.rows(); ++i)
+        result.push_back({String(names.getDataAt(i)), String(query_texts.getDataAt(i))});
+    return result;
+}
+#endif
+
 bool ClientBase::processHelpCommand(const String & word_arg)
 {
     const String word = trim(word_arg, [](char c) { return isWhitespaceASCII(c); });
@@ -4765,6 +4788,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
         ("progress-table", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print a progress table with changing metrics during query execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
         ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
+        ("enable-template-queries-search", po::value<bool>()->default_value(false), "Enable searching the saved template queries (system.template_queries) by name with Ctrl-O in the interactive mode and inserting the chosen query into the prompt. Requires the fuzzy search support (skim).")
 
         ("disable_suggestion,A", "Disable loading suggestions. Note that suggestions are loaded asynchronously through a second connection to ClickHouse server. Recommended when pasting queries with TAB characters.") /// Shorthand -A like in MySQL client
         ("wait_for_suggestions_to_load", "Load suggestion data synchronously")
@@ -4934,6 +4958,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
     if (options.contains("enable-progress-table-toggle") && !options["enable-progress-table-toggle"].defaulted())
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
+    if (options.contains("enable-template-queries-search") && !options["enable-template-queries-search"].defaulted())
+        getClientConfiguration().setBool("enable-template-queries-search", options["enable-template-queries-search"].as<bool>());
     if (options.contains("echo"))
         getClientConfiguration().setBool("echo", options["echo"].as<bool>());
     if (options.contains("echo-formatted"))
@@ -5048,6 +5074,7 @@ void ClientBase::remapClientConfigurationAliases()
         {"echo_formatted", "echo-formatted"},
         {"echo_query_id", "echo-query-id"},
         {"enable_progress_table_toggle", "enable-progress-table-toggle"},
+        {"enable_template_queries_search", "enable-template-queries-search"},
     };
 
     for (const auto & [underscore_key, dashed_key] : boolean_aliases)
@@ -5248,6 +5275,9 @@ void ClientBase::runInteractive()
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText`, so offer them here.
         .enable_slash_commands = true,
+        .template_queries_loader = ConfigHelper::getBool(getClientConfiguration(), "enable-template-queries-search", false)
+            ? std::function<std::vector<ReplxxLineReader::TemplateQuery>()>([this] { return fetchTemplateQueries(); })
+            : std::function<std::vector<ReplxxLineReader::TemplateQuery>()>(),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

@@ -356,6 +356,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , enable_slash_commands(options.enable_slash_commands)
     , enable_suggestion_hints(options.enable_suggestion_hints)
     , editor(getEditor())
+    , template_queries_loader(std::move(options.template_queries_loader))
 {
     using Replxx = replxx::Replxx;
 
@@ -808,6 +809,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
 
+    /// Ctrl-O searches the template queries when enabled. It is not bound by default.
+    if (template_queries_loader && !options.embedded_mode)
+        rx.bind_key(Replxx::KEY::control('O'), [this](char32_t code) { return templateQuerySearch(code); });
+
     /// Change cursor style for overwrite mode to blinking (see console_codes(5))
     rx.bind_key(Replxx::KEY::INSERT, [this](char32_t)
     {
@@ -862,6 +867,81 @@ replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::
     else
         suppress_hints_once = false;
     return result;
+}
+
+replxx::Replxx::ACTION_RESULT ReplxxLineReader::templateQuerySearch(char32_t code)
+{
+    using Replxx = replxx::Replxx;
+
+    /// Messages are printed above the prompt, so repaint afterwards to avoid overlapping it.
+    auto fail = [&](const std::string & message)
+    {
+        rx.print("%s\n", message.c_str());
+        return rx.invoke(Replxx::ACTION::REPAINT, code);
+    };
+
+#if !USE_SKIM
+    return fail("Template queries search requires a build with skim support");
+#else
+    if (!template_queries_cache)
+    {
+        try
+        {
+            template_queries_cache = template_queries_loader();
+        }
+        catch (const std::exception & e)
+        {
+            return fail(fmt::format("Template queries are not available: {}", e.what()));
+        }
+    }
+
+    if (template_queries_cache->empty())
+        return fail("There are no template queries");
+
+    std::vector<std::string> names;
+    names.reserve(template_queries_cache->size());
+    for (const auto & template_query : *template_queries_cache)
+        names.push_back(template_query.name);
+
+    std::string selected_name;
+    try
+    {
+        selected_name = std::string(skim("", names));
+    }
+    catch (const std::exception & e)
+    {
+        return fail(fmt::format("skim failed: {}", e.what()));
+    }
+
+    /// REPAINT before to avoid prompt overlap by the picker
+    rx.invoke(Replxx::ACTION::REPAINT, code);
+
+    const TemplateQuery * selected = nullptr;
+    for (const auto & template_query : *template_queries_cache)
+    {
+        if (template_query.name == selected_name)
+        {
+            selected = &template_query;
+            break;
+        }
+    }
+
+    if (selected)
+    {
+        /// The inserted query is displayed at once - do not pop hints on it (see historyNavigate).
+        suppress_hints_once = true;
+        rx.set_state(Replxx::State(selected->query.c_str(), static_cast<int>(selected->query.size())));
+    }
+
+    if (bracketed_paste_enabled)
+        enableBracketedPaste();
+
+    rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
+    auto result = rx.invoke(Replxx::ACTION::REPAINT, code);
+    if (selected)
+        suppressHintsForDisplayedLine();
+    return result;
+#endif
 }
 
 replxx::Replxx::ACTION_RESULT ReplxxLineReader::historySearch(replxx::Replxx::ACTION action, char32_t code)
