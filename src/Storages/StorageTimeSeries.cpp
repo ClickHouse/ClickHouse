@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -394,6 +395,42 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
     }
     return target->is_inner_table;
+}
+
+
+std::shared_ptr<const StorageTimeSeries> StorageTimeSeries::tryGetOwnerOfInnerTagsTable(const StorageID & table_id, const ContextPtr & local_context)
+{
+    static constexpr std::string_view inner_id_prefix = ".inner_id.tags.";
+    static constexpr std::string_view inner_prefix = ".inner.tags.";
+
+    if (table_id.empty())
+        return nullptr;
+
+    const auto & table_name = table_id.table_name;
+    StoragePtr owner;
+
+    if (table_name.starts_with(inner_id_prefix))
+    {
+        UUID owner_uuid;
+        if (!tryParse(owner_uuid, std::string_view{table_name}.substr(inner_id_prefix.size())))
+            return nullptr;
+        owner = DatabaseCatalog::instance().tryGetByUUID(owner_uuid).second;
+    }
+    else if (table_name.starts_with(inner_prefix) && table_id.hasDatabase())
+    {
+        owner = DatabaseCatalog::instance().tryGetTable(
+            StorageID{table_id.getDatabaseName(), table_name.substr(inner_prefix.size())}, local_context);
+    }
+
+    auto time_series = std::dynamic_pointer_cast<const StorageTimeSeries>(owner);
+    if (!time_series || !time_series->isInnerTable(ViewTarget::Tags))
+        return nullptr;
+
+    auto tags_table_id = time_series->tryGetTargetTableID(ViewTarget::Tags, local_context);
+    if (tags_table_id.empty() || !(tags_table_id == table_id))
+        return nullptr;
+
+    return time_series;
 }
 
 
@@ -872,6 +909,7 @@ void StorageTimeSeries::readImpl(
     /// don't depend on the caller's session/profile (see getSettingsForSelectFromTimeSeries).
     auto read_context = Context::createCopy(local_context);
     read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries());
+    read_context->setIsTimeSeriesInnerReadByOwner(true);
 
     NameSet requested_columns{column_names.begin(), column_names.end()};
     auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
@@ -1459,6 +1497,36 @@ Keep the `TTL` of the samples table longer than that, otherwise a query whose ti
 can return samples which are already deleted from the samples table.
 
 By default the [tags](#tags-table) table has no `TTL`: a time series stays in it after all its samples are deleted.
+
+## Row policies {#row-policies}
+
+A [row policy](/reference/statements/create/row-policy) on a `TimeSeries` table filters `SELECT` queries on the table
+and PromQL reads of the table: the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions,
+the Prometheus HTTP API (`/api/v1/query`, `/api/v1/query_range`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`)
+and the remote read protocol.
+
+PromQL reads select time series from the inner [tags](#tags-table) table, and that table inherits the `SELECT` row policies
+of its `TimeSeries` table. The inner `tags` column holds every tag of a time series, including `__name__` and the tags
+declared in the [tags_to_columns](#settings) setting, so a filter written with `metric_name` and `tags['<name>']` applies
+to the inner table as it is. No `tags_to_columns` entry is needed; the [text index](#tags-table) of the inner `tags` column
+serves `tags['<name>'] = '<value>'` and `tags['<name>'] IN (...)` conditions.
+
+```sql
+CREATE TABLE my_table ENGINE = TimeSeries;
+CREATE ROW POLICY tenant_a ON my_table FOR SELECT USING tags['tenant'] = 'a' TO user_a;
+```
+
+With this policy the user `user_a` reads only the time series of the tenant `a` through every PromQL entry point,
+through a `SELECT` from the `TimeSeries` table, and through a direct read of the inner [tags](#tags-table) table
+or the [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags) table function.
+The `/api/v1/metadata` endpoint returns only the metric families which have a time series visible to the user.
+
+A filter which uses a column the inner tags table doesn't have, for example `samples`, still works for a `SELECT` from
+the `TimeSeries` table, but makes a PromQL read and a direct read of the inner tags table fail with an unknown identifier error.
+
+The inherited policy covers the inner tags table only. A user who can `SELECT` from the inner [samples](#samples-table)
+table, or who can call the [timeSeriesSamples](/reference/functions/table-functions/timeSeriesSamples) table function,
+reads the samples of every time series. To restrict such a user, create row policies on the samples tables as well.
 
 ## Altering settings {#altering-settings}
 

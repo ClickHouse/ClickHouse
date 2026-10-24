@@ -1691,6 +1691,7 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    is_time_series_inner_read_by_owner(o.is_time_series_inner_read_by_owner),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
