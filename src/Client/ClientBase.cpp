@@ -16,14 +16,17 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #if USE_CLIENT_AI
-#include <Client/AI/AISQLGenerator.h>
+#include <Client/AI/AIAgent.h>
 #include <Client/AI/AIClientFactory.h>
 #include <Client/AI/AIConfiguration.h>
+#include <Client/AI/AIPrompts.h>
+#include <Client/AI/AIQueryValidation.h>
 #endif
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Formats/FormatSettings.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
@@ -39,6 +42,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/quoteString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -46,6 +50,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
 
+#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
@@ -177,15 +182,22 @@ namespace Setting
     extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds max_execution_time_leaf;
+    extern const SettingsUInt64 max_memory_usage;
+    extern const SettingsUInt64 max_memory_usage_for_user;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+    extern const int NETWORK_ERROR;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -222,6 +234,40 @@ namespace
 {
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
+
+#if USE_CLIENT_AI
+/// Drop the ANSI escape sequences from a message formatted for the terminal, so it can be reused
+/// where the markup is not rendered (the prompt of the AI agent).
+String stripTerminalEscapeSequences(const String & text)
+{
+    String result;
+    result.reserve(text.size());
+
+    for (size_t i = 0; i < text.size();)
+    {
+        if (text[i] != '\x1b')
+        {
+            result += text[i];
+            ++i;
+            continue;
+        }
+
+        ++i;
+        /// A CSI sequence (`ESC [`, which is what the highlighting uses) runs until a byte in the
+        /// `@`..`~` range; anything else is treated as a two-character escape sequence.
+        if (i < text.size() && text[i] == '[')
+        {
+            ++i;
+            while (i < text.size() && !(text[i] >= '@' && text[i] <= '~'))
+                ++i;
+        }
+        if (i < text.size())
+            ++i;
+    }
+
+    return result;
+}
+#endif
 
 /// The console output of the client. If the reader of the output goes away, as `head` does in
 /// `clickhouse-local -q '...' | head -1`, the write fails with `EPIPE` (`SIGPIPE` is blocked).
@@ -337,6 +383,15 @@ namespace DB
 {
 
 class ClientEmbedded;
+
+/// The settings that the server turns into a part of a `SELECT` after parsing it: `select` replaces
+/// its projection, `filter` and `order` / `sort` add clauses evaluated over its result, and
+/// `implicit_table_at_top_level` supplies the table of a query that names none. A session can hold
+/// them unseen by the client (a settings profile with `apply_settings_from_server = 0`, a
+/// `SET profile`), and then every query the client sends evaluates them - so they are reset for the
+/// queries the client runs on its own (internal queries, the read-only tool of the AI agent). None
+/// of them restricts what a query may read, so resetting them does not loosen anything.
+static constexpr std::array query_construction_settings{"select", "filter", "order", "sort", "implicit_table_at_top_level"};
 
 ProgressOption toProgressOption(std::string progress)
 {
@@ -548,12 +603,20 @@ ClientBase::ClientBase(
     stdout_is_a_tty = isatty(out_fd_);
     stderr_is_a_tty = isatty(err_fd_);
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
+
+#if USE_CLIENT_AI
+    ai_query_context = std::make_shared<QueryContextBuffer>();
+#endif
 }
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin)
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
+
+    /// `tryParseQuery` moves `pos` even when the parse fails, so the beginning of the text being
+    /// parsed is remembered here, for the AI context buffer to record what the user has typed.
+    [[maybe_unused]] const char * const query_begin = pos;
 
     size_t max_length = 0;
 
@@ -722,6 +785,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             {
                 error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                 client_exception.reset(e.clone());
+#if USE_CLIENT_AI
+                recordParseErrorForAIContext({query_begin, static_cast<size_t>(end - query_begin)}, getExceptionMessage(e, false));
+#endif
                 return nullptr;
             }
             throw;
@@ -771,12 +837,21 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             {
                 error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                 client_exception.reset(e.clone());
+#if USE_CLIENT_AI
+                recordParseErrorForAIContext({query_begin, static_cast<size_t>(end - query_begin)}, getExceptionMessage(e, false));
+#endif
                 return nullptr;
             }
 
             if (!res)
             {
                 error_stream << std::endl << message << std::endl << std::endl;
+#if USE_CLIENT_AI
+                /// A parse failure is reported without an exception here, so it is recorded now:
+                /// otherwise the query the user has just typed and its error would be missing from
+                /// the context of the AI agent, which is exactly the case they ask it to fix.
+                recordParseErrorForAIContext({query_begin, static_cast<size_t>(end - query_begin)}, message);
+#endif
                 return nullptr;
             }
         }
@@ -871,6 +946,12 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     processed_rows_from_blocks += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
+
+#if USE_CLIENT_AI
+    /// Sample the result for the context buffer of the AI agent (blocks without rows contribute the header).
+    if (is_interactive && ai_query_context)
+        ai_query_context->addBlock(block);
+#endif
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
@@ -1685,7 +1766,12 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     }
 
     if (have_error)
+    {
+#if USE_CLIENT_AI
+        recordErrorForAIContext(full_query, parsed_query);
+#endif
         processError(full_query);
+    }
     return !have_error;
 }
 
@@ -1701,22 +1787,25 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
 
     if (!current_query_parsed_as_json_dialect)
     {
-        /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
-        /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`,
-        /// `SETTINGS enable_logsql_dialect = ...`) has already
-        /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
-        /// not change how this very query text is parsed on the other side - it only applies to the
-        /// statements that follow it. Only a value the query itself changed is restored (the others are
-        /// empty, see `processParsedSingleQuery`), so settings the user never touched are not forced onto
-        /// the server: a `dialect` the server pushed from the user's profile stays as the server set it.
-        if (current_query_parse_dialect)
-            client_context->setSetting("dialect", *current_query_parse_dialect);
-        if (current_query_parse_json_ast_gate)
-            client_context->setSetting("enable_json_ast_dialect", *current_query_parse_json_ast_gate);
-        if (current_query_parse_trino_gate)
-            client_context->setSetting("enable_trino_dialect", *current_query_parse_trino_gate);
-        if (current_query_parse_logsql_gate)
-            client_context->setSetting("enable_logsql_dialect", *current_query_parse_logsql_gate);
+        /// The `SETTINGS` clause of the query has already been applied to the client context, but the
+        /// text was parsed with the `dialect` of the session as it was before that. The settings are
+        /// sent along with the query and the receiving side parses that very same text with them, so a
+        /// `SETTINGS dialect = 'kusto'` on a ClickHouse SQL `INSERT` would have it parsed as KQL. Keep
+        /// the transport dialect on the one the text was accepted with; a `SET dialect = ...` is a
+        /// statement of its own and still reaches the session.
+        ///
+        /// Only that change is undone, which is why it is tracked rather than found by comparing the
+        /// value: the settings of the session also reach the client context between the two points
+        /// (`apply_settings_from_server`, applied after `connect`), and the `dialect` among them is
+        /// the one the server is going to parse with - a settings profile selecting a foreign dialect
+        /// must keep working, not be overridden by the client for every query.
+        ///
+        /// The same holds for the settings gating a dialect: a `SETTINGS enable_trino_dialect = 0`
+        /// of a query the client accepted with the gate on must not make the receiving side reject
+        /// that very text. The query still runs with its own `SETTINGS`, which are applied from the
+        /// parsed query after parsing.
+        for (const auto & change : current_query_parse_settings_changed_by_query)
+            client_context->setSetting(change.name, change.value);
         return;
     }
 
@@ -3076,6 +3165,12 @@ void ClientBase::processParsedSingleQuery(
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
 
+#if USE_CLIENT_AI
+    /// Record the query into the context buffer of the AI agent.
+    if (is_interactive && ai_query_context)
+        ai_query_context->startQuery(queryTextForAIContext(query_, parsed_query), ai_running_query);
+#endif
+
     /// Generate a fresh query_id for each query, unless the user fixed it with `--query_id`.
     /// In batch mode we only do this when we are going to print the query_id, so that the printed
     /// value matches the one actually used for execution (otherwise the server generates its own).
@@ -3136,33 +3231,33 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
-        /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
-        /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
+        /// Capture the dialect this query was parsed with, and whether it is a SQL `SET` escape, *before*
+        /// applying any in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialect`.
+        static constexpr std::string_view parse_dialect_setting_names[] = {
+            "dialect",
+            "enable_json_ast_dialect",
+            "enable_trino_dialect",
+            "enable_logsql_dialect",
+            "allow_experimental_polyglot_dialect",
+            "polyglot_dialect"};
+        SettingsChanges parse_dialect_settings;
+        for (const auto name : parse_dialect_setting_names)
+            parse_dialect_settings.emplace_back(name, client_context->getSettingsRef().get(name));
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         current_query_is_set_escape = !current_query_parsed_as_json_dialect
             && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
             && client_context->getSettingsRef()[Setting::dialect] != Dialect::trino
             && client_context->getSettingsRef()[Setting::dialect] != Dialect::logsql
             && parsed_query->as<ASTSetQuery>();
-        const Field parse_dialect = client_context->getSettingsRef().get("dialect");
-        const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
-        const Field parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
-        const Field parse_logsql_gate = client_context->getSettingsRef().get("enable_logsql_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         /// Remember only the values this query's own `SETTINGS` clause changed: those are pinned back for
         /// the outbound query. A setting the query left alone is not pinned, so what
         /// `applySettingsFromServerIfNeeded` applies below (e.g. the user's profile `dialect`) is sent as is.
-        const auto changed_by_query = [&](const String & name, const Field & parse_value) -> std::optional<Field>
-        {
-            if (client_context->getSettingsRef().get(name) == parse_value)
-                return std::nullopt;
-            return parse_value;
-        };
-        current_query_parse_dialect = changed_by_query("dialect", parse_dialect);
-        current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
-        current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
-        current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
+        current_query_parse_settings_changed_by_query.clear();
+        for (auto & change : parse_dialect_settings)
+            if (client_context->getSettingsRef().get(change.name) != change.value)
+                current_query_parse_settings_changed_by_query.push_back(std::move(change));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3267,8 +3362,56 @@ void ClientBase::processParsedSingleQuery(
             {
                 if (change.name != "profile")
                     client_context->applySettingChange(change);
+
+#if USE_CLIENT_AI
+                if (ai_running_query && change.name == "dialect")
+                    ai_running_query_changed_dialect = true;
+#endif
             }
+
+#if USE_CLIENT_AI
+            if (ai_running_query && std::find(set_query->default_settings.begin(), set_query->default_settings.end(), "dialect") != set_query->default_settings.end())
+                ai_running_query_changed_dialect = true;
+#endif
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
+
+            const auto changes_setting = [&](std::string_view name)
+            {
+                return std::any_of(changes.begin(), changes.end(), [&](const auto & change) { return change.name == name; })
+                    || std::find(set_query->default_settings.begin(), set_query->default_settings.end(), name) != set_query->default_settings.end();
+            };
+
+            /// A profile is applied by the server and deliberately not reproduced in the client
+            /// context, so after it the client can no longer tell which settings it changed: neither
+            /// the dialect the internal queries have to work around, nor `readonly`, which is asked
+            /// of the server from now on - and it must not promise that the marker of the queries of
+            /// the agent was accepted, either.
+            if (changes_setting("profile"))
+            {
+                settings_may_be_changed_by_profile = true;
+                /// Even when the same statement sets `readonly` too: which of them wins is up to the
+                /// server, so the server is asked.
+                readonly_changed_after_profile = false;
+                /// A profile changes an unknown set of settings and the client is not told which,
+                /// so no cached answer about the effective value of a setting survives it - see
+                /// `serverEffectiveSettingValue`. Without this, a value asked about before the
+                /// profile was applied would still be used after it.
+                server_effective_setting_values.clear();
+#if USE_CLIENT_AI
+                ai_query_log_access_permanently_disabled = true;
+#endif
+            }
+            else
+            {
+                /// The cached answers are the effective values as of the moment the server was
+                /// asked, so the settings this statement changes have to be asked again.
+                for (const auto & change : changes)
+                    server_effective_setting_values.erase(change.name);
+                for (const auto & name : set_query->default_settings)
+                    server_effective_setting_values.erase(name);
+                if (changes_setting("readonly"))
+                    readonly_changed_after_profile = true;
+            }
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -3395,8 +3538,40 @@ void ClientBase::processParsedSingleQuery(
         error_stream << '\x07';
         error_stream.flush();
     }
+
+#if USE_CLIENT_AI
+    if (is_interactive && ai_query_context)
+        ai_query_context->finishQuery(progress_indication.elapsedSeconds(), cancelled);
+#endif
 }
 
+
+static const char * findEndOfInlineInsertData(const ASTInsertQuery & insert_ast, const char * all_queries_end)
+{
+    if (insert_ast.format == "Values")
+    {
+        // Invoke the VALUES format parser to skip the inserted data.
+        // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
+        // whitespace: a trailing comment after the last row would otherwise be scanned
+        // as row data past the terminating ';', swallowing the following queries.
+        ReadBufferFromMemory data_in(insert_ast.data, all_queries_end - insert_ast.data);
+        skipBOMIfExists(data_in);
+        do
+        {
+            skipWhitespaceAndSQLComments(data_in);
+            if (data_in.eof() || *data_in.position() == ';')
+                break;
+        }
+        while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
+        return insert_ast.data + data_in.count();
+    }
+
+    // Handling of generic formats
+    auto pos_newline = std::string_view(insert_ast.data, all_queries_end - insert_ast.data).find("\n\n");
+    if (pos_newline != std::string_view::npos)
+        return insert_ast.data + pos_newline;
+    return all_queries_end;
+}
 
 MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -3530,25 +3705,12 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     }
     if (insert_ast && insert_ast->data)
     {
+        this_query_end = findEndOfInlineInsertData(*insert_ast, all_queries_end);
         if (insert_ast->format == "Values")
         {
-            // Invoke the VALUES format parser to skip the inserted data.
-            // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
-            // whitespace: a trailing comment after the last row would otherwise be scanned
-            // as row data past the terminating ';', swallowing the following queries.
-            ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
-            skipBOMIfExists(data_in);
-            do
-            {
-                skipWhitespaceAndSQLComments(data_in);
-                if (data_in.eof() || *data_in.position() == ';')
-                    break;
-            }
-            while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
             // Handle the case of a comment followed by a semicolon
             //   Example: INSERT INTO tab VALUES xx; -- {serverError xx}
             // If we use this error hint, the next query should not be placed on the same line
-            this_query_end = insert_ast->data + data_in.count();
             const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
             if (pos_newline != this_query_end)
             {
@@ -3556,15 +3718,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 if (hint.hasClientErrors() || hint.hasServerErrors())
                     this_query_end = pos_newline;
             }
-        }
-        else
-        {
-            // Handling of generic formats
-            auto pos_newline = String(insert_ast->data, all_queries_end).find("\n\n");
-            if (pos_newline != std::string::npos)
-                this_query_end = insert_ast->data + pos_newline;
-            else
-                this_query_end = all_queries_end;
         }
         insert_ast->end = this_query_end;
     }
@@ -3977,7 +4130,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Report error.
                 if (have_error)
+                {
+#if USE_CLIENT_AI
+                    recordErrorForAIContext(full_query, parsed_query);
+#endif
                     processError(full_query);
+                }
 
                 // Stop processing queries if needed.
                 if (have_error && stdout_is_broken)
@@ -4137,49 +4295,11 @@ bool ClientBase::processQueryText(const String & text)
 
 
 #if USE_CLIENT_AI
-    // Handle "?? <free_text>" command
-    if (text.starts_with("??"))
+    /// Handle the AI chat command: "? <free text>".
+    if (trimmed_input.starts_with("?"))
     {
-        size_t skip_prefix_size = 2; // Length of "??"
-        auto free_text = text.substr(skip_prefix_size);
-        // Trim leading whitespace from the free text
-        free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
-
-        if (!ai_generator)
-        {
-            error_stream << "AI SQL generator is not initialized. "
-                         << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
-                         << "or configure AI settings in your configuration file. "
-                         << "See documentation for detailed setup instructions." << std::endl << std::endl;
-            return true;
-        }
-
-        if (free_text.empty())
-        {
-            error_stream << "Please provide a natural language query after ??" << std::endl << std::endl;
-            return true;
-        }
-
-        // Check if AI provider usage needs acknowledgment from user
-        if (!checkAIProviderAcknowledgment())
-        {
-            return true;
-        }
-
-        try
-        {
-            std::string generated_sql = ai_generator->generateSQL(free_text);
-
-            /// Prepopulate the next query with the generated SQL
-            next_query_to_prepopulate = generated_sql;
-        }
-        catch (const std::exception & e)
-        {
-            error_stream << "AI query generation failed: " << e.what() << std::endl;
-        }
-
-        error_stream << std::endl;
-        return true;
+        auto free_text = trim(trimmed_input.substr(1), [](char c) { return isWhitespaceASCII(c); });
+        return processAIChat(free_text);
     }
 #endif
 
@@ -4354,145 +4474,1578 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
 }
 
 #if USE_CLIENT_AI
-void ClientBase::initAIProvider()
+void ClientBase::initAIAgent()
 {
-    try {
-        AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
+    /// Failures below (a config error, an unavailable provider, a failed probe) are not
+    /// latched: the next `?` retries the initialization, so the agent becomes available
+    /// once the user fixes the configuration or the session state.
+    if (ai_agent)
+        return;
 
-        // Create the AI client and get metadata about how it was created
-        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+    AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
 
-        // If no configuration was found, don't initialize the AI generator
-        if (ai_result.no_configuration_found || !ai_result.client.has_value())
+    AIAgentHooks hooks;
+    hooks.execute_internal = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAI(query, params); };
+    hooks.execute_internal_masking_secrets
+        = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAIMaskingSecrets(query, params); };
+    hooks.execute_scalar = [this](const String & query, const NameToNameMap & params) { return executeScalarQueryForAI(query, params); };
+    hooks.run_visible = [this](const String & query, bool readonly, bool allow_schema_access)
+    {
+        return runQueryForAI(query, readonly, allow_schema_access);
+    };
+    hooks.confirm_query = [this](const String & query) -> bool
+    {
+        if (!is_interactive)
+            return false;
+
+        if (need_render_progress && tty_buf)
         {
-            return;
+            std::unique_lock lock(tty_mutex);
+            progress_indication.clearProgressOutput(*tty_buf, lock);
         }
 
-        // Store metadata for later use
-        ai_inferred_from_env = ai_result.inferred_from_env;
-        ai_provider_name = ai_result.provider;
+        /// Show the query the agent wants to run before asking, as if the user typed it.
+        echoQueryForAI(query);
+        return ask("Run this query? [Y/n] ", *std_in, *std_out, /*default_yes=*/ true);
+    };
+    hooks.check_query = [this](const String & query) { return checkAIQuery(query); };
+    hooks.session_restrictions = [this] { return aiSessionRestrictions(); };
+    hooks.can_read_query_log = [this] { return aiQueryLogMarkerAllowed(); };
 
-        // Create a query executor that uses the connection
-        auto query_executor = [this](const std::string & query) -> std::string
-        {
-            return executeQueryForSingleString(query);
-        };
+    std::unique_ptr<IAIAgentTransport> transport;
 
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client.value()), query_executor, error_stream);
-    }
-    catch (const std::exception & e)
+    /// Client-side AI providers are disabled for the embedded client (SSH and WebSocket
+    /// protocols) because they access the environment (API keys) of the server process,
+    /// which could be a security concern.
+    if (!isEmbeeddedClient())
     {
-        auto logger = getLogger("ClientBase");
-        LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
+        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+        if (ai_result.client.has_value())
+        {
+            ai_inferred_from_env = ai_result.inferred_from_env;
+            ai_provider_name = ai_result.provider;
+            ai_unused_environment_key = ai_result.unused_environment_key;
+            transport = std::make_unique<AIClientTransport>(std::move(ai_result.client.value()), ai_config);
+        }
     }
+
+    if (!transport && AIServerFunctionTransport::isAvailable(hooks.execute_scalar))
+    {
+        /// No client-side AI provider: fall back to the `aiGenerate` function configured
+        /// on the server we are connected to (or in clickhouse-local). This adds nothing
+        /// the user could not do with a plain `SELECT aiGenerate(...)` query.
+        transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar, ai_config);
+    }
+
+    if (!transport)
+        return;
+
+    ai_agent = std::make_unique<AIAgent>(ai_config, std::move(transport), hooks, ai_query_context, output_stream, stdout_is_a_tty);
 }
 
-std::string ClientBase::executeQueryForSingleString(const std::string & query)
+bool ClientBase::processAIChat(const String & text_)
 {
-    if (!connection)
-        return "";
+    /// In the AI mode of the line editor the leading `?` is consumed as the mode switch and the
+    /// line arrives only right-trimmed, so the documented `? clear` is passed here as ` clear`.
+    /// Trim before matching the commands below (the model does not care about the whitespace).
+    const String text = trim(text_, [](char c) { return isWhitespaceASCII(c); });
+
+    if (!is_interactive)
+    {
+        error_stream << "The AI chat (the `?` command) is only available in interactive mode." << std::endl;
+        return true;
+    }
+
+    /// A known `/`-command runs as the command itself, without involving the agent (and works
+    /// even when no AI provider is configured). A misspelled one, or one given an argument it does
+    /// not take, is reported here as in the SQL mode: sending it to the model as a question would
+    /// leak the typo to the provider and could cost a billed turn. A lone `/` is not a command.
+    const String command_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+    if (isClientSlashCommand(command_input))
+        return processQueryText(text);
+    if (command_input.size() > 1)
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(command_input, is_interactive))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
+
+    /// The assistant emits ClickHouse SQL. With `readonly = 1`, the session refuses the dialect
+    /// pin that both visible and internal assistant queries need, so fail before probing a
+    /// provider (a client-side provider turn is billable) or running an internal query that the
+    /// server would reject anyway. The effective dialect is not always knowable from
+    /// `client_context` (after a `SET profile`, or with `apply_settings_from_server = 0` and a
+    /// settings profile of the user selecting another dialect), so decide it exactly like
+    /// `runQueryForAI` and `fetchInternalQueryResult` do. Asking the server can fail - a session
+    /// that parses another dialect fails the question itself - and then the turn is refused as well,
+    /// with the reason: the messages added to a server exception are not shown without the stack
+    /// trace, so the guidance would not reach the user from the exception.
+    ///
+    /// The help (a bare `?`) and `? clear` / `? reset` are local: they neither call a provider nor
+    /// run a query for the model, so they are not refused - `? clear` is the way out of a
+    /// conversation, and it must work in exactly such a session too.
+    const bool is_local_command = text.empty() || text == "clear" || text == "reset";
+    if (!is_local_command && aiSessionReadonly() == 1)
+    {
+        bool dialect_pin_required = true;
+        String probe_error;
+        try
+        {
+            dialect_pin_required = internalQueriesRequireDialectPin();
+        }
+        catch (const Exception & e)
+        {
+            probe_error = getExceptionMessage(e, false);
+        }
+
+        if (dialect_pin_required)
+        {
+            error_stream << "The AI chat requires the ClickHouse SQL dialect: `readonly = 1` does not allow changing "
+                            "the `dialect` setting. Run `SET dialect = 'clickhouse'` first."
+                         << std::endl;
+            if (!probe_error.empty())
+                error_stream << "The effective dialect of the session could not be determined: " << probe_error << std::endl;
+            return true;
+        }
+    }
+
+    if (ai_agent_reset_pending)
+    {
+        ai_agent_reset_pending = false;
+        ai_agent = nullptr;
+        output_stream << "The connection to the server was re-established, so the AI conversation was started over." << std::endl;
+    }
 
     try
     {
-        std::string result;
+        initAIAgent();
+    }
+    catch (...)
+    {
+        error_stream << "Failed to initialize the AI agent: " << getCurrentExceptionMessage(false) << std::endl << std::endl;
+        return true;
+    }
 
-        /// Only the compression knobs: the rest of the session settings must not leak into this
-        /// client-issued helper query. See `networkCompressionSettings`.
-        const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+    if (!ai_agent)
+    {
+        if (isEmbeeddedClient())
+            error_stream << "The AI agent is not available: no AI provider is configured.\n"
+                            "The embedded client does not use client-side AI providers (they would read the API keys\n"
+                            "from the environment of the server process); enable the `aiGenerate` function on the\n"
+                            "server (the `allow_experimental_ai_functions` setting) and configure default credentials\n"
+                            "for it (the `ai_function_text_default_credentials` setting)."
+                         << std::endl << std::endl;
+        else
+            error_stream << "The AI agent is not available: no AI provider is configured.\n"
+                            "Set the OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, configure the `ai` section\n"
+                            "of the client configuration, or enable the `aiGenerate` function on the server (the\n"
+                            "`allow_experimental_ai_functions` setting) with default credentials configured for it\n"
+                            "(the `ai_function_text_default_credentials` setting)." << std::endl << std::endl;
+        return true;
+    }
 
-        /// This is a complete query exchange on the shared connection, so it follows the same
-        /// resynchronization discipline as the regular queries: recover from a previous failed
-        /// exchange first, arm the flag for the time of the exchange (so that a transport or
-        /// client failure here does not leave the connection silently desynchronized for the
-        /// next query), and clear it when the exchange terminates in a protocol-consistent way -
-        /// with `EndOfStream` or with a server exception.
-        if (connection_needs_resynchronization)
-            resynchronizeConnectionAfterError();
+    if (text.empty())
+    {
+        output_stream << "\nUsage: ? <ask anything about your data or ClickHouse>\n"
+                         "\n"
+                         "The AI agent sees your recent queries with their results and errors, can explore\n"
+                         "the schema and the documentation, runs read-only queries on its own (with a 30 second\n"
+                         "and 10 GiB limit) and asks for confirmation before anything else. The conversation\n"
+                         "keeps its context between questions; type `? clear` to start over.\n"
+                         "\n";
 
-        /// Send the query
-        armResynchronizationAndSendQuery([&]
+        /// The two claims above hold differently in a read-only session, where the agent cannot
+        /// set the limits of its read-only queries and the server refuses the rest outright.
+        if (const UInt64 readonly = aiSessionReadonly(); readonly == 1)
+            output_stream << "Your session is read-only (readonly = 1): the read-only tool cannot enforce its\n"
+                             "execution-time and memory limits, so the agent asks for your confirmation even for\n"
+                             "read-only queries. Writes, DDL and setting changes are refused instead of being confirmed.\n"
+                             "\n";
+        else if (readonly != 0)
+            output_stream << "Your session is read-only (readonly = " << readonly << "): writes and DDL are refused\n"
+                             "instead of being confirmed.\n"
+                             "\n";
+
+        output_stream << ai_agent->status() << "\n" << std::endl;
+        return true;
+    }
+
+    if (text == "clear" || text == "reset")
+    {
+        (*ai_agent).reset();
+        output_stream << "The AI conversation was cleared." << std::endl << std::endl;
+        return true;
+    }
+
+    if (!checkAIProviderAcknowledgment())
+        return true;
+
+    try
+    {
+        ai_agent->chat(text);
+    }
+    catch (...)
+    {
+        error_stream << "AI chat failed: " << getCurrentExceptionMessage(false) << std::endl;
+    }
+
+    output_stream << std::endl;
+    return true;
+}
+
+String ClientBase::executeInternalQueryForAI(const String & query, const NameToNameMap & params)
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true);
+    return formatBlockAsTextForAI(result);
+}
+
+String ClientBase::executeInternalQueryForAIMaskingSecrets(const String & query, const NameToNameMap & params)
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true, /*needs_secret_masking=*/ true);
+    return formatBlockAsTextForAI(result);
+}
+
+String ClientBase::executeScalarQueryForAI(const String & query, const NameToNameMap & params)
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true);
+    if (result.rows() == 0 || result.columns() == 0)
+        return "";
+
+    /// Serialize the cell as unescaped text so any type is rendered faithfully (a `String` keeps
+    /// its raw bytes and newlines; a number becomes its decimal text) - not the raw column bytes.
+    /// The block is materialized first: a `Const`/`Sparse`/`LowCardinality` column (e.g. from
+    /// constant folding) cannot be serialized row by row directly.
+    const Block materialized = materializeBlock(result);
+    const auto & column_with_type = materialized.getByPosition(0);
+    WriteBufferFromOwnString buf;
+    FormatSettings format_settings;
+    column_with_type.type->getDefaultSerialization()->serializeText(*column_with_type.column, 0, buf, format_settings);
+    return buf.str();
+}
+
+void ClientBase::echoQueryForAI(const String & query)
+{
+    String text = AIAgentDisplay::sanitizeForTerminal(query);
+#if USE_REPLXX
+    if (highlight_queries && stdout_is_a_tty)
+        text = highlighted(text, *client_context, rainbow_parentheses);
+#endif
+    writeString(getPrompt(), *std_out);
+    writeString(text, *std_out);
+    writeChar('\n', *std_out);
+    std_out->next();
+}
+
+String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow_schema_access)
+{
+    if (!is_interactive)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The AI agent can run queries only in interactive mode");
+
+    /// A session with `readonly = 1` rejects every setting change, so the settings this function
+    /// would otherwise apply to the query - the sandbox of the read-only tool, the query-log
+    /// marker, the dialect pin - cannot be applied and are not even attempted: such a session
+    /// already restricts the query to reading, which is what the sandbox is there to guarantee.
+    const bool can_change_settings = aiSessionReadonly() != 1;
+
+    if (readonly)
+    {
+        /// A single read-only statement without a way to lift the sandbox settings.
+        /// Parse errors are thrown (not printed): they go back to the model as the tool result.
+        const Settings & settings = client_context->getSettingsRef();
+        const char * begin = query.data();
+        const char * end = begin + query.size();
+        ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        ASTPtr ast = parseQueryAndMovePosition(
+            parser, begin, end, "", /*allow_multi_statements=*/ false,
+            settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        validateReadOnlyQueryForAIAgent(*ast, allow_schema_access);
+
+        /// `readonly = 1` prevents all per-query setting changes. The server's read-only
+        /// restriction alone does not enforce the advertised execution-time and memory
+        /// limits, so do not run an unconfirmed query when the sandbox cannot be installed.
+        /// Checked before the table resolution below, which costs a round trip the query
+        /// would not get to use anyway.
+        if (!can_change_settings)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The read-only tool cannot enforce its execution-time and memory limits because `readonly = 1` "
+                "does not allow changing settings. Use the run_query tool for this query");
+
+        /// The filters that the server adds to the query after the validation above: a `SETTINGS`
+        /// clause of the query cannot change them, but the session can have them already, and then
+        /// every query of the session evaluates the expressions they hold. Unlike the other settings
+        /// of this kind (`query_construction_settings`, which the sandbox below resets), they are
+        /// not reset: `additional_table_filters` and `additional_result_filter` can be what restricts
+        /// the rows the user sees, so the tool refuses rather than loosening them. The value the
+        /// client changed itself travels with the query and is the effective one; otherwise a
+        /// settings profile can set it unseen (`apply_settings_from_server = 0`, a `SET profile`),
+        /// and then the server is asked, as for the limits below. The question is an internal query,
+        /// which resets `query_construction_settings`, so asking does not evaluate those.
         {
-            connection->sendQuery(
-                connection_parameters.timeouts,
-                query,
-                {},  /// query_parameters
-                "",  /// query_id
-                QueryProcessingStage::Complete,
-                &compression_settings,  /// settings (so the network codec honors `network_compression_method`)
-                nullptr,  /// client_info
-                false,    /// with_pending_data
-                {},       /// external_roles
-                {}        /// external_data
-            );
-        });
-
-        /// Receive and process results
-        while (true)
-        {
-            Packet packet = connection->receivePacket();
-            switch (packet.type)
+            const Settings & session_settings = client_context->getSettingsRef();
+            const bool local_values_are_effective = !connection
+                || (session_settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile);
+            for (const auto * name : {"additional_table_filters", "additional_result_filter"})
             {
-                case Protocol::Server::Data:
-                    if (!packet.block.empty() && packet.block.rows() > 0)
-                    {
-                        /// Convert block to string representation
-                        /// For schema queries, we expect single column results
-                        const auto & column = packet.block.getByPosition(0).column;
-                        for (size_t i = 0; i < column->size(); ++i)
-                        {
-                            if (!result.empty())
-                                result += "\n";
-                            result.append(column->getDataAt(i));
-                        }
-                    }
-                    break;
-
-                case Protocol::Server::EndOfStream:
-                    connection_needs_resynchronization = false;
-                    return result;
-
-                case Protocol::Server::Exception:
-                    /// Return empty string on exception. The exchange is complete at this point:
-                    /// the query was sent with the terminating empty block (`with_pending_data`
-                    /// is false), and a server exception is the last packet of the exchange - the
-                    /// server drains the data it has not read yet and preserves the connection.
-                    /// The flag is cleared so that the next query of the session does not go
-                    /// through the round-trip resynchronization: its ping could time out on a
-                    /// slow server and silently reconnect away the session state.
-                    connection_needs_resynchronization = false;
-                    return "";
-
-                case Protocol::Server::Progress:
-                case Protocol::Server::ProfileInfo:
-                case Protocol::Server::Log:
-                case Protocol::Server::ProfileEvents:
-                case Protocol::Server::TimezoneUpdate:
-                    /// Ignore these packet types
-                    break;
-
-                default:
-                    /// Ignore unknown packet types
-                    break;
+                bool is_set = false;
+                if (local_values_are_effective || session_settings.isChanged(name))
+                {
+                    const Field value = session_settings.get(name);
+                    is_set = value.getType() == Field::Types::Map ? !value.safeGet<Map>().empty() : !value.safeGet<String>().empty();
+                }
+                else if (const std::optional<String> value = serverEffectiveSettingValue(name))
+                {
+                    is_set = !value->empty() && *value != "{}";
+                }
+                if (is_set)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The session has the setting `{}`, which the server turns into a part of every query after the "
+                        "read-only tool has validated it. Use the run_query tool for this query",
+                        name);
             }
         }
+
+        /// The isolation of an unconfirmed query is made of settings, and a setting only isolates
+        /// anything on a server that knows it: `show_remote_databases_in_system_tables` and
+        /// `show_data_lake_catalogs_in_system_tables` are not `IMPORTANT`, so a server that
+        /// predates them ignores them silently and `system.tables` / `system.columns` go back to
+        /// contacting the remote database or the data-lake catalog they enumerate.
+        /// `format_display_secrets_in_show_and_select` is `IMPORTANT`, so it cannot even be sent to
+        /// such a server, and a server without it renders the secrets of a table definition.
+        ///
+        /// So the tool refuses rather than running an unconfirmed query whose isolation the server
+        /// would ignore - this is checked before the table resolution below, whose own query reads
+        /// `system.tables` and would be the first one to leave this server. The confirmed
+        /// `run_query` tool stays available, which is what the refusal points the model at.
+        for (const auto * isolation_setting :
+             {"show_remote_databases_in_system_tables", "show_data_lake_catalogs_in_system_tables"})
+            if (!serverSupportsSetting(isolation_setting))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The read-only tool cannot keep an unconfirmed query inside this server, because the server does "
+                    "not support the `{}` setting, so reading `system.tables` or `system.columns` may contact a remote "
+                    "database or a data-lake catalog. Use the run_query tool for this query",
+                    isolation_setting);
+
+        if (!serverSupportsSetting("format_display_secrets_in_show_and_select") && sessionMayDisplaySecrets())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The read-only tool cannot prevent the secrets of an external-engine table from being rendered into "
+                "the result the assistant is shown, because the server does not support the "
+                "`format_display_secrets_in_show_and_select` setting. Use the run_query tool for this query");
+
+        /// The static validation judges what is written in the query; the tables it only collects,
+        /// because a name says nothing about what reading it does. Resolve them and check their
+        /// engines - this is a round trip, so it is skipped when the query names no tables.
+        checkNamedTablesForAIReadOnlyTool(collectNamedTablesForAIAgent(*ast), allow_schema_access);
+
+        /// Queries going through the confirmation prompt were already shown there.
+        echoQueryForAI(query);
     }
-    catch (const std::exception &)
+
+    /// Temporarily adjust the session settings for the query of the agent.
+    ///
+    /// For the read-only tool the whole `Settings` object is restored on exit: the sandbox
+    /// tweaks below must not leak into the session, and a validated read-only statement
+    /// cannot change the session state itself. For the confirmed run_query tool nothing is
+    /// saved: the query must execute exactly as if the user had typed it, so a confirmed
+    /// `SET` must persist in the session (only the dialect pin below is undone).
+    std::optional<Settings> saved_settings;
+    if (readonly && can_change_settings)
+        saved_settings.emplace(client_context->getSettingsRef());
+    SCOPE_EXIT_SAFE({
+        if (saved_settings)
+            client_context->setSettings(*saved_settings);
+    });
+
+    /// The agent always emits ClickHouse SQL, so its queries are pinned to the ClickHouse
+    /// dialect even when the session was switched to another one (`SET dialect = 'prql'`,
+    /// `'kusto'`, ...) - the validation above also parsed the query as ClickHouse SQL.
+    /// For run_query the pin is undone afterwards unless the confirmed query changed the
+    /// dialect itself. This is tracked from its successfully applied `SET`, rather than by
+    /// comparing the final value: setting the dialect to `clickhouse` is a real change too.
+    ///
+    /// Whether the pin is needed is decided by `internalQueriesRequireDialectPin`, which asks the
+    /// server when the client cannot see its effective settings (`apply_settings_from_server = 0`,
+    /// or after a `SET profile`) instead of trusting the local value, and fails when the question fails.
+    std::optional<Field> dialect_to_restore;
+    if (internalQueriesRequireDialectPin())
     {
-        return "";
+        /// Without the pin the server would parse ClickHouse SQL as another dialect, so the
+        /// query is not sent at all: the model is told what stands in the way instead.
+        if (!can_change_settings)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The session uses a SQL dialect other than ClickHouse and `readonly = 1` does not allow changing the "
+                "`dialect` setting for the query, while the queries of the assistant are ClickHouse SQL. "
+                "Ask the user to run `SET dialect = 'clickhouse'`");
+
+        if (!readonly)
+            dialect_to_restore = client_context->getSettingsRef().get("dialect");
+        client_context->setSetting("dialect", String("clickhouse"));
     }
+    /// This guard is the one that consumes `ai_running_query_changed_dialect`, so it is also the one
+    /// that clears it: the guards run in reverse order of declaration, and a guard declared below it
+    /// would clear the flag before it is read here, restoring the old dialect over a confirmed `SET`.
+    SCOPE_EXIT_SAFE({
+        if (dialect_to_restore && !ai_running_query_changed_dialect)
+            client_context->setSetting("dialect", *dialect_to_restore);
+        ai_running_query_changed_dialect = false;
+    });
+
+    /// Enforce the sandbox settings of the read-only tool. The query is unable to override
+    /// them: the validation above rejects SETTINGS clauses that touch them. The limits are
+    /// tighten-only, so a user with a stricter session limit keeps it.
+    if (readonly && can_change_settings)
+    {
+        /// Format-schema settings are interpreted after AST validation. Clear every carrier of
+        /// schema content and force the safe source so inherited session state cannot execute
+        /// a query, write a cached schema file, or fetch the schema of `AvroConfluent` from a
+        /// schema registry through a `FORMAT` clause or the `format` table function.
+        client_context->setSetting("format_schema_source", String("file"));
+        client_context->setSetting("format_schema", String{});
+        client_context->setSetting("format_schema_message_name", String{});
+        client_context->setSetting("output_format_schema", String{});
+        client_context->setSetting("format_template_resultset", String{});
+        client_context->setSetting("format_template_row", String{});
+        client_context->setSetting("format_avro_schema_registry_url", String{});
+
+        /// The settings the server turns into a part of a `SELECT` after the validation above would
+        /// add expressions and tables to the query that the validation has not seen. A `SETTINGS`
+        /// clause of the query cannot set them (the validation refuses it), and the values the
+        /// session holds - visible to the client or not - are reset here.
+        for (const auto * name : query_construction_settings)
+            client_context->setSetting(name, String{});
+
+        /// `SHOW CREATE TABLE` of an external-engine table renders its connection configuration,
+        /// including credentials, when the user enabled `format_display_secrets_in_show_and_select`
+        /// (and the server allows it). The unconfirmed read-only tool feeds its result straight to
+        /// the AI provider, so the secrets are masked for it regardless of the session setting.
+        /// The masking is forced without looking at the value the session has: that value is what
+        /// the client may be wrong about (`apply_settings_from_server = 0` hides the settings
+        /// profile of the user from it). The setting is `IMPORTANT`, so it cannot be sent to a
+        /// server that predates it (`UNKNOWN_SETTING`) - such a server made the tool refuse the
+        /// query above instead, so here it is only skipped for a session that cannot display
+        /// secrets at all - it has nothing to mask.
+        if (serverSupportsSetting("format_display_secrets_in_show_and_select"))
+            client_context->setSetting("format_display_secrets_in_show_and_select", false);
+
+        /// `system.tables` and `system.columns` enumerate a remote (`MySQL`, `PostgreSQL`)
+        /// database or a data-lake catalog when the session lets them, and enumerating one
+        /// contacts it. An unconfirmed query must not leave this server, so both switches are
+        /// turned off for it; they are protected settings, so the query cannot turn them back on.
+        /// Neither is `IMPORTANT`, so a server that predates them ignores them.
+        client_context->setSetting("show_remote_databases_in_system_tables", false);
+        client_context->setSetting("show_data_lake_catalogs_in_system_tables", false);
+
+        static constexpr UInt64 max_execution_time_limit = 30;
+        static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
+
+        /// The limits are compared against the effective values of the session, not against the
+        /// local copy: after a `SET profile`, or with `apply_settings_from_server = 0`, the settings
+        /// profile of the user sets them on the server unseen, and a local `0` read as "no limit"
+        /// would send an override that loosens a stricter limit of the profile - a profile default
+        /// is not a constraint, so the server would accept it. The condition under which the local
+        /// copy is the effective one is the same as for `readonly` in `sessionReadonlyIfKnown`.
+        /// Otherwise the server is asked, and the stricter of its answer and the local value is
+        /// taken: the question does not carry the settings the client changed itself, which travel
+        /// with the query and win over the profile, and being stricter than needed is harmless.
+        Settings current = client_context->getSettingsRef();
+        if (connection && !(current[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile))
+        {
+            Settings server_values;
+            for (const char * name : {"max_execution_time", "max_execution_time_leaf", "max_memory_usage", "max_memory_usage_for_user"})
+                if (const std::optional<String> value = serverEffectiveSettingValue(name))
+                    server_values.set(name, Field(*value));
+
+            const auto stricter = [](auto local_value, auto server_value)
+            {
+                if (local_value == 0)
+                    return server_value;
+                if (server_value == 0)
+                    return local_value;
+                return std::min(local_value, server_value);
+            };
+            current[Setting::max_execution_time] = Poco::Timespan(stricter(
+                current[Setting::max_execution_time].totalMicroseconds(), server_values[Setting::max_execution_time].totalMicroseconds()));
+            current[Setting::max_execution_time_leaf] = Poco::Timespan(stricter(
+                current[Setting::max_execution_time_leaf].totalMicroseconds(),
+                server_values[Setting::max_execution_time_leaf].totalMicroseconds()));
+            current[Setting::max_memory_usage] = stricter(
+                current[Setting::max_memory_usage].value, server_values[Setting::max_memory_usage].value);
+            current[Setting::max_memory_usage_for_user] = stricter(
+                current[Setting::max_memory_usage_for_user].value, server_values[Setting::max_memory_usage_for_user].value);
+        }
+
+        const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
+        {
+            if (current_value == 0 || current_value > limit)
+                client_context->setSetting(String(name), limit);
+            else
+                client_context->setSetting(String(name), current_value);
+        };
+        /// The execution-time limits only look like whole seconds: they are `Seconds` settings
+        /// backed by microseconds, and `0.5` is a value a session can legitimately hold. Compared
+        /// in seconds it would round down to zero, be read as "no limit" and have the query of the
+        /// agent widened to 30 seconds - the one thing this must never do is loosen a limit of the
+        /// session. So the comparison is in microseconds, and only the value written is in seconds.
+        const auto tighten_seconds = [&](std::string_view name, Int64 current_microseconds, UInt64 limit_seconds)
+        {
+            const Int64 limit_microseconds = static_cast<Int64>(limit_seconds) * 1'000'000;
+            if (current_microseconds == 0 || current_microseconds > limit_microseconds)
+                client_context->setSetting(String(name), limit_seconds);
+            else
+                /// The effective value can be stricter than the local one (see above), and the local one
+                /// is what the query carries, so the effective one is pinned explicitly.
+                client_context->setSetting(String(name), static_cast<Float64>(current_microseconds) / 1'000'000);
+        };
+        tighten_seconds("max_execution_time", current[Setting::max_execution_time].totalMicroseconds(), max_execution_time_limit);
+        tighten_seconds(
+            "max_execution_time_leaf", current[Setting::max_execution_time_leaf].totalMicroseconds(), max_execution_time_limit);
+        tighten("max_memory_usage", current[Setting::max_memory_usage], max_memory_usage_limit);
+        tighten("max_memory_usage_for_user", current[Setting::max_memory_usage_for_user], max_memory_usage_limit);
+
+        /// Tag the query in the query log as one the agent ran on its own, so it is distinguishable
+        /// from the queries the user typed themselves (the `read_query_log` tool filters those out).
+        /// Skipped when the session may reject the tag: the query must not fail over a marker that
+        /// nothing depends on once `read_query_log` is unavailable anyway. This is the one query
+        /// of the agent that can reach the query log without any marker (the hidden ones carry the
+        /// marked query id), so it is what takes `read_query_log` away for the rest of the session:
+        /// its row cannot be told apart from the history of the user any more.
+        if (aiQueryLogMarkerAllowed())
+            client_context->setSetting("log_comment", String(AI_AGENT_LOG_COMMENT));
+        else
+            ai_query_log_access_permanently_disabled = true;
+
+        /// Keep a session that is already read-only as is: `readonly = 2` must not be lowered, and
+        /// the server rejects any change of `readonly` in read-only mode anyway. The effective
+        /// value is used, not the one in the client context: the server may have applied a profile
+        /// the client does not see.
+        if (aiSessionReadonly() == 0)
+            client_context->setSetting("readonly", static_cast<UInt64>(1));
+    }
+
+    /// The result of a confirmed query reaches the model as well: it is recorded into the
+    /// recent-query context (`QueryContextBuffer`) and shown to the model as the outcome of the
+    /// tool call. So a confirmed `SHOW CREATE TABLE` of an external-engine table would forward the
+    /// credentials of its connection configuration to the AI provider in a session that displays
+    /// them - the very thing the masking of the unconfirmed paths is there to prevent. The query of
+    /// the agent is therefore masked whether it is confirmed or not, and the user sees the masked
+    /// definition too: the confirmation is about running the query, not about publishing its
+    /// secrets. Rendering the real definition stays an ordinary query the user types themselves.
+    ///
+    /// The pin is installed for every confirmed query, not only for a session whose effective value
+    /// displays secrets: `checkAIQuery` refuses a query that changes the setting itself, and what is
+    /// left - a `SET profile` or a `SET compatibility` inside the confirmed query - changes the
+    /// session on the server without reaching the client context, so the explicitly pinned value
+    /// keeps travelling with every statement and wins over it. Where the pin cannot be installed at
+    /// all - `readonly = 1`, or a server that predates the setting - a session that may display
+    /// secrets makes the tool refuse instead, exactly like the read-only tool above.
+    bool restore_display_secrets = false;
+    bool display_secrets_was_set_by_client = false;
+    Field display_secrets_to_restore;
+    if (!readonly)
+    {
+        if (!can_change_settings || !serverSupportsSetting("format_display_secrets_in_show_and_select"))
+        {
+            if (sessionMayDisplaySecrets())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The session displays the secrets of a table definition and the assistant cannot turn that off for "
+                    "the query it is shown the result of ({}). Ask the user to run this query themselves.",
+                    can_change_settings ? "the server does not support the `format_display_secrets_in_show_and_select` "
+                                          "setting"
+                                        : "`readonly = 1` does not allow changing settings");
+        }
+        else
+        {
+            const Settings & current = client_context->getSettingsRef();
+            display_secrets_was_set_by_client = current.isChanged("format_display_secrets_in_show_and_select");
+            if (display_secrets_was_set_by_client)
+                display_secrets_to_restore = current.get("format_display_secrets_in_show_and_select");
+            restore_display_secrets = true;
+            client_context->setSetting("format_display_secrets_in_show_and_select", false);
+        }
+    }
+    SCOPE_EXIT_SAFE({
+        if (!restore_display_secrets)
+            return;
+        if (display_secrets_was_set_by_client)
+            client_context->setSetting("format_display_secrets_in_show_and_select", display_secrets_to_restore);
+        else
+        {
+            /// The client did not hold the setting at all before the query - give it back exactly
+            /// that, instead of pinning the value of the mask: an override left behind would apply
+            /// to the queries the user types themselves and hide the secrets they asked to see.
+            Settings settings_without_pin = client_context->getSettingsRef();
+            settings_without_pin.setDefaultValue("format_display_secrets_in_show_and_select");
+            client_context->setSettings(settings_without_pin);
+        }
+    });
+
+    /// Put the query into the history of the line editor, like a query the user typed: it was
+    /// displayed as one, and the user may want to recall it with the history navigation to rerun
+    /// it or to edit it into a query of their own. Done before running it, so an interrupted or
+    /// failed query can be picked up and fixed as well.
+    if (ai_line_reader)
+        ai_line_reader->addQueryToHistory(query);
+
+    const UInt64 seqno_before = ai_query_context->latestSeqno();
+
+    ai_running_query_changed_dialect = false;
+    ai_running_query = true;
+    /// The query is displayed exactly once, by `echoQueryForAI` (in the read-only branch above,
+    /// or in the confirmation prompt for `run_query`). Suppress the echo of `executeMultiQuery`
+    /// (on by default in interactive mode) so it is not shown twice.
+    const bool saved_echo_queries = echo_queries;
+    echo_queries = false;
+    SCOPE_EXIT({
+        ai_running_query = false;
+        echo_queries = saved_echo_queries;
+    });
+
+    try
+    {
+        executeMultiQuery(query);
+    }
+    catch (...)
+    {
+        /// Server-side errors are reported through the normal path; what reaches here are
+        /// client-side errors. Record the outcome for the model and restore the connection,
+        /// like the interactive loop does after a client-side exception: only an error of a query
+        /// whose exchange with the server has actually started can desynchronize the protocol, and
+        /// resynchronizing a connection that is in sync would only risk losing the session state.
+        ///
+        /// The query and the message go back to the model as the result of the tool, so they are
+        /// masked like the ones `recordErrorForAIContext` records: a statement with secret parts
+        /// (credentials of an external engine, a presigned URL) is shown formatted for logging,
+        /// and the error, which may quote them, is reduced to its code.
+        const String message = getCurrentExceptionMessage(false);
+        const int code = getCurrentExceptionCode();
+        ASTPtr statement_with_secrets;
+        std::vector<String> masked_statements;
+        parseAIQueryStatements(query, [&](const IAST & ast)
+        {
+            if (!statement_with_secrets && ast.hasSecretParts())
+                statement_with_secrets = ast.clone();
+            masked_statements.push_back(ast.formatForLogging());
+        });
+        if (statement_with_secrets)
+            ai_query_context->recordError(
+                boost::algorithm::join(masked_statements, ";\n"),
+                errorMessageForAIContext(message, code, statement_with_secrets),
+                /*from_ai=*/ true);
+        else
+            ai_query_context->recordError(
+                queryTextForAIContext(query, nullptr), errorMessageForAIContext(message, code, nullptr), /*from_ai=*/ true);
+        if (connection && connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+    }
+
+    String summary = ai_query_context->format(seqno_before, /*skip_ai_initiated=*/ false);
+    if (summary.empty())
+        summary = "The query finished, but no outcome was recorded.";
+    return summary;
+}
+
+std::optional<String> ClientBase::parseAIQueryStatements(const String & query, const std::function<void(const IAST &)> & on_statement)
+{
+    /// Parse with `ParserQuery` directly (the ClickHouse SQL parser), so the parse matches the
+    /// dialect the agent's queries are executed under (pinned to ClickHouse in `runQueryForAI`),
+    /// regardless of the session dialect. `allow_multi_statements` lets `run_query` contain
+    /// several statements; each is parsed in turn.
+    const Settings & settings = client_context->getSettingsRef();
+    const auto max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
+    const auto max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
+    const char * pos = query.data();
+    const char * const end = pos + query.size();
+
+    try
+    {
+        while (pos < end)
+        {
+            /// Skip whitespace and statement separators between statements.
+            while (pos < end && (isWhitespaceASCII(*pos) || *pos == ';'))
+                ++pos;
+            if (pos >= end)
+                break;
+
+            /// If only comments remain, there is nothing more to parse (the parser expects a
+            /// query and would otherwise report a false syntax error on a trailing comment).
+            Tokens tokens(pos, end);
+            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+            if (!token_iterator.isValid())
+                break;
+
+            const char * const before = pos;
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            ASTPtr ast = parseQueryAndMovePosition(
+                parser, pos, end, "", /*allow_multi_statements=*/ true,
+                settings[Setting::max_query_size], max_parser_depth, max_parser_backtracks);
+
+            if (!ast || pos == before)
+                break;
+
+            on_statement(*ast);
+
+            /// An INSERT with inline data (also under `EXPLAIN`): the data that follows the statement
+            /// is not SQL. Skip it up to the boundary that `analyzeMultiQueryText` finds when the
+            /// query is executed, so the statements after the data are seen too.
+            const auto * insert = ast->as<ASTInsertQuery>();
+            if (const auto * explain = ast->as<ASTExplainQuery>(); !insert && explain && explain->getExplainedQuery())
+                insert = explain->getExplainedQuery()->as<ASTInsertQuery>();
+            if (insert && insert->data)
+                pos = findEndOfInlineInsertData(*insert, end);
+        }
+    }
+    catch (const Exception & e)
+    {
+        return e.message();
+    }
+
+    return std::nullopt;
+}
+
+AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
+{
+    const UInt64 readonly = aiSessionReadonly();
+
+    /// Whether the session would accept every statement of the query.
+    bool accepted_by_session = true;
+
+    /// Whether a statement of the query turns the display of secrets on (or resets it to the
+    /// default of the server, which may display them).
+    bool changes_secret_display = false;
+
+    const std::optional<String> syntax_error = parseAIQueryStatements(query, [&](const IAST & ast)
+    {
+        if (changesSecretDisplayForAIAgent(ast))
+            changes_secret_display = true;
+
+        /// `USE`, `SET ROLE` and transaction control change only the state of the session and
+        /// need no privilege that `readonly` takes away, so the server accepts them at any level.
+        if (readonly != 0 && isSessionStateStatementForAISession(ast))
+            return;
+
+        if (readonly == 1)
+        {
+            /// Nothing but reads, and not a single setting change - neither a `SET` statement nor
+            /// a SETTINGS clause, which the server rejects the whole query for.
+            if (!isReadOnlyStatementForAISession(ast) || changesSettingsForAIAgent(ast))
+                accepted_by_session = false;
+        }
+        else if (readonly >= 2)
+        {
+            /// Reads, setting changes and session state changes, but no writes.
+            if (!isReadOnlyStatementForAISession(ast) && !ast.as<ASTSetQuery>())
+                accepted_by_session = false;
+        }
+
+    });
+
+    AIQueryRunDecision decision;
+
+    /// A malformed query is reported back for correction instead of bothering the user with a
+    /// confirmation for a query that cannot run.
+    if (syntax_error)
+    {
+        decision.refusal = "The query has a syntax error and was not run: " + *syntax_error;
+        return decision;
+    }
+
+    /// The client pins `format_display_secrets_in_show_and_select = 0` for every query it runs on
+    /// behalf of the agent, because the result of a confirmed query is summarized back to the model
+    /// through `QueryContextBuffer` as well. The pin is a value of the client context, and a `SET`
+    /// of the query is applied to that same context once the statement has run - so a query made of
+    /// `SET format_display_secrets_in_show_and_select = 1; SHOW CREATE TABLE ...` would run its
+    /// second statement unmasked. It is refused instead: a user who wants to see the real definition
+    /// types the query themselves, where it is not forwarded to the provider by the assistant.
+    if (changes_secret_display)
+    {
+        decision.refusal =
+            "The query changes the `format_display_secrets_in_show_and_select` setting, and the assistant runs every "
+            "query with the display of secrets turned off, because it is shown the result. It was not run and the user "
+            "was not asked. Remove the setting change; if the user wants to see the credentials of a table definition, "
+            "tell them to run the query themselves.";
+        return decision;
+    }
+
+    if (readonly != 0 && !accepted_by_session)
+    {
+        decision.refusal = fmt::format(
+            "The session is read-only (the `readonly` setting is {}), so the server would reject this query: {}. "
+            "It was not run and the user was not asked. Tell them that their session does not allow it.",
+            readonly,
+            readonly == 1 ? "it accepts only read-only queries and session state changes (`USE`, `SET ROLE`), and no setting changes"
+                          : "it accepts only read-only queries, setting changes and session state changes (`USE`, `SET ROLE`)");
+        return decision;
+    }
+
+    return decision;
+}
+
+UInt64 ClientBase::aiSessionReadonly()
+{
+    /// The agent never asks while the question about `readonly` is in flight: that question is an
+    /// internal query that carries no marker of the agent and no isolation settings.
+    const std::optional<UInt64> readonly = sessionReadonlyIfKnown();
+    if (!readonly.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The effective `readonly` of the session is needed while it is being asked");
+    return *readonly;
+}
+
+bool ClientBase::aiQueryLogMarkerAllowed()
+{
+    /// The marker is a `log_comment` setting change, so it takes a session that accepts changing
+    /// settings. Once the agent has run a visible query unmarked (see `runQueryForAI`), its row
+    /// cannot be told apart from the history of the user any more, so the capability does not
+    /// come back when the session starts accepting the marker again. Merely asking - e.g. while
+    /// refreshing the tool set before a turn - takes nothing away for good.
+    if (ai_query_log_access_permanently_disabled || aiSessionReadonly() == 1)
+        return false;
+
+    /// `readonly` is not the only way a session can reject the marker: a settings profile can make
+    /// `log_comment` alone `const` and leave everything else writable. Attaching the marker then
+    /// fails every query of the agent - a schema probe, a documentation lookup, a read-only query -
+    /// over a tag that nothing depends on once `read_query_log` is gone with it. So the marker gets
+    /// a capability of its own, and the server is asked what it is instead of it being inferred
+    /// from `readonly`. The answer belongs to the settings profile of the user, so it is asked
+    /// once; the one thing that can replace that profile unseen - a `SET profile` - disables the
+    /// marker for good anyway. The question is an internal query of the agent like any other, so
+    /// it runs under a marked query id: it is the `log_comment` marker it cannot carry, not the
+    /// one `read_query_log` needs to keep it out of the history of the user.
+    if (!ai_query_log_marker_writable.has_value())
+    {
+        /// Without a server there is no query log to mark, and nothing to ask. The question is
+        /// left unanswered rather than answered wrongly, so it is asked again once connected.
+        if (!connection)
+            return false;
+
+        /// Asking can fail for reasons that say nothing about the answer: the session may limit
+        /// the execution time of its queries to less than this one takes as the first query of a
+        /// cold server, the user may cancel, the connection may break. The marker is optional and
+        /// the agent is not, so such a failure must not end the turn - and it would, because the
+        /// question is asked from `refreshToolSet`, which is the first thing every turn does.
+        /// It is answered with a no instead, which is the fail-closed answer: the marker is
+        /// dropped and `read_query_log` goes with it, and nothing else changes. Reported once,
+        /// because a tool that is silently missing looks like a model that chose not to use it.
+        /// Every internal query of the agent asks whether the marker may be attached before
+        /// attaching it, and this one is such a query, so it has to be told not to ask.
+        ai_query_log_marker_probe_in_progress = true;
+        SCOPE_EXIT(ai_query_log_marker_probe_in_progress = false);
+
+        try
+        {
+            const Block probe = materializeBlock(fetchInternalQueryResult(
+                "SELECT readonly FROM system.settings WHERE name = 'log_comment'", {}, /*from_ai_agent=*/ true));
+            /// An answer that is not a plain "the current user can change it" is taken for a no: the
+            /// marker is optional, and offering `read_query_log` on top of a guess would report the
+            /// activity of the agent itself back as the history of the user.
+            ai_query_log_marker_writable
+                = probe.rows() == 1 && probe.columns() == 1 && probe.getByPosition(0).column->getUInt(0) == 0;
+        }
+        catch (...)
+        {
+            ai_query_log_marker_writable = false;
+            error_stream << "The AI agent cannot check whether it may tag its queries in the query log, so the "
+                            "query-log tool is unavailable in this session: "
+                         << getCurrentExceptionMessage(false) << std::endl;
+        }
+    }
+
+    return *ai_query_log_marker_writable;
+}
+
+String ClientBase::aiSessionRestrictions()
+{
+    const UInt64 readonly = aiSessionReadonly();
+    if (readonly == 0)
+        return {};
+    return readonly == 1 ? AIPrompts::SESSION_READONLY_NOTE : AIPrompts::SESSION_READ_ONLY_QUERIES_NOTE;
+}
+
+void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables, bool allow_schema_access)
+{
+    if (tables.empty())
+        return;
+
+    /// Ask the server what these names are. `system.tables` only narrows its enumeration by
+    /// `database = ...` and `name = ...`, so each table is looked up by a branch of its own
+    /// rather than by an `IN` list over all of them: an `IN` would make the server walk every
+    /// table of the databases involved, which on a server with many tables is the whole cost of
+    /// this check.
+    ///
+    /// An unqualified name needs two branches. The current database is resolved by the server -
+    /// only it knows what a `USE` left behind - and the empty database is how `system.tables`
+    /// reports the temporary tables of the session, which an unqualified name resolves to first.
+    Strings branches;
+    Strings database_expressions;
+    NameSet seen_databases;
+    NameSet seen_lookups;
+
+    auto add_branch = [&](String branch)
+    {
+        if (seen_lookups.emplace(branch).second)
+            branches.push_back(std::move(branch));
+    };
+
+    auto add_lookup = [&](const String & database_expression, const String & name_literal)
+    {
+        add_branch(fmt::format(
+            "SELECT 'table' AS kind, database AS db, name AS tbl, engine AS eng "
+            "FROM system.tables WHERE database = {} AND name = {}",
+            database_expression,
+            name_literal));
+
+        /// The expressions the server evaluates when the table is read, although the query does not
+        /// write them: an `ALIAS` column is expanded into its expression, and a `DEFAULT` or
+        /// `MATERIALIZED` one is computed for the parts that predate the column.
+        add_branch(fmt::format(
+            "SELECT 'expression', database, table, default_expression "
+            "FROM system.columns WHERE database = {} AND table = {} AND default_expression != ''",
+            database_expression,
+            name_literal));
+    };
+
+    /// The filters of the row policies, which the server adds to the query. A temporary table has
+    /// none. Every policy of the table is checked, not only those of the current user: which ones
+    /// apply is resolved by the server. Reading `system.row_policies` needs the `SHOW ROW POLICIES`
+    /// grant; without it the check fails, and the query has to go through the confirmed tool.
+    auto add_row_policy_lookup = [&](const String & database_expression, const String & name_literal)
+    {
+        add_branch(fmt::format(
+            "SELECT 'policy', database, table, assumeNotNull(select_filter) "
+            "FROM system.row_policies WHERE database IN ({}, '') AND table IN ({}, '') AND select_filter IS NOT NULL",
+            database_expression,
+            name_literal));
+    };
+
+    for (const auto & table : tables)
+    {
+        const String database_expression = table.database.empty() ? "currentDatabase()" : quoteString(table.database);
+
+        /// A reference with no table names the database itself (`SHOW TABLES FROM db`): only its
+        /// engine is there to look up.
+        if (!table.table.empty())
+        {
+            const String name_literal = quoteString(table.table);
+            add_lookup(database_expression, name_literal);
+            if (table.database.empty())
+                add_lookup("''", name_literal);
+            /// The tables of the server-owned databases are judged by name, not by what they hold.
+            if (!isServerOwnedDatabaseForAIAgent(table.database))
+                add_row_policy_lookup(database_expression, name_literal);
+        }
+
+        if (seen_databases.emplace(table.database).second)
+            database_expressions.push_back(database_expression);
+    }
+
+    branches.push_back(fmt::format(
+        "SELECT 'database', name, '', engine FROM system.databases WHERE name IN ({})",
+        fmt::join(database_expressions, ", ")));
+    branches.emplace_back("SELECT 'current', currentDatabase(), '', ''");
+
+    const String query = fmt::to_string(fmt::join(branches, " UNION ALL "));
+
+    const Block result = materializeBlock(fetchInternalQueryResult(query, {}, /*from_ai_agent=*/ true));
+    if (result.columns() < 4)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of the table resolution query of the AI agent");
+
+    const auto & kind_column = *result.getByPosition(0).column;
+    const auto & database_column = *result.getByPosition(1).column;
+    const auto & table_column = *result.getByPosition(2).column;
+    const auto & engine_column = *result.getByPosition(3).column;
+
+    String current_database;
+    std::map<std::pair<String, String>, String> table_engines;
+    std::map<String, String> database_engines;
+    std::multimap<std::pair<String, String>, String> column_expressions;
+    std::vector<std::tuple<String, String, String>> row_policy_filters;
+    for (size_t row = 0; row < result.rows(); ++row)
+    {
+        const std::string_view kind = kind_column.getDataAt(row);
+        String database = String(database_column.getDataAt(row));
+        if (kind == "current")
+            current_database = std::move(database);
+        else if (kind == "database")
+            database_engines.emplace(std::move(database), String(engine_column.getDataAt(row)));
+        else if (kind == "expression")
+            column_expressions.emplace(
+                std::pair{std::move(database), String(table_column.getDataAt(row))},
+                String(engine_column.getDataAt(row)));
+        else if (kind == "policy")
+            row_policy_filters.emplace_back(
+                std::move(database), String(table_column.getDataAt(row)), String(engine_column.getDataAt(row)));
+        else
+            table_engines.emplace(
+                std::pair{std::move(database), String(table_column.getDataAt(row))},
+                String(engine_column.getDataAt(row)));
+    }
+
+    /// The table is read through an allowed engine; what is left is what the server evaluates for
+    /// the read without the query writing it.
+    const auto check_stored_expressions = [&](const String & database, const String & table)
+    {
+        const auto [begin, end] = column_expressions.equal_range({database, table});
+        for (auto it = begin; it != end; ++it)
+            validateStoredExpressionForAIAgent(
+                it->second, fmt::format("a column expression of the table `{}.{}`", database, table), allow_schema_access);
+
+        for (const auto & [policy_database, policy_table, filter] : row_policy_filters)
+            if ((policy_database.empty() || policy_database == database) && (policy_table.empty() || policy_table == table))
+                validateStoredExpressionForAIAgent(
+                    filter, fmt::format("the filter of a row policy of the table `{}.{}`", database, table), allow_schema_access);
+    };
+
+    for (const auto & reference : tables)
+    {
+        String database = reference.database;
+        if (database.empty())
+        {
+            /// A temporary table shadows a table of the current database, and has no database
+            /// of its own to check. A reference naming only a database has no temporary form.
+            if (auto it = reference.table.empty() ? table_engines.end() : table_engines.find({"", reference.table});
+                it != table_engines.end())
+            {
+                if (!isAllowedTableEngineForAIAgent(it->second))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The temporary table `{}` has the `{}` engine, which does not just hold data of this "
+                        "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
+                        reference.table,
+                        it->second);
+                check_stored_expressions("", reference.table);
+                continue;
+            }
+            database = current_database;
+        }
+
+        /// The databases owned by the server hold no user definitions; their tables are judged
+        /// by name, because their engines are one per table (`SystemTables`, `SystemNumbers`, ...).
+        if (isServerOwnedDatabaseForAIAgent(database))
+        {
+            /// The server-owned databases list all of their tables in `system.tables`, so an
+            /// unqualified name without a row there is not one of their tables: it is a CTE of the
+            /// query or a column on the right-hand side of an `IN` (`USE system` followed by
+            /// `WITH c AS (...) SELECT * FROM c`). A CTE that shadows a real table of the database
+            /// is still judged as that table: which of the two a name means is not known here.
+            if (reference.database.empty() && !reference.table.empty() && !table_engines.contains({database, reference.table}))
+                continue;
+
+            /// The static check of `validateReadOnlyQueryForAIAgent` only sees the database written
+            /// in the query; an unqualified name reaches a server-owned database through the current
+            /// database (e.g. after a confirmed `USE system`), which is only known here.
+            if (!allow_schema_access)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+
+            if (!reference.table.empty() && !isAllowedServerOwnedTableForAIAgent(database, reference.table))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The table `{}.{}` reads state outside of this server (Keeper or object storage), or holds "
+                    "the texts of queries or errors, or access metadata, so it is not allowed for the read-only tool. "
+                    "Use the run_query tool for this query",
+                    database,
+                    reference.table);
+            continue;
+        }
+
+        const auto database_it = database_engines.find(database);
+        if (database_it == database_engines.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The database `{}` was not found in `system.databases`, so it could not be checked. "
+                "Use the run_query tool for this query",
+                database);
+
+        if (!isAllowedDatabaseEngineForAIAgent(database_it->second))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The database `{}` has the `{}` engine, so its tables are backed by an external catalog rather "
+                "than by this server. It is not allowed for the read-only tool; use the run_query tool for this "
+                "query",
+                database,
+                database_it->second);
+
+        /// The reference names the database only; its engine is what was to be checked.
+        if (reference.table.empty())
+            continue;
+
+        const auto table_it = table_engines.find({database, reference.table});
+        if (table_it == table_engines.end())
+        {
+            /// Not a table of this database: a CTE of the query, a column on the right-hand side
+            /// of an `IN`, or a name that does not exist - in which case the server says so. The
+            /// database engine was checked above, so a database that lists all of its tables is
+            /// what makes this a safe conclusion rather than a guess.
+            continue;
+        }
+
+        if (!isAllowedTableEngineForAIAgent(table_it->second))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The table `{}.{}` has the `{}` engine, which does not just hold data of this server: reading it "
+                "can execute a stored definition or reach another server or an external system. It is not allowed "
+                "for the read-only tool; use the run_query tool for this query",
+                database,
+                reference.table,
+                table_it->second);
+
+        check_stored_expressions(database, reference.table);
+    }
+}
+
+String ClientBase::queryTextForAIContext(std::string_view query, const ASTPtr & parsed_query)
+{
+    /// `formatForLogging` hides the secret parts and then applies `wipeSensitiveDataAndCutToLength`.
+    if (parsed_query && parsed_query->hasSecretParts())
+        return parsed_query->formatForLogging();
+    return wipeSensitiveDataAndCutToLength(String(query), /*max_length=*/ 0, /*wipe_sensitive=*/ true);
+}
+
+String ClientBase::errorMessageForAIContext(const String & message, int code, const ASTPtr & parsed_query)
+{
+    /// An error message can quote the query it is about - a syntax error shows the text around its
+    /// position, an error of a table engine its arguments - and those are exactly the secret parts
+    /// `queryTextForAIContext` hides. They cannot be told apart in the message, so it is not recorded
+    /// at all when the query has any: the model gets the code of the error and its name.
+    if (parsed_query && parsed_query->hasSecretParts())
+        return fmt::format(
+            "Code: {}. ({}) The text of the error is not shown, because the query has secret parts it may quote.",
+            code,
+            ErrorCodes::getName(code));
+    return wipeSensitiveDataAndCutToLength(message, /*max_length=*/ 0, /*wipe_sensitive=*/ true);
+}
+
+void ClientBase::recordErrorForAIContext(std::string_view query_or_input, const ASTPtr & parsed_query)
+{
+    if (!is_interactive || !ai_query_context)
+        return;
+
+    String message;
+    if (server_exception)
+        message = errorMessageForAIContext(getExceptionMessage(*server_exception, false), server_exception->code(), parsed_query);
+    else if (client_exception)
+        message = errorMessageForAIContext(getExceptionMessage(*client_exception, false), client_exception->code(), parsed_query);
+    else
+        return;
+
+    /// A query that failed before an entry was opened (e.g. it could not be parsed) is recorded
+    /// standalone; it must keep the AI-initiated flag, so a failed query of the agent is not
+    /// replayed into the conversation as if the user had typed it.
+    ai_query_context->recordError(queryTextForAIContext(query_or_input, parsed_query), message, /*from_ai=*/ ai_running_query);
+}
+
+void ClientBase::recordParseErrorForAIContext(std::string_view query, const String & message)
+{
+    if (!is_interactive || !ai_query_context)
+        return;
+
+    /// The query was not parsed, so the secret parts of a statement (the credentials of an external
+    /// engine or of a user, a presigned URL) cannot be found the way `formatForLogging` finds them.
+    /// They are always string literals, so every string literal is hidden, and everything after a
+    /// literal that is not closed. The structure of the query, where the syntax error is, survives.
+    bool hidden_parts = false;
+    String masked_query;
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.isError())
+        {
+            masked_query += "[HIDDEN]";
+            hidden_parts = true;
+            break;
+        }
+
+        if (token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        {
+            masked_query += "'[HIDDEN]'";
+            hidden_parts = true;
+        }
+        else
+            masked_query.append(token.begin, token.end);
+    }
+
+    /// The message of a parse error quotes the text around the position of the error, literals
+    /// included, so it is not recorded when any were hidden. Otherwise it is formatted for the
+    /// terminal (it highlights the position of the error), but the recorded text goes into the
+    /// prompt of a model, where the escape sequences are noise.
+    String masked_message = hidden_parts
+        ? String("The query could not be parsed. The text of the error is not shown, because it can quote the string literals of the query, which are hidden.")
+        : stripTerminalEscapeSequences(message);
+
+    ai_query_context->recordError(
+        wipeSensitiveDataAndCutToLength(masked_query, /*max_length=*/ 0, /*wipe_sensitive=*/ true),
+        wipeSensitiveDataAndCutToLength(masked_message, /*max_length=*/ 0, /*wipe_sensitive=*/ true),
+        /*from_ai=*/ ai_running_query);
 }
 #endif
 
-Block ClientBase::fetchDocumentation(const String & query, const String & word)
+void ClientBase::resetServerSessionCaches()
 {
-    const NameToNameMap query_parameters_for_help{{"word", word}};
+    server_effective_setting_values.clear();
+#if USE_CLIENT_AI
+    ai_query_log_marker_writable.reset();
+    /// Neither the conversation nor the recent queries of the previous session may reach the model
+    /// as the context of this one.
+    if (ai_query_context)
+        ai_query_context->dropFinishedEntries();
+    if (ai_agent)
+        ai_agent_reset_pending = true;
+#endif
+}
 
-    /// Only the compression knobs: the rest of the session settings must not leak into this
-    /// client-issued helper query. See `networkCompressionSettings`.
-    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+/// The questions below are asked of the server rather than read from the client context, and
+/// are not guarded by `USE_CLIENT_AI`: `fetchInternalQueryResult` serves the `help` command as
+/// well as the AI agent, and it needs the dialect question in every build.
+std::optional<String> ClientBase::serverEffectiveSettingValue(const String & name)
+{
+    if (const auto it = server_effective_setting_values.find(name); it != server_effective_setting_values.end())
+        return it->second;
 
-    /// See the comment in `executeQueryForSingleString`: this exchange follows the same
-    /// resynchronization discipline as the regular queries.
+    /// Without a server there is nothing to ask, and the question must not be answered wrongly, so
+    /// it is left unanswered and asked again once connected. A question already in flight is not
+    /// asked again: the internal query that asks it is an internal query like any other, and those
+    /// ask this question before they are sent.
+    if (!connection || server_setting_probes_in_progress.contains(name))
+        return {};
+
+    server_setting_probes_in_progress.insert(name);
+    SCOPE_EXIT(server_setting_probes_in_progress.erase(name));
+
+    try
+    {
+        /// `system.settings` reports the value that applies to this session, whatever produced it -
+        /// a settings profile of the user, a `SET profile`, or the client. A setting the server does
+        /// not know is simply not there.
+        const Block probe = materializeBlock(fetchInternalQueryResult(
+            "SELECT value FROM system.settings WHERE name = {name:String}", {{"name", name}}, /*from_ai_agent=*/ true));
+
+        std::optional<String> value;
+        if (probe.rows() == 1 && probe.columns() == 1)
+            value = String(probe.getByPosition(0).column->getDataAt(0));
+        server_effective_setting_values[name] = value;
+        return value;
+    }
+    catch (Exception & e)
+    {
+        /// `system.settings` reports the settings of the query that reads it, so the question about
+        /// the dialect travels without the pin to the ClickHouse dialect (see
+        /// `fetchInternalQueryResult`) - with it, every session would answer `clickhouse`. A session
+        /// that parses another dialect therefore fails the question in the parser of that dialect,
+        /// and that failure is the answer: the dialect is not ClickHouse. It is recorded as unknown,
+        /// which `internalQueriesRequireDialectPin`, the only one asking, reads as "pin it".
+        if (name == "dialect" && (e.code() == ErrorCodes::SYNTAX_ERROR || e.code() == ErrorCodes::SUPPORT_IS_DISABLED))
+        {
+            server_effective_setting_values[name] = std::nullopt;
+            return std::nullopt;
+        }
+
+        /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
+        /// execution-time limit of the session, a cancelled query - so the failure is neither cached
+        /// nor turned into an answer. It propagates, and the tool that asked fails with it: read as
+        /// "the server does not know the setting", a timeout of the probe under a sub-second
+        /// `max_execution_time` of the session came back to the model as a claim that the server
+        /// predates the setting, which sent it looking for the wrong fix.
+        e.addMessage("While asking the server for the effective value of the setting `{}`", name);
+        throw;
+    }
+}
+
+bool ClientBase::serverSupportsSetting(const String & name)
+{
+    return serverEffectiveSettingValue(name).has_value();
+}
+
+bool ClientBase::sessionMayDisplaySecrets()
+{
+    applySettingsFromServerIfNeeded();
+
+    /// What the client set itself is effective regardless of what the server reports.
+    if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        return true;
+
+    /// A server that does not know the setting has no masking to speak of, and without a server
+    /// there is no answer that it does - both count as "it may". A question that fails throws.
+    const std::optional<String> value = serverEffectiveSettingValue("format_display_secrets_in_show_and_select");
+    if (!value.has_value())
+        return true;
+
+    /// Otherwise the answer of the server decides, and the local value is not consulted at all.
+    /// It used to be, for a session with `apply_settings_from_server = 1`, on the grounds that the
+    /// settings of the server reach such a client anyway - but a `SET profile` is applied on the
+    /// server without being reported back, so after one the local value is stale in exactly the
+    /// direction that matters, and the shortcut answered "it does not display secrets" for a
+    /// session that does. Asking costs nothing here: every caller has already asked whether the
+    /// server knows the setting, and both questions share one cached answer.
+    return *value != "0";
+}
+
+std::optional<UInt64> ClientBase::sessionReadonlyIfKnown()
+{
+    applySettingsFromServerIfNeeded();
+    const Settings & settings = client_context->getSettingsRef();
+
+    /// The settings the server applies to the session - `readonly` from the settings profile of
+    /// the user in particular - are sent to the client in the handshake and applied to the client
+    /// context, so its value is the effective one and no query is needed to learn it. Without a
+    /// server there is nothing else to go by.
+    ///
+    /// Two cases stay invisible to the client: a profile applied by a `SET profile` after the
+    /// handshake, and a user with `apply_settings_from_server = 0`, who asked for the settings of
+    /// the server not to reach the client. In both the local value may be wrong in either
+    /// direction, and every guarantee decided on it with it: the agent would offer to run writes
+    /// in a read-only session, and the internal queries would carry settings that such a session
+    /// rejects. So the server is asked, once, until a `SET` of `readonly` or of a profile, or a
+    /// reconnect, drops the answer.
+    ///
+    /// A value the client changed itself - `--readonly` on the command line, or a `SET` - travels
+    /// with the queries of the session, so it is effective whatever the server would answer: the
+    /// question carries no settings of the session and would not see it. But only when it was
+    /// changed after the last `SET profile`: a profile can replace `readonly` on the server
+    /// behind the client's back, just like the `dialect`.
+    const bool readonly_changed_by_client
+        = settings.isChanged("readonly") && (!settings_may_be_changed_by_profile || readonly_changed_after_profile);
+    if (!connection || readonly_changed_by_client
+        || (settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile))
+        return settings[Setting::readonly];
+
+    /// The question itself does not know the answer yet - see `fetchInternalQueryResult`.
+    if (server_setting_probes_in_progress.contains("readonly"))
+        return {};
+
+    const std::optional<String> value = serverEffectiveSettingValue("readonly");
+    if (!value.has_value())
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "The server does not report the `readonly` setting of the session");
+    return parse<UInt64>(*value);
+}
+
+bool ClientBase::internalQueriesRequireDialectPin()
+{
+    applySettingsFromServerIfNeeded();
+
+    const Settings & settings = client_context->getSettingsRef();
+    if (settings[Setting::dialect] != Dialect::clickhouse)
+        return true;
+
+    /// The local value is the effective one only when the settings of the server reach the client,
+    /// and no settings profile was applied with `SET profile` since: the server applies one without
+    /// reporting the settings it changed. With `apply_settings_from_server = 0` the client keeps its
+    /// own default while the server parses under the dialect of the settings profile of the user.
+    /// In both cases the server has to be asked - and an unanswered question means the pin is
+    /// applied (or, where it cannot be, the query is refused). It must not be assumed to be
+    /// required without asking: a profile that makes the session `readonly = 1` and leaves the
+    /// dialect alone would then take the AI chat and `help` down for nothing.
+    if (settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile)
+        return false;
+
+    std::optional<String> value;
+    try
+    {
+        value = serverEffectiveSettingValue("dialect");
+    }
+    catch (Exception & e)
+    {
+        /// The question is ClickHouse SQL and travels without the pin. The failures of the parser of
+        /// another dialect are read as the answer (see `serverEffectiveSettingValue`), but another
+        /// failure of the question - one that dialect reports differently - is what the user gets,
+        /// and it says nothing about how to get out of it in a session that cannot install the pin.
+        /// Only what is already known is consulted: asking the server here would replace this
+        /// error with the failure of another question.
+        const auto readonly_answer = server_effective_setting_values.find("readonly");
+        const bool session_is_readonly = readonly_answer != server_effective_setting_values.end()
+            ? readonly_answer->second == "1"
+            : settings[Setting::readonly] == 1;
+        if (session_is_readonly)
+            e.addMessage(
+                "The internal queries are ClickHouse SQL and `readonly = 1` does not allow pinning the `dialect` setting "
+                "for them. If the session uses another SQL dialect, run `SET dialect = 'clickhouse'` first");
+        throw;
+    }
+    return !value.has_value() || *value != "clickhouse";
+}
+
+Block ClientBase::fetchInternalQueryResult(
+    const String & query, const NameToNameMap & params, [[maybe_unused]] bool from_ai_agent, [[maybe_unused]] bool needs_secret_masking)
+{
+    /// The server-side settings profile is applied lazily. Internal queries can be the first
+    /// query in a session, so read the effective dialect and `readonly` only after applying it.
+    applySettingsFromServerIfNeeded();
+
+    /// The internal queries (of the AI agent and of the `help` command) are ClickHouse SQL and
+    /// must not run under the rest of the session, so what travels with them is only the knobs
+    /// that select the network codec, together with the pin to the ClickHouse dialect - see
+    /// `networkCompressionSettings`.
+    ///
+    /// `readonly = 1` rejects every setting change, that pin among them. Nothing is sent in such a
+    /// session, and one whose dialect is not ClickHouse cannot run these queries at all, so it is
+    /// told what to do about it instead of being handed a server error about the `dialect` setting.
+    ///
+    /// Whether the pin is needed is not read from the client context: with
+    /// `apply_settings_from_server = 0` the client keeps its own default while the server parses
+    /// under the dialect of the settings profile of the user, so the server is asked - see
+    /// `internalQueriesRequireDialectPin`. The question is itself an internal query, and it is the
+    /// one query that must not ask it: there is no answer yet, and under `readonly = 1` it would be
+    /// refused here instead of being sent. It is ClickHouse SQL, so a session that really parses
+    /// another dialect fails it, and the failure of the question then fails the query that asked.
+    ///
+    /// `readonly` is not read from the client context either, for the same reason - see
+    /// `sessionReadonlyIfKnown`. The question about it is the one query that cannot know the
+    /// answer, so it carries only the pin to the ClickHouse dialect: a session that already parses
+    /// ClickHouse SQL ignores it as an unchanged value at any `readonly` level, and one that does
+    /// not accepts it unless it is read-only - where these queries cannot run anyway.
+    ///
+    /// The question about the dialect itself carries no pin: `system.settings` reports the settings
+    /// of the query that reads it, so the pin would be all it measures - see
+    /// `serverEffectiveSettingValue`.
+    const std::optional<UInt64> session_readonly = sessionReadonlyIfKnown();
+    const bool asking_session_readonly = !session_readonly.has_value();
+    const bool asking_session_dialect = server_setting_probes_in_progress.contains("dialect");
+    const bool session_is_readonly = session_readonly == 1;
+    if (session_is_readonly && server_setting_probes_in_progress.empty() && internalQueriesRequireDialectPin())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
+            "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
+
+    /// The question about `readonly` is checked first: it is asked from within the question about
+    /// the dialect, while that one is still in progress, and it needs its pin.
+    std::optional<Settings> settings_to_send;
+    if (asking_session_readonly)
+    {
+        settings_to_send.emplace();
+        settings_to_send->set("dialect", String("clickhouse"));
+    }
+    else if (asking_session_dialect)
+    {
+        /// No pin is sent, see above.
+    }
+    else if (!session_is_readonly)
+    {
+        settings_to_send = networkCompressionSettings(client_context->getSettingsRef());
+    }
+
+    /// Left empty for the queries of the `help` command, so the server assigns the query id. This
+    /// is not the `query_id` member: that one is the query id of the session, which the queries
+    /// running behind the user's back have no business carrying.
+    String internal_query_id;
+
+#if USE_CLIENT_AI
+    /// Tag the queries the agent runs internally (schema exploration, documentation lookups, the
+    /// query-log read itself) so they are distinguishable in the query log from the queries the
+    /// user typed themselves - the `read_query_log` tool filters them out, like the in-memory
+    /// recent-query context does.
+    ///
+    /// The tag is the query id, because that is the one thing a session cannot take away:
+    /// `readonly = 1` accepts no setting change, and a settings profile can make `log_comment`
+    /// alone `const`. None of these queries is displayed, so the id nobody will see is free to
+    /// carry the tag, and it is what lets the tool promise that the hidden activity of the agent
+    /// stays out of the history of the user - in this session and in every earlier one, whatever
+    /// its settings allowed.
+    if (from_ai_agent)
+        internal_query_id = fmt::format("{}{}", AI_AGENT_QUERY_ID_PREFIX, UUIDHelpers::generateV4());
+
+    /// The `log_comment` marker is kept on top of it: it is the one marker the queries the agent
+    /// runs *visibly* on the user's connection can carry, since those keep the query id of a query
+    /// the user typed. It is not worth failing a query over, so a session that rejects it keeps
+    /// the agent, only without it. The question about whether it may be attached does not attach
+    /// it: it is asking, and asking must not fail over the answer.
+    if (from_ai_agent && !asking_session_readonly && !asking_session_dialect && !ai_query_log_marker_probe_in_progress
+        && aiQueryLogMarkerAllowed())
+    {
+        if (!settings_to_send)
+            settings_to_send.emplace();
+        settings_to_send->set("log_comment", String(AI_AGENT_LOG_COMMENT));
+    }
+
+    /// The result of an internal query of the agent that renders a table definition
+    /// (`show_create_table`) is sent to the AI provider without the user seeing it, so the secrets
+    /// of an external-engine table are masked even if the session enabled their display. Only that
+    /// query pays for it: the setting change is one more thing the session can reject, and a
+    /// profile that does reject it must not take `list_databases`, `list_tables`,
+    /// `consult_documentation` and `read_query_log` down with it - none of them can render a
+    /// secret in the first place.
+    ///
+    /// The masking is forced whenever the server knows the setting, without looking at the value
+    /// the session has: that value is exactly what the client may be wrong about
+    /// (`apply_settings_from_server = 0` hides the settings profile of the user from it), and
+    /// sending a value the session already has is a no-op. The setting is `IMPORTANT`, so it cannot
+    /// be sent blindly - a server that predates it answers `UNKNOWN_SETTING` - hence the question
+    /// to the server about whether it knows it at all.
+    ///
+    /// When the masking cannot be installed, the query is not sent: under `readonly = 1` no setting
+    /// travels with it, and a server that does not know the setting renders the secrets no matter
+    /// what. Both cases fail closed, unless the session cannot display secrets in the first place -
+    /// which is the default, and what every ordinary session does.
+    if (needs_secret_masking)
+    {
+        if (settings_to_send && serverSupportsSetting("format_display_secrets_in_show_and_select"))
+        {
+            settings_to_send->set("format_display_secrets_in_show_and_select", false);
+        }
+        else if (sessionMayDisplaySecrets())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "This session renders table definitions with their secrets visible and the assistant must not be shown "
+                "them, which it cannot be prevented from here: {}. Use the run_query tool, so the user sees the "
+                "definition and decides themselves",
+                session_is_readonly
+                    ? "`readonly = 1` does not allow changing `format_display_secrets_in_show_and_select` for the query"
+                    : "the server does not support the `format_display_secrets_in_show_and_select` setting");
+        }
+    }
+
+    /// None of the internal queries of the agent has any business enumerating a remote database
+    /// or a data-lake catalog: `system.tables` and `system.columns` contact one when they do, and
+    /// those two tables are what the schema tools and the table resolution of the read-only tool
+    /// read. Neither setting is `IMPORTANT`, so a server that predates them ignores them, and
+    /// both are sent unconditionally rather than only when the session has them on: an unchanged
+    /// value costs nothing, and the value the session has is not the one to trust here.
+    ///
+    /// Where this isolation cannot be installed - a session with `readonly = 1`, which sends no
+    /// settings at all, or a server that predates the settings and ignores them - the schema tools
+    /// keep the visibility of the session. That is the documented exception (`client.mdx` and the
+    /// descriptions the model reads say so): reading the schema of a database this server does not
+    /// own is allowed without confirmation, and the definition it renders is masked either way.
+    /// The unconfirmed read-only tool does not get that exception - it refuses to run at all unless
+    /// it can install the whole isolation, see `runQueryForAI`.
+    if (from_ai_agent && !asking_session_readonly && settings_to_send)
+    {
+        settings_to_send->set("show_remote_databases_in_system_tables", false);
+        settings_to_send->set("show_data_lake_catalogs_in_system_tables", false);
+    }
+#endif
+
+    /// A session can hold settings that the server evaluates as a part of every `SELECT` (see
+    /// `query_construction_settings`), and an internal query must neither run them nor have its
+    /// result reshaped by them. They are reset for every internal query, the questions about the
+    /// session included: the reset is a no-op where they are not set, which is accepted at any
+    /// `readonly` level (where nothing else is sent), and a session that has them and cannot change
+    /// them fails the query instead of running them. This comes last: the checks above take a query
+    /// that sends no settings for one that cannot change any.
+    if (!settings_to_send)
+        settings_to_send.emplace();
+    for (const auto * name : query_construction_settings)
+        settings_to_send->set(name, String{});
+
+    /// This is a complete query exchange on the shared connection, so it follows the same
+    /// resynchronization discipline as the regular queries: recover from a previous failed
+    /// exchange first, arm the flag for the time of the exchange (so that a transport or client
+    /// failure here does not leave the connection silently desynchronized for the next query),
+    /// and clear it when the exchange terminates in a protocol-consistent way - with
+    /// `EndOfStream` or with a server exception.
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
 
@@ -4501,10 +6054,10 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
         connection->sendQuery(
             connection_parameters.timeouts,
             query,
-            query_parameters_for_help,
-            "", /// query_id
+            params,
+            internal_query_id,
             QueryProcessingStage::Complete,
-            &compression_settings, /// settings (so the network codec honors `network_compression_method`)
+            settings_to_send ? &*settings_to_send : nullptr,
             &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
             false, /// with_pending_data
             {}, /// external_roles
@@ -4529,9 +6082,12 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
                 return blocks.empty() ? Block{} : concatenateBlocks(blocks);
 
             case Protocol::Server::Exception:
-                /// A server exception terminates the exchange with the protocol in sync (see the
-                /// comment in `executeQueryForSingleString`), so the next query of the session
-                /// must not pay for it with a round-trip resynchronization.
+                /// A server exception terminates the exchange with the protocol in sync: the query
+                /// was sent with the terminating empty block (`with_pending_data` is false), and a
+                /// server exception is the last packet of the exchange - the server drains the data
+                /// it has not read yet and preserves the connection. So the next query of the
+                /// session must not pay for it with a round-trip resynchronization: the ping could
+                /// time out on a slow server and silently reconnect away the session state.
                 connection_needs_resynchronization = false;
                 packet.exception->rethrow();
                 break; /// unreachable: `rethrow` always throws
@@ -4602,10 +6158,10 @@ bool ClientBase::processHelpCommand(const String & word_arg)
 
     try
     {
-        const Block exact = fetchDocumentation(
+        const Block exact = fetchInternalQueryResult(
             "SELECT name, toString(type) AS type, description FROM system.documentation "
             "WHERE lower(name) = lower({word:String}) ORDER BY type, name",
-            word);
+            {{"word", word}});
 
         if (exact.rows() > 0)
         {
@@ -4630,21 +6186,21 @@ bool ClientBase::processHelpCommand(const String & word_arg)
         /// and by entities whose documentation mentions the word.
         /// `lower` (not `lowerUTF8`) is used deliberately: entity names are ASCII, and `lowerUTF8`
         /// requires ICU, which is not available in every build (e.g. the Fast test build).
-        const Block by_name = fetchDocumentation(
+        const Block by_name = fetchInternalQueryResult(
             "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
             "WHERE (lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(name, {word:String}) > 0) "
             "   OR editDistanceUTF8(lower(name), lower({word:String})) "
             "      <= greatest(1, intDiv(lengthUTF8({word:String}), 3)) "
             "ORDER BY editDistanceUTF8(lower(name), lower({word:String})), lengthUTF8(name), name "
             "LIMIT 30",
-            word);
+            {{"word", word}});
 
-        const Block by_content = fetchDocumentation(
+        const Block by_content = fetchInternalQueryResult(
             "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
             "WHERE lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(description, {word:String}) > 0 "
             "  AND lower(name) != lower({word:String}) "
             "ORDER BY name LIMIT 30",
-            word);
+            {{"word", word}});
 
         output_stream << "\nNo documentation found for '" << word << "'.\n";
 
@@ -4712,12 +6268,19 @@ bool ClientBase::checkAIProviderAcknowledgment()
             progress_indication.clearProgressOutput(*tty_buf, lock);
         }
 
-        const auto question = fmt::format(
-            "AI SQL generation will use {} API key from environment variable.\n"
-            "Do you want to continue? [y/N] ",
-            ai_provider_name);
+        String unused_key_note;
+        if (!ai_unused_environment_key.empty())
+            unused_key_note = fmt::format(
+                "\n({} is also set but is not used; to use it, set `ai.provider` in the client configuration.)",
+                ai_unused_environment_key);
 
-        if (!ask(question, *std_in, *std_out))
+        const auto question = fmt::format(
+            "The AI agent will use the {} API key from an environment variable.{}\n"
+            "Do you want to continue? [Y/n] ",
+            ai_provider_name,
+            unused_key_note);
+
+        if (!ask(question, *std_in, *std_out, /*default_yes=*/ true))
         {
             // User declined
             error_stream << "AI query cancelled.\n";
@@ -5129,13 +6692,6 @@ void ClientBase::runInteractive()
 
     initQueryIdFormats();
 
-#if USE_CLIENT_AI
-    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
-    /// because it accesses the environment (API keys) which could be a security concern.
-    if (!isEmbeeddedClient())
-        initAIProvider();
-#endif
-
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
@@ -5246,7 +6802,7 @@ void ClientBase::runInteractive()
             && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
         .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
-        /// `processQueryText`, so offer them here.
+        /// `processQueryText` (and in the AI-chat mode in `processAIChat`), so offer them here.
         .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
@@ -5271,6 +6827,21 @@ void ClientBase::runInteractive()
         output_stream,
         stdin_fd
     );
+#endif
+
+#if USE_CLIENT_AI
+    /// The AI agent adds the queries it runs to the history through this reader, so they can be
+    /// recalled and edited like the queries the user typed themselves.
+    /// The reader itself lives on the heap (`lr` merely owns it), and the `SCOPE_EXIT` below is
+    /// destroyed before `lr`, clearing the field first - but the lifetime analysis conflates the
+    /// owner with the pointee and cannot see through the scope guard, so it reports a dangling
+    /// field here. The warning exists only in newer clang, hence `-Wunknown-warning-option`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wlifetime-safety-dangling-field"
+    ai_line_reader = lr.get();
+#pragma clang diagnostic pop
+    SCOPE_EXIT({ ai_line_reader = nullptr; });
 #endif
 
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
@@ -5300,6 +6871,16 @@ void ClientBase::runInteractive()
             "/"   /// Oracle SQL Plus shortcut
         };
 
+#if USE_CLIENT_AI
+    /// A question for the AI agent that is just a repeat alias (`? /` or `/` in the AI mode of the
+    /// line editor). The line may carry surrounding whitespace and a trailing `;` there.
+    const auto is_repeat_last_input_question = [](const String & question)
+    {
+        const String text = trim(question, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+        return std::ranges::find(repeat_last_input_aliases, text) != repeat_last_input_aliases.end();
+    };
+#endif
+
     String last_input;
 
     do
@@ -5313,13 +6894,6 @@ void ClientBase::runInteractive()
             lr->enableBracketedPaste();
             SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
 
-            // Check if we have a prepopulated query to show
-            if (!next_query_to_prepopulate.empty())
-            {
-                lr->setInitialText(next_query_to_prepopulate);
-                next_query_to_prepopulate.clear();
-            }
-
             if (on_waiting_for_query_input)
                 on_waiting_for_query_input(true);
             SCOPE_EXIT_SAFE({
@@ -5332,6 +6906,39 @@ void ClientBase::runInteractive()
 
         if (input.empty())
             break;
+
+#if USE_CLIENT_AI
+        /// In AI-chat mode (entered with a leading `?`) the whole line is a question for the
+        /// agent, not SQL - route it directly, bypassing the SQL conveniences below.
+        if (lr->inAIMode())
+        {
+            /// `last_input` is not updated: it feeds the `.` / `/` repeat aliases of the SQL
+            /// mode, which must keep repeating the last SQL query, not an AI question.
+            try
+            {
+                /// A lone repeat alias is not a question: it repeats the last SQL query, like in
+                /// the SQL mode, instead of costing a provider turn.
+                if (is_repeat_last_input_question(input))
+                {
+                    if (!processQueryText(last_input))
+                        break;
+                }
+                else
+                    processAIChat(input);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::USER_EXPIRED)
+                    break;
+
+                /// A misspelled `/`-command, or a failure of a `/`-command run from this mode, is
+                /// reported like in the SQL mode below instead of ending the session.
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+            }
+            continue;
+        }
+#endif
 
         has_vertical_output_suffix = false;
         if (input.ends_with("\\G") || input.ends_with("\\G;"))
@@ -5373,13 +6980,20 @@ void ClientBase::runInteractive()
             }
         }
 
+#if USE_CLIENT_AI
+        /// The same for the inline `? /` form: repeat the last SQL query rather than asking the model.
+        if (const String trimmed_input = trim(input, [](char c) { return isWhitespaceASCII(c); });
+            trimmed_input.starts_with("?") && is_repeat_last_input_question(trimmed_input.substr(1)))
+            input = last_input;
+#endif
+
         if (suggest && suggest->getLastError() == ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
             /// This is a query exchange on the shared connection, so it follows the same
             /// resynchronization discipline as the regular queries (see the comment in
-            /// `executeQueryForSingleString`): a failed query of this session may have left the
+            /// `fetchInternalQueryResult`): a failed query of this session may have left the
             /// protocol desynchronized, and the flag has to stay armed for the time of the
             /// exchange, because `load` swallows its failures - including a transport failure in
             /// the middle of the exchange, which the next query of the session would otherwise
@@ -5400,7 +7014,15 @@ void ClientBase::runInteractive()
         {
             if (!processQueryText(input))
                 break;
+#if USE_CLIENT_AI
+            /// Like the AI-mode branch above: the inline `? ...` AI commands must not feed the
+            /// `.` / `/` repeat aliases, which repeat the last SQL query, not an AI question.
+            const bool is_inline_ai_command = trim(input, [](char c) { return isWhitespaceASCII(c); }).starts_with("?");
+            if (!is_inline_ai_command)
+                last_input = input;
+#else
             last_input = input;
+#endif
         }
         catch (const Exception & e)
         {
@@ -5410,6 +7032,12 @@ void ClientBase::runInteractive()
             /// We don't need to handle the test hints in the interactive mode.
             error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
             client_exception.reset(e.clone());
+
+#if USE_CLIENT_AI
+            if (ai_query_context)
+                ai_query_context->recordError(
+                    queryTextForAIContext(input, nullptr), errorMessageForAIContext(getExceptionMessage(e, false), e.code(), nullptr), /*from_ai=*/ false);
+#endif
         }
 
         if (client_exception && connection_needs_resynchronization)
@@ -5457,11 +7085,6 @@ void ClientBase::runNonInteractive()
 {
     if (delayed_interactive || echo_query_id)
         initQueryIdFormats();
-
-#if USE_CLIENT_AI
-    if (!isEmbeeddedClient())
-        initAIProvider();
-#endif
 
     if (!buzz_house && !queries_files.empty())
     {

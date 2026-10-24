@@ -1,3 +1,4 @@
+#include <Client/AI/AIAgentDisplay.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ClientSlashCommands.h>
 #include <Client/ReplxxLineReader.h>
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_set>
 #include <chrono>
 #include <cerrno>
@@ -28,7 +30,7 @@
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include "config.h" // USE_SKIM
+#include "config.h" // USE_SKIM, USE_CLIENT_AI
 
 #if USE_SKIM
 #include <skim.h>
@@ -70,6 +72,37 @@ std::vector<std::string> extractIdentifiers(const char * text)
     }
 
     return result;
+}
+
+/// Whether `LINE_PREVIOUS` / `LINE_NEXT` moves the cursor to another line of the multiline text being
+/// edited rather than recalling a history entry: the same condition as in `line_previous` and
+/// `line_next` of replxx - a newline before the cursor for Up, at or after it for Down. The cursor
+/// position of replxx is in code points; a newline is a single byte, which is never a part of a
+/// multi-byte UTF-8 sequence, so only the leading bytes need counting.
+bool lineMoveStaysInText(const replxx::Replxx::State & state, replxx::Replxx::ACTION action)
+{
+    if (action != replxx::Replxx::ACTION::LINE_PREVIOUS && action != replxx::Replxx::ACTION::LINE_NEXT)
+        return false;
+
+    const std::string_view text = state.text() ? state.text() : "";
+    const int cursor = state.cursor_position();
+    int code_point = 0;
+    for (const char c : text)
+    {
+        if ((static_cast<unsigned char>(c) & 0xC0) == 0x80)
+            continue;
+        if (c == '\n' && (action == replxx::Replxx::ACTION::LINE_PREVIOUS ? code_point < cursor : code_point >= cursor))
+            return true;
+        ++code_point;
+    }
+    return false;
+}
+
+/// The cursor position for a text that gained (`delta > 0`) or lost (`delta < 0`) a prefix of
+/// `|delta|` code points, so that it stays at the same place of the text after the prefix.
+int shiftedCursor(int cursor, int delta)
+{
+    return std::max(cursor + delta, 0);
 }
 
 /// Trim ending whitespace inplace
@@ -401,10 +434,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// `/`-commands below).
     auto callback = [this] (const String & context, int & context_size)
     {
-        /// The `/`-commands of the client are completed at the beginning of the input. This is the
-        /// only way to complete them when the as-you-type hints are disabled. The whole typed prefix
-        /// is replaced, including the leading `/` - replxx counts it as a word break character and
-        /// would otherwise complete only the part after it.
+        /// The `/`-commands of the client are completed at the beginning of the input, in both the
+        /// SQL and the AI-chat mode (they run as commands in both). This is the only completion that
+        /// works in the AI-chat mode, and the only way to complete them when the as-you-type hints
+        /// are disabled. The whole typed prefix is replaced, including the leading `/` - replxx
+        /// counts it as a word break character and would otherwise complete only the part after it.
         if (enable_slash_commands)
         {
             if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
@@ -421,6 +455,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 return replxx::Replxx::completions_t(slash_commands.commands.begin(), slash_commands.commands.end());
             }
         }
+
+        /// No SQL completions while composing an AI-chat question (the `?` mode or an inline `?`).
+        if (ai_mode || isAIChatLine(rx.get_state().text()))
+            return replxx::Replxx::completions_t{};
 
         /// When this completion corresponds to the hints currently displayed, reuse the exact
         /// snapshot taken when they were shown. replxx accepts a hint by indexing this completion
@@ -447,7 +485,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_indent_multiline(false);
 
     if (highlighter)
-        rx.set_highlighter_callback(highlighter);
+        rx.set_highlighter_callback([this](const std::string & input, replxx::Replxx::colors_t & colors, int pos)
+        {
+            /// In AI-chat mode the input is a natural-language question, not SQL - leave it
+            /// uncolored instead of running it through the SQL highlighter.
+            if (ai_mode)
+                return;
+            highlighter(input, colors, pos);
+        });
 
     /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
     /// the same priority ordering as Tab completion. replxx renders a single hint inline after
@@ -503,9 +548,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 return hints_to_show;
             };
 
-            /// The `/`-commands of the client are hinted at the beginning of the input, as soon as
-            /// the `/` is typed. The hints replace the whole typed prefix including the `/`, so
-            /// `context_size` is widened to it (see the completion callback).
+            /// The `/`-commands of the client are hinted at the beginning of the input, in both the
+            /// SQL and the AI-chat mode (they run as commands in both), as soon as the `/` is typed.
+            /// The hints replace the whole typed prefix including the `/`, so `context_size` is
+            /// widened to it (see the completion callback).
             if (enable_slash_commands && isCursorAtEndOfInput())
             {
                 if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
@@ -516,6 +562,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                     return show(replxx::Replxx::hints_t(slash_commands.commands.begin(), slash_commands.commands.end()), context_size);
                 }
             }
+
+            /// No SQL hints while composing an AI-chat question (the `?` mode or an inline `?`):
+            /// it is natural-language text, so identifier suggestions are only noise.
+            if (ai_mode || isAIChatLine(rx.get_state().text()))
+                return replxx::Replxx::hints_t{};
 
             if (!enable_suggestion_hints)
                 return replxx::Replxx::hints_t{};
@@ -584,8 +635,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
-    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::DOWN), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
+    /// The rest of replxx's default history recalls are routed through historyNavigate as well,
+    /// so that a recalled AI question (stored with a `? ` prefix) switches into AI-chat mode and
+    /// the displayed line does not pop the as-you-type hints. The uppercase M-P/M-N are re-bound
+    /// to completion below, so only the lowercase pair keeps the common-prefix search.
     rx.bind_key(Replxx::KEY::meta(Replxx::KEY::UP), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::DOWN), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::meta('p'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
     rx.bind_key(Replxx::KEY::meta('n'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
     rx.bind_key(Replxx::KEY::meta('<'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
@@ -611,6 +666,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// the normal "type a command and press Enter" flow.
         if (hintPopupActive() && hint_selection >= 0)
             return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
+        /// AI chat is natural-language input, not SQL. In particular, it has no meaningful SQL
+        /// delimiter, so multiline mode must not turn Enter into a literal newline. A paste in
+        /// progress (see below) is still folded, so a pasted multi-line question is sent whole.
+        if (ai_mode || isAIChatLine(rx.get_state().text()))
+            return rx.invoke(hasInputData() ? Replxx::ACTION::NEW_LINE : Replxx::ACTION::COMMIT_LINE, code);
         /// If we allow multiline and there is already something in the input, start a newline.
         /// Also, when bytes are still queued in the TTY (paste in progress without bracketed
         /// paste support), fold the embedded newline into the same edit buffer instead of
@@ -706,6 +766,13 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             return rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
         });
     }
+    else
+    {
+        /// Without the hint machinery, Up/Down keep their default history navigation, but still
+        /// switch AI-chat mode to match the recalled entry.
+        rx.bind_key(Replxx::KEY::UP, [this](char32_t code) { return historyNavigate(Replxx::ACTION::LINE_PREVIOUS, code); });
+        rx.bind_key(Replxx::KEY::DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::LINE_NEXT, code); });
+    }
 
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
@@ -743,10 +810,54 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
+    /// A leading `?` on an empty line is a mode switch into AI chat rather than a character:
+    /// the prompt becomes the magenta `:?` and the line stays empty. Any other `?` (mid-line,
+    /// or already in AI mode) is inserted normally.
+    ///
+    /// Only a client built with the AI chat has the mode: the line of the mode reaches the caller
+    /// without its `?`, and a client without the AI chat would run it as SQL - a question like
+    /// `? DROP TABLE t` would drop the table. There the `?` stays a character, so the line fails
+    /// to parse as SQL instead.
+#if USE_CLIENT_AI
+    rx.bind_key('?', [this](char32_t code)
+    {
+        if (!ai_mode && rx.get_state().text()[0] == '\0')
+        {
+            ai_mode = true;
+            rx.set_prompt(aiModePrompt());
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }
+        return rx.invoke(Replxx::ACTION::INSERT_CHARACTER, code);
+    });
+#endif
+
+    /// Backspace on the empty `:?` line leaves AI chat mode and restores the SQL prompt; a
+    /// backspace with text present deletes a character as usual.
+    rx.bind_key(Replxx::KEY::BACKSPACE, [this](char32_t code)
+    {
+        if (ai_mode && rx.get_state().text()[0] == '\0')
+        {
+            ai_mode = false;
+            rx.set_prompt(sql_prompt);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }
+        return rx.invoke(Replxx::ACTION::DELETE_CHARACTER_LEFT_OF_CURSOR, code);
+    });
+
     char key_fuzzy = 'R';
     char key_regular = 'T';
     if (options.interactive_history_legacy_keymap)
         std::swap(key_fuzzy, key_regular);
+
+    /// The incremental history searches also go through historyNavigate for the AI-chat mode
+    /// switch: the search re-queues its terminating key (e.g. Enter) and returns before that key
+    /// is dispatched, so a found AI question already switched the mode (and lost the `? ` prefix)
+    /// by the time the line is committed. The skim binding below overrides C-R where the fuzzy
+    /// search is available; C-S (the forward search) and M-r (the search seeded with the current
+    /// line) are replxx defaults.
+    rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
 #if USE_SKIM
     if (!options.embedded_mode)
@@ -781,6 +892,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 /// (see historyNavigate).
                 suppress_hints_once = true;
                 rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+                /// The picked entry may be an AI question stored with a `? ` prefix - switch the
+                /// mode to match it (and strip the prefix), like the history navigation does.
+                syncModeFromHistory();
             }
 
             if (bracketed_paste_enabled)
@@ -849,41 +963,6 @@ bool ReplxxLineReader::hintChosen()
     return hintPopupActive() && (hint_selection >= 0 || hint_count == 1);
 }
 
-replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::ACTION action, char32_t code)
-{
-    /// The recalled entry is displayed (and its hints regenerated) inside the action, so the
-    /// suppression must be armed before it; the pin below keeps later regenerations of the
-    /// recalled text hintless (the refresh inside the action may be throttled and replayed after
-    /// this returns) and is cleared by the first edit.
-    suppress_hints_once = true;
-    auto result = rx.invoke(action, code);
-    if (rx.history_recalled())
-        suppressHintsForDisplayedLine();
-    else
-        suppress_hints_once = false;
-    return result;
-}
-
-replxx::Replxx::ACTION_RESULT ReplxxLineReader::historySearch(replxx::Replxx::ACTION action, char32_t code)
-{
-    /// The selected entry is displayed (and its hints regenerated) inside the search action, so
-    /// the suppression must be armed before it. C-R, C-S, Meta-R, and the ClickHouse regular
-    /// history-search binding all use this wrapper.
-    suppress_hints_once = true;
-    auto result = rx.invoke(action, code);
-    if (rx.history_recalled())
-        suppressHintsForDisplayedLine();
-    else
-        suppress_hints_once = false;
-    return result;
-}
-
-void ReplxxLineReader::suppressHintsForDisplayedLine()
-{
-    suppress_hints_once = false;
-    suppress_hints_for_text = rx.get_state().text();
-}
-
 ReplxxLineReader::~ReplxxLineReader()
 {
     /// `Replxx::print` may fail with `std::runtime_error("write failed")` when e.g. the pty of the embedded
@@ -913,11 +992,122 @@ ReplxxLineReader::~ReplxxLineReader()
     }
 }
 
+std::string ReplxxLineReader::aiModePrompt() const
+{
+    /// Colors are enabled together with highlighting; without them, show a plain `:?`.
+    const std::string question = highlighter ? "\033[1;35m:?\033[0m " : ":? ";
+
+    /// Keep the display-name part of the SQL prompt in its normal color, and swap only its
+    /// trailing `:) ` smiley for the magenta `:?`. `sql_prompt` is the SQL prompt captured in
+    /// readOneLine (e.g. "myhost :) "); custom prompts without the smiley just get `:?` appended.
+    static constexpr std::string_view smiley = ":) ";
+    if (sql_prompt.ends_with(smiley))
+        return sql_prompt.substr(0, sql_prompt.size() - smiley.size()) + question;
+    return sql_prompt + question;
+}
+
+void ReplxxLineReader::restoreHistoryPrefix()
+{
+    /// Before a history move, put the current AI-mode line back into its stored `? `-prefixed
+    /// form, so replxx saves the scratch of the current entry with the prefix and a later revisit
+    /// still recognizes it as an AI entry (replxx saves the edit buffer as the entry's scratch on
+    /// move). No-op in SQL mode or when the prefix is already present.
+    if (!ai_mode)
+        return;
+    const replxx::Replxx::State state = rx.get_state();
+    const std::string text = state.text();
+    if (text.starts_with("? "))
+        return;
+    const std::string prefixed = "? " + text;
+    rx.set_state(replxx::Replxx::State(prefixed.c_str(), shiftedCursor(state.cursor_position(), 2)));
+}
+
+void ReplxxLineReader::syncModeFromHistory()
+{
+    /// A client without the AI chat has no mode to recall the questions into, so it recalls them as
+    /// they are stored, with the prefix: stripped of it, a question would be run as SQL (see the
+    /// binding of `?`).
+#if USE_CLIENT_AI
+    const replxx::Replxx::State state = rx.get_state();
+    const std::string text = state.text();
+    /// AI questions are stored in history with a `? ` prefix (see addToHistory).
+    const bool is_ai_entry = text.starts_with("? ");
+
+    if (is_ai_entry)
+    {
+        if (!ai_mode)
+        {
+            ai_mode = true;
+            rx.set_prompt(aiModePrompt());
+        }
+        /// Show the question itself (without the storage prefix) as the editable line.
+        const std::string stripped = text.substr(2);
+        rx.set_state(replxx::Replxx::State(stripped.c_str(), shiftedCursor(state.cursor_position(), -2)));
+    }
+    else if (ai_mode)
+    {
+        ai_mode = false;
+        rx.set_prompt(sql_prompt);
+    }
+#endif
+}
+
+replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::ACTION action, char32_t code)
+{
+    /// Up and Down inside a multiline text only move the cursor: no entry is recalled, so the stored
+    /// `? ` prefix has nothing to do. Adding it around the move would also shift the first line by
+    /// two columns, which replxx takes into account when it maps the column between the lines.
+    if (lineMoveStaysInText(rx.get_state(), action))
+        return rx.invoke(action, code);
+
+    restoreHistoryPrefix();
+    /// The recalled entry is displayed (and its hints regenerated) inside the action, so the
+    /// suppression must be armed before it; the pin below keeps later regenerations of the
+    /// recalled text hintless (the refresh inside the action may be throttled and replayed after
+    /// this returns) and is cleared by the first edit.
+    suppress_hints_once = true;
+    auto result = rx.invoke(action, code);
+    /// Read before the mode sync below, which sets the state and says nothing about the move.
+    const bool recalled = rx.history_recalled();
+    /// The stored `? ` prefix has to come back off whether or not the move recalled anything:
+    /// `restoreHistoryPrefix` put it on the line that is on screen now, so a move that stayed
+    /// put would leave it there for the user to see.
+    syncModeFromHistory();
+    /// Only a line the action actually replaced is a line displayed programmatically. A move
+    /// that recalled nothing left the line the user was typing, and its hints belong to it.
+    if (recalled)
+        suppressHintsForDisplayedLine();
+    else
+        suppress_hints_once = false;
+    return result;
+}
+
+replxx::Replxx::ACTION_RESULT ReplxxLineReader::historySearch(replxx::Replxx::ACTION action, char32_t code)
+{
+    /// A history search displays the entry it selects exactly like a history move does, and the
+    /// entry can be an AI question stored with a `? ` prefix, so it gets the same treatment.
+    return historyNavigate(action, code);
+}
+
+void ReplxxLineReader::suppressHintsForDisplayedLine()
+{
+    suppress_hints_once = false;
+    suppress_hints_for_text = rx.get_state().text();
+}
+
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
-    const char* cinput = rx.input(prompt);
+    /// Remember the SQL prompt so it can be restored when leaving AI-chat mode (the key handler
+    /// that leaves the mode has no access to it otherwise). In AI mode the passed SQL prompt is
+    /// replaced by the `:?` prompt, which is built from it. It is refreshed in AI mode as well:
+    /// `/dialect` works from the `:?` prompt and changes the SQL prompt. In AI mode the prompt of
+    /// the first line is taken rather than the one passed, because a continuation line of a
+    /// question also gets the `:?` prompt.
+    sql_prompt = ai_mode ? first_line_prompt : prompt;
+
+    const char* cinput = rx.input(ai_mode ? aiModePrompt() : prompt);
     if (cinput == nullptr)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
@@ -927,6 +1117,20 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 }
 
 void ReplxxLineReader::addToHistory(const String & line)
+{
+    /// In AI-chat mode, store the entry with a `? ` prefix so it is distinguishable in the
+    /// history file and recalled back into AI mode by syncModeFromHistory.
+    appendHistoryEntry(ai_mode ? ("? " + line) : line, /*is_sql=*/ !ai_mode);
+}
+
+void ReplxxLineReader::addQueryToHistory(const String & query)
+{
+    /// A query of the AI agent is SQL, so it is stored like a typed query - without the `? `
+    /// prefix of the AI questions, even though the reader is in AI mode while the agent works.
+    appendHistoryEntry(AIAgentDisplay::sanitizeForTerminal(query), /*is_sql=*/ true);
+}
+
+void ReplxxLineReader::appendHistoryEntry(const String & entry, bool is_sql)
 {
     // locking history file to prevent from inconsistent concurrent changes
     //
@@ -939,11 +1143,13 @@ void ReplxxLineReader::addToHistory(const String & line)
     else
         locked = true;
 
-    rx.history_add(line);
+    rx.history_add(entry);
 
     /// Remember identifiers from the committed query so they are prioritized in later
-    /// completions/hints this session (the "previously used" tier).
-    suggest.addUsedWords(extractIdentifiers(line.c_str()));
+    /// completions/hints this session (the "previously used" tier). AI questions are natural
+    /// language, not SQL, so they are not added.
+    if (is_sql)
+        suggest.addUsedWords(extractIdentifiers(entry.c_str()));
 
     // flush changes to the disk
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))
@@ -975,6 +1181,9 @@ void ReplxxLineReader::openEditor(bool format_query)
         if (editor_exit_code == EXIT_SUCCESS)
         {
             const std::string & new_query = readFile(editor_file.getPath());
+            /// The edited query is a whole new line displayed at once - do not pop hints on it
+            /// (see historyNavigate).
+            suppress_hints_once = true;
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
         }
         else
@@ -1017,21 +1226,6 @@ void ReplxxLineReader::disableBracketedPaste()
 {
     bracketed_paste_enabled = false;
     rx.disable_bracketed_paste();
-}
-
-void ReplxxLineReader::setInitialText(const String & text)
-{
-    // Preload the buffer with the initial text
-    if (!text.empty())
-    {
-        rx.set_preload_buffer(text);
-        /// The preloaded query is displayed at once - do not pop hints on it (see
-        /// historyNavigate). The one-shot is consumed at the first render of the line inside
-        /// input(); the pin is set to the raw text (replxx may normalize whitespace in the
-        /// preload, in which case it just stays inert).
-        suppress_hints_once = true;
-        suppress_hints_for_text = text;
-    }
 }
 
 }

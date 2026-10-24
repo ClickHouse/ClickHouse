@@ -262,10 +262,24 @@ LineReader::LineReader
     /// FIXME: check extender != delimiter
 }
 
+bool LineReader::isAIChatLine(std::string_view text)
+{
+    size_t i = 0;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t'))
+        ++i;
+    return i < text.size() && text[i] == '?';
+}
+
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
 {
     String line;
     bool need_next_line = false;
+    /// AI-chat input (the `?` mode or an inline `? ...` line) is natural language rather than
+    /// SQL. In particular, it has no SQL delimiter, so pressing Enter in `--multiline` mode must
+    /// dispatch the question instead of opening the SQL continuation prompt. Decided by the first
+    /// line of the input, so that the rest of a pasted question is not taken for SQL.
+    bool is_ai_chat = false;
+    first_line_prompt = first_prompt;
 
     while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
     {
@@ -273,12 +287,13 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         {
             line.clear();
             need_next_line = false;
+            is_ai_chat = false;
             continue;
         }
 
         if (input.empty())
         {
-            if (!line.empty() && !multiline && !hasInputData())
+            if (!line.empty() && (!multiline || is_ai_chat) && !hasInputData())
                 break;
             continue;
         }
@@ -303,9 +318,16 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             }
         }
 
-        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+        if (line.empty())
+            is_ai_chat = inAIMode() || isAIChatLine(input);
+        /// Bytes still queued in the TTY are a paste in progress (without bracketed paste support):
+        /// it is folded into the same input in both modes, so a pasted multi-line question - a stack
+        /// trace, a query - reaches the agent whole instead of being split after its first line.
+        need_next_line = hasInputData() || (!is_ai_chat && (has_extender || (multiline && !has_delimiter)));
 
-        if (has_extender)
+        /// The prompt of the AI agent is natural language sent verbatim: a trailing backslash in it
+        /// is a part of the question, not a line extender.
+        if (has_extender && !is_ai_chat)
         {
             input.resize(input.size() - strlen(has_extender));
             trimTrailingWhitespace(input);

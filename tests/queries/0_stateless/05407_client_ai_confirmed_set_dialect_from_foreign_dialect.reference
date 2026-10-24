@@ -1,0 +1,3 @@
+control: kusto session does not run the check
+set_dialect: RAN
+after: dialect=clickhouse
