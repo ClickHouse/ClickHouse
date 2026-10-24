@@ -1,0 +1,60 @@
+<test>
+    <!-- String sorts compare 8-byte prefix keys first: random strings, strings with a long common prefix
+         (where the keys are taken after it), duplicates, and the sorts in array and aggregate functions. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE sort_string_prefix_keys (
+            random String,
+            url String,
+            value String,
+            low_cardinality String
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_string_prefix_keys
+        SELECT
+            randomPrintableASCII(8 + rand() % 25),
+            concat('https://www.example.com/', ['news', 'sport', 'shop', 'blog'][1 + rand(1) % 4], '/', toString(rand(2) % 100000), '?id=', toString(rand(3))),
+            concat('value_', toString(rand(4) % 1000)),
+            toString(rand(5) % 50)
+        FROM numbers(5000000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE sort_string_prefix_keys_arrays (
+            arr Array(String),
+            arr_url Array(String),
+            m Map(String, UInt64)
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_string_prefix_keys_arrays
+        SELECT
+            arrayMap(j -> randomPrintableASCII(8 + rand(j) % 25), range(100)),
+            arrayMap(j -> concat('https://www.example.com/', toString(rand(j) % 100000)), range(100)),
+            mapFromArrays(arrayMap(j -> concat(randomPrintableASCII(8), toString(j)), range(100)), range(100))
+        FROM numbers(100000)
+    </fill_query>
+
+    <query>SELECT random FROM sort_string_prefix_keys ORDER BY random FORMAT Null</query>
+    <query>SELECT url FROM sort_string_prefix_keys ORDER BY url FORMAT Null</query>
+    <query>SELECT value FROM sort_string_prefix_keys ORDER BY value DESC FORMAT Null</query>
+    <query>SELECT random FROM sort_string_prefix_keys ORDER BY low_cardinality, random FORMAT Null</query>
+    <query>SELECT url FROM sort_string_prefix_keys ORDER BY url LIMIT 10000 FORMAT Null</query>
+
+    <query>SELECT arraySort(arr) FROM sort_string_prefix_keys_arrays FORMAT Null</query>
+    <query>SELECT arrayReverseSort(arr_url) FROM sort_string_prefix_keys_arrays FORMAT Null</query>
+    <query>SELECT arrayTopK(10, arr) FROM sort_string_prefix_keys_arrays FORMAT Null</query>
+    <query>SELECT mapSort(m) FROM sort_string_prefix_keys_arrays FORMAT Null</query>
+
+    <query>SELECT groupArraySorted(10)(url) FROM sort_string_prefix_keys FORMAT Null</query>
+    <query>SELECT low_cardinality, groupArraySorted(10)(random) FROM sort_string_prefix_keys GROUP BY low_cardinality FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_string_prefix_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sort_string_prefix_keys_arrays</drop_query>
+</test>
