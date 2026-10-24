@@ -13,20 +13,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_QUERY;
 }
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup final : public IFunction, public WithContext
+class FunctionTimeSeriesTagsToGroup final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context_); }
-    /// Defer query-context access to `executeImpl` so the function can be instantiated
-    /// without a query context (e.g. by `system.functions` which only needs to read
-    /// `getSignatureString`).
-    explicit FunctionTimeSeriesTagsToGroup(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesTagsToGroup>(context); }
+    /// The creation context may expire before execution; without a query context only the signature is usable.
+    explicit FunctionTimeSeriesTagsToGroup(const ContextPtr & context)
+        : tags_collector(context->hasQueryContext() ? context->getQueryContext()->getTimeSeriesTagsCollector() : nullptr)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -97,11 +99,9 @@ public:
     }
 
     /// A dry run is used to compute headers / partial results during query planning
-    /// (e.g. constant folding in `tryMergeExpressions`). It must not access the per-query tags
-    /// collector via `getContext`: the context the function was created with may already have
-    /// expired by plan-optimization time, which would otherwise raise a `Context has expired`
-    /// logical error. The real group lookup only needs to happen at execution time, so the
-    /// dry run returns a column of the right type without consulting the collector.
+    /// (e.g. constant folding in `tryMergeExpressions`). The real group lookup only needs to happen
+    /// at execution time, so the dry run returns a column of the right type without consulting
+    /// the collector.
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumn()->cloneResized(input_rows_count);
@@ -109,14 +109,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        if (!tags_collector)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Function {} can be executed only in a query", name);
+
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 0);
 
-        auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         auto groups = tags_collector->getGroupForTags(tags_vector);
         chassert(groups.size() == input_rows_count);
 
         return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
     }
+
+private:
+    const std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 

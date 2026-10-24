@@ -11,21 +11,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_QUERY;
 }
 
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags final : public IFunction, public WithContext
+class FunctionTimeSeriesStoreTags final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesStoreTags>(context_); }
-    /// Defer query-context access to `executeImpl` so the function can be instantiated
-    /// without a query context (e.g. by `system.functions` which only needs to read
-    /// `getSignatureString`).
-    explicit FunctionTimeSeriesStoreTags(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesStoreTags>(context); }
+    /// The creation context may expire before execution; without a query context only the signature is usable.
+    explicit FunctionTimeSeriesStoreTags(const ContextPtr & context)
+        : tags_collector(context->hasQueryContext() ? context->getQueryContext()->getTimeSeriesTagsCollector() : nullptr)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -102,10 +104,8 @@ public:
 
     /// A dry run is used to compute headers / partial results during query planning
     /// (e.g. constant folding in `tryMergeExpressions`). It must not perform the side effect
-    /// of storing tags, nor access the query context via `getContext`: the context the function
-    /// was created with may already have expired by plan-optimization time, which would otherwise
-    /// raise a `Context has expired` logical error. The function returns its `id` argument
-    /// unchanged, so the dry-run result is just that column.
+    /// of storing tags. The function returns its `id` argument unchanged, so the dry-run result
+    /// is just that column.
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         return arguments[0].column;
@@ -113,11 +113,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
+        if (!tags_collector)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Function {} can be executed only in a query", name);
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
-        auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         tags_collector->storeTags(arguments[0].column, tags_vector);
         return arguments[0].column;
     }
+
+private:
+    const std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 
