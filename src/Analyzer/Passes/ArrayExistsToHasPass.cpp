@@ -7,6 +7,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,45 +26,6 @@ namespace Setting
 
 namespace
 {
-
-/// `equals` compares the string family zero-padded, so a needle whose extra bytes are all NUL
-/// still matches a narrower element. `has` compares either the String supertype, which strips
-/// trailing NULs, or raw Fields, which are not padded. The two therefore agree only when the
-/// element and needle types are identical, and a container agrees only when its members do.
-bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & element_type, const DataTypePtr & needle_type)
-{
-    auto element = removeNullable(removeLowCardinality(element_type));
-    auto needle = removeNullable(removeLowCardinality(needle_type));
-
-    const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element.get());
-    const auto * needle_tuple = typeid_cast<const DataTypeTuple *>(needle.get());
-    if (element_tuple && needle_tuple)
-    {
-        const auto & element_elements = element_tuple->getElements();
-        const auto & needle_elements = needle_tuple->getElements();
-        if (element_elements.size() != needle_elements.size())
-            return false;
-
-        for (size_t i = 0; i < element_elements.size(); ++i)
-            if (stringFamilyPairIsNotEqualityEquivalent(element_elements[i], needle_elements[i]))
-                return true;
-
-        return false;
-    }
-
-    const auto * element_array = typeid_cast<const DataTypeArray *>(element.get());
-    const auto * needle_array = typeid_cast<const DataTypeArray *>(needle.get());
-    if (element_array && needle_array)
-        return stringFamilyPairIsNotEqualityEquivalent(element_array->getNestedType(), needle_array->getNestedType());
-
-    const auto * element_map = typeid_cast<const DataTypeMap *>(element.get());
-    const auto * needle_map = typeid_cast<const DataTypeMap *>(needle.get());
-    if (element_map && needle_map)
-        return stringFamilyPairIsNotEqualityEquivalent(element_map->getKeyType(), needle_map->getKeyType())
-            || stringFamilyPairIsNotEqualityEquivalent(element_map->getValueType(), needle_map->getValueType());
-
-    return isStringOrFixedString(element) && isStringOrFixedString(needle) && !element->equals(*needle);
-}
 
 class RewriteArrayExistsToHasVisitor : public InDepthQueryTreeVisitorWithContext<RewriteArrayExistsToHasVisitor>
 {
@@ -166,6 +128,24 @@ public:
         /// Such a pair has a supertype, so the check below admits it, but the two spellings
         /// still disagree.
         if (stringFamilyPairIsNotEqualityEquivalent(nested_type, constant_type))
+            return;
+
+        /// A plain float is compared numerically by both `equals` and `has`, but a composite carrier
+        /// of floats (`Tuple(Float64)`, `Variant(Float64)`, ...) is compared by `has` with the generic
+        /// column comparison, which treats two NaNs as equal, while `equals` compares the nested
+        /// values numerically: `arrayExists(x -> x = tuple(nan), [tuple(nan)])` is false, but
+        /// `has([tuple(nan)], tuple(nan))` is true. The same holds for `BFloat16`, which the numeric
+        /// dispatch of `has` does not cover, and for an `Array(LowCardinality(Float64))`, which `has`
+        /// searches by dictionary lookup.
+        auto is_numerically_compared_float = [](const DataTypePtr & type)
+        {
+            WhichDataType which(type);
+            return which.isFloat32() || which.isFloat64();
+        };
+        if (containsFloat(nested_type)
+            && (!is_numerically_compared_float(nested_type) || array_type->getNestedType()->lowCardinality()))
+            return;
+        if (containsFloat(constant_type) && !is_numerically_compared_float(constant_type))
             return;
 
         bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);
