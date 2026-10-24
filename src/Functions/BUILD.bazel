@@ -861,6 +861,7 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
+        "@clickhouse_cctz//:tzdata",
         "//src:clickhouse_common_io__compile_0",
         "//contrib/cityhash102:_cityhash",
         "//contrib/libfarmhash:_farmhash",
@@ -932,6 +933,9 @@ ch_cc_library(
         "//src:core_defines",
         "//src:io_string_buffers",
         "//src:with_context",
+        ":headers",
+        "//src/Access/Common:headers",
+        "//src/Functions/GatherUtils:headers",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     source_headers = True,
@@ -1007,9 +1011,6 @@ ch_cc_library(
         "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
-    local_includes = [
-        "../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
     ],
@@ -1141,13 +1142,6 @@ ch_cc_library(
             "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
             "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
             "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "../../" + "bazel/gen",
-            "../../" + "bazel/gen/x86_64/.",
         ],
         "@platforms//cpu:aarch64": [],
     }),
@@ -1388,6 +1382,7 @@ cc_library(
         "//src/Common/ZooKeeper:headers",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
         ":cast_api",
+        "//src/Common:parser_support_api",
     ],
 )
 

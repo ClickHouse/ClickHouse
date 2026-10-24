@@ -81,7 +81,6 @@ ch_cc_library(
         "@clickhouse_arrow//:_arrow",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
-        "@clickhouse_icu//:_icudata",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMBitReader",

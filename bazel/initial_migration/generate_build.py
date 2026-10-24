@@ -25,7 +25,7 @@ from initial_migration.format_build_files import format_build_files
 from initial_migration.prune_inherited_headers import prune, prune_published
 from initial_migration.prune_unused_exports import prune_native_exports, prune_unused_exports
 from initial_migration.build_file import (
-    BuildFile, CMakeCxxCompilerVersion, Glob,
+    BuildFile, CMakeCxxCompilerVersion, Concat, Glob,
     SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_EXCLUDES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
     dependency_inputs, relocate_compilation,
     relocate_tools, select, starlark, target_label, target_owner,
@@ -42,6 +42,185 @@ COMPILE_TYPES = {'STATIC_LIBRARY', 'OBJECT_LIBRARY', 'EXECUTABLE'}
 HEADER_SUFFIXES = {'.h', '.hh', '.hpp', '.hxx', '.inc', '.ipp', '.inl', '.tcc', '.def'}
 BCR_DEPENDENCIES = json.loads((ROOT / 'bazel/initial_migration/bcr_dependencies.json').read_text())
 LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
+
+
+# Headers read by ClickHouse source files in compiler dependency reports.
+# Public headers use deps so consumers receive the same CcInfo.
+FIRST_PARTY_HEADER_DEPS = {
+    ("programs/client", "clickhouse-client-lib", "implementation_deps"): ["//src/Parsers:headers"],
+    ("src/Compression", "clickhouse_compression", "implementation_deps"): ["//src/Parsers:headers"],
+    ("src/Dictionaries", "headers", "deps"): [
+        "//bazel:clickhouse_config_headers", "@clickhouse_boost//:boost_headers", "@clickhouse_sparsehash_c11//:sparsehash_c11",
+    ],
+    ("src/Functions", "clickhouse_functions_obj__compile_0", "implementation_deps"): [
+        ":headers", "//src/Access/Common:headers", "//src/Functions/GatherUtils:headers",
+    ],
+    ("src/Functions/JSONPath", "clickhouse_functions_jsonpath", "deps"): ["//src/Parsers:parser_api"],
+    ("src/Functions/URL", "clickhouse_functions_url__compile_0", "implementation_deps"): ["//src/Functions:headers"],
+    ("src/Loggers", "loggers", "deps"): ["//src/Common:parser_support_api"],
+    ("src/Storages/System", "clickhouse_storages_system__compile_1", "implementation_deps"): ["//src/Access/Common:headers"],
+    ("src/Storages/System", "headers", "deps"): ["//bazel:clickhouse_config_headers"],
+}
+
+
+def declare_common_header_owners(root, rules):
+    """Keep StringHash and DateLUT headers with their existing C++ owners after the CMake import."""
+    from initial_migration.prune_inherited_headers import Document
+
+    common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
+    owners = rules(common)
+    edges = {}
+    edits = []
+
+    def add(source, items, name, anchor, *, before=False):
+        names = [item.value for item in items.elts]
+        if name not in names:
+            a, b = source.span(items.elts[names.index(anchor)])
+            edits.append((a, a, json.dumps(name) + ", ") if before else (b, b, ", " + json.dumps(name)))
+
+    def attrs(rule):
+        return {kw.arg: kw.value for kw in rule.keywords}
+
+    if "string_utils" in owners:
+        name = "StringHashForHeterogeneousLookup.h"
+        add(common.source, attrs(owners["string_utils"])["hdrs"], name, "StringUtils.h", before=True)
+        exclusions = attrs(attrs(owners["Common"])["hdrs"])["exclude"]
+        named = next(n for n in ast.walk(exclusions) if isinstance(n, ast.List)
+                     and any(getattr(item, "value", None) == "StringUtils.h" for item in n.elts))
+        add(common.source, named, name, "StringUtils.h", before=True)
+        edges["src/Common/ZooKeeper", "headers", "deps"] = ["//src/Common:string_utils"]
+
+    if "parser_support_api" in owners:
+        headers = common.constants["_PARSER_SUPPORT_HEADERS"]
+        add(common.source, headers, "DateLUTImpl.h", "DateLUT.h")
+        add(common.source, headers, "LocalDate.h", "Logger.h", before=True)
+        parser = "//src/Common:parser_support_api"
+        for package, target, field in (
+            ("programs/client", "clickhouse-client-lib", "implementation_deps"),
+            ("src", "dbms__compile_1", "implementation_deps"),
+            ("src/Functions", "headers", "deps"),
+        ):
+            edges[package, target, field] = [parser]
+
+    if edits:
+        common.path.write_text(common.source.rewrite(edits))
+
+    if "parser_support_api" in owners:
+        # dbms__compile_3 has a DateLUTImpl.h consumer only on x86_64.
+        dbms = Document(root / "src/BUILD.bazel", package="src")
+        options = attrs(rules(dbms)["dbms__compile_3"])
+        impl = options["implementation_deps"]
+        label = dbms.reference(parser)
+        if label in dbms.labels(impl, "aarch64") | dbms.labels(options.get("deps"), "aarch64"):
+            raise ValueError("dbms__compile_3 uses parser_support_api only on x86_64")
+        if label not in dbms.labels(impl, "x86_64") | dbms.labels(options.get("deps"), "x86_64"):
+            choices = impl.right.args[0]
+            x86 = next(v for k, v in zip(choices.keys, choices.values) if k.value == "@platforms//cpu:x86_64")
+            edits.clear()
+            add(dbms.source, x86, parser, x86.elts[-1].value)
+            dbms.path.write_text(dbms.source.rewrite(edits))
+    return edges
+
+
+def declare_first_party_header_deps(root):
+    from initial_migration.prune_inherited_headers import ARCHES, Document
+
+    def rules(doc):
+        return {name.value: call for _, call in doc.source.rules()
+                for kw in call.keywords if kw.arg == "name" and isinstance((name := kw.value), ast.Constant)}
+
+    def public_owner(label):
+        # The initial CMake migration creates :headers before these interfaces are split out.
+        headers = {
+            "//src/Common:parser_support_api": ["DateLUT.h"],
+            "//src/Parsers:parser_api": ["IAST.h", "IParserBase.h", "Lexer.h", "CommonParsers.h"],
+        }.get(label)
+        if headers is None:
+            return label
+        package, name = label[2:].split(":")
+        doc = Document(root / package / "BUILD.bazel", package=package, files=headers)
+        owners = rules(doc)
+        if name in owners:
+            return label
+        attrs = {kw.arg: kw.value for kw in owners["headers"].keywords}
+        for cpu in ARCHES:
+            if not {doc.reference(":" + h) for h in headers} <= doc.labels(attrs["hdrs"], cpu):
+                raise ValueError(f"//{package}:headers does not declare {headers} on {cpu}")
+        return f"//{package}:headers"
+
+    def common_list(node):
+        if isinstance(node, ast.List):
+            return node
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return common_list(node.right) or common_list(node.left)
+        return None
+
+    for (package, target, field), deps in (*FIRST_PARTY_HEADER_DEPS.items(), *declare_common_header_owners(root, rules).items()):
+        path = root / package / "BUILD.bazel"
+        doc = Document(path, package=package)
+        attrs = {kw.arg: kw.value for kw in rules(doc)[target].keywords}
+        node = attrs.get(field)
+        other = attrs.get("deps" if field == "implementation_deps" else "implementation_deps")
+        missing = []
+        for label in map(public_owner, deps):
+            owner = doc.reference(label)
+            if any(owner in doc.labels(other, cpu) for cpu in ARCHES):
+                if field == "implementation_deps" and all(owner in doc.labels(other, cpu) for cpu in ARCHES):
+                    continue  # A public dependency already supplies this private include.
+                raise ValueError(f"//{package}:{target} has {label} in the wrong attribute")
+            present = [owner in doc.labels(node, cpu) for cpu in ARCHES]
+            if not any(present):
+                missing.append(label)
+            elif not all(present):
+                raise ValueError(f"//{package}:{target} has an architecture-specific {field} for {label}")
+        if not missing:
+            continue
+        literal = common_list(node)
+        if literal is not None:
+            start, end = doc.source.span(literal)
+            text = doc.source.text(literal)[:-1].rstrip()
+            separator = "," if literal.elts and not text.endswith(",") else ""
+            edit = (start, end, text + separator + "\n" + ",\n".join(map(json.dumps, missing)) + ",\n]")
+        elif node is not None:
+            end = doc.source.span(node)[1]
+            edit = (end, end, " + " + json.dumps(missing))
+        else:
+            end = doc.source.span(attrs["name"])[1]
+            edit = (end, end, f",\n    {field} = " + json.dumps(missing))
+        path.write_text(doc.source.rewrite([edit]))
+
+
+def declare_unit_test_private_hdrs(path):
+    """Declare the implementation files that the unit_tests_dbms tests include."""
+    from initial_migration.compact_build import Source
+
+    source = Source(path.read_text())
+    target = next(rule for _, rule in source.rules()
+                  if any(kw.arg == 'name' and kw.value.value == 'unit_tests_dbms' for kw in rule.keywords))
+    attrs = {kw.arg: kw for kw in target.keywords}
+    if 'private_hdrs' in attrs:
+        return
+    inputs = attrs['additional_compiler_inputs']
+    files = ast.literal_eval(inputs.value)
+    shared = [
+        'Access/AccessRights.cpp',
+        '//src/Common:Base58.cpp',
+        '//src/Common:Hex.cpp',
+        '//src/Functions:FunctionMD5.cpp',
+        '//src/Functions:FunctionsStringDistance.cpp',
+        'Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp',
+        'Storages/MergeTree/MergeTreeDataPartWriterWide.cpp',
+        'Storages/MergeTree/MergeTreeRangeReader.cpp',
+    ]
+    sha1 = '//src/Functions:FunctionSHA1.cpp'
+    included = set(shared) | {sha1}
+    if missing := included - set(files):
+        raise ValueError(f'unit_tests_dbms no longer lists included implementation files: {sorted(missing)}')
+    other = [file for file in files if file not in included]
+    replacement = f'additional_compiler_inputs = {other!r},\n    ' if other else ''
+    replacement += f'private_hdrs = {shared!r} + select({{"@platforms//cpu:x86_64": [{sha1!r}], "//conditions:default": []}})'
+    path.write_text(source.rewrite([(*source.span(inputs), replacement)]))
+
 
 
 def llvm_source_overlays():
@@ -492,9 +671,11 @@ class Graph:
                 if replacement:
                     external_deps.update(replacement['deps'])
                     continue
-                # Program libraries resolve generated configuration headers
-                # from their declared deps, not from CMake's build root.
-                if path == str(self.build) and all(s.startswith('programs/') for s in sources):
+                # First-party generated headers come from the C++ dependency that owns them.
+                if path == str(self.build) and (
+                    target.get('paths', {}).get('source', '').split('/')[0] in {'base', 'programs', 'src'}
+                    or all(s.startswith('programs/') for s in sources)
+                ):
                     continue
                 hdrs.update(self.headers(path))
                 if path.startswith(str(self.build)):
@@ -804,9 +985,18 @@ def main():
     # the original group's ordered objects from its own pinned repository.
     lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))
     lz4.target('_lz4', native_lz4)
+    asio_implementations = ['boost/asio/**/*.ipp']
+    winapi_dirs = ['boost/detail/winapi', 'boost/winapi']
+    winapi_headers = [directory + '/*.hpp' for directory in winapi_dirs]
+    winapi_config = [directory + '/config.hpp' for directory in winapi_dirs]
     boost_patterns = ['boost/**/*' + suffix for suffix in CC_HEADER_SUFFIXES]
     builds['contrib/boost'].rule('cc_library', 'boost_headers', {
-        'hdrs': Glob(boost_patterns),
+        'srcs': Glob(asio_implementations),
+        'hdrs': Concat([
+            Glob(boost_patterns, asio_implementations + winapi_headers),
+            winapi_config,
+            select({'@platforms//os:linux': [], '//conditions:default': Glob(winapi_headers, winapi_config)}),
+        ]),
         'features': ['external_include_paths'],
     })
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(
@@ -984,6 +1174,8 @@ def main():
                 path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}, headers=True))
     from initial_migration.native_include_deps import run as prune_native_include_deps
     prune_native_include_deps(ROOT, write=True)
+    from initial_migration.measured_deps import apply as apply_measured_dependencies
+    apply_measured_dependencies(ROOT)
     format_build_files()
     # Factor formatted lists last: earlier normalization folds equal CPU
     # branches and would discard required no-match errors.
@@ -998,6 +1190,8 @@ def main():
         for spec in REPOSITORIES.values()
     )
     factor_build_selections(ROOT, selection_builds)
+    declare_unit_test_private_hdrs(ROOT / "src/BUILD.bazel")
+    declare_first_party_header_deps(ROOT)
     # Rule transfers can leave adjacent literal lists. Preserve select()
     # and its no-match error after the CPU selections have been factored.
     from initial_migration.compact_build import Source, simplify_list_expressions
@@ -1011,7 +1205,6 @@ def main():
             after = updated
         if after != before:
             path.write_text(after)
-    format_build_files()
     format_build_files()
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')

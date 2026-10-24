@@ -8,6 +8,7 @@ ch_cc_library(
     srcs = ["Format.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "@clickhouse_cctz//:tzdata",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
         "@clickhouse_boost//:boost_headers",

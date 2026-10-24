@@ -201,7 +201,7 @@ class Codegen:
     def label(self, path):
         return source_label(path)
 
-    def proto_inputs(self, name):
+    def proto_inputs(self, name, import_dirs=()):
         pending = [name]
         inputs = set()
         seen = set()
@@ -210,19 +210,19 @@ class Codegen:
             if name in seen:
                 continue
             seen.add(name)
-            generated = str(self.graph.build / GOOGLEAPIS_OUTPUT / Path(name))
-            label = self.label(self.graph.path(generated))
-            if name in self.googleapis:
+            if not import_dirs and name in self.googleapis:
                 self.googleapis_used.add(name)
-                inputs.add(label)
+                generated = str(self.graph.build / GOOGLEAPIS_OUTPUT / name)
+                inputs.add(self.label(self.graph.path(generated)))
                 source_text = self.googleapis[name]
             else:
-                source = self.root / 'contrib/google-protobuf/src' / name
-                if not source.is_file():
-                    raise ValueError('Unresolved Google API import: ' + name)
+                roots = import_dirs or (self.root / 'contrib/google-protobuf/src',)
+                source = next((root / name for root in roots if (root / name).is_file()), None)
+                if source is None:
+                    raise ValueError('Unresolved proto import: ' + name)
                 inputs.add(self.label(source.relative_to(self.root).as_posix()))
                 source_text = source.read_text()
-            pending.extend(re.findall(r'^import\s+(?:public\s+|weak\s+)?"([^"]+)"', source_text, re.MULTILINE))
+            pending.extend(re.findall(r'^[ \t]*import\s+(?:public\s+|weak\s+)?"([^"]+)"', source_text, re.MULTILINE))
         return inputs
 
     def shell_path(self, value):
@@ -242,6 +242,10 @@ class Codegen:
 
     def translate(self, node):
         command = node.get('command', '')
+        if node['outputs'] == ['contrib/krb5-cmake/include/krb5/krb5.h']:
+            # dependency_inputs creates this public header beside _krb5.
+            self.handled.update(node['outputs'])
+            return
         if node['outputs'] == ['contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o']:
             source = self.label('contrib/libhdfs3/src/common/crc_iscsi_v_pcl.asm')
             output = 'gen/' + self.graph.arch + '/' + node['outputs'][0]
@@ -333,15 +337,21 @@ class Codegen:
         # TableGen, protoc and flatc read included schemas beyond their main
         # input. CMake's initial Ninja graph does not enumerate those includes.
         words = shlex.split(command)
-        for index, word in enumerate(words):
-            directory = None
-            if word == '-I' and index + 1 < len(words):
-                directory = words[index + 1]
-            elif word.startswith('-I') and len(word) > 2:
-                directory = word[2:]
-            if directory and directory.startswith(str(self.root)) and not directory.startswith(str(self.graph.build)):
-                directory = Path(os.path.normpath(directory))
-                suffixes = {'.td'} if any('tblgen' in t for t in tools) else {'.proto', '.fbs'}
+        include_dirs = []
+        args = iter(words)
+        for word in args:
+            if word.startswith('-I'):
+                include_dirs.append(Path(os.path.normpath(word[2:] or next(args))))
+        source_dirs = [d for d in include_dirs if d.is_relative_to(self.root) and not d.is_relative_to(self.graph.build)]
+        schemas = [Path(word) for word in words if word.endswith('.proto')]
+        # protoc resolves imports in -I order. Keep generated Google APIs schemas
+        # on the archive-backed lookup above; their contents are not source files.
+        root = next((d for d in source_dirs if len(schemas) == 1 and d in schemas[0].parents), None)
+        if 'protoc' in tools and root is not None and include_dirs == source_dirs:
+            inputs.update(self.proto_inputs(schemas[0].relative_to(root).as_posix(), source_dirs))
+        else:
+            suffixes = {'.td'} if any('tblgen' in t for t in tools) else {'.proto', '.fbs'}
+            for directory in source_dirs:
                 inputs.update(self.label(p.relative_to(self.root).as_posix())
                               for p in directory.rglob('*') if p.suffix in suffixes and p.is_file())
         # FlatBuffers schema imports are resolved beside the input schemas.

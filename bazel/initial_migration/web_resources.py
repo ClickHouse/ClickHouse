@@ -1,34 +1,54 @@
 #!/usr/bin/env python3
-"""Keep Web UI compiler inputs only in the library compiling WebUIRequestHandler.cpp.
-
-This migration runs after native BUILD rendering and pruning. It replaces the
-captured ClickStack inventory with the source export after checking ownership.
-"""
+"""Give the library compiling WebUIRequestHandler.cpp a private dependency on its resources."""
 import argparse
 import ast
 import copy
 import json
-from collections import Counter, defaultdict
+import posixpath
 from pathlib import Path
 import sys
 
-RULES = {'ch_cc_library', 'cc_library', 'cc_binary', 'cc_test'}
+RULES = {'ch_cc_library', 'ch_cc_binary', 'ch_cc_test', 'cc_library', 'cc_binary', 'cc_test'}
 CPUS = ('x86_64', 'aarch64')
-CONSUMER = ('src/BUILD.bazel', 'dbms__compile_0')
 GROUP = '//bazel:web_ui_resources'
+ASSETS = '//bazel:web_ui_embedded_assets'
 FIELDS = {'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'local_includes', 'includes'}
-FILE_FIELDS = FIELDS - {'local_includes', 'includes'}
 NAMESPACES = {'ClickStack': 'clickstack', 'SQLConsole': 'sql-console'}
 GROUP_BUILD = """
 filegroup(
+    name = "clickstack_header",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "header",
+)
+
+filegroup(
+    name = "clickstack_assets",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "assets",
+)
+
+filegroup(
+    name = "web_ui_embedded_assets",
+    srcs = [":clickstack_assets"] + [
+        out
+        for out in CODEGEN_RULES["generate_native_SQLConsole"]["outs"]
+        if out.endswith(".gz")
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
+cc_library(
     name = "web_ui_resources",
-    srcs = [
-        ":generate_native_ClickStack",
-        ":generate_native_SQLConsole",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [],
-    }),
+    hdrs = [
+        ":clickstack_header",
+        "gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
+    ],
+    additional_compiler_inputs = [":web_ui_embedded_assets"],
+    includes = [
+        "gen/contrib/sql-console-cmake",
+        "gen/contrib/clickstack-cmake",
+    ],
+    visibility = ["//src:__pkg__"],
 )
 """
 CLICKSTACK_LOAD = 'load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")'
@@ -87,28 +107,6 @@ def resource_file(value):
     )
 
 
-def resource_include(value):
-    return 'bazel/gen/' in value and any(
-        value.endswith('/contrib/' + directory + '-cmake') for directory in NAMESPACES.values()
-    )
-
-
-def removable(node, field):
-    predicate = resource_file if field in FILE_FIELDS else resource_include
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return predicate(node.value)
-    # A local_includes element can be a repository-relative helper or a
-    # prefix followed by the include directory. Never interpret select().
-    if (isinstance(node, (ast.Call, ast.BinOp)) and rule_kind(node) != 'select'
-            and field not in FILE_FIELDS):
-        return any(predicate(s) for s in string_constants(node))
-    return False
-
-
-def contains(node, field):
-    return any(isinstance(n, ast.List) and any(removable(item, field) for item in n.elts) for n in ast.walk(node))
-
-
 def select_dict(node):
     if (isinstance(node, ast.Call) and rule_kind(node) == 'select' and len(node.args) == 1
             and not node.keywords and isinstance(node.args[0], ast.Dict)):
@@ -116,82 +114,12 @@ def select_dict(node):
     return None
 
 
-def join(*parts):
-    parts = [part for part in parts if part != '[]']
-    return ' + '.join('(' + part + ')' for part in parts) if parts else '[]'
-
-
-def list_text(source, elements):
-    if not elements:
-        return '[]'
-    return '[\n' + ''.join('    ' + source.text(element) + ',\n' for element in elements) + ']'
-
-
-def render_select(source, dictionary, values):
-    if all(value == '[]' for value in values):
-        return '[]'
-    return 'select({\n' + ''.join('    ' + source.text(k) + ': ' + v + ',\n'
-                                   for k, v in zip(dictionary.keys, values, strict=True)) + '})'
-
-
-def split_includes(source, node):
-    """Split a shared expression, keeping all select conditions and ordering.
-
-    The consumer inserts the generated include directories between the same
-    prefix and suffix that all other libraries use. Large unrelated include
-    lists occur once, even when the original constant was shared.
-    """
-    if not contains(node, 'local_includes'):
-        return source.text(node), '[]', '[]'
-    if isinstance(node, ast.List):
-        indices = [i for i, item in enumerate(node.elts) if removable(item, 'local_includes')]
-        if indices != list(range(indices[0], indices[-1] + 1)):
-            raise ValueError('non-adjacent Web UI directories in a shared include expression')
-        a, b = indices[0], indices[-1] + 1
-        return tuple(list_text(source, x) for x in (node.elts[:a], node.elts[a:b], node.elts[b:]))
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = contains(node.left, 'local_includes'), contains(node.right, 'local_includes')
-        if left and right:
-            raise ValueError('Web UI directories in both operands of a shared include expression')
-        if left:
-            a, b, c = split_includes(source, node.left)
-            return a, b, join(c, source.text(node.right))
-        a, b, c = split_includes(source, node.right)
-        return join(source.text(node.left), a), b, c
-    dictionary = select_dict(node)
-    if dictionary:
-        choices = [split_includes(source, v) for v in dictionary.values]
-        return tuple(render_select(source, dictionary, part) for part in zip(*choices))
-    raise ValueError('unsupported shared Web UI include expression: ' + source.text(node))
-
-
-def prune_lists(source, node, field, edits, counts):
-    dictionary = select_dict(node)
-    if (dictionary and dictionary.values
-            and all(isinstance(value, ast.List) for value in dictionary.values)):
-        items = [item for value in dictionary.values for item in value.elts]
-        if items and all(removable(item, field) for item in items):
-            counts[field] += len(items)
-            edits.append((*source.span(node), '[]'))
-            return
-    if isinstance(node, ast.List):
-        keep = [item for item in node.elts if not removable(item, field)]
-        removed = len(node.elts) - len(keep)
-        if removed:
-            counts[field] += removed
-            edits.append((*source.span(node), list_text(source, keep)))
-            return
-    for child in ast.iter_child_nodes(node):
-        prune_lists(source, child, field, edits, counts)
-
-
 class Configured(ast.NodeTransformer):
     """Evaluate constants and CPU selects but leave globs and other calls opaque."""
 
-    def __init__(self, definitions, cpu, allowed_group=None):
+    def __init__(self, definitions, cpu):
         self.defs = definitions
         self.cpu = cpu
-        self.allowed_group = allowed_group
         self.stack = []
 
     def visit_Name(self, node):
@@ -225,16 +153,10 @@ class Configured(ast.NodeTransformer):
                 return ast.List(elts=node.left.elts + node.right.elts, ctx=ast.Load())
         return node
 
-    def visit_List(self, node):
+    def visit_Subscript(self, node):
         node = self.generic_visit(node)
-        if self.allowed_group is not None:
-            elts = []
-            for item in node.elts:
-                if isinstance(item, ast.Constant) and item.value == GROUP:
-                    elts.extend(ast.Constant(value) for value in sorted(self.allowed_group))
-                else:
-                    elts.append(item)
-            node.elts = elts
+        if rule_kind(node.value) == 'dict' and isinstance(node.slice, ast.Constant):
+            return rule_attrs(node.value).get(node.slice.value, node)
         return node
 
 
@@ -242,21 +164,12 @@ def key(node):
     return ast.dump(node, include_attributes=False)
 
 
-def eval_node(node, definitions, cpu, group=None):
-    return Configured(definitions, cpu, group).visit(copy.deepcopy(node or ast.List(elts=[], ctx=ast.Load())))
+def eval_node(node, definitions, cpu):
+    return Configured(definitions, cpu).visit(copy.deepcopy(node or ast.List(elts=[], ctx=ast.Load())))
 
 
-class Filter(ast.NodeTransformer):
-    def __init__(self, field):
-        self.field = field
-
-    def visit_List(self, node):
-        node.elts = [self.visit(item) for item in node.elts if not removable(item, self.field)]
-        return node
-
-
-def expanded_inputs(node, definitions, cpu, group=None):
-    return string_constants(eval_node(node, definitions, cpu, group))
+def expanded_inputs(node, definitions, cpu):
+    return string_constants(eval_node(node, definitions, cpu))
 
 
 def codegen_table(root, Source):
@@ -360,166 +273,170 @@ def publish_clickstack(root, Source, bazel_text):
     return changes
 
 
-def prove(old, new, rel, generated, counts):
-    originals = list(old.rules())
-    rewritten = list(new.rules())
-    if len(originals) != len(rewritten):
-        raise ValueError(rel + ': changed BUILD rules')
-    old_defs, new_defs = constant_defs(old.module), constant_defs(new.module)
-    for (_, before), (_, after) in zip(originals, rewritten, strict=True):
-        if (rule_name(before), rule_kind(before)) != (rule_name(after), rule_kind(after)):
-            raise ValueError(rel + ': changed target name or kind')
-        one, two = rule_attrs(before), rule_attrs(after)
-        if one.keys() != two.keys():
-            raise ValueError(rel + ': changed attributes of ' + rule_name(before))
-        owner = (rel, rule_name(before)) == CONSUMER
-        for cpu in CPUS:
-            if rule_kind(before) in RULES:
-                web_source = [s for s in expanded_inputs(one.get('srcs'), old_defs, cpu)
-                              if s.endswith('/Server/WebUIRequestHandler.cpp')]
-                if bool(web_source) != owner:
-                    raise ValueError(f'{rel}:{rule_name(before)} {cpu} unexpected WebUIRequestHandler.cpp ownership')
-            for field in one:
-                initial = eval_node(one[field], old_defs, cpu)
-                final = eval_node(two[field], new_defs, cpu)
-                if field in FILE_FIELDS and rule_kind(before) in RULES:
-                    # The owner moves its resource files from public hdrs to
-                    # the single private compiler input group.
-                    expect = Filter(field).visit(copy.deepcopy(initial))
-                    found = Filter(field).visit(copy.deepcopy(final))
-                    if owner and field == 'additional_compiler_inputs':
-                        for private in (expect, found):
-                            private.elts = [el for el in private.elts
-                                            if not (isinstance(el, ast.Constant) and el.value == GROUP)]
-                    if key(expect) != key(found):
-                        raise ValueError(f'{rel}:{rule_name(before)} {cpu} changed non-resource {field}')
-                elif field in {'local_includes', 'includes'} and rule_kind(before) in RULES and not owner:
-                    expect = Filter(field).visit(initial)
-                    if key(expect) != key(final):
-                        raise ValueError(f'{rel}:{rule_name(before)} {cpu} changed non-Web UI {field}')
-                elif key(initial) != key(final):
-                    raise ValueError(f'{rel}:{rule_name(before)} {cpu} changed protected {field}')
-            old_files = set()
-            new_files = set()
-            for field in FILE_FIELDS:
-                old_files.update(filter(resource_file, expanded_inputs(one.get(field), old_defs, cpu)))
-                new_files.update(filter(resource_file, expanded_inputs(two.get(field), new_defs, cpu, generated[cpu])))
-            if owner:
-                already = GROUP in expanded_inputs(one.get('additional_compiler_inputs'), old_defs, cpu)
-                if already:
-                    old_files.update(generated[cpu])
-                if old_files != generated[cpu] or new_files != generated[cpu]:
-                    raise ValueError(f'{rel}:{rule_name(before)} {cpu}: expected exact gzip/header generator outputs '
-                                     f'oldmissing={sorted(generated[cpu] - old_files)} '
-                                     f'oldextra={sorted(old_files - generated[cpu])} '
-                                     f'newmissing={sorted(generated[cpu] - new_files)}')
-                counts['owner_' + cpu + '_matched_files'] = len(new_files)
-            elif new_files:
-                raise ValueError(f'{rel}:{rule_name(before)} {cpu}: retained Web UI compiler files')
-            counts['configured_rules'] += 1
+def literal_string(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = literal_string(node.left), literal_string(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
 
 
-def rewrite(text, rel, generated, Source, counts):
+def is_migrated_input(package, item, field):
+    if field in {'local_includes', 'includes'}:
+        # Native code includes generated headers through their C++ owners.
+        value = literal_string(item)
+        if value is None:
+            return False
+        path = posixpath.normpath(posixpath.join(package, value))
+        return path in {
+            'bazel/gen', 'bazel/gen/x86_64', 'bazel/gen/aarch64',
+            'bazel/gen/contrib/clickstack-cmake', 'bazel/gen/contrib/sql-console-cmake',
+        }
+    return isinstance(item, ast.Constant) and isinstance(item.value, str) and (
+        resource_file(item.value) or item.value in {GROUP, '//bazel:clickstack_header'}
+    )
+
+
+def rewrite(text, rel, Source, owners):
     source = Source(text)
-    definitions = constant_defs(source.module)
-    uses = defaultdict(list)
-    affected = []
-    for statement, rule in source.rules():
+    defs = constant_defs(source.module)
+    package = posixpath.dirname(rel)
+    edits = {}
+    visited = set()
+
+    def remove_inputs(node, field):
+        if node is None or (id(node), field) in visited:
+            return
+        visited.add((id(node), field))
+        if isinstance(node, ast.Name) and node.id in defs:
+            remove_inputs(defs[node.id].value, field)
+        elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id in defs:
+            table = defs[node.value.id].value
+            if rule_kind(table) == 'dict' and isinstance(node.slice, ast.Constant):
+                remove_inputs(rule_attrs(table).get(node.slice.value), field)
+        elif isinstance(node, ast.List):
+            keep = [item for item in node.elts if not is_migrated_input(package, item, field)]
+            if len(keep) != len(node.elts):
+                edits[source.span(node)] = '[' + ', '.join(source.text(item) for item in keep) + ']'
+        else:
+            for child in ast.iter_child_nodes(node):
+                remove_inputs(child, field)
+
+    for _, rule in source.rules():
         if rule_kind(rule) not in RULES:
             continue
-        owner = (rel, rule_name(rule)) == CONSUMER
-        for kw in rule.keywords:
-            for ref in ast.walk(kw.value):
-                if isinstance(ref, ast.Name) and ref.id in definitions:
-                    uses[ref.id].append((kw.arg, owner, ref))
-            if kw.arg in FIELDS:
-                affected.append((kw, owner, rule))
+        attrs = rule_attrs(rule)
+        for field in FIELDS | {'srcs'}:
+            remove_inputs(attrs.get(field), field)
+        consumed = [any(s.endswith('/Server/WebUIRequestHandler.cpp')
+                        for s in expanded_inputs(attrs.get('srcs'), defs, cpu)) for cpu in CPUS]
+        if any(consumed):
+            if not all(consumed):
+                raise ValueError(f'{rel}: WebUIRequestHandler.cpp must have one owner on both CPUs')
+            owners.append((rel, rule_name(rule)))
 
-    edits = []
-    for name, assignments in uses.items():
-        original = definitions[name]
-        fields = {field for field, _, _ in assignments}
-        include = bool(fields & {'includes', 'local_includes'})
-        files = bool(fields & FILE_FIELDS)
-        if include and contains(original.value, 'local_includes'):
-            if not fields <= {'local_includes', 'includes'}:
-                raise ValueError(rel + ': mixed usage of include constant ' + name)
-            owners = [ref for _, owner, ref in assignments if owner]
-            if owners and any(not owner for _, owner, _ in assignments):
-                prefix, dirs, suffix = split_includes(source, original.value)
-                prefix_name = name + '_BEFORE_WEB'
-                suffix_name = name + '_AFTER_WEB'
-                if prefix_name in definitions or suffix_name in definitions:
-                    raise ValueError(rel + ': shared include name collision')
-                replacement = (prefix_name + ' = ' + prefix + '\n\n' +
-                               suffix_name + ' = ' + suffix + '\n\n' +
-                               name + ' = ' + join(prefix_name, suffix_name))
-                edits.append((*source.span(original), replacement))
-                for ref in owners:
-                    edits.append((*source.span(ref), '(' + join(prefix_name, dirs, suffix_name) + ')'))
-                counts['split_include_constants'] += 1
-            elif not owners:
-                prune_lists(source, original.value, 'local_includes', edits, counts)
-        if files and contains(original.value, 'hdrs'):
-            if not fields <= FILE_FIELDS:
-                raise ValueError(rel + ': mixed usage of input constant ' + name)
-            prune_lists(source, original.value, 'hdrs', edits, counts)
-
-    for kw, owner, rule in affected:
-        if kw.arg in FILE_FIELDS:
-            prune_lists(source, kw.value, kw.arg, edits, counts)
-        elif not owner:
-            prune_lists(source, kw.value, kw.arg, edits, counts)
-    result = source.rewrite(edits)
-    source = Source(result)
+    if not edits and not any(path == rel for path, _ in owners):
+        return text
+    source = Source(source.rewrite([(a, b, v) for (a, b), v in edits.items()]))
+    defs = constant_defs(source.module)
     edits = []
     for _, rule in source.rules():
-        if (rel, rule_name(rule)) != CONSUMER:
+        if (rel, rule_name(rule)) not in owners:
             continue
-        attr = rule_attrs(rule)['additional_compiler_inputs']
-        values = string_constants(attr)
-        if GROUP not in values:
-            edits.append((*source.span(attr), '(' + source.text(attr) + ') + ["' + GROUP + '"]'))
-    result = source.rewrite(edits)
-    prove(Source(text), Source(result), rel, generated, counts)
-    return result
+        attrs = rule_attrs(rule)
+        missing = []
+        # cc_library propagates the headers and includes, but only the consumer's
+        # additional_compiler_inputs reach the action running Clang's #embed.
+        for field, label in [('implementation_deps', GROUP), ('additional_compiler_inputs', ASSETS)]:
+            value = attrs.get(field)
+            if value is None:
+                missing.append(f'{field} = ["{label}"],')
+                continue
+            counts = [expanded_inputs(value, defs, cpu).count(label) for cpu in CPUS]
+            if counts == [1, 1]:
+                continue
+            if any(counts):
+                raise ValueError(f'{rel}: expected one {label} on each CPU, got {counts}')
+            if isinstance(value, ast.List):
+                end = source.span(value.elts[-1])[1] if value.elts else source.span(value)[0] + 1
+                edits.append((end, end, (', ' if value.elts else '') + f'"{label}"'))
+            else:
+                edits.append((*source.span(value), source.text(value) + f' + ["{label}"]'))
+        if missing:
+            end = source.span(rule)[1] - 1
+            edits.append((end, end, ' '.join(missing)))
+    for call in ast.walk(source.module):
+        if not isinstance(call, ast.Call):
+            continue
+        for kw in call.keywords:
+            if kw.arg != 'local_includes':
+                continue
+            for cpu in CPUS:
+                value = eval_node(kw.value, defs, cpu)
+                if not isinstance(value, ast.List) or value.elts:
+                    break
+            else:
+                start, end = source.span(kw)
+                edits.append((start, end + (source.bytes[end:end + 1] == b','), ''))
+    return source.rewrite(edits)
 
 
 def prepare(root, paths=None):
     Source = define_paths(root)
-    generated = generator_outputs(root, Source)
-    counts = Counter()
+    generator_outputs(root, Source)
     changes = {}
-    filenames = list(paths) if paths is not None else [
-        *root.glob('programs/**/BUILD.bazel'), *root.glob('src/**/BUILD.bazel'),
-    ]
-    for path in filenames:
-        rel = path.relative_to(root).as_posix()
+    owners = []
+    for path in (paths if paths is not None else
+                 (p for directory in ('base', 'programs', 'src')
+                  for p in (root / directory).rglob('BUILD.bazel'))):
         before = path.read_text()
-        if not any(ns + 'Resources.generated.h' in before or name.replace('-', '_') + '_compressed/' in before
-                   or 'bazel/gen/' in before and '/contrib/' + name + '-cmake' in before
-                   for ns, name in NAMESPACES.items()):
+        if not any(marker in before for marker in ('bazel/gen', 'WebUIRequestHandler.cpp',
+                                                   'clickstack_header', 'web_ui_resources')):
             continue
-        after = rewrite(before, rel, generated, Source, counts)
+        after = rewrite(before, path.relative_to(root).as_posix(), Source, owners)
         if after != before:
             changes[path] = after
-            counts['build_files'] += 1
+    if len(owners) != 1:
+        raise ValueError('Expected one library compiling WebUIRequestHandler.cpp, got ' + repr(owners))
+
     bazel = root / 'bazel/BUILD.bazel'
-    before = bazel.read_text()
-    known = [rule for _, rule in Source(before).rules() if rule_name(rule) == 'web_ui_resources']
-    if len(known) > 1:
-        raise ValueError('duplicate web_ui_resources target')
-    if not known:
-        changes[bazel] = before.rstrip() + '\n' + GROUP_BUILD
-    else:
-        expected = list(Source(GROUP_BUILD).rules())[0][1]
-        if key(known[0]) != key(expected):
-            raise ValueError('unexpected web_ui_resources target')
-    published = publish_clickstack(root, Source, changes.get(bazel, before))
-    for path, text in published.items():
-        if text != path.read_text():
-            changes[path] = text
-    return changes, counts
+    source = Source(bazel.read_text())
+    rules = {rule_name(rule): rule for _, rule in source.rules()}
+    edits = []
+    append = []
+    expected = {rule_name(rule): rule for _, rule in Source(GROUP_BUILD).rules()}
+    for name, rule in expected.items():
+        existing = rules.get(name)
+        if existing is None:
+            declaration = Source(GROUP_BUILD).text(rule)
+            if name == 'web_ui_embedded_assets' and 'web_ui_resources' in rules:
+                start = source.span(rules['web_ui_resources'])[0]
+                edits.append((start, start, declaration + '\n\n'))
+            else:
+                append.append(declaration)
+        elif (rule_kind(existing), {k: key(v) for k, v in rule_attrs(existing).items()}) != (
+                rule_kind(rule), {k: key(v) for k, v in rule_attrs(rule).items()}):
+            if name != 'web_ui_resources':
+                raise ValueError('Unexpected rule for ' + name)
+            if rule_kind(existing) == 'cc_library':
+                # Migrate the former library that kept the payloads only on itself.
+                old = rule_attrs(rule) | {
+                    'additional_compiler_inputs': rule_attrs(expected['web_ui_embedded_assets'])['srcs'],
+                }
+                if {k: key(v) for k, v in rule_attrs(existing).items()} != {k: key(v) for k, v in old.items()}:
+                    raise ValueError('Unexpected attributes on ' + name)
+            elif rule_kind(existing) != 'filegroup':
+                raise ValueError('Unexpected rule for ' + name)
+            edits.append((*source.span(existing), Source(GROUP_BUILD).text(rule)))
+    after = source.rewrite(edits)
+    if append:
+        after = after.rstrip() + '\n\n' + '\n\n'.join(append) + '\n'
+    changes.update(publish_clickstack(root, Source, after))
+    return {path: text for path, text in changes.items() if path.read_text() != text}, {
+        'web_ui_consumer': owners[0], 'changed_builds': len(changes),
+    }
 
 
 def run(root, *, write=False, paths=None):

@@ -260,7 +260,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
         "@clickhouse_nuraft//:_nuraft",
         "@clickhouse_openldap//:_ldap",
-        "@clickhouse_replxx//:_replxx",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
         "//src/Common:current_metrics",
@@ -357,5 +356,6 @@ ch_cc_library(
         "//src/Common:parser_support_api",
         "//src/Common:load_balancing_priority",
         "//src/Parsers:parser_api",
+        "//src/Common:string_utils",
     ],
 )

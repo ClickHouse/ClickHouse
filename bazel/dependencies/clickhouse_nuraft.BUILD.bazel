@@ -26,6 +26,8 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_boost//:boost_asio_headers",
         "@clickhouse_boost//:boost_headers",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_openssl//:ssl",
     ],
     includes = [
         "include",

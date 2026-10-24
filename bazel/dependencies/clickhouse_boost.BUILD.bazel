@@ -251,15 +251,32 @@ _BOOST_PP_TEXTUAL = glob([
     "boost/preprocessor/slot/detail/shared.hpp",
 ]
 
+# Boost.Asio includes each .ipp from its API header or the separate-compilation src.hpp.
+_ASIO_IMPLEMENTATIONS = glob(["boost/asio/**/*.ipp"])
+
+# config.hpp and the nested WinAPI helpers are portable. The remaining top-level
+# WinAPI headers include basic_types.hpp, which rejects Linux.
+_WINAPI_HEADERS = glob(
+    [
+        "boost/detail/winapi/*.hpp",
+        "boost/winapi/*.hpp",
+    ],
+    exclude = [
+        "boost/detail/winapi/config.hpp",
+        "boost/winapi/config.hpp",
+    ],
+)
+
 cc_library(
     name = "boost_headers",
+    srcs = _ASIO_IMPLEMENTATIONS,
     hdrs = glob(
         [
             "boost/**/*.h",
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_PP_TEXTUAL + [
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_PP_TEXTUAL + _ASIO_IMPLEMENTATIONS + _WINAPI_HEADERS + [
             "boost/compute.hpp",
             "boost/compute/**",
             # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
@@ -288,7 +305,10 @@ cc_library(
             "boost/pfr.hpp",
             "boost/pfr/**",
         ],
-    ),
+    ) + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": _WINAPI_HEADERS,
+    }),
     features = ["external_include_paths"],
     textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_PP_TEXTUAL,
     deps = [

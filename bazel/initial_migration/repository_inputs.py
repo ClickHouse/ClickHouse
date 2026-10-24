@@ -223,6 +223,8 @@ def configuration_owner(path):
 
 
 def source_label(path):
+    if path.startswith('bazel/gen/') and path.split('/', 3)[-1] == 'contrib/krb5-cmake/include/krb5/krb5.h':
+        return '@clickhouse_krb5//:config/contrib/krb5-cmake/include/krb5/krb5.h'
     if path.startswith('bazel/config/'):
         _, _, arch, relative = path.split('/', 3)
         if relative.startswith('contrib/'):

@@ -124,9 +124,9 @@ ch_cc_library(
         "//src/Common:target_specific",
         "//src/Common:memory_tracking_api",
         "//src:headers",
+        "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    local_includes = ["../../../" + "bazel/gen"],
     source_headers = True,
     alwayslink = True,
 )
@@ -228,9 +228,6 @@ ch_cc_library(
         "//src:with_context",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
         "//base/glibc-compatibility",
@@ -271,9 +268,6 @@ ch_cc_library(
         "//src/Common:memory_tracking_api",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
     ],
@@ -303,9 +297,6 @@ ch_cc_library(
         "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
     ],
@@ -329,9 +320,6 @@ ch_cc_library(
         "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
     ],

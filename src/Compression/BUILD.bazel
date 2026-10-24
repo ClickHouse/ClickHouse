@@ -51,6 +51,7 @@ ch_cc_library(
         "//src/Common:string_utils",
         "//src/Common:target_specific",
         "//src:core_defines",
+        "//src/Parsers:headers",
     ],
     link_runtime = True,
     local_defines = select({

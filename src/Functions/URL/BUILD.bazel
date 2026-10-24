@@ -114,11 +114,9 @@ ch_cc_library(
         "//src/Common:parser_support_api",
         "//src:column_types",
         "//src/Common:string_utils",
+        "//src/Functions:headers",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
@@ -152,9 +150,6 @@ ch_cc_library(
     implementation_deps = [
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_URL_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",

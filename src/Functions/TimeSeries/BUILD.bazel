@@ -104,9 +104,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     source_headers = True,
     deps = [
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
@@ -114,7 +111,6 @@ ch_cc_library(
         "@clickhouse_arrow//:_arrow",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
-        "@clickhouse_icu//:_icudata",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMBitReader",

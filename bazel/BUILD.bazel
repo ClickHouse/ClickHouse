@@ -1515,21 +1515,6 @@ cc_library(
     strip_include_prefix = "gen/includes/configs",
 )
 
-copy_file(
-    name = "configure_include_com_err_h",
-    src = "@clickhouse_krb5//:src/util/et/com_err.h",
-    out = "gen/contrib/krb5-cmake/include/com_err.h",
-)
-
-cc_library(
-    name = "krb5_generated_headers",
-    hdrs = [
-        ":configure_include_com_err_h",
-        "gen/contrib/krb5-cmake/include/krb5/krb5.h",
-    ],
-    includes = ["gen/contrib/krb5-cmake/include"],
-)
-
 cc_library(
     name = "hdfs3_proto_headers",
     hdrs = [
@@ -1742,6 +1727,7 @@ build_options(
         srcs = [
             ":generate_native_ClickStack",
             ":build_options",
+            "@clickhouse_krb5//:generate_contrib_krb5_cmake_include_krb5_krb5_h",
         ] + [
             ":" + name
             for name in CODEGEN_RULES
@@ -1773,14 +1759,27 @@ filegroup(
 )
 
 filegroup(
-    name = "web_ui_resources",
-    srcs = [
-        ":clickstack_assets",
-    ] + [
+    name = "web_ui_embedded_assets",
+    srcs = [":clickstack_assets"] + [
         out
         for out in CODEGEN_RULES["generate_native_SQLConsole"]["outs"]
         if out.endswith(".gz")
     ],
+    visibility = ["//src:__pkg__"],
+)
+
+cc_library(
+    name = "web_ui_resources",
+    hdrs = [
+        ":clickstack_header",
+        "gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
+    ],
+    additional_compiler_inputs = [":web_ui_embedded_assets"],
+    includes = [
+        "gen/contrib/sql-console-cmake",
+        "gen/contrib/clickstack-cmake",
+    ],
+    visibility = ["//src:__pkg__"],
 )
 
 embed_clickstack(

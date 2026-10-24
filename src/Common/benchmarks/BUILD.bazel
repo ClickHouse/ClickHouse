@@ -97,9 +97,6 @@ ch_cc_library(
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     alwayslink = True,
 )
 
@@ -322,7 +319,6 @@ ch_cc_library(
         "@clickhouse_zstd//:_zstd",
         "//base:common",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
@@ -346,7 +342,6 @@ ch_cc_library(
         "//base/glibc-compatibility",
         "@clickhouse_xxhash//:xxHash",
         "@clickhouse_wyhash//:wyhash",
-        "@clickhouse_libbcrypt//:_bcrypt",
         "//contrib/consistent-hashing:_consistent_hashing",
         "//base:pcg_random",
         "//src/Common:parser_support_api",
@@ -436,7 +431,6 @@ ch_cc_library(
         "@clickhouse_zstd//:_zstd",
         "//base:common",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
     ],
     link_runtime = True,
     local_defines = [
@@ -470,7 +464,6 @@ ch_cc_library(
         "@clickhouse_zstd//:_zstd",
         "//base:common",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
         "//src/Common:stopwatch",
     ],
     link_runtime = True,
@@ -486,13 +479,10 @@ ch_cc_library(
         "//src:dbms__compile_0",
         "//src:dbms__compile_1",
         "@clickhouse_google_benchmark//:google_benchmark",
-        "@clickhouse_icu//:_icudata",
         "//src:dbms",
+        "//src:column_types",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
     alwayslink = True,
 )

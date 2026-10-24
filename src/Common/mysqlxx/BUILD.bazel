@@ -107,7 +107,6 @@ ch_cc_library(
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
         "//base/glibc-compatibility",
-        "@clickhouse_cctz//:tzdata",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
         "//src/Common",

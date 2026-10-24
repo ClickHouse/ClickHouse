@@ -27,6 +27,8 @@ ch_cc_library(
         "//src:dbms__compile_0",
         "//src:headers",
         "//src:core_defines",
+        "//src/Parsers:headers",
+        "//src/Common:parser_support_api",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,

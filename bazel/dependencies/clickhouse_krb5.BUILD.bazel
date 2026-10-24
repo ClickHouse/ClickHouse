@@ -2,7 +2,6 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:codegen_actions.bzl", "declare_codegen")
 load("@clickhouse//bazel/rules:codegen_rules.bzl", "KRB5_PRIVATE_CODEGEN_RULES")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 load("@rules_perl//perl:perl.bzl", "perl_binary", "perl_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -15,22 +14,7 @@ package(default_visibility = ["//visibility:public"])
     for name, attrs in KRB5_PRIVATE_CODEGEN_RULES.items()
 ]
 
-exports_files([
-    "NOTICE",
-    "src/include/krb5/krb5.hin",
-    "src/lib/gssapi/generic/gssapi_err_generic.et",
-    "src/lib/gssapi/krb5/gssapi_err_krb5.et",
-    "src/lib/krb5/error_tables/asn1_err.et",
-    "src/lib/krb5/error_tables/k5e1_err.et",
-    "src/lib/krb5/error_tables/kdb5_err.et",
-    "src/lib/krb5/error_tables/krb524_err.et",
-    "src/lib/krb5/error_tables/krb5_err.et",
-    "src/lib/krb5/error_tables/kv5m_err.et",
-    "src/util/et/com_err.h",
-    "src/util/et/et_c.awk",
-    "src/util/et/et_h.awk",
-    "src/util/profile/prof_err.et",
-])
+exports_files(["NOTICE"])
 
 copy_file(
     name = "configure_include_gssapi_gssapi_h",
@@ -78,6 +62,31 @@ copy_file(
     name = "configure_include_private_profile_h",
     src = "@clickhouse//contrib/krb5-cmake:profile.h",
     out = "config/contrib/krb5-cmake/include_private/profile.h",
+)
+
+copy_file(
+    name = "configure_include_com_err_h",
+    src = "src/util/et/com_err.h",
+    out = "config/contrib/krb5-cmake/include/com_err.h",
+)
+
+_KRB5_HEADER_PARTS = ["src/include/krb5/krb5.hin"] + [
+    "config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/" + table + ".h"
+    for table in [
+        "krb5_err",
+        "k5e1_err",
+        "kdb5_err",
+        "kv5m_err",
+        "krb524_err",
+        "asn1_err",
+    ]
+]
+
+genrule(
+    name = "generate_contrib_krb5_cmake_include_krb5_krb5_h",
+    srcs = _KRB5_HEADER_PARTS,
+    outs = ["config/contrib/krb5-cmake/include/krb5/krb5.h"],
+    cmd = "cat " + " ".join(['"$(location %s)"' % part for part in _KRB5_HEADER_PARTS]) + ' > "$@"',
 )
 
 ch_cc_library(
@@ -411,6 +420,8 @@ ch_cc_library(
         ":config/contrib/krb5-cmake/include_private/util/profile/prof_err.h",
     ],
     hdrs = [
+        "config/contrib/krb5-cmake/include/com_err.h",
+        "config/contrib/krb5-cmake/include/krb5/krb5.h",
         ":config/contrib/krb5-cmake/include/gssapi/gssapi.h",
         ":config/contrib/krb5-cmake/include/gssapi/gssapi_ext.h",
         ":config/contrib/krb5-cmake/include/gssapi/gssapi_generic.h",
@@ -421,8 +432,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-iquote",
-        "$(GENDIR)/" + repository_path("contrib/krb5") + "/config/contrib/krb5-cmake/include_private",
     ],
     implementation_deps = ["@clickhouse_openssl//:crypto"],
     includes = [
@@ -470,7 +479,6 @@ ch_cc_library(
         "src/lib/krb5/krb/brand.c",
         "src/util/profile/profile.hin",
     ],
-    deps = ["@clickhouse//bazel:krb5_generated_headers"],
 )
 
 perl_library(

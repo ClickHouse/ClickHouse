@@ -813,6 +813,8 @@ class BuildFile:
                                             for key, value in features.values.items()})
             else:
                 attrs['features'] = [flag for flag in features if flag not in defaults]
+        if self.owner == 'contrib/krb5' and name == '_krb5':
+            attrs['includes'] = ['src/include', 'config/contrib/krb5-cmake/include']
         if self.owner == 'contrib/openssl' and name == 'crypto':
             # crypto's compile groups also use private OpenSSL directories.
             # Only these two roots belong to the published OpenSSL interface.
@@ -968,6 +970,7 @@ class BuildFile:
             system_includes = {}
             native_includes = {}
             postgres = self.owner == 'contrib/postgres' and name == '_libpq'
+            nuraft = self.owner == 'contrib/NuRaft' and name == '_nuraft'
             implementation_deps = {}
             for arch, group in groups.items():
                 if group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime'):
@@ -1062,6 +1065,17 @@ class BuildFile:
                                 value.append('@clickhouse_llvm_project//:runtime_' + library + '_headers')
                             else:
                                 raise ValueError(f'{name}: unsupported NASM include {origin} {directory}')
+                    if self.owner in {'contrib/krb5', 'contrib/libhdfs3'}:
+                        public = ('contrib/krb5-cmake/include/com_err.h', 'contrib/krb5-cmake/include/krb5/krb5.h')
+                        if field in {'hdrs', 'textual_hdrs', 'additional_compiler_inputs'}:
+                            value = [label for label in value if not label.endswith(public)]
+                            if name == '_krb5' and field == 'hdrs':
+                                value += ['@clickhouse_krb5//:config/' + arch + '/' + public[0],
+                                          '@clickhouse_krb5//:config/' + public[1]]
+                        elif name == '_hdfs3' and index == 0 and field == 'deps':
+                            value = [label for label in value if label != '@clickhouse_krb5//:_krb5']
+                            implementation_deps.setdefault('@platforms//cpu:' + arch, []).append(
+                                '@clickhouse_krb5//:_krb5')
                     if field in LABEL_ATTRIBUTES:
                         value = self.label_inputs(value, source_files=field == 'srcs')
                         if field == 'deps' and collapse_single:
@@ -1069,19 +1083,21 @@ class BuildFile:
                             # libraries. Keep them before the old wrapper's
                             # dependencies and deduplicate after rebasing.
                             value = list(dict.fromkeys(value))
-                    if field == 'deps' and postgres and arch in groups:
+                    if field == 'deps' and (postgres or nuraft) and arch in groups:
                         if not collapse_single:
-                            raise ValueError('Postgres _libpq must have one native compile group')
+                            raise ValueError(f'{name} must have one native compile group')
                         openssl = {
                             self.label(target_label(dep, self.owners))
                             for dep in ('crypto', 'ssl')
                         }
                         supplied = [dep for dep in value if dep in openssl]
-                        if set(supplied) != openssl:
-                            raise ValueError(f'Postgres _libpq no longer links both OpenSSL libraries: {value}')
-                        implementation_deps['@platforms//cpu:' + arch] = supplied + [
-                            '@clickhouse_llvm_project//:libcxxabi_headers',
-                        ]
+                        # src/asio_service.cxx uses OpenSSL only when NuRaft's TLS support is enabled.
+                        if (postgres or supplied) and set(supplied) != openssl:
+                            raise ValueError(f'{name} must link both OpenSSL libraries for TLS: {value}')
+                        if postgres:
+                            supplied.append('@clickhouse_llvm_project//:libcxxabi_headers')
+                        if supplied:
+                            implementation_deps['@platforms//cpu:' + arch] = supplied
                         value = [dep for dep in value if dep not in openssl]
                     values['@platforms//cpu:' + arch] = value
                 attrs[field] = select(values)
@@ -1304,6 +1320,22 @@ def dependency_inputs(builds, owners):
         }),
     })
     krb5 = build('contrib/krb5')
+    # In the initial CMake graph the six generated private error tables
+    # still belong to //bazel. configured_codegen_outputs unifies their
+    # two architecture-specific output labels after the overlays are emitted.
+    error_tables = ('krb5_err', 'k5e1_err', 'kdb5_err', 'kv5m_err', 'krb524_err', 'asn1_err')
+    parts = {
+        '@platforms//cpu:' + arch: ['src/include/krb5/krb5.hin'] + [
+            '@clickhouse//bazel:gen/' + arch + '/contrib/krb5-cmake/include_private/lib/krb5/error_tables/' + table + '.h'
+            for table in error_tables
+        ] for arch in ARCHES
+    }
+    krb5.rule('genrule', 'generate_contrib_krb5_cmake_include_krb5_krb5_h', {
+        'srcs': select(parts),
+        'outs': ['config/contrib/krb5-cmake/include/krb5/krb5.h'],
+        'cmd': select({cpu: 'cat ' + ' '.join('"$(location ' + part + ')"' for part in inputs) + ' > "$@"'
+                       for cpu, inputs in parts.items()}),
+    })
     krb5.rule('perl_library', 'templates', {
         'srcs': Glob(['src/util/*.pm']), 'includes': ['src/util'],
     })

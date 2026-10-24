@@ -649,5 +649,8 @@ cc_library(
         "//src:with_context",
         "//base/poco/Foundation:_poco_foundation",
         "//contrib/cityhash102:_cityhash",
+        "//bazel:clickhouse_config_headers",
+        "@clickhouse_boost//:boost_headers",
+        "@clickhouse_sparsehash_c11//:sparsehash_c11",
     ],
 )

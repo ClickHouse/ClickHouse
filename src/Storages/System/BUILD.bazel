@@ -155,6 +155,11 @@ _STORAGES_SYSTEM_LLVM_DEPS = [
 _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
     clickhouse_code = True,
     implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//base:common",
+        "//src:headers",
+        "//src/Common",
+        "@clickhouse_cctz//:tzdata",
         "//src:core_types",
         "@clickhouse_nuraft//:_nuraft",
         "@clickhouse_icu//:_icuuc",
@@ -179,16 +184,8 @@ _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
         "//src/Access/Common:clickhouse_common_access",
     ],
     local_defines = _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES,
-    local_includes = [
-        "../../../" + "bazel/gen",
-    ],
-    deps = [
-        "//bazel:clickhouse_config_headers",
-    ] + _STORAGES_SYSTEM_LLVM_DEPS + [
+    deps = _STORAGES_SYSTEM_LLVM_DEPS + [
         "//base/glibc-compatibility",
-        "//base:common",
-        "//src:headers",
-        "//src/Common",
     ],
 )
 
@@ -330,9 +327,9 @@ ch_cc_library(
         "//src/Parsers:parser_api",
         "//src:column_types",
         "//src/AggregateFunctions:aggregate_api",
+        "//src/Access/Common:headers",
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
-    local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
     source_headers = True,
     deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"] + [":headers"],
 )
@@ -379,7 +376,6 @@ ch_cc_library(
         "//src:headers",
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
-    local_includes = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_includes"],
     source_headers = True,
     deps = _STORAGES_SYSTEM_LLVM_DEPS + [
         "//base/glibc-compatibility",
@@ -639,5 +635,6 @@ cc_library(
         "//src/Common",
         "//src:column_types",
         "//src:with_context",
+        "//bazel:clickhouse_config_headers",
     ],
 )

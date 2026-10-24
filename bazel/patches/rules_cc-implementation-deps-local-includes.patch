@@ -1,22 +1,32 @@
-diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_library.bzl
---- a/cc/private/rules_impl/cc_library.bzl
-+++ b/cc/private/rules_impl/cc_library.bzl
-@@ -283,6 +283,30 @@
- </p>
-         """,
-         ),
-+        "private_hdrs": attr.label_list(
-+            allow_files = True,
-+            flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
-+            doc = """
-+Files included by this library which must not be compiled as separate sources
+diff --git a/cc/private/rules_impl/attrs.bzl b/cc/private/rules_impl/attrs.bzl
+--- a/cc/private/rules_impl/attrs.bzl
++++ b/cc/private/rules_impl/attrs.bzl
+@@ -23,6 +23,18 @@
+ visibility("private")
+ 
+ common_attrs = {
++    "private_hdrs": attr.label_list(
++        allow_files = True,
++        flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
++        doc = """
++Files included by this target which must not be compiled as separate sources
 +or published to dependent libraries. Ordinary private headers may remain in
 +<code>srcs</code>. Use <code>private_hdrs</code> for included implementation
 +files, such as <code>.c</code> or template files, whose suffix would otherwise
 +be compiled or ignored. Files must not also occur in <code>srcs</code>,
 +<code>hdrs</code>, or <code>textual_hdrs</code>.
 +""",
-+        ),
++    ),
+     "srcs": attr.label_list(
+         allow_files = True,
+         flags = ["DIRECT_COMPILE_TIME_INPUT"],
+diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_library.bzl
+--- a/cc/private/rules_impl/cc_library.bzl
++++ b/cc/private/rules_impl/cc_library.bzl
+@@ -283,6 +283,18 @@
+ </p>
+         """,
+         ),
 +        "private_textual_srcs": attr.label_list(
 +            allow_files = True,
 +            flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
@@ -42,7 +52,7 @@ diff --git a/cc/common/cc_helper.bzl b/cc/common/cc_helper.bzl
 +    if getattr(ctx.attr, "private_hdrs", []):
 +        other_files = {}
 +        for attr_name in ["srcs", "hdrs", "textual_hdrs"]:
-+            for artifact in getattr(ctx.files, attr_name):
++            for artifact in getattr(ctx.files, attr_name, []):
 +                other_files[artifact] = attr_name
 +        for hdr in ctx.attr.private_hdrs:
 +            for artifact in hdr[DefaultInfo].files.to_list():

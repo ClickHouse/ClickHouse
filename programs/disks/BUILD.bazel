@@ -57,7 +57,6 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    source_headers = True,
     deps = [
         "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "//src/Dictionaries:clickhouse_dictionaries",
