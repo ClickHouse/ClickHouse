@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -29,6 +30,8 @@
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/ProfileEvents.h>
+
+#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -62,7 +65,10 @@ namespace Setting
 namespace
 {
 
-bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
+bool subtreeHasViewSource(
+    const QueryTreeNodePtr & node,
+    const Context & context,
+    std::unordered_set<const IQueryTreeNode *> & entered_shared_bodies)
 {
     if (!node)
         return false;
@@ -74,8 +80,13 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
     }
 
     for (const auto & child : node->getChildren())
-        if (subtreeHasViewSource(child.get(), context))
+    {
+        if (!child || !enterSharedMaterializedCTEBody(node, child, entered_shared_bodies))
+            continue;
+
+        if (subtreeHasViewSource(child, context, entered_shared_bodies))
             return true;
+    }
 
     return false;
 }
@@ -133,7 +144,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
+    bool can_use_global_scalars = !only_analyze_subquery
+        && !(context->getViewSource() && subtreeHasViewSource(node_without_alias, *context, entered_shared_bodies));
 
     auto & scalars_cache = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only
@@ -179,13 +192,14 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         /// The Planner reads the context from every node, so parallel replicas must be disabled
         /// in nested QueryNode/UnionNode contexts too, not just on the top node. Same recursive
         /// walk as createLocalPlanForParallelReplicas.
-        std::vector<IQueryTreeNode *> nodes_to_visit;
+        std::unordered_set<const IQueryTreeNode *> entered_context_bodies;
+        std::vector<QueryTreeNodePtr> nodes_to_visit;
         for (const auto & child : query_tree->getChildren())
-            if (child)
-                nodes_to_visit.push_back(child.get());
+            if (child && enterSharedMaterializedCTEBody(query_tree, child, entered_context_bodies))
+                nodes_to_visit.push_back(child);
         while (!nodes_to_visit.empty())
         {
-            auto * current = nodes_to_visit.back();
+            auto current = std::move(nodes_to_visit.back());
             nodes_to_visit.pop_back();
 
             if (auto * nested_query_node = current->as<QueryNode>())
@@ -202,8 +216,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
 
             for (const auto & child : current->getChildren())
-                if (child)
-                    nodes_to_visit.push_back(child.get());
+                if (child && enterSharedMaterializedCTEBody(current, child, entered_context_bodies))
+                    nodes_to_visit.push_back(child);
         }
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
@@ -217,7 +231,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         options.forceMaterializeCTE();
 
         QueryTreePassManager query_tree_pass_manager(subquery_context);
-        addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
+        addQueryTreePasses(
+            query_tree_pass_manager,
+            options.only_analyze,
+            /*positional_arguments_already_resolved=*/ false,
+            /*prune_shared_materialized_cte_bodies=*/ false);
         query_tree_pass_manager.run(query_tree);
 
         /// The inner query of an ordinary view referenced by the view query reads the table itself,

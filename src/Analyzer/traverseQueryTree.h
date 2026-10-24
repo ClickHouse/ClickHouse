@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -31,6 +34,7 @@ void traverseQueryTree(const QueryTreeNodePtr & node, ShouldVisitPredicate shoul
         bool children_processed = false;
     };
     std::vector<Frame> nodes_to_process = { { .node = node } };
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
 
     while (!nodes_to_process.empty())
     {
@@ -71,7 +75,8 @@ void traverseQueryTree(const QueryTreeNodePtr & node, ShouldVisitPredicate shoul
                 }
                 else
                 {
-                    if (should_visit_predicate(current_node, child))
+                    if (should_visit_predicate(current_node, child)
+                        && enterSharedMaterializedCTEBody(current_node, child, entered_shared_bodies))
                         nodes_to_process.push_back({ .node = child });
                 }
             }
@@ -83,7 +88,8 @@ void traverseQueryTree(const QueryTreeNodePtr & node, ShouldVisitPredicate shoul
                 if (!child)
                     continue;
 
-                if (should_visit_predicate(current_node, child))
+                if (should_visit_predicate(current_node, child)
+                    && enterSharedMaterializedCTEBody(current_node, child, entered_shared_bodies))
                     nodes_to_process.push_back({ .node = child });
             }
         }

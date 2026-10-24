@@ -12,6 +12,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -141,6 +143,17 @@ public:
         return children[materialized_cte_subquery_index] != nullptr;
     }
 
+    /// The subquery child is one shared body. A clone must not copy it.
+    bool sharesMaterializedCTEBody() const
+    {
+        return share_materialized_cte_body;
+    }
+
+    void setShareMaterializedCTEBody(bool value)
+    {
+        share_materialized_cte_body = value;
+    }
+
     const QueryTreeNodePtr & getMaterializedCTESubquery() const
     {
         return children[materialized_cte_subquery_index];
@@ -193,12 +206,29 @@ private:
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
     MaterializedCTEPtr materialized_cte;
+    bool share_materialized_cte_body = false;
     /// Hash of the substituted inner query if `storage` is a parameterized view, see `isEqualImpl`.
     std::optional<IASTHash> parameterized_view_query_hash;
 
     static constexpr size_t materialized_cte_subquery_index = 0;
     static constexpr size_t children_size = materialized_cte_subquery_index + 1;
 };
+
+/// A shared materialized CTE body is one node. Return false when this traversal already entered it.
+inline bool enterSharedMaterializedCTEBody(
+    const QueryTreeNodePtr & parent,
+    const QueryTreeNodePtr & child,
+    std::unordered_set<const IQueryTreeNode *> & entered)
+{
+    const auto * table = parent->as<TableNode>();
+    if (!table || !table->isMaterializedCTE() || !table->sharesMaterializedCTEBody())
+        return true;
+
+    if (child.get() != table->getMaterializedCTESubquery().get())
+        return true;
+
+    return entered.insert(child.get()).second;
+}
 
 }
 

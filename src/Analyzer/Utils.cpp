@@ -71,6 +71,7 @@
 #include <Poco/String.h>
 
 #include <ranges>
+#include <unordered_set>
 
 namespace DB
 {
@@ -321,13 +322,22 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node)
 
 bool containsCorrelatedSubquery(const QueryTreeNodePtr & node)
 {
-    if (isCorrelatedQueryOrUnionNode(node))
-        return true;
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
+    QueryTreeNodes nodes_to_process = { node };
 
-    for (const auto & child : node->getChildren())
+    while (!nodes_to_process.empty())
     {
-        if (child && containsCorrelatedSubquery(child))
+        auto current_node = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        if (isCorrelatedQueryOrUnionNode(current_node))
             return true;
+
+        for (const auto & child : current_node->getChildren())
+        {
+            if (child && enterSharedMaterializedCTEBody(current_node, child, entered_shared_bodies))
+                nodes_to_process.push_back(child);
+        }
     }
 
     return false;

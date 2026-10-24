@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
+#include <Analyzer/ValidationUtils.h>
 
 #include <Core/Joins.h>
 #include <Core/NamesAndTypes.h>
@@ -368,7 +369,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
 
     /// Global resolve expression node to tree size
-    std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
+    std::unordered_map<QueryTreeNodePtr, QueryTreeSizeEntry> node_to_tree_size;
 
     /// Global scalar subquery to scalar value map
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;

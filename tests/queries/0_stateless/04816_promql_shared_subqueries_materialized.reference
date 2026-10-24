@@ -48,3 +48,27 @@
 1	1
 -- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again
 3	0
+-- three-term or on(test_case) keeps the earliest sample at each step
+[('__name__','or_chain_a'),('test_case','chain')]	[('1970-01-01 00:01:40.000',1)]
+[('__name__','or_chain_b'),('test_case','chain')]	[('1970-01-01 00:01:50.000',2)]
+[('__name__','or_chain_c'),('test_case','chain')]	[('1970-01-01 00:02:00.000',3)]
+-- thirteen-term or returns every operand
+13
+-- empty on() keeps the earliest sample at each step
+[('__name__','or_chain_a'),('test_case','chain')]	[('1970-01-01 00:01:40.000',1)]
+[('__name__','or_chain_b'),('test_case','chain')]	[('1970-01-01 00:01:50.000',2)]
+[('__name__','or_chain_c'),('test_case','chain')]	[('1970-01-01 00:02:00.000',3)]
+-- identical series or matches the left operand
+1
+-- or range records peak memory
+2
+4
+1	1
+-- wide empty on() keeps left series and unmasked right steps
+400	5600
+-- wide identical series or matches the left operand
+1
+1	1
+-- thirteen-term or names each operand once in the shared body
+1	1
+-- thirteen-term or with materialization disabled exceeds the query tree limit

@@ -23,6 +23,7 @@
 
 #include <memory>
 #include <ranges>
+#include <unordered_set>
 
 namespace DB
 {
@@ -525,9 +526,13 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
 
 void validateTreeSize(const QueryTreeNodePtr & node,
     size_t max_size,
-    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size)
+    std::unordered_map<QueryTreeNodePtr, QueryTreeSizeEntry> & node_to_tree_size)
 {
-    size_t tree_size = 0;
+    /// A marked materialized CTE body is shared, so an ancestor stores that body once and the total adds it once.
+    auto shares_body = [](const TableNode * table_node)
+    {
+        return table_node && table_node->isMaterializedCTE() && table_node->sharesMaterializedCTEBody();
+    };
     std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
     nodes_to_process.emplace_back(node, false);
 
@@ -536,31 +541,57 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         const auto [node_to_process, processed_children] = nodes_to_process.back();
         nodes_to_process.pop_back();
 
+        if (!node_to_process || node_to_tree_size.contains(node_to_process))
+            continue;
+
         if (processed_children)
         {
-            ++tree_size;
+            QueryTreeSizeEntry entry;
+            entry.nodes = 1;
 
-            size_t subtree_size = 1;
-            for (const auto & node_to_process_child : node_to_process->getChildren())
+            if (const auto * table_node = node_to_process->as<TableNode>(); shares_body(table_node))
             {
-                if (!node_to_process_child)
-                    continue;
-
-                subtree_size += node_to_tree_size[node_to_process_child];
+                if (const auto & body = table_node->getMaterializedCTESubquery())
+                    entry.shared_bodies.push_back(body);
+                node_to_tree_size.emplace(node_to_process, std::move(entry));
+                continue;
             }
+
+            std::unordered_set<const IQueryTreeNode *> seen_bodies;
+            auto absorb = [&](const QueryTreeNodePtr & child)
+            {
+                if (!child)
+                    return;
+
+                if (const auto * child_table = child->as<TableNode>(); shares_body(child_table))
+                {
+                    ++entry.nodes;
+                    const auto & body = child_table->getMaterializedCTESubquery();
+                    if (body && seen_bodies.insert(body.get()).second)
+                        entry.shared_bodies.push_back(body);
+                    return;
+                }
+
+                auto child_it = node_to_tree_size.find(child);
+                if (child_it == node_to_tree_size.end())
+                    return;
+
+                entry.nodes += child_it->second.nodes;
+                for (const auto & body : child_it->second.shared_bodies)
+                {
+                    if (body && seen_bodies.insert(body.get()).second)
+                        entry.shared_bodies.push_back(body);
+                }
+            };
+
+            for (const auto & node_to_process_child : node_to_process->getChildren())
+                absorb(node_to_process_child);
 
             auto * constant_node = node_to_process->as<ConstantNode>();
             if (constant_node && constant_node->hasSourceExpression())
-                subtree_size += node_to_tree_size[constant_node->getSourceExpression()];
+                absorb(constant_node->getSourceExpression());
 
-            node_to_tree_size.emplace(node_to_process, subtree_size);
-            continue;
-        }
-
-        auto node_to_size_it = node_to_tree_size.find(node_to_process);
-        if (node_to_size_it != node_to_tree_size.end())
-        {
-            tree_size += node_to_size_it->second;
+            node_to_tree_size.emplace(node_to_process, std::move(entry));
             continue;
         }
 
@@ -577,6 +608,35 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         auto * constant_node = node_to_process->as<ConstantNode>();
         if (constant_node && constant_node->hasSourceExpression())
             nodes_to_process.emplace_back(constant_node->getSourceExpression(), false);
+    }
+
+    auto root_it = node_to_tree_size.find(node);
+    if (root_it == node_to_tree_size.end())
+        return;
+
+    size_t tree_size = 0;
+    std::unordered_set<const IQueryTreeNode *> counted_bodies;
+    std::vector<QueryTreeNodePtr> pending_bodies;
+
+    auto add_entry = [&](const QueryTreeSizeEntry & entry)
+    {
+        tree_size += entry.nodes;
+        for (const auto & body : entry.shared_bodies)
+        {
+            if (body && counted_bodies.insert(body.get()).second)
+                pending_bodies.push_back(body);
+        }
+    };
+
+    add_entry(root_it->second);
+    while (!pending_bodies.empty())
+    {
+        auto body = std::move(pending_bodies.back());
+        pending_bodies.pop_back();
+        auto body_it = node_to_tree_size.find(body);
+        if (body_it == node_to_tree_size.end())
+            continue;
+        add_entry(body_it->second);
     }
 
     if (tree_size > max_size)
@@ -708,6 +768,7 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPt
     bool has_remote = false;
     bool has_correlated_subquery = false;
     QueryTreeNodes nodes_to_process = { node };
+    std::unordered_set<const IQueryTreeNode *> seen_nodes;
 
     /// Tables whose own storage is local but that read from other tables. Resolving what they reach
     /// takes the catalog's dependency graph, so it is deferred to the end and only done when the query
@@ -718,6 +779,9 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPt
     {
         auto current_node = nodes_to_process.back();
         nodes_to_process.pop_back();
+
+        if (!current_node || !seen_nodes.insert(current_node.get()).second)
+            continue;
 
         switch (current_node->getNodeType())
         {
