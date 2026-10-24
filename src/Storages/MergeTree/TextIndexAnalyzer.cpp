@@ -22,6 +22,23 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+/// Compiles the same re2 pattern again, with the options of the original.
+OptimizedRegularExpression compileCopy(const OptimizedRegularExpression & pattern)
+{
+    const auto & re2 = *pattern.getRE2();
+    int options = OptimizedRegularExpression::RE_NO_CAPTURE;
+    if (!re2.options().case_sensitive())
+        options |= OptimizedRegularExpression::RE_CASELESS;
+    if (re2.options().dot_nl())
+        options |= OptimizedRegularExpression::RE_DOT_NL;
+    return {re2.pattern(), options};
+}
+
+}
+
 TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
     : ranges(std::move(ranges_))
 {
@@ -138,12 +155,11 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const PostingList & token_postings)
 {
-    if (is_failed)
+    /// A pattern scan delivers embedded postings again for a token another query already has.
+    if (is_failed || !tokens_with_read_postings.emplace(token).second)
         return;
-
-    ++num_read_postings;
 
     if (!postings)
         postings = token_postings;
@@ -188,7 +204,12 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         }
 
         for (const auto & pattern : query->getPatterns())
-            queries_by_pattern[&pattern].insert(hash);
+        {
+            const auto * own_pattern = pattern.getRE2() ? &own_patterns.emplace_back(compileCopy(pattern)) : &pattern;
+            queries_by_pattern[own_pattern].insert(hash);
+            if (MergeTreeIndexConditionText::isPerTokenPatternFunction(query->getFunctionName()))
+                per_token_patterns.insert(own_pattern);
+        }
     }
 }
 
@@ -280,7 +301,7 @@ void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & 
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(*postings_ptr);
+        query_builder.addPostings(token, *postings_ptr);
     });
 }
 
@@ -295,18 +316,22 @@ void TextIndexAnalyzer::setReadableRows(std::vector<RowsRange> readable_ranges)
 bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 {
     bool added = false;
+    bool added_to_per_token_pattern = false;
 
     for (const auto & [pattern, query_hashes] : queries_by_pattern)
     {
         if (pattern->match(token.data(), token.size()))
         {
             added = true;
+            if (!added_to_per_token_pattern && !per_token_patterns.empty())
+                added_to_per_token_pattern = per_token_patterns.contains(pattern);
 
             for (const auto & query_hash : query_hashes)
                 queries_by_token[token].emplace(query_hash);
         }
     }
 
+    num_per_token_pattern_tokens += added_to_per_token_pattern;
     return added;
 }
 
