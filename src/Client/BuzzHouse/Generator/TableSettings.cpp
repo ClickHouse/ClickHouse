@@ -1186,8 +1186,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                             + std::to_string(rg.thresholdGenerator<uint64_t>(
                                 0.2, 0.2, UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(128)));
                     if (rg.nextSmallNumber() < 4)
-                        res += ", enable_filesystem_query_cache_limit = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
-                    if (rg.nextSmallNumber() < 4)
                         res += ", load_metadata_asynchronously = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
                     if (rg.nextSmallNumber() < 4)
                         res += ", background_download_threads = " + std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16));
