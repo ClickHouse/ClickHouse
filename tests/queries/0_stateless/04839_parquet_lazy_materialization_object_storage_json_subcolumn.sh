@@ -36,7 +36,6 @@ SELECT j FROM ${TABLE_FN} ORDER BY j.user.age.:Int64 DESC LIMIT 2;
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_object_storage = $enabled"
     ${CLICKHOUSE_CLIENT} \
-        --enable_analyzer=1 \
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
