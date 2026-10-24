@@ -1,0 +1,22 @@
+---
+description: 'Query MaxMind DB files directly with binary IP lookups and hot reload.'
+sidebarTitle: 'MaxMindDB'
+slug: /engines/table-engines/integrations/maxminddb
+title: 'MaxMindDB table engine'
+doc_type: 'reference'
+---
+
+`MaxMindDB` is an experimental, read-only ClickHouse table engine for local [MaxMind DB](https://maxmind.github.io/MaxMind-DB/) files. It performs binary longest-prefix matching using `libmaxminddb` without importing MMDB records.
+
+```sql
+SET allow_experimental_maxminddb_table_engine = 1;
+
+CREATE TABLE geoip ENGINE = MaxMindDB('GeoLite2-City.mmdb')
+SETTINGS refresh_interval = '5m';
+
+SELECT country.iso_code FROM geoip WHERE ip = toIPv4('8.8.8.8');
+```
+
+The engine supports IPv4 and IPv6 lookups using bounded equality and `IN` predicates; unbounded scans are unsupported. The schema can be declared manually or inferred automatically from the MMDB records. Nested maps become named `Tuple` values, and supported arrays, scalar types, and nullable fields can be queried.
+
+The file must be inside the server's `user_files_path`; creating a table requires `READ ON FILE`. The `refresh_interval` setting controls how frequently local file replacements are checked. Set it to `'0'` to disable automatic checks. Atomically rename a new file over the existing source to avoid mutating the active memory mapping. Existing queries keep their pinned mapping, and an incompatible replacement is rejected.
