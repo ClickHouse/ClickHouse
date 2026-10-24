@@ -155,6 +155,10 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
         return i < slice.size && vector_contains(slice.size - lanes);
     }
 
+#if defined(__aarch64__)
+    /// Opaque start: otherwise the index reuses the register of the test above and every block load waits for that test.
+    __asm__("" : "+r"(i));
+#endif
     for (; i + block_size <= slice.size; i += block_size)
     {
         if (block_contains(i))
