@@ -50,6 +50,8 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -2120,6 +2122,14 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     }
 
     return true;
+}
+
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && storage == view_source && !context->isViewInnerQuery()
+        && storage_id.database_name == ITableFunction::getDatabaseName()
+        && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
 }
 
 }

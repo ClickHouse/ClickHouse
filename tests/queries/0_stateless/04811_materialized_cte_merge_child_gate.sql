@@ -9,7 +9,6 @@
 -- visited in table-name order) and claims the CTE, and the `Distributed` child that
 -- follows then builds the `IN` set in place while the CTE is still unbuilt.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 DROP TABLE IF EXISTS t_04811 SYNC;
