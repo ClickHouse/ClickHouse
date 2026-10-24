@@ -1794,3 +1794,31 @@ The 15 compiler messages were identical across CPUs (5,585 bytes total). Their f
 Bazel recorded 126 remote executions on each native build, compared with 5,228 on each preceding native build. The [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) build recorded 51,565 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) recorded 52,085. Both builds used minimal downloads. The preceding native builds did not report the 23 SQLConsole outputs individually, so no comparison of their output hashes is available.
 
 The original CcInfo reader selected a module from the current build when it loaded the previous build’s verification code. Both original native builds succeeded, but the reader marked their CcInfo comparisons invalid. Replaying the original four configured FileWrites with the previous build’s module verified both 17-field reports on each CPU. The replay used the same build results, binary hashes, tests and DWYU records; it made no remote build or service request.
+
+## 2421d8299
+
+readpassphrase, Bech32, CityHash, consistent hashing, FarmHash, MetroHash and MurmurHash dropped ten direct glibc compatibility or libunwind dependencies. Bech32, CityHash and consistent hashing retain their private libc++ dependencies. The ISA-L C target no longer depends on the generated libc++ configuration on x86-64.
+
+[2421d8299](https://github.com/dzbarsky/clickhouse/commit/2421d8299505b09f2232f1c51de770ed0f66acdb) built all 63 native targets on x86-64 and ARM64. Both normalized ClickHouse hashes and sizes matched native CMake.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/22ce3d49-b2c2-4774-8fae-eefd7b8dd927) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/22ce3d49-b2c2-4774-8fae-eefd7b8dd927) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/22ce3d49-b2c2-4774-8fae-eefd7b8dd927) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/6d09cdea-8f07-46c9-80a5-a6b4e1ef4d28) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/6d09cdea-8f07-46c9-80a5-a6b4e1ef4d28) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/6d09cdea-8f07-46c9-80a5-a6b4e1ef4d28) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The raw ClickHouse and `unit_tests_dbms` hashes and sizes also matched [2a7b93ea2](https://github.com/dzbarsky/clickhouse/commit/2a7b93ea2ee2dfac734f3a4991ac059141d11f08). On each CPU, 38 GoogleTests, six SQL cases and 16 Decimal boundary checks passed. All 118 existing consumer object hashes and all 23 SQLConsole generated file hashes matched. The new fixtures produced seven library consumer objects on both CPUs and 16 additional ISA-L consumer objects on x86-64. `src/Interpreters/SetSerialization.h` remains outside the standalone public-header fixtures.
+
+BuildBuddy reported ten unchanged benchmark archives per CPU, the 16-field Boost report and the 4,096-byte CRoaring alignment. The DBMS and common I/O CcInfo reports matched all 17 fields on each CPU. Relative to [2a7b93ea2](https://github.com/dzbarsky/clickhouse/commit/2a7b93ea2ee2dfac734f3a4991ac059141d11f08), only the x86-64 DBMS LinkerInput count changed (440 → 439). The current reports record all linker owners, 15 glibc header files and two LLVM quote include directories. The preceding reports did not serialize the full linker order.
+
+| CPU | Ordinary DWYU | Strict DWYU | Production graded | Strict outcomes | Negative fixture | Production ungraded |
+| --- | --- | --- | --- | --- | --- | --- |
+| [x86-64 parent failed](https://app.buildbuddy.io/invocation/f1ff723d-c85c-4ccc-bd4f-d42cba2902dc) | [exit 0](https://app.buildbuddy.io/invocation/6f27ff8a-1538-471b-ad21-1b64d3f9ac3f) | [exit 1](https://app.buildbuddy.io/invocation/169e049c-275c-45cf-836e-4a88f646a440) | 33/783 | 8 `clean`, 1 `findings`, 24 `unverified_link_deps` | Expected unused dependency | 750 |
+| [ARM64 parent failed](https://app.buildbuddy.io/invocation/062a6bb6-332c-4379-994f-de50fef560ae) | [exit 0](https://app.buildbuddy.io/invocation/4b476232-fed7-47b5-b714-1d904a99fa87) | [exit 1](https://app.buildbuddy.io/invocation/18794341-f7d7-49d8-ab39-ee3b74168ae4) | 32/783 | 7 `clean`, 1 `findings`, 24 `unverified_link_deps` | Expected unused dependency | 751 |
+
+x86-64: 0 failed preprocessing actions on production targets; 0 were standalone public headers. ARM64: 0 failed preprocessing actions on production targets; 0 were standalone public headers. The preceding run graded five production targets per CPU. This run did not request `//src:headers` or `//src/Parsers:clickhouse_parsers`. Its results do not reclassify the 18 historical standalone-header diagnostics or the compiled Parser’s `ASTSystemQuery.h` / `config.h` report.
+
+`src/Client/ClientApplicationBaseParser.cpp` includes `src/Client/ClientApplicationBaseParser.h` without a declared dependency: `//src:dbms__compile_4` on x86-64 and `//src:dbms__compile_3` on ARM64. The x86-64 native build reported 51,540 remote cache hits and 174 remote actions; ARM64 reported 52,081 and 137. Both used minimal downloads. The first result reader stopped when it compared two paths to the same preceding DWYU profile. The offline replay checked each submitted profile byte for byte and read the original build and test results; it did not rerun any build.
