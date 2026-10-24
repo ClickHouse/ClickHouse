@@ -268,7 +268,8 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorage(
     if (auto it = external_storages.storages.find(cache_key); it != external_storages.storages.end())
         return {it->second, key_to_use};
 
-    ObjectStoragePtr storage = create_fn(cache_key);
+    /// The cache key may contain credentials of the metadata path, e.g. URI userinfo, while the storage name is logged.
+    ObjectStoragePtr storage = create_fn("iceberg_external_" + std::to_string(sipHash64(cache_key.data(), cache_key.size())));
 
     /// Evict older credential generations; in-flight readers retain their own `shared_ptr`.
     if (!supersedes_prefix.empty())
@@ -814,8 +815,13 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     std::string cache_key;
     if (target_scheme_normalized == "file")
     {
-        std::filesystem::path fs_path(target_decomposed.key);
-        file_dir_path = fs_path.parent_path().string();
+        std::filesystem::path dir_path = std::filesystem::path(target_decomposed.key).parent_path();
+        /// The local storage creates its root directory, which a read must not do. A missing directory holds no files,
+        /// so the storage is rooted at the nearest existing ancestor; keys are absolute paths, so they do not change.
+        if (!access_check && access_type == DB::AccessType::READ)
+            while (dir_path.has_relative_path() && !std::filesystem::is_directory(dir_path))
+                dir_path = dir_path.parent_path();
+        file_dir_path = dir_path.string();
         if (file_dir_path.empty() || file_dir_path == "/")
             file_dir_path = "/";
         else if (file_dir_path.back() != '/')

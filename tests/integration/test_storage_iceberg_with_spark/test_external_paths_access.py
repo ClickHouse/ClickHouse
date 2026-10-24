@@ -342,3 +342,56 @@ def test_cached_external_metadata_requires_source_grant(started_cluster_iceberg_
     assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
 
     instance.query(f"DROP USER {user}")
+
+
+def test_external_uri_userinfo_not_in_storage_name(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_userinfo_disk_name_{get_uuid_str()}"
+    data_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    secret = f"secret_{get_uuid_str()}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = relocate_data_files_to_bucket(
+        started_cluster_iceberg_with_spark, TABLE_NAME, data_bucket,
+        endpoint=f"http://reader:{secret}@{started_cluster_iceberg_with_spark.minio_ip}:{started_cluster_iceberg_with_spark.minio_port}")
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = f"icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{started_cluster_iceberg_with_spark.minio_bucket}/')"
+
+    # The storage name is reported in errors of the external storage.
+    error = instance.query_and_get_error(
+        f"SELECT * FROM {table_function} ORDER BY id "
+        f"SETTINGS object_storage_propagate_credentials_to_other_storages = 1, "
+        f"s3_allow_server_credentials_in_user_queries = 1")
+    assert "on disk 'iceberg_external_" in error, error
+    assert secret not in error, error
+
+
+def test_missing_external_local_file_does_not_create_directories(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_local_missing_dir_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    missing_root = f"/var/lib/clickhouse/user_files/external_missing_{TABLE_NAME}"
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = _rewrite_paths_to_local_uri(
+        started_cluster_iceberg_with_spark, TABLE_NAME, "", target_dir=f"{missing_root}/new/tree")
+    instance.exec_in_container(["rm", "-rf", missing_root])
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
+                      f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    instance.query(f"GRANT READ ON S3 TO {user}")
+    instance.query(f"GRANT READ ON FILE('{missing_root}/.*') TO {user}")
+
+    instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
+    assert instance.exec_in_container(["bash", "-c", f"test -e {missing_root} && echo exists || echo absent"]).strip() == "absent"
+
+    instance.query(f"DROP USER {user}")
