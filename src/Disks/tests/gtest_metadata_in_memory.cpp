@@ -1,0 +1,1025 @@
+#include <gtest/gtest.h>
+
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageInMemory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
+
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ObjectStorageKey.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/ObjectStorageKeyGenerator.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <Poco/TemporaryFile.h>
+#include <Poco/Util/XMLConfiguration.h>
+
+#include <algorithm>
+#include <filesystem>
+
+
+class MetadataInMemoryTest : public testing::Test
+{
+public:
+    std::shared_ptr<DB::MetadataStorageInMemory> getMetadataStorage()
+    {
+        auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
+        return std::make_shared<DB::MetadataStorageInMemory>(/*compatible_key_prefix_=*/"", key_generator);
+    }
+};
+
+/// Mirrors `MetadataLocalDiskTest::TestHardlinkRewrite`: rewriting a hardlinked file via
+/// `createMetadataFile` must update the shared metadata so every link observes the new content.
+TEST_F(MetadataInMemoryTest, TestHardlinkRewrite)
+{
+    auto metadata = getMetadataStorage();
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile(
+            "original_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("key1").serialize(), "original_file", 111)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getHardlinkCount("original_file"), 0);
+    EXPECT_EQ(metadata->getFileSize("original_file"), 111);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createHardLink("original_file", "hardlinked_file");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getFileSize("hardlinked_file"), 111);
+
+    EXPECT_EQ(metadata->getHardlinkCount("original_file"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("hardlinked_file"), 1);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile(
+            "hardlinked_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("key2").serialize(), "hardlinked_file", 222)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getHardlinkCount("original_file"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("hardlinked_file"), 1);
+
+    EXPECT_EQ(metadata->getFileSize("original_file"), 222);
+    EXPECT_EQ(metadata->getFileSize("hardlinked_file"), 222);
+
+    auto original_blobs = metadata->getStorageObjects("original_file");
+    auto hardlinked_blobs = metadata->getStorageObjects("hardlinked_file");
+
+    EXPECT_EQ(original_blobs.size(), 1);
+    EXPECT_EQ(hardlinked_blobs.size(), 1);
+
+    EXPECT_EQ(original_blobs[0].remote_path, "key2");
+    EXPECT_EQ(original_blobs[0].bytes_size, 222);
+
+    EXPECT_EQ(hardlinked_blobs[0].remote_path, "key2");
+    EXPECT_EQ(hardlinked_blobs[0].bytes_size, 222);
+}
+
+/// Verifies that on a partial-failure exception during commit, the operation-level
+/// rollback journal restores files, directories, and shared `BlobGroup` content
+/// (including hardlink `ref_count`) to the pre-transaction state.
+TEST_F(MetadataInMemoryTest, TestRollbackRestoresAllTouchedState)
+{
+    auto metadata = getMetadataStorage();
+
+    /// Seed: two files (one with a hardlink) and a directory.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("dir");
+        transaction->createMetadataFile(
+            "dir/a",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "dir/a", 100)});
+        transaction->createMetadataFile(
+            "dir/b",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k2").serialize(), "dir/b", 200)});
+        transaction->createHardLink("dir/a", "dir/a_link");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getHardlinkCount("dir/a"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("dir/a_link"), 1);
+    EXPECT_EQ(metadata->getFileSize("dir/a"), 100);
+    EXPECT_EQ(metadata->getFileSize("dir/b"), 200);
+
+    /// Transaction with a successful early op + a failing later op:
+    /// - createDirectory("new_dir")  -> succeeds
+    /// - unlinkFile("dir/a", ...)    -> succeeds; decrements `BlobGroup::ref_count`,
+    ///                                  erases metadata entry
+    /// - createMetadataFile("dir/a_link", ...) -> would mutate the shared BlobGroup
+    /// - createDirectory("dir")      -> FAILS: a file with the same name already exists
+    /// All earlier mutations must be rolled back.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("new_dir");
+        transaction->unlinkFile("dir/a", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->createMetadataFile(
+            "dir/a_link",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k3").serialize(), "dir/a_link", 333)});
+        transaction->createDirectory("dir/b");
+
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+
+    /// Everything from the failed transaction must be reverted:
+    /// - "new_dir" should not exist
+    /// - "dir/a" should still exist with original size and hardlink count
+    /// - "dir/a_link" should still see original blob (k1, 100), not (k3, 333)
+    /// - hardlink ref counts restored
+    EXPECT_FALSE(metadata->existsDirectory("new_dir"));
+    EXPECT_TRUE(metadata->existsFile("dir/a"));
+    EXPECT_TRUE(metadata->existsFile("dir/a_link"));
+    EXPECT_EQ(metadata->getHardlinkCount("dir/a"), 1);
+    EXPECT_EQ(metadata->getHardlinkCount("dir/a_link"), 1);
+    EXPECT_EQ(metadata->getFileSize("dir/a"), 100);
+    EXPECT_EQ(metadata->getFileSize("dir/a_link"), 100);
+
+    auto blobs = metadata->getStorageObjects("dir/a_link");
+    ASSERT_EQ(blobs.size(), 1);
+    EXPECT_EQ(blobs[0].remote_path, "k1");
+    EXPECT_EQ(blobs[0].bytes_size, 100);
+
+    /// `dir/b` is still untouched.
+    EXPECT_EQ(metadata->getFileSize("dir/b"), 200);
+}
+
+/// `MetadataStorageInMemory` stores entries with relative paths (e.g. `a/`, `a/file`).
+/// Root-path queries must still match other backends: the root always exists and
+/// `listDirectory("/")` must return top-level entries.
+TEST_F(MetadataInMemoryTest, TestRootPathSemantics)
+{
+    auto metadata = getMetadataStorage();
+
+    EXPECT_TRUE(metadata->existsDirectory("/"));
+    EXPECT_TRUE(metadata->existsFileOrDirectory("/"));
+    EXPECT_TRUE(metadata->listDirectory("/").empty());
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("a");
+        transaction->createMetadataFile(
+            "top_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "top_file", 10)});
+        transaction->createMetadataFile(
+            "a/inner_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k2").serialize(), "a/inner_file", 20)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/"));
+    EXPECT_TRUE(metadata->existsFileOrDirectory("/"));
+
+    auto root_children = metadata->listDirectory("/");
+    std::sort(root_children.begin(), root_children.end());
+    EXPECT_EQ(root_children, std::vector<std::string>({"a", "top_file"}));
+
+    /// Iterator output should match the relative form used by other lookups so values
+    /// can be passed back into `existsFile` / `findFile` without mangling.
+    auto iter = metadata->iterateDirectory("/");
+    std::vector<std::string> iter_paths;
+    for (; iter->isValid(); iter->next())
+        iter_paths.push_back(iter->path());
+    std::sort(iter_paths.begin(), iter_paths.end());
+    EXPECT_EQ(iter_paths, std::vector<std::string>({"a", "top_file"}));
+}
+
+/// A trailing slash must not create an empty-named child: `DataPartStorageOnDiskBase::clonePart`
+/// passes such a path to `createDirectories`, and the bogus child made the directory look like it
+/// contained itself (endless recursion in `IDisk::asyncCopy`) and non-empty for `removeDirectory`.
+TEST_F(MetadataInMemoryTest, TestCreateDirectoryRecursiveWithTrailingSlash)
+{
+    auto metadata = getMetadataStorage();
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectoryRecursive("a/b/");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("a"));
+    EXPECT_TRUE(metadata->existsDirectory("a/b"));
+    EXPECT_EQ(metadata->listDirectory("a/"), std::vector<std::string>({"b"}));
+    EXPECT_TRUE(metadata->listDirectory("a/b/").empty());
+    EXPECT_FALSE(metadata->iterateDirectory("a/b/")->isValid());
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->removeDirectory("a/b/");
+        transaction->removeDirectory("a/");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("a"));
+    EXPECT_TRUE(metadata->listDirectory("/").empty());
+}
+
+/// The root path above is just a placeholder, not a real host directory: callers that need to do
+/// raw filesystem I/O outside the `IMetadataStorage` API (e.g. `StorageDistributed`'s local insert
+/// queue) must check `isPathOnLocalFilesystem` and fail closed instead of using `getPath()` as one.
+TEST_F(MetadataInMemoryTest, TestNotOnLocalFilesystem)
+{
+    auto metadata = getMetadataStorage();
+    EXPECT_FALSE(metadata->isPathOnLocalFilesystem());
+}
+
+/// A cache layer (`DiskObjectStorage::wrapWithCache`) forwards `getPath` to the underlying
+/// metadata storage, so it must forward `isPathOnLocalFilesystem` as well; inheriting the
+/// default `true` would let the cache-wrapped disk slip past the same guards.
+TEST_F(MetadataInMemoryTest, TestCacheWrapperForwardsPathLocality)
+{
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(getMetadataStorage(), /*object_storage_=*/ nullptr);
+    EXPECT_FALSE(wrapped->isPathOnLocalFilesystem());
+}
+
+/// `hasLocalFilesystemDirectoryNamespace` is the stronger property a caller needs when it mixes
+/// raw `std::filesystem` calls on `getPath() + relative_path` with `IDisk` directory operations
+/// on the same directory. A metadata storage describes the directory structure itself, so the
+/// interface default is `false` -- an in-memory backend must never claim otherwise, and the cache
+/// wrapper must forward it rather than inherit a permissive default.
+TEST_F(MetadataInMemoryTest, TestNoLocalFilesystemDirectoryNamespace)
+{
+    auto metadata = getMetadataStorage();
+    EXPECT_FALSE(metadata->hasLocalFilesystemDirectoryNamespace());
+
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata, /*object_storage_=*/ nullptr);
+    EXPECT_FALSE(wrapped->hasLocalFilesystemDirectoryNamespace());
+}
+
+/// `keepsMetadataAcrossRestarts` tells storages whether a table directory that is missing on
+/// attach is expected (the metadata is in RAM) or a sign of data loss on a durable disk. An
+/// in-memory backend must report `false`, and the cache wrapper must forward it: caching the data
+/// does not make the metadata persistent.
+TEST_F(MetadataInMemoryTest, TestDoesNotKeepMetadataAcrossRestarts)
+{
+    auto metadata = getMetadataStorage();
+    EXPECT_FALSE(metadata->keepsMetadataAcrossRestarts());
+
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata, /*object_storage_=*/ nullptr);
+    EXPECT_FALSE(wrapped->keepsMetadataAcrossRestarts());
+}
+
+/// `MergeTree` reads a part directory's mtime as the part `modification_time`
+/// (`DataPartStorageOnDiskBase::getLastModified`), and sets it on the temp part directory just
+/// before renaming it into place. Verify directories carry timestamps: `getLastModified` does
+/// not report the epoch for a directory, `setLastModified` updates it, `moveDirectory` preserves
+/// it, and `setLastModified` on a non-existent path throws instead of silently dropping it.
+TEST_F(MetadataInMemoryTest, TestDirectoryModificationTime)
+{
+    auto metadata = getMetadataStorage();
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("part_tmp");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// A freshly created directory gets the current time as its mtime, never the epoch.
+    EXPECT_GT(metadata->getLastModified("part_tmp").epochTime(), 0);
+
+    const Poco::Timestamp ts = Poco::Timestamp::fromEpochTime(1234567890);
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setLastModified("part_tmp", ts);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// The set timestamp must be observable, whether or not the caller passes a trailing slash
+    /// (part directory paths are passed without one).
+    EXPECT_EQ(metadata->getLastModified("part_tmp").epochTime(), 1234567890);
+    EXPECT_EQ(metadata->getLastModified("part_tmp/").epochTime(), 1234567890);
+
+    /// Renaming the temp directory into its final place must preserve the timestamp, otherwise
+    /// the part would report a 1970 `modification_time` after the move.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->moveDirectory("part_tmp", "all_1_1_0");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("part_tmp"));
+    EXPECT_TRUE(metadata->existsDirectory("all_1_1_0"));
+    EXPECT_EQ(metadata->getLastModified("all_1_1_0").epochTime(), 1234567890);
+
+    /// `setLastModified` on a path that is neither a file nor a directory must throw.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setLastModified("does_not_exist", ts);
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+}
+
+/// The rollback journal must restore a directory's pre-transaction mtime when a later operation
+/// in the same transaction fails, not just its existence.
+TEST_F(MetadataInMemoryTest, TestDirectoryModificationTimeRollback)
+{
+    auto metadata = getMetadataStorage();
+
+    const Poco::Timestamp original_ts = Poco::Timestamp::fromEpochTime(1000000000);
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("dir");
+        transaction->setLastModified("dir", original_ts);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getLastModified("dir").epochTime(), 1000000000);
+
+    /// Update the directory mtime, then fail later in the same transaction.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setLastModified("dir", Poco::Timestamp::fromEpochTime(2000000000));
+        /// `createMetadataFile` under a non-existent parent throws, failing the commit.
+        transaction->createMetadataFile(
+            "missing_parent/file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k").serialize(), "missing_parent/file", 1)});
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+
+    /// The original mtime must be restored.
+    EXPECT_EQ(metadata->getLastModified("dir").epochTime(), 1000000000);
+}
+
+/// `truncateFile(path, 0)` must stay idempotent across metadata backends, matching the disk-backed
+/// `MetadataStorageFromDisk::TruncateMetadataFileOperation` and the public `IDisk::truncateFile`
+/// contract codified by `DiskObjectStorageTest.TruncateFileToZero`: truncating a missing file to
+/// zero is a no-op, truncating an existing file to zero drops its blobs, and only a non-zero target
+/// on a missing file is an error.
+TEST_F(MetadataInMemoryTest, TestTruncateMissingFileToZero)
+{
+    auto metadata = getMetadataStorage();
+
+    /// Truncating a missing file to zero is a no-op and must not create the file.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("missing_file", 0);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(metadata->existsFile("missing_file"));
+
+    /// Truncating a missing file to a non-zero size is still an error.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("missing_file", 5);
+        EXPECT_THROW(transaction->commit(DB::NoCommitOptions{}), DB::Exception);
+    }
+    EXPECT_FALSE(metadata->existsFile("missing_file"));
+
+    /// Truncating an existing file to zero keeps the file but drops its blobs.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile(
+            "existing_file",
+            {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "existing_file", 111)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("existing_file"), 111);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("existing_file", 0);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("existing_file"));
+    EXPECT_EQ(metadata->getFileSize("existing_file"), 0);
+    EXPECT_TRUE(metadata->getStorageObjects("existing_file").empty());
+}
+
+/// `hasPendingRemovalBlobs` must report blobs that were submitted for removal and not yet
+/// reclaimed, so `DiskObjectStorageTransaction::waitBlobRemoval` (`wait_for_blob_removal`)
+/// can actually wait for the removal queue to drain instead of returning immediately.
+TEST_F(MetadataInMemoryTest, TestPendingRemovalBlobs)
+{
+    auto metadata = getMetadataStorage();
+
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 111);
+    const DB::StoredObject unrelated_blob(DB::ObjectStorageKey::createAsAbsolute("k2").serialize(), "other", 222);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+    }
+
+    EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+    EXPECT_TRUE(metadata->hasPendingRemovalBlobs({unrelated_blob, blob}));
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({unrelated_blob}));
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({}));
+
+    /// Once the cleaner records the blob as removed, the wait condition clears.
+    EXPECT_EQ(metadata->recordAsRemoved({blob}), 1);
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+}
+
+/// Unlinking the last owner of a blob must always submit that blob for removal, even when the caller
+/// asks to keep shared data (`should_remove_objects == false`). For this backend `keep_shared_data`
+/// has no valid meaning: `memory` metadata is node-local and ephemeral, is only used with
+/// `borrow_from_cache`, and has zero-copy replication disabled, so there is no out-of-band owner that
+/// could keep the blobs alive. Honoring `keep_shared_data` would leak the borrowed `FileSegmentsHolder`
+/// until shutdown — e.g. an aborted replicated fetch cleaning up with an unconditional
+/// `removeSharedRecursive(true)` (`DataPartsExchange.cpp`) would otherwise pin cache space and later
+/// fail writes with `NOT_ENOUGH_SPACE`.
+TEST_F(MetadataInMemoryTest, TestKeepSharedDataStillReleasesLastOwnerBlobs)
+{
+    /// `removeSharedFile(path, keep_shared_data=true)` maps to `unlinkFile(path, false, false)`.
+    {
+        auto metadata = getMetadataStorage();
+        const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 111);
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->createMetadataFile("file", {blob});
+            transaction->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ false);
+            transaction->commit(DB::NoCommitOptions{});
+            /// Even with `should_remove_objects == false`, the last owner's blob is released.
+            EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+        }
+        EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+    }
+
+    /// `removeSharedRecursive(path, keep_all_shared_data=true)` maps to `removeRecursive(path, pred)`
+    /// where the predicate always returns `false`.
+    {
+        auto metadata = getMetadataStorage();
+        const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "dir/file", 222);
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->createDirectory("dir");
+            transaction->createMetadataFile("dir/file", {blob});
+            transaction->commit(DB::NoCommitOptions{});
+        }
+
+        {
+            auto transaction = metadata->createTransaction();
+            transaction->removeRecursive("dir", /* should_remove_objects= */ [](const std::string &) { return false; });
+            transaction->commit(DB::NoCommitOptions{});
+            EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+        }
+        EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+    }
+}
+
+/// The last-owner release above must not over-release blobs that are still referenced through a
+/// hardlink: `ref_count` remains authoritative, so a blob shared by two links is released only once
+/// its last link is unlinked, regardless of `should_remove_objects`.
+TEST_F(MetadataInMemoryTest, TestHardlinkedBlobReleasedOnlyOnLastUnlink)
+{
+    auto metadata = getMetadataStorage();
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 333);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->createHardLink("file", "file_link");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// First unlink (still one link left) releases nothing, even though `should_remove_objects == true`.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("file", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 0);
+    }
+    EXPECT_FALSE(metadata->hasPendingRemovalBlobs({blob}));
+
+    /// Last unlink releases the blob even with `should_remove_objects == false` (keep_shared_data).
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("file_link", /* if_exists= */ false, /* should_remove_objects= */ false);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 1);
+    }
+    EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
+}
+
+/// `FREEZE` of a replicated `borrow_from_cache` table writes `frozen_metadata.txt` through
+/// `writeStringToFile` and reads it back via `readFileToString` (`FreezeMetaData::save`/`load`).
+/// The in-memory backend must round-trip that plain-content file (no backing blobs) rather than
+/// throwing `NOT_IMPLEMENTED`, and it must be removable and overwritable like any other file.
+TEST_F(MetadataInMemoryTest, TestWriteStringToFileRoundTrip)
+{
+    auto metadata = getMetadataStorage();
+
+    const std::string content = "2\nreplica_1\nzk\nshared_id\n";
+
+    /// Root-level plain file (mirrors `frozen_metadata.txt`).
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("frozen_metadata.txt", content);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsFile("frozen_metadata.txt"));
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), content);
+    /// A plain-content file has no backing objects.
+    EXPECT_TRUE(metadata->getStorageObjects("frozen_metadata.txt").empty());
+
+    /// Overwriting replaces the content in place.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("frozen_metadata.txt", "updated");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "updated");
+
+    /// Removing it releases no blobs (there are none) and it no longer exists (`FreezeMetaData::clean`).
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("frozen_metadata.txt", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 0);
+    }
+    EXPECT_FALSE(metadata->existsFile("frozen_metadata.txt"));
+
+    /// Reading a missing plain file reports it clearly rather than returning empty data.
+    EXPECT_ANY_THROW(metadata->readFileToString("frozen_metadata.txt"));
+
+    /// A nested plain file requires its parent directory to exist, matching disk-backed metadata.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("shadow/frozen_metadata.txt", content);
+        /// Parent directory `shadow/` was never created.
+        EXPECT_ANY_THROW(transaction->commit(DB::NoCommitOptions{}));
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("shadow");
+        transaction->writeStringToFile("shadow/frozen_metadata.txt", content);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->readFileToString("shadow/frozen_metadata.txt"), content);
+}
+
+/// A plain-content file written by `writeStringToFile` has no backing objects: its inline data is
+/// the whole payload, so `getFileSize` must report the payload size (not the total size of the
+/// empty object list) and `truncateFile` must shrink the payload itself (not just remove blobs).
+TEST_F(MetadataInMemoryTest, TestPlainFileSizeAndTruncate)
+{
+    auto metadata = getMetadataStorage();
+
+    const std::string content = "2\nreplica_1\nzk\nshared_id\n";
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("frozen_metadata.txt", content);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), content.size());
+
+    /// Shrinking keeps a prefix of the payload.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("frozen_metadata.txt", 1);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), 1);
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "2");
+
+    /// Truncating to zero leaves an empty file with no readable leftover content.
+    /// (Growing a file is not something `truncateFile` supports on any metadata backend, but that
+    /// path throws a logical error — which aborts in sanitizer builds — so it is not covered here.)
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->truncateFile("frozen_metadata.txt", 0);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("frozen_metadata.txt"));
+    EXPECT_EQ(metadata->getFileSize("frozen_metadata.txt"), 0);
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "");
+}
+
+/// Mirrors `MetadataStorageFromMemory.InlineOverwriteReleasesCreatedBlob`: rewriting a blob-backed
+/// file with inline content (`DiskObjectStorageTransaction::writeFile` routes a small `Rewrite`
+/// through `writeInlineDataToFile`, and `writeStringToFile` can overwrite an existing entry) must
+/// release the old objects and leave only the inline representation, so `getFileSize` follows the
+/// new payload and the borrowed cache segments are reclaimed.
+TEST_F(MetadataInMemoryTest, TestInlineOverwriteReleasesBlobs)
+{
+    auto metadata = getMetadataStorage();
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k_inline_rewrite").serialize(), "file", 123);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->getFileSize("file"), 123);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeInlineDataToFile("file", "tiny");
+        transaction->commit(DB::NoCommitOptions{});
+        auto removed = transaction->getSubmittedForRemovalBlobs();
+        ASSERT_EQ(removed.size(), 1);
+        EXPECT_EQ(removed[0].remote_path, blob.remote_path);
+    }
+    EXPECT_EQ(metadata->readInlineDataToString("file"), "tiny");
+    EXPECT_EQ(metadata->getFileSize("file"), 4);
+    EXPECT_TRUE(metadata->getStorageObjects("file").empty());
+
+    /// The same contract holds for `writeStringToFile` overwriting a blob-backed entry.
+    const DB::StoredObject blob2(DB::ObjectStorageKey::createAsAbsolute("k_string_rewrite").serialize(), "file2", 45);
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file2", {blob2});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("file2", "plain");
+        transaction->commit(DB::NoCommitOptions{});
+        auto removed = transaction->getSubmittedForRemovalBlobs();
+        ASSERT_EQ(removed.size(), 1);
+        EXPECT_EQ(removed[0].remote_path, blob2.remote_path);
+    }
+    EXPECT_EQ(metadata->readFileToString("file2"), "plain");
+    EXPECT_EQ(metadata->getFileSize("file2"), 5);
+    EXPECT_TRUE(metadata->getStorageObjects("file2").empty());
+}
+
+/// The sibling in-memory backend (`MetadataStorageFromMemory`, made by `wrapWithMemoryMetadata`)
+/// also returns an empty placeholder from `getPath()`, so it must report the same locality as
+/// `MetadataStorageInMemory` instead of inheriting the permissive default.
+TEST_F(MetadataInMemoryTest, TestFromMemorySiblingNotOnLocalFilesystem)
+{
+    auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
+    auto metadata = std::make_shared<DB::MetadataStorageFromMemory>(/*compatible_key_prefix_=*/"", key_generator);
+    EXPECT_FALSE(metadata->isPathOnLocalFilesystem());
+    EXPECT_FALSE(metadata->hasLocalFilesystemDirectoryNamespace());
+}
+
+/// `FREEZE` and detached-part cloning mark each source file read-only (`BackupImpl` with
+/// `make_source_readonly`, also reached by `makeCloneInDetached`/`DETACH PART`). For this ephemeral
+/// backend `setReadOnly` is a validated no-op: it must succeed on an existing file (leaving it
+/// otherwise unchanged) and throw on a missing one, rather than throwing `NOT_IMPLEMENTED`.
+TEST_F(MetadataInMemoryTest, TestSetReadOnlyIsNoOpButValidatesExistence)
+{
+    auto metadata = getMetadataStorage();
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 123);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// No-op on an existing file: it stays present and its blobs are unchanged.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setReadOnly("file");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("file"));
+    ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "k1");
+
+    /// Missing file is rejected instead of silently succeeding.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setReadOnly("does_not_exist");
+        EXPECT_ANY_THROW(transaction->commit(DB::NoCommitOptions{}));
+    }
+}
+
+/// An empty append records no phantom blob. `supportsEmptyFilesWithoutBlobs()` is true for this
+/// backend, so `DiskObjectStorageTransaction` cancels the blob write of an empty append and the
+/// backing object is never created, yet it still calls `addBlobToMetadata` with the zero-byte
+/// `StoredObject` so that a first append materializes the file. Recording that object would leave
+/// the file pointing at a blob that does not exist, and a later read (e.g. of a `StripeLog` table
+/// after `INSERT ... SELECT ... LIMIT 0`) would fail with `FILE_DOESNT_EXIST`.
+TEST_F(MetadataInMemoryTest, TestEmptyAppendCreatesFileWithoutPhantomBlob)
+{
+    auto metadata = getMetadataStorage();
+
+    /// First append of zero bytes: the file must be created, but with no objects.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata(
+            "file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("phantom1").serialize(), "file", 0));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("file"));
+    EXPECT_TRUE(metadata->getStorageObjects("file").empty());
+    EXPECT_EQ(metadata->getFileSize("file"), 0);
+
+    /// A real append is recorded as usual.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata(
+            "file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("real").serialize(), "file", 42));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "real");
+    EXPECT_EQ(metadata->getFileSize("file"), 42);
+
+    /// An empty append after real data must not append a phantom object either.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->addBlobToMetadata(
+            "file", DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("phantom2").serialize(), "file", 0));
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "real");
+    EXPECT_EQ(metadata->getFileSize("file"), 42);
+}
+
+namespace
+{
+
+/// Everything observable about the given paths, to compare the whole state before and after a transaction.
+[[maybe_unused]] std::string dumpState(const DB::MetadataStorageInMemory & metadata, const std::vector<std::string> & paths, bool with_mtime = true)
+{
+    std::string result;
+    for (const auto & path : paths)
+    {
+        result += path + ":";
+        if (metadata.existsFile(path))
+        {
+            result += " file size=" + std::to_string(metadata.getFileSize(path))
+                + " links=" + std::to_string(metadata.getHardlinkCount(path))
+                + " inline=" + metadata.readInlineDataToString(path) + " objects=";
+            for (const auto & object : metadata.getStorageObjects(path))
+                result += object.remote_path + "/" + std::to_string(object.bytes_size) + ",";
+        }
+        if (metadata.existsDirectory(path))
+        {
+            result += " directory";
+            /// A directory created by the transaction gets the current time, which differs between runs.
+            if (with_mtime)
+                result += " mtime=" + std::to_string(metadata.getLastModified(path).epochMicroseconds());
+        }
+        result += "\n";
+    }
+    return result;
+}
+
+}
+
+/// A commit can fail on an allocation at any point, and its rollback runs while memory is still exhausted,
+/// so the rollback must not allocate. Fail the commit at every allocation in turn (by limiting the memory
+/// available to it) and check that every failed commit leaves exactly the pre-transaction state, including
+/// files and directories it had already erased and the `BlobGroup` snapshot it was copying.
+TEST_F(MetadataInMemoryTest, TestRollbackOnAllocationFailureRestoresEverything)
+{
+#if defined(SANITIZER)
+    /// The sanitizer runtime provides its own `operator new`, so allocations do not reach the memory tracker
+    /// and the limit below never makes the commit fail (see also `gtest_allocation_interceptors.cpp`).
+    GTEST_SKIP() << "Allocations are not tracked by the memory tracker under sanitizers";
+#else
+    DB::MainThreadStatus::getInstance();
+
+    const std::vector<std::string> paths
+        = {"d", "d/a", "d/a_link", "d/b", "d/b2", "d/sub", "d/sub/c", "e", "e/x"};
+
+    auto seed = [](DB::MetadataStorageInMemory & metadata)
+    {
+        auto transaction = metadata.createTransaction();
+        transaction->createDirectory("d");
+        transaction->createDirectory("d/sub");
+        transaction->createMetadataFile(
+            "d/a", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "d/a", 100)});
+        transaction->createHardLink("d/a", "d/a_link");
+        transaction->writeStringToFile("d/b", std::string(1000, 'b'));
+        transaction->createMetadataFile(
+            "d/sub/c", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k3").serialize(), "d/sub/c", 300)});
+        transaction->commit(DB::NoCommitOptions{});
+    };
+
+    auto make_transaction = [](DB::MetadataStorageInMemory & metadata)
+    {
+        auto transaction = metadata.createTransaction();
+        transaction->unlinkFile("d/a", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->moveFile("d/b", "d/b2");
+        transaction->writeStringToFile("d/a_link", "rewritten");
+        transaction->createDirectory("e");
+        transaction->removeRecursive("d/sub", [](const std::string &) { return true; });
+        transaction->createMetadataFile(
+            "e/x", {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k4").serialize(), "e/x", 400)});
+        return transaction;
+    };
+
+    std::string expected_after;
+    {
+        auto metadata = getMetadataStorage();
+        seed(*metadata);
+        make_transaction(*metadata)->commit(DB::NoCommitOptions{});
+        expected_after = dumpState(*metadata, paths, /* with_mtime= */ false);
+    }
+
+    size_t failed_commits = 0;
+    bool committed = false;
+    for (Int64 slack = 0; slack < 1'000'000 && !committed; slack += 16)
+    {
+        auto metadata = getMetadataStorage();
+        seed(*metadata);
+        const std::string before = dumpState(*metadata, paths);
+        auto transaction = make_transaction(*metadata);
+
+        bool threw = false;
+        {
+            const Int64 prev_untracked_limit = DB::CurrentThread::get().untracked_memory_limit;
+            const Int64 prev_hard_limit = total_memory_tracker.getHardLimit();
+            const UInt64 prev_min_alloc_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+            SCOPE_EXIT_SAFE({
+                total_memory_tracker.setHardLimit(prev_hard_limit);
+                DB::CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
+                CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(prev_min_alloc_to_throw);
+            });
+
+            /// Every allocation must reach the tracker and be checked against the limit: the throwing
+            /// `operator new` ignores the limit for allocations below this size (by default all of them),
+            /// and the per-thread untracked-memory buffer would hide small allocations.
+            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+            DB::CurrentThread::get().untracked_memory_limit = 0;
+            DB::CurrentThread::flushUntrackedMemory();
+            total_memory_tracker.setHardLimit(total_memory_tracker.get() + slack);
+            try
+            {
+                transaction->commit(DB::NoCommitOptions{});
+            }
+            catch (const DB::Exception &)
+            {
+                threw = true;
+            }
+        }
+
+        if (threw)
+        {
+            ++failed_commits;
+            ASSERT_EQ(dumpState(*metadata, paths), before) << "slack: " << slack;
+            EXPECT_FALSE(metadata->hasPendingRemovalBlobs(
+                {DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "d/a", 100)}));
+        }
+        else
+        {
+            committed = true;
+            EXPECT_EQ(dumpState(*metadata, paths, /* with_mtime= */ false), expected_after);
+        }
+    }
+
+    EXPECT_TRUE(committed);
+    EXPECT_GT(failed_commits, 0);
+#endif
+}
+
+/// A `DiskObjectStorage` over `MetadataStorageInMemory`, to exercise inline-only files through the
+/// generic `IDisk` read and copy paths rather than through the metadata storage alone.
+class DiskObjectStorageOverInMemoryMetadataTest : public testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        temp_dir = std::make_unique<Poco::TemporaryFile>();
+        temp_dir->createDirectories();
+
+        object_storage = std::make_shared<DB::LocalObjectStorage>(
+            DB::LocalObjectStorageSettings("test", temp_dir->path() + "/blobs", /*read_only_=*/false));
+        metadata = std::make_shared<DB::MetadataStorageInMemory>(
+            /*compatible_key_prefix_=*/"", object_storage->createKeyGenerator());
+
+        std::unordered_map<DB::Location, DB::LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
+        std::unordered_map<DB::Location, DB::ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
+
+        DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>("in_memory", std::move(cluster_registry));
+        DB::ObjectStorageRouterPtr object_storages = std::make_shared<DB::ObjectStorageRouter>(std::move(object_storage_registry));
+
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+        disk = std::make_shared<DB::DiskObjectStorage>(
+            "in_memory", std::move(cluster), metadata, std::move(object_storages), nullptr, *config, "");
+    }
+
+    size_t countBlobs() const
+    {
+        size_t count = 0;
+        const std::string prefix = object_storage->getCommonKeyPrefix();
+        if (!std::filesystem::exists(prefix))
+            return 0;
+        for (const auto & entry : std::filesystem::recursive_directory_iterator(prefix))
+            if (entry.is_regular_file())
+                ++count;
+        return count;
+    }
+
+    std::string readThroughDisk(const std::string & path) const
+    {
+        auto buf = disk->readFile(path, DB::ReadSettings{});
+        std::string content;
+        DB::readStringUntilEOF(content, *buf);
+        return content;
+    }
+
+    std::unique_ptr<Poco::TemporaryFile> temp_dir;
+    std::shared_ptr<DB::LocalObjectStorage> object_storage;
+    std::shared_ptr<DB::MetadataStorageInMemory> metadata;
+    std::shared_ptr<DB::DiskObjectStorage> disk;
+};
+
+/// A plain file written with `writeStringToFile` (e.g. `frozen_metadata.txt`) has no backing objects.
+/// Without `supportsInlineData` the disk would read it and copy it as an empty file.
+TEST_F(DiskObjectStorageOverInMemoryMetadataTest, PlainFileReadsAndCopiesThroughDisk)
+{
+    ASSERT_TRUE(metadata->supportsInlineData());
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("plain.txt", "hello");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    ASSERT_TRUE(metadata->getStorageObjects("plain.txt").empty());
+
+    EXPECT_EQ(disk->getFileSize("plain.txt"), 5u);
+    EXPECT_EQ(readThroughDisk("plain.txt"), "hello");
+
+    const size_t blobs_before = countBlobs();
+    disk->copyFile("plain.txt", *disk, "copy.txt", DB::ReadSettings{});
+    EXPECT_EQ(readThroughDisk("copy.txt"), "hello");
+    EXPECT_EQ(metadata->readInlineDataToString("copy.txt"), "hello");
+    EXPECT_TRUE(metadata->getStorageObjects("copy.txt").empty());
+    EXPECT_EQ(countBlobs(), blobs_before);
+}
+
+/// A small `Rewrite` through the disk is stored inline, both for a new file and over an existing
+/// blob-backed one, whose blob is then released.
+TEST_F(DiskObjectStorageOverInMemoryMetadataTest, SmallRewriteIsInlined)
+{
+    DB::WriteSettings settings;
+    settings.inline_file_max_bytes = 16;
+
+    {
+        auto buf = disk->writeFile("big.bin", 4096, DB::WriteMode::Rewrite, settings);
+        DB::writeString("0123456789abcdef-and-then-some", *buf);
+        buf->finalize();
+    }
+    ASSERT_EQ(metadata->getStorageObjects("big.bin").size(), 1u);
+    EXPECT_EQ(readThroughDisk("big.bin"), "0123456789abcdef-and-then-some");
+
+    {
+        auto buf = disk->writeFile("small.txt", 4096, DB::WriteMode::Rewrite, settings);
+        DB::writeString("tiny", *buf);
+        buf->finalize();
+    }
+    EXPECT_EQ(metadata->readInlineDataToString("small.txt"), "tiny");
+    EXPECT_TRUE(metadata->getStorageObjects("small.txt").empty());
+    EXPECT_EQ(readThroughDisk("small.txt"), "tiny");
+
+    {
+        auto buf = disk->writeFile("big.bin", 4096, DB::WriteMode::Rewrite, settings);
+        DB::writeString("short", *buf);
+        buf->finalize();
+    }
+    EXPECT_TRUE(metadata->getStorageObjects("big.bin").empty());
+    EXPECT_EQ(readThroughDisk("big.bin"), "short");
+    EXPECT_EQ(disk->getFileSize("big.bin"), 5u);
+}
+
+/// Appending to an inline-backed file would leave both the inline payload and a blob as the file
+/// content, so the append is rejected and the file keeps its inline content.
+TEST_F(DiskObjectStorageOverInMemoryMetadataTest, AppendToInlinedFileIsRejected)
+{
+    DB::WriteSettings settings;
+    settings.inline_file_max_bytes = 16;
+
+    {
+        auto buf = disk->writeFile("small.txt", 4096, DB::WriteMode::Rewrite, settings);
+        DB::writeString("tiny", *buf);
+        buf->finalize();
+    }
+    ASSERT_EQ(metadata->readInlineDataToString("small.txt"), "tiny");
+
+    EXPECT_ANY_THROW({
+        auto buf = disk->writeFile("small.txt", 4096, DB::WriteMode::Append, settings);
+        DB::writeString("-more", *buf);
+        buf->finalize();
+    });
+
+    EXPECT_TRUE(metadata->getStorageObjects("small.txt").empty());
+    EXPECT_EQ(readThroughDisk("small.txt"), "tiny");
+}

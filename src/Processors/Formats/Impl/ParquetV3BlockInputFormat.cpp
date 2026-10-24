@@ -72,6 +72,8 @@ static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStor
         case ObjectStorageType::HDFS: return AccessTypeObjects::Source::HDFS;
         case ObjectStorageType::Web: return AccessTypeObjects::Source::URL;
         case ObjectStorageType::Local: return AccessTypeObjects::Source::FILE;
+        /// Only a disk, never the storage of a table function.
+        case ObjectStorageType::BorrowFromCache:
         case ObjectStorageType::None:
         case ObjectStorageType::Max:
             return std::nullopt;

@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageInMemory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
@@ -500,6 +501,37 @@ TEST_F(DiskObjectStorageOverMemoryMetadataTest, WritesApplyEagerly)
     /// The blob is still tracked by the transaction and reclaimed by undo.
     tx->undo();
     EXPECT_FALSE(fs::exists(objects.at(0).remote_path));
+}
+
+/// A disk whose own metadata is `MetadataStorageInMemory` (as on a `borrow_from_cache` disk)
+/// must hand its key generator to the wrapper, or the first blob-backed write would throw.
+TEST_F(DiskObjectStorageOverMemoryMetadataTest, WrapsInMemoryMetadataStorage)
+{
+    MetadataStoragePtr in_memory = std::make_shared<MetadataStorageInMemory>("/", object_storage->createKeyGenerator());
+    ASSERT_TRUE(in_memory->getKeyGenerator());
+
+    std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
+    std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    auto in_memory_disk = std::make_shared<DiskObjectStorage>(
+        "in_memory_blobs",
+        std::make_shared<ClusterConfiguration>("in_memory_blobs", std::move(cluster_registry)),
+        std::move(in_memory),
+        std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry)),
+        nullptr, *config, "");
+
+    auto wrapped = in_memory_disk->wrapWithMemoryMetadata();
+    auto memory = wrapped->getMetadataStorage();
+    auto tx = wrapped->createTransaction();
+    {
+        auto buf = tx->writeFile("data.bin", 4096, WriteMode::Rewrite, {});
+        writeString("hello", *buf);
+        buf->finalize();
+    }
+    auto objects = memory->getStorageObjects("data.bin");
+    ASSERT_EQ(objects.size(), 1u);
+    EXPECT_TRUE(fs::exists(objects.at(0).remote_path));
+    tx->undo();
 }
 
 TEST_F(DiskObjectStorageOverMemoryMetadataTest, SmallWritesAreInlinedByTheTransaction)

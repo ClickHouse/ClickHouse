@@ -130,6 +130,19 @@ static struct InitFiu
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
+    PAUSEABLE(set_or_join_sink_pause_before_publish) \
+    PAUSEABLE(set_or_join_sink_pause_before_replay) \
+    PAUSEABLE(set_or_join_sink_pause_before_discard) \
+    PAUSEABLE(storage_set_pause_during_backup_replay) \
+    REGULAR(storage_set_fail_during_backup_replay) \
+    REGULAR(set_or_join_sink_fail_removing_promoted_backup) \
+    REGULAR(storage_set_or_join_fail_quarantining_backup) \
+    ONCE(storage_join_mutate_fail_after_moving_backup_aside) \
+    ONCE(storage_join_mutate_fail_before_commit) \
+    ONCE(storage_join_mutate_fail_putting_backup_back) \
+    ONCE(storage_join_mutate_fail_removing_superseded_backups) \
+    ONCE(storage_join_publish_fail_during_rollback) \
+    REGULAR(storage_join_publish_fail_before_replay) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \

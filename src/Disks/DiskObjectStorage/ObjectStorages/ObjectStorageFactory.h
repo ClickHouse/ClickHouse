@@ -27,7 +27,8 @@ public:
         const ContextPtr & context,
         bool run_access_check,
         bool run_local_paths_check,
-        RemoteHostFilterCheck remote_host_filter_check)>;
+        RemoteHostFilterCheck remote_host_filter_check,
+        bool attach)>;
 
     static ObjectStorageFactory & instance();
 
@@ -40,7 +41,8 @@ public:
         const ContextPtr & context,
         bool run_access_check,
         bool run_local_paths_check,
-        RemoteHostFilterCheck remote_host_filter_check) const;
+        RemoteHostFilterCheck remote_host_filter_check,
+        bool attach) const;
 
     void clearRegistry();
 

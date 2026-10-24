@@ -264,6 +264,9 @@ struct QueryPlanOptimizationSettings
     bool collect_hash_table_stats_during_aggregation;
     bool optimize_uniq_exact_radix_partitioning;
     String initial_query_id;
+    /// The query id under which a `Join` table is locked when the logical join is converted. It falls back to the
+    /// current query id when the initial one is empty, the same way as `StorageJoin::getLockQueryId`.
+    String join_lock_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
 
