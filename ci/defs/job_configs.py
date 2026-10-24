@@ -164,7 +164,11 @@ fast_test_digest_config = Job.CacheDigestConfig(
 # must schedule the job (the shared digest above does not cover it).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
-    + ["./ci/jobs/scripts/fast_test_darwin.sh"],
+    + [
+        "./ci/jobs/scripts/fast_test_darwin.sh",
+        "./ci/jobs/vm_fast_test_job.py",
+        "./ci/jobs/scripts/macos_vm.py",
+    ],
 )
 
 # The limited clang-tidy check is configured exactly like the full tidy build, so
@@ -393,6 +397,14 @@ class JobConfigs:
             parameter=BuildTypes.ARM_DARWIN,
             runs_on=RunnerLabels.MACOS_ARM_SMALL,
             requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
+        ),
+        # The same fast test in a throwaway Tart VM; the first run on a host builds the image.
+        Job.ParamSet(
+            parameter=f"{BuildTypes.ARM_DARWIN}, vm",
+            runs_on=RunnerLabels.MACOS_ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            command="python3 ./ci/jobs/vm_fast_test_job.py",
+            timeout=3 * 3600,
         ),
     )
     # The clang-tidy build does not link anything, so its object files are split
