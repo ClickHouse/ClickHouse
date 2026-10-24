@@ -77,8 +77,7 @@ public:
     size_t getHashes() const { return hashes; }
     size_t getSeed() const { return seed; }
 
-    /// For debug.
-    UInt64 isEmpty() const;
+    bool isEmpty() const;
 
     size_t memoryUsageBytes() const;
 
