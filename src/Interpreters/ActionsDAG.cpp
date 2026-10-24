@@ -2774,10 +2774,12 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     bool add_cast_columns,
     NameToNameMap * new_names,
     NameSet * columns_contain_compiled_function,
-    bool materialize_constants)
+    bool materialize_constants,
+    const std::vector<bool> * nulls_from_source_only)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
+    chassert(!nulls_from_source_only || nulls_from_source_only->size() == num_result_columns);
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
@@ -2875,7 +2877,13 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
             ColumnWithTypeAndName left_column{nullptr, dst_node->result_type, {}};
-            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic), context);
+            auto func_base_cast = createInternalCast(
+                std::move(left_column),
+                res_elem.type,
+                CastType::nonAccurate,
+                std::move(diagnostic),
+                context,
+                nulls_from_source_only && (*nulls_from_source_only)[result_col_num]);
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});

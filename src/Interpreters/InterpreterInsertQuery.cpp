@@ -399,6 +399,8 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
 
     pipeline.dropTotalsAndExtremes();
 
+    std::vector<bool> nulls_from_source_only(query_sample_block.columns(), false);
+
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
     if (context_->getSettingsRef()[Setting::insert_null_as_default])
     {
@@ -424,6 +426,7 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
                             makeNullableOrLowCardinalityNullable(query_columns[col_idx].column),
                             makeNullableOrLowCardinalityNullable(query_columns[col_idx].type),
                             query_columns[col_idx].name));
+                    nulls_from_source_only[col_idx] = true;
                 }
             }
         }
@@ -433,7 +436,13 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
-            context_);
+            context_,
+            /*ignore_constant_values=*/ false,
+            /*add_cast_columns=*/ false,
+            /*new_names=*/ nullptr,
+            /*columns_contain_compiled_function=*/ nullptr,
+            /*materialize_constants=*/ true,
+            &nulls_from_source_only);
     auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context_, CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr

@@ -445,6 +445,7 @@ public:
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
     /// @param new_names - Output parameter for new column names when add_cast_columns is used.
+    /// @param nulls_from_source_only - Indexed by result column, marks the casts whose Nullable result must hold only the source NULLs.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
@@ -454,7 +455,8 @@ public:
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr,
         NameSet * columns_contain_compiled_function = nullptr,
-        bool materialize_constants=true);
+        bool materialize_constants=true,
+        const std::vector<bool> * nulls_from_source_only = nullptr);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);

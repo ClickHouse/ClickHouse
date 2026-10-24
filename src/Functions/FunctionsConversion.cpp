@@ -408,7 +408,7 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
     try
     {
         return std::make_unique<ExecutableFunctionCast>(
-            prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
+            prepareUnpackDictionaries(getArgumentTypes()[0], getResultType(), nulls_from_source_only), cast_name, diagnostic);
     }
     catch (Exception & e)
     {
@@ -2989,7 +2989,8 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
     };
 }
 
-FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(
+    const DataTypePtr & from_type, const DataTypePtr & to_type, bool result_nulls_from_source_only) const
 {
     /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
     /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
@@ -3036,7 +3037,7 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
         /// Disable check for dictionary. Will check that column doesn't contain NULL in wrapper below.
         skip_not_null_check = true;
 
-    auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check);
+    auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check, result_nulls_from_source_only);
     if (!from_low_cardinality && !to_low_cardinality)
         return wrapper;
 
@@ -3102,7 +3103,8 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
     };
 }
 
-FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const
+FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
+    const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check, bool result_nulls_from_source_only) const
 {
     /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -3120,11 +3122,13 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
     /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
-    auto wrapper = prepareImpl(from_nested_type, to_nested_type, result_is_nullable && !strict_text_conversion);
+    auto wrapper = prepareImpl(from_nested_type, to_nested_type, result_is_nullable && !strict_text_conversion && !result_nulls_from_source_only);
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
+        /// A NULL row's hidden value is not converted; a numeric one is left in place, where converting it is cheaper than filtering.
+        bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+            && (cast_type == CastType::accurate || (result_nulls_from_source_only && !from_nested_type->isValueRepresentedByNumber()));
 
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
@@ -3481,7 +3485,8 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type)
+    CastType cast_type,
+    bool nulls_from_source_only)
 {
     DataTypes data_types(arguments.size());
 
@@ -3527,7 +3532,7 @@ FunctionBasePtr createFunctionBaseCast(
     }
 
     return std::make_unique<detail::FunctionCast>(
-        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, nulls_from_source_only);
 }
 
 
