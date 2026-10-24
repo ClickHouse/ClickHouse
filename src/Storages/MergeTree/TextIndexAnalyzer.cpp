@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
@@ -310,6 +311,65 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
     return added;
 }
 
+namespace
+{
+
+/// re2 also folds U+017F onto `s` and U+212A onto `k`, and ILIKE folds the code points `isASCIIReachableByCaseFolding` lists.
+bool hasOnlyASCIICaseVariants(char c)
+{
+    return isASCII(c) && !UTF8::isASCIIReachableByCaseFolding(c) && c != 's' && c != 'S' && c != 'k' && c != 'K';
+}
+
+/// Appends key ranges holding every token that the case-insensitive `^literal` (`^literal$` if `exact`) can match.
+bool appendCaseVariantKeyRanges(std::string_view literal, bool exact, std::vector<TextIndexAnalyzer::TokenKeyRange> & key_ranges)
+{
+    const size_t prefix_size = TextIndexAnalyzer::getCaseVariantPrefixSize(literal);
+    if (prefix_size == 0)
+        return false;
+
+    String variant(literal.substr(0, prefix_size));
+    std::vector<size_t> letter_positions;
+    for (size_t pos = 0; pos < prefix_size; ++pos)
+        if (isAlphaASCII(variant[pos]))
+            letter_positions.push_back(pos);
+
+    const bool single_key = exact && prefix_size == literal.size();
+    for (size_t mask = 0; mask < (size_t{1} << letter_positions.size()); ++mask)
+    {
+        for (size_t bit = 0; bit < letter_positions.size(); ++bit)
+        {
+            char & c = variant[letter_positions[bit]];
+            c = ((mask >> bit) & 1) ? toUpperIfAlphaASCII(c) : toLowerIfAlphaASCII(c);
+        }
+
+        if (single_key)
+            key_ranges.emplace_back(variant, variant);
+        else
+            key_ranges.emplace_back(variant, firstStringThatIsGreaterThanAllStringsWithPrefix(variant));
+    }
+
+    return true;
+}
+
+}
+
+size_t TextIndexAnalyzer::getCaseVariantPrefixSize(std::string_view literal)
+{
+    /// At most 16 key ranges: more letters rarely narrow them to fewer dictionary blocks.
+    static constexpr size_t max_letters = 4;
+
+    size_t prefix_size = 0;
+    size_t letters = 0;
+    for (; prefix_size < literal.size(); ++prefix_size)
+    {
+        const char c = literal[prefix_size];
+        if (!hasOnlyASCIICaseVariants(c) || (isAlphaASCII(c) && ++letters > max_letters))
+            break;
+    }
+
+    return prefix_size;
+}
+
 std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::getPatternTokenKeyRanges() const
 {
     if (queries_by_pattern.empty())
@@ -334,9 +394,21 @@ std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> TextIndexAnalyzer::
             case RegexpMatchKind::Exact:
                 key_ranges.emplace_back(literal, literal);
                 break;
+            case RegexpMatchKind::General:
+            {
+                /// A demoted case-insensitive `^literal` or `^literal$` matches inside the key ranges of its case variants.
+                const auto & re2 = pattern->getRE2();
+                if (!re2 || re2->options().case_sensitive())
+                    return std::nullopt;
+
+                const auto match_kind = OptimizedRegularExpression::analyze(re2->pattern()).match_kind;
+                if ((match_kind != RegexpMatchKind::Prefix && match_kind != RegexpMatchKind::Exact)
+                    || !appendCaseVariantKeyRanges(literal, match_kind == RegexpMatchKind::Exact, key_ranges))
+                    return std::nullopt;
+                break;
+            }
             case RegexpMatchKind::Suffix:
             case RegexpMatchKind::Substring:
-            case RegexpMatchKind::General:
                 return std::nullopt;
         }
     }
