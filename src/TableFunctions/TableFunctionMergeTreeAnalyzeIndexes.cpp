@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -370,7 +371,10 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
                 context->getSettingsRef()[Setting::max_limit_for_vector_search_queries]),
             getVectorSearchReferenceVector(vector_search_args, 3),
             getVectorSearchBoolArgument(vector_search_args, 4),
-            getVectorSearchBoolArgument(vector_search_args, 5)};
+            getVectorSearchBoolArgument(vector_search_args, 5), /// return distances
+            vector_search_args.size() == 7
+                ? SettingFieldVectorSearchFilterStrategyTraits::fromString(getVectorSearchStringArgument(vector_search_args, 6))
+                : VectorSearchFilterStrategy::AUTO};
     }
     else
     {
