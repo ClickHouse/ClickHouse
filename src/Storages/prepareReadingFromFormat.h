@@ -42,10 +42,10 @@ namespace DB
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
 
-        /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
+        /// The list of hive partition columns and their requested subcolumns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-        /// True if `format_header` has a hive partition column. Its values in the file are not the values
-        /// of the column, so filters and the top-K threshold must not be pushed into the format.
+        /// True if `format_header` has a hive partition column or a subcolumn of one is requested. The format would take
+        /// their values from the data file, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
         /// The filter without the conjuncts on hive partition and virtual columns (except row lineage ones if `keep_row_lineage_columns`):
         /// they are added after the format, and a column of the data file with the same name holds other values.

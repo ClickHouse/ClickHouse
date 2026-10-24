@@ -248,13 +248,6 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
 
             try
             {
-                if (!filter_actions_dag)
-                    return;
-
-                auto ctx = context.lock();
-                if (!ctx)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
-
                 Block all_inputs = buildKeyConditionInputs(keys, prewhere_info, row_level_filter);
                 /// `row_level_filter`/`prewhere_info` are usually derived from `filter_actions_dag`
                 /// (the WHERE clause) and so normally reference a superset of its columns, but that's
@@ -262,12 +255,20 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 /// `filter_actions_dag` alone still drives spatial/row-group pruning. Make sure its
                 /// required columns (e.g. the geometry column) end up in `additional_columns` too, or
                 /// pruning code that looks the column up in the sample block silently no-ops.
-                for (const auto & col : filter_actions_dag->getRequiredColumns())
-                    if (!isColumnCovered(all_inputs, col.name))
-                        all_inputs.insert({col.type->createColumn(), col.type, col.name});
+                if (filter_actions_dag)
+                    for (const auto & col : filter_actions_dag->getRequiredColumns())
+                        if (!isColumnCovered(all_inputs, col.name))
+                            all_inputs.insert({col.type->createColumn(), col.type, col.name});
                 for (const auto & col : all_inputs)
                     if (!keys.has(col.name))
                         additional_columns.insert(col);
+
+                if (!filter_actions_dag)
+                    return;
+
+                auto ctx = context.lock();
+                if (!ctx)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
                 ColumnsWithTypeAndName columns = all_inputs.getColumnsWithTypeAndName();
                 Names names;

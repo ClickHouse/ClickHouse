@@ -59,6 +59,13 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             info.hive_partition_columns_to_read_from_file_path.emplace_back(it->first, it->second);
         }
+        else if (auto subcolumn = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+                 subcolumn && subcolumn->isSubcolumn()
+                     && hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(subcolumn->getNameInStorage()))
+        {
+            /// A subcolumn of a hive partition column (`key.null`) is taken from the path as well.
+            info.hive_partition_columns_to_read_from_file_path.push_back(*subcolumn);
+        }
         else
             columns_to_read.push_back(column_name);
     }
@@ -364,7 +371,7 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
 bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
 {
     for (const auto & column : hive_partition_columns_to_read_from_file_path)
-        if (format_header.has(column.name))
+        if (column.isSubcolumn() || format_header.has(column.name))
             return true;
     return false;
 }
