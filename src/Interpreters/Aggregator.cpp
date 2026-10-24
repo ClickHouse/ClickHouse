@@ -4550,6 +4550,13 @@ void Aggregator::mergeStatesIntoQueryResultPreviewSnapshot(
     /// writing into its states once its lock is released, so the snapshot must not hold on to their
     /// storage. Each state is first copied through its serialization into a temporary state, which
     /// is solely owned by the snapshot, and merged from there.
+    ///
+    /// When all the states are empty (e.g. of `uniqExactOrNull(NULL)`, which is `nothing`), every
+    /// zero-size allocation from the snapshot arena returns the same address, so the temporary state
+    /// would alias the destination one. There is nothing to merge then.
+    if (total_size_of_aggregate_states == 0)
+        return;
+
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         const auto & function = aggregate_functions[i];
