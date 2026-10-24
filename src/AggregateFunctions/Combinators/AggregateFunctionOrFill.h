@@ -105,6 +105,12 @@ public:
         return nested_function->allocatesMemoryInArena();
     }
 
+    /// `addBatchSinglePlace` passes the range to the nested function.
+    bool canOptimizeEqualKeysRanges() const override
+    {
+        return nested_function->canOptimizeEqualKeysRanges();
+    }
+
     bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();

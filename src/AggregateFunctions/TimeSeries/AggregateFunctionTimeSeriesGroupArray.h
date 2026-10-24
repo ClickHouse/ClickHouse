@@ -366,7 +366,7 @@ public:
         for (size_t i = row_begin; i < row_end; ++i)
         {
             /// A flag is per row, and each row holds a whole series
-            if (!flags_data || flags_data[i] == flag_value_to_include)
+            if (!flags_data || (flags_data[i] != 0) == flag_value_to_include)
             {
                 const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
                 const size_t value_array_size = value_offsets[i] - previous_value_offset;
