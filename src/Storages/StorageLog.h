@@ -198,6 +198,7 @@ public:
         ContextPtr local_context_,
         std::shared_ptr<StorageLog> storage_,
         const StorageSnapshotPtr & storage_snapshot_,
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
         size_t max_block_size_,
         size_t num_streams_
     );
@@ -219,6 +220,7 @@ private:
     ContextPtr local_context;
     std::shared_ptr<StorageLog> storage;
     const StorageSnapshotPtr storage_snapshot;
+    const std::shared_ptr<const StorageLimitsList> storage_limits;
     const size_t max_block_size;
     const size_t num_streams;
 };
