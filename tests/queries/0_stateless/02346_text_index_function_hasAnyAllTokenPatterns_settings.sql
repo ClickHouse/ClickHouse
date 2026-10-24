@@ -336,3 +336,31 @@ FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_agree_swapped WHE
 
 DROP TABLE tab_agree;
 DROP TABLE tab_agree_swapped;
+
+-- An unmaterialized or ignored index does not take the function from a sibling that can be read directly.
+CREATE TABLE tab_sibling
+(
+    id UInt32,
+    tag String,
+    INDEX idx_b(if(notEmpty(tag), tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_sibling SELECT number, if(number < 8, 'env:prod-eu', 'env:dev') FROM numbers(64);
+ALTER TABLE tab_sibling ADD INDEX idx_a(if(tag != '', tag, 'none')) TYPE text(tokenizer = array) GRANULARITY 1;
+
+SELECT 'unmaterialized idx_a', count() FROM tab_sibling WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'env:prod%');
+SELECT 'unmaterialized idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_b\_hasAnyTokenLike%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_a\_%') > 0
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_sibling WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'env:prod%'));
+
+ALTER TABLE tab_sibling MATERIALIZE INDEX idx_a SETTINGS mutations_sync = 2;
+
+SELECT 'ignored idx_a', count() FROM tab_sibling WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'env:prod%') SETTINGS ignore_data_skipping_indices = 'idx_a';
+SELECT 'ignored idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_b\_hasAnyTokenLike%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_a\_%') > 0
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_sibling WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'env:prod%') SETTINGS ignore_data_skipping_indices = 'idx_a');
+SELECT 'materialized idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_a\_hasAnyTokenLike%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_b\_%') > 0
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_sibling WHERE hasAnyTokenLike(if(notEmpty(tag), tag, 'none'), 'env:prod%'));
+
+DROP TABLE tab_sibling;

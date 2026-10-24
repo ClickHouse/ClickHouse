@@ -170,3 +170,8 @@ Granules: 1/8
 Granules: 1/1
 direct read by idx_a	1	0
 direct read by idx_a	1	0
+unmaterialized idx_a	8
+unmaterialized idx_a	1	0
+ignored idx_a	8
+ignored idx_a	1	0
+materialized idx_a	1	0
