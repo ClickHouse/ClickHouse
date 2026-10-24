@@ -1,0 +1,35 @@
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "aws_c_event_stream",
+    srcs = glob(["source/*.c"]) + glob(
+        ["include/aws/event-stream/private/*.h"],
+        exclude = ["include/aws/event-stream/private/event_stream_rpc_test_helper.h"],
+    ),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
+    copts = [
+        "-w",
+        "-std=gnu11",
+        "-g1",
+    ],
+    implementation_deps = [
+        "@clickhouse_aws_c_io//:aws_c_io",
+        "@clickhouse_aws_checksums//:aws_checksums",
+    ],
+    includes = ["include"],
+    language = "C",
+    libcxx_headers = False,
+    llvm_headers = False,
+    local_defines = AWS_CRT_DEFINES,
+    deps = ["@clickhouse_aws_c_common//:aws_c_common"],
+)

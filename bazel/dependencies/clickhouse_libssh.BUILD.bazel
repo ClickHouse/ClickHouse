@@ -1,0 +1,151 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "COPYING",
+])
+
+expand_template(
+    name = "configure_include_libssh_libssh_version_h",
+    out = "config/contrib/libssh/include/libssh/libssh_version.h",
+    substitutions = {
+        "@libssh_VERSION_MAJOR@": "0",
+        "@libssh_VERSION_MINOR@": "12",
+        "@libssh_VERSION_PATCH@": "2",
+    },
+    template = ":include/libssh/libssh_version.h.cmake",
+)
+
+copy_file(
+    name = "private_config",
+    src = select({
+        "@platforms//cpu:x86_64": "@clickhouse//contrib/libssh-cmake:linux/x86-64/config.h",
+        "@platforms//cpu:aarch64": "@clickhouse//contrib/libssh-cmake:linux/aarch64/config.h",
+    }),
+    out = "config/private/config.h",
+    allow_symlink = True,
+)
+
+# Installed C headers from include/libssh/CMakeLists.txt.
+_LIBSSH_PUBLIC_C_HEADERS = [
+    "include/libssh/callbacks.h",
+    "include/libssh/libssh.h",
+    "include/libssh/ssh2.h",
+    "include/libssh/legacy.h",
+    "include/libssh/sftp.h",
+    "include/libssh/server.h",
+    "include/libssh/sftpserver.h",
+    "include/libssh/sk_api.h",
+]
+
+ch_cc_library(
+    name = "_ssh",
+    srcs = [
+        "src/agent.c",
+        "src/auth.c",
+        "src/base64.c",
+        "src/bignum.c",
+        "src/buffer.c",
+        "src/callbacks.c",
+        "src/chachapoly.c",
+        "src/channels.c",
+        "src/client.c",
+        "src/config.c",
+        "src/config_parser.c",
+        "src/connect.c",
+        "src/connector.c",
+        "src/curve25519.c",
+        "src/dh.c",
+        "src/ecdh.c",
+        "src/error.c",
+        "src/external/bcrypt_pbkdf.c",
+        "src/external/blowfish.c",
+        "src/external/chacha.c",
+        "src/external/poly1305.c",
+        "src/external/sntrup761.c",
+        "src/getpass.c",
+        "src/hybrid_mlkem.c",
+        "src/init.c",
+        "src/kdf.c",
+        "src/kex.c",
+        "src/known_hosts.c",
+        "src/knownhosts.c",
+        "src/legacy.c",
+        "src/log.c",
+        "src/match.c",
+        "src/messages.c",
+        "src/misc.c",
+        "src/mlkem.c",
+        "src/options.c",
+        "src/packet.c",
+        "src/packet_cb.c",
+        "src/packet_crypt.c",
+        "src/pcap.c",
+        "src/pki.c",
+        "src/pki_container_openssh.c",
+        "src/pki_ed25519_common.c",
+        "src/poll.c",
+        "src/scp.c",
+        "src/session.c",
+        "src/socket.c",
+        "src/string.c",
+        "src/threads.c",
+        "src/token.c",
+        "src/ttyopts.c",
+        "src/wrapper.c",
+        "src/threads/noop.c",
+        "src/threads/pthread.c",
+        "src/crypto_common.c",
+        "src/curve25519_crypto.c",
+        "src/dh_crypto.c",
+        "src/ecdh_crypto.c",
+        "src/getrandom_crypto.c",
+        "src/gzip.c",
+        "src/libcrypto.c",
+        "src/md_crypto.c",
+        "src/mlkem_crypto.c",
+        "src/pki_crypto.c",
+        "src/pki_context.c",
+        "src/sntrup761.c",
+        "src/threads/libcrypto.c",
+        "src/bind.c",
+        "src/bind_config.c",
+        "src/server.c",
+        ":private_config",
+    ] + glob(
+        [
+            "src/**/*.h",
+            "include/**/*.h",
+        ],
+        exclude = _LIBSSH_PUBLIC_C_HEADERS + [
+            "include/libssh/dh-gex.h",
+            "include/libssh/ed25519.h",
+            "include/libssh/fe25519.h",
+            "include/libssh/ge25519.h",
+            "include/libssh/mlkem_native.h",
+            "include/libssh/sc25519.h",
+            "include/libssh/sftp_priv.h",
+            "include/libssh/sk_usbhid.h",
+            "src/mbedcrypto-compat.h",
+        ],
+    ),
+    hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + _LIBSSH_PUBLIC_C_HEADERS,
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    implementation_deps = [
+        "@clickhouse_openssl//:crypto",
+    ],
+    includes = [
+        "include",
+        "config/contrib/libssh/include",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = ["config/private"],
+)

@@ -1,0 +1,78 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_ICUUC_PRIVATE_DATA_HEADERS = glob(["icu4c/source/common/*_data.h"])
+
+exports_files([
+    "LICENSE",
+])
+
+alias(
+    name = "_icudata",
+    actual = "@clickhouse_icudata//:_icudata",
+)
+
+ch_cc_library(
+    name = "_icui18n",
+    srcs = glob(
+        [
+            "icu4c/source/i18n/*.cpp",
+            "icu4c/source/i18n/*.h",
+        ],
+        exclude = [
+            "icu4c/source/i18n/umsg_imp.h",
+            "icu4c/source/i18n/wintzimpl.h",
+        ],
+    ),
+    hdrs = glob(["icu4c/source/i18n/unicode/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = [
+        "icu4c/source/i18n",
+    ],
+    local_defines = [
+        "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "U_HAVE_ELF_H=1",
+        "U_HAVE_STRTOD_L=1",
+        "U_HAVE_XLOCALE_H=0",
+        "U_I18N_IMPLEMENTATION",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_REENTRANT",
+    ],
+    deps = [":_icuuc"],
+)
+
+ch_cc_library(
+    name = "_icuuc",
+    srcs = glob(["icu4c/source/common/*.cpp"]) + _ICUUC_PRIVATE_DATA_HEADERS,
+    hdrs = glob(
+        ["icu4c/source/common/**/*.h"],
+        exclude = _ICUUC_PRIVATE_DATA_HEADERS,
+    ),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    implementation_deps = [":_icudata"],
+    includes = [
+        "icu4c/source/common",
+    ],
+    local_defines = [
+        "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "U_COMMON_IMPLEMENTATION",
+        "U_HAVE_ELF_H=1",
+        "U_HAVE_STRTOD_L=1",
+        "U_HAVE_XLOCALE_H=0",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_REENTRANT",
+    ],
+)

@@ -1,0 +1,15 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "arrow_cmake_headers",
+    hdrs = glob([
+        "cpp/src/**/*.h",
+        "cpp/src/**/*.hh",
+    ]),
+    includes = [
+        "cpp/src",
+        "cpp/src/orc/c++/include",
+    ],
+)

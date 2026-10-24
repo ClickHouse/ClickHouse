@@ -1,0 +1,62 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_src_h3lib_include_h3api_h",
+    out = "config/contrib/h3/src/h3lib/include/h3api.h",
+    substitutions = {
+        "@H3_VERSION_MAJOR@": "4",
+        "@H3_VERSION_MINOR@": "5",
+        "@H3_VERSION_PATCH@": "0",
+    },
+    template = ":src/h3lib/include/h3api.h.in",
+)
+
+_H3_PUBLIC_HEADERS = [
+    "src/h3lib/include/bbox.h",
+    "src/h3lib/include/constants.h",
+    "src/h3lib/include/coordijk.h",
+    "src/h3lib/include/faceijk.h",
+    "src/h3lib/include/h3Assert.h",
+    "src/h3lib/include/h3Index.h",
+    "src/h3lib/include/iterators.h",
+    "src/h3lib/include/latLng.h",
+    "src/h3lib/include/linkedGeo.h",
+    "src/h3lib/include/mathExtensions.h",
+    "src/h3lib/include/polyfill.h",
+    "src/h3lib/include/polygon.h",
+    "src/h3lib/include/vec2d.h",
+    "src/h3lib/include/vec3d.h",
+]
+
+ch_cc_library(
+    name = "_h3",
+    srcs = glob(["src/h3lib/lib/*.c"]) + glob(
+        ["src/h3lib/include/*.h"],
+        exclude = _H3_PUBLIC_HEADERS + ["src/h3lib/include/localij.h"],
+    ),
+    hdrs = [":config/contrib/h3/src/h3lib/include/h3api.h"] + _H3_PUBLIC_HEADERS,
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        "src/h3lib/include",
+        "config/contrib/h3/src/h3lib/include",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = [
+        "H3_HAVE_VLA",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+)

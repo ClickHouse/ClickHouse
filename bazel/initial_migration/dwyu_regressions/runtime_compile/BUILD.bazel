@@ -1,0 +1,104 @@
+load("//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
+load(":fixture_rules.bzl", "failing_nm")
+
+package(default_visibility = ["//visibility:public"])
+
+_ARCH = select({
+    "@platforms//cpu:x86_64": "x86_64",
+    "@platforms//cpu:aarch64": "aarch64",
+})
+
+# A real configured compiler and sysroot supply these system includes.
+# Ordinary compilation and DWYU must both succeed.
+llvm_runtime_objects(
+    name = "system_headers",
+    srcs = ["system.c"],
+    arch = _ARCH,
+    copts = ["--no-default-config"],
+    language = "C",
+    tags = ["manual"],
+)
+
+filegroup(
+    name = "raw_files",
+    srcs = ["api/config.h"],
+    tags = ["manual"],
+)
+
+# -isystem and a filegroup make this file available to Clang, but cannot
+# declare header ownership or a direct dependency.
+llvm_runtime_objects(
+    name = "raw_transitive",
+    srcs = ["read_config.c"],
+    hdrs = [":raw_files"],
+    arch = _ARCH,
+    copts = ["--no-default-config"],
+    language = "C",
+    system_includes = ["api"],
+    tags = ["manual"],
+)
+
+llvm_runtime_objects(
+    name = "forced_input",
+    srcs = ["forced.c"],
+    hdrs = ["api/config.h"],
+    arch = _ARCH,
+    copts = [
+        "--no-default-config",
+        "-include",
+        "$(location api/config.h)",
+    ],
+    language = "C",
+    tags = ["manual"],
+)
+
+# None of these inputs is opened by system.c. They must still be reported as
+# unverified compiler inputs; they must not become private or public headers.
+llvm_runtime_objects(
+    name = "legacy_unused",
+    srcs = ["system.c"],
+    hdrs = [
+        "CMakeLists.txt",
+        "api/config.h",
+        "sibling.cpp",
+    ],
+    arch = _ARCH,
+    copts = ["--no-default-config"],
+    language = "C",
+    tags = ["manual"],
+)
+
+# This has a CppCompile mnemonic, but no C/CXX producer data. A C++ coverage
+# audit must retain it as unsupported and must not emit a DWYU report.
+llvm_runtime_objects(
+    name = "wrong_language",
+    srcs = ["empty.S"],
+    arch = _ARCH,
+    copts = ["--no-default-config"],
+    language = "C",
+    tags = ["manual"],
+)
+
+# These targets do not have a C/CXX TU or CPP report on either architecture.
+llvm_runtime_objects(
+    name = "assembly",
+    srcs = ["empty.S"],
+    arch = _ARCH,
+    copts = ["--no-default-config"],
+    language = "ASM",
+    tags = ["manual"],
+)
+
+llvm_runtime_objects(
+    name = "empty",
+    arch = _ARCH,
+    language = "CXX",
+    tags = ["manual"],
+)
+
+# Use fixture_rules.bzl%nm_failure on :system_headers. DWYU must execute
+# the selected nm on the real producer outputs and fail with exit 53.
+failing_nm(
+    name = "failing_nm",
+    tags = ["manual"],
+)

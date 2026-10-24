@@ -1,0 +1,37 @@
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "aws_c_cal",
+    srcs = [
+        "source/cal.c",
+        "source/der.c",
+        "source/ecc.c",
+        "source/ed25519.c",
+        "source/hash.c",
+        "source/hkdf.c",
+        "source/hmac.c",
+        "source/rsa.c",
+    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + glob(["include/**/private/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
+    copts = [
+        "-w",
+        "-std=gnu11",
+        "-g1",
+    ],
+    implementation_deps = ["@clickhouse_openssl//:crypto"],
+    includes = ["include"],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = AWS_CRT_DEFINES,
+    deps = ["@clickhouse_aws_c_common//:aws_c_common"],
+)

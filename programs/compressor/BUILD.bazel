@@ -1,0 +1,28 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-compressor-lib",
+    srcs = ["Compressor.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src/Common",
+        "//src/Compression:clickhouse_compression",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/Parsers:clickhouse_parsers",
+        "//src:dbms",
+        "//src/Common:current_metrics",
+        "//src/Common:exception_api",
+        "//src:clickhouse_common_io__compile_0",
+        "//src:core_defines",
+        "//src:headers",
+        "//src/Parsers:parser_api",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+    local_includes = [
+        ".",
+    ],
+)

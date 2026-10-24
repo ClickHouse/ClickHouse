@@ -1,0 +1,233 @@
+module(name = "clickhouse")
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "llvm", version = "0.8.24")
+bazel_dep(name = "lz4", version = "1.10.0.bcr.2")
+bazel_dep(name = "nasm", version = "2.16.03.bcr.4")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "protobuf", version = "36.1")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "rules_perl", version = "1.1.1")
+bazel_dep(name = "rules_python", version = "1.8.0")
+bazel_dep(name = "rules_rs", version = "0.1.0")
+
+bazel_dep(name = "depend_on_what_you_use", version = "1.1.2", dev_dependency = True)
+single_version_override(
+    module_name = "depend_on_what_you_use",
+    patch_strip = 1,
+    patches = ["//bazel/patches:dwyu-compiler-preprocessing.patch"],
+)
+
+include("//bazel:contrib.MODULE.bazel")
+include("//bazel:clickstack.MODULE.bazel")
+
+# Same CMake release used by bazel/initial_migration/run_cmake_reference.sh.
+# SHA-256 values are from Kitware's cmake-3.28.3-SHA-256.txt.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "clickhouse_cmake_linux_x86_64",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bin/cmake"])
+filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
+""",
+    sha256 = "804d231460ab3c8b556a42d2660af4ac7a0e21c98a7f8ee3318a74b4a9a187a6",
+    strip_prefix = "cmake-3.28.3-linux-x86_64",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz"],
+)
+
+http_archive(
+    name = "clickhouse_cmake_linux_aarch64",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+exports_files(["bin/cmake"])
+filegroup(name = "files", srcs = glob(["bin/**", "share/**"]))
+""",
+    sha256 = "bbf023139f944cefe731d944f2864d8ea3ea0c4f9310b46ac72b3cb4e314b023",
+    strip_prefix = "cmake-3.28.3-linux-aarch64",
+    urls = ["https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-aarch64.tar.gz"],
+)
+
+# ClickHouse enables the fast decoder on Linux ARM64 as well as x86-64.
+single_version_override(
+    module_name = "lz4",
+    patch_strip = 1,
+    patches = ["//bazel/patches:lz4-fast-decoder.patch"],
+)
+
+single_version_override(
+    module_name = "protobuf",
+    patch_strip = 1,
+    patches = ["//bazel/patches:protobuf-generated-cc-deps.patch"],
+)
+
+single_version_override(
+    module_name = "rules_cc",
+    patch_strip = 1,
+    patches = ["//bazel/patches:rules_cc-implementation-deps-local-includes.patch"],
+)
+
+single_version_override(
+    module_name = "llvm",
+    patch_strip = 1,
+    patches = ["//bazel/patches:llvm-clickhouse-runtime.patch"],
+)
+
+# Resolve path dependencies that belong to nested vendored Cargo workspaces.
+single_version_override(
+    module_name = "rules_rs",
+    patch_strip = 1,
+    patches = ["//bazel/patches:rules_rs-local-workspaces.patch"],
+)
+
+# Export declared zstd headers without an empty generated include directory.
+single_version_override(
+    module_name = "zstd",
+    patch_strip = 1,
+    patches = ["//bazel/patches:zstd-public-headers.patch"],
+)
+
+include("//bazel:llvm.MODULE.bazel")
+
+register_toolchains("@llvm//toolchain:all")
+
+register_toolchains(
+    "//bazel:clickhouse_proto_toolchain",
+    "//bazel:clickhouse_cc_proto_toolchain",
+)
+
+rust_toolchains = use_extension("@rules_rs//rs/toolchains:module_extension.bzl", "toolchains")
+rust_toolchains.toolchain(
+    edition = "2021",
+    extra_rustc_flags = {
+        "aarch64-unknown-linux-gnu": [
+            "-Ctarget-feature=+dotprod,+ssbs,+rcpc,+bf16",
+            "-Csymbol-mangling-version=v0",
+        ],
+        "x86_64-unknown-linux-gnu": [
+            "-Ctarget-cpu=x86-64-v3",
+            "-Ctarget-feature=+pclmulqdq",
+            "-Csymbol-mangling-version=v0",
+        ],
+    },
+    # Keep in sync with contrib/corrosion-cmake/CMakeLists.txt.
+    version = "nightly/2026-03-22",
+)
+use_repo(rust_toolchains, "default_rust_toolchains")
+
+register_toolchains("@default_rust_toolchains//...")
+
+rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
+use_repo(rules_rust, "rules_rust")
+
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "clickhouse_crates",
+    cargo_lock = "@clickhouse_cargo_sources//rust/workspace:Cargo.lock",
+    cargo_toml = "@clickhouse_cargo_sources//rust/workspace:Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "clickhouse_crates")
+
+crate.annotation(
+    crate = "cxxbridge-cmd",
+    extra_aliased_targets = {"cxxbridge_cli": "cxxbridge__bin"},
+    gen_binaries = ["cxxbridge"],
+    repositories = ["clickhouse_crates"],
+)
+
+# Compile the native runtime with ClickHouse's patched C++ exception ABI.
+crate.annotation(
+    additive_build_file_content = "exports_files([\"src/cxx.cc\", \"include/cxx.h\"])\n",
+    crate = "cxx",
+    extra_aliased_targets = {
+        "cxx_source": "src/cxx.cc",
+        "cxx_header": "include/cxx.h",
+    },
+    repositories = ["clickhouse_crates"],
+)
+
+# This script only installs C headers through cmake -P. ClickHouse configures
+# those headers separately in rust/workspace/wasmtime/CMakeLists.txt; Bazel
+# generates the configured headers in the fetched Wasmtime repository.
+crate.annotation(
+    crate = "wasmtime-c-api-impl",
+    gen_build_script = "off",
+    repositories = ["clickhouse_crates"],
+)
+crate.from_cargo(
+    name = "delta_crates",
+    cargo_lock = "@clickhouse_cargo_sources//bazel/rust:delta-kernel-rs/Cargo.lock",
+    cargo_toml = "@clickhouse_cargo_sources//bazel/rust:delta-kernel-rs/Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+crate.from_cargo(
+    name = "chdig_crates",
+    cargo_lock = "@clickhouse_cargo_sources//bazel/rust:chdig/Cargo.lock",
+    cargo_toml = "@clickhouse_cargo_sources//bazel/rust:chdig/Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+
+# Cbindgen runs in a separate action with declared offline metadata inputs.
+# The Rust library consumes no output from its cbindgen-only build script.
+crate.annotation(
+    crate = "delta_kernel_ffi",
+    gen_build_script = "off",
+    repositories = ["delta_crates"],
+)
+use_repo(crate, "chdig_crates", "delta_crates")
+
+crate.annotation(
+    crate = "cbindgen",
+    extra_aliased_targets = {"cbindgen_cli": "cbindgen__bin"},
+    gen_binaries = ["cbindgen"],
+    repositories = ["delta_crates"],
+)
+
+# Reuse the same audited LZ4 implementation for Rust and C++ consumers.
+crate.annotation(
+    crate = "lz4-sys",
+    gen_build_script = "off",
+    deps = ["@lz4//:lz4_frame"],
+)
+
+# Match delta-kernel-rs-cmake: probe ClickHouse's OpenSSL headers and leave
+# linking to the C++ binary, which already links its ssl/crypto targets.
+crate.annotation(
+    build_script_data = ["//bazel/rust:openssl_include"],
+    build_script_env = {
+        # Build-script location expansion already makes execpath absolute.
+        "OPENSSL_INCLUDE_DIR": "$(execpath @@//bazel/rust:openssl_include)",
+        # No libraries are requested, but openssl-sys checks directory existence.
+        "OPENSSL_LIB_DIR": "$(execpath @@//bazel/rust:openssl_include)",
+        "OPENSSL_LIBS": "",
+        "OPENSSL_NO_VENDOR": "1",
+        "OPENSSL_STATIC": "1",
+    },
+    crate = "openssl-sys",
+    gen_build_script = "on",
+)
+crate.annotation(
+    additive_build_file = "//bazel/rust:perfetto_protos.BUILD.bazel",
+    crate = "perfetto_protos",
+    extra_aliased_targets = {"perfetto_build_script": "_bs"},
+    gen_build_script = "off",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:perfetto-protos-protoc.patch"],
+    repositories = ["chdig_crates"],
+    deps = ["@chdig_crates//:perfetto_build_script"],
+)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11")
+use_repo(python, "python_3_11")

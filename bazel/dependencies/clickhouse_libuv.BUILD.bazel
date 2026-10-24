@@ -1,0 +1,69 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE-extra",
+])
+
+ch_cc_library(
+    name = "_uv",
+    srcs = glob(["src/*.c"]) + [
+        "src/unix/async.c",
+        "src/unix/core.c",
+        "src/unix/dl.c",
+        "src/unix/fs.c",
+        "src/unix/getaddrinfo.c",
+        "src/unix/getnameinfo.c",
+        "src/unix/loop-watcher.c",
+        "src/unix/loop.c",
+        "src/unix/pipe.c",
+        "src/unix/poll.c",
+        "src/unix/process.c",
+        "src/unix/random-devurandom.c",
+        "src/unix/signal.c",
+        "src/unix/stream.c",
+        "src/unix/tcp.c",
+        "src/unix/thread.c",
+        "src/unix/tty.c",
+        "src/unix/udp.c",
+        "src/unix/proctitle.c",
+        "src/unix/linux.c",
+        "src/unix/procfs-exepath.c",
+        "src/unix/random-getrandom.c",
+        "src/unix/random-sysctl-linux.c",
+        "include/uv/tree.h",
+        "src/unix/internal.h",
+    ] + glob(["src/*.h"]),
+    hdrs = [
+        "include/uv.h",
+        "include/uv/errno.h",
+        "include/uv/linux.h",
+        "include/uv/version.h",
+    ],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        "include",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = [
+        "CLICKHOUSE_GLIBC_COMPATIBILITY",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_GNU_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_POSIX_C_SOURCE=200112",
+    ],
+    local_includes = [
+        "src",
+    ],
+    textual_hdrs = [
+        "include/uv/threadpool.h",
+        "include/uv/unix.h",
+    ],
+)

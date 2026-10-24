@@ -1,0 +1,54 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "google_benchmark",
+    srcs = [
+        "src/benchmark.cc",
+        "src/benchmark_api_internal.cc",
+        "src/benchmark_name.cc",
+        "src/benchmark_register.cc",
+        "src/benchmark_runner.cc",
+        "src/check.cc",
+        "src/colorprint.cc",
+        "src/commandlineflags.cc",
+        "src/complexity.cc",
+        "src/console_reporter.cc",
+        "src/counter.cc",
+        "src/csv_reporter.cc",
+        "src/json_reporter.cc",
+        "src/perf_counters.cc",
+        "src/reporter.cc",
+        "src/statistics.cc",
+        "src/string_util.cc",
+        "src/sysinfo.cc",
+        "src/timers.cc",
+    ] + glob(["src/**/*.h"]),
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+)
+
+ch_cc_library(
+    name = "google_benchmark_main",
+    srcs = [
+        "src/benchmark_main.cc",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    implementation_deps = [":google_benchmark"],
+    local_defines = CXX_RUNTIME_DEFINES,
+)

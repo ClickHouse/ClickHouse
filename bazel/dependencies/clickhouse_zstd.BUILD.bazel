@@ -1,0 +1,77 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_zstd",
+    srcs = glob(["lib/common/*.c"]) + [
+        "lib/compress/fse_compress.c",
+        "lib/compress/hist.c",
+        "lib/compress/huf_compress.c",
+        "lib/compress/zstd_compress.c",
+    ] + glob(["lib/compress/zstd_compress_*.c"]) + [
+        "lib/compress/zstd_double_fast.c",
+        "lib/compress/zstd_fast.c",
+        "lib/compress/zstd_lazy.c",
+        "lib/compress/zstd_ldm.c",
+        "lib/compress/zstdmt_compress.c",
+        "lib/compress/zstd_opt.c",
+        "lib/compress/zstd_preSplit.c",
+    ] + glob(["lib/decompress/*.c"]) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]) + glob(
+        [
+            "lib/common/*.h",
+            "lib/compress/*.h",
+            "lib/decompress/*.h",
+            "lib/dictBuilder/*.h",
+            "lib/legacy/*.h",
+        ],
+        exclude = ["lib/common/portability_macros.h"],
+    ),
+    hdrs = glob([
+        "lib/*.h",
+        "lib/deprecated/*.h",
+    ]),
+    copts = [
+        "-w",
+        "-std=gnu11",
+        "-D",
+        "ZSTD_LEGACY_SUPPORT=1",
+        "-fno-sanitize=undefined",
+    ],
+    includes = [
+        "lib",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "lib/legacy",
+        "lib/common",
+    ],
+    deps = [
+        ":_zstd__compile_1",
+    ],
+)
+
+ch_cc_library(
+    name = "_zstd__compile_1",
+    srcs = ["lib/decompress/huf_decompress_amd64.S"],
+    hdrs = ["lib/common/portability_macros.h"],
+    copts = [
+        "-D",
+        "ZSTD_LEGACY_SUPPORT=1",
+        "-fno-sanitize=undefined",
+    ],
+    language = "ASM",
+    libcxx_headers = False,
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "lib",
+        "lib/legacy",
+        "lib/common",
+    ],
+)

@@ -1,0 +1,75 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_src_include_compat_liburing_compat_h",
+    out = "config/contrib/liburing/src/include-compat/liburing/compat.h",
+    substitutions = {
+        "# cmakedefine LIBURING_CONFIG_HAS_KERNEL_TIMESPEC": "/* #undef LIBURING_CONFIG_HAS_KERNEL_TIMESPEC */",
+        "# cmakedefine LIBURING_CONFIG_HAS_KERNEL_RWF_T": "/* #undef LIBURING_CONFIG_HAS_KERNEL_RWF_T */",
+        "# cmakedefine LIBURING_CONFIG_HAS_GLIBC_STATX": "/* #undef LIBURING_CONFIG_HAS_GLIBC_STATX */",
+        "# cmakedefine LIBURING_CONFIG_HAS_OPEN_HOW": "/* #undef LIBURING_CONFIG_HAS_OPEN_HOW */",
+        "# cmakedefine LIBURING_CONFIG_HAS_STATX": "/* #undef LIBURING_CONFIG_HAS_STATX */",
+    },
+    template = "@clickhouse//contrib:liburing-cmake/compat.h.in",
+)
+
+expand_template(
+    name = "configure_src_include_liburing_io_uring_version_h",
+    out = "config/contrib/liburing/src/include/liburing/io_uring_version.h",
+    substitutions = {
+        "${LIBURING_VERSION_MAJOR}": "2",
+        "${LIBURING_VERSION_MINOR}": "15",
+    },
+    template = "@clickhouse//contrib:liburing-cmake/io_uring_version.h.in",
+)
+
+ch_cc_library(
+    name = "_liburing",
+    srcs = [
+        "src/queue.c",
+        "src/register.c",
+        "src/setup.c",
+        "src/syscall.c",
+        "src/version.c",
+    ] + glob([
+        "src/*.h",
+        "src/arch/*.h",
+    ]) + select({
+        "@platforms//cpu:x86_64": glob(["src/arch/x86/**/*.h"]),
+        "@platforms//cpu:aarch64": glob(["src/arch/aarch64/**/*.h"]),
+    }),
+    hdrs = [
+        ":config/contrib/liburing/src/include-compat/liburing/compat.h",
+        ":config/contrib/liburing/src/include/liburing/io_uring_version.h",
+    ] + glob(
+        ["src/include/**/*.h"],
+        exclude = ["src/include/liburing/io_uring.h"],
+    ),
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        "config/contrib/liburing/src/include-compat",
+        "config/contrib/liburing/src/include",
+        "src/include",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = [
+        "LIBURING_INTERNAL",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_GNU_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    textual_hdrs = ["src/include/liburing/io_uring.h"],
+)

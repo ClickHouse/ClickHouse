@@ -1,0 +1,37 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "COPYING",
+])
+
+ch_cc_library(
+    name = "_bcrypt",
+    srcs = [
+        "bcrypt.c",
+        "crypt_blowfish/crypt_blowfish.h",
+        "crypt_blowfish/crypt_gensalt.h",
+        "crypt_blowfish/ow-crypt.h",
+    ] + glob(["crypt_blowfish/*.c"]),
+    hdrs = ["bcrypt.h"],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        ".",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = [
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "__SKIP_GNU",
+    ],
+)

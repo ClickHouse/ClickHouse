@@ -1,0 +1,222 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES", "DBMS_CONSUMER_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "benchmark_radix_sort_objects",
+    srcs = ["radix_sort.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:headers",
+        "//src/Functions:headers",
+        "//src:dbms__compile_0",
+        "//src:dbms__compile_1",
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//src:dbms",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "benchmark_sched_getcpu_objects",
+    srcs = ["sched_getcpu.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//base/glibc-compatibility",
+    ],
+    link_runtime = True,
+    local_defines = [
+        "ENABLE_MULTITARGET_CODE=1",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "benchmark_stack_trace_objects",
+    srcs = ["stack_trace.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//src/Common",
+        "//src/Common:exception_api",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_zstd//:_zstd",
+        "//base:common",
+        "//base/glibc-compatibility",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "integer_hash_tables_and_hashes_objects",
+    srcs = ["integer_hash_tables_and_hashes.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//src/Common",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "//contrib/libfarmhash:_farmhash",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_zstd//:_zstd",
+        "//base:common",
+        "//base/glibc-compatibility",
+        "@clickhouse_xxhash//:xxHash",
+        "@clickhouse_wyhash//:wyhash",
+        "//contrib/consistent-hashing:_consistent_hashing",
+        "//base:pcg_random",
+        "//src/Common:parser_support_api",
+    ],
+    link_runtime = True,
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+        ],
+    }) + [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+        "ENABLE_DISTRIBUTED_CACHE=0",
+        "ENABLE_MULTITARGET_CODE=1",
+        "FIU_ENABLE",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_CONFIG_H",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "JEMALLOC_NO_RENAME",
+        "PICOJSON_USE_LOCALE=0",
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_COVERAGE=0",
+        "WITH_COVERAGE_DEPTH=0",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "XXH_INLINE_ALL",
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    source_headers = True,
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "orc_string_dictionary_objects",
+    srcs = ["orc_string_dictionary.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_zstd//:_zstd",
+        "//base:common",
+        "//base/glibc-compatibility",
+    ],
+    link_runtime = True,
+    local_defines = [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+        "ENABLE_MULTITARGET_CODE=1",
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "WITH_COVERAGE=0",
+        "WITH_COVERAGE_DEPTH=0",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "profile_events_objects",
+    srcs = ["profile_events.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//src/Common",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_zstd//:_zstd",
+        "//base:common",
+        "//base/glibc-compatibility",
+        "//src/Common:stopwatch",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "wrap_in_nullable_objects",
+    srcs = ["wrap_in_nullable.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:headers",
+        "//src/Functions:headers",
+        "//src:dbms__compile_0",
+        "//src:dbms__compile_1",
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//src:dbms",
+        "//src:column_types",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+    alwayslink = True,
+)

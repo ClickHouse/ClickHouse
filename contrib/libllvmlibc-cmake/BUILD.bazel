@@ -1,0 +1,9 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "string/aarch64_mem_functions.cpp",
+    "string/mem_functions.cpp",
+    "string/memmem.cpp",
+    "string/x86_64_mem_functions.cpp",
+    "string/x86_cpu_dispatch.h",
+])

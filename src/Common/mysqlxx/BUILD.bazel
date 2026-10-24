@@ -1,0 +1,54 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "tests/gtest_pool_entry_name.cpp",
+    "tests/gtest_ssl_params.cpp",
+])
+
+ch_cc_library(
+    name = "mysqlxx",
+    srcs = [
+        "Connection.cpp",
+        "Exception.cpp",
+        "Query.cpp",
+        "ResultBase.cpp",
+        "UseQueryResult.cpp",
+        "Row.cpp",
+        "SSLParams.cpp",
+        "Value.cpp",
+        "Pool.cpp",
+        "PoolFactory.cpp",
+        "PoolWithFailover.cpp",
+    ],
+    hdrs = glob(["mysqlxx/*.h"]),
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src/Common",
+        "//src:headers",
+        "@clickhouse_fmtlib//:_fmt",
+        "@clickhouse_mariadb_connector_c//:_mariadbclient",
+        "//base:common",
+        "//base:pcg_random",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+        "//src:io_string_buffers",
+    ],
+    includes = ["."],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+    deps = [
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_zstd//:_zstd",
+        "//base/glibc-compatibility",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//src/Common:parser_support_api",
+    ],
+)

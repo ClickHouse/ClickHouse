@@ -1,0 +1,203 @@
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+load("//bazel/rules:cbindgen.bzl", "rust_cbindgen")
+load("//bazel/rules:cmake_cargo.bzl", "cmake_cargo")
+load("//bazel/rules:openssl_headers.bzl", "openssl_headers")
+load("//bazel/rules:rust_archive.bzl", "rust_archive")
+load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
+load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
+load("//bazel/rules:rust_localization_data.bzl", "CLANG_RT_BUILTINS_GROUP_COUNTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob([
+    "*/Cargo.toml",
+    "*/Cargo.lock",
+]))
+
+exports_files(["perfetto_protos.BUILD.bazel"])
+
+openssl_headers(
+    name = "openssl_include",
+    configured_headers = "//contrib/openssl-cmake:openssl_configured_headers",
+)
+
+genrule(
+    name = "skim_cxx_codegen",
+    srcs = ["//rust/workspace:skim/src/lib.rs"],
+    outs = [
+        "skim_bridge.h",
+        "skim_bridge.cc",
+    ],
+    cmd = "$(execpath @clickhouse_crates//:cxxbridge_cli) $(execpath //rust/workspace:skim/src/lib.rs) -o $(location skim_bridge.h) -o $(location skim_bridge.cc)",
+    tools = ["@clickhouse_crates//:cxxbridge_cli"],
+)
+
+[
+    cc_library(
+        name = name,
+        srcs = srcs,
+        hdrs = hdrs + select({
+            "@platforms//cpu:" + arch: config["hdrs"]
+            for arch, config in RUST_CXX.items()
+        }),
+        copts = ["-std=" + standard] + select({
+            "@platforms//cpu:" + arch: config["copts"]
+            for arch, config in RUST_CXX.items()
+        }),
+        features = ["-fortify_source"],
+        implementation_deps = implementation_deps,
+    )
+    for name, srcs, hdrs, standard, implementation_deps in [
+        # cxx/build.rs selects C++11; skim/build.rs uses Clang's C++17 default.
+        (
+            "cxx_runtime",
+            ["@clickhouse_crates//:cxx_source"],
+            ["@clickhouse_crates//:cxx_header"],
+            "c++11",
+            [],
+        ),
+        (
+            "skim_bridge",
+            [
+                "skim_bridge.cc",
+                "//rust/workspace:skim/src/check_abi.cpp",
+            ],
+            ["skim_bridge.h"],
+            "gnu++17",
+            [":cxx_runtime"],
+        ),
+    ]
+]
+
+alias(
+    name = "cmake",
+    actual = select({
+        "@platforms//cpu:x86_64": "@clickhouse_cmake_linux_x86_64//:bin/cmake",
+        "@platforms//cpu:aarch64": "@clickhouse_cmake_linux_aarch64//:bin/cmake",
+    }),
+)
+
+alias(
+    name = "cmake_files",
+    actual = select({
+        "@platforms//cpu:x86_64": "@clickhouse_cmake_linux_x86_64//:files",
+        "@platforms//cpu:aarch64": "@clickhouse_cmake_linux_aarch64//:files",
+    }),
+)
+
+rust_cbindgen(
+    name = "delta_ffi_headers",
+    srcs = ["@clickhouse_delta_kernel_rs//:cbindgen_sources"],
+    cargo_config = "//contrib/corrosion-cmake:config.toml.in",
+    cbindgen_tool = "@delta_crates//:cbindgen_cli",
+    config = "@clickhouse_delta_kernel_rs//:ffi/cbindgen.toml",
+    crate = "delta_kernel_ffi",
+    headers = {
+        "c++": "delta_kernel_ffi.hpp",
+        "c": "delta_kernel_ffi.h",
+    },
+    manifest = "@clickhouse_delta_kernel_rs//:ffi/Cargo.toml",
+    vendor = "@clickhouse_rust_vendor//:sources",
+)
+
+rust_static_library(
+    name = "delta_kernel_ffi",
+    srcs = ["delta.rs"],
+    edition = "2021",
+    deps = ["@delta_crates//:delta_kernel_ffi"],
+)
+
+rust_static_library(
+    name = "chdig",
+    srcs = ["chdig.rs"],
+    edition = "2024",
+    deps = ["@chdig_crates//:chdig"],
+)
+
+[
+    cmake_cargo(
+        name = name + "_cargo",
+        cargo_features = spec.get("features", []),
+        cargo_package = spec["package"],
+        cmake = ":cmake" if name == "wasmtime" else None,
+        cmake_files = ":cmake_files" if name == "wasmtime" else None,
+        config = "//contrib/corrosion-cmake:config.toml.in",
+        # Each Cargo action owns this directory in a fresh OCI rootfs.
+        exec_properties = {
+            "workload-isolation-type": "oci",
+            "recycle-runner": "false",
+            "dockerReuse": "false",
+            "network": "off",
+            "dockerRunAsRoot": "true",
+        },
+        manifest = spec.get(
+            "manifest",
+            "//rust/workspace:" + name + "/Cargo.toml",
+        ),
+        native_compilation = spec.get("native_compilation", False),
+        # ClickHouse_SOURCE_DIR and CMAKE_HOME_DIRECTORY in the native CMakeCache.
+        native_source_root = "/home/buildbuddy/workspace/repo-root",
+        openssl_headers = ":openssl_include" if name == "delta_kernel_ffi" else None,
+        path_crates = spec.get("path_crates", []),
+        repositories = {
+            "@clickhouse_pcodec//:cmake_cargo_sources": "contrib/pcodec",
+            "@clickhouse_wasmtime//:cmake_cargo_sources": "contrib/wasmtime",
+            "@clickhouse_rust_vendor//:sources": "contrib/rust_vendor",
+        } | spec.get("repositories", {}),
+        workspace_manifest = "//rust/workspace:Cargo.toml",
+        workspace_sources = "//rust/workspace:cmake_cargo_sources",
+    )
+    for name, spec in RUST_ARCHIVES.items()
+]
+
+RUST_LOCALIZATION_REFERENCES = select({
+    "@platforms//cpu:" + arch: [
+        "@clickhouse_llvm_project//:clang_rt_builtins__compile_" + str(index)
+        for index in range(count)
+    ]
+    for arch, count in CLANG_RT_BUILTINS_GROUP_COUNTS.items()
+}) + [
+    "@clickhouse_llvm_project//:libllvmlibc",
+]
+
+[
+    rust_archive(
+        name = name + "_processed",
+        src = select({
+            "//bazel:use_cmake_metadata": ":" + name + "_cargo",
+            "//conditions:default": spec.get(
+                "rules_rs",
+                "//rust/workspace:" + name,
+            ),
+        }),
+        keep_symbols = spec.get("keep_symbols", []),
+        references = RUST_LOCALIZATION_REFERENCES,
+    )
+    for name, spec in RUST_ARCHIVES.items()
+]
+
+_C_FFI_HEADERS = [
+    "pco",
+    "polyglot",
+    "prql",
+    "skim",
+]
+
+[
+    cc_import(
+        name = name + "_cc",
+        hdrs = [":delta_ffi_headers"] if name == "delta_kernel_ffi" else ["//rust/workspace:" + name + "/include/" + name + ".h"] if name in _C_FFI_HEADERS else [],
+        static_library = ":" + name + "_processed",
+        strip_include_prefix = "delta_ffi_headers" if name == "delta_kernel_ffi" else "/rust/workspace/" + name + "/include" if name in _C_FFI_HEADERS else None,
+        # Cargo bundles cxx.cc and skim/build.rs's bridge objects into the archive.
+        # Only rules_rs needs the separate Bazel C++ bridge.
+        deps = select({
+            "//bazel:use_cmake_metadata": [],
+            "//conditions:default": [":skim_bridge"],
+        }) if name == "skim" else [],
+    )
+    for name in RUST_ARCHIVES
+    if name != "wasmtime"
+]

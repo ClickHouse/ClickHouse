@@ -1,0 +1,1801 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel/toolchains:proto_lang_toolchain.bzl", "proto_lang_toolchain")
+load("@protobuf//bazel/toolchains:proto_toolchain.bzl", "proto_toolchain")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs/platforms:triples.bzl", "triple_to_constraint_set")
+load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
+load("//bazel/initial_migration:cmake_toolchain.bzl", "cmake_toolchain")
+load("//bazel/initial_migration:native_cmake_reference.bzl", "native_cmake_reference")
+load("//bazel/initial_migration:native_stripped_hash.bzl", "native_stripped_hash")
+load("//bazel/rules:build_options.bzl", "build_options")
+load("//bazel/rules:build_options_data.bzl", "BUILD_OPTIONS")
+load("//bazel/rules:codegen_actions.bzl", "declare_codegen")
+load("//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES", "CODEGEN_RULES", "KRB5_PRIVATE_CODEGEN_RULES")
+load("//bazel/rules:grpc_proto_sources.bzl", "grpc_proto_sources")
+load("//bazel/rules/clickstack:embed.bzl", "embed_clickstack")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_toolchain(
+    name = "clickhouse_proto",
+    exec_compatible_with = ["@platforms//os:linux"],
+    proto_compiler = "@clickhouse_google_protobuf//:protoc",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+proto_lang_toolchain(
+    name = "clickhouse_cc_proto",
+    command_line = "--cpp_out=$(OUT)",
+    denylisted_protos = ["@clickhouse_google_protobuf//:libprotobuf_well_known_protos"],
+    output_files = "multiple",
+    runtime = "@clickhouse_google_protobuf//:_libprotobuf",
+    target_compatible_with = ["@platforms//os:linux"],
+    toolchain_type = "@protobuf//bazel/private:cc_toolchain_type",
+)
+
+proto_lang_toolchain(
+    name = "clickhouse_grpc_proto",
+    command_line = "--grpc_out=$(OUT)",
+    output_files = "multiple",
+    plugin = "@clickhouse_grpc//:grpc_cpp_plugin",
+    plugin_format_flag = "--plugin=protoc-gen-grpc=%s",
+)
+
+proto_library(
+    name = "google_api_annotations_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/annotations.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_http_proto",
+        "@clickhouse_google_protobuf//:descriptor_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_api_annotations_cc_proto",
+    deps = [":google_api_annotations_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_annotations_grpc_sources",
+    proto = ":google_api_annotations_proto",
+)
+
+proto_library(
+    name = "google_api_auth_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/auth.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_auth_cc_proto",
+    deps = [":google_api_auth_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_auth_grpc_sources",
+    proto = ":google_api_auth_proto",
+)
+
+proto_library(
+    name = "google_api_backend_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/backend.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_backend_cc_proto",
+    deps = [":google_api_backend_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_backend_grpc_sources",
+    proto = ":google_api_backend_proto",
+)
+
+proto_library(
+    name = "google_api_billing_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/billing.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_billing_cc_proto",
+    deps = [":google_api_billing_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_billing_grpc_sources",
+    proto = ":google_api_billing_proto",
+)
+
+proto_library(
+    name = "google_api_client_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/client.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_launch_stage_proto",
+        "@clickhouse_google_protobuf//:descriptor_proto",
+        "@clickhouse_google_protobuf//:duration_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_api_client_cc_proto",
+    deps = [":google_api_client_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_client_grpc_sources",
+    proto = ":google_api_client_proto",
+)
+
+proto_library(
+    name = "google_api_config_change_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/config_change.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_config_change_cc_proto",
+    deps = [":google_api_config_change_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_config_change_grpc_sources",
+    proto = ":google_api_config_change_proto",
+)
+
+proto_library(
+    name = "google_api_consumer_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/consumer.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_consumer_cc_proto",
+    deps = [":google_api_consumer_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_consumer_grpc_sources",
+    proto = ":google_api_consumer_proto",
+)
+
+proto_library(
+    name = "google_api_context_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/context.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_context_cc_proto",
+    deps = [":google_api_context_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_context_grpc_sources",
+    proto = ":google_api_context_proto",
+)
+
+proto_library(
+    name = "google_api_control_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/control.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [":google_api_policy_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_control_cc_proto",
+    deps = [":google_api_control_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_control_grpc_sources",
+    proto = ":google_api_control_proto",
+)
+
+proto_library(
+    name = "google_api_distribution_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/distribution.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        "@clickhouse_google_protobuf//:any_proto",
+        "@clickhouse_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_api_distribution_cc_proto",
+    deps = [":google_api_distribution_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_distribution_grpc_sources",
+    proto = ":google_api_distribution_proto",
+)
+
+proto_library(
+    name = "google_api_documentation_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/documentation.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_documentation_cc_proto",
+    deps = [":google_api_documentation_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_documentation_grpc_sources",
+    proto = ":google_api_documentation_proto",
+)
+
+proto_library(
+    name = "google_api_endpoint_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/endpoint.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_endpoint_cc_proto",
+    deps = [":google_api_endpoint_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_endpoint_grpc_sources",
+    proto = ":google_api_endpoint_proto",
+)
+
+proto_library(
+    name = "google_api_error_reason_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/error_reason.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_error_reason_cc_proto",
+    deps = [":google_api_error_reason_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_error_reason_grpc_sources",
+    proto = ":google_api_error_reason_proto",
+)
+
+proto_library(
+    name = "google_api_field_behavior_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/field_behavior.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_field_behavior_cc_proto",
+    deps = [":google_api_field_behavior_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_field_behavior_grpc_sources",
+    proto = ":google_api_field_behavior_proto",
+)
+
+proto_library(
+    name = "google_api_field_info_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/field_info.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_field_info_cc_proto",
+    deps = [":google_api_field_info_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_field_info_grpc_sources",
+    proto = ":google_api_field_info_proto",
+)
+
+proto_library(
+    name = "google_api_http_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/http.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_http_cc_proto",
+    deps = [":google_api_http_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_http_grpc_sources",
+    proto = ":google_api_http_proto",
+)
+
+proto_library(
+    name = "google_api_httpbody_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/httpbody.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:any_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_httpbody_cc_proto",
+    deps = [":google_api_httpbody_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_httpbody_grpc_sources",
+    proto = ":google_api_httpbody_proto",
+)
+
+proto_library(
+    name = "google_api_label_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/label.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_label_cc_proto",
+    deps = [":google_api_label_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_label_grpc_sources",
+    proto = ":google_api_label_proto",
+)
+
+proto_library(
+    name = "google_api_launch_stage_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/launch_stage.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_launch_stage_cc_proto",
+    deps = [":google_api_launch_stage_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_launch_stage_grpc_sources",
+    proto = ":google_api_launch_stage_proto",
+)
+
+proto_library(
+    name = "google_api_log_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/log.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [":google_api_label_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_log_cc_proto",
+    deps = [":google_api_log_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_log_grpc_sources",
+    proto = ":google_api_log_proto",
+)
+
+proto_library(
+    name = "google_api_logging_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/logging.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_logging_cc_proto",
+    deps = [":google_api_logging_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_logging_grpc_sources",
+    proto = ":google_api_logging_proto",
+)
+
+proto_library(
+    name = "google_api_metric_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/metric.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_label_proto",
+        ":google_api_launch_stage_proto",
+        "@clickhouse_google_protobuf//:duration_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_api_metric_cc_proto",
+    deps = [":google_api_metric_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_metric_grpc_sources",
+    proto = ":google_api_metric_proto",
+)
+
+proto_library(
+    name = "google_api_monitored_resource_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/monitored_resource.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_label_proto",
+        ":google_api_launch_stage_proto",
+        "@clickhouse_google_protobuf//:struct_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_api_monitored_resource_cc_proto",
+    deps = [":google_api_monitored_resource_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_monitored_resource_grpc_sources",
+    proto = ":google_api_monitored_resource_proto",
+)
+
+proto_library(
+    name = "google_api_monitoring_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/monitoring.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_monitoring_cc_proto",
+    deps = [":google_api_monitoring_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_monitoring_grpc_sources",
+    proto = ":google_api_monitoring_proto",
+)
+
+proto_library(
+    name = "google_api_policy_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/policy.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_policy_cc_proto",
+    deps = [":google_api_policy_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_policy_grpc_sources",
+    proto = ":google_api_policy_proto",
+)
+
+proto_library(
+    name = "google_api_quota_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/quota.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_quota_cc_proto",
+    deps = [":google_api_quota_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_quota_grpc_sources",
+    proto = ":google_api_quota_proto",
+)
+
+proto_library(
+    name = "google_api_resource_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/resource.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_resource_cc_proto",
+    deps = [":google_api_resource_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_resource_grpc_sources",
+    proto = ":google_api_resource_proto",
+)
+
+proto_library(
+    name = "google_api_routing_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/routing.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_routing_cc_proto",
+    deps = [":google_api_routing_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_routing_grpc_sources",
+    proto = ":google_api_routing_proto",
+)
+
+proto_library(
+    name = "google_api_service_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/service.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_auth_proto",
+        ":google_api_backend_proto",
+        ":google_api_billing_proto",
+        ":google_api_client_proto",
+        ":google_api_context_proto",
+        ":google_api_control_proto",
+        ":google_api_documentation_proto",
+        ":google_api_endpoint_proto",
+        ":google_api_http_proto",
+        ":google_api_log_proto",
+        ":google_api_logging_proto",
+        ":google_api_metric_proto",
+        ":google_api_monitored_resource_proto",
+        ":google_api_monitoring_proto",
+        ":google_api_quota_proto",
+        ":google_api_source_info_proto",
+        ":google_api_system_parameter_proto",
+        ":google_api_usage_proto",
+        "@clickhouse_google_protobuf//:api_proto",
+        "@clickhouse_google_protobuf//:type_proto",
+        "@clickhouse_google_protobuf//:wrappers_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_api_service_cc_proto",
+    deps = [":google_api_service_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_service_grpc_sources",
+    proto = ":google_api_service_proto",
+)
+
+proto_library(
+    name = "google_api_source_info_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/source_info.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:any_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_source_info_cc_proto",
+    deps = [":google_api_source_info_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_source_info_grpc_sources",
+    proto = ":google_api_source_info_proto",
+)
+
+proto_library(
+    name = "google_api_system_parameter_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/system_parameter.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_system_parameter_cc_proto",
+    deps = [":google_api_system_parameter_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_system_parameter_grpc_sources",
+    proto = ":google_api_system_parameter_proto",
+)
+
+proto_library(
+    name = "google_api_usage_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/usage.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_api_usage_cc_proto",
+    deps = [":google_api_usage_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_usage_grpc_sources",
+    proto = ":google_api_usage_proto",
+)
+
+proto_library(
+    name = "google_api_visibility_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/api/visibility.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_api_visibility_cc_proto",
+    deps = [":google_api_visibility_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_api_visibility_grpc_sources",
+    proto = ":google_api_visibility_proto",
+)
+
+proto_library(
+    name = "google_cloud_common_operation_metadata_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/cloud/common/operation_metadata.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_field_behavior_proto",
+        "@clickhouse_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_cloud_common_operation_metadata_cc_proto",
+    deps = [":google_cloud_common_operation_metadata_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_cloud_common_operation_metadata_grpc_sources",
+    proto = ":google_cloud_common_operation_metadata_proto",
+)
+
+proto_library(
+    name = "google_cloud_extended_operations_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/cloud/extended_operations.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:descriptor_proto"],
+)
+
+cc_proto_library(
+    name = "google_cloud_extended_operations_cc_proto",
+    deps = [":google_cloud_extended_operations_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_cloud_extended_operations_grpc_sources",
+    proto = ":google_cloud_extended_operations_proto",
+)
+
+proto_library(
+    name = "google_cloud_location_locations_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/cloud/location/locations.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_annotations_proto",
+        ":google_api_client_proto",
+        "@clickhouse_google_protobuf//:any_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_cloud_location_locations_cc_proto",
+    deps = [":google_cloud_location_locations_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_cloud_location_locations_grpc_sources",
+    proto = ":google_cloud_location_locations_proto",
+)
+
+proto_library(
+    name = "google_cloud_orgpolicy_v1_orgpolicy_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/cloud/orgpolicy/v1/orgpolicy.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:timestamp_proto"],
+)
+
+cc_proto_library(
+    name = "google_cloud_orgpolicy_v1_orgpolicy_cc_proto",
+    deps = [":google_cloud_orgpolicy_v1_orgpolicy_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_cloud_orgpolicy_v1_orgpolicy_grpc_sources",
+    proto = ":google_cloud_orgpolicy_v1_orgpolicy_proto",
+)
+
+proto_library(
+    name = "google_iam_credentials_v1_common_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/common.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_field_behavior_proto",
+        ":google_api_resource_proto",
+        "@clickhouse_google_protobuf//:duration_proto",
+        "@clickhouse_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_iam_credentials_v1_common_cc_proto",
+    deps = [":google_iam_credentials_v1_common_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_iam_credentials_v1_common_grpc_sources",
+    proto = ":google_iam_credentials_v1_common_proto",
+)
+
+proto_library(
+    name = "google_iam_credentials_v1_iamcredentials_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/iam/credentials/v1/iamcredentials.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_annotations_proto",
+        ":google_api_client_proto",
+        ":google_iam_credentials_v1_common_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_iam_credentials_v1_iamcredentials_cc_proto",
+    deps = [":google_iam_credentials_v1_iamcredentials_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_iam_credentials_v1_iamcredentials_grpc_sources",
+    proto = ":google_iam_credentials_v1_iamcredentials_proto",
+)
+
+proto_library(
+    name = "google_iam_v1_iam_policy_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/iam/v1/iam_policy.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_annotations_proto",
+        ":google_api_client_proto",
+        ":google_api_field_behavior_proto",
+        ":google_api_resource_proto",
+        ":google_iam_v1_options_proto",
+        ":google_iam_v1_policy_proto",
+        "@clickhouse_google_protobuf//:field_mask_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_iam_v1_iam_policy_cc_proto",
+    deps = [":google_iam_v1_iam_policy_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_iam_v1_iam_policy_grpc_sources",
+    proto = ":google_iam_v1_iam_policy_proto",
+)
+
+proto_library(
+    name = "google_iam_v1_options_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/iam/v1/options.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_iam_v1_options_cc_proto",
+    deps = [":google_iam_v1_options_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_iam_v1_options_grpc_sources",
+    proto = ":google_iam_v1_options_proto",
+)
+
+proto_library(
+    name = "google_iam_v1_policy_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/iam/v1/policy.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [":google_type_expr_proto"],
+)
+
+cc_proto_library(
+    name = "google_iam_v1_policy_cc_proto",
+    deps = [":google_iam_v1_policy_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_iam_v1_policy_grpc_sources",
+    proto = ":google_iam_v1_policy_proto",
+)
+
+proto_library(
+    name = "google_longrunning_operations_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/longrunning/operations.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_annotations_proto",
+        ":google_api_client_proto",
+        ":google_rpc_status_proto",
+        "@clickhouse_google_protobuf//:any_proto",
+        "@clickhouse_google_protobuf//:descriptor_proto",
+        "@clickhouse_google_protobuf//:duration_proto",
+        "@clickhouse_google_protobuf//:empty_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_longrunning_operations_cc_proto",
+    deps = [":google_longrunning_operations_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_longrunning_operations_grpc_sources",
+    proto = ":google_longrunning_operations_proto",
+)
+
+proto_library(
+    name = "google_rpc_code_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/rpc/code.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_rpc_code_cc_proto",
+    deps = [":google_rpc_code_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_rpc_code_grpc_sources",
+    proto = ":google_rpc_code_proto",
+)
+
+proto_library(
+    name = "google_rpc_context_attribute_context_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/rpc/context/attribute_context.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        "@clickhouse_google_protobuf//:any_proto",
+        "@clickhouse_google_protobuf//:duration_proto",
+        "@clickhouse_google_protobuf//:struct_proto",
+        "@clickhouse_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_rpc_context_attribute_context_cc_proto",
+    deps = [":google_rpc_context_attribute_context_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_rpc_context_attribute_context_grpc_sources",
+    proto = ":google_rpc_context_attribute_context_proto",
+)
+
+proto_library(
+    name = "google_rpc_error_details_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/rpc/error_details.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:duration_proto"],
+)
+
+cc_proto_library(
+    name = "google_rpc_error_details_cc_proto",
+    deps = [":google_rpc_error_details_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_rpc_error_details_grpc_sources",
+    proto = ":google_rpc_error_details_proto",
+)
+
+proto_library(
+    name = "google_rpc_status_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/rpc/status.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:any_proto"],
+)
+
+cc_proto_library(
+    name = "google_rpc_status_cc_proto",
+    deps = [":google_rpc_status_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_rpc_status_grpc_sources",
+    proto = ":google_rpc_status_proto",
+)
+
+proto_library(
+    name = "google_storage_v2_storage_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/storage/v2/storage.proto"],
+    cc_deps = ["@clickhouse_abseil_cpp//:absl_cord"],
+    cc_implementation_deps = ["@clickhouse_abseil_cpp//:absl_strings"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = [
+        ":google_api_client_proto",
+        ":google_api_field_behavior_proto",
+        ":google_api_resource_proto",
+        ":google_api_routing_proto",
+        ":google_iam_v1_iam_policy_proto",
+        ":google_iam_v1_policy_proto",
+        ":google_type_date_proto",
+        "@clickhouse_google_protobuf//:duration_proto",
+        "@clickhouse_google_protobuf//:empty_proto",
+        "@clickhouse_google_protobuf//:field_mask_proto",
+        "@clickhouse_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "google_storage_v2_storage_cc_proto",
+    deps = [":google_storage_v2_storage_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_storage_v2_storage_grpc_sources",
+    proto = ":google_storage_v2_storage_proto",
+)
+
+proto_library(
+    name = "google_type_calendar_period_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/calendar_period.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_calendar_period_cc_proto",
+    deps = [":google_type_calendar_period_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_calendar_period_grpc_sources",
+    proto = ":google_type_calendar_period_proto",
+)
+
+proto_library(
+    name = "google_type_color_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/color.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:wrappers_proto"],
+)
+
+cc_proto_library(
+    name = "google_type_color_cc_proto",
+    deps = [":google_type_color_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_color_grpc_sources",
+    proto = ":google_type_color_proto",
+)
+
+proto_library(
+    name = "google_type_date_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/date.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_date_cc_proto",
+    deps = [":google_type_date_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_date_grpc_sources",
+    proto = ":google_type_date_proto",
+)
+
+proto_library(
+    name = "google_type_datetime_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/datetime.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:duration_proto"],
+)
+
+cc_proto_library(
+    name = "google_type_datetime_cc_proto",
+    deps = [":google_type_datetime_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_datetime_grpc_sources",
+    proto = ":google_type_datetime_proto",
+)
+
+proto_library(
+    name = "google_type_dayofweek_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/dayofweek.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_dayofweek_cc_proto",
+    deps = [":google_type_dayofweek_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_dayofweek_grpc_sources",
+    proto = ":google_type_dayofweek_proto",
+)
+
+proto_library(
+    name = "google_type_decimal_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/decimal.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_decimal_cc_proto",
+    deps = [":google_type_decimal_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_decimal_grpc_sources",
+    proto = ":google_type_decimal_proto",
+)
+
+proto_library(
+    name = "google_type_expr_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/expr.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_expr_cc_proto",
+    deps = [":google_type_expr_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_expr_grpc_sources",
+    proto = ":google_type_expr_proto",
+)
+
+proto_library(
+    name = "google_type_fraction_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/fraction.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_fraction_cc_proto",
+    deps = [":google_type_fraction_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_fraction_grpc_sources",
+    proto = ":google_type_fraction_proto",
+)
+
+proto_library(
+    name = "google_type_interval_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/interval.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+    deps = ["@clickhouse_google_protobuf//:timestamp_proto"],
+)
+
+cc_proto_library(
+    name = "google_type_interval_cc_proto",
+    deps = [":google_type_interval_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_interval_grpc_sources",
+    proto = ":google_type_interval_proto",
+)
+
+proto_library(
+    name = "google_type_latlng_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/latlng.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_latlng_cc_proto",
+    deps = [":google_type_latlng_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_latlng_grpc_sources",
+    proto = ":google_type_latlng_proto",
+)
+
+proto_library(
+    name = "google_type_localized_text_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/localized_text.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_localized_text_cc_proto",
+    deps = [":google_type_localized_text_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_localized_text_grpc_sources",
+    proto = ":google_type_localized_text_proto",
+)
+
+proto_library(
+    name = "google_type_money_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/money.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_money_cc_proto",
+    deps = [":google_type_money_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_money_grpc_sources",
+    proto = ":google_type_money_proto",
+)
+
+proto_library(
+    name = "google_type_month_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/month.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_month_cc_proto",
+    deps = [":google_type_month_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_month_grpc_sources",
+    proto = ":google_type_month_proto",
+)
+
+proto_library(
+    name = "google_type_phone_number_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/phone_number.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_phone_number_cc_proto",
+    deps = [":google_type_phone_number_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_phone_number_grpc_sources",
+    proto = ":google_type_phone_number_proto",
+)
+
+proto_library(
+    name = "google_type_postal_address_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/postal_address.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_postal_address_cc_proto",
+    deps = [":google_type_postal_address_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_postal_address_grpc_sources",
+    proto = ":google_type_postal_address_proto",
+)
+
+proto_library(
+    name = "google_type_quaternion_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/quaternion.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_quaternion_cc_proto",
+    deps = [":google_type_quaternion_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_quaternion_grpc_sources",
+    proto = ":google_type_quaternion_proto",
+)
+
+proto_library(
+    name = "google_type_timeofday_proto",
+    srcs = ["gen/external/googleapis/src/googleapis_download/google/type/timeofday.proto"],
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+    strip_import_prefix = "gen/external/googleapis/src/googleapis_download",
+)
+
+cc_proto_library(
+    name = "google_type_timeofday_cc_proto",
+    deps = [":google_type_timeofday_proto"],
+)
+
+grpc_proto_sources(
+    name = "google_type_timeofday_grpc_sources",
+    proto = ":google_type_timeofday_proto",
+)
+
+copy_file(
+    name = "configure_git_hash",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/base/base/GitHash.generated.cpp",
+        "@platforms//cpu:aarch64": "config/aarch64/base/base/GitHash.generated.cpp",
+    }),
+    out = "gen/base/base/GitHash.generated.cpp",
+    allow_symlink = False,
+)
+
+copy_file(
+    name = "configure_clickhouse_config",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/includes/configs/config.h",
+        "@platforms//cpu:aarch64": "config/aarch64/includes/configs/config.h",
+    }),
+    out = "gen/includes/configs/config.h",
+    allow_symlink = False,
+)
+
+copy_file(
+    name = "configure_clickhouse_tools",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/includes/configs/config_tools.h",
+        "@platforms//cpu:aarch64": "config/aarch64/includes/configs/config_tools.h",
+    }),
+    out = "gen/includes/configs/config_tools.h",
+    allow_symlink = False,
+)
+
+copy_file(
+    name = "configure_clickhouse_version",
+    src = select({
+        "@platforms//cpu:x86_64": "config/x86_64/includes/configs/config_version.cpp",
+        "@platforms//cpu:aarch64": "config/aarch64/includes/configs/config_version.cpp",
+    }),
+    out = "gen/includes/configs/config_version.cpp",
+    allow_symlink = False,
+)
+
+cc_library(
+    name = "clickhouse_config_headers",
+    hdrs = [
+        ":configure_clickhouse_config",
+        ":configure_clickhouse_tools",
+    ],
+    features = ["-system_include_paths"],
+    strip_include_prefix = "gen/includes/configs",
+)
+
+cc_library(
+    name = "hdfs3_proto_headers",
+    hdrs = [
+        "gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.h",
+        "gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.h",
+        "gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.h",
+        "gen/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.h",
+        "gen/contrib/libhdfs3-cmake/RpcHeader.pb.h",
+        "gen/contrib/libhdfs3-cmake/Security.pb.h",
+        "gen/contrib/libhdfs3-cmake/datatransfer.pb.h",
+        "gen/contrib/libhdfs3-cmake/hdfs.pb.h",
+    ],
+    includes = ["gen/contrib/libhdfs3-cmake"],
+    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
+)
+
+cc_library(
+    name = "arrow_flatbuffer_headers",
+    hdrs = [
+        "gen/contrib/flatbuffers/generated/File_generated.h",
+        "gen/contrib/flatbuffers/generated/Message_generated.h",
+        "gen/contrib/flatbuffers/generated/Schema_generated.h",
+        "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+        "gen/contrib/flatbuffers/generated/Tensor_generated.h",
+        "gen/contrib/flatbuffers/generated/feather_generated.h",
+    ],
+    includes = ["gen/contrib/flatbuffers"],
+    deps = ["@clickhouse_flatbuffers//:_flatbuffers"],
+)
+
+platform(
+    name = "buildbuddy_linux_x86_64",
+    # BuildBuddy prewarms this image. Ubuntu 20.04 satisfies LLVM's gnu.2.28
+    # constraint, without requiring each executor to pull Ubuntu from Docker Hub.
+    exec_properties = {
+        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
+    },
+    parents = ["@llvm//:rbe_linux_x86_64"],
+)
+
+platform(
+    name = "buildbuddy_linux_aarch64",
+    # LLVM's Ubuntu 22.04 image, pinned through the mirror so ARM actions
+    # do not depend on Docker Hub authentication at executor startup.
+    exec_properties = {
+        "container-image": "docker://mirror.gcr.io/library/ubuntu@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956",
+    },
+    parents = ["@llvm//:rbe_linux_aarch64"],
+)
+
+platform(
+    name = "buildbuddy_linux_aarch64_test",
+    constraint_values = triple_to_constraint_set("aarch64-unknown-linux-gnu"),
+    # Bazel tests require the target's full constraint set. Keep LLVM's
+    # gnu.2.28 compiler platform separate from rules_rs's unconstrained libc.
+    parents = [":buildbuddy_linux_aarch64"],
+)
+
+exports_files(glob([
+    "*.MODULE.bazel",
+    "config/**",
+]))
+
+bool_flag(
+    name = "cmake_metadata",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_cmake_metadata",
+    flag_values = {":cmake_metadata": "true"},
+)
+
+[
+    config_setting(
+        name = "use_cmake_metadata_" + arch,
+        constraint_values = ["@platforms//cpu:" + arch],
+        flag_values = {":cmake_metadata": "true"},
+    )
+    for arch in [
+        "x86_64",
+        "aarch64",
+    ]
+]
+
+cmake_toolchain(
+    name = "cmake_toolchain_files",
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+)
+
+# initial_migration/prepare_native_reference.py creates the archives.
+# Only these manual CMake targets consume the archives.
+native_stripped_hash(
+    name = "stripped_hash_aarch64",
+    clickhouse = "//:clickhouse",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    reference = ":cmake_reference_aarch64",
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+[
+    native_cmake_reference(
+        name = name,
+        configure_only = configure_only,
+        exec_compatible_with = [
+            "@platforms//cpu:aarch64",
+            "@platforms//os:linux",
+        ],
+        exec_properties = {
+            # BuildBuddy uses learned sizes in preference to CPU/memory alone.
+            # Compute units disable learned sizing; keep 64 GB for Ninja/link.
+            "EstimatedComputeUnits": "16",
+            "EstimatedMemory": "64GB",
+            "EstimatedFreeDiskBytes": "180GB",
+            "default-timeout": "23h",
+        },
+        features = [
+            "-static_link_cpp_runtimes",
+            "-fortify_source",
+        ],
+        source_archive = "//bazel/native_reference_inputs:source.tar",
+        tags = ["manual"],
+        target_compatible_with = [
+            "@platforms//cpu:aarch64",
+            "@platforms//os:linux",
+        ],
+        tools_archive = "//bazel/native_reference_inputs:tools.tar",
+    )
+    for name, configure_only in [
+        ("cmake_reference_aarch64", False),
+        ("cmake_configure_aarch64", True),
+    ]
+]
+
+build_options(
+    name = "build_options",
+    out = "gen/src/Storages/System/StorageSystemBuildOptions.generated.cpp",
+    c_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["c_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["c_flags"],
+    }),
+    cmake_metadata = select({
+        ":use_cmake_metadata": True,
+        "//conditions:default": False,
+    }),
+    cmake_substitutions = select({
+        "@platforms//cpu:x86_64": CMAKE_METADATA["x86_64"]["build_options"],
+        "@platforms//cpu:aarch64": CMAKE_METADATA["aarch64"]["build_options"],
+    }),
+    cxx_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["cxx_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["cxx_flags"],
+    }),
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    link_flags = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["link_flags"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["link_flags"],
+    }),
+    template = select({
+        "@platforms//cpu:x86_64": BUILD_OPTIONS["x86_64"]["template"],
+        "@platforms//cpu:aarch64": BUILD_OPTIONS["aarch64"]["template"],
+    }),
+)
+
+[
+    alias(
+        name = name,
+        actual = "//bazel/rules:" + name,
+    )
+    for name in [
+        "prepare_hdfs_crc",
+        "extract_archive",
+        "generate_licenses",
+        "embed_resources",
+        "process_rust_archive",
+        "cmake_cargo",
+        "cbindgen",
+        "generate_timezones",
+    ]
+]
+
+[
+    declare_codegen(
+        name = name,
+        attrs = attrs,
+    )
+    for name, attrs in CODEGEN_RULES.items()
+]
+
+[
+    filegroup(
+        name = "generated_" + arch,
+        srcs = [
+            ":generate_native_ClickStack",
+            ":build_options",
+            "@clickhouse_krb5//:generate_contrib_krb5_cmake_include_krb5_krb5_h",
+        ] + [
+            ":" + name
+            for name in CODEGEN_RULES
+            if name.startswith("generate_" + arch + "_") or name.startswith("generate_contrib_") or name.startswith("generate_native_") or name == "extract_googleapis"
+        ] + [
+            "@clickhouse_arrow//:" + name
+            for name in ARROW_FLIGHT_CODEGEN_RULES
+        ] + [
+            "@clickhouse_krb5//:" + name
+            for name in KRB5_PRIVATE_CODEGEN_RULES
+        ],
+    )
+    for arch in [
+        "x86_64",
+        "aarch64",
+    ]
+]
+
+filegroup(
+    name = "clickstack_header",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "header",
+)
+
+filegroup(
+    name = "clickstack_assets",
+    srcs = [":generate_native_ClickStack"],
+    output_group = "assets",
+)
+
+filegroup(
+    name = "web_ui_embedded_assets",
+    srcs = [":clickstack_assets"] + [
+        out
+        for out in CODEGEN_RULES["generate_native_SQLConsole"]["outs"]
+        if out.endswith(".gz")
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
+cc_library(
+    name = "web_ui_resources",
+    hdrs = [
+        ":clickstack_header",
+        "gen/contrib/sql-console-cmake/SQLConsoleResources.generated.h",
+    ],
+    additional_compiler_inputs = [":web_ui_embedded_assets"],
+    includes = [
+        "gen/contrib/sql-console-cmake",
+        "gen/contrib/clickstack-cmake",
+    ],
+    visibility = ["//src:__pkg__"],
+)
+
+embed_clickstack(
+    name = "generate_native_ClickStack",
+    src = "//bazel/rules/clickstack:source_export",
+    gzip_mtime = select({
+        ":use_cmake_metadata_x86_64": CMAKE_METADATA["x86_64"]["resource_gzip_mtimes"]["ClickStack"],
+        ":use_cmake_metadata_aarch64": CMAKE_METADATA["aarch64"]["resource_gzip_mtimes"]["ClickStack"],
+        "//conditions:default": -1,
+    }),
+)
+
+label_flag(
+    name = "clickhouse_link_runtime",
+    build_setting_default = "@bazel_tools//tools/cpp:empty_lib",
+    scope = "target",
+)

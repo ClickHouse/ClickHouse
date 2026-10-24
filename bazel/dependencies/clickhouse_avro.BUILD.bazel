@@ -1,0 +1,38 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE.txt",
+])
+
+ch_cc_library(
+    name = "_avrocpp",
+    srcs = glob(
+        ["lang/c++/impl/**/*.cc"],
+        exclude = ["lang/c++/impl/avrogencpp.cc"],
+    ) + glob(["lang/c++/impl/**/*.hh"]),
+    hdrs = glob(["lang/c++/api/**/*.hh"]),
+    copts = [
+        "-w",
+        "-std=c++17",
+    ],
+    implementation_deps = [
+        "@clickhouse_boost//:_boost_iostreams",
+        "@clickhouse_snappy//:_snappy",
+    ],
+    includes = [
+        "lang/c++/api",
+    ],
+    local_defines = [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+        "SNAPPY_CODEC_AVAILABLE",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    deps = ["@clickhouse_boost//:boost_headers_no_openssl"],
+)

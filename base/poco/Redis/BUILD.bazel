@@ -1,0 +1,40 @@
+load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_REDIS_PRIVATE_HEADERS = [
+    "include/Poco/Redis/AsyncReader.h",
+    "include/Poco/Redis/PoolableConnectionFactory.h",
+    "include/Poco/Redis/RedisEventArgs.h",
+]
+
+poco_cc_library(
+    name = "_poco_redis",
+    srcs = glob(["src/*.cpp"]) + _REDIS_PRIVATE_HEADERS,
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = _REDIS_PRIVATE_HEADERS,
+    ),
+    copts = [
+        "-Wno-deprecated-dynamic-exception-spec",
+        "-Wno-shadow",
+        "-Wno-shorten-64-to-32",
+        "-Wno-sign-compare",
+        "-Wno-zero-as-null-pointer-constant",
+        "-Wno-implicit-int-conversion",
+    ],
+    includes = ["include"],
+    link_runtime = True,
+    local_defines = [
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    deps = [
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Foundation:_poco_foundation",
+    ],
+)

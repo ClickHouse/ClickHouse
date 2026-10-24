@@ -1,0 +1,125 @@
+Backport LLVM 485e69bc527ada2eda59c243f2cbdca8045634c8 (#178001).
+Retain relative #embed dependency filenames for Bazel remote execution.
+Only source changes are included: llvm.from_archive excludes clang tests and docs.
+The ClickHouse fork uses SavedHash where upstream uses Introducer.
+
+diff --git a/clang/include/clang/Lex/Preprocessor.h b/clang/include/clang/Lex/Preprocessor.h
+index 5adc45a19ca797..5fb83eafc6b2a8 100644
+--- a/clang/include/clang/Lex/Preprocessor.h
++++ b/clang/include/clang/Lex/Preprocessor.h
+@@ -2604,13 +2604,11 @@ class Preprocessor {
+   /// resource. \p isAngled indicates whether the file reference is for
+   /// system \#include's or not (i.e. using <> instead of ""). If \p OpenFile
+   /// is true, the file looked up is opened for reading, otherwise it only
+-  /// validates that the file exists. Quoted filenames are looked up relative
+-  /// to \p LookupFromFile if it is nonnull.
++  /// validates that the file exists.
+   ///
+   /// Returns std::nullopt on failure.
+-  OptionalFileEntryRef
+-  LookupEmbedFile(StringRef Filename, bool isAngled, bool OpenFile,
+-                  const FileEntry *LookupFromFile = nullptr);
++  OptionalFileEntryRef LookupEmbedFile(StringRef Filename, bool isAngled,
++                                       bool OpenFile);
+ 
+   /// Return true if we're in the top-level file, not in a \#include.
+   bool isInPrimaryFile() const;
+@@ -2920,8 +2918,7 @@ class Preprocessor {
+       SmallVectorImpl<char> &RelativePath, SmallVectorImpl<char> &SearchPath,
+       ModuleMap::KnownHeader &SuggestedModule, bool isAngled);
+   // Binary data inclusion
+-  void HandleEmbedDirective(SourceLocation HashLoc, Token &Tok,
+-                            const FileEntry *LookupFromFile = nullptr);
++  void HandleEmbedDirective(SourceLocation HashLoc, Token &Tok);
+   void HandleEmbedDirectiveImpl(SourceLocation HashLoc,
+                                 const LexEmbedParametersResult &Params,
+                                 StringRef BinaryContents, StringRef FileName);
+diff --git a/clang/lib/Lex/PPDirectives.cpp b/clang/lib/Lex/PPDirectives.cpp
+index b1d5c3636c99bc..8d4c9c49f756a9 100644
+--- a/clang/lib/Lex/PPDirectives.cpp
++++ b/clang/lib/Lex/PPDirectives.cpp
+@@ -1187,9 +1187,9 @@ OptionalFileEntryRef Preprocessor::LookupFile(
+   return std::nullopt;
+ }
+ 
+-OptionalFileEntryRef
+-Preprocessor::LookupEmbedFile(StringRef Filename, bool isAngled, bool OpenFile,
+-                              const FileEntry *LookupFromFile) {
++OptionalFileEntryRef Preprocessor::LookupEmbedFile(StringRef Filename,
++                                                   bool isAngled,
++                                                   bool OpenFile) {
+   FileManager &FM = this->getFileManager();
+   if (llvm::sys::path::is_absolute(Filename)) {
+     // lookup path or immediately fail
+@@ -1215,13 +1215,15 @@ Preprocessor::LookupEmbedFile(StringRef Filename, bool isAngled, bool OpenFile,
+   SmallString<512> LookupPath;
+   // Non-angled lookup
+   if (!isAngled) {
++    OptionalFileEntryRef LookupFromFile = getCurrentFileLexer()->getFileEntry();
+     if (LookupFromFile) {
+       // Use file-based lookup.
+-      StringRef FullFileDir = LookupFromFile->tryGetRealPathName();
+-      if (!FullFileDir.empty()) {
+-        SeparateComponents(LookupPath, FullFileDir, Filename, true);
++      SmallString<1024> TmpDir;
++      TmpDir = LookupFromFile->getDir().getName();
++      llvm::sys::path::append(TmpDir, Filename);
++      if (!TmpDir.empty()) {
+         llvm::Expected<FileEntryRef> ShouldBeEntry = FM.getFileRef(
+-            LookupPath, OpenFile, /*CacheFailure=*/true, /*IsText=*/false);
++            TmpDir, OpenFile, /*CacheFailure=*/true, /*IsText=*/false);
+         if (ShouldBeEntry)
+           return llvm::expectedToOptional(std::move(ShouldBeEntry));
+         llvm::consumeError(ShouldBeEntry.takeError());
+@@ -1487,12 +1489,8 @@ void Preprocessor::HandleDirective(Token &Result) {
+       return HandleIdentSCCSDirective(Result);
+     case tok::pp_sccs:
+       return HandleIdentSCCSDirective(Result);
+-    case tok::pp_embed: {
+-      if (PreprocessorLexer *CurrentFileLexer = getCurrentFileLexer())
+-        if (OptionalFileEntryRef FERef = CurrentFileLexer->getFileEntry())
+-          return HandleEmbedDirective(SavedHash.getLocation(), Result, *FERef);
+-      return HandleEmbedDirective(SavedHash.getLocation(), Result, nullptr);
+-    }
++    case tok::pp_embed:
++      return HandleEmbedDirective(SavedHash.getLocation(), Result);
+     case tok::pp_assert:
+       //isExtension = true;  // FIXME: implement #assert
+       break;
+@@ -4076,8 +4074,8 @@ void Preprocessor::HandleEmbedDirectiveImpl(
+   EnterTokenStream(std::move(Toks), TotalNumToks, true, true);
+ }
+ 
+-void Preprocessor::HandleEmbedDirective(SourceLocation HashLoc, Token &EmbedTok,
+-                                        const FileEntry *LookupFromFile) {
++void Preprocessor::HandleEmbedDirective(SourceLocation HashLoc,
++                                        Token &EmbedTok) {
+   // Give the usual extension/compatibility warnings.
+   if (LangOpts.C23)
+     Diag(EmbedTok, diag::warn_compat_pp_embed_directive);
+@@ -4126,7 +4124,7 @@ void Preprocessor::HandleEmbedDirective(SourceLocation HashLoc, Token &EmbedTok,
+     return;
+ 
+   OptionalFileEntryRef MaybeFileRef =
+-      this->LookupEmbedFile(Filename, isAngled, true, LookupFromFile);
++      this->LookupEmbedFile(Filename, isAngled, /*OpenFile=*/true);
+   if (!MaybeFileRef) {
+     // could not find file
+     if (Callbacks && Callbacks->EmbedFileNotFound(Filename)) {
+diff --git a/clang/lib/Lex/PPMacroExpansion.cpp b/clang/lib/Lex/PPMacroExpansion.cpp
+index 350bd6c88eaad6..20b8fe585a0076 100644
+--- a/clang/lib/Lex/PPMacroExpansion.cpp
++++ b/clang/lib/Lex/PPMacroExpansion.cpp
+@@ -1287,11 +1287,8 @@ EmbedResult Preprocessor::EvaluateHasEmbed(Token &Tok, IdentifierInfo *II) {
+       this->GetIncludeFilenameSpelling(FilenameTok.getLocation(), Filename);
+   // If GetIncludeFilenameSpelling set the start ptr to null, there was an
+   // error.
+-  const FileEntry *LookupFromFile =
+-      this->getCurrentFileLexer() ? *this->getCurrentFileLexer()->getFileEntry()
+-                                  : static_cast<FileEntry *>(nullptr);
+   OptionalFileEntryRef MaybeFileEntry =
+-      this->LookupEmbedFile(Filename, isAngled, false, LookupFromFile);
++      this->LookupEmbedFile(Filename, isAngled, false);
+   if (Callbacks) {
+     Callbacks->HasEmbed(LParenLoc, Filename, isAngled, MaybeFileEntry);
+   }

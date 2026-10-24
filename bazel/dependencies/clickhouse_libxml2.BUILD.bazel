@@ -1,0 +1,141 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "Copyright",
+    "test/html-tokenizer/NOTICE",
+])
+
+copy_file(
+    name = "xmlversion",
+    src = "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/libxml/xmlversion.h",
+    out = "configured_public/libxml/xmlversion.h",
+)
+
+copy_file(
+    name = "config",
+    src = "@clickhouse//contrib/libxml2-cmake:linux_x86_64/include/config.h",
+    out = "configured_private/config.h",
+)
+
+ch_cc_library(
+    name = "_libxml2",
+    srcs = [
+        "buf.c",
+        "chvalid.c",
+        "dict.c",
+        "encoding.c",
+        "entities.c",
+        "error.c",
+        "globals.c",
+        "hash.c",
+        "list.c",
+        "parser.c",
+        "parserInternals.c",
+        "SAX2.c",
+        "threads.c",
+        "tree.c",
+        "uri.c",
+        "valid.c",
+        "xmlIO.c",
+        "xmlmemory.c",
+        "xmlstring.c",
+        "pattern.c",
+        "xmlreader.c",
+        "xinclude.c",
+        "xpath.c",
+        "xlink.c",
+        "xpointer.c",
+        "xmlschemas.c",
+        "xmlschemastypes.c",
+        "xmlregexp.c",
+        "relaxng.c",
+        "catalog.c",
+        "HTMLparser.c",
+        "HTMLtree.c",
+        "xmlwriter.c",
+        "xmlsave.c",
+        "debugXML.c",
+        ":config",
+        "libxml.h",
+        "timsort.h",
+    ] + glob(["codegen/*.inc"]) + [
+        "include/private/buf.h",
+        "include/private/cata.h",
+        "include/private/dict.h",
+        "include/private/enc.h",
+        "include/private/entities.h",
+        "include/private/error.h",
+        "include/private/globals.h",
+        "include/private/html.h",
+        "include/private/io.h",
+        "include/private/memory.h",
+        "include/private/parser.h",
+        "include/private/regexp.h",
+        "include/private/save.h",
+        "include/private/string.h",
+        "include/private/threads.h",
+        "include/private/tree.h",
+        "include/private/xinclude.h",
+        "include/private/xpath.h",
+    ],
+    hdrs = [":xmlversion"] + glob(["include/libxml/*.h"]),
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        "include",
+        "configured_public",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = ["configured_private"],
+)

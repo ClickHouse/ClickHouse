@@ -1,0 +1,22 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "datasketches_cpp",
+    hdrs = glob([
+        "common/include/**/*.h",
+        "common/include/**/*.hpp",
+        "count/include/**/*.hpp",
+        "theta/include/**/*.hpp",
+    ]),
+    includes = [
+        "common/include",
+        "count/include",
+        "theta/include",
+    ],
+)

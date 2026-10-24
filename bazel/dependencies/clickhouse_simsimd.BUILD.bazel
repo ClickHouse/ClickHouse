@@ -1,0 +1,34 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_simsimd",
+    srcs = [
+        "c/lib.c",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        "include",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = [
+        "SIMSIMD_DYNAMIC_DISPATCH",
+        "SIMSIMD_NATIVE_BF16=0",
+        "SIMSIMD_TARGET_SVE2=0",
+        "SIMSIMD_TARGET_SVE=0",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+)

@@ -1,0 +1,11 @@
+--- a/build.rs
++++ b/build.rs
+@@ -4,7 +4,7 @@
+ fn main() {
+     // The proto files defining the message types we want to support.
+     let roots = ["protos/perfetto/trace/trace.proto"];
+-    let protoc = &protoc_bin_vendored::protoc_bin_path().unwrap();
++    let protoc = &PathBuf::from(std::env::var_os("PROTOC").expect("PROTOC"));
+     let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+     // A dummy output: we have to tell protoc to produce some output.
+     let out_file = out_dir.join("descriptors.pb");

@@ -1,0 +1,20 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "contrib/natvis/LICENSE",
+    "license.txt",
+])
+
+cc_library(
+    name = "rapidjson",
+    hdrs = glob([
+        "include/rapidjson/*.h",
+        "include/rapidjson/error/*.h",
+        "include/rapidjson/internal/*.h",
+    ]),
+    includes = [
+        "include",
+    ],
+)

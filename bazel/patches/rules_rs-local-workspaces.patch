@@ -1,0 +1,150 @@
+diff --git a/rs/extensions.bzl b/rs/extensions.bzl
+--- a/rs/extensions.bzl
++++ b/rs/extensions.bzl
+@@ -114,6 +114,46 @@
+     content += annotation.additive_build_file_content
+     return content
+ 
++def _local_workspace_metadata(mctx, cargo_path, cargo_metadata, package_limit):
++    """Discover transitive local workspaces without resolving registry crates."""
++    pending = {}
++    discovered = {}
++    roots = {cargo_metadata["workspace_root"]: True}
++    for package in cargo_metadata["packages"]:
++        for dep in package["dependencies"]:
++            if dep.get("path"):
++                pending[dep["path"]] = True
++    for _ in range(package_limit):
++        if not pending:
++            break
++        path = pending.keys()[0]
++        pending.pop(path)
++        if path in discovered:
++            continue
++        result = mctx.execute([
++            cargo_path, "metadata", "--no-deps", "--format-version=1", "--quiet",
++            "--manifest-path", paths.join(path, "Cargo.toml"),
++        ])
++        if result.return_code:
++            fail(result.stdout + "\n" + result.stderr)
++        metadata = json.decode(result.stdout)
++        root = metadata["workspace_root"]
++        manifest = paths.join(root, "Cargo.toml")
++        mctx.watch(mctx.path(manifest))
++        if root in roots:
++            continue
++        roots[root] = True
++        for package in metadata["packages"]:
++            package_path = paths.dirname(package["manifest_path"])
++            mctx.watch(mctx.path(package["manifest_path"]))
++            discovered[package_path] = dict(package, workspace_manifest = manifest)
++            for dep in package["dependencies"]:
++                if dep.get("path") and dep["path"] not in discovered:
++                    pending[dep["path"]] = True
++    if pending:
++        fail("Local workspace discovery exceeded the number of locked packages")
++    return discovered
++
+ def _generate_hub_and_spokes(
+         mctx,
+         hub_name,
+@@ -162,6 +202,8 @@
+         fail(result.stdout + "\n" + result.stderr)
+     cargo_metadata = json.decode(result.stdout)
+ 
++    local_metadata = _local_workspace_metadata(mctx, cargo_path, cargo_metadata, len(all_packages))
++
+     _date(mctx, "parsed cargo metadata")
+ 
+     existing_facts = getattr(mctx, "facts", {}) or {}
+@@ -172,6 +214,7 @@
+         cargo_metadata,
+         workspace_cargo_toml_json,
+         all_packages,
++        local_metadata = local_metadata,
+     )
+     packages = split_packages.packages
+     workspace_members = split_packages.workspace_members
+@@ -242,7 +285,9 @@
+             mctx.watch(mctx.path(cargo_toml_path))
+             annotation = annotation_for(annotations, name, package["version"], hub_name)
+             cargo_toml_json = run_toml2json(mctx, cargo_toml_path)
+-            fact = cargo_toml_fact(cargo_toml_json, {})
++            workspace_manifest = package.get("workspace_manifest")
++            local_workspace = run_toml2json(mctx, workspace_manifest) if workspace_manifest else {}
++            fact = cargo_toml_fact(cargo_toml_json, local_workspace)
+ 
+             package["strip_prefix"] = fact.get("strip_prefix", "")
+         elif source.startswith("git+"):
+@@ -444,6 +489,7 @@
+                 patch_tool = annotation.patch_tool,
+                 patches = annotation.patches,
+                 path = package["local_path"],
++                workspace_manifest = package.get("workspace_manifest", ""),
+                 **kwargs
+             )
+         elif source.startswith("git+"):
+diff --git a/rs/private/cargo_workspace_graph.bzl b/rs/private/cargo_workspace_graph.bzl
+--- a/rs/private/cargo_workspace_graph.bzl
++++ b/rs/private/cargo_workspace_graph.bzl
+@@ -334,7 +334,7 @@
+ 
+     return package_dirs
+ 
+-def split_lockfile_packages(hub_name, cargo_metadata, workspace_cargo_toml, all_packages, repo_root = None, workspace_package_dir = ""):
++def split_lockfile_packages(hub_name, cargo_metadata, workspace_cargo_toml, all_packages, repo_root = None, workspace_package_dir = "", local_metadata = {}):
+     if repo_root == None:
+         repo_root = cargo_metadata["workspace_root"]
+     repo_root = normalize_path(repo_root)
+@@ -343,7 +343,9 @@
+     for package in cargo_metadata["packages"]:
+         workspace_member_keys[(package["name"], package["version"])] = True
+ 
+-    dep_paths_by_name = _cargo_metadata_dep_paths_by_name(cargo_metadata["packages"], repo_root)
++    dep_paths_by_name = _cargo_metadata_dep_paths_by_name(cargo_metadata["packages"] + local_metadata.values(), repo_root)
++    for path, metadata in local_metadata.items():
++        dep_paths_by_name.setdefault(metadata["name"], _relative_to_workspace(path, repo_root))
+     patch_paths_by_name = _cargo_toml_patch_paths_by_name(workspace_cargo_toml, repo_root, workspace_package_dir)
+     workspace_members = []
+     packages = []
+@@ -369,7 +369,10 @@
+             fail("Found a path dependency on %s %s but could not determine its path from Cargo.toml. Please declare it in [patch] or as a path dependency." % (pkg["name"], pkg["version"]))
+ 
+         pkg["source"] = "path+" + hub_name + "/" + rel_path
+-        pkg["local_path"] = local_path
++        pkg["local_path"] = paths.normalize(local_path)
++        metadata = local_metadata.get(pkg["local_path"], {})
++        if metadata.get("workspace_manifest"):
++            pkg["workspace_manifest"] = metadata["workspace_manifest"]
+         packages.append(pkg)
+ 
+     return struct(
+diff --git a/rs/private/crate_repository.bzl b/rs/private/crate_repository.bzl
+--- a/rs/private/crate_repository.bzl
++++ b/rs/private/crate_repository.bzl
+@@ -2,7 +2,7 @@
+ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "get_auth", "patch")
+ load(":cargo_credentials.bzl", "load_cargo_credentials", "registry_auth_headers")
+ load(":registry_utils.bzl", "registry_download_url_from_template")
+-load(":repository_utils.bzl", "cargo_build_file_values", "common_attrs", "package_version", "render_build_file_content")
++load(":repository_utils.bzl", "cargo_build_file_values", "common_attrs", "inherit_workspace_package_fields", "package_version", "render_build_file_content")
+ load(":toml2json.bzl", "run_toml2json")
+ 
+ def _cargo_purl(package_name, version, qualifiers = {}):
+@@ -95,6 +95,9 @@
+ 
+     cargo_toml = run_toml2json(rctx, "Cargo.toml")
+ 
++    if rctx.attr.workspace_manifest:
++        cargo_toml = inherit_workspace_package_fields(cargo_toml, run_toml2json(rctx, rctx.attr.workspace_manifest))
++
+     rctx.file("BUILD.bazel", _generate_build_file(rctx, cargo_toml))
+ 
+     # Symlinks into the main workspace get replanted by Bazel >= 9.0.1 as
+@@ -110,5 +113,6 @@
+     implementation = _local_crate_repository_impl,
+     attrs = {
+         "path": attr.string(mandatory = True),
++        "workspace_manifest": attr.string(),
+     } | common_attrs,
+ )

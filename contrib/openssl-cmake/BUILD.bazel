@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob([
+    "asm/**/*.s",
+    "asm/**/*.S",
+    "common/**/*.c",
+    "common/include/**/*.h",
+    "linux_x86_64/include_private/*.h",
+    "linux_aarch64/include_private/*.h",
+]))
+
+filegroup(
+    name = "openssl_configured_headers",
+    srcs = glob(["common/include/**"]),
+)

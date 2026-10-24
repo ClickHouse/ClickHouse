@@ -1,0 +1,1051 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_grpc_cc_library.bzl", "ch_grpc_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_internal_build_info_cc",
+    out = "config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
+    substitutions = {
+        "@GOOGLE_CLOUD_CPP_BUILD_METADATA@": "",
+        "@CMAKE_CXX_FLAGS@": "",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "${CMAKE_CXX_FLAGS_${GOOGLE_CLOUD_CPP_BUILD_TYPE_UPPER}}": "--gcc-toolchain=cmake/linux/../../contrib/sysroot/linux-x86_64 --no-default-config -fdiagnostics-color=always  -pipe -march=x86-64-v3 -mpclmul -fasynchronous-unwind-tables -fdebug-compilation-dir=. -ffile-prefix-map== -falign-functions=64 -falign-loops=32 -ffunction-sections -fdata-sections -faddrsig -mbranches-within-32B-boundaries -fstack-protector-strong -fstack-clash-protection -ffp-contract=off -fno-math-errno  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -fPIE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST -w -ffunction-sections -fdata-sections -faddrsig -O3 -DNDEBUG",
+        },
+        "@platforms//cpu:aarch64": {
+            "${CMAKE_CXX_FLAGS_${GOOGLE_CLOUD_CPP_BUILD_TYPE_UPPER}}": "--gcc-toolchain=cmake/linux/../../contrib/sysroot/linux-aarch64 --no-default-config -fdiagnostics-color=always  -pipe -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16 -fasynchronous-unwind-tables -fdebug-compilation-dir=. -ffile-prefix-map== -falign-functions=64 -falign-loops=32 -ffunction-sections -fdata-sections -faddrsig -fstack-protector-strong -fstack-clash-protection -ffp-contract=off -fno-math-errno  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -fPIE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST -w -ffunction-sections -fdata-sections -faddrsig -O3 -DNDEBUG",
+        },
+    }),
+    template = ":google/cloud/internal/build_info.cc.in",
+)
+
+_GENERATED_LOCAL_DEFINES_0 = select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": [
+        "ARM_ACLE",
+        "ARM_ASM_HWCAP",
+        "ARM_AUXV_HAS_CRC32",
+        "ARM_AUXV_HAS_NEON",
+        "ARM_FEATURES",
+        "ARM_NEON",
+        "ARM_NEON_HASLD4",
+        "HAVE_ARM_ACLE_H",
+    ],
+}) + [
+    "HAVE_ATTRIBUTE_ALIGNED",
+    "HAVE_BUILTIN_CTZ",
+    "HAVE_BUILTIN_CTZLL",
+    "HAVE_POSIX_MEMALIGN",
+] + select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": [
+        "HAVE_SYS_AUXV_H",
+    ],
+}) + [
+    "HAVE_VISIBILITY_HIDDEN",
+    "HAVE_VISIBILITY_INTERNAL",
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "UNALIGNED_OK",
+    "WITH_GZFILEOP",
+    "X86_64",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "X86_AVX2",
+        "X86_FEATURES",
+        "X86_PCLMULQDQ_CRC",
+        "X86_SSE2",
+        "X86_SSE42",
+        "X86_SSSE3",
+    ],
+    "@platforms//cpu:aarch64": [],
+}) + [
+    "ZLIB_COMPAT",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
+
+_GOOGLE_CLOUD_CPP_COPTS = [
+    "-w",
+    "-std=c++23",
+]
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_annotations_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_annotations_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_auth_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_auth_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_backend_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_backend_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_billing_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_billing_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_client_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_client_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_config_change_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_config_change_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_consumer_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_consumer_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_context_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_context_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_control_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_control_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_distribution_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_distribution_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_documentation_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_documentation_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_endpoint_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_endpoint_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_error_reason_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_error_reason_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_field_behavior_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_field_behavior_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_field_info_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_field_info_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_http_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_http_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_httpbody_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_httpbody_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_label_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_label_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_launch_stage_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_launch_stage_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_log_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_log_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_logging_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_logging_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_metric_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_metric_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_monitored_resource_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_monitored_resource_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_monitoring_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_monitoring_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_policy_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_policy_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_quota_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_quota_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_resource_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_resource_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_routing_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_routing_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_service_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_service_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_source_info_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_source_info_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_system_parameter_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_system_parameter_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_usage_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_usage_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_api_visibility_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_api_visibility_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_cloud_common_common_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_cloud_common_operation_metadata_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_cloud_extended_operations_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_cloud_extended_operations_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_cloud_location_locations_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_cloud_location_locations_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_cloud_orgpolicy_v1_orgpolicy_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_cloud_orgpolicy_v1_orgpolicy_proto",
+)
+
+_GENERATED_COPTS_1 = [
+    "-w",
+    "-std=c++23",
+    "-g1",
+]
+
+ch_cc_library(
+    name = "google_cloud_cpp_common",
+    srcs = [
+        ":config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
+        "google/cloud/access_token.cc",
+        "google/cloud/credentials.cc",
+        "google/cloud/internal/api_client_header.cc",
+        "google/cloud/internal/auth_header_error.cc",
+        "google/cloud/internal/backoff_policy.cc",
+        "google/cloud/internal/base64_transforms.cc",
+        "google/cloud/internal/compiler_info.cc",
+        "google/cloud/internal/compute_engine_util.cc",
+        "google/cloud/internal/credentials_impl.cc",
+        "google/cloud/internal/debug_future_status.cc",
+        "google/cloud/internal/debug_string.cc",
+        "google/cloud/internal/detect_gcp_impl.cc",
+        "google/cloud/internal/error_context.cc",
+        "google/cloud/internal/filesystem.cc",
+        "google/cloud/internal/format_time_point.cc",
+        "google/cloud/internal/future_impl.cc",
+        "google/cloud/internal/future_then_impl.cc",
+        "google/cloud/internal/getenv.cc",
+        "google/cloud/internal/invocation_id_generator.cc",
+        "google/cloud/internal/log_impl.cc",
+        "google/cloud/internal/make_status.cc",
+        "google/cloud/internal/noexcept_action.cc",
+        "google/cloud/internal/opentelemetry.cc",
+        "google/cloud/internal/opentelemetry_context.cc",
+        "google/cloud/internal/parse_rfc3339.cc",
+        "google/cloud/internal/populate_common_options.cc",
+        "google/cloud/internal/random.cc",
+        "google/cloud/internal/retry_loop_helpers.cc",
+        "google/cloud/internal/retry_policy_impl.cc",
+        "google/cloud/internal/service_endpoint.cc",
+        "google/cloud/internal/sha256_hash.cc",
+        "google/cloud/internal/sha256_hmac.cc",
+        "google/cloud/internal/status_payload_keys.cc",
+        "google/cloud/internal/status_utils.cc",
+        "google/cloud/internal/strerror.cc",
+        "google/cloud/internal/subject_token.cc",
+        "google/cloud/internal/throw_delegate.cc",
+        "google/cloud/internal/timer_queue.cc",
+        "google/cloud/internal/trace_propagator.cc",
+        "google/cloud/internal/url_encode.cc",
+        "google/cloud/internal/user_agent_prefix.cc",
+        "google/cloud/kms_key_name.cc",
+        "google/cloud/location.cc",
+        "google/cloud/log.cc",
+        "google/cloud/options.cc",
+        "google/cloud/project.cc",
+        "google/cloud/status.cc",
+        "google/cloud/terminate_handler.cc",
+        "google/cloud/tracing_options.cc",
+        "google/cloud/version.cc",
+    ],
+    hdrs = [
+        "google/cloud/access_token.h",
+        "google/cloud/backoff_policy.h",
+        "google/cloud/common_options.h",
+        "google/cloud/credentials.h",
+        "google/cloud/experimental_tag.h",
+        "google/cloud/future.h",
+        "google/cloud/future_generic.h",
+        "google/cloud/future_void.h",
+        "google/cloud/idempotency.h",
+        "google/cloud/internal/algorithm.h",
+        "google/cloud/internal/api_client_header.h",
+        "google/cloud/internal/attributes.h",
+        "google/cloud/internal/auth_header_error.h",
+        "google/cloud/internal/backoff_policy.h",
+        "google/cloud/internal/base64_transforms.h",
+        "google/cloud/internal/big_endian.h",
+        "google/cloud/internal/build_info.h",
+        "google/cloud/internal/call_context.h",
+        "google/cloud/internal/clock.h",
+        "google/cloud/internal/compiler_info.h",
+        "google/cloud/internal/compute_engine_util.h",
+        "google/cloud/internal/credentials_impl.h",
+        "google/cloud/internal/debug_future_status.h",
+        "google/cloud/internal/debug_string.h",
+        "google/cloud/internal/detect_gcp.h",
+        "google/cloud/internal/detect_gcp_impl.h",
+        "google/cloud/internal/error_context.h",
+        "google/cloud/internal/filesystem.h",
+        "google/cloud/internal/format_time_point.h",
+        "google/cloud/internal/getenv.h",
+        "google/cloud/internal/group_options.h",
+        "google/cloud/internal/invocation_id_generator.h",
+        "google/cloud/internal/invoke_result.h",
+        "google/cloud/internal/ios_flags_saver.h",
+        "google/cloud/internal/log_impl.h",
+        "google/cloud/internal/make_status.h",
+        "google/cloud/internal/noexcept_action.h",
+        "google/cloud/internal/non_constructible.h",
+        "google/cloud/internal/opentelemetry.h",
+        "google/cloud/internal/opentelemetry_context.h",
+        "google/cloud/internal/pagination_range.h",
+        "google/cloud/internal/parse_rfc3339.h",
+        "google/cloud/internal/populate_common_options.h",
+        "google/cloud/internal/port_platform.h",
+        "google/cloud/internal/random.h",
+        "google/cloud/internal/retry_info.h",
+        "google/cloud/internal/retry_loop_helpers.h",
+        "google/cloud/internal/retry_policy_impl.h",
+        "google/cloud/internal/service_endpoint.h",
+        "google/cloud/internal/status_payload_keys.h",
+        "google/cloud/internal/status_utils.h",
+        "google/cloud/internal/strerror.h",
+        "google/cloud/internal/subject_token.h",
+        "google/cloud/internal/throw_delegate.h",
+        "google/cloud/internal/timer_queue.h",
+        "google/cloud/internal/trace_propagator.h",
+        "google/cloud/internal/traced_stream_range.h",
+        "google/cloud/internal/tuple.h",
+        "google/cloud/internal/type_list.h",
+        "google/cloud/internal/type_traits.h",
+        "google/cloud/internal/url_encode.h",
+        "google/cloud/internal/user_agent_prefix.h",
+        "google/cloud/internal/utility.h",
+        "google/cloud/internal/version_info.h",
+        "google/cloud/kms_key_name.h",
+        "google/cloud/location.h",
+        "google/cloud/log.h",
+        "google/cloud/no_await_tag.h",
+        "google/cloud/opentelemetry_options.h",
+        "google/cloud/optional.h",
+        "google/cloud/options.h",
+        "google/cloud/polling_policy.h",
+        "google/cloud/project.h",
+        "google/cloud/retry_policy.h",
+        "google/cloud/rpc_metadata.h",
+        "google/cloud/status.h",
+        "google/cloud/status_or.h",
+        "google/cloud/stream_range.h",
+        "google/cloud/terminate_handler.h",
+        "google/cloud/tracing_options.h",
+        "google/cloud/universe_domain_options.h",
+        "google/cloud/version.h",
+    ] + glob([
+        "google/cloud/internal/diagnostics_*.inc",
+        "google/cloud/internal/absl_*.h",
+        "google/cloud/internal/future_*.h",
+        "google/cloud/internal/sha256_*.h",
+    ]),
+    copts = _GENERATED_COPTS_1,
+    implementation_deps = [
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_variant",
+    ],
+)
+
+ch_cc_library(
+    name = "google_cloud_cpp_grpc_utils",
+    srcs = [
+        "google/cloud/completion_queue.cc",
+        "google/cloud/connection_options.cc",
+        "google/cloud/grpc_error_delegate.cc",
+        "google/cloud/grpc_options.cc",
+        "google/cloud/internal/async_connection_ready.cc",
+        "google/cloud/internal/async_polling_loop.cc",
+        "google/cloud/internal/background_threads_impl.cc",
+        "google/cloud/internal/debug_string_protobuf.cc",
+        "google/cloud/internal/debug_string_status.cc",
+        "google/cloud/internal/default_completion_queue_impl.cc",
+        "google/cloud/internal/extract_long_running_result.cc",
+    ] + glob(
+        ["google/cloud/internal/grpc_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
+        "google/cloud/internal/log_wrapper.cc",
+        "google/cloud/internal/minimal_iam_credentials_stub.cc",
+        "google/cloud/internal/populate_grpc_options.cc",
+        "google/cloud/internal/streaming_read_rpc.cc",
+        "google/cloud/internal/streaming_write_rpc_impl.cc",
+        "google/cloud/internal/time_utils.cc",
+        "google/cloud/internal/unified_grpc_credentials.cc",
+    ],
+    hdrs = [
+        "google/cloud/async_operation.h",
+        "google/cloud/async_streaming_read_write_rpc.h",
+        "google/cloud/background_threads.h",
+        "google/cloud/completion_queue.h",
+        "google/cloud/connection_options.h",
+        "google/cloud/grpc_error_delegate.h",
+        "google/cloud/grpc_options.h",
+        "google/cloud/iam_updater.h",
+        "google/cloud/internal/async_connection_ready.h",
+        "google/cloud/internal/async_long_running_operation.h",
+        "google/cloud/internal/async_polling_loop.h",
+        "google/cloud/internal/async_retry_loop.h",
+        "google/cloud/internal/async_retry_unary_rpc.h",
+        "google/cloud/internal/async_rpc_details.h",
+        "google/cloud/internal/background_threads_impl.h",
+        "google/cloud/internal/completion_queue_impl.h",
+        "google/cloud/internal/debug_string_protobuf.h",
+        "google/cloud/internal/debug_string_status.h",
+        "google/cloud/internal/default_completion_queue_impl.h",
+        "google/cloud/internal/extract_long_running_result.h",
+        "google/cloud/internal/grpc_access_token_authentication.h",
+        "google/cloud/internal/grpc_api_key_authentication.h",
+        "google/cloud/internal/grpc_async_access_token_cache.h",
+        "google/cloud/internal/grpc_channel_credentials_authentication.h",
+        "google/cloud/internal/grpc_impersonate_service_account.h",
+        "google/cloud/internal/grpc_metadata_view.h",
+        "google/cloud/internal/grpc_opentelemetry.h",
+        "google/cloud/internal/grpc_request_metadata.h",
+        "google/cloud/internal/grpc_service_account_authentication.h",
+        "google/cloud/internal/log_wrapper.h",
+        "google/cloud/internal/minimal_iam_credentials_stub.h",
+        "google/cloud/internal/populate_grpc_options.h",
+        "google/cloud/internal/resumable_streaming_read_rpc.h",
+        "google/cloud/internal/retry_loop.h",
+        "google/cloud/internal/routing_matcher.h",
+        "google/cloud/internal/setup_context.h",
+        "google/cloud/internal/streaming_write_rpc.h",
+        "google/cloud/internal/streaming_write_rpc_impl.h",
+        "google/cloud/internal/streaming_write_rpc_logging.h",
+        "google/cloud/internal/streaming_write_rpc_tracing.h",
+        "google/cloud/internal/time_utils.h",
+        "google/cloud/internal/unified_grpc_credentials.h",
+    ] + glob([
+        "google/cloud/internal/async_read_*.h",
+        "google/cloud/internal/async_streaming_*.h",
+        "google/cloud/internal/streaming_read_*.h",
+    ]) + [
+        "google/cloud/internal/disable_deprecation_warnings.inc",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    implementation_deps = [
+        "@clickhouse//bazel:google_rpc_error_details_cc_proto",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        ".",
+        "config/contrib/google-cloud-cpp-cmake",
+    ],
+    deps = [
+        ":google_cloud_cpp_common",
+        ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:grpc++",
+        "@clickhouse//bazel:google_iam_v1_policy_cc_proto",
+        "@clickhouse//bazel:google_longrunning_operations_cc_proto",
+        "@clickhouse//bazel:google_rpc_status_cc_proto",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_variant",
+    ],
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_iam_credentials_v1_common_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_iam_credentials_v1_common_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_iam_credentials_v1_iamcredentials_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_iam_v1_iam_policy_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_iam_v1_iam_policy_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_iam_v1_options_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_iam_v1_options_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_iam_v1_policy_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_iam_v1_policy_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_longrunning_operations_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_longrunning_operations_proto",
+)
+
+ch_cc_library(
+    name = "google_cloud_cpp_rest_internal",
+    srcs = [
+        "google/cloud/internal/binary_data_as_debug_string.cc",
+        "google/cloud/internal/external_account_source_format.cc",
+        "google/cloud/internal/external_account_token_source_aws.cc",
+        "google/cloud/internal/external_account_token_source_file.cc",
+        "google/cloud/internal/external_account_token_source_url.cc",
+        "google/cloud/internal/json_parsing.cc",
+        "google/cloud/internal/make_jwt_assertion.cc",
+    ] + glob(
+        ["google/cloud/internal/oauth2_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
+        "google/cloud/internal/openssl/parse_service_account_p12_file.cc",
+        "google/cloud/internal/openssl/sign_using_sha256.cc",
+        "google/cloud/internal/populate_rest_options.cc",
+        "google/cloud/internal/rest_carrier.cc",
+        "google/cloud/internal/rest_context.cc",
+        "google/cloud/internal/rest_lro_helpers.cc",
+        "google/cloud/internal/rest_opentelemetry.cc",
+        "google/cloud/internal/rest_parse_json_error.cc",
+        "google/cloud/internal/rest_request.cc",
+        "google/cloud/internal/rest_response.cc",
+        "google/cloud/internal/rest_set_metadata.cc",
+        "google/cloud/internal/tracing_http_payload.cc",
+        "google/cloud/internal/tracing_rest_client.cc",
+        "google/cloud/internal/tracing_rest_response.cc",
+        "google/cloud/internal/unified_rest_credentials.cc",
+        "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
+    ],
+    hdrs = [
+        "google/cloud/internal/binary_data_as_debug_string.h",
+        "google/cloud/internal/curl_handle_factory.h",
+        "google/cloud/internal/curl_options.h",
+        "google/cloud/internal/curl_wrappers.h",
+        "google/cloud/internal/http_payload.h",
+        "google/cloud/internal/json_parsing.h",
+        "google/cloud/internal/make_jwt_assertion.h",
+        "google/cloud/internal/oauth2_access_token_credentials.h",
+        "google/cloud/internal/oauth2_anonymous_credentials.h",
+        "google/cloud/internal/oauth2_api_key_credentials.h",
+        "google/cloud/internal/oauth2_authorized_user_credentials.h",
+        "google/cloud/internal/oauth2_cached_credentials.h",
+        "google/cloud/internal/oauth2_compute_engine_credentials.h",
+        "google/cloud/internal/oauth2_credential_constants.h",
+        "google/cloud/internal/oauth2_credentials.h",
+        "google/cloud/internal/oauth2_decorate_credentials.h",
+        "google/cloud/internal/oauth2_error_credentials.h",
+        "google/cloud/internal/oauth2_external_account_credentials.h",
+        "google/cloud/internal/oauth2_external_account_token_source.h",
+        "google/cloud/internal/oauth2_google_application_default_credentials_file.h",
+        "google/cloud/internal/oauth2_google_credentials.h",
+        "google/cloud/internal/oauth2_http_client_factory.h",
+        "google/cloud/internal/oauth2_impersonate_service_account_credentials.h",
+        "google/cloud/internal/oauth2_logging_credentials.h",
+        "google/cloud/internal/oauth2_minimal_iam_credentials_rest.h",
+        "google/cloud/internal/oauth2_refreshing_credentials_wrapper.h",
+        "google/cloud/internal/oauth2_service_account_credentials.h",
+        "google/cloud/internal/oauth2_universe_domain.h",
+        "google/cloud/internal/parse_service_account_p12_file.h",
+        "google/cloud/internal/percent_encode.h",
+        "google/cloud/internal/populate_rest_options.h",
+        "google/cloud/internal/rest_carrier.h",
+        "google/cloud/internal/rest_client.h",
+        "google/cloud/internal/rest_context.h",
+        "google/cloud/internal/rest_lro_helpers.h",
+        "google/cloud/internal/rest_opentelemetry.h",
+        "google/cloud/internal/rest_options.h",
+        "google/cloud/internal/rest_parse_json_error.h",
+        "google/cloud/internal/rest_request.h",
+        "google/cloud/internal/rest_response.h",
+        "google/cloud/internal/rest_retry_loop.h",
+        "google/cloud/internal/rest_set_metadata.h",
+        "google/cloud/internal/sign_using_sha256.h",
+        "google/cloud/internal/unified_rest_credentials.h",
+        "google/cloud/rest_options.h",
+    ] + glob([
+        "google/cloud/internal/external_*.h",
+        "google/cloud/internal/tracing_*.h",
+    ]),
+    copts = _GENERATED_COPTS_1,
+    implementation_deps = [
+        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "@clickhouse//base/poco/Foundation:_poco_foundation",
+        "@clickhouse//base/poco/Net:_poco_net",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_openssl//:crypto",
+    ],
+    local_defines = [
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        ":google_cloud_cpp_common",
+        "@clickhouse_nlohmann_json//:nlohmann_json",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_span",
+    ],
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_rpc_code_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_code_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_rpc_context_attribute_context_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_context_attribute_context_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_rpc_error_details_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_error_details_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_rpc_status_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_rpc_status_proto",
+)
+
+ch_cc_library(
+    name = "google_cloud_cpp_storage",
+    srcs = [
+        "google/cloud/storage/auto_finalize.cc",
+    ] + glob(
+        ["google/cloud/storage/bucket_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
+        "google/cloud/storage/client.cc",
+        "google/cloud/storage/client_options.cc",
+        "google/cloud/storage/hashing_options.cc",
+        "google/cloud/storage/hmac_key_metadata.cc",
+        "google/cloud/storage/iam_policy.cc",
+        "google/cloud/storage/idempotency_policy.cc",
+        "google/cloud/storage/internal/access_control_common_parser.cc",
+        "google/cloud/storage/internal/access_token_credentials.cc",
+        "google/cloud/storage/internal/base64.cc",
+        "google/cloud/storage/internal/bucket_access_control_parser.cc",
+        "google/cloud/storage/internal/bucket_acl_requests.cc",
+        "google/cloud/storage/internal/bucket_metadata_parser.cc",
+        "google/cloud/storage/internal/bucket_requests.cc",
+        "google/cloud/storage/internal/compute_engine_util.cc",
+        "google/cloud/storage/internal/connection_factory.cc",
+        "google/cloud/storage/internal/connection_impl.cc",
+        "google/cloud/storage/internal/const_buffer.cc",
+        "google/cloud/storage/internal/crc32c.cc",
+        "google/cloud/storage/internal/default_object_acl_requests.cc",
+        "google/cloud/storage/internal/empty_response.cc",
+        "google/cloud/storage/internal/error_credentials.cc",
+        "google/cloud/storage/internal/generate_message_boundary.cc",
+        "google/cloud/storage/internal/generic_stub_adapter.cc",
+        "google/cloud/storage/internal/generic_stub_factory.cc",
+        "google/cloud/storage/internal/hash_function.cc",
+        "google/cloud/storage/internal/hash_function_impl.cc",
+        "google/cloud/storage/internal/hash_validator.cc",
+        "google/cloud/storage/internal/hash_validator_impl.cc",
+        "google/cloud/storage/internal/hash_values.cc",
+        "google/cloud/storage/internal/hmac_key_metadata_parser.cc",
+        "google/cloud/storage/internal/hmac_key_requests.cc",
+        "google/cloud/storage/internal/http_response.cc",
+        "google/cloud/storage/internal/impersonate_service_account_credentials.cc",
+        "google/cloud/storage/internal/lifecycle_rule_parser.cc",
+        "google/cloud/storage/internal/logging_stub.cc",
+        "google/cloud/storage/internal/make_jwt_assertion.cc",
+        "google/cloud/storage/internal/md5hash.cc",
+        "google/cloud/storage/internal/metadata_parser.cc",
+        "google/cloud/storage/internal/notification_metadata_parser.cc",
+        "google/cloud/storage/internal/notification_requests.cc",
+    ] + glob(
+        ["google/cloud/storage/internal/object_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
+        "google/cloud/storage/internal/openssl/hash_function_impl.cc",
+        "google/cloud/storage/internal/patch_builder.cc",
+        "google/cloud/storage/internal/patch_builder_details.cc",
+        "google/cloud/storage/internal/policy_document_request.cc",
+        "google/cloud/storage/internal/request_project_id.cc",
+        "google/cloud/storage/internal/rest/object_read_source.cc",
+        "google/cloud/storage/internal/rest/request_builder.cc",
+        "google/cloud/storage/internal/rest/stub.cc",
+        "google/cloud/storage/internal/retry_object_read_source.cc",
+        "google/cloud/storage/internal/service_account_parser.cc",
+        "google/cloud/storage/internal/service_account_requests.cc",
+        "google/cloud/storage/internal/sign_blob_requests.cc",
+        "google/cloud/storage/internal/signed_url_requests.cc",
+        "google/cloud/storage/internal/storage_connection.cc",
+        "google/cloud/storage/internal/tracing_connection.cc",
+        "google/cloud/storage/internal/tracing_object_read_source.cc",
+        "google/cloud/storage/internal/unified_rest_credentials.cc",
+        "google/cloud/storage/lifecycle_rule.cc",
+    ] + glob(["google/cloud/storage/*_reader.cc"]) + [
+        "google/cloud/storage/notification_metadata.cc",
+    ] + glob(
+        ["google/cloud/storage/oauth2/*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + glob(
+        ["google/cloud/storage/object_*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
+        "google/cloud/storage/parallel_upload.cc",
+        "google/cloud/storage/policy_document.cc",
+        "google/cloud/storage/service_account.cc",
+        "google/cloud/storage/version.cc",
+        "google/cloud/storage/well_known_headers.cc",
+        "google/cloud/storage/well_known_parameters.cc",
+    ],
+    hdrs = glob(
+        [
+            "google/cloud/storage/*.h",
+            "google/cloud/storage/oauth2/*.h",
+            "google/cloud/storage/internal/*.h",
+            "google/cloud/storage/internal/rest/*.h",
+            "google/cloud/storage/internal/curl/*.h",
+        ],
+        exclude = [
+            "google/cloud/storage/grpc_plugin.h",
+            "google/cloud/storage/internal/storage_*decorator.h",
+            "google/cloud/storage/internal/storage_stub*.h",
+            "google/cloud/storage/internal/storage_tracing_stub.h",
+        ],
+    ),
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+    ],
+    implementation_deps = [
+        "@clickhouse_crc32c//:_crc32c",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_crc32c",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_openssl//:crypto",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        ":google_cloud_cpp_grpc_utils",
+        ":google_cloud_cpp_rest_internal",
+        ":google_cloud_cpp_common",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_variant",
+        "@clickhouse_nlohmann_json//:nlohmann_json",
+    ],
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_storage_protos",
+    copts = _GENERATED_COPTS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_storage_v2_storage_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_calendar_period_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_calendar_period_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_color_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_color_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_date_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_date_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_datetime_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_datetime_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_dayofweek_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_dayofweek_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_decimal_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_decimal_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_expr_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_expr_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_fraction_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_fraction_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_interval_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_interval_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_latlng_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_latlng_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_localized_text_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_localized_text_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_money_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_money_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_month_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_month_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_phone_number_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_phone_number_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_postal_address_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_postal_address_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_quaternion_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_quaternion_proto",
+)
+
+ch_grpc_cc_library(
+    name = "google_cloud_cpp_type_timeofday_protos",
+    copts = _GOOGLE_CLOUD_CPP_COPTS,
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    proto = "@clickhouse//bazel:google_type_timeofday_proto",
+)

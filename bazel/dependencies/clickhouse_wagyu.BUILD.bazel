@@ -1,0 +1,16 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "wagyu",
+    hdrs = glob(["include/mapbox/geometry/wagyu/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
+    deps = ["@clickhouse_mapbox_geometry//:mapbox_geometry"],
+)

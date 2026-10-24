@@ -1,0 +1,1265 @@
+diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
+@@ -1,7 +1,6 @@
+ load("@bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+ load("@bazel_skylib//lib:selects.bzl", "selects")
+ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+-load("@bazel_skylib//rules:write_file.bzl", "write_file")
+ load("@llvm//3rd_party/llvm-project/21.x/libcxx:libcxx_headers.bzl", "LIBCXX_HEADERS_FILES_21")
+ load("@llvm//3rd_party/llvm-project/22.x/libcxx:libcxx_headers.bzl", "LIBCXX_HEADERS_FILES_22")
+ load("@llvm//3rd_party/llvm-project/23.x/libcxx:libcxx_headers.bzl", "LIBCXX_HEADERS_FILES_23")
+@@ -41,102 +40,6 @@
+     visibility = ["//visibility:public"],
+ )
+ 
+-_CONFIG_SITE_MUSL_LINES = [
+-    "#define _LIBCPP_HAS_MUSL_LIBC 1",
+-]
+-
+-_CONFIG_SITE_NO_MUSL_LINES = [
+-    "#define _LIBCPP_HAS_MUSL_LIBC 0",
+-]
+-
+-_CONFIG_SITE_THREAD_API_WIN32_LINES = [
+-    "#define _LIBCPP_HAS_THREAD_API_PTHREAD 0",
+-    "#define _LIBCPP_HAS_THREAD_API_WIN32   1",
+-]
+-
+-_CONFIG_SITE_THREAD_API_PTHREAD_LINES = [
+-    "#define _LIBCPP_HAS_THREAD_API_PTHREAD 1",
+-    "#define _LIBCPP_HAS_THREAD_API_WIN32   0",
+-]
+-
+-_CONFIG_SITE_WINDOWS_MSVC_STATIC_LIBCXX_LINES = [
+-    "#define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+-    # Bazel owns C++ runtime selection. Do not inject libc++.lib through
+-    # COFF .drectve sections emitted by every libc++ consumer object.
+-    "#define _LIBCPP_NO_AUTO_LINK",
+-]
+-
+-_CONFIG_SITE_PREAMBLE_LINES = [
+-    "// Generated from this LLVM line's libcxx/include/__config_site.in.",
+-    "#ifndef _LIBCPP___CONFIG_SITE",
+-    "#define _LIBCPP___CONFIG_SITE",
+-]
+-
+-_CONFIG_SITE_POSTAMBLE_LINES = [
+-    "#endif // _LIBCPP___CONFIG_SITE",
+-]
+-
+-_CONFIG_SITE_ABI_MSVC_LINES = [
+-    "#define _LIBCPP_ABI_FORCE_ITANIUM       0",
+-    "#define _LIBCPP_ABI_FORCE_MICROSOFT     1",
+-    "#define _LIBCPP_HAS_TIME_ZONE_DATABASE  0",
+-]
+-
+-_CONFIG_SITE_ABI_DEFAULT_LINES = [
+-    "#define _LIBCPP_ABI_FORCE_ITANIUM       0",
+-    "#define _LIBCPP_ABI_FORCE_MICROSOFT     0",
+-    "#define _LIBCPP_HAS_TIME_ZONE_DATABASE  1",
+-]
+-
+-_CONFIG_SITE_LLVM_LINE_LINES = ([
+-    "// LLVM 23 libcxx/include/__config_site.in contract.",
+-    "#define _LIBCPP_HAS_THREAD_API_C11      0",
+-    "#define _LIBCPP_ASSERTION_SEMANTIC_DEFAULT 2",
+-    "#define _LIBCPP_LIBC_PICOLIBC 0",
+-    "#define _LIBCPP_LIBC_NEWLIB 0",
+-    "#define _LIBCPP_LIBC_LLVM_LIBC 0",
+-] if int(LLVM_VERSION_MAJOR) >= 23 else [
+-    "// LLVM 22 libcxx/include/__config_site.in contract.",
+-    "#define _LIBCPP_HAS_TERMINAL            1",
+-    "#define _LIBCPP_HAS_THREAD_API_C11      0",
+-    "#define _LIBCPP_ASSERTION_SEMANTIC_DEFAULT 2",
+-    "#define _LIBCPP_LIBC_PICOLIBC 0",
+-    "#define _LIBCPP_LIBC_NEWLIB 0",
+-] if int(LLVM_VERSION_MAJOR) >= 22 else [
+-    "// LLVM 21 libcxx/include/__config_site.in contract.",
+-    "#define _LIBCPP_HAS_TERMINAL            1",
+-    "#define _LIBCPP_HAS_THREAD_API_C11      0",
+-])
+-
+-_CONFIG_SITE_GENERIC_LINES = [
+-    "#define _LIBCPP_ABI_VERSION             1",
+-    "#ifndef _LIBCPP_ABI_NAMESPACE",
+-    "#define _LIBCPP_ABI_NAMESPACE           __1",
+-    "#endif",
+-    "#define _LIBCPP_HAS_THREADS             1 // TODO: Handle no threads",
+-    "#define _LIBCPP_HAS_MONOTONIC_CLOCK     1",
+-    "#define _LIBCPP_HAS_THREAD_API_EXTERNAL 0",
+-    "// #define _LIBCPP_NO_VCRUNTIME",
+-    "// #define _LIBCPP_TYPEINFO_COMPARISON_IMPLEMENTATION @_LIBCPP_TYPEINFO_COMPARISON_IMPLEMENTATION@",
+-    "#define _LIBCPP_HAS_FILESYSTEM          1",
+-    "#define _LIBCPP_HAS_RANDOM_DEVICE       1",
+-    "#define _LIBCPP_HAS_LOCALIZATION        1",
+-    "#define _LIBCPP_HAS_UNICODE             1",
+-    "#define _LIBCPP_HAS_WIDE_CHARACTERS     1",
+-    "#define _LIBCPP_HAS_STD_MODULES         0",
+-    "#define _LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS 0",
+-    "#define _LIBCPP_INSTRUMENTED_WITH_ASAN  __has_feature(address_sanitizer)",
+-    "",
+-    "#define _LIBCPP_PSTL_BACKEND_SERIAL",
+-    "// #define _LIBCPP_PSTL_BACKEND_STD_THREAD",
+-    "// #define _LIBCPP_PSTL_BACKEND_LIBDISPATCH",
+-    "",
+-    "# // Hardening.",
+-    "#define _LIBCPP_HARDENING_MODE_DEFAULT _LIBCPP_HARDENING_MODE_NONE",
+-    "",
+-    "// \"_LIBCPP_HAS_NO_LIBRARY_ALIGNED_ALLOCATION\", # GLIBC < 2.16",
+-]
+-
+ selects.config_setting_group(
+     name = "windows_static",
+     match_all = [
+@@ -169,41 +72,17 @@
+     ],
+ )
+ 
+-write_file(
++# ClickHouse keeps its ABI and assertion configuration in the LLVM fork.
++filegroup(
+     name = "__config_site",
+-    out = "include/__config_site",
+-    content = _CONFIG_SITE_PREAMBLE_LINES +
+-              _CONFIG_SITE_GENERIC_LINES +
+-              _CONFIG_SITE_LLVM_LINE_LINES +
+-              select({
+-                  ":windows_msvc": _CONFIG_SITE_ABI_MSVC_LINES,
+-                  "//conditions:default": _CONFIG_SITE_ABI_DEFAULT_LINES,
+-              }) +
+-              select({
+-                  # The supported Windows MSVC route is configuration-wide
+-                  # static libc++, including for ordinary /MD consumers.
+-                  # Public headers are configured outside the runtime build's
+-                  # linkmode transition, so encode that route contract here.
+-                  ":windows_msvc": _CONFIG_SITE_WINDOWS_MSVC_STATIC_LIBCXX_LINES,
+-                  "//conditions:default": [],
+-              }) +
+-              select({
+-                  "@llvm//constraints/libc:musl": _CONFIG_SITE_MUSL_LINES,
+-                  "//conditions:default": _CONFIG_SITE_NO_MUSL_LINES,
+-              }) +
+-              select({
+-                  "@platforms//os:windows": _CONFIG_SITE_THREAD_API_WIN32_LINES,
+-                  "//conditions:default": _CONFIG_SITE_THREAD_API_PTHREAD_LINES,
+-              }) +
+-              _CONFIG_SITE_POSTAMBLE_LINES,
+-    visibility = ["//visibility:public"],
+-)
+-
+-copy_file(
++    srcs = ["include/__config_site"],
++    visibility = ["//visibility:public"],
++)
++
++filegroup(
+     name = "__assertion_handler",
+-    src = "vendor/llvm/default_assertion_handler.in",
+-    out = "include/__assertion_handler",
+-    allow_symlink = True,
++    srcs = ["include/__assertion_handler"],
++    visibility = ["//visibility:public"],
+ )
+ 
+ copy_to_directory(
+@@ -227,21 +106,46 @@
+         ":__config_site",
+         ":libcxx_headers_files",
+     ],
+-    includes = [
+-        "generated_headers",
+-        "include",
+-        "src",
+-    ],
+-    visibility = ["//visibility:public"],
+-)
+-
+-filegroup(
+-    name = "textual_hdrs",
+-    srcs = glob([
+-        "src/**/*.h",
+-        "src/**/*.ipp",
+-    ]),
+-    visibility = ["//visibility:public"],
++    # The complete Linux toolchain owns public C++ headers. Searching both
++    # copies makes include_next find another C++ wrapper instead of libc.
++    # Bootstrap runtimes still need their source and generated headers.
++    includes = select({
++        "@llvm//toolchain:linux_complete": ["src"],
++        "//conditions:default": [
++            "generated_headers",
++            "include",
++            "src",
++        ],
++    }),
++    visibility = ["//visibility:public"],
++    deps = select({
++        "@llvm//platforms/config:gnu": ["@glibc//:gnu_libc_headers"],
++        "//conditions:default": [],
++    }),
++)
++
++_ABI_SUPPORT_HEADERS = [
++    "src/include/aligned_alloc.h",
++    "src/include/atomic_support.h",
++    "src/include/overridable_function.h",
++    "src/include/refstring.h",
++]
++
++cc_library(
++    name = "abi_support",
++    hdrs = _ABI_SUPPORT_HEADERS,
++    # libc++ uses system_header in these real headers; Clang warns when a
++    # compiler consumer preprocesses a header as the primary input.
++    copts = ["-Wno-error=pragma-system-header-outside-header"],
++    includes = ["src"],
++    visibility = [
++        "//libcxx:__pkg__",
++        "//libcxxabi:__pkg__",
++    ],
++    deps = select({
++        "@llvm//toolchain:linux_complete": [],
++        "//conditions:default": [":headers"],
++    }),
+ )
+ 
+ cc_library(
+@@ -263,9 +167,7 @@
+         "src/filesystem/path.cpp",
+         "src/functional.cpp",
+         "src/hash.cpp",
+-        "src/include/atomic_support.h",
+         "src/include/config_elast.h",
+-        "src/include/refstring.h",
+         "src/include/ryu/common.h",
+         "src/include/ryu/d2fixed.h",
+         "src/include/ryu/d2fixed_full_table.h",
+@@ -432,6 +334,7 @@
+     implementation_deps = [
+         # Order matter. Search path should have C++ headers before any lib C headers.
+         "@llvm-project//libcxx:headers",
++        ":abi_support",
+     ] + select({
+         ":windows_msvc": [],
+         "//conditions:default": ["@llvm-project//libcxxabi:headers"],
+@@ -467,10 +370,13 @@
+         ],
+         "//conditions:default": [],
+     }),
+-    includes = [
+-        "include",
+-        "src",
+-    ],
++    includes = select({
++        "@llvm//toolchain:linux_complete": ["src"],
++        "//conditions:default": [
++            "include",
++            "src",
++        ],
++    }),
+     # The MSVC route exposes only the purpose-built static libc++ archive.
+     # Generic routes retain the cc_library default so the shared-runtime rule
+     # can preserve the pre-MSVC implementation graph.
+@@ -479,7 +385,7 @@
+         "//conditions:default": False,
+     }),
+     local_defines = [
+-        "LIBC_NAMESPACE=__llvm_libc_common_utils",
++        "LIBC_NAMESPACE=__llvm_libc",
+         "_LIBCPP_BUILDING_LIBRARY",
+         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
+         "_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER",
+@@ -506,11 +412,11 @@
+     textual_hdrs = glob([
+         "src/**/*.h",
+         "src/**/*.ipp",
+-    ]) + select({
++    ], exclude = _ABI_SUPPORT_HEADERS) + select({
+         ":windows_msvc": [],
+         "//conditions:default": ["@llvm-project//libcxxabi:textual_hdrs"],
+     }),
+-    visibility = ["//compiler-rt:__pkg__"],
++    visibility = ["//visibility:public"],
+ )
+ 
+ cc_runtime_stage0_asan_static_library(
+diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
+@@ -5,6 +5,7 @@
+
+ cc_library(
+     name = "headers",
++    features = ["external_include_paths"],
+     hdrs = glob([
+         "include/**",
+     ]),
+@@ -66,6 +67,7 @@
+     #     "src/*.h"
+     # ]),
+     srcs = [
++        "src/clickhouse-unwind-override.c",
+         "src/libunwind.cpp",
+         "src/Unwind-EHABI.cpp",
+         "src/Unwind-seh.cpp",
+@@ -148,6 +150,8 @@
+         # build for the target specified by compiler defines. Since we pass -target the compiler
+         # defines will be correct.
+         "_LIBUNWIND_IS_NATIVE_ONLY",
++        "_LIBUNWIND_NO_HEAP=1",
++        "_LIBUNWIND_REMEMBER_STACK_ALLOC=1",
+         "_NDEBUG",
+         # "_LIBUNWIND_HAS_NO_THREADS", # ANY_NON_SINGLE_THREADED
+         # "_DCOMPILER_RT_ARMHF_TARGET", # ARM
+diff --git a/toolchain/features/BUILD.bazel b/toolchain/features/BUILD.bazel
+--- a/toolchain/features/BUILD.bazel
++++ b/toolchain/features/BUILD.bazel
+@@ -5,6 +5,10 @@
+ load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_args_list")
+
+ package(default_visibility = ["//visibility:public"])
++
++cc_feature(name = "fortify_source", feature_name = "fortify_source")
++cc_feature(name = "llvm_system_c_headers", feature_name = "llvm_system_c_headers")
++cc_feature(name = "skip_virtual_includes", feature_name = "skip_virtual_includes")
+
+ _DEBUG_INFO_COMPILE_ACTIONS = [
+     "@rules_cc//cc/toolchains/actions:c_compile",
+@@ -229,6 +233,7 @@
+
+ cc_args(
+     name = "opt_fortify",
++    requires_any_of = [":fortify_source"],
+     actions = _CONFIGURATION_COMPILE_ACTIONS,
+     args = select({
+         # VCRuntime provides its own checked-runtime policy; _FORTIFY_SOURCE is
+diff --git a/toolchain/cc_toolchain.bzl b/toolchain/cc_toolchain.bzl
+--- a/toolchain/cc_toolchain.bzl
++++ b/toolchain/cc_toolchain.bzl
+@@ -314,8 +314,8 @@
+             ],
+             "//conditions:default": [],
+         }),
+-        known_features = [name + "_selected_known_features"],
+-        enabled_features = [name + "_selected_enabled_features"],
++        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers", "@llvm//toolchain/features:skip_virtual_includes"],
++        enabled_features = [name + "_selected_enabled_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers"],
+         tool_map = tool_map,
+         module_map = module_map,
+         static_runtime_lib = name + "_static_runtime_lib",
+diff --git a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel b/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
+@@ -143,13 +143,15 @@
+             "src/__support/wctype_utils.h",
+         ] if int(LLVM_VERSION_MAJOR) >= 22 else []
+     ),
+-    includes = [
+-        ".",
+-    ],
++    # Export only the materialized header tree, without a nonexistent generated root.
++    strip_include_prefix = ".",
+     visibility = ["//visibility:public"],
+     deps = [
+         "@llvm-project//compiler-rt:sanitizers_interface_headers",
+-    ],
++    ] + select({
++        "@llvm//platforms/config:gnu": ["@glibc//:gnu_libc_headers"],
++        "//conditions:default": [],
++    }),
+ )
+ 
+ cc_library(
+@@ -164,3 +166,139 @@
+     includes = ["."],
+     visibility = ["//visibility:public"],
+ )
++
++# ClickHouse supplies selected libc math and memory implementations as part of
++# its executable. Keep the same source list and definitions as
++# contrib/libllvmlibc-cmake/CMakeLists.txt; the module otherwise builds headers only.
++filegroup(
++    name = "clickhouse_math_headers",
++    srcs = glob(["hdr/**", "src/**/*.h", "include/**/*.h", "shared/**/*.h"]),
++)
++filegroup(
++    name = "clickhouse_memory_sources",
++    srcs = glob(["src/string/*.cpp", "src/strings/*.cpp"]),
++)
++cc_library(
++    name = "clickhouse_math",
++    srcs = [
++        "src/string/clickhouse-mem-functions.cpp",
++        "src/math/generic/acos.cpp",
++        "src/math/generic/asin.cpp",
++        "src/math/generic/asinf.cpp",
++        "src/math/generic/atan.cpp",
++        "src/math/generic/atan2.cpp",
++        "src/math/generic/cbrt.cpp",
++        "src/math/generic/ceill.cpp",
++        "src/math/generic/copysignl.cpp",
++        "src/math/generic/cos.cpp",
++        "src/math/generic/exp.cpp",
++        "src/math/generic/exp2.cpp",
++        "src/math/generic/expm1.cpp",
++        "src/math/generic/fabs.cpp",
++        "src/math/generic/fabsl.cpp",
++        "src/math/generic/floor.cpp",
++        "src/math/generic/floorl.cpp",
++        "src/math/generic/fma.cpp",
++        "src/math/generic/fmod.cpp",
++        "src/math/generic/fmodl.cpp",
++        "src/math/generic/frexp.cpp",
++        "src/math/generic/frexpl.cpp",
++        "src/math/generic/ldexp.cpp",
++        "src/math/generic/ldexpf.cpp",
++        "src/math/generic/ldexpl.cpp",
++        "src/math/generic/llround.cpp",
++        "src/math/generic/log.cpp",
++        "src/math/generic/log10.cpp",
++        "src/math/generic/log1p.cpp",
++        "src/math/generic/log2.cpp",
++        "src/math/generic/logf.cpp",
++        "src/math/generic/lround.cpp",
++        "src/math/generic/modf.cpp",
++        "src/math/generic/nan.cpp",
++        "src/math/generic/nanf.cpp",
++        "src/math/generic/nanl.cpp",
++        "src/math/generic/nextafter.cpp",
++        "src/math/generic/pow.cpp",
++        "src/math/generic/scalbn.cpp",
++        "src/math/generic/scalbnl.cpp",
++        "src/math/generic/sin.cpp",
++        "src/math/generic/sqrt.cpp",
++        "src/math/generic/sqrtf.cpp",
++        "src/math/generic/sqrtl.cpp",
++        "src/math/generic/tan.cpp",
++        "src/math/generic/truncl.cpp",
++        "src/string/clickhouse-memmem.cpp",
++    ],
++    hdrs = [
++        ":clickhouse_math_headers",
++    ],
++    textual_hdrs = [
++        ":clickhouse_memory_sources",
++    ],
++    includes = [
++        ".",
++    ],
++    copts = [
++        "-std=c++23",
++        "-O3",
++        "-ffreestanding",
++        "-fno-builtin",
++        "-ffp-contract=off",
++        "-fno-math-errno",
++        "-ffunction-sections",
++        "-fdata-sections",
++    ] + select({
++        "@platforms//cpu:x86_64": ["-march=x86-64-v3", "-mpclmul"],
++        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
++    }),
++    local_defines = select({
++        "@platforms//cpu:x86_64": [
++            "LIBC_COPT_PUBLIC_PACKAGING=1",
++            "LIBC_ERRNO_MODE=6",
++            "LIBC_MATH_HAS_NO_ERRNO=1",
++            "LIBC_MATH_HAS_NO_EXCEPT=1",
++            "LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1",
++            "LIBC_NAMESPACE=__llvm_libc",
++            "LIBC_TARGET_CPU_HAS_AVX2=1",
++            "LIBC_TARGET_CPU_HAS_AVX=1",
++            "LIBC_TARGET_CPU_HAS_FMA=1",
++            "LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1",
++            "LIBC_TARGET_CPU_HAS_FMA_FLOAT=1",
++            "LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1",
++            "LIBC_TARGET_CPU_HAS_FPU_FLOAT=1",
++            "LIBC_TARGET_CPU_HAS_NEAREST_INT=1",
++            "LIBC_TARGET_CPU_HAS_SSE2=1",
++            "LIBC_TARGET_CPU_HAS_SSE4_2=1",
++            "STD_EXCEPTION_HAS_STACK_TRACE=1",
++            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
++            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
++            "_LIBUNWIND_IS_NATIVE_ONLY",
++        ],
++        "@platforms//cpu:aarch64": [
++            "LIBC_COPT_PUBLIC_PACKAGING=1",
++            "LIBC_ERRNO_MODE=6",
++            "LIBC_MATH_HAS_NO_ERRNO=1",
++            "LIBC_MATH_HAS_NO_EXCEPT=1",
++            "LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1",
++            "LIBC_NAMESPACE=__llvm_libc",
++            "LIBC_TARGET_CPU_HAS_FAST_FLOAT16_OPS=1",
++            "LIBC_TARGET_CPU_HAS_FMA=1",
++            "LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1",
++            "LIBC_TARGET_CPU_HAS_FMA_FLOAT=1",
++            "LIBC_TARGET_CPU_HAS_FMA_HALF=1",
++            "LIBC_TARGET_CPU_HAS_FULLFP16=1",
++            "LIBC_TARGET_CPU_HAS_NEAREST_INT=1",
++            "STD_EXCEPTION_HAS_STACK_TRACE=1",
++            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
++            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
++            "_LIBUNWIND_IS_NATIVE_ONLY",
++        ],
++    }),
++    alwayslink = True,
++    features = [
++        "-fortify_source",
++    ],
++    visibility = [
++        "//visibility:public",
++    ],
++)
+diff --git a/private/llvm_project_common.bzl b/private/llvm_project_common.bzl
+--- a/private/llvm_project_common.bzl
++++ b/private/llvm_project_common.bzl
+@@ -89,6 +89,8 @@
+     rctx.file("BUILD.bazel", """\
+ load("@bazel_lib//:bzl_library.bzl", "bzl_library")
+
++exports_files(["LICENSE.TXT"])
++
+ bzl_library(
+     name = "version",
+     srcs = ["vars.bzl"],
+diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
+@@ -63,6 +63,14 @@
+ filegroup(
+     name = "msan_ignorelist",
+     srcs = ["lib/msan/msan_ignorelist.txt"],
++    visibility = ["//visibility:public"],
++)
++
++cc_library(
++    name = "headers",
++    features = ["external_include_paths"],
++    hdrs = glob(["include/**/*.h", "include/**/*.inc"]),
++    includes = ["include"],
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -107,6 +115,7 @@
+     "lib/builtins/divsi3.c",
+     "lib/builtins/divti3.c",
+     "lib/builtins/extendsfdf2.c",
++    "lib/builtins/extendhfdf2.c",
+     "lib/builtins/extendhfsf2.c",
+     "lib/builtins/ffsdi2.c",
+     "lib/builtins/ffssi2.c",
+@@ -287,6 +296,7 @@
+     name = "builtins_x86_80_bit_sources",
+     srcs = [
+         "lib/builtins/divxc3.c",
++        "lib/builtins/extendhfxf2.c",
+         "lib/builtins/extendxftf2.c",
+         "lib/builtins/fixunsxfdi.c",
+         "lib/builtins/fixunsxfsi.c",
+@@ -300,6 +310,7 @@
+         "lib/builtins/mulxc3.c",
+         "lib/builtins/powixf2.c",
+         "lib/builtins/trunctfxf2.c",
++        "lib/builtins/truncxfhf2.c",
+     ],
+ )
+ 
+@@ -564,6 +575,7 @@
+ 
+ cc_library(
+     name = "builtins",
++    alwayslink = True,
+     srcs = select(
+         {
+             "@platforms//cpu:x86_64": [":builtins_x86_64_sources"],
+@@ -597,6 +609,7 @@
+         ],
+         "@platforms//cpu:armv7": [
+             "lib/builtins/arm/sync-ops.h",
++            "lib/builtins/unwind-ehabi-helpers.h",
+         ],
+         "@platforms//cpu:riscv64": [
+             "lib/builtins/cpu_model/riscv.h",
+@@ -615,6 +628,54 @@
+             ":builtins_bf16_sources",
+         ],
+         "//conditions:default": [],
++    }) + [
++        "lib/builtins/fp_add_impl.inc",
++        "lib/builtins/fp_compare_impl.inc",
++        "lib/builtins/fp_div_impl.inc",
++        "lib/builtins/fp_extend_impl.inc",
++        "lib/builtins/fp_fixint_impl.inc",
++        "lib/builtins/fp_fixuint_impl.inc",
++        "lib/builtins/fp_mul_impl.inc",
++        "lib/builtins/fp_trunc_impl.inc",
++        "lib/builtins/int_div_impl.inc",
++        "lib/builtins/int_mulo_impl.inc",
++        "lib/builtins/int_mulv_impl.inc",
++        "lib/builtins/int_to_fp_impl.inc",
++        "lib/builtins/cpu_model/cpu_model.h",
++    ] + select({
++        "@platforms//cpu:aarch64": [
++            "lib/builtins/cpu_model/AArch64CPUFeatures.inc",
++            "lib/builtins/cpu_model/aarch64/hwcap.inc",
++            # "lib/builtins/cpu_model/aarch64/lse_atomics/atomic_helper.inc",
++            "lib/builtins/cpu_model/aarch64/lse_atomics/getauxval.inc",
++        ],
++        "@platforms//cpu:riscv64": [
++            "lib/builtins/riscv/int_mul_impl.inc",
++        ] + ([
++            "lib/builtins/cpu_model/riscv/hwprobe.inc",
++            "lib/builtins/cpu_model/riscv/unimplemented.inc",
++        ] if int(LLVM_VERSION_MAJOR) >= 23 else []),
++        "//conditions:default": [],
++    }) + select({
++        "@llvm//platforms/config:windows_aarch64": [
++            "lib/builtins/cpu_model/aarch64/lse_atomics/windows.inc",
++        ],
++        "//conditions:default": [],
++    }) + select({
++        "@llvm//platforms/config:linux_aarch64": ([
++            "lib/builtins/cpu_model/aarch64/fmv/hwcap.inc",
++        ] if int(LLVM_VERSION_MAJOR) >= 22 else [
++            "lib/builtins/cpu_model/aarch64/fmv/mrs.inc",
++        ]) + [
++            "lib/builtins/cpu_model/aarch64/fmv/getauxval.inc",
++        ],
++        "@llvm//platforms/config:macos_aarch64": [
++            "lib/builtins/cpu_model/aarch64/fmv/apple.inc",
++        ],
++        "@llvm//platforms/config:windows_aarch64": [
++            "lib/builtins/cpu_model/aarch64/fmv/windows.inc",
++        ],
++        "//conditions:default": [],
+     }),
+     copts = select({
+         ":windows_msvc": [
+@@ -687,7 +748,8 @@
+     }),
+     includes = ["lib/builtins"],
+     linkstatic = True,
+-    local_defines = selects.with_or({
++    # Assembly declarations do not inherit -fvisibility=hidden.
++    local_defines = ["VISIBILITY_HIDDEN"] + selects.with_or({
+         (
+             # The following additional architectures support float16:
+             # - aarch64_be
+@@ -707,62 +769,13 @@
+         ],
+         "//conditions:default": [],
+     }),
+-    textual_hdrs = [
+-        "lib/builtins/fp_add_impl.inc",
+-        "lib/builtins/fp_compare_impl.inc",
+-        "lib/builtins/fp_div_impl.inc",
+-        "lib/builtins/fp_extend_impl.inc",
+-        "lib/builtins/fp_fixint_impl.inc",
+-        "lib/builtins/fp_fixuint_impl.inc",
+-        "lib/builtins/fp_mul_impl.inc",
+-        "lib/builtins/fp_trunc_impl.inc",
+-        "lib/builtins/int_div_impl.inc",
+-        "lib/builtins/int_mulo_impl.inc",
+-        "lib/builtins/int_mulv_impl.inc",
+-        "lib/builtins/int_to_fp_impl.inc",
+-        "lib/builtins/cpu_model/cpu_model.h",
+-        "lib/builtins/unwind-ehabi-helpers.h",
+-    ] + select({
+-        "@platforms//cpu:aarch64": [
+-            "lib/builtins/cpu_model/AArch64CPUFeatures.inc",
+-            "lib/builtins/cpu_model/aarch64/hwcap.inc",
+-            # "lib/builtins/cpu_model/aarch64/lse_atomics/atomic_helper.inc",
+-            "lib/builtins/cpu_model/aarch64/lse_atomics/getauxval.inc",
+-        ],
+-        "@platforms//cpu:riscv64": [
+-            "lib/builtins/riscv/int_mul_impl.inc",
+-        ] + ([
+-            "lib/builtins/cpu_model/riscv/hwprobe.inc",
+-            "lib/builtins/cpu_model/riscv/unimplemented.inc",
+-        ] if int(LLVM_VERSION_MAJOR) >= 23 else []),
+-        "//conditions:default": [],
+-    }) + select({
+-        "@llvm//platforms/config:windows_aarch64": [
+-            "lib/builtins/cpu_model/aarch64/lse_atomics/windows.inc",
+-        ],
+-        "//conditions:default": [],
+-    }) + select({
+-        "@llvm//platforms/config:linux_aarch64": ([
+-            "lib/builtins/cpu_model/aarch64/fmv/hwcap.inc",
+-        ] if int(LLVM_VERSION_MAJOR) >= 22 else [
+-            "lib/builtins/cpu_model/aarch64/fmv/mrs.inc",
+-        ]) + [
+-            "lib/builtins/cpu_model/aarch64/fmv/getauxval.inc",
+-        ],
+-        "@llvm//platforms/config:macos_aarch64": [
+-            "lib/builtins/cpu_model/aarch64/fmv/apple.inc",
+-        ],
+-        "@llvm//platforms/config:windows_aarch64": [
+-            "lib/builtins/cpu_model/aarch64/fmv/windows.inc",
+-        ],
+-        "//conditions:default": [],
+-    }),
+     deps = select({
+         "@platforms//cpu:aarch64": [
+             ":builtins_aarch64_atomic",
+         ],
+         "//conditions:default": [],
+     }),
++    visibility = ["//visibility:public"],
+ )
+ 
+ cc_runtime_stage0_static_library(
+@@ -880,6 +893,7 @@
+ 
+ cc_library(
+     name = "sanitizers_interface_headers",
++    features = ["external_include_paths"],
+     hdrs = glob(["include/sanitizer/*.h"]),
+     includes = ["include"],
+     visibility = ["//visibility:public"],
+@@ -2908,6 +2922,7 @@
+ cc_library(
+     name = "xray",
+     srcs = [
++        "lib/xray/clickhouse-reject-modes.cpp",
+         ":xray_arch_sources",
+         ":xray_headers",
+         ":xray_sources",
+@@ -2929,6 +2944,7 @@
+         ":sanitizer_common_libc",
+     ],
+     alwayslink = True,
++    visibility = ["//visibility:public"],
+ )
+ 
+ cc_library(
+@@ -3059,6 +3075,7 @@
+     ],
+     linkstatic = True,
+     alwayslink = True,
++    visibility = ["//visibility:public"],
+ )
+ 
+ cc_library(
+@@ -3076,6 +3093,7 @@
+     ],
+     linkstatic = True,
+     alwayslink = True,
++    visibility = ["//visibility:public"],
+ )
+ 
+ cc_library(
+diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
+@@ -36,13 +36,17 @@
+ 
+ cc_library(
+     name = "headers",
+-    hdrs = glob([
+-        "include/**",
+-    ]),
+-    includes = [
+-        "include",
+-        "src",
+-    ],
++    hdrs = [":libcxxabi_headers_files"],
++    # The complete Linux toolchain owns public C++ headers. Searching both
++    # copies makes include_next find another C++ wrapper instead of libc.
++    # Bootstrap runtimes still need their source and generated headers.
++    includes = select({
++        "@llvm//toolchain:linux_complete": ["src"],
++        "//conditions:default": [
++            "include",
++            "src",
++        ],
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -86,10 +90,8 @@
+     ] + [
+         # LIBCXXABI_ENABLE_THREADS
+         "src/cxa_thread_atexit.cpp",
+-    ],
+-    hdrs = glob([
+-        "include/**",
+-    ]),
++    ] + glob(["src/**/*.h"]),
++    hdrs = [":libcxxabi_headers_files"],
+     copts = [
+         "-std=c++23",
+         "-fstrict-aliasing",
+@@ -117,48 +119,30 @@
+         "//conditions:default": [],
+     }),
+     implementation_deps = [
+-        # Order matter. Search path should have C++ headers before any lib C headers.
+-        "@llvm-project//libcxx:headers",
++        "@llvm-project//libcxx:abi_support",
+         # libcxxabi's cxa_exception.h includes "unwind.h" from libunwind.
+         # On ARM EHABI targets, this pulls in unwind_arm_ehabi.h which declares
+         # __gnu_unwind_frame used by cxa_personality.cpp.
+         "@llvm-project//libunwind:headers",
+     ] + select({
+-        "@platforms//os:macos": [],
+-        "@platforms//os:windows": [],
+-        "@platforms//os:linux": [
+-            # TODO(cerisier): Provide only a subset of linux UAPI headers for musl.
+-            # https://github.com/hermeticbuild/hermetic-llvm/issues/146
+-            "@kernel_headers",
+-        ],
+-    }) + [
+-        # libcxx depends on a set of internal llvm-libc headers. (libc/shared)
+-        # See project hand-in-hand.
+-        # https://discourse.llvm.org/t/rfc-project-hand-in-hand-llvm-libc-libc-code-sharing/77701
+-        "@llvm-project//libc:libc_headers",
+-    ] + select({
+         "@llvm//platforms/config:musl": [
+             "@musl_libc//:musl_libc_headers",
+         ],
+-        "@llvm//platforms/config:gnu": [
+-            "@glibc//:gnu_libc_headers",
+-        ],
++        "@llvm//platforms/config:gnu": [],
+         "@platforms//os:windows": [
+             "@mingw//:mingw_headers",
+         ],
+         "@platforms//os:macos": [],
+     }),
+-    includes = [
+-        "include",
+-        "src",
+-    ],
+-    textual_hdrs = [
+-        "@llvm-project//libcxx:textual_hdrs",
+-    ] + glob([
+-        "src/**/*.h",
+-        "src/**/*.def",
+-    ]),
+-    visibility = ["//compiler-rt:__pkg__"],
++    includes = select({
++        "@llvm//toolchain:linux_complete": ["src"],
++        "//conditions:default": [
++            "include",
++            "src",
++        ],
++    }),
++    textual_hdrs = glob(["src/**/*.def"]),
++    visibility = ["//visibility:public"],
+ )
+ 
+ cc_runtime_stage0_static_library(
+diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/bootstrap_binary.bzl
+--- a/toolchain/bootstrap/bootstrap_binary.bzl
++++ b/toolchain/bootstrap/bootstrap_binary.bzl
+@@ -42,2 +42,5 @@
+         "@llvm-project//llvm:driver-tools": LLVM_TOOLS,
++        # Compiler capabilities must not inherit the application LLVM settings.
++        "@llvm-project//third-party:llvm_enable_zlib": True,
++        "@llvm-project//third-party:llvm_enable_zstd": True,
+     }
+@@ -70,2 +73,4 @@
+         "@llvm-project//llvm:driver-tools",
++        "@llvm-project//third-party:llvm_enable_zlib",
++        "@llvm-project//third-party:llvm_enable_zstd",
+     ] + SANITIZER_FLAGS,
+diff --git a/toolchain/args/BUILD.bazel b/toolchain/args/BUILD.bazel
+--- a/toolchain/args/BUILD.bazel
++++ b/toolchain/args/BUILD.bazel
+@@ -926,5 +926,6 @@
+ cc_args(
+     name = "hermetic_compile_flags",
++    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
+     actions = [
+         "@rules_cc//cc/toolchains/actions:clif_match",
+         "@rules_cc//cc/toolchains/actions:cpp_compile",
+diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
+--- a/toolchain/args/linux/BUILD.bazel
++++ b/toolchain/args/linux/BUILD.bazel
+@@ -32,5 +32,6 @@
+ cc_args(
+     name = "kernel_headers_include_search_paths",
++    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
+     actions = [
+         "//toolchain:source_compile_actions",
+     ],
+@@ -53,5 +54,6 @@
+ cc_args(
+     name = "glibc_headers_include_search_paths",
++    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
+     actions = [
+         "//toolchain:source_compile_actions",
+     ],
+diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_stage0_object.bzl
+--- a/toolchain/runtimes/cc_stage0_object.bzl
++++ b/toolchain/runtimes/cc_stage0_object.bzl
+@@ -6,6 +6,9 @@
+ bootstrap_transition = transition(
+     implementation = lambda settings, attr: {
+         # we are compiling runtimes without any kind of other dependencies
++        # Compiler-rt startup objects must not inherit application C flags.
++        "//command_line_option:copt": [],
++        "//command_line_option:conlyopt": [],
+         "//toolchain:runtime_stage": "stage0",
+         # Stage0 objects must never be built with sanitizers enabled.
+         "//config:asan": False,
+@@ -36,6 +39,8 @@
+     },
+     inputs = [],
+     outputs = [
++        "//command_line_option:copt",
++        "//command_line_option:conlyopt",
+         "//toolchain:runtime_stage",
+         "//config:asan",
+         "//config:msan",
+diff --git a/runtimes/glibc/extension/glibc-headers.BUILD.bazel b/runtimes/glibc/extension/glibc-headers.BUILD.bazel
+--- a/runtimes/glibc/extension/glibc-headers.BUILD.bazel
++++ b/runtimes/glibc/extension/glibc-headers.BUILD.bazel
+@@ -3,12 +3,17 @@
+ 
+ cc_library(
+     name = "gnu_libc_headers",
+-    hdrs = ["include"],
++    hdrs = glob(["include/**/*.h"]),
+     # user code should always get glibc headers as -isystem
+     # but it seems glibc itself includes as <...>
+     features = ["system_include_paths"],
+-    includes = ["include"],
++    includes = select({
++        "@llvm//toolchain:linux_complete": [],
++        "//conditions:default": ["include"],
++    }),
++    textual_hdrs = ["include/bits/stab.def"],
+     visibility = ["//visibility:public"],
++    deps = ["@kernel_headers"],
+ )
+ 
+ headers_directory(
+diff --git a/kernel/extension/kernel-headers.BUILD.bazel b/kernel/extension/kernel-headers.BUILD.bazel
+--- a/kernel/extension/kernel-headers.BUILD.bazel
++++ b/kernel/extension/kernel-headers.BUILD.bazel
+@@ -3,10 +3,13 @@
+ 
+ cc_library(
+     name = "kernel_headers",
+-    hdrs = ["include"],
++    hdrs = glob(["include/**/*.h"]),
+     # Any code should always get passed linux UAPI headers as -isystem
+     features = ["system_include_paths"],
+-    includes = ["include"],
++    includes = select({
++        "@llvm//toolchain:linux_complete": [],
++        "//conditions:default": ["include"],
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+diff --git a/toolchain/BUILD.bazel b/toolchain/BUILD.bazel
+--- a/toolchain/BUILD.bazel
++++ b/toolchain/BUILD.bazel
+@@ -8,6 +8,14 @@
+ load(":declare_toolchains.bzl", "declare_toolchains")
+ 
+ package(default_visibility = ["//toolchain:__subpackages__"])
++
++# Extra target sysroot files, separate from compiler and runtime construction.
++label_flag(
++    name = "sysroot_compile_files",
++    build_setting_default = "//runtimes:none",
++    scope = "universal",
++    visibility = ["//visibility:public"],
++)
+ 
+ # TODO(cerisier): Find a better name ?
+ # This should be the semantic for "what are we building ?"
+@@ -304,6 +312,7 @@
+         "//platforms/config:gnu": [
+             "//toolchain/args/linux:kernel_headers_include_search_paths",
+             "//toolchain/args/linux:glibc_headers_include_search_paths",
++            "//toolchain/args/linux:sysroot_compile_files",
+         ],
+         "//conditions:default": [],
+     }) + select({
+diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
+--- a/toolchain/args/linux/BUILD.bazel
++++ b/toolchain/args/linux/BUILD.bazel
+@@ -4,6 +4,20 @@
+ 
+ # Extracted from rules_cc unix_cc_configure.bzl
+ # TODO(cerisier): Extract those into proper semantic args list.
++# Sysroot files follow the target CPU; LLVM tool binaries follow the exec CPU.
++cc_args(
++    name = "sysroot_compile_files",
++    actions = [
++        "//toolchain:source_compile_actions",
++        "@rules_cc//cc/toolchains/actions:assembly_actions",
++    ],
++    data = select({
++        "@platforms//cpu:x86_64": ["//toolchain:sysroot_compile_files"],
++        "@platforms//cpu:aarch64": ["//toolchain:sysroot_compile_files"],
++        "//conditions:default": [],
++    }),
++)
++
+ cc_args(
+     name = "default_link_flags",
+     actions = [
+diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/bootstrap_binary.bzl
+--- a/toolchain/bootstrap/bootstrap_binary.bzl
++++ b/toolchain/bootstrap/bootstrap_binary.bzl
+@@ -33,6 +33,7 @@
+         bootstrap_stage = "stage0_prebuilt_seed"
+ 
+     transition_settings = {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         # we are compiling final programs, so we want all runtimes.
+         "//toolchain:runtime_stage": "complete",
+         "//toolchain:bootstrap_stage": bootstrap_stage,
+@@ -64,6 +65,7 @@
+         "//command_line_option:platforms",
+     ],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:compilation_mode",
+         "//command_line_option:fdo_profile",
+         "//command_line_option:features",
+diff --git a/toolchain/bootstrap/fdo_profile.bzl b/toolchain/bootstrap/fdo_profile.bzl
+--- a/toolchain/bootstrap/fdo_profile.bzl
++++ b/toolchain/bootstrap/fdo_profile.bzl
+@@ -49,6 +49,7 @@
+ 
+ def _profile_generation_transition_impl(_settings, attr):
+     transition_settings = {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:fdo_profile": None,
+         "//command_line_option:platforms": str(attr.target_platform),
+         "//toolchain:runtime_stage": "complete",
+@@ -64,6 +65,7 @@
+     implementation = _profile_generation_transition_impl,
+     inputs = [],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:fdo_profile",
+         "//command_line_option:platforms",
+         "//toolchain:runtime_stage",
+@@ -74,6 +76,7 @@
+ 
+ def _profile_merge_transition_impl(_settings, _attr):
+     return {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:fdo_profile": None,
+         "//toolchain:bootstrap_stage": "stage1_from_source",
+     }
+@@ -82,6 +85,7 @@
+     implementation = _profile_merge_transition_impl,
+     inputs = [],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:fdo_profile",
+         "//toolchain:bootstrap_stage",
+     ],
+diff --git a/toolchain/runtimes/cc_unsanitized_library.bzl b/toolchain/runtimes/cc_unsanitized_library.bzl
+--- a/toolchain/runtimes/cc_unsanitized_library.bzl
++++ b/toolchain/runtimes/cc_unsanitized_library.bzl
+@@ -4,6 +4,7 @@
+ 
+ def _reset_sanitizers_impl(settings, attr):
+     return {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:copt": settings["//command_line_option:copt"] + attr.copts,
+         "//command_line_option:cxxopt": settings["//command_line_option:cxxopt"] + attr.cxxopts,
+         "//command_line_option:platforms": str(attr.platform) if attr.platform else settings["//command_line_option:platforms"],
+@@ -47,6 +48,7 @@
+         "@llvm-project//third-party:llvm_enable_zstd",
+     ],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:copt",
+         "//command_line_option:cxxopt",
+         "//command_line_option:platforms",
+diff --git a/toolchain/runtimes/cc_internal_symbolizer_object.bzl b/toolchain/runtimes/cc_internal_symbolizer_object.bzl
+--- a/toolchain/runtimes/cc_internal_symbolizer_object.bzl
++++ b/toolchain/runtimes/cc_internal_symbolizer_object.bzl
+@@ -5,6 +5,7 @@
+ 
+ def _internal_symbolizer_libcxx_transition_impl(settings, attr):
+     return {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         "//command_line_option:copt": settings["//command_line_option:copt"] + attr.copts,
+         "//command_line_option:cxxopt": settings["//command_line_option:cxxopt"] + attr.cxxopts,
+         "//command_line_option:platforms": str(attr.platform),
+@@ -18,6 +19,7 @@
+         "//command_line_option:platforms",
+     ],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:copt",
+         "//command_line_option:cxxopt",
+         "//command_line_option:platforms",
+diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_stage0_object.bzl
+--- a/toolchain/runtimes/cc_stage0_object.bzl
++++ b/toolchain/runtimes/cc_stage0_object.bzl
+@@ -5,6 +5,7 @@
+ #TODO(cerisier): use a single shared transition
+ bootstrap_transition = transition(
+     implementation = lambda settings, attr: {
++        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
+         # we are compiling runtimes without any kind of other dependencies
+         # Compiler-rt startup objects must not inherit application C flags.
+         "//command_line_option:copt": [],
+@@ -38,6 +39,7 @@
+     },
+     inputs = [],
+     outputs = [
++        "//toolchain:sysroot_compile_files",
+         "//command_line_option:copt",
+         "//command_line_option:conlyopt",
+         "//toolchain:runtime_stage",
+diff --git a/toolchain/runtimes/with_cfg_runtimes_common.bzl b/toolchain/runtimes/with_cfg_runtimes_common.bzl
+--- a/toolchain/runtimes/with_cfg_runtimes_common.bzl
++++ b/toolchain/runtimes/with_cfg_runtimes_common.bzl
+@@ -3,6 +3,7 @@
+     # a specific set of flags and compilation mode. It is not safe to let the user
+     # interfere with them using default command line flags.
+     # TODO: Expose a build setting to extend those flags.
++    builder.set(Label("//toolchain:sysroot_compile_files"), str(Label("//runtimes:none")))
+     builder.set("copt", [])
+     builder.set("cxxopt", [])
+     builder.set("conlyopt", [])
+diff --git a/private/llvm_project_archive.bzl b/private/llvm_project_archive.bzl
+--- a/private/llvm_project_archive.bzl
++++ b/private/llvm_project_archive.bzl
+@@ -12,16 +12,7 @@
+     "update_attrs",
+ )
+ load("//:http_bsdtar_archive.bzl", "download_remote_files")
+-load(":llvm_project_common.bzl", "LLVM_PROJECT_OVERLAY", "write_llvm_project_files")
+-
+-_DEFAULT_OVERLAY_FILES = {
+-    "compiler-rt/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/compiler-rt:compiler-rt.BUILD.bazel"),
+-    "libc/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libc:libc.BUILD.bazel"),
+-    "libcxx/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxx:libcxx.BUILD.bazel"),
+-    "libcxxabi/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxxabi:libcxxabi.BUILD.bazel"),
+-    "libunwind/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libunwind:libunwind.BUILD.bazel"),
+-    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
+-}
++load(":llvm_project_common.bzl", "LLVM_PROJECT_OVERLAY", "LLVM_PROJECT_OVERLAY_FILES", "copy_llvm_project_files", "write_llvm_project_files")
+
+ def _default_excludes():
+     excludes = [
+@@ -133,15 +124,6 @@
+         overlay_prefix.count("/") + 1,
+     )
+
+-def _copy_files(rctx):
+-    files = dict(rctx.attr.overlay_files)
+-    files.update(rctx.attr.files)
+-    for path, label in files.items():
+-        source = rctx.path(label)
+-        if not source.exists:
+-            fail("Input {} does not exist".format(label))
+-        rctx.file(path, rctx.read(source), executable = False)
+-
+ def _update_integrity_attrs(rctx, archive_info, remote_files_info, remote_patches_info):
+     overrides = {}
+     if not rctx.attr.sha256 and not rctx.attr.integrity:
+@@ -179,7 +161,7 @@
+
+     remote_files_info = download_remote_files(rctx)
+     remote_patches_info = patch(rctx)
+-    _copy_files(rctx)
++    copy_llvm_project_files(rctx)
+     write_llvm_project_files(rctx)
+
+     return _update_integrity_attrs(rctx, archive_info, remote_files_info, remote_patches_info)
+@@ -194,7 +176,7 @@
+     "canonical_id": attr.string(),
+     "strip_prefix": attr.string(),
+     "files": attr.string_keyed_label_dict(default = {}),
+-    "overlay_files": attr.string_keyed_label_dict(default = _DEFAULT_OVERLAY_FILES),
++    "overlay_files": attr.string_keyed_label_dict(default = LLVM_PROJECT_OVERLAY_FILES),
+     "type": attr.string(),
+     "patches": attr.label_list(default = []),
+     "remote_file_urls": attr.string_list_dict(default = {}),
+diff --git a/private/llvm_project_common.bzl b/private/llvm_project_common.bzl
+--- a/private/llvm_project_common.bzl
++++ b/private/llvm_project_common.bzl
+@@ -1,6 +1,24 @@
+ LLVM_PROJECT_OVERLAY = "utils/bazel/llvm-project-overlay"
+
+ _MAX_OVERLAY_DIRECTORIES = 1000000
++
++LLVM_PROJECT_OVERLAY_FILES = {
++    "compiler-rt/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/compiler-rt:compiler-rt.BUILD.bazel"),
++    "libc/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libc:libc.BUILD.bazel"),
++    "libcxx/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxx:libcxx.BUILD.bazel"),
++    "libcxxabi/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxxabi:libcxxabi.BUILD.bazel"),
++    "libunwind/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libunwind:libunwind.BUILD.bazel"),
++    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
++}
++
++def copy_llvm_project_files(rctx):
++    files = dict(rctx.attr.overlay_files)
++    files.update(rctx.attr.files)
++    for path, label in files.items():
++        source = rctx.path(label)
++        if not source.exists:
++            fail("Input {} does not exist".format(label))
++        rctx.file(path, rctx.read(source), executable = False)
+
+ def _extract_cmake_settings(rctx, path):
+     settings = {
+diff --git a/private/llvm_project_from_git.bzl b/private/llvm_project_from_git.bzl
+--- a/private/llvm_project_from_git.bzl
++++ b/private/llvm_project_from_git.bzl
+@@ -3,6 +3,9 @@
+ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "patch")
+ load(
+     ":llvm_project_common.bzl",
++    "LLVM_PROJECT_OVERLAY",
++    "LLVM_PROJECT_OVERLAY_FILES",
++    "copy_llvm_project_files",
+     "copy_overlay",
+     "write_llvm_project_files",
+ )
+@@ -23,12 +26,14 @@
+         for entry in source_root.readdir():
+             rctx.symlink(entry, entry.basename)
+
++    copy_overlay(rctx, source_root)
++    rctx.delete(source_root.get_child(LLVM_PROJECT_OVERLAY))
+     patch(rctx)
+-    copy_overlay(rctx, source_root)
++    copy_llvm_project_files(rctx)
+     rctx.delete(git_root.get_child(".git"))
+     write_llvm_project_files(rctx)
+
+-    return rctx.repo_metadata(reproducible = False)
++    return rctx.repo_metadata(reproducible = bool(rctx.attr.commit))
+
+ llvm_project_from_git = repository_rule(
+     implementation = _llvm_project_from_git_impl,
+@@ -41,6 +46,9 @@
+         "init_submodules": attr.bool(default = False),
+         "recursive_init_submodules": attr.bool(default = False),
+         "strip_prefix": attr.string(),
++        "sparse_checkout_patterns": attr.string_list(),
++        "files": attr.string_keyed_label_dict(default = {}),
++        "overlay_files": attr.string_keyed_label_dict(default = LLVM_PROJECT_OVERLAY_FILES),
+         "patches": attr.label_list(default = []),
+         "patch_args": attr.string_list(default = []),
+         "patch_cmds": attr.string_list(default = []),
+diff --git a/extensions/llvm.bzl b/extensions/llvm.bzl
+--- a/extensions/llvm.bzl
++++ b/extensions/llvm.bzl
+@@ -265,6 +265,8 @@
+         "init_submodules": attr.bool(default = False),
+         "recursive_init_submodules": attr.bool(default = False),
+         "strip_prefix": attr.string(default = ""),
++        "sparse_checkout_patterns": attr.string_list(),
++        "files": attr.string_keyed_label_dict(default = {}),
+         "patches": attr.label_list(default = []),
+         "patch_args": attr.string_list(default = ["-p0"]),
+         "patch_cmds": attr.string_list(default = []),

@@ -1,0 +1,25 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["COPYING"])
+
+ch_cc_library(
+    name = "_cityhash",
+    srcs = [
+        "src/city.cc",
+        "src/config.h",
+    ],
+    hdrs = [
+        "include/city.h",
+        "include/citycrc.h",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = ["include"],
+    link_runtime = True,
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = ["src"],
+)

@@ -1,0 +1,15 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE_1_0.txt",
+])
+
+cc_library(
+    name = "miniselect",
+    hdrs = glob(["include/miniselect/**/*.h"]),
+    includes = [
+        "include",
+    ],
+)

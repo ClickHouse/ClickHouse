@@ -1,0 +1,292 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel/rules:dwyu.bzl", "dwyu_cc_consumer_audit")
+load(":boost_sources.bzl", "BOOST_MYSQL_COMPILER_SOURCES")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "owner",
+    textual_hdrs = ["fragment.inc"],
+    deps = ["//bazel/initial_migration/dwyu_regressions:api"],
+)
+
+cc_library(
+    name = "owner_bridge",
+    textual_hdrs = ["fragment.inc"],
+    deps = ["//bazel/initial_migration/dwyu_regressions:bridge"],
+)
+
+cc_library(
+    name = "owner_impl",
+    implementation_deps = ["//bazel/initial_migration/dwyu_regressions:api"],
+    textual_hdrs = ["fragment.inc"],
+)
+
+cc_library(
+    name = "reader",
+    srcs = ["reader.cc"],
+    implementation_deps = [":owner"],
+)
+
+cc_library(
+    name = "reader_bridge",
+    srcs = ["reader.cc"],
+    implementation_deps = [":owner_bridge"],
+)
+
+cc_library(
+    name = "reader_impl",
+    srcs = ["reader.cc"],
+    implementation_deps = [
+        ":owner_impl",
+        "//bazel/initial_migration/dwyu_regressions:api",
+    ],
+)
+
+cc_library(
+    name = "reader_second",
+    srcs = ["reader.cc"],
+    implementation_deps = [
+        ":owner",
+        "//bazel/initial_migration/dwyu_regressions:cpp_api",
+    ],
+    local_defines = ["DWYU_CONTEXT_SECOND=1"],
+)
+
+# A configured, native consumer that never enters the advertised fragment.
+cc_library(
+    name = "reader_without_fragment",
+    srcs = ["without_fragment.cc"],
+    implementation_deps = [":owner"],
+)
+
+cc_library(
+    name = "reader_spoof_line",
+    srcs = ["spoof_line.cc"],
+    implementation_deps = [":owner"],
+)
+
+cc_library(
+    name = "wrong_basename",
+    textual_hdrs = ["wrong/fragment.inc"],
+)
+
+cc_library(
+    name = "reader_wrong_basename",
+    srcs = ["wrong_reader.cc"],
+    implementation_deps = [
+        ":owner",
+        ":wrong_basename",
+    ],
+)
+
+# Two native libraries publish the same physical artifact. One cannot testify
+# to the other's dependency list merely because the header bytes are equal.
+cc_library(
+    name = "other_owner",
+    textual_hdrs = ["fragment.inc"],
+    deps = ["//bazel/initial_migration/dwyu_regressions:api"],
+)
+
+cc_library(
+    name = "reader_wrong_owner",
+    srcs = ["reader.cc"],
+    implementation_deps = [":other_owner"],
+)
+
+cc_library(
+    name = "private_owner",
+    srcs = ["private_leaf.h"],
+    textual_hdrs = ["public_fragment.inc"],
+    deps = ["//bazel/initial_migration/dwyu_regressions:api"],
+)
+
+cc_library(
+    name = "private_legitimate_reader",
+    srcs = ["private_legitimate.cc"],
+    implementation_deps = [":private_owner"],
+)
+
+cc_library(
+    name = "private_bad_reader",
+    srcs = ["private_direct.cc"],
+    implementation_deps = [":private_owner"],
+)
+
+cc_library(
+    name = "private_owner_impl",
+    srcs = ["private_leaf.h"],
+    implementation_deps = ["//bazel/initial_migration/dwyu_regressions:api"],
+    textual_hdrs = ["public_fragment.inc"],
+)
+
+cc_library(
+    name = "private_impl_reader",
+    srcs = ["private_legitimate.cc"],
+    implementation_deps = [
+        ":private_owner_impl",
+        "//bazel/initial_migration/dwyu_regressions:api",
+    ],
+)
+
+dwyu_cc_consumer_audit(
+    name = "direct",
+    consumers = [":reader"],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "private_transit",
+    consumers = [":private_legitimate_reader"],
+    owner = ":private_owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_bridge",
+    consumers = [":reader_bridge"],
+    owner = ":owner_bridge",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_impl",
+    consumers = [":reader_impl"],
+    owner = ":owner_impl",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_private_impl",
+    consumers = [":private_impl_reader"],
+    owner = ":private_owner_impl",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_unobserved",
+    consumers = [":reader_without_fragment"],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_line",
+    consumers = [":reader_spoof_line"],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_basename",
+    consumers = [":reader_wrong_basename"],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_owner",
+    consumers = [":reader_wrong_owner"],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_second",
+    consumers = [
+        ":reader",
+        ":reader_second",
+    ],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_direct_private",
+    consumers = [":private_bad_reader"],
+    owner = ":private_owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_self",
+    consumers = [":owner"],
+    owner = ":owner",
+)
+
+dwyu_cc_consumer_audit(
+    name = "negative_no_consumer",
+    consumers = [],
+    owner = ":owner",
+)
+
+# Both readers compile the real ClickHouse-generated proto implementation.
+# Only the runtime owner differs; codegen still uses the real C++ gRPC plugin.
+cc_library(
+    name = "generated_unsecure",
+    srcs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+    ],
+    hdrs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.h",
+    ],
+    copts = ["-w"],
+    strip_include_prefix = "/bazel/gen/src/Server/grpc_protos",
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:grpc++_unsecure",
+    ],
+)
+
+dwyu_cc_consumer_audit(
+    name = "grpc_secure",
+    compiler_sources = [
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+    ],
+    consumers = ["//src/Server/grpc_protos:clickhouse_grpc_protos"],
+    owner = "@clickhouse_grpc//:grpc++",
+)
+
+dwyu_cc_consumer_audit(
+    name = "grpc_unsecure",
+    compiler_sources = [
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+        "bazel/gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+    ],
+    consumers = [":generated_unsecure"],
+    owner = "@clickhouse_grpc//:grpc++_unsecure",
+)
+
+dwyu_cc_consumer_audit(
+    name = "boost_asio_options",
+    consumers = ["@clickhouse_nuraft//:_nuraft"],
+    owner = "@clickhouse_boost//:boost_asio_options",
+)
+
+dwyu_cc_consumer_audit(
+    name = "boost_config",
+    consumers = ["@clickhouse_boost//:_boost_iostreams"],
+    owner = "@clickhouse_boost//:boost_config",
+)
+
+# These are the existing ClickHouse format compilations with the actual
+# msgpack.hpp include and the original dbms__compile_0 definitions and flags.
+dwyu_cc_consumer_audit(
+    name = "msgpack_formats",
+    compiler_sources = [
+        "src/Processors/Formats/Impl/MsgPackRowInputFormat.cpp",
+        "src/Processors/Formats/Impl/MsgPackRowOutputFormat.cpp",
+    ],
+    consumers = ["//src:dbms__compile_0"],
+    owner = "@clickhouse_msgpack_c//:msgpack_c",
+)
+
+dwyu_cc_consumer_audit(
+    name = "boost_separate_asio",
+    compiler_sources = BOOST_MYSQL_COMPILER_SOURCES,
+    consumers = ["@clickhouse_boost//:boost_mysql_compiled"],
+    owner = "@clickhouse_boost//:boost_headers_no_openssl",
+)
+
+dwyu_cc_consumer_audit(
+    name = "boost_separate_openssl",
+    compiler_sources = BOOST_MYSQL_COMPILER_SOURCES,
+    consumers = ["@clickhouse_boost//:boost_mysql_compiled"],
+    owner = "@clickhouse_boost//:boost_headers",
+)

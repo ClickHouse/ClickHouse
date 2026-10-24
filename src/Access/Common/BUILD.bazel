@@ -1,0 +1,56 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse_common_access",
+    srcs = glob(["*.cpp"]),
+    clickhouse_code = True,
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Foundation:_poco_foundation",
+        "@clickhouse_fmtlib//:_fmt",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "@clickhouse_libcotp//:_libcotp",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "@clickhouse_zstd//:_zstd",
+        "@clickhouse_openssl//:crypto",
+        "//base/glibc-compatibility",
+        "//src/Common:parser_support_api",
+        "//src/Common",
+        "//src:headers",
+        "//src/Parsers:parser_api",
+        "//base/poco/Net:_poco_net",
+        "//base:common",
+        "//src/Access/Common:headers",
+        "//src/Common:exception_api",
+        "//src/Common:string_utils",
+        "//src:io_string_buffers",
+    ],
+    link_runtime = True,
+    llvm_headers = False,
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+    deps = [
+        "//src:core_types",
+        "//src/Parsers:headers",
+    ],
+)
+
+ch_cc_library(
+    name = "headers",
+    hdrs = glob(["*.h"]),
+    clickhouse_code = True,
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Net:_poco_net",
+        "//src:core_types",
+        "//src:io_string_buffers",
+        "//src/Common:exception_api",
+        "//src/Common:string_utils",
+        "//src/Parsers:parser_api",
+    ],
+)

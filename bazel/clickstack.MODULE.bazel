@@ -1,0 +1,85 @@
+bazel_dep(name = "aspect_rules_js", version = "3.5.1")
+bazel_dep(name = "rules_nodejs", version = "6.7.6")
+
+clickstack_node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+clickstack_node.toolchain(node_version = "22.21.1")
+use_repo(
+    clickstack_node,
+    "nodejs_darwin_amd64",
+    "nodejs_darwin_arm64",
+    "nodejs_linux_amd64",
+    "nodejs_linux_arm64",
+    "nodejs_toolchains",
+)
+
+register_toolchains("@nodejs_toolchains//:all")
+
+clickstack_http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+clickstack_http_archive(
+    name = "clickhouse_hyperdx_src",
+    build_file = "//bazel/rules/clickstack:hyperdx.BUILD.bazel",
+    patch_args = ["-p1"],
+    patches = ["//bazel/rules/clickstack:hyperdx-release.patch"],
+    sha256 = "9577ae79350c844ea8d83394966b1e26977fb9e856df3ea621bf2bc3be781755",
+    strip_prefix = "hyperdx-bfa4b980f34c73dd88a138d509edb7aa32db2e6a",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/hyperdxio/hyperdx/tar.gz/bfa4b980f34c73dd88a138d509edb7aa32db2e6a"],
+)
+
+clickstack_http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+clickstack_http_file(
+    name = "clickstack_release_ignore",
+    downloaded_file_path = "clickstack.gitignore",
+    sha256 = "54e157658e2dcdd4af5e536d3b7257171f3cd572cf4ca2f5deedc81bafadb06b",
+    urls = ["https://raw.githubusercontent.com/ClickHouse/clickhouse-clickstack/f5232dc36db0f151c6a19a770710fbeebfd9051b/.gitignore"],
+)
+
+clickstack_http_file(
+    name = "clickstack_inter_unicode",
+    downloaded_file_path = "unicode.json",
+    sha256 = "7735ddbdba800ab83fe40e5cb2cc1a1857c3c8c99f60bc18c02e42e9b78a0a04",
+    urls = ["https://raw.githubusercontent.com/fontsource/font-files/86edcf1aab7fd27e8960ea3555aab50e3480a098/fonts/google/inter/unicode.json"],
+)
+
+clickstack_http_file(
+    name = "clickstack_ibm_plex_mono_unicode",
+    downloaded_file_path = "unicode.json",
+    sha256 = "0fec16233c1ca8d35c9d37b7dc221316d82c625ba9a68310ad6ad17167ae5eaa",
+    urls = ["https://raw.githubusercontent.com/fontsource/font-files/86edcf1aab7fd27e8960ea3555aab50e3480a098/fonts/google/ibm-plex-mono/unicode.json"],
+)
+
+clickstack_http_file(
+    name = "clickstack_roboto_unicode",
+    downloaded_file_path = "unicode.json",
+    sha256 = "77e8abc6a4b7462c7d7e0bd80d71becf900444ac5c795dd3ca4e1d8ddd530a22",
+    urls = ["https://raw.githubusercontent.com/fontsource/font-files/86edcf1aab7fd27e8960ea3555aab50e3480a098/fonts/google/roboto/unicode.json"],
+)
+
+clickstack_http_file(
+    name = "clickstack_roboto_mono_unicode",
+    downloaded_file_path = "unicode.json",
+    sha256 = "a7e2d66563f1df5909abf3a583589c9d0270f28838c3b9320eaf13fdaef06988",
+    urls = ["https://raw.githubusercontent.com/fontsource/font-files/86edcf1aab7fd27e8960ea3555aab50e3480a098/fonts/google/roboto-mono/unicode.json"],
+)
+
+clickstack_google_fonts = use_repo_rule("//bazel/rules/clickstack:repositories.bzl", "clickstack_google_fonts")
+
+clickstack_google_fonts(
+    name = "clickstack_google_fonts",
+    css = [
+        "//bazel/rules/clickstack:google_css/Inter.css",
+        "//bazel/rules/clickstack:google_css/IBM_Plex_Mono.css",
+        "//bazel/rules/clickstack:google_css/Roboto.css",
+        "//bazel/rules/clickstack:google_css/Roboto_Mono.css",
+    ],
+    manifest = "//bazel/rules/clickstack:google-fonts.json",
+)
+
+clickstack_yarn_cache = use_repo_rule("//bazel/rules/clickstack:repositories.bzl", "clickstack_yarn_cache")
+
+clickstack_yarn_cache(
+    name = "clickstack_yarn_cache",
+    native_checksums = "//bazel/rules/clickstack:native-yarn-checksums.json",
+)

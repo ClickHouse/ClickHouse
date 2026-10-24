@@ -1,0 +1,66 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE-MIT",
+])
+
+ch_cc_library(
+    name = "_simdutf",
+    srcs = [
+        "src/simdutf.cpp",
+        "src/generic/ascii_validation.h",
+        "src/generic/buf_block_reader.h",
+        "src/generic/utf16.h",
+        "src/generic/utf8.h",
+    ] + glob([
+        "src/generic/utf16_to_utf8/*.h",
+        "src/generic/utf8_to_*/*.h",
+        "src/generic/utf8_validation/*.h",
+        "src/simdutf/*.h",
+        "src/tables/*.h",
+    ]) + select({
+        "@platforms//cpu:x86_64": [
+            "src/generic/base64.h",
+            "src/generic/find.h",
+            "src/generic/utf16/utf8_length_from_utf16_bytemask.h",
+            "src/generic/utf32.h",
+            "src/generic/utf8/utf16_length_from_utf8_bytemask.h",
+            "src/generic/validate_utf16.h",
+            "src/generic/validate_utf32.h",
+        ] + glob([
+            "src/simdutf/haswell/*.h",
+            "src/simdutf/icelake/*.h",
+        ]),
+        "@platforms//cpu:aarch64": [
+            "src/generic/base64lengths.h",
+        ] + glob([
+            "src/simdutf/arm64/*.h",
+        ]),
+    }),
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "src",
+    ],
+    private_hdrs = [
+        "src/encoding_types.cpp",
+        "src/error.cpp",
+        "src/implementation.cpp",
+        "src/simdutf_c.cpp",
+    ] + select({
+        "@platforms//cpu:x86_64": glob([
+            "src/haswell/*.cpp",
+            "src/icelake/*.cpp",
+        ]),
+        "@platforms//cpu:aarch64": glob(["src/arm64/*.cpp"]),
+    }),
+)

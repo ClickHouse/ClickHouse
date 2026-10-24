@@ -1,0 +1,42 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-client-lib",
+    srcs = [
+        "Client.cpp",
+        "FuzzLoop.cpp",
+    ] + glob(["**/*.h"]),
+    clickhouse_code = True,
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//src/Common",
+        "//src/Common/Config:clickhouse_common_config",
+        "//base:common",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src/Functions:clickhouse_functions_obj__compile_0",
+        "//src/Parsers:clickhouse_parsers",
+        "//src/Common:exception_api",
+        "//src:io_string_buffers",
+        "//src:clickhouse_common_io__compile_0",
+        "//src:dbms__compile_0",
+        "//src:headers",
+        "//src:core_defines",
+        "//src/Parsers:headers",
+        "//src/Common:parser_support_api",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
+        "//src/Dictionaries:clickhouse_dictionaries",
+    ],
+)

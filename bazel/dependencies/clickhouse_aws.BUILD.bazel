@@ -1,0 +1,109 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE.txt",
+])
+
+expand_template(
+    name = "configure_include_aws_core_SDKConfig_h",
+    out = "config/contrib/aws-cmake/include/aws/core/SDKConfig.h",
+    substitutions = {
+        "#cmakedefine USE_AWS_MEMORY_MANAGEMENT": "/* #undef USE_AWS_MEMORY_MANAGEMENT */",
+    },
+    template = ":src/aws-cpp-sdk-core/include/aws/core/SDKConfig.h.in",
+)
+
+ch_cc_library(
+    name = "_aws__compile_0",
+    srcs = (glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/endpoint/**/*.cpp"]) + [
+        "src/aws-cpp-sdk-core/source/external/cjson/cJSON.cpp",
+        "src/aws-cpp-sdk-core/source/external/tinyxml2/tinyxml2.cpp",
+    ] + glob(["src/aws-cpp-sdk-core/source/http/*.cpp"]) + [
+        "src/aws-cpp-sdk-core/source/http/crt/CRTHttpClient.cpp",
+        "src/aws-cpp-sdk-core/source/http/standard/StandardHttpRequest.cpp",
+        "src/aws-cpp-sdk-core/source/http/standard/StandardHttpResponse.cpp",
+        "src/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp",
+    ] + glob(["src/aws-cpp-sdk-core/source/monitoring/*.cpp"]) + glob([
+        "src/aws-cpp-sdk-core/source/net/*.cpp",
+        "src/aws-cpp-sdk-core/source/net/linux-shared/*.cpp",
+    ]) + glob(["src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/smithy/client/**/*.cpp"]) + [
+        "src/aws-cpp-sdk-core/source/smithy/identity/AuthSchemeOption.cpp",
+        "src/aws-cpp-sdk-core/source/smithy/tracing/TracingUtils.cpp",
+    ] + glob(["src/aws-cpp-sdk-core/source/utils/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/**/*.cpp"]) + [
+        "@clickhouse//contrib:aws-cmake/aws_stubs.cpp",
+    ]),
+    # This target builds CRT HTTP and no-op telemetry. These SDK backends
+    # require sources and system APIs that this target does not compile.
+    hdrs = glob(
+        [
+            "generated/src/aws-cpp-sdk-glue/include/**/*.h",
+            "generated/src/aws-cpp-sdk-s3/include/**/*.h",
+            "src/aws-cpp-sdk-core/include/**/*.h",
+        ],
+        exclude = [
+            "src/aws-cpp-sdk-core/include/aws/core/external/CommonCryptorSPI.h",
+            "src/aws-cpp-sdk-core/include/aws/core/http/curl/*.h",
+            "src/aws-cpp-sdk-core/include/aws/core/http/windows/*.h",
+            "src/aws-cpp-sdk-core/include/aws/core/platform/refs/IXmlHttpRequest2Ref.h",
+            "src/aws-cpp-sdk-core/include/smithy/tracing/impl/opentelemetry/*.h",
+        ],
+    ) + ["config/contrib/aws-cmake/include/aws/core/SDKConfig.h"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+    ],
+    implementation_deps = [
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_http//:aws_c_http",
+    ],
+    includes = [
+        "src/aws-cpp-sdk-core/include",
+        "generated/src/aws-cpp-sdk-s3/include",
+        "generated/src/aws-cpp-sdk-glue/include",
+        "config/contrib/aws-cmake/include",
+    ],
+    local_defines = AWS_CRT_DEFINES,
+    deps = [
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
+        "@clickhouse_aws_crt_cpp//:aws_crt_cpp",
+    ],
+)
+
+alias(
+    name = "_aws__compile_2",
+    actual = select({
+        "@platforms//cpu:x86_64": "@clickhouse_aws_c_common//:aws_c_common__compile_2",
+        "@platforms//cpu:aarch64": "@clickhouse_aws_checksums//:aws_checksums__compile_2",
+    }),
+)
+
+alias(
+    name = "_aws__compile_3",
+    actual = "@clickhouse_aws_c_io//:aws_c_io__compile_3",
+)
+
+cc_library(
+    name = "_aws",
+    deps = [
+        ":_aws__compile_0",
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_cal//:aws_c_cal",
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_aws_checksums//:aws_checksums",
+        "@clickhouse_aws_c_io//:aws_c_io",
+        "@clickhouse_aws_c_http//:aws_c_http",
+        "@clickhouse_aws_c_compression//:aws_c_compression",
+        "@clickhouse_aws_c_s3//:aws_c_s3",
+        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
+        ":_aws__compile_2",
+        ":_aws__compile_3",
+    ],
+)

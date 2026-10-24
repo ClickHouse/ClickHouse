@@ -1,0 +1,35 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE-MIT",
+])
+
+ch_cc_library(
+    name = "_idna",
+    srcs = [
+        "src/idna.cpp",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    copts =
+        [
+            "-w",
+            "-std=c++23",
+        ],
+    includes = ["include"],
+    local_defines = CXX_RUNTIME_DEFINES,
+    private_hdrs = [
+        "src/identifier.cpp",
+        "src/mapping.cpp",
+        "src/normalization.cpp",
+        "src/punycode.cpp",
+        "src/to_ascii.cpp",
+        "src/to_unicode.cpp",
+        "src/unicode_transcoding.cpp",
+        "src/validity.cpp",
+        "src/id_tables.cpp",
+        "src/mapping_tables.cpp",
+        "src/normalization_tables.cpp",
+    ],
+)

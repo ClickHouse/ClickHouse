@@ -1,0 +1,46 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE.md",
+])
+
+ch_cc_library(
+    name = "_replxx",
+    srcs = [
+        "src/conversion.cxx",
+        "src/ConvertUTF.cpp",
+        "src/escape.cxx",
+        "src/history.cxx",
+        "src/terminal.cxx",
+        "src/prompt.cxx",
+        "src/replxx_impl.cxx",
+        "src/replxx.cxx",
+        "src/util.cxx",
+        "src/wcwidth.cpp",
+        "src/ConvertUTF.h",
+        "src/conversion.hxx",
+        "src/escape.hxx",
+        "src/history.hxx",
+        "src/killring.hxx",
+        "src/prompt.hxx",
+        "src/replxx_impl.hxx",
+        "src/terminal.hxx",
+        "src/unicodestring.hxx",
+        "src/utf8string.hxx",
+        "src/util.hxx",
+    ],
+    hdrs = glob([
+        "include/**/*.h",
+        "include/**/*.hxx",
+    ]),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+)

@@ -1,0 +1,16 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "license.txt",
+    "pdqsort.h",
+])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
+)

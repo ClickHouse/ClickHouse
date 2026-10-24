@@ -1,0 +1,18 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "wyhash",
+    hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
+)

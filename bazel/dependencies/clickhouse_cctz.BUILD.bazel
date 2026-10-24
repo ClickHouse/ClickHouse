@@ -1,0 +1,65 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["LICENSE.txt"])
+
+genrule(
+    name = "configure_TimeZones_generated_cpp",
+    srcs = glob(
+        ["testdata/zoneinfo/**"],
+        exclude = [
+            "testdata/zoneinfo/**/*.tab",
+            "testdata/zoneinfo/**/localtime",
+        ],
+    ),
+    outs = ["config/contrib/cctz-cmake/TimeZones.generated.cpp"],
+    cmd = "$(execpath @clickhouse//bazel/rules:generate_timezones) --output=$@ $(SRCS)",
+    tools = [
+        "@clickhouse//bazel/rules:generate_timezones",
+    ],
+)
+
+ch_cc_library(
+    name = "_cctz",
+    srcs = [
+        "src/civil_time_detail.cc",
+        "src/time_zone_fixed.cc",
+        "src/time_zone_format.cc",
+        "src/time_zone_if.cc",
+        "src/time_zone_impl.cc",
+        "src/time_zone_info.cc",
+        "src/time_zone_libc.cc",
+        "src/time_zone_lookup.cc",
+        "src/time_zone_posix.cc",
+        "src/zone_info_source.cc",
+        "src/time_zone_fixed.h",
+        "src/time_zone_if.h",
+        "src/time_zone_impl.h",
+        "src/time_zone_info.h",
+        "src/time_zone_libc.h",
+        "src/time_zone_posix.h",
+        "src/tzfile.h",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    copts =
+        [
+            "-w",
+            "-std=c++23",
+        ],
+    includes = [
+        "include",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+)
+
+ch_cc_library(
+    name = "tzdata",
+    srcs = [":config/contrib/cctz-cmake/TimeZones.generated.cpp"],
+    copts =
+        [
+            "-w",
+            "-std=c++23",
+        ],
+    local_defines = CXX_RUNTIME_DEFINES,
+)

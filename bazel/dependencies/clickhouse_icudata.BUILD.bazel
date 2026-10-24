@@ -1,0 +1,27 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_icudata",
+    srcs = [
+        "icudt78l_dat.S",
+    ],
+    language = "ASM",
+    libcxx_headers = False,
+    local_defines = [
+        "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "U_HAVE_ELF_H=1",
+        "U_HAVE_STRTOD_L=1",
+        "U_HAVE_XLOCALE_H=0",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_REENTRANT",
+    ],
+)

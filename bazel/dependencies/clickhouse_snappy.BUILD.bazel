@@ -1,0 +1,95 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "COPYING",
+])
+
+expand_template(
+    name = "configure_config_h",
+    out = "config/contrib/snappy-cmake/config.h",
+    substitutions = {
+        "#cmakedefine01 HAVE_ATTRIBUTE_ALWAYS_INLINE": "#define HAVE_ATTRIBUTE_ALWAYS_INLINE 0",
+        "#cmakedefine01 SNAPPY_HAVE_NEON_CRC32": "#define SNAPPY_HAVE_NEON_CRC32 0",
+        "#cmakedefine01 HAVE_BUILTIN_PREFETCH": "#define HAVE_BUILTIN_PREFETCH 1",
+        "#cmakedefine01 SNAPPY_IS_BIG_ENDIAN": "#define SNAPPY_IS_BIG_ENDIAN 0",
+        "#cmakedefine01 HAVE_BUILTIN_EXPECT": "#define HAVE_BUILTIN_EXPECT 1",
+        "#cmakedefine01 HAVE_SYS_RESOURCE_H": "#define HAVE_SYS_RESOURCE_H 1",
+        "#cmakedefine01 HAVE_FUNC_SYSCONF": "#define HAVE_FUNC_SYSCONF 1",
+        "#cmakedefine01 HAVE_BUILTIN_CTZ": "#define HAVE_BUILTIN_CTZ 1",
+        "#cmakedefine01 HAVE_SYS_MMAN_H": "#define HAVE_SYS_MMAN_H 1",
+        "#cmakedefine01 HAVE_SYS_TIME_H": "#define HAVE_SYS_TIME_H 1",
+        "#cmakedefine01 HAVE_FUNC_MMAP": "#define HAVE_FUNC_MMAP 1",
+        "#cmakedefine01 HAVE_SYS_UIO_H": "#define HAVE_SYS_UIO_H 1",
+        "#cmakedefine01 HAVE_WINDOWS_H": "#define HAVE_WINDOWS_H 0",
+        "#cmakedefine01 HAVE_UNISTD_H": "#define HAVE_UNISTD_H 1",
+        "#cmakedefine01 HAVE_LIBLZO2": "#define HAVE_LIBLZO2 0",
+        "#cmakedefine01 HAVE_LIBLZ4": "#define HAVE_LIBLZ4 0",
+        "#cmakedefine01 HAVE_LIBZ": "#define HAVE_LIBZ 0",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "#cmakedefine01 SNAPPY_HAVE_X86_CRC32": "#define SNAPPY_HAVE_X86_CRC32 1",
+            "#cmakedefine01 SNAPPY_HAVE_SSSE3": "#define SNAPPY_HAVE_SSSE3 1",
+            "#cmakedefine01 SNAPPY_HAVE_BMI2": "#define SNAPPY_HAVE_BMI2 1",
+            "#cmakedefine01 SNAPPY_HAVE_NEON": "#define SNAPPY_HAVE_NEON 0",
+        },
+        "@platforms//cpu:aarch64": {
+            "#cmakedefine01 SNAPPY_HAVE_X86_CRC32": "#define SNAPPY_HAVE_X86_CRC32 0",
+            "#cmakedefine01 SNAPPY_HAVE_SSSE3": "#define SNAPPY_HAVE_SSSE3 0",
+            "#cmakedefine01 SNAPPY_HAVE_BMI2": "#define SNAPPY_HAVE_BMI2 0",
+            "#cmakedefine01 SNAPPY_HAVE_NEON": "#define SNAPPY_HAVE_NEON 1",
+        },
+    }),
+    template = ":cmake/config.h.in",
+)
+
+expand_template(
+    name = "configure_snappy_stubs_public_h",
+    out = "config/contrib/snappy-cmake/snappy-stubs-public.h",
+    substitutions = {
+        "${PROJECT_VERSION_MAJOR}": "",
+        "${PROJECT_VERSION_MINOR}": "",
+        "${PROJECT_VERSION_PATCH}": "",
+        "${HAVE_SYS_UIO_H_01}": "1",
+    },
+    template = ":snappy-stubs-public.h.in",
+)
+
+ch_cc_library(
+    name = "_snappy",
+    srcs = [
+        "snappy-c.cc",
+        "snappy-sinksource.cc",
+        "snappy-stubs-internal.cc",
+        "snappy.cc",
+        "snappy-internal.h",
+        "snappy-stubs-internal.h",
+        ":configure_config_h",
+    ],
+    hdrs = [
+        "snappy-c.h",
+        "snappy-sinksource.h",
+        "snappy.h",
+        ":configure_snappy_stubs_public_h",
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = [
+        ".",
+        "config/contrib/snappy-cmake",
+    ],
+    local_defines = [
+        "HAVE_CONFIG_H",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+)

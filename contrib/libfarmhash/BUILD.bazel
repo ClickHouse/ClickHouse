@@ -1,0 +1,19 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "COPYING",
+])
+
+ch_cc_library(
+    name = "_farmhash",
+    srcs = ["farmhash.cc"],
+    hdrs = ["farmhash.h"],
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = ["."],
+    local_defines = CXX_RUNTIME_DEFINES,
+)

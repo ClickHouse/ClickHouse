@@ -1,0 +1,130 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+_CAPNPROTO_COPTS = [
+    "-w",
+    "-std=c++17",
+    "-fno-char8_t",
+]
+
+ch_cc_library(
+    name = "_capnp",
+    srcs = [
+        "c++/src/capnp/c++.capnp.c++",
+        "c++/src/capnp/blob.c++",
+        "c++/src/capnp/arena.c++",
+        "c++/src/capnp/arena.h",
+        "c++/src/capnp/layout.c++",
+        "c++/src/capnp/list.c++",
+        "c++/src/capnp/any.c++",
+        "c++/src/capnp/message.c++",
+        "c++/src/capnp/schema.capnp.c++",
+        "c++/src/capnp/serialize.c++",
+        "c++/src/capnp/serialize-packed.c++",
+        "c++/src/capnp/schema.c++",
+        "c++/src/capnp/stream.capnp.c++",
+        "c++/src/capnp/schema-loader.c++",
+        "c++/src/capnp/dynamic.c++",
+        "c++/src/capnp/stringify.c++",
+    ],
+    hdrs = glob(
+        ["c++/src/capnp/*.h"],
+        exclude = [
+            "c++/src/capnp/arena.h",
+            "c++/src/capnp/test-util.h",
+            "c++/src/capnp/schema-parser.h",
+            "c++/src/capnp/serialize-text.h",
+        ],
+    ),
+    copts = _CAPNPROTO_COPTS,
+    local_defines = CXX_RUNTIME_DEFINES,
+    deps = [":_kj"],
+)
+
+_CAPNPC_PUBLIC_HEADERS = [
+    "c++/src/capnp/schema-parser.h",
+    "c++/src/capnp/serialize-text.h",
+    "c++/src/capnp/compiler/compiler.h",
+    "c++/src/capnp/compiler/error-reporter.h",
+    "c++/src/capnp/compiler/generics.h",
+    "c++/src/capnp/compiler/grammar.capnp.h",
+    "c++/src/capnp/compiler/resolver.h",
+]
+
+ch_cc_library(
+    name = "_capnpc",
+    srcs = [
+        "c++/src/capnp/compiler/type-id.c++",
+        "c++/src/capnp/compiler/error-reporter.c++",
+        "c++/src/capnp/compiler/lexer.capnp.c++",
+        "c++/src/capnp/compiler/lexer.c++",
+        "c++/src/capnp/compiler/grammar.capnp.c++",
+        "c++/src/capnp/compiler/parser.c++",
+        "c++/src/capnp/compiler/generics.c++",
+        "c++/src/capnp/compiler/node-translator.c++",
+        "c++/src/capnp/compiler/compiler.c++",
+        "c++/src/capnp/schema-parser.c++",
+        "c++/src/capnp/serialize-text.c++",
+    ] + glob(
+        ["c++/src/capnp/compiler/**/*.h"],
+        exclude = _CAPNPC_PUBLIC_HEADERS + [
+            "c++/src/capnp/compiler/module-loader.h",
+        ],
+    ),
+    hdrs = _CAPNPC_PUBLIC_HEADERS,
+    copts = _CAPNPROTO_COPTS,
+    local_defines = CXX_RUNTIME_DEFINES,
+    deps = [
+        ":_capnp",
+        ":_kj",
+    ],
+)
+
+ch_cc_library(
+    name = "_kj",
+    srcs = [
+        "c++/src/kj/array.c++",
+        "c++/src/kj/common.c++",
+        "c++/src/kj/debug.c++",
+        "c++/src/kj/exception.c++",
+        "c++/src/kj/io.c++",
+        "c++/src/kj/memory.c++",
+        "c++/src/kj/mutex.c++",
+        "c++/src/kj/string.c++",
+        "c++/src/kj/hash.c++",
+        "c++/src/kj/table.c++",
+        "c++/src/kj/thread.c++",
+        "c++/src/kj/main.c++",
+        "c++/src/kj/arena.c++",
+        "c++/src/kj/test-helpers.c++",
+        "c++/src/kj/units.c++",
+        "c++/src/kj/encoding.c++",
+        "c++/src/kj/refcount.c++",
+        "c++/src/kj/string-tree.c++",
+        "c++/src/kj/time.c++",
+        "c++/src/kj/filesystem.c++",
+        "c++/src/kj/filesystem-disk-unix.c++",
+        "c++/src/kj/filesystem-disk-win32.c++",
+        "c++/src/kj/parse/char.c++",
+    ],
+    hdrs = glob(
+        ["c++/src/kj/**/*.h"],
+        exclude = [
+            "c++/src/kj/async-inl.h",
+            "c++/src/kj/async-win32.h",
+            "c++/src/kj/compat/brotli.h",
+            "c++/src/kj/compat/gzip.h",
+        ],
+    ),
+    copts = _CAPNPROTO_COPTS,
+    includes = [
+        "c++/src",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+    textual_hdrs = ["c++/src/kj/async-inl.h"],
+)

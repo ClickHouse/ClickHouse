@@ -1,0 +1,19 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "copyright-and-BSD-license.txt",
+    "tools/pysz/LICENSE",
+])
+
+cc_library(
+    name = "sz3",
+    hdrs = glob(["include/SZ3/**/*.hpp"]),
+    includes = [
+        "include",
+    ],
+    deps = [
+        "@clickhouse_zstd//:_zstd",
+    ],
+)

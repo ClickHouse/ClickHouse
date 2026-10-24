@@ -1,0 +1,65 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+_CLD2_PUBLIC_INTERNAL_HEADERS = [
+    "internal/generated_language.h",
+    "internal/generated_ulscript.h",
+    "internal/integral_types.h",
+    "internal/lang_script.h",
+]
+
+ch_cc_library(
+    name = "_cld2",
+    srcs = [
+        "internal/cldutil.cc",
+        "internal/compact_lang_det.cc",
+        "internal/cldutil_shared.cc",
+        "internal/compact_lang_det_hint_code.cc",
+        "internal/compact_lang_det_impl.cc",
+        "internal/debug.cc",
+        "internal/fixunicodevalue.cc",
+        "internal/generated_entities.cc",
+        "internal/generated_language.cc",
+        "internal/generated_ulscript.cc",
+        "internal/getonescriptspan.cc",
+        "internal/lang_script.cc",
+        "internal/offsetmap.cc",
+        "internal/scoreonescriptspan.cc",
+        "internal/tote.cc",
+        "internal/utf8statetable.cc",
+        "internal/cld_generated_cjk_uni_prop_80.cc",
+        "internal/cld2_generated_cjk_compatible.cc",
+        "internal/cld_generated_cjk_delta_bi_4.cc",
+        "internal/generated_distinct_bi_0.cc",
+        "internal/cld2_generated_quadchrome_2.cc",
+        "internal/cld2_generated_deltaoctachrome.cc",
+        "internal/cld2_generated_distinctoctachrome.cc",
+        "internal/cld_generated_score_quad_octa_2.cc",
+    ] + glob(
+        ["internal/**/*.h"],
+        exclude = _CLD2_PUBLIC_INTERNAL_HEADERS + [
+            "internal/cld2_dynamic_compat.h",
+            "internal/cld2_dynamic_data_extractor.h",
+            "internal/cldutil_offline.h",
+            "internal/unittest_data.h",
+            "internal/cld2_dynamic_data.h",
+            "internal/cld2_dynamic_data_loader.h",
+        ],
+    ),
+    hdrs = glob(["public/**/*.h"]) + _CLD2_PUBLIC_INTERNAL_HEADERS,
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-Wno-reserved-id-macro",
+        "-Wno-c++11-narrowing",
+    ],
+    includes = [
+        "public",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+)

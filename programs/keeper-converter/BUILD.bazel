@@ -1,0 +1,24 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-keeper-converter-lib",
+    srcs = ["KeeperConverter.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:dbms__compile_0",
+        "//base/poco/Foundation:_poco_foundation",
+        "//src/Common",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src:headers",
+        "//src:dbms",
+        "//src/Common:parser_support_api",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+    local_includes = [
+        ".",
+    ],
+)

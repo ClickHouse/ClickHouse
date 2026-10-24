@@ -1,0 +1,65 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "COPYING",
+])
+
+expand_template(
+    name = "configure_pqxx_config_internal_compiler_h",
+    out = "config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+    substitutions = {},
+    template = ":include/pqxx/config.h.in",
+)
+
+expand_template(
+    name = "configure_pqxx_config_public_compiler_h",
+    out = "config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+    substitutions = {},
+    template = ":include/pqxx/config.h.in",
+)
+
+ch_cc_library(
+    name = "_libpqxx",
+    srcs = [
+        ":config/contrib/libpqxx-cmake/pqxx/config-internal-compiler.h",
+        "include/pqxx/internal/wait.hxx",
+    ] + glob(
+        [
+            "include/pqxx/internal/gates/*.hxx",
+            "src/*.cxx",
+            "src/**/*.hxx",
+        ],
+        exclude = [
+            "include/pqxx/internal/gates/connection-stream_from.hxx",
+            "include/pqxx/internal/gates/result-sql_cursor.hxx",
+        ],
+    ),
+    hdrs = [
+        ":config/contrib/libpqxx-cmake/pqxx/config-public-compiler.h",
+        "include/pqxx/internal/libpq-forward.hxx",
+    ] + glob(
+        ["include/pqxx/*"],
+        exclude = ["include/pqxx/*.*"],
+    ),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    implementation_deps = ["@clickhouse_postgres//:_libpq"],
+    includes = [
+        "config/contrib/libpqxx-cmake",
+        "include",
+    ],
+    local_defines = CXX_RUNTIME_DEFINES,
+    textual_hdrs = glob(
+        ["include/**/*.hxx"],
+        exclude = [
+            "include/pqxx/internal/gates/*.hxx",
+            "include/pqxx/internal/wait.hxx",
+            "include/pqxx/internal/libpq-forward.hxx",
+        ],
+    ) + ["include/pqxx/internal/gates/connection-stream_from.hxx"],
+)

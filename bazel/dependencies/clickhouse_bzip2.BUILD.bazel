@@ -1,0 +1,47 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "COPYING",
+])
+
+expand_template(
+    name = "configure_bz_version_h",
+    out = "config/contrib/bzip2/bz_version.h",
+    substitutions = {
+        "@BZ_VERSION@": "1.0.7",
+    },
+    template = ":bz_version.h.in",
+)
+
+ch_cc_library(
+    name = "_bzip2",
+    srcs = [
+        "blocksort.c",
+        "huffman.c",
+        "crctable.c",
+        "randtable.c",
+        "compress.c",
+        "decompress.c",
+        "bzlib.c",
+        "bzlib_private.h",
+        ":config/contrib/bzip2/bz_version.h",
+    ],
+    hdrs = ["bzlib.h"],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    includes = [
+        ".",
+        "config/contrib/bzip2",
+    ],
+    language = "C",
+    libcxx_headers = False,
+    local_defines = CXX_RUNTIME_DEFINES,
+)

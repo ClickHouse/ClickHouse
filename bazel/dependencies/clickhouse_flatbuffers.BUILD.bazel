@@ -1,0 +1,224 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+_GENERATED_LOCAL_DEFINES_0 = [
+    "FLATBUFFERS_LOCALE_INDEPENDENT=0",
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
+
+ch_cc_library(
+    name = "_flatbuffers",
+    srcs = [
+        "src/idl_parser.cpp",
+        "src/file_manager.cpp",
+        "src/file_name_manager.cpp",
+        "src/idl_gen_text.cpp",
+        "src/idl_gen_text.h",
+        "src/reflection.cpp",
+        "src/util.cpp",
+    ],
+    hdrs = glob(
+        ["include/flatbuffers/*.h"],
+        # flatc owns its compiler headers. No ClickHouse build enables flatc --grpc.
+        exclude = [
+            "include/flatbuffers/flatc.h",
+            "include/flatbuffers/grpc.h",
+        ],
+    ),
+    copts = [
+        "-w",
+        "-std=c++23",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+)
+
+ch_cc_binary(
+    name = "flatc",
+    srcs = [
+        "src/annotated_binary_text_gen.cpp",
+        "src/bfbs_gen_lua.cpp",
+        "src/bfbs_gen_nim.cpp",
+        "src/binary_annotator.cpp",
+        "src/code_generators.cpp",
+        "src/flatc.cpp",
+        "src/flatc_main.cpp",
+        "src/idl_gen_binary.cpp",
+        "src/idl_gen_cpp.cpp",
+        "src/idl_gen_csharp.cpp",
+        "src/idl_gen_dart.cpp",
+        "src/idl_gen_fbs.cpp",
+        "src/idl_gen_go.cpp",
+        "src/idl_gen_grpc.cpp",
+        "src/idl_gen_java.cpp",
+        "src/idl_gen_json_schema.cpp",
+        "src/idl_gen_kotlin.cpp",
+        "src/idl_gen_kotlin_kmp.cpp",
+        "src/idl_gen_lobster.cpp",
+        "src/idl_gen_php.cpp",
+        "src/idl_gen_python.cpp",
+        "src/idl_gen_rust.cpp",
+        "src/idl_gen_swift.cpp",
+        "src/idl_gen_ts.cpp",
+        "include/codegen/python.cc",
+    ] + glob(["grpc/src/compiler/*.cc"]) + glob([
+        "src/**/*.h",
+        "include/codegen/**/*.h",
+        "include/flatbuffers/flatc.h",
+        "grpc/**/*.h",
+    ]),
+    copts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + (select({
+        "@platforms//cpu:x86_64": [
+            "-march=x86-64-v3",
+            "-mpclmul",
+        ],
+        "@platforms//cpu:aarch64": [
+            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
+        ],
+    }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    })) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fstrict-vtable-pointers",
+        "-fPIE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-w",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+        "-O3",
+        "-DNDEBUG",
+        "-std=c++23",
+        "-D",
+        "OS_LINUX",
+        "-gz=zlib",
+        "-Werror",
+        "-nostdinc++",
+    ] + cmake_prefix_maps([
+        "aarch64",
+        "x86_64",
+    ]),
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+        "-llvm_system_c_headers",
+    ],
+    linkopts = [
+        "--no-default-config",
+        "-fdiagnostics-color=always",
+        "-pipe",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-march=x86-64-v3",
+            "-mpclmul",
+        ],
+        "@platforms//cpu:aarch64": [
+            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
+        ],
+    }) + [
+        "-fasynchronous-unwind-tables",
+        "-fdebug-compilation-dir=.",
+        "-falign-functions=64",
+        "-falign-loops=32",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "-mbranches-within-32B-boundaries",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+        "-ffp-contract=off",
+        "-fno-math-errno",
+        "-fdiagnostics-absolute-paths",
+        "-fstrict-vtable-pointers",
+        "-fPIE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+        "-w",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-faddrsig",
+        "-O3",
+        "-DNDEBUG",
+        "--no-default-config",
+        "-Wl,--no-export-dynamic",
+        "-Wl,--gc-sections",
+        "-Wl,--fatal-warnings",
+        "-Wl,--icf=safe",
+        "-Wl,--strip-debug",
+        "-Wl,--build-id=sha1",
+        "-Wl,-u,logf",
+        "-Wl,-u,powf",
+        "-Wl,-u,expf",
+        "-Wl,-u,exp2f",
+        "-Wl,-u,log2f",
+        "-Wl,-u,log",
+        "-Wl,-u,pow",
+        "-Wl,-u,exp",
+        "-Wl,-u,exp2",
+        "-Wl,-u,log2",
+        "-Wl,-u,lgammaf",
+        "-pie",
+        "-Wl,-pie",
+        "-fno-xray-link-deps",
+        "-Wl,-u,memcpy",
+        "-Wl,-u,memmove",
+        "-Wl,-u,memset",
+        "-Wl,-u,memcmp",
+        "-Wl,-z,now",
+        "-Wl,-z,relro",
+        "-Wl,-z,separate-code",
+        "-Wl,-z,keep-text-section-prefix",
+        "-Xlinker",
+        "--no-undefined",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "grpc",
+    ],
+    deps = [
+        "@clickhouse_llvm_project//:clang_rt_xray",
+        "@clickhouse_llvm_project//:libllvmlibc",
+        ":_flatbuffers",
+        "@clickhouse_llvm_project//:cxx",
+        "@clickhouse_llvm_project//:cxxabi",
+        "@clickhouse//base/glibc-compatibility",
+        "@clickhouse_llvm_project//:unwind",
+    ],
+)

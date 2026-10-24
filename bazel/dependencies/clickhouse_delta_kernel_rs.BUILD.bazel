@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+    "ffi/Cargo.toml",
+    "ffi/cbindgen.toml",
+])
+
+filegroup(
+    name = "cbindgen_sources",
+    srcs = glob(
+        ["**"],
+        exclude = ["**/BUILD.bazel"],
+    ),
+)

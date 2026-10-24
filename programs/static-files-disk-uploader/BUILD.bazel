@@ -1,0 +1,24 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-static-files-disk-uploader-lib",
+    srcs = ["static-files-disk-uploader.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:clickhouse_common_io__compile_0",
+        "//src:dbms__compile_0",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/Common",
+        "//src:dbms",
+        "//src/Common:exception_api",
+        "//src:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+    local_includes = [
+        ".",
+    ],
+)

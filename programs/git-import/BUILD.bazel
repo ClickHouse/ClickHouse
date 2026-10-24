@@ -1,0 +1,26 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-git-import-lib",
+    srcs = ["git-import.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:dbms",
+        "//base:common",
+        "//src/Common",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src:clickhouse_common_io__compile_0",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src/Common:string_utils",
+        "//src:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+    local_includes = [
+        ".",
+    ],
+)

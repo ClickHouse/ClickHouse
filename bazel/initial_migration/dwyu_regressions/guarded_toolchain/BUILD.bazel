@@ -1,0 +1,149 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# These targets use the full configured LLVM toolchain and system_include_paths.
+cc_library(
+    name = "libc_c",
+    srcs = ["libc.c"],
+)
+
+cc_library(
+    name = "libc_cxx",
+    srcs = ["libc.cc"],
+)
+
+cc_library(
+    name = "clang_resource",
+    srcs = ["resource.c"],
+)
+
+# ch_cc_library disables llvm_system_c_headers and selects ClickHouse's sysroot.
+ch_cc_library(
+    name = "clickhouse_libc",
+    srcs = ["libc.c"],
+    language = "C",
+    libcxx_headers = False,
+)
+
+cc_library(
+    name = "api",
+    hdrs = ["api/dwyu_guarded.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "api_direct",
+    srcs = ["read_api.c"],
+    implementation_deps = [":api"],
+)
+
+# Compilation succeeds through bridge, but both guarded and entered includes
+# must identify api as the missing direct owner in the DWYU report.
+cc_library(
+    name = "negative_api_bridge",
+    srcs = ["read_api.c"],
+    implementation_deps = [":bridge"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_additional_inputs",
+    srcs = ["read_api.c"],
+    additional_compiler_inputs = ["api/dwyu_guarded.h"],
+    copts = [
+        "-isystem",
+        "bazel/initial_migration/dwyu_regressions/guarded_toolchain/api",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_superseded_sysroot",
+    srcs = ["read_api.c"],
+    additional_compiler_inputs = ["api/dwyu_guarded.h"],
+    copts = [
+        "--sysroot=bazel/initial_migration/dwyu_regressions/guarded_toolchain/api",
+        "--sysroot=/dev/null",
+        "-isystem",
+        "bazel/initial_migration/dwyu_regressions/guarded_toolchain/api",
+    ],
+    tags = ["manual"],
+)
+
+# A sibling of a real supplied final sysroot is not part of that sysroot.
+cc_library(
+    name = "negative_sysroot_sibling",
+    srcs = ["read_api.c"],
+    additional_compiler_inputs = [
+        "sysroot/include/dwyu_marker.h",
+        "sysroot-sibling/dwyu_guarded.h",
+    ],
+    copts = [
+        "--sysroot=bazel/initial_migration/dwyu_regressions/guarded_toolchain/sysroot",
+        "-isystem",
+        "bazel/initial_migration/dwyu_regressions/guarded_toolchain/sysroot-sibling",
+    ],
+    tags = ["manual"],
+)
+
+# Two input spellings for features.h: ordinary -I beats Clang's -isystem.
+# No public include directory on shadow; only the -I control requests it.
+cc_library(
+    name = "shadow",
+    hdrs = ["shadow/features.h"],
+)
+
+cc_library(
+    name = "shadow_bridge",
+    deps = [":shadow"],
+)
+
+cc_library(
+    name = "ordinary_i_shadow",
+    srcs = ["shadow_read.c"],
+    copts = ["-Ibazel/initial_migration/dwyu_regressions/guarded_toolchain/shadow"],
+    features = ["-system_include_paths"],
+    implementation_deps = [":shadow"],
+)
+
+cc_library(
+    name = "negative_ordinary_i_bridge",
+    srcs = ["shadow_read.c"],
+    copts = ["-Ibazel/initial_migration/dwyu_regressions/guarded_toolchain/shadow"],
+    features = ["-system_include_paths"],
+    implementation_deps = [":shadow_bridge"],
+    tags = ["manual"],
+)
+
+# The same directory supplied by both -I and -isystem keeps its system
+# position. Glibc must win over the later project system directory, and
+# shadow must remain an unused dep instead of becoming a false guarded use.
+cc_library(
+    name = "negative_duplicate_i_system",
+    srcs = ["libc.c"],
+    copts = [
+        "-Ibazel/initial_migration/dwyu_regressions/guarded_toolchain/shadow",
+        "-isystem",
+        "bazel/initial_migration/dwyu_regressions/guarded_toolchain/shadow",
+    ],
+    implementation_deps = [":shadow"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_late_system_shadow",
+    srcs = ["libc.c"],
+    copts = [
+        "-isystem",
+        "bazel/initial_migration/dwyu_regressions/guarded_toolchain/shadow",
+    ],
+    implementation_deps = [":shadow"],
+    tags = ["manual"],
+)
