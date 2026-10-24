@@ -42,6 +42,7 @@ using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 const std::size_t POLL_TIMEOUT_WO_ASSIGNMENT_MS = 50;
 const auto DRAIN_TIMEOUT_MS = 5000ms;
+const auto SEEK_TIMEOUT_MS = 5000ms;
 
 
 KafkaConsumer::KafkaConsumer(
@@ -82,27 +83,31 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     // called (synchronously, during poll) when we enter the consumer group
+    // The cooperative protocol (always used by `group.protocol=consumer`, KIP-848) passes only the added partitions.
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         CurrentMetrics::add(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceAssignments);
 
-        if (topic_partitions.empty())
-        {
-            LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
-        }
-        else
-        {
-            LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
-            CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-        }
+        if (!assignment.has_value())
+            assignment.emplace();
 
-        assignment = topic_partitions;
+        if (assignment->empty() && !topic_partitions.empty())
+            CurrentMetrics::add(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+
+        assignment->insert(assignment->end(), topic_partitions.begin(), topic_partitions.end());
+
+        if (assignment->empty())
+            LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
+        else
+            LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
+
         waited_for_assignment = 0;
         num_rebalance_assignments++;
     });
 
     // called (synchronously, during poll) when we leave the consumer group
+    // The cooperative protocol revokes only a part of the assignment, `doPoll` rewinds the rest.
     consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
@@ -124,8 +129,15 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
-        chassert(!assignment.has_value() || topic_partitions.size() == assignment->size());
-        cleanAssignment();
+        if (assignment.has_value() && topic_partitions.size() < assignment->size())
+        {
+            auto revoked = std::erase_if(*assignment, [&](const auto & assigned) { return std::ranges::find(topic_partitions, assigned) != topic_partitions.end(); });
+            CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, revoked);
+        }
+        else
+        {
+            cleanAssignment();
+        }
         waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
@@ -359,10 +371,10 @@ void KafkaConsumer::cleanUnprocessed()
     offsets_stored = 0;
 }
 
-/// Sole owner of the decrements for `KafkaAssignedPartitions` and `KafkaConsumersWithAssignment`.
-/// Every path that drops an assignment reaches it - the revocation callback, `moveConsumer` and
-/// `KafkaConsumer`'s destructor - so a caller that also decrements on its own makes the gauge drift
-/// by one per rebalance until it passes zero.
+/// Sole owner of the decrements for `KafkaAssignedPartitions` and `KafkaConsumersWithAssignment`, except a
+/// partial cooperative revocation. Every path that drops an assignment reaches it - the revocation callback,
+/// `moveConsumer` and `KafkaConsumer`'s destructor - so a caller that also decrements on its own makes the gauge
+/// drift by one per rebalance until it passes zero.
 void KafkaConsumer::cleanAssignment()
 {
     if (assignment.has_value())
@@ -392,8 +404,29 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
-    consumer->assign(committed_offset);
+    rewindTo(committed_offset);
     LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
+}
+
+/// The cooperative rebalance protocol (always used by `group.protocol=consumer`, KIP-848) rejects `assign`, so seek
+/// instead. Only the partitions read from need it, the others still start from the committed offsets, and librdkafka
+/// rejects seeking a partition before its fetcher starts.
+void KafkaConsumer::rewindTo(const cppkafka::TopicPartitionList & offsets)
+{
+    if (consumer->get_rebalance_protocol() != "COOPERATIVE")
+    {
+        consumer->assign(offsets);
+        return;
+    }
+
+    const auto positions = consumer->get_offsets_position(offsets);
+    cppkafka::TopicPartitionList read_from;
+    for (size_t i = 0; i < offsets.size(); ++i)
+        if (positions[i].get_offset() >= 0)
+            read_from.push_back(offsets[i]);
+
+    if (!read_from.empty())
+        consumer->seek(read_from, SEEK_TIMEOUT_MS);
 }
 
 void KafkaConsumer::rewindToLastCommitted()
@@ -420,7 +453,7 @@ void KafkaConsumer::rewindToLastCommitted()
                     if (tp.get_partition() == start.get_partition() && tp.get_topic() == start.get_topic())
                         tp.set_offset(start.get_offset());
 
-            consumer->assign(positions);
+            rewindTo(positions);
             consumer->commit(block_start_offsets);
             LOG_TRACE(log, "Aborted in-flight block, rewound to block start: {}", block_start_offsets);
             cleanBlockStartOffsets();
@@ -474,13 +507,10 @@ void KafkaConsumer::doPoll()
         }
         if (stalled_status == REBALANCE_HAPPENED)
         {
-            if (!new_messages.empty())
-            {
-                // we have polled something just after rebalance.
-                // we will not use current batch, so we need to return to last committed position
-                // otherwise we will continue polling from that position
-                resetToLastCommitted("Rewinding last poll after rebalance.");
-            }
+            // we will not use current batch, so we need to return to last committed position
+            // otherwise we will continue polling from that position. That is needed even if nothing was polled now:
+            // the cooperative protocol keeps the partitions that were not revoked, and the batch read from them is dropped.
+            resetToLastCommitted("Rewinding after rebalance.");
             return;
         }
 

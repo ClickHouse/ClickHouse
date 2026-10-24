@@ -78,6 +78,7 @@ public:
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
+    void rewindTo(const cppkafka::TopicPartitionList & offsets);
 
     /// Polls batch of messages from Kafka and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.

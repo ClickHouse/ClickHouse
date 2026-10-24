@@ -12,7 +12,7 @@ from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/sasl_settings.xml"],
+    main_configs=["configs/sasl_settings.xml", "configs/kip848.xml"],
     with_kafka_sasl=True,
     stay_alive=True,
 )
@@ -144,3 +144,87 @@ def test_dead_letter_segfault(kafka_cluster):
     )
 
     assert "The table system.dead_letter_queue is not configured on the server" in res
+
+
+
+def kafka_cli(kafka_cluster, tool, *args):
+    config = "/tmp/kip848_client.properties"
+    properties = (
+        "security.protocol=SASL_PLAINTEXT\n"
+        "sasl.mechanism=PLAIN\n"
+        "sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required "
+        f'username="{kafka_sasl_user}" password="{kafka_sasl_pass}";\n'
+    )
+    kafka_cluster.exec_in_container(
+        kafka_cluster.kafka_sasl_docker_id, ["bash", "-c", f"echo '{properties}' > {config}"]
+    )
+    return kafka_cluster.exec_in_container(
+        kafka_cluster.kafka_sasl_docker_id,
+        [tool, "--bootstrap-server", "kafka_sasl:19092", "--command-config", config, *args],
+    )
+
+
+# `group_protocol = consumer` (KIP-848, set for the topic in configs/kip848.xml): the broker assigns the partitions,
+# and every rebalance is incremental. Members joining and leaving the group must not lose or stall messages.
+def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
+    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", "kip848", "--partitions", "6")
+
+    def create_kafka_table(name):
+        instance.query(
+            f"""
+            CREATE TABLE test.{name} (id UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka_sasl:19092',
+                         kafka_security_protocol = 'sasl_plaintext',
+                         kafka_sasl_mechanism = 'PLAIN',
+                         kafka_sasl_username = '{kafka_sasl_user}',
+                         kafka_sasl_password = '{kafka_sasl_pass}',
+                         kafka_flush_interval_ms = 500,
+                         kafka_topic_list = 'kip848',
+                         kafka_group_name = 'kip848',
+                         kafka_format = 'JSONEachRow';
+            CREATE MATERIALIZED VIEW test.{name}_mv TO test.messages AS SELECT id FROM test.{name};
+            """
+        )
+
+    def wait_assigned_partitions(name, condition):
+        assert_eq_with_retry(
+            instance,
+            f"SELECT sum(length(assignments.partition_id)) {condition} FROM system.kafka_consumers WHERE table = '{name}'",
+            "1",
+            retry_count=120,
+            sleep_time=0.5,
+        )
+
+    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
+    produced = 0
+
+    def produce_and_wait(count):
+        nonlocal produced
+        for i in range(produced, produced + count):
+            producer.send(topic="kip848", value=f'{{"id":{i}}}', partition=i % 6)
+        producer.flush()
+        produced += count
+        assert_eq_with_retry(
+            instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
+        )
+
+    instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
+    create_kafka_table("kafka1")
+    produce_and_wait(1000)
+    wait_assigned_partitions("kafka1", "= 6")
+
+    # The new member takes a part of the partitions, the first one keeps the rest.
+    create_kafka_table("kafka2")
+    wait_assigned_partitions("kafka2", "> 0")
+    produce_and_wait(1000)
+
+    # And gets them back when the new member leaves.
+    instance.query("DROP TABLE test.kafka2_mv; DROP TABLE test.kafka2 SYNC")
+    wait_assigned_partitions("kafka1", "= 6")
+    produce_and_wait(1000)
+    producer.close()
+
+    assert instance.query("SELECT min(id), max(id) FROM test.messages") == f"0\t{produced - 1}\n"
+    assert int(instance.query("SELECT num_rebalance_revocations FROM system.kafka_consumers WHERE table = 'kafka1'")) > 0
+    assert "kip848" in kafka_cli(kafka_cluster, "kafka-groups", "--list", "--group-type", "consumer")
