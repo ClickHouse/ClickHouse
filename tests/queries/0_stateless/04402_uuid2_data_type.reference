@@ -1,0 +1,73 @@
+-- type names and alias
+UUID2
+UUID
+UUID
+-- text round-trip is canonical
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- UUID2 sorts lexicographically (unlike UUID)
+00000000-0000-0000-0000-000000000009
+00000000-0000-0000-0002-000000000000
+00000002-0000-0000-0000-000000000000
+-- same values as UUID would sort differently
+00000002-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000009
+00000000-0000-0000-0002-000000000000
+-- min/max
+00000000-0000-0000-0000-000000000009	00000002-0000-0000-0000-000000000000
+-- conversions round-trip
+1	1	1
+-- FixedString(16) (canonical bytes) parses to UUID2
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- UUID2 -> UInt128 (identity) equals UUID -> UInt128 (half-swap): both give the canonical integer
+1
+-- comparison with string literal
+1
+-- Field-level UUID <-> UUID2 coercion swaps halves (convertFieldToType, e.g. IN-set)
+1
+1	1	0
+-- direct UUID <-> UUID2 comparison (least supertype is UUID2)
+1	1	0	1	UUID2	Array(UUID2)
+-- comparison of a UUID2 column against a UUID constant
+1
+-- JOIN between UUID and UUID2 keys (common type is UUID2)
+a	x
+-- setting materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit
+a	UUID2
+b	UUID
+c	UUID2
+d	Array(UUID2)
+e	Nullable(UUID2)
+-- version 1 (default) leaves UUID as UUID
+a	UUID
+d	Array(UUID)
+-- ALTER ADD/MODIFY COLUMN materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit
+a	UUID2
+b	UUID2
+c	UUID2
+d	Array(UUID2)
+e	Nullable(UUID2)
+id	UInt64
+-- ALTER version 1 (default) leaves UUID as UUID
+f	UUID
+g	Array(UUID)
+-- CREATE ON CLUSTER with a legacy DDL format version still materializes bare UUID as UUID2 on the initiator
+a	UUID2
+b	UUID
+c	UUID2
+d	Array(UUID2)
+e	Nullable(UUID2)
+-- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value
+1	1	1	1	1	1
+-- hashing parity: hashes match UUID for the same value
+1	1	1	1	1
+-- mapAdd / mapSubtract on Map(UUID2, ...) keys (nested UUID materialization parity)
+Map(UUID2, UInt64)	3	3
+-- -Map aggregate combinator on Map(UUID2, ...) keys
+Map(UUID2, UInt64)	3	30
+-- uniq* parity: UUID2 takes the same fixed-width path as UUID
+1	1	1	1	1	1
+-- generateRandom produces UUID2
+5
+-- bloom_filter skip index on UUID2
+1
+0

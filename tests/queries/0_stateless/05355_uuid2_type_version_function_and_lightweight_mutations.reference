@@ -1,0 +1,7 @@
+CREATE FUNCTION
+CREATE FUNCTION db_05355_to_uuid1 AS s -> CAST(s, \'UUID\')
+CREATE FUNCTION db_05355_to_uuid2 AS s -> CAST(s, \'UUID2\')
+UUID	UUID2
+lightweight DELETE
+(UPDATE _row_exists = 0 WHERE CAST(s, \'UUID2\') = toUUID2(\'61f0c404-5cb3-11e7-907b-a6006ad3dba0\'))
+2

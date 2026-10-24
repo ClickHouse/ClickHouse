@@ -1508,6 +1508,11 @@ public:
         if (callOnBasicTypes<true, true, true, false>(left_id, right_id, call))
             return res;
 
+        /// `UUID` and `UUID2` share the physical column, but keep the two 64-bit halves in the opposite order,
+        /// so a mix of them (also as array elements) must be cast to the result type instead of selected bit-wise.
+        if ((left_id == TypeIndex::UUID && right_id == TypeIndex::UUID2) || (left_id == TypeIndex::UUID2 && right_id == TypeIndex::UUID))
+            return executeGeneric(cond_col, arguments, result_type, input_rows_count);
+
         res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count);
         if (!res)
             res = executeString(cond_col, arguments, result_type);

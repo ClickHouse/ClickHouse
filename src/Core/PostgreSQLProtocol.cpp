@@ -75,6 +75,8 @@ ColumnTypeSpec convertArrayTypeToPostgresColumnTypeSpec(const DataTypePtr & arra
             return {ColumnType::NUMERIC_ARRAY, -1, encodeNumericTypeModifier(getDecimalPrecision(*element), getDecimalScale(*element))};
 
         case TypeIndex::UUID:
+        /// `UUID2` elements are advertised as `uuid` as well, see the scalar mapping below.
+        case TypeIndex::UUID2:
             return {ColumnType::UUID_ARRAY, -1};
 
         /// `String`, `FixedString`, `DateTime`, `DateTime64` and everything else: `text[]`.
@@ -173,6 +175,10 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
             return {ColumnType::NUMERIC, -1, encodeNumericTypeModifier(getDecimalPrecision(*data_type), getDecimalScale(*data_type))};
 
         case TypeIndex::UUID:
+        /// `UUID2` is exposed to PostgreSQL clients as the same `uuid` type: the wire values are serialized as text
+        /// and `UUID2` produces the canonical UUID string, so existing clients keep decoding these columns as UUIDs
+        /// even when a bare `UUID` column is materialized to `UUID2` under `uuid_type_version = 2`.
+        case TypeIndex::UUID2:
             return {ColumnType::UUID, 16};
 
         default:

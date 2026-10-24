@@ -1,0 +1,18 @@
+-- Arrow nested, all writer/reader combinations
+native_writer=1 native_reader=1:
+Array(UUID2)	Map(UUID2, UUID)	Tuple(\n    a UUID2,\n    b UUID)	Array(Nullable(UUID2))	Array(Tuple(\n    a UUID2,\n    b UUID))	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=1 native_reader=0:
+Array(UUID2)	Map(UUID2, UUID)	Tuple(\n    a UUID2,\n    b UUID)	Array(Nullable(UUID2))	Array(Tuple(\n    a UUID2,\n    b UUID))	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=0 native_reader=1:
+Array(UUID2)	Map(UUID2, UUID)	Tuple(\n    a UUID2,\n    b UUID)	Array(Nullable(UUID2))	Array(Tuple(\n    a UUID2,\n    b UUID))	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=0 native_reader=0:
+Array(UUID2)	Map(UUID2, UUID)	Tuple(\n    a UUID2,\n    b UUID)	Array(Nullable(UUID2))	Array(Tuple(\n    a UUID2,\n    b UUID))	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Arrow LowCardinality (plain values), all writer/reader combinations
+native_writer=1 native_reader=1: UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=1 native_reader=0: UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=0 native_reader=1: UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+native_writer=0 native_reader=0: UUID2	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Arrow LowCardinality (dictionary-encoded), library writer and reader
+LowCardinality(UUID2)	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- Arrow LowCardinality UUID (dictionary-encoded), library writer and reader
+LowCardinality(UUID)	61f0c404-5cb3-11e7-907b-a6006ad3dba0

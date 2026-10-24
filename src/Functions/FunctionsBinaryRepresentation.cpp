@@ -252,6 +252,7 @@ public:
                " OR (StringOrFixedString) -> String"
                " OR (DateOrDateTime) -> String"
                " OR (UUID) -> String"
+               " OR (UUID2) -> String"
                " OR (IPv4) -> String"
                " OR (IPv6) -> String"
                " OR (AggregateFunction) -> String";
@@ -297,7 +298,7 @@ public:
             tryExecuteDecimal<Decimal64>(column, res_column) ||
             tryExecuteDecimal<Decimal128>(column, res_column) ||
             tryExecuteDecimal<Decimal256>(column, res_column) ||
-            tryExecuteUUID(column, res_column) ||
+            tryExecuteUUID(column, res_column, isUUID2(arguments[0].type)) ||
             tryExecuteIPv4(column, res_column) ||
             tryExecuteIPv6(column, res_column))
             return res_column;
@@ -481,7 +482,7 @@ public:
         return false;
     }
 
-    bool tryExecuteUUID(const IColumn * col, ColumnPtr & col_res) const
+    bool tryExecuteUUID(const IColumn * col, ColumnPtr & col_res, bool is_uuid2) const
     {
         const ColumnUUID * col_vec = checkAndGetColumn<ColumnUUID>(col);
 
@@ -512,8 +513,11 @@ public:
 
                 // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
-                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(uuid[i]), end, false);
-                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(uuid[i]), end, false);
+                // `UUID2` stores the value in the big-endian layout; convert to the logical `UUID` layout so the
+                // canonical (first-half then second-half) byte order is emitted.
+                const UUID u = is_uuid2 ? UUIDHelpers::swapHalves(uuid[i]) : uuid[i];
+                Impl::executeOneUIntOrInt(UUIDHelpers::getHighBytes(u), end, false);
+                Impl::executeOneUIntOrInt(UUIDHelpers::getLowBytes(u), end, false);
 
                 pos += end - begin;
                 out_offsets[i] = pos;

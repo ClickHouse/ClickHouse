@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -331,6 +332,20 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                 encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
             }};
         }
+        case TypeIndex::UUID2:
+        {
+            uuid2_paths.push_back(column_path);
+            auto schema = avro::StringSchema();
+            schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::UUID));
+            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                /// UUID2 stores the two 64-bit halves swapped relative to UUID; convert to the logical UUID
+                /// value at the column boundary so that the serialized text matches UUID for the same value.
+                const auto uuid = UUIDHelpers::swapHalves(assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num));
+                const auto serialized_uuid = formatUUID(uuid);
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
+            }};
+        }
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
@@ -407,9 +422,12 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             std::vector<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
 
-            for (const auto & nested_type : nested_types)
+            for (size_t i = 0; i < nested_types.size(); ++i)
             {
-                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name, column_path);
+                /// Each alternative gets its own path (see `getAvroVariantAlternativePath`), so that the `UUID2`
+                /// discriminator tells `Variant(Tuple(x UUID), Tuple(x UUID2))` alternatives apart.
+                const auto [schema, serialize] = createSchemaWithSerializeFn(
+                    nested_types[i], type_name_increment, column_name, getAvroVariantAlternativePath(column_path, nested_types.size(), i));
                 union_schema.addType(schema);
                 nested_serializers.push_back(serialize);
             }
@@ -667,6 +685,21 @@ void AvroRowOutputFormat::createFileWriter()
         serializer.getSchema(),
         settings.avro.output_sync_interval,
         getCodec(settings.avro.output_codec));
+
+    const auto & uuid2_paths = serializer.getUUID2Paths();
+    if (!uuid2_paths.empty())
+    {
+        WriteBufferFromOwnString buf;
+        writeChar('[', buf);
+        for (size_t i = 0; i < uuid2_paths.size(); ++i)
+        {
+            if (i)
+                writeChar(',', buf);
+            writeJSONString(uuid2_paths[i], buf, settings);
+        }
+        writeChar(']', buf);
+        file_writer_ptr->setMetadata(AVRO_UUID2_PATHS_METADATA_KEY, buf.str());
+    }
 }
 
 void AvroRowOutputFormat::writePrefix()

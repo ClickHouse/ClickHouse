@@ -100,6 +100,7 @@ void registerDataTypeMap(DataTypeFactory & factory);
 void registerDataTypeNullable(DataTypeFactory & factory);
 void registerDataTypeNothing(DataTypeFactory & factory);
 void registerDataTypeUUID(DataTypeFactory & factory);
+void registerDataTypeUUID2(DataTypeFactory & factory);
 void registerDataTypeIPv4andIPv6(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);

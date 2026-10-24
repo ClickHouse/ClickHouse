@@ -1,0 +1,20 @@
+inferred from DEFAULT expression
+x	UUID2
+CREATE TABLE default.t_uuid2_default\n(\n    `x` UUID2 DEFAULT CAST(generateUUIDv4(), \'UUID2\')\n)\nENGINE = Memory
+inferred from AS SELECT
+x	UUID2
+inferred from AS SELECT with the cast operator
+x	UUID2
+nested type in the cast literal
+x	Array(UUID2)
+constant expression in the type-name argument
+x	UUID2
+DEFAULT expression added by ALTER is materialized too
+x	UUID2
+CREATE TABLE default.t_uuid2_alter\n(\n    `k` UInt8,\n    `x` UUID2 DEFAULT CAST(generateUUIDv4(), \'UUID2\')\n)\nENGINE = MergeTree\nORDER BY k\nSETTINGS index_granularity = 8192
+the explicit names UUID1 and UUID2 are never rewritten
+x1	UUID
+x2	UUID2
+the historical type is unchanged under uuid_type_version = 1
+x	UUID
+x	UUID

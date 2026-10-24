@@ -1,0 +1,3 @@
+uuid2_ts_v1	'CAST(reinterpretAsUUID(sipHash128(metric_name, all_tags)), \'UUID\')'
+uuid2_ts_v2	'CAST(reinterpretAsUUID(sipHash128(metric_name, all_tags)), \'UUID2\')'
+uuid2_ts_v2	'CAST(reinterpretAsUUID(sipHash128(metric_name, all_tags)), \'UUID2\')'

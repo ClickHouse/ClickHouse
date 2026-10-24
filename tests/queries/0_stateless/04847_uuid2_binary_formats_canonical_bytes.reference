@@ -1,0 +1,16 @@
+-- MsgPack bin writes the canonical bytes
+1
+-- MsgPack bin, ext and str round-trip
+bin: UUID2	00112233-4455-6677-8899-aabbccddeeff
+ext: UUID2	00112233-4455-6677-8899-aabbccddeeff
+str: UUID2	00112233-4455-6677-8899-aabbccddeeff
+-- MsgPack ext bytes are identical for UUID and UUID2 (both canonical)
+1
+-- BSONEachRow binary subtype 4 holds the canonical bytes
+1
+-- BSONEachRow round-trip
+UUID2	00112233-4455-6677-8899-aabbccddeeff
+-- CapnProto Data field holds the canonical bytes
+1
+-- CapnProto round-trip
+UUID2	00112233-4455-6677-8899-aabbccddeeff

@@ -68,8 +68,8 @@ public:
         /// constant equal to the vector dimension, but its type is still the numeric `ResultType`,
         /// so the same `-> ResultType` return applies and the dimension constant is produced in `executeImpl`.
         if constexpr (supportsQBit())
-            return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | QBit) -> " + DataTypeNumber<ResultType>{}.getName();
-        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
+            return "(String | FixedString | Array | Map | UUID | UUID2 | IPv4 | IPv6 | QBit) -> " + DataTypeNumber<ResultType>{}.getName();
+        return "(String | FixedString | Array | Map | UUID | UUID2 | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

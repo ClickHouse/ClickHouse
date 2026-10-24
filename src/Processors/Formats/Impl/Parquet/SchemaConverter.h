@@ -2,6 +2,8 @@
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -45,6 +47,12 @@ struct SchemaConverter
 
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
+
+    /// Indices (in leaf order, i.e. parquet column order) of the leaf columns that the ClickHouse writer
+    /// marked as written from the correctly-sorting `UUID2` type (footer key-value metadata key
+    /// `ClickHouse:uuid2_leaf_columns`). Parquet has a single UUID logical type, so without this
+    /// discriminator schema inference could only restore the historical `UUID` type.
+    std::unordered_set<size_t> uuid2_leaf_columns;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -148,10 +156,13 @@ private:
     void processSubtreeTuple(TraversalNode & node);
     bool processSubtreeDynamic(TraversalNode & node);
 
+    /// `uuid2_preferred` says the file-level key-value metadata marks this leaf column as written from
+    /// the ClickHouse `UUID2` type; it only matters when there's no type hint (schema inference).
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const;
+        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx,
+        bool uuid2_preferred) const;
 
     /// For a column with the `GEOMETRY` or `GEOGRAPHY` logical type: if `GeospatialStatistics` of
     /// all its column chunks list the same single 2D geometry type, returns that type. If any of

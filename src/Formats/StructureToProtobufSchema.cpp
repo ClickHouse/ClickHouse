@@ -45,6 +45,7 @@ const std::unordered_map<TypeIndex, String> protobuf_simple_type_names =
     {TypeIndex::String, "bytes"},
     {TypeIndex::FixedString, "bytes"},
     {TypeIndex::UUID, "bytes"},
+    {TypeIndex::UUID2, "bytes"},
     {TypeIndex::Date, "uint32"},
     {TypeIndex::Date32, "int32"},
     {TypeIndex::DateTime, "uint32"},
