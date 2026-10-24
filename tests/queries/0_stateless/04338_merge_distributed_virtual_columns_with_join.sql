@@ -11,8 +11,6 @@
 -- `WHERE _table = ...` child-pruning filter matches, so producing any other
 -- name would make such filters silently drop rows.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tbl;
 DROP TABLE IF EXISTS distributed_table;
 DROP TABLE IF EXISTS mergetable_dist;
