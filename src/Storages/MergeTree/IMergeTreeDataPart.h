@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Common/UniqueLock.h>
 
 #include <atomic>
@@ -110,6 +112,11 @@ struct StatisticsCacheCell;
 
 class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
+
+#if USE_ROCKSDB
+class SSTFileReader;
+using SSTFileReaderPtr = std::shared_ptr<const SSTFileReader>;
+#endif
 
 class VersionMetadata;
 class WriteBuffer;
@@ -697,6 +704,14 @@ public:
     /// non-UK table). Treat as an opaque "is there an on-disk dense index
     /// for this part?" probe; the backend code owns the format.
     std::optional<String> getDenseIndexBackingPath() const;
+
+#if USE_ROCKSDB
+    /// UNIQUE KEY — this part's SST reader, shared process-wide through the
+    /// reader cache (keyed by part identity + SST checksum). Direct open (no
+    /// caching) when the cache is disabled, the part is not Active, or the SST
+    /// has no checksum entry.
+    SSTFileReaderPtr getOrOpenSSTReader(const ReadSettings & read_settings) const;
+#endif
 
     /// UNIQUE KEY — cache-key identity for this part. Prefers the part's
     /// UUID when set (stable across ATTACH / rename); falls back to

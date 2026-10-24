@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeySSTReaderCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #if USE_AVRO
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -667,6 +668,9 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(String, unique_key_bitmap_cache_policy, "SLRU", R"(UNIQUE KEY delete-bitmap cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, unique_key_bitmap_cache_size_bytes, 1_GiB, R"(Maximum size in bytes of the in-process cache for UNIQUE KEY per-part delete bitmaps. Set to 0 to disable the cache.)", 0) \
     DECLARE(Double, unique_key_bitmap_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY delete-bitmap cache relative to the cache's total size.)", 0) \
+    DECLARE(String, unique_key_sst_reader_cache_policy, "SLRU", R"(UNIQUE KEY SST reader cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
+    DECLARE(UInt64, unique_key_sst_reader_cache_size_bytes, 1_GiB, R"(Maximum size in bytes of the in-process cache for opened UNIQUE KEY SST readers. A cached reader pins the part's SST index and filter blocks in memory. Set to 0 to disable the cache.)", 0) \
+    DECLARE(Double, unique_key_sst_reader_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY SST reader cache relative to the cache's total size.)", 0) \
     DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache eviction policy name. Possible values: `LRU`, `SLRU`, `SIEVE`.)", 0) \
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
@@ -3871,6 +3875,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
+#if USE_ROCKSDB
+            {"unique_key_sst_reader_cache_size_bytes",
+                {std::to_string(context->getUniqueKeySSTReaderCache() ? context->getUniqueKeySSTReaderCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
+#endif
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},

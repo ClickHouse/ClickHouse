@@ -59,6 +59,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeySSTReaderCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -298,6 +299,8 @@ namespace CurrentMetrics
     extern const Metric UniqueKeyIndexCacheEntries;
     extern const Metric DeleteBitmapCacheBytes;
     extern const Metric DeleteBitmapCacheEntries;
+    extern const Metric UniqueKeySSTReaderCacheBytes;
+    extern const Metric UniqueKeySSTReaderCacheEntries;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
     extern const Metric ColumnsCacheBytes;
@@ -762,6 +765,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
+    mutable UniqueKeySSTReaderCachePtr unique_key_sst_reader_cache TSA_GUARDED_BY(mutex);     /// Cache of opened UNIQUE KEY SST readers (nullptr when RocksDB unavailable or disabled).
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable StatisticsCachePtr statistics_cache TSA_GUARDED_BY(mutex);              /// Cache of column statistics of data parts.
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
@@ -5486,6 +5490,81 @@ void Context::clearDeleteBitmapCache() const
     DeleteBitmapCachePtr cache = getDeleteBitmapCache();
     if (cache)
         cache->clear();
+}
+
+void Context::setUniqueKeySSTReaderCache(
+    [[maybe_unused]] const String & cache_policy,
+    [[maybe_unused]] size_t max_cache_size_in_bytes,
+    [[maybe_unused]] double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->unique_key_sst_reader_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "UNIQUE KEY SST reader cache has been already created.");
+
+#if USE_ROCKSDB
+    if (max_cache_size_in_bytes == 0)
+        return; /// Explicit opt-out — callers get nullptr from getUniqueKeySSTReaderCache.
+
+    shared->unique_key_sst_reader_cache = std::make_shared<UniqueKeySSTReaderCache>(
+        cache_policy,
+        CurrentMetrics::UniqueKeySSTReaderCacheBytes,
+        CurrentMetrics::UniqueKeySSTReaderCacheEntries,
+        max_cache_size_in_bytes,
+        size_ratio);
+#endif
+    /// !USE_ROCKSDB: the reader cache is never registered; silently accept the
+    /// call so startup works on non-RocksDB builds (mirrors setUniqueKeyIndexCache).
+}
+
+void Context::updateUniqueKeySSTReaderCacheConfiguration(
+    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+#if USE_ROCKSDB
+    size_t size = config.getUInt64("unique_key_sst_reader_cache_size_bytes", 1ULL << 30);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY SST reader cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+
+    if (!shared->unique_key_sst_reader_cache)
+    {
+        if (size == 0)
+            return; /// Stay disabled until reload requests a non-zero size.
+        /// Enable on the first reload that requests a non-zero size, so a
+        /// startup `size = 0` is reversible rather than a one-way disable.
+        shared->unique_key_sst_reader_cache = std::make_shared<UniqueKeySSTReaderCache>(
+            config.getString("unique_key_sst_reader_cache_policy", "SLRU"),
+            CurrentMetrics::UniqueKeySSTReaderCacheBytes,
+            CurrentMetrics::UniqueKeySSTReaderCacheEntries,
+            size,
+            config.getDouble("unique_key_sst_reader_cache_size_ratio", 0.5));
+        LOG_INFO(shared->log, "Enabled UNIQUE KEY SST reader cache at {} via reload-config", formatReadableSizeWithBinarySuffix(size));
+        return;
+    }
+
+    shared->unique_key_sst_reader_cache->setMaxSizeInBytes(size);
+    LOG_DEBUG(shared->log, "UNIQUE KEY SST reader cache size set to {}", formatReadableSizeWithBinarySuffix(size));
+#endif
+}
+
+UniqueKeySSTReaderCachePtr Context::getUniqueKeySSTReaderCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->unique_key_sst_reader_cache;
+}
+
+void Context::clearUniqueKeySSTReaderCache() const
+{
+#if USE_ROCKSDB
+    UniqueKeySSTReaderCachePtr cache = getUniqueKeySSTReaderCache();
+    if (cache)
+        cache->clear();
+#endif
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const

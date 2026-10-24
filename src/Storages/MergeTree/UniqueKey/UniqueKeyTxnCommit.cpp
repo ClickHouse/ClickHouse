@@ -294,7 +294,7 @@ ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const Me
     return std::make_shared<SSTProbeTargetPart>(
         target.get(),
         delete_bitmap_store.readLatestBitmap(target->info),
-        openSSTReaderFromStorage(target->getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, context->getReadSettings()));
+        target->getOrOpenSSTReader(context->getReadSettings()));
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "UNIQUE KEY duplicate probing requires RocksDB support (USE_ROCKSDB=1)");

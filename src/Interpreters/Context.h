@@ -111,6 +111,7 @@ class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
+class UniqueKeySSTReaderCache;
 class PrimaryIndexCache;
 class StatisticsCache;
 class PageCache;
@@ -1726,6 +1727,13 @@ public:
     void updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<DeleteBitmapCache> getDeleteBitmapCache() const;
     void clearDeleteBitmapCache() const;
+
+    /// UNIQUE KEY SST reader cache: shares opened SST readers across INSERT dedup
+    /// probes. Size 0 leaves it unregistered (callers get `nullptr`).
+    void setUniqueKeySSTReaderCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateUniqueKeySSTReaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<UniqueKeySSTReaderCache> getUniqueKeySSTReaderCache() const;
+    void clearUniqueKeySSTReaderCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);

@@ -546,6 +546,9 @@ possible_properties = {
     "unique_key_index_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
     "unique_key_index_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
     "unique_key_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "unique_key_sst_reader_cache_policy": lambda: random.choice(["LRU", "SLRU", "SIEVE"]),
+    "unique_key_sst_reader_cache_size_bytes": threshold_generator(0.2, 0.2, 0, 5368709120),
+    "unique_key_sst_reader_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_separate_cache_arena": true_false_lambda,
     "use_shared_merge_tree_log_pipeline": true_false_lambda,  # Cloud setting
     "user_profile_events_per_cpu": true_false_lambda,

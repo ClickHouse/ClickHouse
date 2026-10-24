@@ -48,6 +48,8 @@
 #include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeySSTReaderCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
@@ -114,6 +116,8 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexRows;
     extern const Event LoadedPrimaryIndexBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event UniqueKeySSTReaderCacheHits;
+    extern const Event UniqueKeySSTReaderCacheMisses;
 }
 
 namespace DimensionalMetrics
@@ -1084,6 +1088,21 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     }
 }
 
+#if USE_ROCKSDB
+namespace
+{
+/// Reader cache key of the part's SST, or nullopt when the part has no SST
+/// checksum entry (non-UNIQUE KEY or legacy part): such parts are never cached.
+std::optional<UniqueKeySSTReaderCacheKey> getSSTReaderCacheKey(const IMergeTreeDataPart & part)
+{
+    const auto it = part.checksums.files.find(SSTIndexWriter::FILE_NAME);
+    if (it == part.checksums.files.end())
+        return std::nullopt;
+    return UniqueKeySSTReaderCache::makeKey(part.getDeleteBitmapCacheIdentity(), it->second.file_hash);
+}
+}
+#endif
+
 void IMergeTreeDataPart::clearCaches()
 {
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
@@ -1098,6 +1117,15 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+
+#if USE_ROCKSDB
+    /// A cached SST reader pins the part's storage and read buffer.
+    if (auto key = getSSTReaderCacheKey(*this))
+    {
+        if (auto sst_reader_cache = storage.getContext()->getUniqueKeySSTReaderCache())
+            sst_reader_cache->remove(*key);
+    }
+#endif
 
     /// Remove deserialized columns from cache
     if (mayStoreColumnsInColumnsCache())
@@ -2148,6 +2176,44 @@ std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
         return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
     return toString(uuid);
 }
+
+#if USE_ROCKSDB
+SSTFileReaderPtr IMergeTreeDataPart::getOrOpenSSTReader(const ReadSettings & read_settings) const
+{
+    const auto direct_open = [&]() -> SSTFileReaderPtr
+    {
+        return openSSTReaderFromStorage(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, read_settings);
+    };
+
+    auto cache = storage.getContext()->getUniqueKeySSTReaderCache();
+    if (!cache)
+        return direct_open();
+
+    /// Non-Active parts are transient (their SST may still be rewritten under the
+    /// same name); after `clearCaches` the part must not re-populate the cache.
+    if (getState() != MergeTreeDataPartState::Active || cleared_data_in_caches)
+        return direct_open();
+    const auto key = getSSTReaderCacheKey(*this);
+    if (!key)
+        return direct_open();
+
+    /// Cached readers are shared and long-lived, so they open with server-level
+    /// settings like other background reads, not with the first query's. The
+    /// reader only does `readBigAt`, so keep its unused buffer small. An open
+    /// failure propagates out of `getOrSet` and is never cached.
+    auto [reader, loaded] = cache->getOrSet(*key, [&]() -> SSTFileReaderPtr
+    {
+        auto cached_read_settings = Context::getGlobalContextInstance()->getReadSettings();
+        cached_read_settings.local_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
+        cached_read_settings.remote_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
+        /// Otherwise `prefer_bigger_buffer_size` raises the remote buffer back to 1 MiB.
+        cached_read_settings.remote_fs_settings.large_buffer_size = SST_READER_BUFFER_SIZE;
+        return std::make_shared<SSTFileReader>(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, cached_read_settings);
+    });
+    ProfileEvents::increment(loaded ? ProfileEvents::UniqueKeySSTReaderCacheMisses : ProfileEvents::UniqueKeySSTReaderCacheHits);
+    return reader;
+}
+#endif
 
 void IMergeTreeDataPart::loadDefaultCompressionCodec()
 {
