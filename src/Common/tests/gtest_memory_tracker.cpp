@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <functional>
 #include <future>
+#include <limits>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
@@ -13,11 +16,16 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SpeculativeMemoryReservation.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TraceCollector.h>
 #include <base/scope_guard.h>
@@ -143,6 +151,474 @@ TEST(MemoryTracker, ParentLimitFailureRollsBackHierarchy)
     });
 
     expectUsage(hierarchy, 0);
+}
+
+TEST(MemoryTracker, SpeculativeReservationRanksQueryForGlobalOvercommit)
+{
+    MemoryTracker first;
+    MemoryTracker second;
+
+    constexpr Int64 soft_limit = 128 * MB;
+    constexpr Int64 reservation = 4 * MB;
+
+    first.adjustWithUntrackedMemory(100 * MB);
+    second.adjustWithUntrackedMemory(101 * MB);
+
+    EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+
+    first.addSpeculativeReservation(reservation);
+    EXPECT_LT(second.getOvercommitRatio(soft_limit), first.getOvercommitRatio(soft_limit));
+
+    first.subSpeculativeReservation(reservation);
+    EXPECT_LT(first.getOvercommitRatio(soft_limit), second.getOvercommitRatio(soft_limit));
+}
+
+TEST(MemoryTracker, SpeculativeReservationDoesNotAffectUserOvercommit)
+{
+    MemoryTracker first;
+    MemoryTracker second;
+
+    constexpr Int64 soft_limit = 128 * MB;
+    constexpr Int64 reservation = 4 * MB;
+
+    first.setSoftLimit(soft_limit);
+    second.setSoftLimit(soft_limit);
+    first.adjustWithUntrackedMemory(100 * MB);
+    second.adjustWithUntrackedMemory(101 * MB);
+
+    first.addSpeculativeReservation(reservation);
+
+    /// Speculative reservations are charged only to the total tracker, and must not
+    /// change the victim selected when a user-level limit is exceeded.
+    EXPECT_LT(first.getOvercommitRatio(), second.getOvercommitRatio());
+}
+
+TEST(MemoryTracker, GlobalReservationUsesOutermostProcessTracker)
+{
+    MemoryTracker outer_process(&total_memory_tracker, VariableContext::Process, false);
+    MemoryTracker inner_process(&outer_process, VariableContext::Process, false);
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&inner_process);
+        thread_status.untracked_memory_limit = 0;
+
+        constexpr Int64 reservation = MB;
+        auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+        EXPECT_EQ(credited_tracker, &outer_process);
+        CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+    }).join();
+}
+
+TEST(MemoryTracker, SpeculativeReservationSurvivesExternalCorrection)
+{
+    /// `MemoryWorker` periodically replaces the total tracker's counters with externally
+    /// measured values (`updateAllocated` from jemalloc statistics, `updateRSS` from the
+    /// resident set size). A live speculative reservation is not backed by any allocation,
+    /// so the measurement does not see it; the correction must add it back, otherwise the
+    /// paired `freeGlobal` would push the counters below the actual memory usage and the
+    /// total tracker would stop being an upper bound.
+    constexpr Int64 reservation = 16 * MB;
+    constexpr Int64 measured_amount = 300 * MB;
+    constexpr Int64 measured_rss = 320 * MB;
+
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    SCOPE_EXIT({
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    /// The test thread has no thread group, so the reservation is credited to no query
+    /// tracker and lands on the total tracker only.
+    auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+    EXPECT_EQ(credited_tracker, nullptr);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - (amount_before + reservation)), GLOBAL_TOLERANCE);
+
+    /// A correction tick arrives while the reservation is live: the measured values must
+    /// be raised by the reservation, not installed verbatim.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    MemoryTracker::updateRSS(measured_rss);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - (measured_amount + reservation)), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - (measured_rss + reservation)), GLOBAL_TOLERANCE);
+
+    /// Releasing the reservation brings the counters back to exactly the measured values.
+    CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - measured_rss), GLOBAL_TOLERANCE);
+
+    /// With no reservation live, a correction installs the measured values verbatim.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    MemoryTracker::updateRSS(measured_rss);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - measured_rss), GLOBAL_TOLERANCE);
+}
+
+TEST(MemoryTracker, ConcurrentCorrectionNeverErasesLiveReservation)
+{
+    /// The correction of the total tracker towards an externally measured value must be
+    /// applied as a relative delta. An absolute store would erase a reservation charged
+    /// between reading the measured value and installing it, while the paired
+    /// `freeGlobal` still subtracts that reservation - pushing the total tracker below
+    /// the measured usage and breaking the upper-bound invariant.
+    constexpr Int64 reservation = 16 * MB;
+    constexpr Int64 measured_amount = 300 * MB;
+    constexpr size_t reserving_threads = 4;
+    const auto duration = std::chrono::milliseconds(300);
+
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    SCOPE_EXIT({
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    /// Install the measured value before any observer runs: otherwise a reserver scheduled
+    /// ahead of the first correction observes the unrelated pre-test amount of the process.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+
+    std::atomic_bool stop = false;
+    std::atomic<Int64> lowest_observed_amount = std::numeric_limits<Int64>::max();
+
+    auto observe = [&]
+    {
+        Int64 observed = total_memory_tracker.get();
+        Int64 lowest = lowest_observed_amount.load(std::memory_order_relaxed);
+        while (observed < lowest
+            && !lowest_observed_amount.compare_exchange_weak(lowest, observed, std::memory_order_relaxed))
+        {
+        }
+    };
+
+    std::thread corrector([&]
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+            observe();
+        }
+    });
+
+    std::vector<std::thread> reservers;
+    for (size_t thread = 0; thread < reserving_threads; ++thread)
+    {
+        reservers.emplace_back([&]
+        {
+            while (!stop.load(std::memory_order_relaxed))
+            {
+                auto * credited_tracker = CurrentMemoryTracker::allocGlobal(reservation);
+                CurrentMemoryTracker::freeGlobal(reservation, credited_tracker);
+
+                /// A reservation erased by a correction shows up right here, as a total
+                /// tracker below the measured value by a multiple of the reservation.
+                observe();
+            }
+        });
+    }
+
+    std::this_thread::sleep_for(duration);
+    stop.store(true, std::memory_order_relaxed);
+    for (auto & reserver : reservers)
+        reserver.join();
+    corrector.join();
+
+    EXPECT_GE(lowest_observed_amount.load(), measured_amount - TOLERANCE);
+
+    /// No reservation is live any more, so a correction installs the measured value.
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+}
+
+TEST(MemoryTracker, FailedSpeculativeReservationLeavesCorrectionUntouched)
+{
+    /// A reservation rejected by the server-wide hard limit must not linger in the
+    /// reservations counter, or every later correction would inflate the total tracker.
+    constexpr Int64 measured_amount = 300 * MB;
+
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT({
+        total_memory_tracker.setHardLimit(hard_limit_before);
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    try
+    {
+        std::ignore = CurrentMemoryTracker::allocGlobal(OVER_LIMIT);
+        FAIL() << "Expected the total memory tracker to reject the reservation of " << OVER_LIMIT;
+    }
+    catch (const DB::Exception & exception)
+    {
+        EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+
+    MemoryTracker::updateAllocated(measured_amount, /*log_change=*/ false);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - measured_amount), GLOBAL_TOLERANCE);
+}
+
+TEST(MemoryTracker, SwitcherDoesNotSetAsideDeferredMemory)
+{
+    /// `additional_memory_tracking_per_thread` covers one buffer of deferred allocations per
+    /// thread. `MemoryTrackerSwitcher` (e.g. in `Aggregator::executeOnBlock`) must not keep the
+    /// bytes deferred before the switch unreported while the switched scope defers more.
+    MemoryTracker process(&total_memory_tracker, VariableContext::Process, false);
+    MemoryTracker switched(&total_memory_tracker, VariableContext::Process, false);
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&process);
+        thread_status.untracked_memory_limit = 4 * MB;
+
+        std::ignore = CurrentMemoryTracker::alloc(3 * MB);
+        {
+            DB::MemoryTrackerSwitcher switcher(&switched);
+            /// The bytes deferred before the switch are reported to the previous parent.
+            EXPECT_EQ(process.get(), 3 * MB);
+            EXPECT_EQ(thread_status.untracked_memory.load(), 0);
+
+            std::ignore = CurrentMemoryTracker::alloc(3 * MB);
+            EXPECT_EQ(process.get() + switched.get() + thread_status.untracked_memory.load(), 6 * MB);
+            EXPECT_LE(thread_status.untracked_memory.load(), thread_status.untracked_memory_limit);
+            std::ignore = CurrentMemoryTracker::free(3 * MB);
+        }
+        EXPECT_EQ(switched.get(), 0);
+
+        std::ignore = CurrentMemoryTracker::free(3 * MB);
+        DB::CurrentThread::flushUntrackedMemory();
+        EXPECT_EQ(process.get(), 0);
+    }).join();
+}
+
+TEST(MemoryTracker, SpeculativeReservationOutlivesNonNestedGuards)
+{
+    /// A nested executor can be suspended in a fiber with its guard alive while the outer
+    /// guard on the same thread is destroyed, and that fiber can be finished on another
+    /// thread. The thread's charge must stay live for as long as any guard sharing it does,
+    /// and a guard created in between must share it instead of running uncovered.
+    constexpr Int64 reservation = 4 * MB;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    additional_memory_tracking_per_thread.store(reservation);
+    SCOPE_EXIT({ additional_memory_tracking_per_thread.store(setting_before); });
+
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    auto outer = std::make_unique<DB::SpeculativeMemoryReservation>();
+    auto suspended_nested = std::make_unique<DB::SpeculativeMemoryReservation>();
+    EXPECT_EQ(outer->getSize(), reservation);
+    EXPECT_EQ(suspended_nested->getSize(), reservation);
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// The outer guard returns first: the suspended nested guard keeps the charge.
+    outer.reset();
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// The next activation on this thread shares the live charge.
+    auto next_activation = std::make_unique<DB::SpeculativeMemoryReservation>();
+    EXPECT_EQ(next_activation->getSize(), reservation);
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// The suspended fiber is finished on another thread.
+    std::thread([&] { suspended_nested.reset(); }).join();
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+    /// A guard on another thread takes its own charge.
+    std::thread([&]
+    {
+        DB::SpeculativeMemoryReservation other_thread;
+        EXPECT_EQ(other_thread.getSize(), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+    }).join();
+
+    next_activation.reset();
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    /// After the last guard is gone, a new guard takes a fresh charge.
+    {
+        DB::SpeculativeMemoryReservation fresh;
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+    }
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+}
+
+TEST(MemoryTracker, RejectedSpeculativeReservationGuardLeavesNoCharge)
+{
+    /// A guard whose charge is rejected by the server-wide hard limit must leave neither the
+    /// total charge nor the global reservation counter behind, and must install no state that
+    /// a later guard on this thread would share.
+    constexpr Int64 reservation = OVER_LIMIT;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT({
+        additional_memory_tracking_per_thread.store(setting_before);
+        total_memory_tracker.setHardLimit(hard_limit_before);
+        MemoryTracker::updateAllocated(amount_before, /*log_change=*/ false);
+        MemoryTracker::updateRSS(rss_before);
+    });
+
+    additional_memory_tracking_per_thread.store(reservation);
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    try
+    {
+        DB::SpeculativeMemoryReservation rejected;
+        FAIL() << "Expected the total memory tracker to reject the reservation of " << reservation;
+    }
+    catch (const DB::Exception & exception)
+    {
+        EXPECT_EQ(exception.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+    EXPECT_LE(std::abs(total_memory_tracker.get() - amount_before), GLOBAL_TOLERANCE);
+
+    /// The next guard takes a fresh charge and releases it completely.
+    total_memory_tracker.setHardLimit(hard_limit_before);
+    {
+        DB::SpeculativeMemoryReservation accepted;
+        EXPECT_EQ(accepted.getSize(), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+    }
+    EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+}
+
+TEST(MemoryTracker, SpeculativeReservationIsNotSharedAcrossQueries)
+{
+    /// A pooled thread can start a guard for another query while a suspended guard of the
+    /// previous query is still alive. The new guard must take its own charge credited to its
+    /// own query, and the previous query's charge must keep that query's tracker alive until
+    /// its last guard is gone, even after the query itself has released its thread group.
+    constexpr Int64 reservation = 4 * MB;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    additional_memory_tracking_per_thread.store(reservation);
+    SCOPE_EXIT({ additional_memory_tracking_per_thread.store(setting_before); });
+
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    /// The credit of the speculative reservations on a query tracker.
+    auto credit = [](MemoryTracker & tracker)
+    {
+        return tracker.getOvercommitRatio(1).committed - tracker.getOvercommitRatio().committed;
+    };
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto context = getContext().context;
+
+        auto group_a = std::make_shared<DB::ThreadGroup>(context, 0);
+        DB::CurrentThread::attachToGroup(group_a);
+        auto suspended_guard_of_a = std::make_unique<DB::SpeculativeMemoryReservation>();
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        auto group_b = std::make_shared<DB::ThreadGroup>(context, 0);
+        DB::CurrentThread::attachToGroup(group_b);
+        auto guard_of_b = std::make_unique<DB::SpeculativeMemoryReservation>();
+        EXPECT_EQ(guard_of_b->getSize(), reservation);
+        EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+
+        /// A nested guard of the same query shares its charge.
+        {
+            DB::SpeculativeMemoryReservation nested_guard_of_b;
+            EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+            EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+        }
+
+        /// Query B leaves the thread, and query A returns to it while its suspended guard is
+        /// still alive: the new guard of A shares A's existing charge.
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+        DB::CurrentThread::attachToGroup(group_a);
+        {
+            DB::SpeculativeMemoryReservation returned_guard_of_a;
+            EXPECT_EQ(returned_guard_of_a.getSize(), reservation);
+            EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+            EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+            EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+        }
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+        DB::CurrentThread::attachToGroup(group_b);
+
+        /// Query A finishes, then its suspended guard is destroyed on another thread.
+        group_a.reset();
+        std::thread([&] { suspended_guard_of_a.reset(); }).join();
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+        EXPECT_EQ(credit(group_b->memory_tracker), reservation);
+
+        guard_of_b.reset();
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+        EXPECT_EQ(credit(group_b->memory_tracker), 0);
+
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+}
+
+TEST(MemoryTracker, SpeculativeReservationIsSharedWhenQueryReturnsToThread)
+{
+    /// A -> B -> A on one pooled thread: query A leaves a suspended guard alive, query B takes
+    /// its own charge and finishes, then A gets another activation on the thread. A must share
+    /// its existing charge instead of taking a second one for the same untracked-memory buffer.
+    constexpr Int64 reservation = 4 * MB;
+    const Int64 setting_before = additional_memory_tracking_per_thread.load();
+    additional_memory_tracking_per_thread.store(reservation);
+    SCOPE_EXIT({ additional_memory_tracking_per_thread.store(setting_before); });
+
+    ASSERT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+
+    auto credit = [](MemoryTracker & tracker)
+    {
+        return tracker.getOvercommitRatio(1).committed - tracker.getOvercommitRatio().committed;
+    };
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto context = getContext().context;
+
+        auto group_a = std::make_shared<DB::ThreadGroup>(context, 0);
+        DB::CurrentThread::attachToGroup(group_a);
+        auto suspended_guard_of_a = std::make_unique<DB::SpeculativeMemoryReservation>();
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        {
+            auto group_b = std::make_shared<DB::ThreadGroup>(context, 0);
+            DB::CurrentThread::attachToGroup(group_b);
+            {
+                DB::SpeculativeMemoryReservation guard_of_b;
+                EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 2 * reservation);
+            }
+            EXPECT_EQ(credit(group_b->memory_tracker), 0);
+            DB::CurrentThread::detachFromGroupIfNotDetached();
+        }
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+        EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+
+        DB::CurrentThread::attachToGroup(group_a);
+        {
+            DB::SpeculativeMemoryReservation returned_guard_of_a;
+            EXPECT_EQ(returned_guard_of_a.getSize(), reservation);
+            EXPECT_EQ(credit(group_a->memory_tracker), reservation);
+            EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+        }
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), reservation);
+
+        suspended_guard_of_a.reset();
+        EXPECT_EQ(MemoryTracker::getSpeculativeReservationsGlobal(), 0);
+        EXPECT_EQ(credit(group_a->memory_tracker), 0);
+
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
 }
 
 TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
@@ -483,6 +959,30 @@ TEST_F(MemoryTrackerLargeAllocationTrace, SilentWhenDisabledOnTheBlockedGlobalPa
     {
         MemoryTrackerBlockerInThread blocker(VariableContext::Global);
         chargeAndRelease(QUALIFYING_ALLOCATION);
+    }
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+/// A speculative reservation is not backed by an allocation, so it must not spend the trace budget
+/// on either path.
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentForSpeculativeReservation)
+{
+    const auto before = tracedLargeAllocations();
+    auto * credited_tracker = CurrentMemoryTracker::allocGlobal(QUALIFYING_ALLOCATION);
+    CurrentMemoryTracker::freeGlobal(QUALIFYING_ALLOCATION, credited_tracker);
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentForSpeculativeReservationOnTheBlockedGlobalPath)
+{
+    const auto before = tracedLargeAllocations();
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        auto * credited_tracker = CurrentMemoryTracker::allocGlobal(QUALIFYING_ALLOCATION);
+        CurrentMemoryTracker::freeGlobal(QUALIFYING_ALLOCATION, credited_tracker);
     }
 
     EXPECT_EQ(tracedLargeAllocations(), before);

@@ -1,7 +1,9 @@
 #include <memory>
+#include <optional>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
+#include <Common/SpeculativeMemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
@@ -255,6 +257,14 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
         throw;
     }
 
+    /// `finalizeExecution` runs on the calling thread after every reservation taken in
+    /// `executeImpl` has been released, and it can do substantial work with its own memory
+    /// (`onPipelineFinished` epilogues of the output formats). Cover it with a separate
+    /// reservation (its destructor flushes the deferred allocations before releasing it),
+    /// like for any other pipeline worker. `executeUntil` keeps its guard alive through
+    /// finalization.
+    SpeculativeMemoryReservation speculative_memory_reservation;
+
     finalizeExecution();
 }
 
@@ -278,6 +288,12 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
             return true;
     }
 
+    /// A step-driven executor runs this job on its caller. The guards on that caller share
+    /// one reservation between nested executors, because they also share one
+    /// untracked-memory buffer. The guard flushes that buffer before dropping its reference,
+    /// including on an exception, so the server-wide tracker never loses both the
+    /// speculative charge and the caller's deferred allocations.
+    SpeculativeMemoryReservation speculative_memory_reservation;
     executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
 
     if (!tasks.isFinished())
@@ -763,6 +779,11 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
             try
             {
+                /// If the reservation does not fit the server memory limit, the surrounding
+                /// `catch` propagates `MEMORY_LIMIT_EXCEEDED` through the pipeline
+                /// (calling `finish()` so consumers unblock).
+                SpeculativeMemoryReservation speculative_memory_reservation;
+
                 executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element));
             }
             catch (...)
@@ -793,13 +814,45 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
                 // Start at least one thread, could block to acquire the first CPU slot
                 spawnThreads(cpu_slots->acquire());
             }
-            tasks.processAsyncTasks();
+
+            {
+                /// The calling thread is not always idle while the spawned workers run: it
+                /// executes `IProcessor::onAsyncJobReady` callbacks (e.g. `RemoteSource`
+                /// handling parallel-replica control packets), so once it runs those it
+                /// accumulates its own `max_untracked_memory` buffer and has to carry a
+                /// reservation too.
+                ///
+                /// The reservation is therefore taken lazily, on the first such callback,
+                /// and kept until the wait loop ends, because the thread's untracked-memory
+                /// buffer survives between callbacks. A fully synchronous pipeline - where
+                /// this thread only blocks in `async_task_queue.wait` and never allocates -
+                /// takes no reservation at all, so ordinary pipelines keep exactly one
+                /// reservation per worker thread instead of `num_threads + 1`.
+                std::optional<SpeculativeMemoryReservation> speculative_memory_reservation;
+
+                /// May throw `MEMORY_LIMIT_EXCEEDED`, like the `onAsyncJobReady` callback
+                /// that follows it; the surrounding `catch` cancels the pipeline.
+                tasks.processAsyncTasks([&]
+                {
+                    if (!speculative_memory_reservation)
+                        speculative_memory_reservation.emplace();
+                });
+            }
+
             pool->wait();
         }
         else
         {
             auto slot = cpu_slots->acquire();
             tasks.upscale(slot->slot_id);
+
+            /// In single-threaded execution the calling thread is the only pipeline worker,
+            /// so it carries the speculative reservation itself. In multi-threaded execution
+            /// each spawned worker job carries its own (see `spawnThreads`) and the calling
+            /// thread carries one while it processes async-job callbacks. A throw lands in the
+            /// surrounding `catch`, which cancels the pipeline and rethrows to the caller.
+            SpeculativeMemoryReservation speculative_memory_reservation;
+
             executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
         }
     }
