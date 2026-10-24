@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -22,6 +23,8 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageMemory.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -312,8 +315,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
-        UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
+        /// A materialized CTE stays empty until its writer finishes at execution time.
+        if (auto cte = assert_cast<const StorageMemory &>(*reading->getStorage()).getMaterializedCTE(); cte && !cte->isBuilt())
+            return RelationStats{.estimated_rows = cte->estimated_rows, .table_name = table_display_name};
+        UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
     }
 

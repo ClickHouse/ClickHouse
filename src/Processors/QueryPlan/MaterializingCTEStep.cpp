@@ -5,6 +5,7 @@
 #include <Analyzer/traverseQueryTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -143,6 +144,8 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
             continue;
 
         cte->plan->optimize(optimization_settings);
+        /// The root `MaterializingCTEStep` does not keep the number of rows, so its input is estimated.
+        cte->estimated_rows = QueryPlanOptimizations::estimateReadRowsCount(*cte->plan->getRootNode()->children.front()).estimated_rows;
     }
 }
 

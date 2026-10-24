@@ -1,4 +1,6 @@
 #include <Analyzer/TableNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/traverseQueryTree.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -132,6 +134,15 @@ void TableNode::finalizeMaterializedCTE(TemporaryTableHolder temporary_table_hol
     auto real_storage = temporary_table_holder_.getTable();
     materialized_cte->storage = real_storage;
     materialized_cte->table_holder = std::move(temporary_table_holder_);
+    bool has_order_by = false;
+    traverseQueryTree(getMaterializedCTESubquery(), Everything{}, [&](const QueryTreeNodePtr & node)
+    {
+        if (const auto * query_node = node->as<QueryNode>())
+            has_order_by |= query_node->hasOrderBy();
+        else if (const auto * table_node = node->as<TableNode>(); table_node && table_node->getMaterializedCTE())
+            has_order_by |= table_node->getMaterializedCTE()->has_order_by;
+    });
+    materialized_cte->has_order_by = has_order_by;
     typeid_cast<StorageMemory *>(real_storage.get())->setMaterializedCTE(materialized_cte);
     updateStorage(std::move(real_storage), context_);
 }

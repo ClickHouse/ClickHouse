@@ -57,6 +57,7 @@ namespace Setting
 {
 
 extern const SettingsBool enable_multiple_prewhere_read_steps;
+extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsBool use_query_condition_cache;
 extern const SettingsBool use_query_condition_cache_for_top_k;
 
@@ -1365,22 +1366,41 @@ Pipe ReadFromMemoryStorageStep::makePipe()
         /// It may seem to be not optimal, but actually data from such table is used to fill
         /// set for IN or hash table for JOIN, which can't be done concurrently.
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
-
-        return Pipe(std::make_shared<MemorySource>(
-            physical_columns,
-            virtual_columns,
-            nullptr /* data */,
-            nullptr /* parallel execution index */,
-            [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
+        ///
+        /// A materialized CTE feeds the rest of the query, so it is read with up to `num_streams` sources
+        /// that share one block index, one per estimated block. A CTE with ORDER BY at any level keeps
+        /// one source to return its rows in order.
+        auto materialized_cte = typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE();
+        size_t num_sources = 1;
+        if (materialized_cte && !materialized_cte->has_order_by)
+        {
+            num_sources = num_streams;
+            if (materialized_cte->estimated_rows)
             {
-                auto current = assert_cast<const StorageMemory &>(*my_storage).data.get();
-                data_to_initialize = std::shared_ptr<const Blocks>(current, &current->blocks);
-            },
-            typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
-            source_filter,
-            output_header,
-            nullptr /* block start rows */,
-            nested_arrays));
+                UInt64 max_block_size = context->getSettingsRef()[Setting::max_block_size];
+                UInt64 estimated_blocks = (*materialized_cte->estimated_rows + max_block_size - 1) / max_block_size;
+                num_sources = std::min<UInt64>(num_sources, std::max<UInt64>(1, estimated_blocks));
+            }
+        }
+        auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
+        Pipes pipes(num_sources);
+        for (auto & pipe : pipes)
+            pipe = Pipe(std::make_shared<MemorySource>(
+                physical_columns,
+                virtual_columns,
+                nullptr /* data */,
+                parallel_execution_index,
+                [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
+                {
+                    auto current = assert_cast<const StorageMemory &>(*my_storage).data.get();
+                    data_to_initialize = std::shared_ptr<const Blocks>(current, &current->blocks);
+                },
+                materialized_cte,
+                source_filter,
+                output_header,
+                nullptr /* block start rows */,
+                nested_arrays));
+        return Pipe::unitePipes(std::move(pipes));
     }
 
     size_t size = current_data->size();
