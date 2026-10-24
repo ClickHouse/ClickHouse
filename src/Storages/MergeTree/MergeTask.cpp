@@ -467,10 +467,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         {
             global_ctx->text_indexes_to_merge.push_back(index);
 
-            if (index_columns.size() > 1)
+            for (const auto & index_column : index_columns)
             {
-                for (const auto & index_column : index_columns)
-                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
+                auto column_name = getColumnNameInStorage(index_column, storage_columns, virtual_columns);
+                /// Expired inputs must be handled in the horizontal stage because they are not gathered vertically.
+                /// They are needed to build the index, but must not become required physical output columns.
+                if (index_columns.size() > 1 || global_ctx->new_data_part->expired_columns.contains(column_name))
+                    key_columns.insert(std::move(column_name));
             }
         }
         else if (index_columns.size() == 1)
@@ -3355,7 +3358,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     IndicesDescription description_to_build;
     std::vector<MergeTreeIndexPtr> indexes_to_build;
-    const auto storage_columns = global_ctx->storage_columns.getNameSet();
+    /// Index dependencies refer to table columns, including expired columns omitted from the output part.
+    const auto storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical().getNameSet();
     const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
@@ -3492,6 +3496,27 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
     Names merging_column_names = global_ctx->merging_columns.getNames();
+
+    /// Text indexes built for source parts need their inputs before TTL restores expired columns.
+    /// Read these inputs without adding them to merging_columns or storage_columns: the reader supplies
+    /// defaults for missing columns, while the writer keeps the original physical column selection.
+    /// When rows may be removed, indexes are built after TTL and already receive the restored columns.
+    if (!global_ctx->merge_may_reduce_rows && !global_ctx->text_indexes_to_merge.empty())
+    {
+        auto read_columns = global_ctx->merging_columns.getNameSet();
+        const auto storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+        const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+        for (const auto & index : global_ctx->text_indexes_to_merge)
+        {
+            for (const auto & column : index.expression->getRequiredColumns())
+            {
+                auto column_name = getColumnNameInStorage(column, storage_columns, virtual_columns);
+                if (global_ctx->new_data_part->expired_columns.contains(column_name) && read_columns.insert(column_name).second)
+                    merging_column_names.push_back(std::move(column_name));
+            }
+        }
+    }
+
     for (const auto * projection : global_ctx->projections_to_merge)
     {
         /// If projection needs part offset mapping, add _part_index column to build this mapping
