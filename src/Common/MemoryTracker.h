@@ -277,6 +277,8 @@ public:
         fault_probability.store(std::min(value, 0.5), std::memory_order_relaxed);
     }
 
+    double getFaultProbability() const { return fault_probability.load(std::memory_order_relaxed); }
+
     void injectFault() const;
 
     void setSampleProbability(double value) { sample_probability.store(value, std::memory_order_relaxed); }

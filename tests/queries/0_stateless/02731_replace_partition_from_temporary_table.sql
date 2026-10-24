@@ -1,4 +1,5 @@
--- Tags: no-replicated-database, no-shared-merge-tree
+-- Tags: no-replicated-database, no-shared-merge-tree, no-random-detach
+-- no-random-detach: test checks system.parts
 -- SharedMergeTree doesn't support replace partition from MergeTree engine
 
 DROP TEMPORARY TABLE IF EXISTS src;

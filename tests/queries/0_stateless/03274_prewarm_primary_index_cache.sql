@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-shared-merge-tree
+-- Tags: no-parallel, no-shared-merge-tree, no-random-detach
+-- no-random-detach: test checks cache state
 
 SET parallel_replicas_local_plan = 1;
 

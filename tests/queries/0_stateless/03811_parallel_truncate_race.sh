@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel, long, no-replicated-database, no-parallel-replicas, no-object-storage, no-random-merge-tree-settings
+# Tags: race, no-parallel, long, no-replicated-database, no-parallel-replicas, no-object-storage, no-random-merge-tree-settings, no-random-detach
+# no-random-detach: concurrent `TRUNCATE TABLE ... PARALLEL WITH TRUNCATE TABLE ...` on the same table races with the test-only `DETACH`/`ATTACH` cycle, so two such cycles overlap and one `ATTACH` fails with `TABLE_ALREADY_EXISTS`.
 # no-replicated-database: distributed `DDL` queries (`TRUNCATE TABLE`) inside transactions are not supported.
 # no-random-merge-tree-settings: the test checks `TRUNCATE` tmp part cleanup; random `MergeTree` part settings make the stress unrelated.
 

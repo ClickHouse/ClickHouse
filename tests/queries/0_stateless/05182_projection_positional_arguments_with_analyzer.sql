@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: `ATTACH` analyzes the projection with the server settings, where `enable_positional_arguments_for_projections`
+-- is disabled, so the positional `GROUP BY 1` makes it fail and the table cannot be attached back.
 -- A projection whose `GROUP BY` uses positional arguments, which `enable_positional_arguments_for_projections`
 -- allows for compatibility with the projections defined by the older versions. Such a projection is
 -- calculated with the Analyzer as any other one, so check the whole path: the columns written into

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: use-rocksdb, no-fasttest, no-parallel, no-ordinary-database
+# Tags: use-rocksdb, no-fasttest, no-parallel, no-ordinary-database, no-random-detach
 # no-ordinary-database: the test needs its own database to be Atomic for the Atomic<->Ordinary directions.
 # no-parallel: named databases plus directories under the server data path, and the failpoints
 # used below are process-global, so two copies of this test would arm and disable them under
 # each other.
+# no-random-detach: the test checks that a table left unusable by a failed rename refuses queries,
+# and a `DETACH`/`ATTACH` before the query reloads the table and makes it usable again.
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal

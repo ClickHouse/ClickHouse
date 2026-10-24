@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses loop() table function
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas, no-random-detach
+-- no-random-detach: test checks system.parts
 -- Tag no-fasttest: Depends on S3
 -- Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas read the files
 

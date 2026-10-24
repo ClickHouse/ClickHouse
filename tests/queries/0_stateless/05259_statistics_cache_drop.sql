@@ -1,7 +1,9 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas, no-random-detach
 -- Tag no-parallel: `SYSTEM DROP STATISTICS CACHE` clears the server-wide cache, which would make the
 -- cache hits asserted by other tests nondeterministic.
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only.
+-- Tag no-random-detach: the random `DETACH`/`ATTACH` before a query removes the table's parts from the statistics
+-- cache, which turns the expected hits into misses.
 
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;

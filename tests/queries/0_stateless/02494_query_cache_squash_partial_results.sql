@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test checks cache state
 -- Tag no-parallel: Messes with internal cache
 
 SYSTEM CLEAR QUERY CACHE;

@@ -1,7 +1,9 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas, no-random-detach
 -- Tag no-parallel: dropping a table without UUID (e.g. in an `Ordinary` database) in a concurrent test
 -- clears all caches of the server, including the statistics cache, which turns the expected hits into misses.
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only.
+-- Tag no-random-detach: the random `DETACH`/`ATTACH` before a query removes the table's parts from the statistics
+-- cache, which turns the expected hits into misses.
 
 -- The statistics of a data part are cached per part and column, loaded by the first query that needs
 -- them, and merged on the fly for the parts of every query. So a query over the parts left after

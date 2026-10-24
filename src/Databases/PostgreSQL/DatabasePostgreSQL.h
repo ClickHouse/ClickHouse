@@ -40,6 +40,12 @@ public:
 
     bool isRemoteDatabase() const override { return true; }
 
+    /// The tables are read-through proxies of the remote PostgreSQL server's tables: even probing a
+    /// table (`isTableExist`, `tryGetTable`) reaches out to the remote server under the caller's
+    /// credentials (see `checkPostgresTable` / `fetchTable`), so it is not free of side effects, and a
+    /// `DETACH`/`ATTACH` cycle would only manipulate the local proxy cache, not the remote table.
+    bool supportsDetachingTables() const override { return false; }
+
     String getMetadataPath() const override { return metadata_path; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }

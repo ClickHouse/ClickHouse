@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: replica, no-fasttest, no-shared-merge-tree
+# Tags: replica, no-fasttest, no-shared-merge-tree, no-random-detach
 # no-fasttest: Mutation load can be slow
 # no-shared-merge-tree -- have separate test for it
+# no-random-detach: this test renames columns while replication queues are stopped;
+# DETACH/ATTACH between the renames invalidates checksums and triggers `NO_FILE_IN_DATA_PART`.
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh

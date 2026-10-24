@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+# no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 # Test that system.columns_cache filters its rows by access rights, mirroring
 # system.columns. A user without SHOW TABLES / SHOW COLUMNS on a table must not
 # be able to learn its database, table, part, or column names or cached sizes
 # from system.columns_cache once another query has warmed the cache.
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

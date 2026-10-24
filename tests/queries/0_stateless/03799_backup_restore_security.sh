@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: test uses limited permissions
 
 # Test for security fixes related to BACKUP and RESTORE operations:
 # 1. RESTORE should be forbidden in readonly mode

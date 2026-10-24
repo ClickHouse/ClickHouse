@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- Tag no-replicated-database: the test creates its own databases with specific engines.
 
 -- The columns cache is keyed by the table UUID, so it only works for tables that have one.

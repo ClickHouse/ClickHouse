@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- The columns cache identifies the schema of an entry by the column list of the metadata
 -- snapshot the reader uses, so that data deserialized under one schema is never served to a
 -- query running with another one. That identity must not react to metadata changes which

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
+# Tags: race, no-parallel, no-random-detach
 # no-parallel because we run many concurrent mutations, which may break other tests by delaying their
 # mutations for a long time.
+# no-random-detach: many concurrent threads hammer the same table for a fixed duration; a random
+# DETACH/ATTACH cycle racing with INSERT/ALTER/OPTIMIZE/DELETE can leave the table briefly unavailable
+# and make the final DROP TABLE fail with UNKNOWN_TABLE.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
