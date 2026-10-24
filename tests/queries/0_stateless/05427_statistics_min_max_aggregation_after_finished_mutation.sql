@@ -12,7 +12,7 @@ SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
 
 DROP TABLE IF EXISTS t_05427;
-CREATE TABLE t_05427 (x UInt64 STATISTICS(minmax), b UInt64 STATISTICS(minmax), spare UInt64)
+CREATE TABLE t_05427 (x UInt64 STATISTICS(basic), b UInt64 STATISTICS(basic), spare UInt64)
 ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_05427 SELECT number, number + 100, number FROM numbers(1000) SETTINGS materialize_statistics_on_insert = 1;
@@ -31,7 +31,7 @@ SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05427) WHERE explain L
 -- statistics of the dropped column.
 SYSTEM STOP MERGES t_05427;
 ALTER TABLE t_05427 DROP COLUMN b SETTINGS mutations_sync = 0, alter_sync = 0;
-ALTER TABLE t_05427 ADD COLUMN b UInt64 DEFAULT 7 STATISTICS(minmax) SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05427 ADD COLUMN b UInt64 DEFAULT 7 STATISTICS(basic) SETTINGS mutations_sync = 0, alter_sync = 0;
 
 SELECT 'pending drop and add';
 SELECT count() > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't_05427' AND NOT is_done;
