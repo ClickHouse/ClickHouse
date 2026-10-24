@@ -91,15 +91,18 @@ for _ in $(seq 1 600); do
     sleep 0.1
 done
 
+if [ "$reading" = "1" ]; then
+    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
+fi
+# KILL ... SYNC returns once the server has stopped the query, not once the client has written its error.
+wait "$select_pid" 2>/dev/null
+
 if [ "$reading" != "1" ]; then
     echo 'did not observe the in-block read phase'
 else
-    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
     echo -n 'kill observed '
     inside_part_read "$kill_err"
 fi
-
-wait "$select_pid" 2>/dev/null
 rm -f "$timeout_err" "$kill_err"
 
 # A cancelled read says nothing about the part's health: it must stay active, must not be
