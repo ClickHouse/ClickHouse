@@ -156,7 +156,7 @@ public:
     virtual bool supportsFullyQualifiedPaths() const { return false; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
@@ -296,9 +296,14 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
     }
 
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    virtual DataLakeStorageSettingsPtr getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual void setDataLakeSettings(ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
@@ -340,6 +345,13 @@ public:
     virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
     {
         return true;
+    }
+
+    /// See `IDataLakeMetadata::estimateRead`. Plain object storage has no metadata to estimate from.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr /*storage_metadata_snapshot*/, const ActionsDAG * /*filter*/, ContextPtr /*context*/) const
+    {
+        return std::nullopt;
     }
 
     /// Whether the data files that back this configuration are immutable, i.e. an existing data
