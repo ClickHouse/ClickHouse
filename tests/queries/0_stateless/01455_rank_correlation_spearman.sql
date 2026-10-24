@@ -24,6 +24,50 @@ INSERT INTO circles VALUES (1.20848,0.505643), (1.577706,1.726383), (1.945215,1.
 SELECT '0.286';
 SELECT roundBankers(rankCorr(a, b), 3) from circles;
 
+-- Tied values get mid-ranks, whose Pearson correlation is the coefficient.
+SELECT '-1';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (1, 2), (1, 2), (2, 1), (2, 1));
+
+SELECT '0';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (1, 1), (1, 2), (2, 1), (2, 2));
+
+SELECT '-0.333';
+SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (0, 1), (0, 0), (0, 0), (1, 0));
+
+SELECT '0.861';
+SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (1, 1), (1, 2), (1, 3), (2, 3), (2, 4), (3, 5));
+
+-- A constant column has no rank variance, so the correlation is undefined.
+SELECT 'nan';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (5, 1), (5, 2), (5, 3));
+
+-- A NaN drops its whole row, so trailing and interleaved NaNs both keep the samples paired.
+SELECT '-1';
+SELECT rankCorr(-number, CAST(if(number < 5, number, nan) AS Float64)) FROM numbers(10);
+
+SELECT '-0.5';
+SELECT rankCorr(x, y) FROM values('x Float64, y Float64', (0, 0), (0, nan), (1, 0), (0, 1));
+
+SELECT '0.949';
+SELECT roundBankers(rankCorr(x, y), 3) FROM values('x Float64, y Float64', (1, 1), (nan, 5), (1, 2), (2, nan), (2, 3), (3, 9));
+
+-- A state from an older server can hold unequal sizes, and it records no row pairing,
+-- so which observations survived is unrecoverable.
+SELECT 'nan';
+SELECT finalizeAggregation(CAST(unhex('040300000000000000000000000000000000000000000000F03F000000000000000000000000000000000000000000000000000000000000F03F') AS AggregateFunction(rankCorr, Float64, Float64)));
+
+-- Merging concatenates both vectors, so two such states can cancel each other's size skew.
+-- Either merge order stays unrecoverable.
+SELECT 'nan';
+SELECT arrayReduce('rankCorrMerge', [CAST(unhex('01000000000000000000') AS AggregateFunction(rankCorr, Float64, Float64)), CAST(unhex('02030000000000000000000000000000F03F0000000000000000000000000000F03F0000000000000000') AS AggregateFunction(rankCorr, Float64, Float64))]);
+
+SELECT 'nan';
+SELECT arrayReduce('rankCorrMerge', [CAST(unhex('02030000000000000000000000000000F03F0000000000000000000000000000F03F0000000000000000') AS AggregateFunction(rankCorr, Float64, Float64)), CAST(unhex('01000000000000000000') AS AggregateFunction(rankCorr, Float64, Float64))]);
+
+-- An older state with equal sizes was never unpaired, so it still computes.
+SELECT '0.5';
+SELECT finalizeAggregation(CAST(unhex('03030000000000000000000000000000F03F000000000000004000000000000000000000000000000040000000000000F03F') AS AggregateFunction(rankCorr, Float64, Float64)));
+
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
