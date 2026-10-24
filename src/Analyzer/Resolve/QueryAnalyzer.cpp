@@ -2838,9 +2838,30 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
-                    /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
-                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(
-                        join_using_column_node, join_node->getKind(), *nearest_query_scope, semi_anti_star_checker.preservedSideOrNone());
+                    /// `PREWHERE` is evaluated by reading a single table before the join, so there the `USING` column is
+                    /// the column of the leftmost table with its own storage type, as for an identifier. A matcher reaches
+                    /// this point in `PREWHERE` only from inside a lambda, because `PREWHERE` itself is resolved with
+                    /// `allow_resolve_from_using` disabled. The first argument of the `USING` column is that column even for
+                    /// nested joins, because the arguments of an inner `USING` key are flattened into the outer one, but there
+                    /// it already has the type of the inner `USING` key, so its original type is restored from the query scope.
+                    /// The conversion to the common `USING` type is not applied: the `PREWHERE` rollback of the changed types
+                    /// does not descend into a lambda.
+                    auto preserved_side = semi_anti_star_checker.preservedSideOrNone();
+                    QueryTreeNodePtr matched_column_node;
+                    if (scope.in_prewhere && !preserved_side)
+                    {
+                        matched_column_node = join_using_column_nodes.front();
+                        if (auto original_column_node = ReplaceColumnsVisitor::findTransitiveReplacement(
+                                matched_column_node, nearest_query_scope->join_columns_with_changed_types))
+                            matched_column_node = original_column_node;
+                        matched_column_node = matched_column_node->clone();
+                    }
+                    else
+                    {
+                        /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
+                        matched_column_node = createProjectionForUsing(
+                            join_using_column_node, join_node->getKind(), *nearest_query_scope, preserved_side);
+                    }
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
