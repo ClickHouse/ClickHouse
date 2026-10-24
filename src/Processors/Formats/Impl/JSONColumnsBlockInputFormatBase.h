@@ -61,7 +61,7 @@ public:
 protected:
     Chunk read() override;
 
-    size_t readColumn(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name);
+    size_t readColumn(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name, size_t column_index);
 
     const FormatSettings format_settings;
     const NamesAndTypes fields;
