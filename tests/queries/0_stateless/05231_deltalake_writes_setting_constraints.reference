@@ -1,0 +1,19 @@
+versions: 1, data files: 1
+-- kill switch: SET, the alias and a SETTINGS clause on the INSERT all hit the constraint
+SETTING_CONSTRAINT_VIOLATION
+SETTING_CONSTRAINT_VIOLATION
+SETTING_CONSTRAINT_VIOLATION
+-- kill switch: a plain INSERT is rejected by the writes gate, SELECT still works
+SUPPORT_IS_DISABLED
+1
+versions: 1, data files: 1
+-- readonly = 1 with the writes setting on: INSERT is rejected as read-only
+READONLY
+1
+versions: 1, data files: 1
+-- readonly = 2 may change the setting, INSERT is still rejected as read-only
+true
+READONLY
+versions: 1, data files: 1
+-- the table is intact: only the initial row
+1
