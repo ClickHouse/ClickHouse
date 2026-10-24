@@ -145,6 +145,7 @@ static struct InitFiu
     REGULAR(object_storage_queue_fail_after_insert) \
     REGULAR(object_storage_queue_fail_delete) \
     REGULAR(object_storage_queue_fail_startup) \
+    REGULAR(object_storage_queue_unregister_without_remove_recursive) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(smt_simulate_part_removed_during_load) \
@@ -170,6 +171,8 @@ static struct InitFiu
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
+    PAUSEABLE_ONCE(object_storage_queue_unregister_after_drop_lock) \
+    PAUSEABLE_ONCE(object_storage_queue_unregister_before_final_multi) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(columns_cache_reader_pause_before_later_range) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
