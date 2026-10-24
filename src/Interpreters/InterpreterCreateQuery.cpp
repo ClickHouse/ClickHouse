@@ -235,6 +235,8 @@ size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnes
     if (create.is_materialized_view_with_inner_table())
         ++result;
 
+    /// The definition of a TimeSeries table is normalized at this point, so it has a clause for every target it will have.
+    /// An external target has a table id, an inner one doesn't and is created together with the table.
     if (create.is_time_series_table)
     {
         /// The query must be already normalized here (see getTablePropertiesAndNormalizeCreateQuery).

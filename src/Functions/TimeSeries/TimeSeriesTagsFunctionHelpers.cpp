@@ -36,7 +36,7 @@ namespace
     /// Checks that the column's type is Array(Tuple(String, String)).
     void checkTypeOfTagsArrayArgument(std::string_view function_name, const DataTypePtr & type, size_t argument_index)
     {
-        auto nested_type = removeNullableOrLowCardinalityNullable(type);
+        auto nested_type = removeLowCardinalityAndNullable(type);
 
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(nested_type.get()))
             nested_type = map_type->getNestedType();
@@ -47,8 +47,8 @@ namespace
             {
                 if (tuple_type->getElements().size() == 2)
                 {
-                    auto first_type = removeNullableOrLowCardinalityNullable(tuple_type->getElements()[0]);
-                    auto second_type = removeNullableOrLowCardinalityNullable(tuple_type->getElements()[1]);
+                    auto first_type = removeLowCardinalityAndNullable(tuple_type->getElements()[0]);
+                    auto second_type = removeLowCardinalityAndNullable(tuple_type->getElements()[1]);
                     if (isStringOrFixedString(first_type) && isStringOrFixedString(second_type))
                         return;
                 }
@@ -167,7 +167,7 @@ namespace
     /// Checks that the column's type is String or FixedString.
     void checkTypeOfTagNameArgument(std::string_view function_name, const DataTypePtr & type, size_t argument_index)
     {
-        auto nested_type = removeNullableOrLowCardinalityNullable(type);
+        auto nested_type = removeLowCardinalityAndNullable(type);
 
         if (isStringOrFixedString(nested_type) || isNothing(nested_type))
             return;

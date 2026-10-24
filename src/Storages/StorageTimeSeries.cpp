@@ -1,4 +1,6 @@
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
+#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -109,26 +111,19 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
-
-    /// Whether a target of the given kind is optional: the RecentSamples target is enabled by the `recent_samples_ttl_seconds`
-    /// setting, and the TimeRanges target is enabled by the `store_time_ranges` setting.
-    constexpr bool isOptionalTarget(ViewTarget::Kind target_kind)
-    {
-        return (target_kind == ViewTarget::RecentSamples) || (target_kind == ViewTarget::TimeRanges);
-    }
 }
 
 
 std::vector<StorageTimeSeries::Target> StorageTimeSeries::findTargets(const ASTCreateQuery & create_query)
 {
     std::vector<Target> targets;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         /// An optional target exists only if the normalized create query has its clause (e.g. RECENT SAMPLES).
         /// The setting enabling the target cannot be checked here instead: a table created before the target
         /// existed has no such table on disk while the setting reads as its default enabling the target,
         /// and ATTACH never creates inner tables.
-        if (isOptionalTarget(target_kind) && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
+        if (isOptionalTimeSeriesTarget(target_kind) && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
             continue;
 
         Target target;
@@ -304,7 +299,7 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
     const auto * target_ptr = tryGetTarget(target_kind);
     if (!target_ptr)
     {
-        if (isOptionalTarget(target_kind))
+        if (isOptionalTimeSeriesTarget(target_kind))
         {
             if (throw_if_not_found)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries table {} has no {} target table",
@@ -389,7 +384,7 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
     const auto * target = tryGetTarget(target_kind);
     if (!target)
     {
-        if (isOptionalTarget(target_kind))
+        if (isOptionalTimeSeriesTarget(target_kind))
             return false;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
     }
@@ -493,7 +488,7 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
@@ -514,7 +509,7 @@ void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) c
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         if (!isInnerTable(target_kind))
             continue;
@@ -537,7 +532,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
     /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
     clearCaches();
 
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         /// We truncate only inner tables here.
         if (isInnerTable(target_kind))
@@ -561,7 +556,7 @@ std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) con
     if (!hasInnerTables())
         return 0;
     UInt64 total_rows = 0;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
@@ -584,7 +579,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) co
     if (!hasInnerTables())
         return 0;
     UInt64 total_bytes = 0;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
@@ -607,7 +602,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytesUncompressed(const Settings &
     if (!hasInnerTables())
         return 0;
     UInt64 total_bytes = 0;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
@@ -628,7 +623,7 @@ std::optional<UInt64> StorageTimeSeries::totalBytesUncompressed(const Settings &
 Strings StorageTimeSeries::getDataPaths() const
 {
     Strings data_paths;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         auto table = tryGetTargetTable(target_kind, getContext());
         if (!table)
@@ -659,7 +654,7 @@ bool StorageTimeSeries::optimize(
     }
 
     bool optimized = false;
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
@@ -766,7 +761,7 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
         /// them one by one would leave the table half-renamed (some inner tables moved, the rest
         /// not) if a later destination name happened to be occupied.
         std::vector<std::pair<StorageID, String>> inner_renames;
-        for (auto target_kind : getTargetKinds())
+        for (auto target_kind : getTimeSeriesTargetKinds())
         {
             if (!isInnerTable(target_kind))
                 continue;
@@ -805,7 +800,7 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         /// We backup the target table's data only if it's inner.
         if (isInnerTable(target_kind))
@@ -828,7 +823,7 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (auto target_kind : getTimeSeriesTargetKinds())
     {
         /// We restore the target table's data only if it's inner.
         if (isInnerTable(target_kind))
@@ -933,9 +928,29 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 }
 
 
+namespace
+{
+    /// The rows of the documentation table describing the payload columns of the histograms table, generated from
+    /// the same source of truth as the columns themselves.
+    String makeHistogramsColumnsDocs()
+    {
+        String result;
+        for (const auto & column : TimeSeriesHistogramsColumns::getAll())
+        {
+            const auto & definition = TimeSeriesHistogramsColumns::getDefinition(column);
+            result += fmt::format("| `{}` | `{}` | `{}` | {} |\n", definition.name, definition.type, definition.codec, definition.description);
+        }
+        return result;
+    }
+}
+
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
+    /// The versions mentioned in the documentation are generated so that the documentation doesn't go stale.
+    const String latest_version = std::to_string(TimeSeriesVersion::LATEST);
+    const String histograms_version = std::to_string(TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET);
+
     factory.registerStorage("TimeSeries", [](const StorageFactory::Arguments & args)
     {
         /// Pass local_context here to convey setting to inner tables.
@@ -995,6 +1010,10 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 <Note>
 The keyword `SAMPLES` has an alias `DATA`, and the keyword `METRIC FAMILIES` has an alias `METRICS`, both are kept for backwards compatibility.
 The definition of a table of a [version](#schema-versioning) before 4 is written with `METRICS`, so that an older server can read it.
+The definition of a table of version )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later also has a generated `HISTOGRAMS` clause, which can't be customized yet
+(see [Histograms table](#histograms-table)).
 </Note>
 
 <Note>
@@ -1023,6 +1042,9 @@ Columns of a TimeSeries table are generated automatically. These are outer colum
 | `metric_name` | `String` | The name of the metric |
 | `tags` | `Map(String, String)` | Map of tags (labels) for the time series |
 | `samples` | `Array(Tuple(DateTime64(3), Float64))` by default | Array of (timestamp, value) pairs for a time series. The tuple's timestamp and value element types can be derived from the samples `INNER COLUMNS` declaration (see [Specifying outer columns](#specifying-outer-columns)). The column is named `time_series` in tables of [version](#schema-versioning) 2 and earlier |
+| `histograms.timestamp`, `histograms.is_float`, ..., `histograms.negative_values_float` | `Array(DateTime64(3))` by default, `Array(Bool)`, ... | The native histogram samples of a time series as the flattened form of `histograms Nested(...)`: one array per column of the [histograms](#histograms-table) table (with `timestamp` in place of `id`), element k of every array being histogram sample k. The arrays of a row must have the same length. Tables of [versions](#schema-versioning) before )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( have no such columns |
 | `metric_family` | `String` | The name of the metric family (for metrics metadata) |
 | `type` | `String` | The type of the metric (e.g. "counter", "gauge") |
 | `unit` | `String` | The unit of the metric |
@@ -1076,7 +1098,11 @@ This is similar to how a [materialized view](/reference/statements/create/view#m
 with the difference that a materialized view has one target table
 whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metric families](#metric-families-table),
 and two optional target tables which are enabled by default: [recent samples](#recent-samples-table)
-(see the [recent_samples_ttl_seconds](#settings) setting) and [time ranges](#time-ranges-table) (see the [store_time_ranges](#settings) setting).
+(see the [recent_samples_ttl_seconds](#settings) setting) and [time ranges](#time-ranges-table) (see the [store_time_ranges](#settings) setting),
+and a [histograms](#histograms-table) target table
+in tables of [version](#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later.
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
@@ -1157,8 +1183,17 @@ The _time ranges_ table must have columns:
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table) | Identifies a combination of a metric name and tags |
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))`, optionally wrapped in `SimpleAggregateFunction(min, ...)` | Minimum timestamp of the time series with that `id` |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))`, optionally wrapped in `SimpleAggregateFunction(max, ...)` | Maximum timestamp of the time series with that `id` |
+| `sample_kinds` | [ ] | `SimpleAggregateFunction(groupBitOr, UInt8)` | `UInt8` or `SimpleAggregateFunction(groupBitOr, UInt8)` | The kinds of samples of time series with that `id`, a bitmask: 1 - float samples, 2 - [histogram](#histograms-table) samples. Every row has the kinds of the samples written together with it (aggregated like `min_time` and `max_time`), and [timeSeriesSelector](/reference/functions/table-functions/timeSeriesSelector) reads only the target tables of the kinds present. The column is required in tables of [version](#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later if [store_time_ranges](#settings) is `true`.
+        It has no default: the `TimeSeries` table writes it with every row, and rows written to the time ranges table another way must have the
+        right kinds, otherwise their samples may be missed. The engine of the time ranges table must keep the kinds when it merges rows:
+        a `MergeTree` engine merging no rows, the column in the sorting key, or `AggregatingMergeTree` with the type
+        `SimpleAggregateFunction(groupBitOr, UInt8)`.
+        A customized `MergeTree` engine of the inner time ranges table is checked when the table is created;
+        an inner table passing its rows to other tables (e.g. `Distributed`) is the responsibility of its owner |
 
-Every insert writes the time range of the inserted samples of each time series to this table, and the inner _time ranges_ table
+Every insert writes the time range and the kind of the inserted samples of each time series to this table, and the inner _time ranges_ table
 uses the [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) engine to merge those ranges into one per time series.
 
 ### Metric families table {#metric-families-table}
@@ -1174,6 +1209,64 @@ The _metric families_ table must have columns:
 | `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
+
+### Histograms table {#histograms-table}
+
+The _histograms_ table contains native histogram samples, one row per sample, keyed by `id` and `timestamp` like the [samples](#samples-table) table.
+It exists in tables of [version](#schema-versioning) )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( and later and is always generated: it can't be customized yet, so
+`INNER COLUMNS` or an `INNER ENGINE` differing from the generated ones are rejected.
+Tables of earlier versions have no histograms table.
+
+Integer and float histograms share the table, and the bucket layout is stored the way Prometheus sends it: spans plus absolute bucket counts.
+The generated columns get compression codecs; the trailing `ZSTD(3)` is explicit because the offsets of an array receive only the generic tail of a codec pipeline.
+
+| Name | Type | Codec | Description |
+|---|---|---|---|
+| `id` | `Tuple(UInt64, LowCardinality(UUID))` by default | | Identifies a combination of a metric name and tags, same as in the [samples](#samples-table) table |
+| `timestamp` | `DateTime64(3)` by default | `CODEC(Delta, T64, ZSTD(3))` | A time point, same type as in the [samples](#samples-table) table |
+)DOCS_MD"
+        + makeHistogramsColumnsDocs()
+        + R"DOCS_MD(
+The histogram samples are written and read through the `histograms.*` [outer columns](#outer-columns), which mirror the columns
+of this table by name. Every histogram is validated on insertion the way Prometheus validates it (the spans must describe the
+buckets, an integer histogram's buckets must sum up to its count, a histogram with custom buckets must have increasing bounds and
+no negative side, and so on); the columns of the flavour a histogram doesn't use (see `is_float`) are ignored. An insert with an invalid
+histogram is rejected as a whole. The number of buckets of one histogram can be limited by the [histograms_max_buckets](#settings) setting.
+
+The columns of the group that an `INSERT` doesn't mention get default values aligned with the mentioned ones, so an integer histogram
+with exponential buckets needs only its own columns, for example a histogram with `schema = 3` and four positive buckets with the
+indexes -2, -1, 0, 1 (one span starting at -2 of length 4):
+
+```sql
+INSERT INTO my_table (metric_name, tags,
+                      histograms.timestamp, histograms.schema, histograms.zero_threshold,
+                      histograms.count_int, histograms.zero_count_int, histograms.sum,
+                      histograms.positive_spans, histograms.positive_values_int)
+VALUES ('http_request_duration_seconds', {'job': 'api'},
+        [now64(3)], [3], [exp2(-128)],
+        [42], [0], [12.5],
+        [[(-2, 4)]], [[3, 10, 20, 9]])
+```
+
+A row may carry both float samples in `samples` and histogram samples in `histograms.*` for the same time series.
+
+The Prometheus remote-write protocol fills the group from the native histograms of a request when the sender is configured
+with `send_native_histograms: true`: the integer bucket deltas are decoded to absolute counts, everything else is stored as sent.
+A table of a version before )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( has no histograms table, so it stores the float samples of a request and drops its native
+histograms with a warning, counting them in the `PrometheusRemoteWriteDroppedHistograms` profile event.
+The Prometheus remote-read protocol returns the native histograms exactly as they were written.
+
+Reading the group returns the histogram samples of every time series, for example the buckets of every histogram:
+
+```sql
+SELECT metric_name, ts, spans, counts
+FROM my_table
+ARRAY JOIN histograms.timestamp AS ts, histograms.positive_spans AS spans, histograms.positive_values_int AS counts
+```
 
 ## Creation {#creation}
 
@@ -1192,13 +1285,32 @@ CREATE TABLE my_table
     `metric_name` String,
     `tags` Map(String, String),
     `samples` Array(Tuple(DateTime64(3), Float64)),
+    `histograms.timestamp` Array(DateTime64(3)),
+    `histograms.is_float` Array(Bool),
+    `histograms.counter_reset_hint` Array(UInt8),
+    `histograms.schema` Array(Int8),
+    `histograms.zero_threshold` Array(Float64),
+    `histograms.sum` Array(Float64),
+    `histograms.positive_spans` Array(Array(Tuple(offset Int32, length UInt32))),
+    `histograms.negative_spans` Array(Array(Tuple(offset Int32, length UInt32))),
+    `histograms.custom_values` Array(Array(Float64)),
+    `histograms.count_int` Array(UInt64),
+    `histograms.zero_count_int` Array(UInt64),
+    `histograms.positive_values_int` Array(Array(UInt64)),
+    `histograms.negative_values_int` Array(Array(UInt64)),
+    `histograms.count_float` Array(Float64),
+    `histograms.zero_count_float` Array(Float64),
+    `histograms.positive_values_float` Array(Array(Float64)),
+    `histograms.negative_values_float` Array(Array(Float64)),
     `metric_family` String,
     `type` String,
     `unit` String,
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 9, recent_samples_ttl_seconds = 345600
+SETTINGS version = )DOCS_MD"
+        + latest_version
+        + R"DOCS_MD(, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1225,7 +1337,8 @@ TIME RANGES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)),
+    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)
 )
 TIME RANGES INNER ENGINE = AggregatingMergeTree ORDER BY id
 METRIC FAMILIES INNER COLUMNS
@@ -1236,6 +1349,28 @@ METRIC FAMILIES INNER COLUMNS
     `help` String
 )
 METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
+HISTOGRAMS INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
+    `is_float` Bool CODEC(ZSTD(3)),
+    `counter_reset_hint` UInt8 CODEC(ZSTD(3)),
+    `schema` Int8 CODEC(ZSTD(3)),
+    `zero_threshold` Float64 CODEC(ZSTD(3)),
+    `sum` Float64 CODEC(ZSTD(3)),
+    `positive_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `negative_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `custom_values` Array(Float64) CODEC(ZSTD(3)),
+    `count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `zero_count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `positive_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `negative_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `count_float` Float64 CODEC(ZSTD(3)),
+    `zero_count_float` Float64 CODEC(ZSTD(3)),
+    `positive_values_float` Array(Float64) CODEC(Delta, ZSTD(3)),
+    `negative_values_float` Array(Float64) CODEC(Delta, ZSTD(3))
+)
+HISTOGRAMS INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 8192
 ```
 
 So the columns were generated automatically and also there are five inner target tables with their own column definitions
@@ -1245,7 +1380,8 @@ Also the latest schema version was pinned into the `version` setting (see [Schem
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-`.inner_id.timeranges.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+`.inner_id.timeranges.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+`.inner_id.histograms.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 and each target table has its own set of columns:
 
 ```sql
@@ -1293,7 +1429,8 @@ CREATE TABLE default.`.inner_id.timeranges.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
     `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)),
+    `sample_kinds` SimpleAggregateFunction(groupBitOr, UInt8)
 )
 ENGINE = AggregatingMergeTree
 ORDER BY id
@@ -1310,6 +1447,33 @@ CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family
+SETTINGS index_granularity = 8192
+```
+
+```sql
+CREATE TABLE default.`.inner_id.histograms.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(Delta(8), T64, ZSTD(3)),
+    `is_float` Bool CODEC(ZSTD(3)),
+    `counter_reset_hint` UInt8 CODEC(ZSTD(3)),
+    `schema` Int8 CODEC(ZSTD(3)),
+    `zero_threshold` Float64 CODEC(ZSTD(3)),
+    `sum` Float64 CODEC(ZSTD(3)),
+    `positive_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `negative_spans` Array(Tuple(offset Int32, length UInt32)) CODEC(ZSTD(3)),
+    `custom_values` Array(Float64) CODEC(ZSTD(3)),
+    `count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `zero_count_int` UInt64 CODEC(DoubleDelta, ZSTD(3)),
+    `positive_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `negative_values_int` Array(UInt64) CODEC(T64, ZSTD(3)),
+    `count_float` Float64 CODEC(ZSTD(3)),
+    `zero_count_float` Float64 CODEC(ZSTD(3)),
+    `positive_values_float` Array(Float64) CODEC(Delta(8), ZSTD(3)),
+    `negative_values_float` Array(Float64) CODEC(Delta(8), ZSTD(3))
+)
+ENGINE = MergeTree
+ORDER BY (id, timestamp)
 SETTINGS index_granularity = 8192
 ```
 
@@ -1409,6 +1573,7 @@ and the ranges of the same time series must be merged into one;
 - the [metric families](#metric-families-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates. Most duplicates don't even reach the table: the deduplication cache of the `TimeSeries` table skips the metric families
 written recently (see the `metric_families_deduplication_cache_expiration_seconds` setting).
+- the [histograms](#histograms-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) ordered by `(id, timestamp)`, like the samples table.
 
 The engine family of the generated inner tables follows the `default_table_engine` query-level setting:
 with `default_table_engine = ReplicatedMergeTree` or `SharedMergeTree` the inner tables use the corresponding
@@ -1492,7 +1657,9 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `version` | UInt64 | 10 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | )DOCS_MD"
+        + latest_version
+        + R"DOCS_MD( | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `store_time_ranges` | Bool | true | If set to true then the table stores the time range of each time series in the [time ranges](#time-ranges-table) table and uses it to filter time series by time. Set to false to disable the time ranges table. Not applicable to tables of [version](#schema-versioning) 7 or earlier, they use `store_min_time_and_max_time` instead |
 | `metric_families_deduplication_cache_size_bytes` | UInt64 | 10485760 | Maximum size in bytes of the deduplication cache of the [metric families](#metric-families-table) table. The cache remembers the descriptions of the metric families written recently, so they aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). Set to 0 to disable the cache, see also `metric_families_deduplication_cache_expiration_seconds` |
@@ -1504,6 +1671,12 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine |
+| `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `version` to be at least )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( |
+| `histograms_max_buckets` | UInt64 | 0 | The maximum number of buckets (positive and negative together) a single histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without `native_histogram_bucket_limit`. Requires `version` to be at least )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( |
 
 ### Settings of the earlier versions {#settings-of-earlier-versions}
 
@@ -1523,7 +1696,9 @@ The following settings apply to tables of earlier [versions](#schema-versioning)
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 9) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently )DOCS_MD"
+        + latest_version
+        + R"DOCS_MD() -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1555,6 +1730,9 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 8 | The columns `min_time` and `max_time` were moved from the [tags](#tags-table) table to the new optional [time ranges](#time-ranges-table) table (the inner table `.inner_id.timeranges.<uuid>`, the keyword `TIME RANGES`), which is enabled by the [`store_time_ranges`](#settings) setting. The time ranges are always aggregated and always used to filter time series by time. The settings `store_min_time_and_max_time`, `aggregate_min_time_and_max_time` and `filter_by_min_time_and_max_time` apply to the earlier versions only. The inner tags table of a new table uses `ReplacingMergeTree` |
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
+| )DOCS_MD"
+        + histograms_version
+        + R"DOCS_MD( | The [histograms](#histograms-table) target table was introduced: every table of this version has a target table `.inner_id.histograms.<uuid>` for native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have no histograms table. The [time ranges](#time-ranges-table) table got the column `sample_kinds` |
 
 # Functions {#functions}
 
@@ -1563,6 +1741,7 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
 - [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags)
 - [timeSeriesTimeRanges](/reference/functions/table-functions/timeSeriesTimeRanges)
 - [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies)
+- [timeSeriesHistograms](/reference/functions/table-functions/timeSeriesHistograms)
 )DOCS_MD",
         .syntax = "ENGINE = TimeSeries()"});
 }

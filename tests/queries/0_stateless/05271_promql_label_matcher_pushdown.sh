@@ -104,15 +104,21 @@ $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'rate({__name__=~\"
 echo "-- as in Prometheus, duplicate left series of a one-to-one match are an error only in a matched group"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'lim / on(instance) req{instance=\"i1\"}', 100, 130, 10) ORDER BY tags"
 
-# Prints the label values each selector filters by. EXPLAIN keeps the selector filters in the plan only for an empty table.
-# Only the filter lines are looked at: the join with the time ranges table lists `metric_name` among its input columns too.
+# Prints the metric name and the values of the equality matchers of each selector the query reads, with the pushed-down
+# matchers. The selector looks its series up in a query of its own, which EXPLAIN doesn't show, so the selectors are taken
+# from the log of the query: the lookup logs every selector it runs. The query runs over an empty table, so it reads no samples.
+SELECTOR_QUERY_COUNT=0
 function selectors()
 {
     echo "$1"
+    SELECTOR_QUERY_COUNT=$((SELECTOR_QUERY_COUNT + 1))
+    local query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_selectors_${SELECTOR_QUERY_COUNT}"
+    $CLIENT --query_id="$query_id" -q "SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10) FORMAT Null"
+    $CLIENT -q "SYSTEM FLUSH LOGS text_log"
     $CLIENT -q "
-        SELECT DISTINCT arrayStringConcat(extractAll(explain, '= \'([a-z0-9]+)\''), ' ') AS filter
-        FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))
-        WHERE explain LIKE '%Filter column:%metric_name%'
+        SELECT DISTINCT arrayStringConcat(arrayConcat(extractAll(selector, '^([a-z0-9_]+)'), extractAll(selector, '[^~!]=\"([a-z0-9]+)\"')), ' ') AS filter
+        FROM (SELECT extract(message, 'for selector \\'(.*)\\', reading') AS selector FROM system.text_log
+              WHERE query_id = '$query_id' AND message LIKE 'Collected the tags of % series for selector %')
         ORDER BY filter"
 }
 
@@ -151,12 +157,18 @@ selectors "$(and_of_lim 21) / on(job) req{job=\"api\"}"
 echo "-- the setting turns the pushdown off"
 CLIENT="$CLIENT --promql_push_down_label_matchers=0" selectors 'rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])'
 
-# Prints how many selectors the query reads and how many joins it makes.
-# Only the hash joins are counted: the PromQL operators are executed with a hash join, while each selector joins the time ranges table with a merge join.
+# Prints how many selectors the query reads (the lookups it logs, see `selectors`) and how many joins its plan makes.
+# Only the hash joins are counted: the PromQL operators are executed with a hash join.
+READS_QUERY_COUNT=0
 function reads()
 {
+    READS_QUERY_COUNT=$((READS_QUERY_COUNT + 1))
+    local query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_reads_${READS_QUERY_COUNT}"
+    $CLIENT --query_id="$query_id" -q "SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10) FORMAT Null"
+    $CLIENT -q "SYSTEM FLUSH LOGS text_log"
     $CLIENT -q "
-        SELECT countIf(explain LIKE '%metric_name = %'), countIf(explain LIKE '%Join (JOIN FillRightFirst)%')
+        SELECT (SELECT count() FROM system.text_log WHERE query_id = '$query_id' AND message LIKE 'Collected the tags of % series for selector %'),
+               countIf(explain LIKE '%Join (JOIN FillRightFirst)%')
         FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))"
 }
 

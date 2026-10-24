@@ -24,7 +24,8 @@ INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map('host', 'h2'), [(to
 INSERT INTO FUNCTION timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) (id, metric_name, tags) VALUES (1, 'm', map('__name__', 'm', 'host', 'h1'));
 INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, timestamp, value) VALUES
     (1, toDateTime64(500, 3), 0.), (1, toDateTime64(1000, 3), 1.), (1, toDateTime64(1060, 3), 2.), (1, toDateTime64(1500, 3), 4.);
-INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (id, min_time, max_time) VALUES (1, toDateTime64(3000, 3), toDateTime64(3000, 3));
+-- `sample_kinds` = 1 marks float samples: the selector reads only the data tables of the kinds stored in the time ranges.
+INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (id, min_time, max_time, sample_kinds) VALUES (1, toDateTime64(3000, 3), toDateTime64(3000, 3), 1);
 
 SELECT min_time, max_time FROM timeSeriesTimeRanges(ts) ORDER BY min_time;
 

@@ -103,6 +103,16 @@ bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_
     return detail::TIME_SERIES_STORE_TIME_RANGES_DEFAULT;
 }
 
+bool isTimeSeriesHistogramsTargetEnabled(const ASTCreateQuery & query, bool for_restore)
+{
+    if (hasTimeSeriesTargetDefinition(query, ViewTarget::Histograms))
+        return true;
+
+    if (for_restore && !hasExplicitTimeSeriesVersion(query))
+        return false;
+
+    return getTimeSeriesVersion(query) >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET;
+}
 
 bool hasTimeSeriesTargetDefinition(const ASTCreateQuery & query, ViewTarget::Kind kind)
 {
@@ -120,6 +130,8 @@ size_t countTimeSeriesInnerTables(const ASTCreateQuery & query, bool for_restore
         result += count_inner_table(ViewTarget::RecentSamples);
     if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
         result += count_inner_table(ViewTarget::TimeRanges);
+    if (isTimeSeriesHistogramsTargetEnabled(query, for_restore))
+        result += count_inner_table(ViewTarget::Histograms);
     return result;
 }
 

@@ -50,6 +50,11 @@ bool isTimeSeriesRecentSamplesTargetEnabled(const ASTCreateQuery & query, bool f
 /// For an existing table prefer `StorageTimeSeries::hasTarget`, which needs neither normalization nor a supported version.
 bool isTimeSeriesTimeRangesTargetEnabled(const ASTCreateQuery & query, bool for_restore = false);
 
+/// Whether a CREATE TABLE ... ENGINE=TimeSeries query enables the "histograms" target table:
+/// by a HISTOGRAMS clause, otherwise by the default for a version having
+/// this table (a backup without a clause was made by a version without it, `for_restore`).
+/// For an existing table prefer `StorageTimeSeries::hasTarget`, which needs neither normalization nor a supported version.
+bool isTimeSeriesHistogramsTargetEnabled(const ASTCreateQuery & query, bool for_restore = false);
 
 /// Whether a CREATE TABLE ... ENGINE=TimeSeries query declares a target in a form written by users: inner columns,
 /// an inner engine, or an external table. An inner UUID doesn't count: it's stamped by UUID generation,
