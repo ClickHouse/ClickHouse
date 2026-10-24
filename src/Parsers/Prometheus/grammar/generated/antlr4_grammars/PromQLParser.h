@@ -333,6 +333,8 @@ public:
     TimestampContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *NUMBER();
+    antlr4::tree::TerminalNode *ADD();
+    antlr4::tree::TerminalNode *SUB();
     antlr4::tree::TerminalNode *START();
     antlr4::tree::TerminalNode *LEFT_PAREN();
     antlr4::tree::TerminalNode *RIGHT_PAREN();

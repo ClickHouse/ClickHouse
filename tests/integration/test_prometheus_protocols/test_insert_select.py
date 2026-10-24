@@ -79,6 +79,42 @@ def test_insert_with_metrics_metadata():
     ) == TSV([["100"]])
 
 
+@pytest.mark.parametrize(
+    "suffix,timestamp_type,wrapped_timestamp,epoch_timestamp,expected_negative",
+    [
+        pytest.param("u32", "UInt32", "4294967196", "0", ["0", "[]"], id="uint32"),
+        pytest.param("datetime", "DateTime", "toDateTime(4294967196)", "toDateTime(0)", ["0", "[]"], id="datetime"),
+        pytest.param(
+            "datetime64", "DateTime64(3)", "toDateTime64(-100, 3)", "toDateTime64(0, 3)", ["1", "[1]"], id="datetime64"
+        ),
+    ],
+)
+def test_promql_at_timestamp_with_supported_timestamp_types(
+    suffix, timestamp_type, wrapped_timestamp, epoch_timestamp, expected_negative
+):
+    table_name = f"prometheus_{suffix}"
+    try:
+        node.query(
+            f"CREATE TABLE {table_name} (samples Array(Tuple({timestamp_type}, Float64))) ENGINE=TimeSeries"
+        )
+        node.query(
+            f"INSERT INTO {table_name} (metric_name, tags, samples) VALUES"
+            f" ('metric', {{'job': 'test'}}, [({wrapped_timestamp}, 1), ({epoch_timestamp}, 2)])"
+        )
+
+        # A negative selector must not read a wrapped positive timestamp.
+        assert node.query(
+            f"SELECT count(), groupArray(value) FROM prometheusQuery({table_name}, 'metric @ -100', 0)"
+        ) == TSV([expected_negative])
+
+        # The default five-minute lookback crosses the Unix epoch at @ +100.
+        assert node.query(
+            f"SELECT count(), groupArray(value) FROM prometheusQuery({table_name}, 'metric @ +100', 0)"
+        ) == TSV([["1", "[2]"]])
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def insert_time_series():
     """Helper for the SELECT tests: a series with its family's metadata, a series whose family has no
     metadata, and a metadata-only family with no series."""

@@ -81,7 +81,7 @@ void promqlparserParserInitialize() {
     }
   );
   static const int32_t serializedATNSegment[] = {
-  	4,1,47,352,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,6,2,
+  	4,1,47,355,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,6,2,
   	7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,2,14,7,
   	14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,7,20,2,21,7,
   	21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,2,26,7,26,2,27,7,27,2,28,7,
@@ -93,112 +93,113 @@ void promqlparserParserInitialize() {
   	134,8,6,1,6,3,6,137,8,6,1,7,1,7,3,7,141,8,7,1,8,1,8,3,8,145,8,8,1,9,1,
   	9,3,9,149,8,9,1,10,1,10,1,10,1,10,3,10,155,8,10,1,10,1,10,1,10,1,10,3,
   	10,161,8,10,3,10,163,8,10,1,11,1,11,1,11,1,11,1,11,1,11,1,11,3,11,172,
-  	8,11,1,12,1,12,1,12,1,12,1,13,1,13,1,13,1,13,1,13,1,13,1,13,3,13,185,
-  	8,13,1,14,1,14,1,15,3,15,190,8,15,1,15,1,15,1,16,1,16,1,16,3,16,197,8,
-  	16,1,16,3,16,200,8,16,1,16,1,16,1,16,1,16,3,16,206,8,16,1,17,1,17,1,17,
-  	1,17,1,17,3,17,213,8,17,1,18,1,18,1,19,1,19,1,19,5,19,220,8,19,10,19,
-  	12,19,223,9,19,1,19,3,19,226,8,19,1,20,1,20,1,20,1,21,1,21,1,21,1,21,
-  	1,21,1,21,3,21,237,8,21,1,22,1,22,1,22,1,22,1,22,5,22,244,8,22,10,22,
-  	12,22,247,9,22,3,22,249,8,22,1,22,1,22,1,22,1,22,1,22,1,22,1,22,3,22,
-  	258,8,22,1,23,1,23,3,23,262,8,23,1,24,1,24,1,24,1,24,5,24,268,8,24,10,
-  	24,12,24,271,9,24,3,24,273,8,24,1,24,1,24,1,25,1,25,1,25,1,25,1,25,3,
-  	25,282,8,25,1,25,1,25,1,25,1,25,1,25,1,25,3,25,290,8,25,3,25,292,8,25,
-  	1,26,1,26,1,26,1,27,1,27,1,27,1,28,1,28,3,28,302,8,28,1,28,1,28,3,28,
-  	306,8,28,1,29,1,29,1,29,1,30,1,30,1,30,1,31,1,31,3,31,316,8,31,1,32,1,
-  	32,3,32,320,8,32,1,33,1,33,1,33,1,33,3,33,326,8,33,1,34,1,34,1,34,1,34,
-  	5,34,332,8,34,10,34,12,34,335,9,34,1,34,3,34,338,8,34,3,34,340,8,34,1,
-  	34,1,34,1,35,1,35,3,35,346,8,35,1,36,1,36,1,37,1,37,1,37,0,1,2,38,0,2,
-  	4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,
-  	52,54,56,58,60,62,64,66,68,70,72,74,0,7,1,0,3,4,2,0,5,7,12,12,1,0,14,
-  	19,2,0,9,9,11,11,3,0,13,13,15,15,20,21,2,0,9,12,22,33,1,0,1,2,371,0,76,
-  	1,0,0,0,2,84,1,0,0,0,4,117,1,0,0,0,6,119,1,0,0,0,8,123,1,0,0,0,10,127,
-  	1,0,0,0,12,131,1,0,0,0,14,138,1,0,0,0,16,142,1,0,0,0,18,146,1,0,0,0,20,
-  	162,1,0,0,0,22,171,1,0,0,0,24,173,1,0,0,0,26,184,1,0,0,0,28,186,1,0,0,
-  	0,30,189,1,0,0,0,32,205,1,0,0,0,34,212,1,0,0,0,36,214,1,0,0,0,38,216,
-  	1,0,0,0,40,227,1,0,0,0,42,236,1,0,0,0,44,257,1,0,0,0,46,261,1,0,0,0,48,
-  	263,1,0,0,0,50,291,1,0,0,0,52,293,1,0,0,0,54,296,1,0,0,0,56,301,1,0,0,
-  	0,58,307,1,0,0,0,60,310,1,0,0,0,62,313,1,0,0,0,64,317,1,0,0,0,66,325,
-  	1,0,0,0,68,327,1,0,0,0,70,345,1,0,0,0,72,347,1,0,0,0,74,349,1,0,0,0,76,
-  	77,3,2,1,0,77,78,5,0,0,1,78,1,1,0,0,0,79,80,6,1,-1,0,80,81,3,4,2,0,81,
-  	82,3,2,1,7,82,85,1,0,0,0,83,85,3,22,11,0,84,79,1,0,0,0,84,83,1,0,0,0,
-  	85,114,1,0,0,0,86,87,10,8,0,0,87,88,3,6,3,0,88,89,3,2,1,8,89,113,1,0,
-  	0,0,90,91,10,6,0,0,91,92,3,8,4,0,92,93,3,2,1,7,93,113,1,0,0,0,94,95,10,
-  	5,0,0,95,96,3,10,5,0,96,97,3,2,1,6,97,113,1,0,0,0,98,99,10,4,0,0,99,100,
-  	3,12,6,0,100,101,3,2,1,5,101,113,1,0,0,0,102,103,10,3,0,0,103,104,3,14,
-  	7,0,104,105,3,2,1,4,105,113,1,0,0,0,106,107,10,2,0,0,107,108,3,16,8,0,
-  	108,109,3,2,1,3,109,113,1,0,0,0,110,111,10,9,0,0,111,113,3,18,9,0,112,
-  	86,1,0,0,0,112,90,1,0,0,0,112,94,1,0,0,0,112,98,1,0,0,0,112,102,1,0,0,
-  	0,112,106,1,0,0,0,112,110,1,0,0,0,113,116,1,0,0,0,114,112,1,0,0,0,114,
-  	115,1,0,0,0,115,3,1,0,0,0,116,114,1,0,0,0,117,118,7,0,0,0,118,5,1,0,0,
-  	0,119,121,5,8,0,0,120,122,3,56,28,0,121,120,1,0,0,0,121,122,1,0,0,0,122,
-  	7,1,0,0,0,123,125,7,1,0,0,124,126,3,56,28,0,125,124,1,0,0,0,125,126,1,
-  	0,0,0,126,9,1,0,0,0,127,129,7,0,0,0,128,130,3,56,28,0,129,128,1,0,0,0,
-  	129,130,1,0,0,0,130,11,1,0,0,0,131,133,7,2,0,0,132,134,5,29,0,0,133,132,
-  	1,0,0,0,133,134,1,0,0,0,134,136,1,0,0,0,135,137,3,56,28,0,136,135,1,0,
-  	0,0,136,137,1,0,0,0,137,13,1,0,0,0,138,140,7,3,0,0,139,141,3,56,28,0,
-  	140,139,1,0,0,0,140,141,1,0,0,0,141,15,1,0,0,0,142,144,5,10,0,0,143,145,
-  	3,56,28,0,144,143,1,0,0,0,144,145,1,0,0,0,145,17,1,0,0,0,146,148,5,42,
-  	0,0,147,149,3,20,10,0,148,147,1,0,0,0,148,149,1,0,0,0,149,19,1,0,0,0,
-  	150,151,5,41,0,0,151,154,3,26,13,0,152,153,5,28,0,0,153,155,3,30,15,0,
-  	154,152,1,0,0,0,154,155,1,0,0,0,155,163,1,0,0,0,156,157,5,28,0,0,157,
-  	160,3,30,15,0,158,159,5,41,0,0,159,161,3,26,13,0,160,158,1,0,0,0,160,
-  	161,1,0,0,0,161,163,1,0,0,0,162,150,1,0,0,0,162,156,1,0,0,0,163,21,1,
-  	0,0,0,164,172,3,44,22,0,165,172,3,50,25,0,166,172,3,32,16,0,167,172,3,
-  	40,20,0,168,172,3,42,21,0,169,172,3,74,37,0,170,172,3,24,12,0,171,164,
-  	1,0,0,0,171,165,1,0,0,0,171,166,1,0,0,0,171,167,1,0,0,0,171,168,1,0,0,
-  	0,171,169,1,0,0,0,171,170,1,0,0,0,172,23,1,0,0,0,173,174,5,36,0,0,174,
-  	175,3,2,1,0,175,176,5,37,0,0,176,25,1,0,0,0,177,185,5,1,0,0,178,179,5,
-  	30,0,0,179,180,5,36,0,0,180,185,5,37,0,0,181,182,5,31,0,0,182,183,5,36,
-  	0,0,183,185,5,37,0,0,184,177,1,0,0,0,184,178,1,0,0,0,184,181,1,0,0,0,
-  	185,27,1,0,0,0,186,187,5,1,0,0,187,29,1,0,0,0,188,190,7,0,0,0,189,188,
-  	1,0,0,0,189,190,1,0,0,0,190,191,1,0,0,0,191,192,5,1,0,0,192,31,1,0,0,
-  	0,193,199,3,70,35,0,194,196,5,34,0,0,195,197,3,38,19,0,196,195,1,0,0,
-  	0,196,197,1,0,0,0,197,198,1,0,0,0,198,200,5,35,0,0,199,194,1,0,0,0,199,
-  	200,1,0,0,0,200,206,1,0,0,0,201,202,5,34,0,0,202,203,3,38,19,0,203,204,
-  	5,35,0,0,204,206,1,0,0,0,205,193,1,0,0,0,205,201,1,0,0,0,206,33,1,0,0,
-  	0,207,208,3,66,33,0,208,209,3,36,18,0,209,210,5,2,0,0,210,213,1,0,0,0,
-  	211,213,5,2,0,0,212,207,1,0,0,0,212,211,1,0,0,0,213,35,1,0,0,0,214,215,
-  	7,4,0,0,215,37,1,0,0,0,216,221,3,34,17,0,217,218,5,40,0,0,218,220,3,34,
-  	17,0,219,217,1,0,0,0,220,223,1,0,0,0,221,219,1,0,0,0,221,222,1,0,0,0,
-  	222,225,1,0,0,0,223,221,1,0,0,0,224,226,5,40,0,0,225,224,1,0,0,0,225,
-  	226,1,0,0,0,226,39,1,0,0,0,227,228,3,32,16,0,228,229,5,43,0,0,229,41,
-  	1,0,0,0,230,231,3,32,16,0,231,232,3,20,10,0,232,237,1,0,0,0,233,234,3,
-  	40,20,0,234,235,3,20,10,0,235,237,1,0,0,0,236,230,1,0,0,0,236,233,1,0,
-  	0,0,237,43,1,0,0,0,238,239,5,33,0,0,239,248,5,36,0,0,240,245,3,46,23,
-  	0,241,242,5,40,0,0,242,244,3,46,23,0,243,241,1,0,0,0,244,247,1,0,0,0,
-  	245,243,1,0,0,0,245,246,1,0,0,0,246,249,1,0,0,0,247,245,1,0,0,0,248,240,
-  	1,0,0,0,248,249,1,0,0,0,249,250,1,0,0,0,250,258,5,37,0,0,251,252,5,30,
-  	0,0,252,253,5,36,0,0,253,258,5,37,0,0,254,255,5,31,0,0,255,256,5,36,0,
-  	0,256,258,5,37,0,0,257,238,1,0,0,0,257,251,1,0,0,0,257,254,1,0,0,0,258,
-  	45,1,0,0,0,259,262,3,74,37,0,260,262,3,2,1,0,261,259,1,0,0,0,261,260,
-  	1,0,0,0,262,47,1,0,0,0,263,272,5,36,0,0,264,269,3,46,23,0,265,266,5,40,
-  	0,0,266,268,3,46,23,0,267,265,1,0,0,0,268,271,1,0,0,0,269,267,1,0,0,0,
-  	269,270,1,0,0,0,270,273,1,0,0,0,271,269,1,0,0,0,272,264,1,0,0,0,272,273,
-  	1,0,0,0,273,274,1,0,0,0,274,275,5,37,0,0,275,49,1,0,0,0,276,277,5,32,
-  	0,0,277,292,3,48,24,0,278,281,5,32,0,0,279,282,3,52,26,0,280,282,3,54,
-  	27,0,281,279,1,0,0,0,281,280,1,0,0,0,282,283,1,0,0,0,283,284,3,48,24,
-  	0,284,292,1,0,0,0,285,286,5,32,0,0,286,289,3,48,24,0,287,290,3,52,26,
-  	0,288,290,3,54,27,0,289,287,1,0,0,0,289,288,1,0,0,0,290,292,1,0,0,0,291,
-  	276,1,0,0,0,291,278,1,0,0,0,291,285,1,0,0,0,292,51,1,0,0,0,293,294,5,
-  	22,0,0,294,295,3,68,34,0,295,53,1,0,0,0,296,297,5,23,0,0,297,298,3,68,
-  	34,0,298,55,1,0,0,0,299,302,3,58,29,0,300,302,3,60,30,0,301,299,1,0,0,
-  	0,301,300,1,0,0,0,302,305,1,0,0,0,303,306,3,62,31,0,304,306,3,64,32,0,
-  	305,303,1,0,0,0,305,304,1,0,0,0,305,306,1,0,0,0,306,57,1,0,0,0,307,308,
-  	5,24,0,0,308,309,3,68,34,0,309,59,1,0,0,0,310,311,5,25,0,0,311,312,3,
-  	68,34,0,312,61,1,0,0,0,313,315,5,26,0,0,314,316,3,68,34,0,315,314,1,0,
-  	0,0,315,316,1,0,0,0,316,63,1,0,0,0,317,319,5,27,0,0,318,320,3,68,34,0,
-  	319,318,1,0,0,0,319,320,1,0,0,0,320,65,1,0,0,0,321,326,3,72,36,0,322,
-  	326,5,44,0,0,323,326,5,45,0,0,324,326,5,2,0,0,325,321,1,0,0,0,325,322,
-  	1,0,0,0,325,323,1,0,0,0,325,324,1,0,0,0,326,67,1,0,0,0,327,339,5,36,0,
-  	0,328,333,3,66,33,0,329,330,5,40,0,0,330,332,3,66,33,0,331,329,1,0,0,
-  	0,332,335,1,0,0,0,333,331,1,0,0,0,333,334,1,0,0,0,334,337,1,0,0,0,335,
-  	333,1,0,0,0,336,338,5,40,0,0,337,336,1,0,0,0,337,338,1,0,0,0,338,340,
-  	1,0,0,0,339,328,1,0,0,0,339,340,1,0,0,0,340,341,1,0,0,0,341,342,5,37,
-  	0,0,342,69,1,0,0,0,343,346,5,44,0,0,344,346,3,72,36,0,345,343,1,0,0,0,
-  	345,344,1,0,0,0,346,71,1,0,0,0,347,348,7,5,0,0,348,73,1,0,0,0,349,350,
-  	7,6,0,0,350,75,1,0,0,0,42,84,112,114,121,125,129,133,136,140,144,148,
-  	154,160,162,171,184,189,196,199,205,212,221,225,236,245,248,257,261,269,
-  	272,281,289,291,301,305,315,319,325,333,337,339,345
+  	8,11,1,12,1,12,1,12,1,12,1,13,3,13,179,8,13,1,13,1,13,1,13,1,13,1,13,
+  	1,13,1,13,3,13,188,8,13,1,14,1,14,1,15,3,15,193,8,15,1,15,1,15,1,16,1,
+  	16,1,16,3,16,200,8,16,1,16,3,16,203,8,16,1,16,1,16,1,16,1,16,3,16,209,
+  	8,16,1,17,1,17,1,17,1,17,1,17,3,17,216,8,17,1,18,1,18,1,19,1,19,1,19,
+  	5,19,223,8,19,10,19,12,19,226,9,19,1,19,3,19,229,8,19,1,20,1,20,1,20,
+  	1,21,1,21,1,21,1,21,1,21,1,21,3,21,240,8,21,1,22,1,22,1,22,1,22,1,22,
+  	5,22,247,8,22,10,22,12,22,250,9,22,3,22,252,8,22,1,22,1,22,1,22,1,22,
+  	1,22,1,22,1,22,3,22,261,8,22,1,23,1,23,3,23,265,8,23,1,24,1,24,1,24,1,
+  	24,5,24,271,8,24,10,24,12,24,274,9,24,3,24,276,8,24,1,24,1,24,1,25,1,
+  	25,1,25,1,25,1,25,3,25,285,8,25,1,25,1,25,1,25,1,25,1,25,1,25,3,25,293,
+  	8,25,3,25,295,8,25,1,26,1,26,1,26,1,27,1,27,1,27,1,28,1,28,3,28,305,8,
+  	28,1,28,1,28,3,28,309,8,28,1,29,1,29,1,29,1,30,1,30,1,30,1,31,1,31,3,
+  	31,319,8,31,1,32,1,32,3,32,323,8,32,1,33,1,33,1,33,1,33,3,33,329,8,33,
+  	1,34,1,34,1,34,1,34,5,34,335,8,34,10,34,12,34,338,9,34,1,34,3,34,341,
+  	8,34,3,34,343,8,34,1,34,1,34,1,35,1,35,3,35,349,8,35,1,36,1,36,1,37,1,
+  	37,1,37,0,1,2,38,0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,
+  	38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,0,7,1,0,3,4,
+  	2,0,5,7,12,12,1,0,14,19,2,0,9,9,11,11,3,0,13,13,15,15,20,21,2,0,9,12,
+  	22,33,1,0,1,2,375,0,76,1,0,0,0,2,84,1,0,0,0,4,117,1,0,0,0,6,119,1,0,0,
+  	0,8,123,1,0,0,0,10,127,1,0,0,0,12,131,1,0,0,0,14,138,1,0,0,0,16,142,1,
+  	0,0,0,18,146,1,0,0,0,20,162,1,0,0,0,22,171,1,0,0,0,24,173,1,0,0,0,26,
+  	187,1,0,0,0,28,189,1,0,0,0,30,192,1,0,0,0,32,208,1,0,0,0,34,215,1,0,0,
+  	0,36,217,1,0,0,0,38,219,1,0,0,0,40,230,1,0,0,0,42,239,1,0,0,0,44,260,
+  	1,0,0,0,46,264,1,0,0,0,48,266,1,0,0,0,50,294,1,0,0,0,52,296,1,0,0,0,54,
+  	299,1,0,0,0,56,304,1,0,0,0,58,310,1,0,0,0,60,313,1,0,0,0,62,316,1,0,0,
+  	0,64,320,1,0,0,0,66,328,1,0,0,0,68,330,1,0,0,0,70,348,1,0,0,0,72,350,
+  	1,0,0,0,74,352,1,0,0,0,76,77,3,2,1,0,77,78,5,0,0,1,78,1,1,0,0,0,79,80,
+  	6,1,-1,0,80,81,3,4,2,0,81,82,3,2,1,7,82,85,1,0,0,0,83,85,3,22,11,0,84,
+  	79,1,0,0,0,84,83,1,0,0,0,85,114,1,0,0,0,86,87,10,8,0,0,87,88,3,6,3,0,
+  	88,89,3,2,1,8,89,113,1,0,0,0,90,91,10,6,0,0,91,92,3,8,4,0,92,93,3,2,1,
+  	7,93,113,1,0,0,0,94,95,10,5,0,0,95,96,3,10,5,0,96,97,3,2,1,6,97,113,1,
+  	0,0,0,98,99,10,4,0,0,99,100,3,12,6,0,100,101,3,2,1,5,101,113,1,0,0,0,
+  	102,103,10,3,0,0,103,104,3,14,7,0,104,105,3,2,1,4,105,113,1,0,0,0,106,
+  	107,10,2,0,0,107,108,3,16,8,0,108,109,3,2,1,3,109,113,1,0,0,0,110,111,
+  	10,9,0,0,111,113,3,18,9,0,112,86,1,0,0,0,112,90,1,0,0,0,112,94,1,0,0,
+  	0,112,98,1,0,0,0,112,102,1,0,0,0,112,106,1,0,0,0,112,110,1,0,0,0,113,
+  	116,1,0,0,0,114,112,1,0,0,0,114,115,1,0,0,0,115,3,1,0,0,0,116,114,1,0,
+  	0,0,117,118,7,0,0,0,118,5,1,0,0,0,119,121,5,8,0,0,120,122,3,56,28,0,121,
+  	120,1,0,0,0,121,122,1,0,0,0,122,7,1,0,0,0,123,125,7,1,0,0,124,126,3,56,
+  	28,0,125,124,1,0,0,0,125,126,1,0,0,0,126,9,1,0,0,0,127,129,7,0,0,0,128,
+  	130,3,56,28,0,129,128,1,0,0,0,129,130,1,0,0,0,130,11,1,0,0,0,131,133,
+  	7,2,0,0,132,134,5,29,0,0,133,132,1,0,0,0,133,134,1,0,0,0,134,136,1,0,
+  	0,0,135,137,3,56,28,0,136,135,1,0,0,0,136,137,1,0,0,0,137,13,1,0,0,0,
+  	138,140,7,3,0,0,139,141,3,56,28,0,140,139,1,0,0,0,140,141,1,0,0,0,141,
+  	15,1,0,0,0,142,144,5,10,0,0,143,145,3,56,28,0,144,143,1,0,0,0,144,145,
+  	1,0,0,0,145,17,1,0,0,0,146,148,5,42,0,0,147,149,3,20,10,0,148,147,1,0,
+  	0,0,148,149,1,0,0,0,149,19,1,0,0,0,150,151,5,41,0,0,151,154,3,26,13,0,
+  	152,153,5,28,0,0,153,155,3,30,15,0,154,152,1,0,0,0,154,155,1,0,0,0,155,
+  	163,1,0,0,0,156,157,5,28,0,0,157,160,3,30,15,0,158,159,5,41,0,0,159,161,
+  	3,26,13,0,160,158,1,0,0,0,160,161,1,0,0,0,161,163,1,0,0,0,162,150,1,0,
+  	0,0,162,156,1,0,0,0,163,21,1,0,0,0,164,172,3,44,22,0,165,172,3,50,25,
+  	0,166,172,3,32,16,0,167,172,3,40,20,0,168,172,3,42,21,0,169,172,3,74,
+  	37,0,170,172,3,24,12,0,171,164,1,0,0,0,171,165,1,0,0,0,171,166,1,0,0,
+  	0,171,167,1,0,0,0,171,168,1,0,0,0,171,169,1,0,0,0,171,170,1,0,0,0,172,
+  	23,1,0,0,0,173,174,5,36,0,0,174,175,3,2,1,0,175,176,5,37,0,0,176,25,1,
+  	0,0,0,177,179,7,0,0,0,178,177,1,0,0,0,178,179,1,0,0,0,179,180,1,0,0,0,
+  	180,188,5,1,0,0,181,182,5,30,0,0,182,183,5,36,0,0,183,188,5,37,0,0,184,
+  	185,5,31,0,0,185,186,5,36,0,0,186,188,5,37,0,0,187,178,1,0,0,0,187,181,
+  	1,0,0,0,187,184,1,0,0,0,188,27,1,0,0,0,189,190,5,1,0,0,190,29,1,0,0,0,
+  	191,193,7,0,0,0,192,191,1,0,0,0,192,193,1,0,0,0,193,194,1,0,0,0,194,195,
+  	5,1,0,0,195,31,1,0,0,0,196,202,3,70,35,0,197,199,5,34,0,0,198,200,3,38,
+  	19,0,199,198,1,0,0,0,199,200,1,0,0,0,200,201,1,0,0,0,201,203,5,35,0,0,
+  	202,197,1,0,0,0,202,203,1,0,0,0,203,209,1,0,0,0,204,205,5,34,0,0,205,
+  	206,3,38,19,0,206,207,5,35,0,0,207,209,1,0,0,0,208,196,1,0,0,0,208,204,
+  	1,0,0,0,209,33,1,0,0,0,210,211,3,66,33,0,211,212,3,36,18,0,212,213,5,
+  	2,0,0,213,216,1,0,0,0,214,216,5,2,0,0,215,210,1,0,0,0,215,214,1,0,0,0,
+  	216,35,1,0,0,0,217,218,7,4,0,0,218,37,1,0,0,0,219,224,3,34,17,0,220,221,
+  	5,40,0,0,221,223,3,34,17,0,222,220,1,0,0,0,223,226,1,0,0,0,224,222,1,
+  	0,0,0,224,225,1,0,0,0,225,228,1,0,0,0,226,224,1,0,0,0,227,229,5,40,0,
+  	0,228,227,1,0,0,0,228,229,1,0,0,0,229,39,1,0,0,0,230,231,3,32,16,0,231,
+  	232,5,43,0,0,232,41,1,0,0,0,233,234,3,32,16,0,234,235,3,20,10,0,235,240,
+  	1,0,0,0,236,237,3,40,20,0,237,238,3,20,10,0,238,240,1,0,0,0,239,233,1,
+  	0,0,0,239,236,1,0,0,0,240,43,1,0,0,0,241,242,5,33,0,0,242,251,5,36,0,
+  	0,243,248,3,46,23,0,244,245,5,40,0,0,245,247,3,46,23,0,246,244,1,0,0,
+  	0,247,250,1,0,0,0,248,246,1,0,0,0,248,249,1,0,0,0,249,252,1,0,0,0,250,
+  	248,1,0,0,0,251,243,1,0,0,0,251,252,1,0,0,0,252,253,1,0,0,0,253,261,5,
+  	37,0,0,254,255,5,30,0,0,255,256,5,36,0,0,256,261,5,37,0,0,257,258,5,31,
+  	0,0,258,259,5,36,0,0,259,261,5,37,0,0,260,241,1,0,0,0,260,254,1,0,0,0,
+  	260,257,1,0,0,0,261,45,1,0,0,0,262,265,3,74,37,0,263,265,3,2,1,0,264,
+  	262,1,0,0,0,264,263,1,0,0,0,265,47,1,0,0,0,266,275,5,36,0,0,267,272,3,
+  	46,23,0,268,269,5,40,0,0,269,271,3,46,23,0,270,268,1,0,0,0,271,274,1,
+  	0,0,0,272,270,1,0,0,0,272,273,1,0,0,0,273,276,1,0,0,0,274,272,1,0,0,0,
+  	275,267,1,0,0,0,275,276,1,0,0,0,276,277,1,0,0,0,277,278,5,37,0,0,278,
+  	49,1,0,0,0,279,280,5,32,0,0,280,295,3,48,24,0,281,284,5,32,0,0,282,285,
+  	3,52,26,0,283,285,3,54,27,0,284,282,1,0,0,0,284,283,1,0,0,0,285,286,1,
+  	0,0,0,286,287,3,48,24,0,287,295,1,0,0,0,288,289,5,32,0,0,289,292,3,48,
+  	24,0,290,293,3,52,26,0,291,293,3,54,27,0,292,290,1,0,0,0,292,291,1,0,
+  	0,0,293,295,1,0,0,0,294,279,1,0,0,0,294,281,1,0,0,0,294,288,1,0,0,0,295,
+  	51,1,0,0,0,296,297,5,22,0,0,297,298,3,68,34,0,298,53,1,0,0,0,299,300,
+  	5,23,0,0,300,301,3,68,34,0,301,55,1,0,0,0,302,305,3,58,29,0,303,305,3,
+  	60,30,0,304,302,1,0,0,0,304,303,1,0,0,0,305,308,1,0,0,0,306,309,3,62,
+  	31,0,307,309,3,64,32,0,308,306,1,0,0,0,308,307,1,0,0,0,308,309,1,0,0,
+  	0,309,57,1,0,0,0,310,311,5,24,0,0,311,312,3,68,34,0,312,59,1,0,0,0,313,
+  	314,5,25,0,0,314,315,3,68,34,0,315,61,1,0,0,0,316,318,5,26,0,0,317,319,
+  	3,68,34,0,318,317,1,0,0,0,318,319,1,0,0,0,319,63,1,0,0,0,320,322,5,27,
+  	0,0,321,323,3,68,34,0,322,321,1,0,0,0,322,323,1,0,0,0,323,65,1,0,0,0,
+  	324,329,3,72,36,0,325,329,5,44,0,0,326,329,5,45,0,0,327,329,5,2,0,0,328,
+  	324,1,0,0,0,328,325,1,0,0,0,328,326,1,0,0,0,328,327,1,0,0,0,329,67,1,
+  	0,0,0,330,342,5,36,0,0,331,336,3,66,33,0,332,333,5,40,0,0,333,335,3,66,
+  	33,0,334,332,1,0,0,0,335,338,1,0,0,0,336,334,1,0,0,0,336,337,1,0,0,0,
+  	337,340,1,0,0,0,338,336,1,0,0,0,339,341,5,40,0,0,340,339,1,0,0,0,340,
+  	341,1,0,0,0,341,343,1,0,0,0,342,331,1,0,0,0,342,343,1,0,0,0,343,344,1,
+  	0,0,0,344,345,5,37,0,0,345,69,1,0,0,0,346,349,5,44,0,0,347,349,3,72,36,
+  	0,348,346,1,0,0,0,348,347,1,0,0,0,349,71,1,0,0,0,350,351,7,5,0,0,351,
+  	73,1,0,0,0,352,353,7,6,0,0,353,75,1,0,0,0,43,84,112,114,121,125,129,133,
+  	136,140,144,148,154,160,162,171,178,187,192,199,202,208,215,224,228,239,
+  	248,251,260,264,272,275,284,292,294,304,308,318,322,328,336,340,342,348
   };
   staticData->serializedATN = antlr4::atn::SerializedATNView(serializedATNSegment, sizeof(serializedATNSegment) / sizeof(serializedATNSegment[0]));
 
@@ -1634,6 +1635,14 @@ tree::TerminalNode* PromQLParser::TimestampContext::NUMBER() {
   return getToken(PromQLParser::NUMBER, 0);
 }
 
+tree::TerminalNode* PromQLParser::TimestampContext::ADD() {
+  return getToken(PromQLParser::ADD, 0);
+}
+
+tree::TerminalNode* PromQLParser::TimestampContext::SUB() {
+  return getToken(PromQLParser::SUB, 0);
+}
+
 tree::TerminalNode* PromQLParser::TimestampContext::START() {
   return getToken(PromQLParser::START, 0);
 }
@@ -1678,6 +1687,7 @@ std::any PromQLParser::TimestampContext::accept(tree::ParseTreeVisitor *visitor)
 PromQLParser::TimestampContext* PromQLParser::timestamp() {
   TimestampContext *_localctx = _tracker.createInstance<TimestampContext>(_ctx, getState());
   enterRule(_localctx, 26, PromQLParser::RuleTimestamp);
+  size_t _la = 0;
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1687,34 +1697,55 @@ PromQLParser::TimestampContext* PromQLParser::timestamp() {
     exitRule();
   });
   try {
-    setState(184);
+    setState(187);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
-      case PromQLParser::NUMBER: {
+      case PromQLParser::NUMBER:
+      case PromQLParser::ADD:
+      case PromQLParser::SUB: {
         enterOuterAlt(_localctx, 1);
-        setState(177);
+        setState(178);
+        _errHandler->sync(this);
+
+        _la = _input->LA(1);
+        if (_la == PromQLParser::ADD
+
+        || _la == PromQLParser::SUB) {
+          setState(177);
+          _la = _input->LA(1);
+          if (!(_la == PromQLParser::ADD
+
+          || _la == PromQLParser::SUB)) {
+          _errHandler->recoverInline(this);
+          }
+          else {
+            _errHandler->reportMatch(this);
+            consume();
+          }
+        }
+        setState(180);
         match(PromQLParser::NUMBER);
         break;
       }
 
       case PromQLParser::START: {
         enterOuterAlt(_localctx, 2);
-        setState(178);
+        setState(181);
         match(PromQLParser::START);
-        setState(179);
+        setState(182);
         match(PromQLParser::LEFT_PAREN);
-        setState(180);
+        setState(183);
         match(PromQLParser::RIGHT_PAREN);
         break;
       }
 
       case PromQLParser::END: {
         enterOuterAlt(_localctx, 3);
-        setState(181);
+        setState(184);
         match(PromQLParser::END);
-        setState(182);
+        setState(185);
         match(PromQLParser::LEFT_PAREN);
-        setState(183);
+        setState(186);
         match(PromQLParser::RIGHT_PAREN);
         break;
       }
@@ -1781,7 +1812,7 @@ PromQLParser::DurationContext* PromQLParser::duration() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(186);
+    setState(189);
     match(PromQLParser::NUMBER);
    
   }
@@ -1851,14 +1882,14 @@ PromQLParser::OffsetValueContext* PromQLParser::offsetValue() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(189);
+    setState(192);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == PromQLParser::ADD
 
     || _la == PromQLParser::SUB) {
-      setState(188);
+      setState(191);
       _la = _input->LA(1);
       if (!(_la == PromQLParser::ADD
 
@@ -1870,7 +1901,7 @@ PromQLParser::OffsetValueContext* PromQLParser::offsetValue() {
         consume();
       }
     }
-    setState(191);
+    setState(194);
     match(PromQLParser::NUMBER);
    
   }
@@ -1943,7 +1974,7 @@ PromQLParser::InstantSelectorContext* PromQLParser::instantSelector() {
     exitRule();
   });
   try {
-    setState(205);
+    setState(208);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case PromQLParser::AND:
@@ -1964,25 +1995,25 @@ PromQLParser::InstantSelectorContext* PromQLParser::instantSelector() {
       case PromQLParser::FUNCTION:
       case PromQLParser::METRIC_NAME: {
         enterOuterAlt(_localctx, 1);
-        setState(193);
+        setState(196);
         metricName();
-        setState(199);
+        setState(202);
         _errHandler->sync(this);
 
-        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 18, _ctx)) {
+        switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 19, _ctx)) {
         case 1: {
-          setState(194);
+          setState(197);
           match(PromQLParser::LEFT_BRACE);
-          setState(196);
+          setState(199);
           _errHandler->sync(this);
 
           _la = _input->LA(1);
           if ((((_la & ~ 0x3fULL) == 0) &&
             ((1ULL << _la) & 52793733815812) != 0)) {
-            setState(195);
+            setState(198);
             labelMatcherList();
           }
-          setState(198);
+          setState(201);
           match(PromQLParser::RIGHT_BRACE);
           break;
         }
@@ -1995,11 +2026,11 @@ PromQLParser::InstantSelectorContext* PromQLParser::instantSelector() {
 
       case PromQLParser::LEFT_BRACE: {
         enterOuterAlt(_localctx, 2);
-        setState(201);
+        setState(204);
         match(PromQLParser::LEFT_BRACE);
-        setState(202);
+        setState(205);
         labelMatcherList();
-        setState(203);
+        setState(206);
         match(PromQLParser::RIGHT_BRACE);
         break;
       }
@@ -2073,23 +2104,23 @@ PromQLParser::LabelMatcherContext* PromQLParser::labelMatcher() {
     exitRule();
   });
   try {
-    setState(212);
+    setState(215);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 20, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 21, _ctx)) {
     case 1: {
       enterOuterAlt(_localctx, 1);
-      setState(207);
+      setState(210);
       labelName();
-      setState(208);
+      setState(211);
       labelMatcherOperator();
-      setState(209);
+      setState(212);
       match(PromQLParser::STRING);
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
-      setState(211);
+      setState(214);
       match(PromQLParser::STRING);
       break;
     }
@@ -2169,7 +2200,7 @@ PromQLParser::LabelMatcherOperatorContext* PromQLParser::labelMatcherOperator() 
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(214);
+    setState(217);
     _la = _input->LA(1);
     if (!((((_la & ~ 0x3fULL) == 0) &&
       ((1ULL << _la) & 3186688) != 0))) {
@@ -2252,28 +2283,28 @@ PromQLParser::LabelMatcherListContext* PromQLParser::labelMatcherList() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(216);
+    setState(219);
     labelMatcher();
-    setState(221);
+    setState(224);
     _errHandler->sync(this);
-    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 21, _ctx);
+    alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 22, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
-        setState(217);
+        setState(220);
         match(PromQLParser::COMMA);
-        setState(218);
+        setState(221);
         labelMatcher(); 
       }
-      setState(223);
+      setState(226);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 21, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 22, _ctx);
     }
-    setState(225);
+    setState(228);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if (_la == PromQLParser::COMMA) {
-      setState(224);
+      setState(227);
       match(PromQLParser::COMMA);
     }
    
@@ -2339,9 +2370,9 @@ PromQLParser::RangeSelectorContext* PromQLParser::rangeSelector() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(227);
+    setState(230);
     instantSelector();
-    setState(228);
+    setState(231);
     match(PromQLParser::SELECTOR_RANGE);
    
   }
@@ -2409,23 +2440,23 @@ PromQLParser::SelectorWithOffsetContext* PromQLParser::selectorWithOffset() {
     exitRule();
   });
   try {
-    setState(236);
+    setState(239);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 23, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 24, _ctx)) {
     case 1: {
       enterOuterAlt(_localctx, 1);
-      setState(230);
+      setState(233);
       instantSelector();
-      setState(231);
+      setState(234);
       offsetOp();
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
-      setState(233);
+      setState(236);
       rangeSelector();
-      setState(234);
+      setState(237);
       offsetOp();
       break;
     }
@@ -2524,59 +2555,59 @@ PromQLParser::Function_Context* PromQLParser::function_() {
     exitRule();
   });
   try {
-    setState(257);
+    setState(260);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case PromQLParser::FUNCTION: {
         enterOuterAlt(_localctx, 1);
-        setState(238);
+        setState(241);
         match(PromQLParser::FUNCTION);
-        setState(239);
+        setState(242);
         match(PromQLParser::LEFT_PAREN);
-        setState(248);
+        setState(251);
         _errHandler->sync(this);
 
         _la = _input->LA(1);
         if ((((_la & ~ 0x3fULL) == 0) &&
           ((1ULL << _la) & 17695261072926) != 0)) {
-          setState(240);
+          setState(243);
           parameter();
-          setState(245);
+          setState(248);
           _errHandler->sync(this);
           _la = _input->LA(1);
           while (_la == PromQLParser::COMMA) {
-            setState(241);
+            setState(244);
             match(PromQLParser::COMMA);
-            setState(242);
+            setState(245);
             parameter();
-            setState(247);
+            setState(250);
             _errHandler->sync(this);
             _la = _input->LA(1);
           }
         }
-        setState(250);
+        setState(253);
         match(PromQLParser::RIGHT_PAREN);
         break;
       }
 
       case PromQLParser::START: {
         enterOuterAlt(_localctx, 2);
-        setState(251);
+        setState(254);
         match(PromQLParser::START);
-        setState(252);
+        setState(255);
         match(PromQLParser::LEFT_PAREN);
-        setState(253);
+        setState(256);
         match(PromQLParser::RIGHT_PAREN);
         break;
       }
 
       case PromQLParser::END: {
         enterOuterAlt(_localctx, 3);
-        setState(254);
+        setState(257);
         match(PromQLParser::END);
-        setState(255);
+        setState(258);
         match(PromQLParser::LEFT_PAREN);
-        setState(256);
+        setState(259);
         match(PromQLParser::RIGHT_PAREN);
         break;
       }
@@ -2646,19 +2677,19 @@ PromQLParser::ParameterContext* PromQLParser::parameter() {
     exitRule();
   });
   try {
-    setState(261);
+    setState(264);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 27, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 28, _ctx)) {
     case 1: {
       enterOuterAlt(_localctx, 1);
-      setState(259);
+      setState(262);
       literal();
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
-      setState(260);
+      setState(263);
       vectorOperation(0);
       break;
     }
@@ -2746,30 +2777,30 @@ PromQLParser::ParameterListContext* PromQLParser::parameterList() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(263);
+    setState(266);
     match(PromQLParser::LEFT_PAREN);
-    setState(272);
+    setState(275);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if ((((_la & ~ 0x3fULL) == 0) &&
       ((1ULL << _la) & 17695261072926) != 0)) {
-      setState(264);
+      setState(267);
       parameter();
-      setState(269);
+      setState(272);
       _errHandler->sync(this);
       _la = _input->LA(1);
       while (_la == PromQLParser::COMMA) {
-        setState(265);
+        setState(268);
         match(PromQLParser::COMMA);
-        setState(266);
+        setState(269);
         parameter();
-        setState(271);
+        setState(274);
         _errHandler->sync(this);
         _la = _input->LA(1);
       }
     }
-    setState(274);
+    setState(277);
     match(PromQLParser::RIGHT_PAREN);
    
   }
@@ -2841,33 +2872,33 @@ PromQLParser::AggregationContext* PromQLParser::aggregation() {
     exitRule();
   });
   try {
-    setState(291);
+    setState(294);
     _errHandler->sync(this);
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 32, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 33, _ctx)) {
     case 1: {
       enterOuterAlt(_localctx, 1);
-      setState(276);
+      setState(279);
       match(PromQLParser::AGGREGATION_OPERATOR);
-      setState(277);
+      setState(280);
       parameterList();
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
-      setState(278);
-      match(PromQLParser::AGGREGATION_OPERATOR);
       setState(281);
+      match(PromQLParser::AGGREGATION_OPERATOR);
+      setState(284);
       _errHandler->sync(this);
       switch (_input->LA(1)) {
         case PromQLParser::BY: {
-          setState(279);
+          setState(282);
           by();
           break;
         }
 
         case PromQLParser::WITHOUT: {
-          setState(280);
+          setState(283);
           without();
           break;
         }
@@ -2875,28 +2906,28 @@ PromQLParser::AggregationContext* PromQLParser::aggregation() {
       default:
         throw NoViableAltException(this);
       }
-      setState(283);
+      setState(286);
       parameterList();
       break;
     }
 
     case 3: {
       enterOuterAlt(_localctx, 3);
-      setState(285);
+      setState(288);
       match(PromQLParser::AGGREGATION_OPERATOR);
-      setState(286);
-      parameterList();
       setState(289);
+      parameterList();
+      setState(292);
       _errHandler->sync(this);
       switch (_input->LA(1)) {
         case PromQLParser::BY: {
-          setState(287);
+          setState(290);
           by();
           break;
         }
 
         case PromQLParser::WITHOUT: {
-          setState(288);
+          setState(291);
           without();
           break;
         }
@@ -2973,9 +3004,9 @@ PromQLParser::ByContext* PromQLParser::by() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(293);
+    setState(296);
     match(PromQLParser::BY);
-    setState(294);
+    setState(297);
     labelNameList();
    
   }
@@ -3040,9 +3071,9 @@ PromQLParser::WithoutContext* PromQLParser::without() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(296);
+    setState(299);
     match(PromQLParser::WITHOUT);
-    setState(297);
+    setState(300);
     labelNameList();
    
   }
@@ -3115,17 +3146,17 @@ PromQLParser::GroupingContext* PromQLParser::grouping() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(301);
+    setState(304);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case PromQLParser::ON: {
-        setState(299);
+        setState(302);
         on_();
         break;
       }
 
       case PromQLParser::IGNORING: {
-        setState(300);
+        setState(303);
         ignoring();
         break;
       }
@@ -3133,18 +3164,18 @@ PromQLParser::GroupingContext* PromQLParser::grouping() {
     default:
       throw NoViableAltException(this);
     }
-    setState(305);
+    setState(308);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 34, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 35, _ctx)) {
     case 1: {
-      setState(303);
+      setState(306);
       groupLeft();
       break;
     }
 
     case 2: {
-      setState(304);
+      setState(307);
       groupRight();
       break;
     }
@@ -3215,9 +3246,9 @@ PromQLParser::On_Context* PromQLParser::on_() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(307);
+    setState(310);
     match(PromQLParser::ON);
-    setState(308);
+    setState(311);
     labelNameList();
    
   }
@@ -3282,9 +3313,9 @@ PromQLParser::IgnoringContext* PromQLParser::ignoring() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(310);
+    setState(313);
     match(PromQLParser::IGNORING);
-    setState(311);
+    setState(314);
     labelNameList();
    
   }
@@ -3349,14 +3380,14 @@ PromQLParser::GroupLeftContext* PromQLParser::groupLeft() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(313);
+    setState(316);
     match(PromQLParser::GROUP_LEFT);
-    setState(315);
+    setState(318);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 35, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 36, _ctx)) {
     case 1: {
-      setState(314);
+      setState(317);
       labelNameList();
       break;
     }
@@ -3427,14 +3458,14 @@ PromQLParser::GroupRightContext* PromQLParser::groupRight() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(317);
+    setState(320);
     match(PromQLParser::GROUP_RIGHT);
-    setState(319);
+    setState(322);
     _errHandler->sync(this);
 
-    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 36, _ctx)) {
+    switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 37, _ctx)) {
     case 1: {
-      setState(318);
+      setState(321);
       labelNameList();
       break;
     }
@@ -3512,7 +3543,7 @@ PromQLParser::LabelNameContext* PromQLParser::labelName() {
     exitRule();
   });
   try {
-    setState(325);
+    setState(328);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case PromQLParser::AND:
@@ -3532,28 +3563,28 @@ PromQLParser::LabelNameContext* PromQLParser::labelName() {
       case PromQLParser::AGGREGATION_OPERATOR:
       case PromQLParser::FUNCTION: {
         enterOuterAlt(_localctx, 1);
-        setState(321);
+        setState(324);
         keyword();
         break;
       }
 
       case PromQLParser::METRIC_NAME: {
         enterOuterAlt(_localctx, 2);
-        setState(322);
+        setState(325);
         match(PromQLParser::METRIC_NAME);
         break;
       }
 
       case PromQLParser::LABEL_NAME: {
         enterOuterAlt(_localctx, 3);
-        setState(323);
+        setState(326);
         match(PromQLParser::LABEL_NAME);
         break;
       }
 
       case PromQLParser::STRING: {
         enterOuterAlt(_localctx, 4);
-        setState(324);
+        setState(327);
         match(PromQLParser::STRING);
         break;
       }
@@ -3642,40 +3673,40 @@ PromQLParser::LabelNameListContext* PromQLParser::labelNameList() {
   try {
     size_t alt;
     enterOuterAlt(_localctx, 1);
-    setState(327);
+    setState(330);
     match(PromQLParser::LEFT_PAREN);
-    setState(339);
+    setState(342);
     _errHandler->sync(this);
 
     _la = _input->LA(1);
     if ((((_la & ~ 0x3fULL) == 0) &&
       ((1ULL << _la) & 52793733815812) != 0)) {
-      setState(328);
+      setState(331);
       labelName();
-      setState(333);
+      setState(336);
       _errHandler->sync(this);
-      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 38, _ctx);
+      alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 39, _ctx);
       while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
         if (alt == 1) {
-          setState(329);
+          setState(332);
           match(PromQLParser::COMMA);
-          setState(330);
+          setState(333);
           labelName(); 
         }
-        setState(335);
+        setState(338);
         _errHandler->sync(this);
-        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 38, _ctx);
+        alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 39, _ctx);
       }
-      setState(337);
+      setState(340);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
       if (_la == PromQLParser::COMMA) {
-        setState(336);
+        setState(339);
         match(PromQLParser::COMMA);
       }
     }
-    setState(341);
+    setState(344);
     match(PromQLParser::RIGHT_PAREN);
    
   }
@@ -3739,12 +3770,12 @@ PromQLParser::MetricNameContext* PromQLParser::metricName() {
     exitRule();
   });
   try {
-    setState(345);
+    setState(348);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
       case PromQLParser::METRIC_NAME: {
         enterOuterAlt(_localctx, 1);
-        setState(343);
+        setState(346);
         match(PromQLParser::METRIC_NAME);
         break;
       }
@@ -3766,7 +3797,7 @@ PromQLParser::MetricNameContext* PromQLParser::metricName() {
       case PromQLParser::AGGREGATION_OPERATOR:
       case PromQLParser::FUNCTION: {
         enterOuterAlt(_localctx, 2);
-        setState(344);
+        setState(347);
         keyword();
         break;
       }
@@ -3894,7 +3925,7 @@ PromQLParser::KeywordContext* PromQLParser::keyword() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(347);
+    setState(350);
     _la = _input->LA(1);
     if (!((((_la & ~ 0x3fULL) == 0) &&
       ((1ULL << _la) & 17175682560) != 0))) {
@@ -3968,7 +3999,7 @@ PromQLParser::LiteralContext* PromQLParser::literal() {
   });
   try {
     enterOuterAlt(_localctx, 1);
-    setState(349);
+    setState(352);
     _la = _input->LA(1);
     if (!(_la == PromQLParser::NUMBER
 
