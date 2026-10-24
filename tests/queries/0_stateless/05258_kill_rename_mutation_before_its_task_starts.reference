@@ -1,0 +1,29 @@
+t_compact	Compact	Full
+t_compact_marker	Compact	Full
+t_compact_patch	Compact	Full
+t_compact_two_columns	Compact	Full
+t_packed	Wide	Packed
+t_replicated	Compact	Full
+t_wide	Wide	Full
+t_compact	ABORTED
+t_compact_marker	ABORTED
+t_compact_patch	ABORTED
+t_compact_two_columns	ABORTED
+t_packed	ABORTED
+t_wide	ABORTED
+t_compact	all_1_1_0	['v']
+t_compact_marker	all_1_1_0	['x']
+t_compact_patch	all_1_1_0	['x']
+t_compact_two_columns	all_1_1_0	['v','x']
+t_packed	all_1_1_0	['v']
+t_replicated	all_0_0_0_1	['v']
+t_wide	all_1_1_0	['v']
+0
+t_compact_patch	1
+all_0_0_0_1	ABORTED
+all_0_0_0_1	OK
+0
+all_0_0_1	1	0
+1
+1	1
+0
