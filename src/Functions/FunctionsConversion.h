@@ -1566,7 +1566,21 @@ struct ConvertThroughParsing
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
-            ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
+            const char * string_begin = reinterpret_cast<const char *>(chars->data()) + current_offset;
+
+            /// Fast path for canonical IPv4 addresses; anything else (e.g. leading zeros) falls back to the generic parser.
+            if constexpr (std::is_same_v<FromDataType, DataTypeString> && std::is_same_v<ToDataType, DataTypeIPv4>)
+            {
+                if (tryParseIPv4(string_begin, string_begin + string_size, vec_to[i].toUnderType()))
+                {
+                    if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                        (*vec_null_map_to)[i] = false;
+                    current_offset = next_offset;
+                    continue;
+                }
+            }
+
+            ReadBufferFromMemory read_buffer(string_begin, string_size);
             read_buffer.setPadded();
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
