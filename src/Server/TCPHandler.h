@@ -118,6 +118,9 @@ struct QueryState
 
     /// Data was sent.
     bool sent_all_data = false;
+    /// The result of a `SELECT` is being streamed to the client, so the client accepts `ProfileEvents`
+    /// packets at any moment, including right before an `Exception`.
+    bool streaming_select_result = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
     /// Data was read.
@@ -359,7 +362,8 @@ private:
     void sendExtremes(QueryState & state, const Block & extremes);
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// `final_report` is the report after all the data of the `INSERT` has been received.
+    void sendInsertProfileEvents(QueryState & state, bool final_report = false) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.

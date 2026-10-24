@@ -90,7 +90,7 @@ namespace
         }
         else
         {
-            bool limit_found = false;
+            bool limit_found = !limits.profile_events_max.empty();
             for (auto quota_type : collections::range(QuotaType::MAX))
             {
                 auto quota_type_i = static_cast<size_t>(quota_type);
@@ -110,6 +110,12 @@ namespace
                             ostr << ",";
                         formatLimit(quota_type, *limits.max[quota_type_i], ostr);
                     }
+                }
+                for (const auto & [event_name, event_max] : limits.profile_events_max)
+                {
+                    if (std::exchange(need_comma, true))
+                        ostr << ",";
+                    ostr << " " << backQuoteIfNeed(event_name) << " = " << event_max;
                 }
             }
             else

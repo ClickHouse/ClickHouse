@@ -116,6 +116,10 @@ public:
         /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
         const bool is_subquery;
 
+        /// Was the query that wrote the entry exempt from quotas (see `IInterpreter::ignoreQuota`)? A hit does not create an
+        /// interpreter, so it takes the decision from here and keeps the exemption of a query served from the cache.
+        bool ignore_quota = false;
+
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
             const String & current_database,
@@ -309,6 +313,7 @@ public:
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
     std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
+    bool entryIgnoresQuota() const;
 
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
@@ -327,7 +332,8 @@ private:
         SharedHeader header,
         QueryResultCache::Entry && entry,
         std::chrono::time_point<std::chrono::system_clock> created_at_,
-        std::chrono::time_point<std::chrono::system_clock> expires_at_);
+        std::chrono::time_point<std::chrono::system_clock> expires_at_,
+        bool ignore_quota_);
 
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
@@ -339,6 +345,7 @@ private:
 
     std::chrono::time_point<std::chrono::system_clock> created_at;
     std::chrono::time_point<std::chrono::system_clock> expires_at;
+    bool ignore_quota = false;
 
     LoggerPtr logger = getLogger("QueryResultCache");
 
