@@ -305,8 +305,9 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
 
         const auto & lhs_column = assert_cast<const ColumnNullable &>(*lhs_columns[0]);
         const auto & rhs_column = assert_cast<const ColumnNullable &>(*rhs_columns[0]);
-        const auto & lhs_nullmap = lhs_column.getNullMapData();
-        const auto & rhs_nullmap = rhs_column.getNullMapData();
+        /// nullptr if the column has no null map, which means it has no NULLs.
+        const auto * lhs_nullmap = lhs_column.tryGetNullMapData();
+        const auto * rhs_nullmap = rhs_column.tryGetNullMapData();
         const auto & denull_lhs_column = assert_cast<const ColumnType &>(lhs_column.getNestedColumn());
         const auto & denull_rhs_column = assert_cast<const ColumnType &>(rhs_column.getNestedColumn());
 
@@ -314,8 +315,8 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
 
         auto get_compare_result = [&]() -> int
         {
-            bool lval_is_null = lhs_nullmap[lhs_pos];
-            bool rval_is_null = rhs_nullmap[rhs_pos];
+            bool lval_is_null = lhs_nullmap && (*lhs_nullmap)[lhs_pos];
+            bool rval_is_null = rhs_nullmap && (*rhs_nullmap)[rhs_pos];
 
             if (unlikely(lval_is_null || rval_is_null))
             {

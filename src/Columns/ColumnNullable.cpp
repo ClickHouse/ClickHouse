@@ -2,6 +2,7 @@
 #include <iterator>
 
 #include <Common/Arena.h>
+#include <Common/ErrnoException.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -16,12 +17,21 @@
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
+#include <Common/ProfileEvents.h>
+
+#include <mutex>
+#include <sys/mman.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
 #include <llvm/IR/IRBuilder.h>
 #endif
 
+
+namespace ProfileEvents
+{
+    extern const Event NullableNullMapMaterializations;
+}
 
 namespace DB
 {
@@ -32,20 +42,134 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
 ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
-    : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
+    : nested_column(std::move(nested_column_)), null_map(std::move(null_map_)), has_null_map(static_cast<bool>(null_map))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    nested_column = getNestedColumn().convertToFullColumnIfConst();
+    nested_column = nested_column->convertToFullColumnIfConst();
 
-    if (!getNestedColumn().canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
+    if (!nested_column->canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", nested_column->getName());
 
-    if (isColumnConst(*null_map))
+    if (null_map && isColumnConst(*null_map))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
+}
+
+ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_)
+    : ColumnNullable(std::move(nested_column_), nullptr)
+{
+}
+
+ColumnNullable::ColumnNullable(const ColumnNullable & other)
+    : COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>(other)
+    , nested_column(other.nested_column)
+{
+    /// The null map of `other` can be created concurrently, read it only if it is published.
+    if (other.hasNullMap())
+    {
+        null_map = other.null_map;
+        has_null_map.store(true, std::memory_order_relaxed);
+    }
+}
+
+namespace
+{
+
+/// The null maps created on demand in the const methods of shared columns are rare,
+/// so a small set of mutexes shared by all columns is enough.
+std::mutex & getNullMapMaterializationMutex(const void * column)
+{
+    static constexpr size_t num_mutexes = 64;
+    static std::mutex mutexes[num_mutexes];
+    return mutexes[(reinterpret_cast<uintptr_t>(column) >> 6) % num_mutexes];
+}
+
+/// Feeds `size` zero bytes into the hash, as if a zero-filled null map of this size was hashed.
+void updateHashWithZeros(SipHash & hash, size_t size)
+{
+    static constexpr char zeros[4096]{};
+    while (size)
+    {
+        size_t chunk = std::min(size, sizeof(zeros));
+        hash.update(zeros, chunk);
+        size -= chunk;
+    }
+}
+
+}
+
+void ColumnNullable::materializeNullMapSlow() const
+{
+    std::lock_guard lock(getNullMapMaterializationMutex(this));
+    if (has_null_map.load(std::memory_order_relaxed))
+        return;
+
+    null_map = ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0));
+    has_null_map.store(true, std::memory_order_release);
+    ProfileEvents::increment(ProfileEvents::NullableNullMapMaterializations);
+}
+
+namespace
+{
+
+/// A read-only anonymous mapping, so it does not take memory: its pages are mapped to the zero page on reading.
+/// Not a static array in `.bss`, which would take 16 MiB of the 2 GiB reach of the PC-relative references of the binary.
+/// Padded on both sides like `PaddedPODArray`, because the readers may read past the end of the null map
+/// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`). Never unmapped.
+constexpr size_t zeros_size = 16 << 20;
+constexpr size_t zeros_pad_left = PADDING_FOR_SIMD;
+
+const UInt8 * getZeros()
+{
+    static const UInt8 * const zeros = []
+    {
+        void * mapping = mmap(nullptr, zeros_pad_left + zeros_size + PADDING_FOR_SIMD, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (MAP_FAILED == mapping)
+            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot mmap the zero null map");
+        return static_cast<const UInt8 *>(mapping) + zeros_pad_left;
+    }();
+    return zeros;
+}
+
+}
+
+const UInt8 * ColumnNullable::getNullMapRawDataOrZeros() const
+{
+    if (const auto * map = tryGetNullMapData())
+        return map->data();
+    if (size() <= zeros_size)
+        return getZeros();
+    return getNullMapData().data();
+}
+
+ColumnPtr ColumnNullable::convertToFullIfWrapped() const
+{
+    ColumnPtr map = tryGetNullMapColumnPtr();
+    ColumnPtr new_nested = nested_column->convertToFullIfWrapped();
+    ColumnPtr new_map = map ? map->convertToFullIfWrapped() : nullptr;
+
+    if (new_nested.get() == nested_column.get() && new_map.get() == map.get())
+        return getPtr();
+
+    return ColumnNullable::create(new_nested, new_map);
+}
+
+bool ColumnNullable::dropNullMapIfNoNulls()
+{
+    const auto * map = tryGetNullMapData();
+    if (!map)
+        return true;
+
+    if (!memoryIsZero(map->data(), 0, map->size()))
+        return false;
+
+    has_null_map.store(false, std::memory_order_relaxed);
+    null_map = nullptr;
+    return true;
 }
 
 std::string_view ColumnNullable::getDataAt(size_t n) const
@@ -56,19 +180,25 @@ std::string_view ColumnNullable::getDataAt(size_t n) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {} in case if value is NULL", getName());
 }
 
+/// The hashes must not depend on whether the column has a null map, because the same values
+/// can be hashed in the blocks with and without a null map (e.g. in GROUP BY or DISTINCT).
+
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    const auto & arr = getNullMapData();
-    hash.update(arr[n]);
-    if (arr[n] == 0)
-        getNestedColumn().updateHashWithValue(n, hash);
+    const auto * arr = tryGetNullMapData();
+    const UInt8 is_null = arr ? (*arr)[n] : 0;
+    hash.update(is_null);
+    if (is_null == 0)
+        nested_column->updateHashWithValue(n, hash);
 }
 
 void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    const auto & arr = getNullMapData();
-    getNestedColumn().updateHashWithValueRange(begin, end, hash);
-    hash.update(reinterpret_cast<const char *>(&arr[begin]), (end - begin) * sizeof(arr[0]));
+    nested_column->updateHashWithValueRange(begin, end, hash);
+    if (const auto * arr = tryGetNullMapData())
+        hash.update(reinterpret_cast<const char *>(&(*arr)[begin]), (end - begin) * sizeof((*arr)[0]));
+    else
+        updateHashWithZeros(hash, end - begin);
 }
 
 void ColumnNullable::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
@@ -76,7 +206,14 @@ void ColumnNullable::computeHashInto(size_t row_begin, size_t row_end, UInt32 * 
     /// A NULL row must hash to a fixed value, independent of the bytes that happen to sit in the
     /// nested column for that row, so two SQL-equal NULL keys route identically. The nested hash of
     /// null rows is replaced with `WEAK_HASH32_INITIAL_VALUE`. See IColumn::computeHashInto.
-    const UInt8 * null_map_data = getNullMapData().data() + row_begin;
+    const auto * map = tryGetNullMapData();
+    if (!map)
+    {
+        nested_column->computeHashInto(row_begin, row_end, hash_out, initial);
+        return;
+    }
+
+    const UInt8 * null_map_data = map->data() + row_begin;
     const size_t n = row_end - row_begin;
 
     if (initial)
@@ -101,13 +238,22 @@ void ColumnNullable::computeHashInto(size_t row_begin, size_t row_end, UInt32 * 
 
 void ColumnNullable::updateHashFast(SipHash & hash) const
 {
-    null_map->updateHashFast(hash);
+    if (const auto * map = tryGetNullMapColumn())
+        map->updateHashFast(hash);
+    else
+        updateHashWithZeros(hash, size());
     nested_column->updateHashFast(hash);
 }
 
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
-    MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
+    MutableColumnPtr new_nested_col = nested_column->cloneResized(new_size);
+
+    const auto * map = tryGetNullMapData();
+    /// No NULLs are added if the column is not extended.
+    if (new_size == 0 || (!map && new_size <= size()))
+        return ColumnNullable::create(std::move(new_nested_col));
+
     auto new_null_map = ColumnUInt8::create(new_size);
 
     if (new_size > 0)
@@ -115,7 +261,10 @@ MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
         new_null_map->getData().resize_exact(new_size);
 
         size_t count = std::min(size(), new_size);
-        memcpy(new_null_map->getData().data(), getNullMapData().data(), count * sizeof(getNullMapData()[0]));
+        if (map)
+            memcpy(new_null_map->getData().data(), map->data(), count * sizeof((*map)[0]));
+        else
+            memset(new_null_map->getData().data(), 0, count);
 
         /// If resizing to bigger one, set all new values to NULLs.
         if (new_size > count)
@@ -180,30 +329,36 @@ Int64 ColumnNullable::getInt(size_t n) const
     return getNestedColumn().getInt(n);
 }
 
+/// The methods inserting a NULL into a column without a null map create the null map before
+/// inserting into the nested column, because the null map is created with the size of the nested column.
+
 void ColumnNullable::insertData(const char * pos, size_t length)
 {
     if (pos == nullptr)
     {
-        getNestedColumn().insertDefault();
+        materializeNullMap();
+        nested_column->insertDefault();
         getNullMapData().push_back(true);
     }
     else
     {
-        getNestedColumn().insertData(pos, length);
-        getNullMapData().push_back(false);
+        nested_column->insertData(pos, length);
+        if (hasNullMap())
+            getNullMapData().push_back(false);
     }
 }
 
 std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    const auto & arr = getNullMapData();
+    const auto * arr = tryGetNullMapData();
+    const UInt8 is_null = arr ? (*arr)[n] : 0;
 
     /// First serialize the NULL map byte.
     auto * pos = arena.allocContinue(1, begin);
-    *pos = arr[n];
+    *pos = is_null;
 
     /// If the value is NULL, that's it.
-    if (arr[n])
+    if (is_null)
         return std::string_view(pos, 1);
 
     /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
@@ -215,12 +370,13 @@ std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena
 
 char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    const auto & arr = getNullMapData();
+    const auto * arr = tryGetNullMapData();
+    const UInt8 is_null = arr ? (*arr)[n] : 0;
 
-    *memory = arr[n];
+    *memory = is_null;
     ++memory;
 
-    if (arr[n])
+    if (is_null)
         return memory;
 
     return getNestedColumn().serializeValueIntoMemory(n, memory, settings);
@@ -242,12 +398,16 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
     UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
-    getNullMapData().push_back(val);
+    if (val != 0)
+        materializeNullMap();
+
+    if (hasNullMap())
+        getNullMapData().push_back(val);
 
     if (val == 0)
-        getNestedColumn().deserializeAndInsertFromArena(in, settings);
+        nested_column->deserializeAndInsertFromArena(in, settings);
     else
-        getNestedColumn().insertDefault();
+        nested_column->insertDefault();
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -257,21 +417,37 @@ void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t
 #endif
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
-    getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
-    getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
+    const auto * src_map = nullable_col.tryGetNullMapColumn();
+
+    /// Keep the column without a null map while the inserted rows have no NULLs.
+    if (src_map && !hasNullMap() && !memoryIsZero(src_map->getData().data(), start, start + length))
+        materializeNullMap();
+
+    if (hasNullMap())
+    {
+        auto & map = getNullMapColumn();
+        if (src_map)
+            map.insertRangeFrom(*src_map, start, length);
+        else
+            map.getData().resize_fill(map.size() + length);
+    }
+
+    nested_column->insertRangeFrom(*nullable_col.nested_column, start, length);
 }
 
 void ColumnNullable::insert(const Field & x)
 {
     if (x.isNull())
     {
-        getNestedColumn().insertDefault();
+        materializeNullMap();
+        nested_column->insertDefault();
         getNullMapData().push_back(true);
     }
     else
     {
-        getNestedColumn().insert(x);
-        getNullMapData().push_back(false);
+        nested_column->insert(x);
+        if (hasNullMap())
+            getNullMapData().push_back(false);
     }
 }
 
@@ -279,15 +455,17 @@ bool ColumnNullable::tryInsert(const Field & x)
 {
     if (x.isNull())
     {
-        getNestedColumn().insertDefault();
+        materializeNullMap();
+        nested_column->insertDefault();
         getNullMapData().push_back(true);
         return true;
     }
 
-    if (!getNestedColumn().tryInsert(x))
+    if (!nested_column->tryInsert(x))
         return false;
 
-    getNullMapData().push_back(false);
+    if (hasNullMap())
+        getNullMapData().push_back(false);
     return true;
 }
 
@@ -298,8 +476,12 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
-    getNullMapData().push_back(src_concrete.getNullMapData()[n]);
+    const UInt8 is_null = src_concrete.isNullAt(n) ? src_concrete.getNullMapData()[n] : 0;
+    if (is_null)
+        materializeNullMap();
+    nested_column->insertFrom(src_concrete.getNestedColumn(), n);
+    if (hasNullMap())
+        getNullMapData().push_back(is_null);
 }
 
 
@@ -310,20 +492,29 @@ void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size
 #endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    getNestedColumn().insertManyFrom(src_concrete.getNestedColumn(), position, length);
-    getNullMapColumn().insertManyFrom(src_concrete.getNullMapColumn(), position, length);
+    const UInt8 is_null = src_concrete.isNullAt(position) ? src_concrete.getNullMapData()[position] : 0;
+    if (is_null)
+        materializeNullMap();
+    nested_column->insertManyFrom(src_concrete.getNestedColumn(), position, length);
+    if (hasNullMap())
+    {
+        auto & map = getNullMapData();
+        map.resize_fill(map.size() + length, is_null);
+    }
 }
 
 void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 {
-    getNestedColumn().insertFrom(src, n);
-    getNullMapData().push_back(false);
+    nested_column->insertFrom(src, n);
+    if (hasNullMap())
+        getNullMapData().push_back(false);
 }
 
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
 {
-    getNestedColumn().insertRangeFrom(src, start, length);
-    getNullMapData().resize_fill(getNullMapData().size() + length);
+    nested_column->insertRangeFrom(src, start, length);
+    if (hasNullMap())
+        getNullMapData().resize_fill(getNullMapData().size() + length);
 }
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
@@ -334,8 +525,9 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
 
 void ColumnNullable::popBack(size_t n)
 {
-    getNestedColumn().popBack(n);
-    getNullMapColumn().popBack(n);
+    nested_column->popBack(n);
+    if (hasNullMap())
+        getNullMapColumn().popBack(n);
 }
 
 ColumnCheckpointPtr ColumnNullable::getCheckpoint() const
@@ -351,25 +543,31 @@ void ColumnNullable::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnNullable::rollback(const ColumnCheckpoint & checkpoint)
 {
-    getNullMapData().resize_assume_reserved(checkpoint.size);
+    if (hasNullMap())
+        getNullMapData().resize_assume_reserved(checkpoint.size);
     nested_column->rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
 }
 
 ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint);
-    ColumnPtr filtered_null_map = getNullMapColumn().filter(filt, result_size_hint);
+    ColumnPtr filtered_data = nested_column->filter(filt, result_size_hint);
+    const auto * map = tryGetNullMapColumn();
+    if (!map)
+        return ColumnNullable::create(filtered_data);
+    ColumnPtr filtered_null_map = map->filter(filt, result_size_hint);
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
 void ColumnNullable::filter(const Filter & filt)
 {
-    getNestedColumn().filter(filt);
-    getNullMapColumn().filter(filt);
+    nested_column->filter(filt);
+    if (hasNullMap())
+        getNullMapColumn().filter(filt);
 }
 
 void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
+    materializeNullMap();
     nested_column->expand(mask, inverted);
     /// Use 1 as default value so column will contain NULLs on rows where filter has 0.
     expandDataByMask<UInt8>(getNullMapData(), mask, inverted, 1);
@@ -377,15 +575,21 @@ void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
-    ColumnPtr permuted_data = getNestedColumn().permute(perm, limit);
-    ColumnPtr permuted_null_map = getNullMapColumn().permute(perm, limit);
+    ColumnPtr permuted_data = nested_column->permute(perm, limit);
+    const auto * map = tryGetNullMapColumn();
+    if (!map)
+        return ColumnNullable::create(permuted_data);
+    ColumnPtr permuted_null_map = map->permute(perm, limit);
     return ColumnNullable::create(permuted_data, permuted_null_map);
 }
 
 ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
 {
-    ColumnPtr indexed_data = getNestedColumn().index(indexes, limit);
-    ColumnPtr indexed_null_map = getNullMapColumn().index(indexes, limit);
+    ColumnPtr indexed_data = nested_column->index(indexes, limit);
+    const auto * map = tryGetNullMapColumn();
+    if (!map)
+        return ColumnNullable::create(indexed_data);
+    ColumnPtr indexed_null_map = map->index(indexes, limit);
     return ColumnNullable::create(indexed_data, indexed_null_map);
 }
 
@@ -461,9 +665,9 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
 
     const IColumn & nested_rhs = nullable_rhs.getNestedColumn();
     if (collator)
-        return getNestedColumn().compareAtWithCollation(n, m, nested_rhs, null_direction_hint, *collator);
+        return nested_column->compareAtWithCollation(n, m, nested_rhs, null_direction_hint, *collator);
 
-    return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
+    return nested_column->compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -485,10 +689,14 @@ size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, in
     if (begin >= end)
         return begin;
 
+    const auto * map = tryGetNullMapData();
+    if (!map)
+        return nested_column->getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+
     /// In a sorted Nullable column the NULLs are grouped at one end, so null-ness forms a run within this
     /// range. Rows must be compared by null-ness, not by the raw null map byte: any non-zero byte means
     /// NULL, so the bytes within the NULL group may be arbitrary non-zero values in arbitrary order.
-    const UInt8 * null_bytes = getNullMapData().data();
+    const UInt8 * null_bytes = map->data();
     const bool ref_is_null = null_bytes[begin] != 0;
 
     /// A null-ness comparison is cheap, so use a longer linear probe (the default is 8).
@@ -499,7 +707,7 @@ size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, in
     /// When the start row is non-NULL the run is additionally bounded by where the nested value changes.
     /// That nested scan stays within `[begin, run_end)`, which is entirely non-NULL, so it never reads NULL slots.
     if (!ref_is_null)
-        run_end = getNestedColumn().getEqualRangeEndAssumeSorted(begin, run_end, nan_direction_hint);
+        run_end = nested_column->getEqualRangeEndAssumeSorted(begin, run_end, nan_direction_hint);
 
     return run_end;
 }
@@ -507,12 +715,22 @@ size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, in
 void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
+    /// Without NULLs the order is defined by the nested column alone.
+    if (!hasNullMap())
+    {
+        if (collator)
+            nested_column->getPermutationWithCollation(*collator, direction, stability, limit, null_direction_hint, res);
+        else
+            nested_column->getPermutation(direction, stability, limit, null_direction_hint, res);
+        return;
+    }
+
     /// Cannot pass limit because of unknown amount of NULLs.
 
     if (collator)
-        getNestedColumn().getPermutationWithCollation(*collator, direction, stability, 0, null_direction_hint, res);
+        nested_column->getPermutationWithCollation(*collator, direction, stability, 0, null_direction_hint, res);
     else
-        getNestedColumn().getPermutation(direction, stability, 0, null_direction_hint, res);
+        nested_column->getPermutation(direction, stability, 0, null_direction_hint, res);
 
     bool reverse = direction == IColumn::PermutationSortDirection::Descending;
     const auto is_nulls_last = ((null_direction_hint > 0) != reverse);
@@ -606,6 +824,16 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 {
     if (equal_ranges.empty())
         return;
+
+    /// Without NULLs the order is defined by the nested column alone.
+    if (!hasNullMap())
+    {
+        if (collator)
+            nested_column->updatePermutationWithCollation(*collator, direction, stability, limit, null_direction_hint, res, equal_ranges);
+        else
+            nested_column->updatePermutation(direction, stability, limit, null_direction_hint, res, equal_ranges);
+        return;
+    }
 
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
     EqualRanges new_ranges;
@@ -708,9 +936,9 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
     }
 
     if (collator)
-        getNestedColumn().updatePermutationWithCollation(*collator, direction, stability, limit, null_direction_hint, res, new_ranges);
+        nested_column->updatePermutationWithCollation(*collator, direction, stability, limit, null_direction_hint, res, new_ranges);
     else
-        getNestedColumn().updatePermutation(direction, stability, limit, null_direction_hint, res, new_ranges);
+        nested_column->updatePermutation(direction, stability, limit, null_direction_hint, res, new_ranges);
 
     if (unlikely(stability == PermutationSortStability::Stable))
     {
@@ -790,13 +1018,16 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
 
 void ColumnNullable::reserve(size_t n)
 {
-    getNestedColumn().reserve(n);
-    getNullMapData().reserve(n);
+    nested_column->reserve(n);
+    if (hasNullMap())
+        getNullMapData().reserve(n);
 }
 
 size_t ColumnNullable::capacity() const
 {
-    return getNullMapData().capacity();
+    if (const auto * map = tryGetNullMapData())
+        return map->capacity();
+    return nested_column->capacity();
 }
 
 void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
@@ -812,53 +1043,62 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
     }
 
     nested_column->prepareForSquashing(nested_source_columns, factor);
-    getNullMapData().reserve(new_size * factor);
+    if (hasNullMap())
+        getNullMapData().reserve(new_size * factor);
 }
 
 void ColumnNullable::shrinkToFit()
 {
-    getNestedColumn().shrinkToFit();
-    getNullMapColumn().shrinkToFit();
+    nested_column->shrinkToFit();
+    if (hasNullMap())
+        getNullMapColumn().shrinkToFit();
 }
 
 void ColumnNullable::ensureOwnership()
 {
-    getNestedColumn().ensureOwnership();
+    nested_column->ensureOwnership();
 }
 
 size_t ColumnNullable::byteSize() const
 {
-    return getNestedColumn().byteSize() + getNullMapColumn().byteSize();
+    const auto * map = tryGetNullMapColumn();
+    return nested_column->byteSize() + (map ? map->byteSize() : 0);
 }
 
 size_t ColumnNullable::byteSizeAt(size_t n) const
 {
-    return sizeof(getNullMapData()[0]) + getNestedColumn().byteSizeAt(n);
+    return sizeof(UInt8) + nested_column->byteSizeAt(n);
 }
 
 size_t ColumnNullable::allocatedBytes() const
 {
-    return getNestedColumn().allocatedBytes() + getNullMapColumn().allocatedBytes();
+    const auto * map = tryGetNullMapColumn();
+    return nested_column->allocatedBytes() + (map ? map->allocatedBytes() : 0);
 }
 
 void ColumnNullable::protect()
 {
-    getNestedColumn().protect();
-    getNullMapColumn().protect();
+    nested_column->protect();
+    if (hasNullMap())
+        getNullMapColumn().protect();
 }
 
 ColumnPtr ColumnNullable::compress(bool force_compression) const
 {
     ColumnPtr nested_compressed = nested_column->compress(force_compression);
-    ColumnPtr null_map_compressed = null_map->compress(force_compression);
+    const auto * map = tryGetNullMapColumn();
+    ColumnPtr null_map_compressed = map ? map->compress(force_compression) : nullptr;
 
-    size_t byte_size = nested_column->byteSize() + null_map->byteSize();
-    Columns parts{nested_compressed, null_map_compressed};
+    size_t byte_size = nested_column->byteSize() + (map ? map->byteSize() : 0);
+    /// Without a null map, the column can be decompressed only as a whole.
+    Columns parts;
+    if (null_map_compressed)
+        parts = {nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
-            return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
+            return ColumnNullable::create(my_nested_column->decompress(), my_null_map ? my_null_map->decompress() : nullptr);
         },
         std::move(parts));
 }
@@ -910,20 +1150,29 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
 
 void ColumnNullable::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    getExtremesWithNulls(getNestedColumn(), getNullMapData(), min, max, start, end);
+    if (const auto * map = tryGetNullMapData())
+        getExtremesWithNulls(*nested_column, *map, min, max, start, end);
+    else
+        nested_column->getExtremes(min, max, start, end);
 }
 
 
 void ColumnNullable::getExtremesNullLast(Field & min, Field & max, size_t start, size_t end) const
 {
-    getExtremesWithNulls(getNestedColumn(), getNullMapData(), min, max, start, end, true);
+    if (const auto * map = tryGetNullMapData())
+        getExtremesWithNulls(*nested_column, *map, min, max, start, end, true);
+    else
+        nested_column->getExtremes(min, max, start, end);
 }
 
 
 ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 {
-    ColumnPtr replicated_data = getNestedColumn().replicate(offsets);
-    ColumnPtr replicated_null_map = getNullMapColumn().replicate(offsets);
+    ColumnPtr replicated_data = nested_column->replicate(offsets);
+    const auto * map = tryGetNullMapColumn();
+    if (!map)
+        return ColumnNullable::create(replicated_data);
+    ColumnPtr replicated_null_map = map->replicate(offsets);
     return ColumnNullable::create(replicated_data, replicated_null_map);
 }
 
@@ -931,6 +1180,10 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 template <bool negative>
 void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
 {
+    /// Applying a map without NULLs does not add NULLs.
+    if (!negative && !hasNullMap() && offset + map.size() == size() && memoryIsZero(map.data(), 0, map.size()))
+        return;
+
     NullMap & arr = getNullMapData();
 
     if (offset + map.size() != arr.size())
@@ -968,17 +1221,27 @@ void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
 
 void ColumnNullable::applyNullMap(const ColumnNullable & other)
 {
-    applyNullMap(other.getNullMapColumn());
+    const auto * other_map = other.tryGetNullMapColumn();
+    if (!other_map)
+    {
+        if (other.size() != size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Null map of size {} does not match ColumnNullable of size {}", other.size(), size());
+        return;
+    }
+    applyNullMap(*other_map);
 }
 
 void ColumnNullable::checkConsistency() const
 {
-    if (null_map->size() != getNestedColumn().size())
+    const auto * map = tryGetNullMapColumn();
+    if (map && map->size() != nested_column->size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Sizes of nested column and null map of Nullable column are not equal (null map size = {}, nested column size = {})",
-            null_map->size(),
-            getNestedColumn().size());
+            map->size(),
+            nested_column->size());
 }
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
@@ -992,14 +1255,16 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     const ColumnNullable & nullable_column_with_default_value = assert_cast<const ColumnNullable &>(column_with_default_value.getDataColumn());
     if (nullable_column_with_default_value.isNullAt(0))
     {
+        const auto & map = getNullMapColumnPtr();
         /// Value in main column, when null map is 1 is implementation defined. So, take any value.
         new_values = nested_column->createWithOffsets(offsets, *createColumnConstWithDefaultValue(nested_column), total_rows, shift);
-        new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(1u)), total_rows, shift);
+        new_null_map = map->createWithOffsets(offsets, *createColumnConst(map, Field(1u)), total_rows, shift);
     }
     else
     {
         new_values = nested_column->createWithOffsets(offsets, *ColumnConst::create(nullable_column_with_default_value.getNestedColumnPtr(), 1), total_rows, shift);
-        new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(0u)), total_rows, shift);
+        if (hasNullMap())
+            new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(0u)), total_rows, shift);
     }
 
     return ColumnNullable::create(new_values, new_null_map);
@@ -1008,16 +1273,24 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
 void ColumnNullable::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
 {
     const auto & src_nullable = assert_cast<const ColumnNullable &>(src);
+    const UInt8 is_null = src_nullable.isNullAt(src_pos) ? src_nullable.getNullMapData()[src_pos] : 0;
+    if (is_null)
+        materializeNullMap();
     nested_column->updateAt(src_nullable.getNestedColumn(), dst_pos, src_pos);
-    null_map->updateAt(src_nullable.getNullMapColumn(), dst_pos, src_pos);
+    if (hasNullMap())
+        getNullMapData()[dst_pos] = is_null;
 }
 
 ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
 {
+    const auto * map = tryGetNullMapData();
+    if (!map)
+        return nested_column;
+
     auto res = nested_column->cloneEmpty();
-    const auto & null_map_data = getNullMapData();
+    const auto & null_map_data = *map;
     size_t start = 0;
-    size_t end = null_map->size();
+    size_t end = null_map_data.size();
     while (start < nested_column->size())
     {
         size_t next_null_index = start;
@@ -1070,7 +1343,8 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
 
 void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+    materializeNullMap();
+    nested_column->fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
 }
 
 /// A NULL row emits only the flag byte and never touches the nested column, so an
@@ -1089,8 +1363,7 @@ void ColumnNullable::validateNestedComparable() const
 /// encoding; a NULL row is just `\x01`.
 void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 {
-    const auto & null_map_data = getNullMapData();
-    if (null_map_data[n])
+    if (isNullAt(n))
     {
         validateNestedComparable();
         out.push_back('\x01');
@@ -1111,8 +1384,18 @@ void ColumnNullable::batchSerializeAsComparable(
 
     validateNestedComparable();
 
+    const auto * map = tryGetNullMapData();
+    if (!map)
+    {
+        batchSerializeAsComparableImpl(
+            num_rows, out, permutation, outer_null_map,
+            [&](size_t, String & dst) { dst.push_back('\x00'); });
+        nested_column->batchSerializeAsComparable(num_rows, out, permutation, outer_null_map);
+        return;
+    }
+
     /// Write the null flag for every row: NULL=0x01 (sorts after), non-NULL=0x00.
-    const auto & null_map_data = getNullMapData();
+    const auto & null_map_data = *map;
     batchSerializeAsComparableImpl(
         num_rows, out, permutation, outer_null_map,
         [&](size_t src, String & dst) { dst.push_back(null_map_data[src] ? '\x01' : '\x00'); });
@@ -1139,7 +1422,7 @@ ColumnPtr makeNullable(const ColumnPtr & column)
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
-    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
+    return ColumnNullable::create(column);
 }
 
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
@@ -1153,7 +1436,7 @@ ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     if (column->lowCardinality())
         return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
-    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
+    return ColumnNullable::create(column);
 }
 
 ColumnConstPtr makeNullableSafe(const ColumnConstPtr & column)
@@ -1195,6 +1478,18 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
     return column;
 }
 
+void materializeNullMapsRecursively(const IColumn & column)
+{
+    auto materialize = [](const IColumn & subcolumn)
+    {
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&subcolumn))
+            nullable->materializeNullMap();
+    };
+
+    materialize(column);
+    column.forEachSubcolumnRecursively(materialize);
+}
+
 ColumnPtr removeNullable(const ColumnPtr & column)
 {
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
@@ -1216,15 +1511,18 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
 
 bool ColumnNullable::hasOnlyTypeDefaults() const
 {
-    const auto & data = getNullMapData();
-    if (data.empty())
+    const auto * data = tryGetNullMapData();
+    if (!data)
+        return empty();
+    if (data->empty())
         return true;
-    return memoryIsByte(data.data(), 0, data.size(), 1);
+    return memoryIsByte(data->data(), 0, data->size(), 1);
 }
 
 ColumnPlanes ColumnNullable::getPlanes() const
 {
-    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    /// The readers of the planes only read the null map, so a column without a null map exposes the shared zeros.
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapRawDataOrZeros());
     planes.children = {&getNestedColumn()};
     return planes;
 }

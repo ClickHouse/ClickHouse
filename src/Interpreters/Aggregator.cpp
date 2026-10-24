@@ -4193,7 +4193,7 @@ Chunk Aggregator::insertResultsIntoColumns(
                  * and additional memory for null data needs to be allocated when using the compiled function
                  */
                 final_aggregate_column = final_aggregate_column->cloneResized(places.size() + (has_null_key_data ? 1 : 0));
-                columns_data.emplace_back(getColumnData(final_aggregate_column.get(), (has_null_key_data ? 1 : 0)));
+                columns_data.emplace_back(getMutableColumnData(final_aggregate_column.get(), (has_null_key_data ? 1 : 0)));
             }
 
             auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;

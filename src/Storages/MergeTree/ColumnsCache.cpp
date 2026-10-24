@@ -2,6 +2,7 @@
 #include <chrono>
 #include <optional>
 
+#include <Columns/ColumnNullable.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -333,6 +334,9 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
     const size_t existing_row_end = existing->row_begin + existing->rows;
     if (row_end > existing_row_end)
         column->insertRangeFrom(*incoming_column, existing_row_end - incoming->row_begin, row_end - existing_row_end);
+    /// The readers share the column and may create a missing null map lazily, see `setMany`. The merged column is
+    /// the server's, so its null maps are created under `MemoryTrackerBlockerInThread` together with the rest of it.
+    materializeNullMapsRecursively(*column);
     column->shrinkToFit();
     merged->column = std::move(column);
 
@@ -347,6 +351,13 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     /// trackers yet would be flushed under the blocker, to the global tracker only.
     size_t bytes_to_hand_over = 0;
     size_t bytes_admitted = 0;
+
+    /// The readers share the cached columns (a read of a whole entry is served the very same column) and may create
+    /// a missing null map lazily, which would change the weight of an entry after it was accounted, so create the
+    /// null maps now. Before the blocker: the columns are still the query's, and so are their null maps.
+    for (const auto & entry : entries)
+        materializeNullMapsRecursively(*entry->column);
+
     {
         MemoryTrackerBlockerInThread not_charged_to_query_or_user;
         bytes_admitted = setManyImpl(entries, expected_table_generation, bytes_to_hand_over, entries_resident);

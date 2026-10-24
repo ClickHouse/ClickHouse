@@ -46,10 +46,26 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
     ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col.get()))
     {
-        null_map = ColumnUInt8::create();
-        null_map->insertRangeFrom(col_nullable->getNullMapColumn(), 0, col_nullable->size());
+        /// Do not create the null map of a column without NULLs.
+        if (const auto * col_null_map = col_nullable->tryGetNullMapColumn())
+        {
+            null_map = ColumnUInt8::create();
+            null_map->insertRangeFrom(*col_null_map, 0, col_nullable->size());
+        }
+        else
+        {
+            null_map = ColumnUInt8::create(col_nullable->size(), static_cast<UInt8>(0));
+        }
     }
     return null_map;
+}
+
+ColumnPtr createNullableResult(IColumn::MutablePtr col_to, ColumnUInt8::MutablePtr null_map)
+{
+    const auto & null_map_data = null_map->getData();
+    if (memoryIsZero(null_map_data.data(), 0, null_map_data.size()))
+        return ColumnNullable::create(std::move(col_to));
+    return ColumnNullable::create(std::move(col_to), std::move(null_map));
 }
 
 }
@@ -1450,7 +1466,7 @@ ColumnPtr FunctionCast::convertArrayToQBit(
 
     /// Use the null map to skip NULL rows — their nested arrays may have default (empty) values
     /// that don't match the expected dimension, but the result will be masked by NULL anyway.
-    const NullMap * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+    const NullMap * null_map = nullable_source ? nullable_source->tryGetNullMapData() : nullptr;
 
     /// Verify array size matches expected QBit size (skip NULL rows)
     size_t prev_offset = 0;
@@ -1643,7 +1659,7 @@ ColumnPtr FunctionCast::convertQBitToArray(ColumnsWithTypeAndName & arguments, c
     /// (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN) or masks it via wrapInNullable — so untransposing it
     /// would be wasted work. For a wide QBit a block of NULLs would dominate time. This mirrors the
     /// Array -> QBit path, which inserts default values for NULL rows instead of transposing them.
-    const NullMap * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+    const NullMap * null_map = nullable_source ? nullable_source->tryGetNullMapData() : nullptr;
 
     auto data_column = ColumnVector<FloatType>::create();
     auto & result_data = data_column->getData();
@@ -3331,7 +3347,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                     if (!WhichDataType(result_type).isIPv4())
                         throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
 
-                    const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                    const auto * null_map = column_nullable ? column_nullable->tryGetNullMapData() : nullptr;
                     if (requested_result_is_nullable)
                         return convertToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
                     else if (settings.cast_ipv4_ipv6_default_on_conversion_error || settings.input_format_ipv4_default_on_conversion_error)
@@ -3355,7 +3371,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                         throw Exception(
                             ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv6", result_type->getName());
 
-                    const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                    const auto * null_map = column_nullable ? column_nullable->tryGetNullMapData() : nullptr;
                     if (requested_result_is_nullable)
                         return convertToIPv6<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
                     else if (settings.cast_ipv4_ipv6_default_on_conversion_error || settings.input_format_ipv6_default_on_conversion_error)
@@ -3397,7 +3413,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
                     throw Exception(
                         ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
 
-                const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+                const auto * null_map = column_nullable ? column_nullable->tryGetNullMapData() : nullptr;
                 if (requested_result_is_nullable)
                     return convertIPv6ToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
                 else if (settings.cast_ipv4_ipv6_default_on_conversion_error)

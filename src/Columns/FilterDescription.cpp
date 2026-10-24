@@ -110,7 +110,7 @@ ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
     {
-        null_map_column = nullable_column->getNullMapColumnPtr();
+        null_map_column = nullable_column->tryGetNullMapColumnPtr();
         column = nullable_column->getNestedColumnPtr();
     }
 

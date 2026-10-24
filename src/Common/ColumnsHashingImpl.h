@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -244,7 +245,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// Per-block fast path: if a one-time `memchr` at construction proved that the block
+            /// Per-block fast path: if a one-time scan of the null map at construction proved that the block
             /// contains no nulls, the compiler can fold this branch away entirely. Otherwise we
             /// load the cached `null_map_data` directly, avoiding the virtual `IColumn::getBool`.
             if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
@@ -406,7 +407,7 @@ protected:
     /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
     /// Bypasses the virtual `IColumn` dispatch on the per-row hot path in `emplaceKey` / `findKey`.
     const UInt8 * null_map_data = nullptr;
-    /// Per-block flag set by a single `memchr` at construction time. When true, every row in the
+    /// Per-block flag set by a single scan of the null map at construction time. When true, every row in the
     /// block has a zero null-map byte, so the per-row null check can be statically skipped.
     bool block_has_no_nulls = true;
     bool has_null_data = false;
@@ -428,17 +429,22 @@ protected:
 
         if constexpr (nullable)
         {
-            const auto & null_map_column = checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
-            const auto & null_map_container = null_map_column.getData();
-            null_map_data = null_map_container.data();
-            /// Scan the null map once per block. `PaddedPODArray<UInt8>` stores 0/1 bytes, so
-            /// finding a single 0x01 byte is enough to know the block contains a null. We use
-            /// `memchr` which is typically vectorized in libc and amortizes well for blocks of
-            /// the usual aggregation size (`max_block_size` = 65505). For tiny blocks the cost
-            /// is dominated by the function-call overhead, but the per-row payload saves a
-            /// virtual call and a branch, so the break-even is small.
-            const size_t size = null_map_container.size();
-            block_has_no_nulls = (size == 0) || (std::memchr(null_map_data, 1, size) == nullptr);
+            /// A column without a null map has no NULLs.
+            if (const auto * null_map_container = checkAndGetColumn<ColumnNullable>(*column).tryGetNullMapData())
+            {
+                null_map_data = null_map_container->data();
+                /// Scan the null map once per block. Any non-zero byte means NULL (some deserializers
+                /// keep the stored byte as is), so check that the whole null map is zero. The scan is
+                /// vectorized and amortizes well for blocks of the usual aggregation size
+                /// (`max_block_size` = 65505). For tiny blocks the cost is dominated by the
+                /// function-call overhead, but the per-row payload saves a virtual call and a branch,
+                /// so the break-even is small.
+                block_has_no_nulls = memoryIsZero(null_map_data, 0, null_map_container->size());
+            }
+            else
+            {
+                block_has_no_nulls = true;
+            }
         }
     }
 
@@ -595,7 +601,8 @@ protected:
             if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col))
             {
                 actual_columns.push_back(&nullable_col->getNestedColumn());
-                null_maps.push_back(&nullable_col->getNullMapColumn());
+                /// nullptr if the column has no null map, which means it has no NULLs.
+                null_maps.push_back(nullable_col->tryGetNullMapColumn());
             }
             else
             {

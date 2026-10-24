@@ -94,9 +94,8 @@ private:
         {
             const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(filter_column);
             filter_column = nullable_column->getNestedColumnPtr().get();
-            const UInt8 * filter_null_map = nullable_column->getNullMapData().data();
 
-            return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num] && !filter_null_map[row_num];
+            return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num] && !nullable_column->isNullAt(row_num);
         }
 
         return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num];
@@ -161,7 +160,7 @@ public:
             return;
 
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const UInt8 * null_map = column->getNullMapData().data();
+        const UInt8 * null_map = column->getNullMapRawDataOrZeros();
         const IColumn * columns_param[] = {&column->getNestedColumn()};
 
         const IColumn * filter_column = columns[num_arguments - 1];
@@ -173,7 +172,9 @@ public:
         {
             const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(filter_column);
             filter_column = nullable_column->getNestedColumnPtr().get();
-            filter_null_map = nullable_column->getNullMapData().data();
+            /// nullptr if the filter has no null map, which means it has no NULLs.
+            if (const auto * map = nullable_column->tryGetNullMapData())
+                filter_null_map = map->data();
         }
 
         filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
@@ -182,6 +183,21 @@ public:
         {
             /// The nested function skips the rows that are NULL or fail the condition at position 1.
             const IColumn * columns_with_filter[] = {columns_param[0], filter_column};
+
+            if (!column->hasNullMap())
+            {
+                /// No NULLs at all: take the same path as for non-`Nullable` arguments.
+                if constexpr (result_is_nullable)
+                {
+                    if (!countBytesInFilter(filter_values, row_begin, row_end))
+                        return;
+                    this->setFlag(place);
+                }
+                this->nested_function->addBatchSinglePlace(
+                    row_begin, row_end, this->nestedPlace(place), columns_with_filter, arena, 1);
+                return;
+            }
+
             if constexpr (result_is_nullable)
             {
                 if (!countBytesInFilterWithNull(assert_cast<const ColumnUInt8 &>(*filter_column).getData(), null_map, row_begin, row_end))
@@ -353,7 +369,7 @@ public:
                 if (is_nullable[arg])
                 {
                     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
-                    null_map = nullable_col.getNullMapData().data();
+                    null_map = nullable_col.getNullMapRawDataOrZeros();
                     nested_columns[arg] = &nullable_col.getNestedColumn();
                 }
                 else
@@ -379,7 +395,7 @@ public:
         {
             const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(columns[filter_column_num]);
             const IColumn & filter_column = nullable_column->getNestedColumn();
-            const UInt8 * filter_null_map = nullable_column->getNullMapColumn().getData().data();
+            const UInt8 * filter_null_map = nullable_column->getNullMapRawDataOrZeros();
             const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(filter_column).getData().data();
 
             for (size_t i = row_begin; i < row_end; i++)
@@ -403,8 +419,7 @@ public:
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
                 if (arg != filter_column_num)
                 {
-                    const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
-                    const UInt8 * col_null_map = nullmap_column.getData().data();
+                    const UInt8 * col_null_map = nullable_col.getNullMapRawDataOrZeros();
                     for (size_t r = row_begin; r < row_end; r++)
                         final_null_flags[r] |= !!col_null_map[r];
                 }
@@ -556,7 +571,7 @@ private:
         if (is_nullable[filter_column_num])
         {
             const ColumnNullable & nullable_column = assert_cast<const ColumnNullable &>(*columns[filter_column_num]);
-            const UInt8 * filter_null_map = nullable_column.getNullMapData().data();
+            const UInt8 * filter_null_map = nullable_column.getNullMapRawDataOrZeros();
             const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(nullable_column.getNestedColumn()).getData().data();
             for (size_t i = row_begin; i < row_end; ++i)
                 condition[i] = !filter_null_map[i] && filter_values[i];
@@ -574,7 +589,7 @@ private:
             if (is_nullable[arg])
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
-                const UInt8 * col_null_map = nullable_col.getNullMapData().data();
+                const UInt8 * col_null_map = nullable_col.getNullMapRawDataOrZeros();
                 for (size_t i = row_begin; i < row_end; ++i)
                     condition[i] &= !col_null_map[i];
                 nested_columns[arg] = &nullable_col.getNestedColumn();

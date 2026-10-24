@@ -96,13 +96,13 @@ ColumnPtr applyComparator(
     /// and cache the null maps for direct array access in the inner loop.
     const auto * mapped_nullable = checkAndGetColumn<ColumnNullable>(&mapped);
     const IColumn & mapped_data = mapped_nullable ? mapped_nullable->getNestedColumn() : mapped;
-    const NullMap * mapped_null_map = mapped_nullable ? &mapped_nullable->getNullMapData() : nullptr;
+    const NullMap * mapped_null_map = mapped_nullable ? mapped_nullable->tryGetNullMapData() : nullptr;
 
     /// Same peel for the source data column; the non-null nested column is what we use to build
     /// the result (matches the declared return type).
     const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source.getData());
     const IColumn & source_data = source_nullable ? source_nullable->getNestedColumn() : source.getData();
-    const NullMap * source_null_map = source_nullable ? &source_nullable->getNullMapData() : nullptr;
+    const NullMap * source_null_map = source_nullable ? source_nullable->tryGetNullMapData() : nullptr;
 
     auto indexes_column = ColumnUInt64::create();
     auto & indexes = indexes_column->getData();

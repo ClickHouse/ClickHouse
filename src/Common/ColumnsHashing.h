@@ -483,7 +483,9 @@ struct HashMethodSerialized
             {
                 if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_columns[i]))
                 {
-                    null_maps[i] = nullable_column->getNullMapData().data();
+                    /// A NULL flag must be serialized for the columns without a null map as well,
+                    /// so that the keys from the columns with and without a null map are equal.
+                    null_maps[i] = nullable_column->getNullMapRawDataOrZeros();
                     key_columns[i] = nullable_column->getNestedColumnPtr().get();
                 }
             }

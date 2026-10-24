@@ -393,7 +393,13 @@ struct StoredBlock
 
     /// Must be called after `columns` are replaced in-place (e.g. by cloneResized). The raw pointers in
     /// `replicated_columns` point into the old column objects and dangle once those objects are released.
+    /// Also calls `materializeNullMaps`.
     void rebuildReplicatedColumns();
+
+    /// Create the null maps of the `Nullable` columns (and subcolumns) that have no null map.
+    /// The readers of a `Nullable` column may create its null map lazily, which would change `allocatedBytes`
+    /// of a block after it was accounted (e.g. in `HashJoin::data->allocated_size`), so create them beforehand.
+    void materializeNullMaps() const;
 
     bool hasRowStore() const;
 

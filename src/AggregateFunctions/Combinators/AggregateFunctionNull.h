@@ -270,23 +270,27 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
+                /// Keep the result without a null map while there are no NULLs.
+                IColumn & to_nested = to_concrete.getNestedColumnNoMaterialize();
                 if constexpr (merge)
                 {
-                    nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                    to_concrete.getNullMapData().push_back(false);
+                    nested_function->insertMergeResultInto(nestedPlace(place), to_nested, arena);
+                    if (to_concrete.hasNullMap())
+                        to_concrete.getNullMapData().push_back(false);
                 }
                 else
                 {
-                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    nested_function->insertResultInto(nestedPlace(place), to_nested, arena);
 
                     /// A nested call that threw has already restored the nested column itself.
                     try
                     {
-                        to_concrete.getNullMapData().push_back(false);
+                        if (to_concrete.hasNullMap())
+                            to_concrete.getNullMapData().push_back(false);
                     }
                     catch (...)
                     {
-                        nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                        nested_function->rollbackInsertResult(nestedPlace(place), to_nested);
                         throw;
                     }
                 }
@@ -322,8 +326,9 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                to_concrete.getNullMapData().pop_back();
-                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                if (to_concrete.hasNullMap())
+                    to_concrete.getNullMapData().pop_back();
+                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumnNoMaterialize());
             }
             else
             {
@@ -517,7 +522,20 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        const UInt8 * null_map = column->getNullMapData().data();
+        const auto * null_map_data = column->tryGetNullMapData();
+        if (!null_map_data)
+        {
+            /// No NULLs.
+            this->nested_function->addBatchSinglePlace(
+                row_begin, row_end, this->nestedPlace(place), &nested_column, arena, if_argument_pos);
+
+            if constexpr (result_is_nullable)
+                if (row_begin < row_end)
+                    this->setFlag(place);
+            return;
+        }
+
+        const UInt8 * null_map = null_map_data->data();
 
         this->nested_function->addBatchSinglePlaceNotNull(
             row_begin, row_end, this->nestedPlace(place), &nested_column, null_map, arena, if_argument_pos);
@@ -732,8 +750,9 @@ public:
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
                 nested_columns[i] = &nullable_col.getNestedColumn();
-                const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
-                nullable_filters.push_back(nullmap_column.getData().data());
+                /// The columns without a null map have no NULLs.
+                if (const auto * null_map = nullable_col.tryGetNullMapData())
+                    nullable_filters.push_back(null_map->data());
             }
             else
             {
@@ -741,7 +760,18 @@ public:
             }
         }
 
-        chassert(!nullable_filters.empty());
+        if (nullable_filters.empty())
+        {
+            /// No NULLs, and the `if` argument (if any) passes all rows.
+            if (row_begin < row_end)
+            {
+                this->setFlag(place);
+                this->nested_function->addBatchSinglePlace(
+                    row_begin, row_end, this->nestedPlace(place), nested_columns.data(), arena, -1);
+            }
+            return;
+        }
+
         bool found_one = false;
         if (nullable_filters.size() == 1)
         {
