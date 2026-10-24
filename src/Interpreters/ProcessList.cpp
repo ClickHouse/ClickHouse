@@ -1047,6 +1047,30 @@ std::optional<ProfileEvents::Counters::Snapshot> QueryStatus::getRemoteProfileEv
 }
 
 
+void QueryStatus::addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot)
+{
+    std::lock_guard lock(excluded_profile_events_mutex);
+    for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+    {
+        if (const auto value = snapshot[event])
+        {
+            if (!excluded_profile_events)
+                excluded_profile_events = std::make_unique<ProfileEvents::Counters>(VariableContext::Process, /* parent = */ nullptr);
+            excluded_profile_events->incrementNoTrace(event, value);
+        }
+    }
+}
+
+
+std::optional<ProfileEvents::Counters::Snapshot> QueryStatus::getExcludedProfileEvents() const
+{
+    std::lock_guard lock(excluded_profile_events_mutex);
+    if (!excluded_profile_events)
+        return {};
+    return excluded_profile_events->getPartiallyAtomicSnapshot();
+}
+
+
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {
     QueryStatusInfo res{};

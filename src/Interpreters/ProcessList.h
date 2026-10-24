@@ -138,6 +138,13 @@ protected:
     mutable std::mutex remote_profile_events_mutex;
     std::unique_ptr<ProfileEvents::Counters> remote_profile_events TSA_GUARDED_BY(remote_profile_events_mutex);
 
+    /// Profile events of the queries nested in this one that are part of the local counters of `thread_group`,
+    /// but have been charged to the quotas over profile events on their own, so they are excluded from what
+    /// this query is charged with: the flushes of asynchronous inserts run by `SYSTEM FLUSH ASYNC INSERT QUEUE`.
+    /// Allocated on the first exclusion.
+    mutable std::mutex excluded_profile_events_mutex;
+    std::unique_ptr<ProfileEvents::Counters> excluded_profile_events TSA_GUARDED_BY(excluded_profile_events_mutex);
+
     /// Used to externally check for the query time limits
     /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
     ExecutionSpeedLimits limits;
@@ -286,6 +293,12 @@ public:
 
     /// Returns the sum of the profile events reported by the remote servers, if any were reported.
     std::optional<ProfileEvents::Counters::Snapshot> getRemoteProfileEvents() const;
+
+    /// Adds the profile events of a nested query charged to the quotas on its own (see `excluded_profile_events`).
+    void addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot);
+
+    /// Returns the sum of the excluded profile events, if any were added.
+    std::optional<ProfileEvents::Counters::Snapshot> getExcludedProfileEvents() const;
 
     void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 

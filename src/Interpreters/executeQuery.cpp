@@ -790,6 +790,11 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         .pipeline_dump = std::move(pipeline_dump)};
 }
 
+static bool isAsyncInsertFlush(const ASTPtr & query_ast)
+{
+    return query_ast && query_ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush;
+}
+
 /// Accounts the profile events accumulated by a finished (or failed) query against the quotas
 /// defining limits over profile events. Called once per query at its end, after the performance
 /// counters of its threads have been finalized and, for a failed query, after the `FailedQuery`
@@ -805,6 +810,17 @@ static void usedQuotaProfileEvents(
         return;
 
     auto counters = process_list_elem->getInfo(false, /* get_profile_events= */ true).profile_counters;
+    /// What the nested queries charged on their own added to the local counters (see `excludeFromOuterQueryQuota`).
+    if (auto excluded = process_list_elem->getExcludedProfileEvents(); excluded && counters)
+    {
+        ProfileEvents::Counters own_counters(VariableContext::Process, /* parent = */ nullptr);
+        for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+        {
+            if ((*counters)[event] > (*excluded)[event])
+                own_counters.incrementNoTrace(event, (*counters)[event] - (*excluded)[event]);
+        }
+        counters = std::make_shared<ProfileEvents::Counters::Snapshot>(own_counters.getPartiallyAtomicSnapshot());
+    }
     /// What the remote servers did for a distributed query, as they reported it (see `RemoteQueryExecutor`).
     auto remote_counters = process_list_elem->getRemoteProfileEvents();
 
@@ -823,7 +839,48 @@ static void usedQuotaProfileEvents(
 /// and under their quota (it charges the predefined `written_bytes` as well).
 static bool chargesQuotaProfileEvents(const ASTPtr & query_ast, bool internal)
 {
-    return !internal || (query_ast && query_ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush);
+    return !internal || isAsyncInsertFlush(query_ast);
+}
+
+/// The normalized query hash the quotas of a query are charged by. For the deferred flush of asynchronous inserts,
+/// it is the hash of the submitted inserts the quotas keyed by `normalized_query_hash` were checked against, which
+/// `AsynchronousInsertQueue` sets in the context, rather than the hash of the flush's own statement.
+static UInt64 quotaNormalizedQueryHash(const ASTPtr & query_ast, const ContextPtr & context, UInt64 normalized_query_hash)
+{
+    return isAsyncInsertFlush(query_ast) ? context->getNormalizedQueryHash() : normalized_query_hash;
+}
+
+/// A flush of asynchronous inserts run by a query (`SYSTEM FLUSH ASYNC INSERT QUEUE t`) has its thread group nested in
+/// the group of that query, so its counters add up to the counters of the query as well. Having been charged to the
+/// user who submitted the inserts, they are excluded from what the outer query is charged with. Returns the outer
+/// query to exclude them from, if it is charged with profile events.
+static QueryStatusPtr getOuterQueryToExcludeFrom(const ASTPtr & query_ast)
+{
+    if (!isAsyncInsertFlush(query_ast))
+        return nullptr;
+    auto group = CurrentThread::getGroup();
+    auto outer_group = group ? group->getParent() : nullptr;
+    if (!outer_group)
+        return nullptr;
+    auto outer_context = outer_group->query_context.lock();
+    if (!outer_context)
+        return nullptr;
+    auto outer_quota = outer_context->getQuota();
+    if (!outer_quota || !outer_quota->hasProfileEventLimits())
+        return nullptr;
+    return outer_context->getProcessListElementSafe();
+}
+
+static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStatusPtr & process_list_elem)
+{
+    if (!process_list_elem)
+        return;
+    if (auto outer_query = getOuterQueryToExcludeFrom(query_ast))
+    {
+        auto counters = process_list_elem->getInfo(false, /* get_profile_events= */ true).profile_counters;
+        if (counters)
+            outer_query->addExcludedProfileEvents(*counters);
+    }
 }
 
 
@@ -970,7 +1027,8 @@ void logQueryFinish(
     /// the quotas over profile events for the other queries, so they are charged here, by the same rule
     /// as on the exception path (`logQueryException`); the counters have been finalized above.
     if (chargesQuotaProfileEvents(query_ast, internal))
-        usedQuotaProfileEvents(context->getQuota(), context->getProcessListElementSafe(), elem.normalized_query_hash);
+        usedQuotaProfileEvents(context->getQuota(), context->getProcessListElementSafe(), quotaNormalizedQueryHash(query_ast, context, elem.normalized_query_hash));
+    excludeFromOuterQueryQuota(query_ast, context->getProcessListElementSafe());
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -1060,7 +1118,8 @@ void logQueryException(
     /// `addStatusInfoToQueryLogElement`, which increments the time-based events (`QueryTimeMicroseconds`
     /// and friends), so that they are charged as on the success path.
     if (charge_quota_profile_events && chargesQuotaProfileEvents(query_ast, internal))
-        usedQuotaProfileEvents(context->getQuota(), process_list_elem, elem.normalized_query_hash);
+        usedQuotaProfileEvents(context->getQuota(), process_list_elem, quotaNormalizedQueryHash(query_ast, context, elem.normalized_query_hash));
+    excludeFromOuterQueryQuota(query_ast, process_list_elem);
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
     elem.query_result_cache_usage = QueryResultCacheUsage::None;
@@ -1113,8 +1172,9 @@ void logExceptionBeforeStart(
     /// Exception before the query execution.
     /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged.
     auto quota = context->getQuota();
+    const UInt64 quota_normalized_query_hash = quotaNormalizedQueryHash(ast, context, normalized_query_hash);
     if (quota && charge_quota)
-        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+        quota->usedForQuery(quota_normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1205,13 +1265,17 @@ void logExceptionBeforeStart(
     if (charge_quota && chargesQuotaProfileEvents(ast, internal))
     {
         if (process_list_elem)
-            usedQuotaProfileEvents(quota, process_list_elem, normalized_query_hash);
+            usedQuotaProfileEvents(quota, process_list_elem, quota_normalized_query_hash);
         else if (quota && quota->hasProfileEventLimits())
         {
             auto failed_query_snapshot = failed_query_counters.getPartiallyAtomicSnapshot();
-            quota->usedProfileEvents(normalized_query_hash, {&failed_query_snapshot}, /* check_exceeded = */ false);
+            quota->usedProfileEvents(quota_normalized_query_hash, {&failed_query_snapshot}, /* check_exceeded = */ false);
         }
     }
+    if (process_list_elem)
+        excludeFromOuterQueryQuota(ast, process_list_elem);
+    else if (auto outer_query = getOuterQueryToExcludeFrom(ast))
+        outer_query->addExcludedProfileEvents(failed_query_counters.getPartiallyAtomicSnapshot());
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
     if (query_log)
