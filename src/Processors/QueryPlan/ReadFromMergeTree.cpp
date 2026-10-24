@@ -3305,13 +3305,13 @@ void ReadFromMergeTree::buildIndexes(
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
         if (index_helper->isVectorSimilarityIndex())
         {
-#if USE_USEARCH
+            /// All vector similarity index types implement the virtual overload of createIndexCondition
+            /// that accepts VectorSearchParameters. Call it via polymorphism so that new backends
+            /// (e.g. vector_similarity('scann', ...)) work without modifying this file.
             factory = [index_helper, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
-                const auto & vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity &>(*index_helper);
-                return vector_similarity_index.createIndexCondition(predicate, query_context, vector_search_parameters);
+                return index_helper->createIndexCondition(predicate, query_context, vector_search_parameters);
             };
-#endif
         }
         else
         {

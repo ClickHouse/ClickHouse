@@ -25,6 +25,9 @@ struct NearestNeighbours
 {
     std::vector<UInt64> rows;
     std::optional<std::vector<float>> distances;
+    /// Read the entire index granule and compute distances from the original vectors.
+    /// In this state, `rows` and `distances` are unused.
+    bool scan_full_granule = false;
 };
 
 }
