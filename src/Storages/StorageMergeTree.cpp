@@ -902,12 +902,7 @@ void StorageMergeTree::alter(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
                 });
 
-                setProperties(new_metadata, old_metadata, false, local_context);
-
-                {
-                    auto parts_lock = lockParts();
-                    resetSerializationHints(parts_lock);
-                }
+                setPropertiesAndResetSerializationHints(new_metadata, old_metadata, local_context);
             }
             catch (...)
             {
@@ -930,7 +925,7 @@ void StorageMergeTree::alter(
                             addPreparedMutationEntry(std::move(*prepared));
                             mutation_registered = true;
                         }
-                        setProperties(new_metadata, old_metadata, false, local_context);
+                        setPropertiesAndResetSerializationHints(new_metadata, old_metadata, local_context);
                     }
                     catch (...)
                     {
@@ -948,6 +943,8 @@ void StorageMergeTree::alter(
                     /// `held_entry` (its `is_registered` flag stops the destructor from
                     /// removing it) and is only removed once `alterTable(old_metadata)`
                     /// durably succeeds. See #80648.
+                    /// Plain `setProperties`: the rejected settings stay live until `changeSettings` after the
+                    /// durable rollback, so hints rebuilt now would come from settings about to be undone.
                     try
                     {
                         setProperties(old_metadata, new_metadata, false, local_context);
@@ -1031,7 +1028,7 @@ void StorageMergeTree::alter(
                                     background_operations_assignee.trigger();
                                 }
                             }
-                            setProperties(new_metadata, old_metadata, false, local_context);
+                            setPropertiesAndResetSerializationHints(new_metadata, old_metadata, local_context);
                         }
                         catch (...)
                         {

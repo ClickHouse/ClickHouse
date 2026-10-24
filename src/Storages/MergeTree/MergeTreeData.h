@@ -2046,6 +2046,18 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
+    /// The part of `setProperties` that runs after `new_metadata` is published.
+    void updateCachesAfterMetadataPublish(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata);
+
+    /// Same as `setProperties`, but publishes the metadata and rebuilds `serialization_hints` under one `parts_lock`:
+    /// a committing part reads both under that lock and must not see new column types with old-typed hints.
+    void setPropertiesAndResetSerializationHints(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        ContextPtr local_context = nullptr);
+
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
@@ -2171,6 +2183,9 @@ protected:
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+
+    /// Aggregates the active parts' serialization infos for `storage_columns` without publishing.
+    SerializationInfoByName buildSerializationHints(const ColumnsDescription & storage_columns, const DataPartsLock & lock) const;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
