@@ -50,7 +50,7 @@ public:
         {
             const Int64 offset = arguments.at(1, bounds.row[i]).getInt();
             if (offset <= 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in (1, {}], {} given", getName(), INT64_MAX, offset);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The offset for function {} must be in [1, {}], {} given", getName(), INT64_MAX, offset);
 
             if (offset > bounds.frame_end[i] - bounds.frame_start[i])
                 result.insertDefault();
