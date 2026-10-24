@@ -521,6 +521,11 @@ inline void ALWAYS_INLINE readNodeImpl(
         if (out_path)
         {
             chassert(out_path_buf);
+            if (path_prefix_size > block->base_path_len)
+                throw DB::Exception(
+                    DB::ErrorCodes::CORRUPTED_DATA,
+                    "Node path prefix size {} exceeds the base path length {}",
+                    path_prefix_size, block->base_path_len);
             /// path = base_path[:path_prefix_size] + path_suffix
             out_path_buf->reserve(path_prefix_size + path_suffix_size);
             out_path_buf->assign(block->data() + block->base_path_offset, path_prefix_size);

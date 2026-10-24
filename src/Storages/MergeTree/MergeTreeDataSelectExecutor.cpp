@@ -32,6 +32,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
+#include <Access/EnabledMaskingPolicies.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -65,6 +69,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <base/sleep.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -163,7 +168,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 
 /// Maps each primary-key column position to the slot of the matching column in a part's partition
 /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
-std::vector<std::optional<size_t>> MergeTreeDataSelectExecutor::buildPrimaryKeyToMinMaxSlotMapping(
+static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -929,12 +934,32 @@ static bool partHasStaleTopKIndex(
     if (part->hasLightweightDelete())
         return true;
 
+    /// A Cloud masking policy rewrites the indexed column on read but is not part of the mutation
+    /// snapshot: getAlterConversionsForPart appends it as an UPDATE command independently of the flags
+    /// checked below. A table with only a masking policy therefore has none of hasDataMutations,
+    /// hasAlterMutations or hasPatchParts set, so without this gate it would skip the canUseIndex check
+    /// and let top-k rank/prune by the unmasked minmax. Include enabled masking policies for this part's
+    /// table in the gate so such parts reach the overlap check.
+#if CLICKHOUSE_CLOUD
+    const auto enabled_masking_policies = context->getAccess()->getEnabledMaskingPolicies();
+    const auto & storage_id = part->storage.getStorageID();
+    const bool has_masking_policies = enabled_masking_policies
+        && !enabled_masking_policies->getPolicies(storage_id.database_name, storage_id.table_name).empty();
+#else
+    const bool has_masking_policies = false;
+#endif
+
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasPatchParts() || has_masking_policies))
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , enabled_masking_policies
+#endif
+                );
 
         /// A pending delete hides rows of any value -> the index is stale. This covers both a
         /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
@@ -1187,7 +1212,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(*context, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1429,9 +1454,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t job = 0; job < num_jobs; ++job)
             {
                 pool.scheduleOrThrowOnError(
-                    [&, thread_group = CurrentThread::getGroup()]
+                    [&, thread_group = CurrentThread::getGroup(), component_name = Coordination::getCurrentComponent()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
+                        /// ThreadGroupSwitcher does not carry the Keeper component, so propagate it
+                        /// explicitly: skip-index analysis below may read from a Keeper-backed disk.
+                        auto local_component_guard = Coordination::setCurrentComponent(component_name);
 
                         /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
                         while (!pool.isFinished())
@@ -1585,9 +1613,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 }
 
 MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
-    const Settings & settings,
+    const Context & context,
     const SelectQueryInfo & query_info)
 {
+    const auto & settings = context.getSettingsRef();
     RowLimits row_limits;
 
     /// Do not check number of read rows if we are
@@ -1601,7 +1630,8 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
         && !query_info.input_order_info)
         row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+    if (context.getClientInfo().distributed_depth > 0
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
         && settings[Setting::max_rows_to_read_leaf]
         && !query_info.input_order_info)
         row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
@@ -2186,11 +2216,12 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -2276,6 +2307,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    /// The columns are unnamed, because `KeyCondition` names the function results it caches in this block.
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 
     /// Which key columns are reverse-sorted.
@@ -2375,7 +2407,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             chassert(i < index->size());
             chassert(index->at(i));
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], "");
         }
 
         /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
@@ -2426,7 +2458,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < num_analyzed_key_columns; ++i)
             {
                 if (i < index->size())
-                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], "");
                 else
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();
