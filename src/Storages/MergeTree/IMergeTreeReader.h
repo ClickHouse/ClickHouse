@@ -86,7 +86,10 @@ public:
 
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns) const;
+    /// `previous_step_columns` are the columns of the same rows read by earlier steps of the chain.
+    void performRequiredConversions(Columns & res_columns, const Block * previous_step_columns = nullptr) const;
+
+    bool convertsNullsToDefaults() const { return converts_nulls_to_defaults; }
 
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
@@ -272,6 +275,8 @@ private:
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
+
+    bool converts_nulls_to_defaults = false;
 };
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;

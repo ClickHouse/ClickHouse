@@ -103,6 +103,10 @@ IMergeTreeReader::IMergeTreeReader(
         }
         else
             serializations.emplace_back(std::move(serialization));
+
+        if (isNullableOrLowCardinalityNullable(column_to_read.type) && !isNullableOrLowCardinalityNullable(column.type)
+            && storage_snapshot->metadata->getColumns().hasDefault(column.name))
+            converts_nulls_to_defaults = true;
     }
 
     /// On-fly `UPDATE` and `DELETE` mutations are executed as steps ahead of PREWHERE, and their
@@ -660,7 +664,7 @@ bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDa
     return type_in_part.hasSubcolumn(subcolumn_name);
 }
 
-void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
+void IMergeTreeReader::performRequiredConversions(Columns & res_columns, const Block * previous_step_columns) const
 {
     try
     {
@@ -676,6 +680,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 
         /// We check types manually while iterating to avoid unnecessary copies
         Block copy_block;
+        bool replaces_nulls_with_defaults = false;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
@@ -702,14 +707,28 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
+            replaces_nulls_with_defaults |= converts_nulls_to_defaults && isNullableOrLowCardinalityNullable(column_in_part.type)
+                && !isNullableOrLowCardinalityNullable(name_and_type->type);
         }
 
         if (copy_block.empty())
             return;
 
+        Block row_columns;
+        if (previous_step_columns && replaces_nulls_with_defaults)
+        {
+            row_columns = *previous_step_columns;
+            name_and_type = getColumns().begin();
+            for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+                if (res_columns[pos] && !copy_block.has(name_and_type->name) && !row_columns.has(name_and_type->name))
+                    row_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+        }
+
         DB::performRequiredConversions(copy_block, getColumns(),
             data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+            storage_snapshot->metadata->getColumns().getDefaults(),
+            /*forbid_default_defaults=*/ false,
+            row_columns);
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

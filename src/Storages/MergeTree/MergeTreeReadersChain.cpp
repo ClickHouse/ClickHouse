@@ -28,12 +28,14 @@ LoggerPtr getMergeTreeReadersChainLogger()
 }
 
 static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_readers);
+static bool hasWritesAfterAlter(const RangeReaders & range_readers, const MergeTreePatchReaders & patch_readers);
 
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
     , patches_results(patch_readers.size())
     , columns_consumed_by_chain_actions(collectColumnsConsumedByChainActions(range_readers))
+    , has_writes_after_alter(hasWritesAfterAlter(range_readers, patch_readers))
     , is_initialized(true)
 {
     for (const auto & range_reader : range_readers)
@@ -273,6 +275,21 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
+/// Whether the chain may write a column after the pending `ALTER MODIFY COLUMN`: a patch part or an on-fly mutation newer than it.
+static bool hasWritesAfterAlter(const RangeReaders & range_readers, const MergeTreePatchReaders & patch_readers)
+{
+    for (const auto & patch_reader : patch_readers)
+        if (patch_reader->getPatchPart().perform_alter_conversions)
+            return true;
+
+    for (const auto & reader : range_readers)
+        if (const auto * prewhere_info = reader.getPrewhereInfo();
+            prewhere_info && prewhere_info->mutation_version && prewhere_info->perform_alter_conversions)
+            return true;
+
+    return false;
+}
+
 /// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
 /// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
 static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
@@ -399,6 +416,18 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     return read_result;
 }
 
+Block MergeTreeReadersChain::getPreviousStepsColumns(const Block & previous_header, const ReadResult & result)
+{
+    Block columns;
+    if (!previous_header.empty())
+        columns = previous_header.cloneWithColumns(result.columns);
+
+    for (const auto & col : result.additional_columns)
+        columns.insert(col);
+
+    return columns;
+}
+
 void MergeTreeReadersChain::executeActionsBeforePrewhere(
     ReadResult & result,
     Columns & read_columns,
@@ -497,7 +526,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// columns; keep them out of the skip set so the conversion still runs.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
-        merge_tree_reader->performRequiredConversions(read_columns);
+        Block previous_steps_columns;
+        /// A previous step may hold a value written after the ALTER, which the DEFAULT replacing NULLs must not read.
+        if (merge_tree_reader->convertsNullsToDefaults() && !has_writes_after_alter)
+            previous_steps_columns = getPreviousStepsColumns(previous_header, result);
+
+        merge_tree_reader->performRequiredConversions(read_columns, &previous_steps_columns);
     }
     else
     {
@@ -547,13 +581,7 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     const Block & previous_header,
     Columns & columns) const
 {
-    Block additional_columns;
-    if (!previous_header.empty())
-        additional_columns = previous_header.cloneWithColumns(result.columns);
-
-    for (const auto & col : result.additional_columns)
-        additional_columns.insert(col);
-
+    Block additional_columns = getPreviousStepsColumns(previous_header, result);
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
     range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
 }
