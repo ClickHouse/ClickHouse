@@ -30,9 +30,10 @@ def frame(meta):
 # 1) Message whose header_type = Schema(1) but the header union value offset is omitted.
 b = bytearray(32)
 struct.pack_into('<I', b, 0, 20)                                  # root -> Message table @20
-for o, v in [(4, 14), (6, 8), (8, 0), (10, 4), (12, 0), (14, 0), (16, 0)]:  # Message vtable, header slot(12)=0
+for o, v in [(4, 14), (6, 8), (8, 6), (10, 4), (12, 0), (14, 0), (16, 0)]:  # Message vtable, header slot(12)=0
     struct.pack_into('<H', b, o, v)
 struct.pack_into('<i', b, 20, 16); b[24] = 1                      # soffset; header_type=Schema, header ABSENT
+struct.pack_into('<h', b, 26, 4)                                  # version=V5, so the reader gets past that guard
 open(os.path.join(work, 'header.arrows'), 'wb').write(frame(bytes(b)))
 
 # 2) Valid Schema with one Field whose type_type = Int(2) but the type union value offset is omitted.
@@ -41,8 +42,9 @@ def p16(o, v): struct.pack_into('<H', b, o, v)
 def p32(o, v): struct.pack_into('<I', b, o, v)
 def pi32(o, v): struct.pack_into('<i', b, o, v)
 p32(0, 20)                                                        # root -> Message table @20
-p16(4, 14); p16(6, 12); p16(8, 0); p16(10, 4); p16(12, 8); p16(14, 0); p16(16, 0)  # Message vtable
+p16(4, 14); p16(6, 12); p16(8, 6); p16(10, 4); p16(12, 8); p16(14, 0); p16(16, 0)  # Message vtable
 pi32(20, 16); b[24] = 1; p32(28, 16)                             # Message table: header_type=Schema, header ->Schema
+struct.pack_into('<h', b, 26, 4)                                 # version=V5, so the reader gets past that guard
 p16(32, 12); p16(34, 8); p16(36, 0); p16(38, 4); p16(40, 0); p16(42, 0)            # Schema vtable
 pi32(44, 12); p32(48, 4)                                          # Schema table: fields ->vector
 p32(52, 1); p32(56, 24)                                           # fields vector: 1 element ->Field @80

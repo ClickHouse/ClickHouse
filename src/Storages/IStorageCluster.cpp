@@ -256,6 +256,8 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
+    /// The workers are leaves of a distributed read, like the shards of the `Distributed` fan-out.
+    new_context->increaseDistributedDepth();
     return new_context;
 }
 

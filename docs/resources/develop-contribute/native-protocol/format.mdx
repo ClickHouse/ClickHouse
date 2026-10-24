@@ -250,7 +250,7 @@ All Data-family packets share the same Block wire format. The variants differ on
 | Header block  | N > 0       | 0        | Announces the result schema (column names + types). |
 | Result block  | N > 0       | M > 0    | Actual result rows. |
 | Empty block   | 0           | 0        | Sentinel — end-of-input on the client side; boundary marker on the server side. |
-| Column-less row block | 0   | M > 0    | Rows that carry no values: only their number is the result. Written at revision `54495` and above (`DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`). |
+| Column-less row block | 0   | M > 0    | Rows that carry no values: only their number is the result. Written at revision `54496` and above (`DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`). |
 
 `num_rows` is written independently of `num_columns`, so a block can declare rows while carrying no
 columns at all. That is not a contradiction: a query can ask a server for a number of rows and nothing
@@ -261,7 +261,7 @@ count, it has no other source, and the count is not recoverable from the (empty)
 row count is all there is, a column-less block with `num_rows > 0` carries no column entries, exactly
 like the other `num_columns = 0` variants.
 
-A reader below revision `54495` rejects this variant (`INCORRECT_DATA`), so a writer only emits it once
+A reader below revision `54496` rejects this variant (`INCORRECT_DATA`), so a writer only emits it once
 the negotiated revision is at least that. Below it the writer refuses such a block with an error
 (`NOT_IMPLEMENTED`) instead of writing an empty block that would lose its rows, and an initiator that
 expects a result with no columns refuses a peer below the revision the same way. The writer's error
@@ -342,7 +342,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
 | Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54492` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). Gated purely on the revision, with no per-column wire marker. At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). The `Buffers` format is not part of the protocol and always uses the per-value layout. |
-| Row count of a column-less block | `DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT` | `54495` | A block with no columns always declares `num_rows = 0`, so rows that carry no values cannot be sent (see [block variants](#block-variants)). Below the threshold a reader that is given no header treats `num_columns = 0` with `num_rows > 0` as corruption and raises `INCORRECT_DATA`. |
+| Row count of a column-less block | `DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT` | `54496` | A block with no columns always declares `num_rows = 0`, so rows that carry no values cannot be sent (see [block variants](#block-variants)). Below the threshold a reader that is given no header treats `num_columns = 0` with `num_rows > 0` as corruption and raises `INCORRECT_DATA`. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `skip_degree` in `quantileDeterministic` state | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE` | `54491` | `AggregateFunction(quantileDeterministic, ...)` states (and the `quantiles`/`median` spellings of the same function) are written at state version `0`, without the trailing `UInt8 skip_degree`. See the note under [type aliases](#type-aliases). |
 | 64-bit hash sample in `uniq` state | `DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1` | `54493` | `AggregateFunction(uniq, ...)` states are written at state version `0`: no leading flags byte and no trailing sample of 64-bit hashes. See the note under [type aliases](#type-aliases). |

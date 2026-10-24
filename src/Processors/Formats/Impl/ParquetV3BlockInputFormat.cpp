@@ -18,12 +18,17 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace ProfileEvents
 {
     extern const Event ParquetReadMinMaxFromStatistics;
+    extern const Event ParquetFilesSkippedByCachedStatistics;
+    extern const Event ParquetMetadataCacheHits;
+    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace DB
@@ -75,8 +80,9 @@ static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStor
 
 /// The columns cache options for reading a file, or nullptr if the read does not use the cache.
 /// The cache is used only for a file whose content is identified by a strong version token:
-/// an ETag of an object in an object storage, or the version token of a local file once it has
-/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
+/// an ETag of an object in an object storage, the identity of an immutable file recorded by its
+/// table, or the version token of a local file once it has settled (see `StorageFile`), the same
+/// as for the userspace page cache. The file must also be
 /// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
 static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
     const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
@@ -90,7 +96,10 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     if (!enable_reads && !enable_writes)
         return nullptr;
 
-    if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+    if (!object_with_metadata || !object_with_metadata->metadata)
+        return nullptr;
+    const auto content_token = object_with_metadata->metadata->getContentCacheToken();
+    if (!content_token)
         return nullptr;
 
     if (!object_with_metadata->path_for_content_cache)
@@ -120,7 +129,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     const ObjectMetadata & metadata = *object_with_metadata->metadata;
     SipHash hash;
     hash.update(*object_with_metadata->path_for_content_cache);
-    hash.update(metadata.etag);
+    hash.update(*content_token);
     hash.update(metadata.size_bytes);
     /// The format settings that change the values decoded from the file without changing their
     /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
@@ -145,7 +154,8 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek,
     ParquetMetadataCachePtr metadata_cache_,
-    const std::optional<RelativePathWithMetadata> & object_with_metadata_)
+    const std::optional<RelativePathWithMetadata> & object_with_metadata_,
+    bool is_remote_fs_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
@@ -156,6 +166,7 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
     read_options.bytes_per_read_task = min_bytes_for_seek * 4;
+    read_options.is_remote_fs = is_remote_fs_;
 
     if (!format_filter_info)
         format_filter_info = std::make_shared<FormatFilterInfo>();
@@ -196,27 +207,176 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
+            auto cache_key = getMetadataCacheKey();
+            ParquetMetadataCache::MappedPtr cache_cell;
+            bool cache_hit = false;
+            if (cache_key)
+            {
+                std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(
+                    *cache_key, [&] { return readFileFooter(reader->reader.prefetcher); });
+                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
+                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                {
+                    metadata_cache_cell = cache_cell;
+                    metadata_cache_key = *cache_key;
+                }
+            }
+            else
+            {
+                reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
+            }
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+            if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
+            {
+                /// Ranges are collected only for the columns not kept yet, and only while they can still be kept.
+                Block key_block = getPort().getHeader();
+                for (const auto & column : format_filter_info->additional_columns)
+                    key_block.insert(column);
+                const auto & kept_statistics = *metadata_cache_cell->kept_statistics;
+                for (size_t idx : format_filter_info->key_condition->getUsedColumnsInOrder())
+                {
+                    if (idx >= key_block.columns())
+                        continue;
+                    const auto & column = key_block.getByPosition(idx);
+                    if (!kept_statistics.get(ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings)))
+                        reader->reader.collect_key_condition_column_ranges.push_back(idx);
+                }
+                reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
+            }
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+            /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
+            if (cache_hit)
+                metadata_cache->addColumnChunks(*cache_key, cache_cell, reader->reader.getColumnChunks());
         }
     }
 }
 
-parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
+std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
+        return ParquetMetadataCache::createKey(
+            object_with_metadata->getPath(),
+            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
+    return std::nullopt;
+}
+
+std::shared_ptr<const Parquet::FileFooter> ParquetV3BlockInputFormat::readFileFooter(Parquet::Prefetcher & prefetcher) const
+{
+    return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
+}
+
+std::shared_ptr<const Parquet::FileFooter> ParquetV3BlockInputFormat::getFileFooter(Parquet::Prefetcher & prefetcher) const
+{
+    if (auto cache_key = getMetadataCacheKey())
+        return metadata_cache->getOrSetMetadata(*cache_key, [&] { return readFileFooter(prefetcher); }).first->footer;
+    return readFileFooter(prefetcher);
+}
+
+void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
+{
+    std::lock_guard lock(reader_mutex);
+    if (!reader || !metadata_cache_cell || min_max_from_statistics)
+        return;
+    const auto & parquet_reader = reader->reader;
+    /// With a column mapper (data lakes) the column names do not identify the columns of the file.
+    if (!parquet_reader.key_condition_column_ranges_complete || format_filter_info->column_mapper)
+        return;
+    for (const auto & column_ranges : parquet_reader.key_condition_column_ranges)
     {
-        String file_name = object_with_metadata->getPath();
-        String etag = object_with_metadata->metadata->etag;
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        return metadata_cache->getOrSetMetadata(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
+        if (std::ranges::all_of(column_ranges.ranges, [](const Range & range) { return range.isInfinite(); }))
+            continue;
+        const auto & column = parquet_reader.extended_sample_block.getByPosition(column_ranges.idx);
+        String column_key = ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings);
+        if (metadata_cache && metadata_cache_key)
+            metadata_cache->keepStatistics(
+                *metadata_cache_key, metadata_cache_cell, column_key, column_ranges.ranges, column_ranges.bytes);
     }
-    else
+}
+
+String ParquetCachedStatisticsFilter::makeColumnKey(
+    const String & column_name, const IDataType & type, const FormatSettings & format_settings)
+{
+    const String type_name = type.getName();
+    const auto & parquet = format_settings.parquet;
+    return fmt::format(
+        "{}:{}{}:{}{}{}{}{}{}{}{}:{}:{}:{}:{}",
+        column_name.size(), column_name, type_name.size(), type_name,
+        format_settings.null_as_default, parquet.case_insensitive_column_matching, parquet.allow_missing_columns,
+        parquet.allow_geoparquet_parser, parquet.local_time_as_utc, parquet.enable_json_parsing, parquet.detect_variant_by_structure,
+        static_cast<int>(format_settings.date_time_overflow_behavior), format_settings.schema_inference_make_columns_nullable,
+        format_settings.schema_inference_make_json_columns_nullable, format_settings.schema_inference_allow_nullable_tuple_type);
+}
+
+std::shared_ptr<const ParquetCachedStatisticsFilter> ParquetCachedStatisticsFilter::create(
+    const FormatFilterInfoPtr & format_filter_info, const Block & header, const FormatSettings & format_settings)
+{
+    /// The reader builds the key condition for its header, which is `header` only if `getHeaderToParse` keeps it.
+    if (!format_filter_info || !format_filter_info->filter_actions_dag || format_filter_info->column_mapper
+        || !format_settings.parquet.filter_push_down
+        || AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(header, format_settings.aggregate_function_input_format))
+        return nullptr;
+
+    format_filter_info->initKeyConditionOnce(header);
+    const auto & key_condition = format_filter_info->key_condition;
+    if (!key_condition || key_condition->alwaysUnknownOrTrue())
+        return nullptr;
+
+    Block key_block = header;
+    for (const auto & column : format_filter_info->additional_columns)
+        key_block.insert(column);
+
+    auto filter = std::make_shared<ParquetCachedStatisticsFilter>();
+    filter->key_condition = key_condition;
+    for (size_t idx : key_condition->getUsedColumnsInOrder())
     {
-        return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+        if (idx >= key_block.columns())
+            return nullptr;
+        const auto & column = key_block.getByPosition(idx);
+        filter->column_keys.emplace_back(idx, makeColumnKey(column.name, *column.type, format_settings));
     }
+    if (filter->column_keys.empty())
+        return nullptr;
+    filter->key_types = key_block.getDataTypes();
+    return filter;
+}
+
+std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
+    ParquetMetadataCache & metadata_cache, const String & path, const String & version) const
+{
+    auto cell = metadata_cache.get(ParquetMetadataCache::createKey(path, version));
+    if (!cell)
+        return std::nullopt;
+
+    std::vector<std::pair<size_t, ParquetKeptStatistics::RangesPtr>> columns;
+    columns.reserve(column_keys.size());
+    for (const auto & [idx, key] : column_keys)
+        /// A column without kept ranges is unknown, like a column without statistics.
+        if (auto ranges = cell->kept_statistics->get(key))
+            columns.emplace_back(idx, std::move(ranges));
+    if (columns.empty())
+        return std::nullopt;
+
+    const size_t num_kept_row_groups = columns.front().second->size();
+    for (const auto & column : columns)
+        if (column.second->size() != num_kept_row_groups)
+            return std::nullopt;
+
+    Hyperrectangle hyperrectangle(key_types.size(), Range::createWholeUniverse());
+    for (size_t row_group = 0; row_group < num_kept_row_groups; ++row_group)
+    {
+        for (const auto & [idx, ranges] : columns)
+            hyperrectangle[idx] = (*ranges)[row_group];
+        if (key_condition->checkInHyperrectangle(hyperrectangle, key_types).can_be_true)
+            return std::nullopt;
+    }
+    return cell->footer->metadata.row_groups.size();
+}
+
+void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_row_groups)
+{
+    ProfileEvents::increment(ProfileEvents::ParquetFilesSkippedByCachedStatistics);
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, num_row_groups);
+    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
 }
 
 Chunk ParquetV3BlockInputFormat::read()
@@ -229,10 +389,10 @@ Chunk ParquetV3BlockInputFormat::read()
         /// Don't init Reader and ReadManager if we only need file metadata.
         Parquet::Prefetcher temp_prefetcher;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
+        auto footer = getFileFooter(temp_prefetcher);
 
 
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
@@ -277,7 +437,7 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
         if (produced_rows)
             matched.push_back(row_group.row_group_idx);
     }
-    return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
+    return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
 }
 
 std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
@@ -336,6 +496,8 @@ void ParquetV3BlockInputFormat::resetParser()
         std::lock_guard lock(reader_mutex);
         reader.reset();
         min_max_from_statistics = false;
+        metadata_cache_cell.reset();
+        metadata_cache_key.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
@@ -353,21 +515,21 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    file_footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
     initialized = true;
 }
 
 NamesAndTypesList NativeParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
-    Parquet::SchemaConverter schemer(file_metadata, read_options, /*sample_block*/ nullptr);
+    Parquet::SchemaConverter schemer(*file_footer, read_options, /*sample_block*/ nullptr);
     return schemer.inferSchema();
 }
 
 std::optional<size_t> NativeParquetSchemaReader::readNumberOrRows()
 {
     initializeIfNeeded();
-    return size_t(file_metadata.num_rows);
+    return size_t(file_footer->metadata.num_rows);
 }
 
 void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
@@ -431,9 +593,9 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
     std::vector<size_t> bucket_sizes;
-    for (const auto & row_group : metadata.row_groups)
+    for (const auto & row_group : footer->metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
 
     std::vector<std::vector<size_t>> buckets;
@@ -503,7 +665,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                 std::move(format_filter_info),
                 min_bytes_for_seek,
                 metadata_cache,
-                object_with_metadata
+                object_with_metadata,
+                is_remote_fs
             );
             format->setColumnsCacheOptions(getColumnsCacheOptions(context, settings, object_with_metadata));
             return format;
@@ -528,7 +691,8 @@ void registerInputFormatParquet(FormatFactory & factory)
             std::move(format_filter_info),
             min_bytes_for_seek,
             nullptr,
-            std::nullopt
+            std::nullopt,
+            is_remote_fs
         );
     });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
@@ -585,6 +749,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `MultiLineString` (GeoParquet) | [MultiLineString](/reference/data-types/geo#multilinestring) |
 | `MultiPolygon` (GeoParquet) | [MultiPolygon](/reference/data-types/geo#multipolygon) |
 | mixed/unknown geometry (GeoParquet) | [Geometry](/reference/data-types/geo#geometry) |
+| `GEOMETRY`, `GEOGRAPHY` | [Point](/reference/data-types/geo#point), [MultiPoint](/reference/data-types/geo#multipoint), [LineString](/reference/data-types/geo#linestring), [Polygon](/reference/data-types/geo#polygon), [MultiLineString](/reference/data-types/geo#multilinestring), [MultiPolygon](/reference/data-types/geo#multipolygon) or [Geometry](/reference/data-types/geo#geometry), see [Geo types](#geo-types) |
 | `VARIANT` | [Dynamic](/reference/data-types/dynamic) |
 | `FILE` | [Tuple](/reference/data-types/tuple) of `Nullable` fields, see [below](#file-type) |
 
@@ -597,12 +762,13 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 | [Date](/reference/data-types/date) (16 bits) | `DATE` (32 bits) |
 | [DateTime](/reference/data-types/datetime) (32 bits, seconds) | `TIMESTAMP` (64 bits, milliseconds) |
 | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint) | `FIXED_LEN_BYTE_ARRAY` (16/32 bytes, little-endian) |
-| [Point](/reference/data-types/geo#point) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
-| [MultiPoint](/reference/data-types/geo#multipoint) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
-| [LineString](/reference/data-types/geo#linestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
-| [Polygon](/reference/data-types/geo#polygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
-| [MultiLineString](/reference/data-types/geo#multilinestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
-| [MultiPolygon](/reference/data-types/geo#multipolygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
+| [Point](/reference/data-types/geo#point) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
+| [MultiPoint](/reference/data-types/geo#multipoint) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
+| [LineString](/reference/data-types/geo#linestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
+| [Polygon](/reference/data-types/geo#polygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
+| [MultiLineString](/reference/data-types/geo#multilinestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
+| [MultiPolygon](/reference/data-types/geo#multipolygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata, or `GEOMETRY` with `output_format_parquet_geometry_logical_type` |
+| [Geometry](/reference/data-types/geo#geometry) | `BYTE_ARRAY` (WKB), or `GEOMETRY` + GeoParquet metadata with `output_format_parquet_geometry_logical_type` |
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
@@ -647,18 +813,21 @@ On write, such a `Tuple` (with element names being a non-empty subset of the `FI
 
 ## Geo types (GeoParquet) {#geo-types}
 
-ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification. Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read), with a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS.
+ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification and the Parquet [`GEOMETRY` and `GEOGRAPHY` logical types](https://github.com/apache/parquet-format/blob/master/Geospatial.md). Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read for GeoParquet). GeoParquet uses a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS, while the logical types annotate the column itself, and the column chunk metadata contains `GeospatialStatistics` (a bounding box and the list of geometry types) instead of min/max statistics. A file can have both.
 
 ### Read behavior {#read}
 
 On read, geometry columns are mapped to the corresponding ClickHouse [geo data types](/reference/data-types/geo):
 * A column declared as `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` is read into the matching ClickHouse geo type.
 * A column with multiple or unknown geometry types is read into the [`Geometry`](/reference/data-types/geo#geometry) type, which is a `Variant` over all supported geo types.
-* If the requested column type is `String`, the GeoParquet metadata is ignored and the raw encoded geometry payload is returned as-is — WKB or WKT bytes, matching whichever encoding the GeoParquet column declares. This is also true if the setting [`input_format_parquet_allow_geoparquet_parser`](/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) is set to `0`.
+* For a column with the `GEOMETRY` or `GEOGRAPHY` logical type, the geometry type is taken from the GeoParquet metadata if the file has it. Otherwise, if the `GeospatialStatistics` of all column chunks list the same single 2D geometry type, the column is read into the matching geo type, and into `Geometry` otherwise. If a geo type is requested explicitly, the values are decoded directly into that type.
+* ClickHouse has no separate type for geography, so `GEOGRAPHY` columns are read into the same geo types as `GEOMETRY` (the coordinates are longitude and latitude), and the edge interpolation algorithm (the `algorithm` parameter) is not represented. The CRS (the `crs` parameter, `OGC:CRS84` by default) is not represented either. Geometries with Z or M coordinates are not supported.
+* The sort order of the `GEOMETRY` and `GEOGRAPHY` logical types is undefined, so min/max statistics and the column index of such columns are ignored. With [`input_format_parquet_spatial_filter_push_down`](/reference/settings/formats/input-format#input_format_parquet_spatial_filter_push_down), the bounding box from `GeospatialStatistics` is used to skip row groups.
+* If the requested column type is `String`, the GeoParquet metadata and the logical type are ignored and the raw encoded geometry payload is returned as-is — WKB or WKT bytes, matching whichever encoding the GeoParquet column declares. This is also true if the setting [`input_format_parquet_allow_geoparquet_parser`](/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) is set to `0` and no geo type is requested explicitly.
 
 ### Write behavior {#write}
 
-On write, top-level columns of type `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` are encoded as `BYTE_ARRAY` (WKB) and the appropriate `geo` JSON metadata is appended to the Parquet file footer. A top-level [`Geometry`](/reference/data-types/geo#geometry) `Variant` is also encoded as a WKB `BYTE_ARRAY` payload (its sub-values are converted to WKB and stored as a `Nullable(String)` column), but no `geo` metadata is emitted for it, so the result is not recognized as a GeoParquet geometry column on read. Other geo-related types, such as [`Ring`](/reference/data-types/geo#ring), are written using their native underlying representation with no GeoParquet metadata. This behavior can be disabled entirely by setting [`output_format_parquet_geometadata`](/reference/settings/formats/output-format#output_format_parquet_geometadata) to `0`, in which case even the supported geo types are written using their native underlying representation (`Point` as `Tuple(Float64, Float64)`, `LineString` as `Array(Point)`, `Polygon` as `Array(Array(Point))`, etc.) and no GeoParquet metadata is emitted.
+On write, top-level columns of type `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` are encoded as `BYTE_ARRAY` (WKB) and the appropriate `geo` JSON metadata is appended to the Parquet file footer. A top-level [`Geometry`](/reference/data-types/geo#geometry) `Variant` is also encoded as a WKB `BYTE_ARRAY` payload (its sub-values are converted to WKB and stored as a `Nullable(String)` column), but by default no `geo` metadata is emitted for it, so it is read back as `String`. These columns are written as `BYTE_ARRAY` with min/max statistics by default. With the setting [`output_format_parquet_geometry_logical_type`](/reference/settings/formats/output-format#output_format_parquet_geometry_logical_type) enabled, all these columns are annotated with the `GEOMETRY` logical type with the default CRS (`OGC:CRS84`), their column chunk metadata contains `GeospatialStatistics` (the bounding box and the geometry types) but no min/max statistics and no column index, as required by the specification, and a `Geometry` column is described in the `geo` metadata with an empty list of geometry types, so it is read back as `Geometry`. The setting is disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file. Other geo-related types, such as [`Ring`](/reference/data-types/geo#ring), are written using their native underlying representation with no GeoParquet metadata. This behavior can be disabled entirely by setting [`output_format_parquet_geometadata`](/reference/settings/formats/output-format#output_format_parquet_geometadata) to `0`, in which case even the supported geo types are written using their native underlying representation (`Point` as `Tuple(Float64, Float64)`, `LineString` as `Array(Point)`, `Polygon` as `Array(Array(Point))`, etc.) and no GeoParquet metadata is emitted.
 
 Geometry columns must appear at the root of the schema or nested inside `Tuple` (`struct`); nesting them inside `Array` or `Map` is not supported. `Nullable` is not supported for geo columns either.
 
@@ -729,7 +898,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `input_format_parquet_max_block_size`                                          | Max block size for parquet reader.                                                                                                                                                                                                | `65409`     |
 | `input_format_parquet_prefer_block_bytes`                                      | Average block bytes output by parquet reader                                                                                                                                                                                      | `16744704`  |
 | `input_format_parquet_enable_json_parsing`                                      | When reading Parquet files, parse JSON columns as ClickHouse JSON Column.                                                                                                                                                                                      | `1`  |
-| `input_format_parquet_allow_geoparquet_parser`                                  | When reading Parquet files, recognize the GeoParquet `geo` metadata and decode geometry columns (WKB or WKT, per the column's declared encoding) as ClickHouse geo data types. If `0`, geometry columns are exposed as their raw physical (`String`) representation.                                                                                                                                              | `1`         |
+| `input_format_parquet_allow_geoparquet_parser`                                  | When reading Parquet files, recognize the GeoParquet `geo` metadata and the `GEOMETRY` and `GEOGRAPHY` logical types, and decode geometry columns (WKB or WKT, per the column's declared encoding) as ClickHouse geo data types. If `0`, geometry columns are exposed as their raw physical (`String`) representation.                                                                                                                                              | `1`         |
 | `output_format_parquet_row_group_size`                                         | Target row group size in rows.                                                                                                                                                                                                      | `1000000`   |
 | `output_format_parquet_row_group_size_bytes`                                   | Target row group size in bytes, before compression.                                                                                                                                                                                  | `536870912` |
 | `output_format_parquet_string_as_string`                                       | Use Parquet String type instead of Binary for String columns.                                                                                                                                                                      | `1`         |
@@ -741,6 +910,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/reference/e
 | `output_format_parquet_batch_size`                                             | Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.                                                                                                              | `1024`      |
 | `output_format_parquet_write_page_index`                                       | Add a possibility to write page index into parquet files.                                                                                                                                                                          | `1`         |
 | `output_format_parquet_geometadata`                                            | Write GeoParquet `geo` metadata into the Parquet file footer and encode top-level ClickHouse geo columns ([`Point`](/reference/data-types/geo#point), [`MultiPoint`](/reference/data-types/geo#multipoint), [`LineString`](/reference/data-types/geo#linestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`MultiPolygon`](/reference/data-types/geo#multipolygon)) as WKB. If `0`, those columns are written using their native underlying representation (e.g. `Point` as `Tuple(Float64, Float64)`) and no GeoParquet metadata is emitted.                                                                                                                                                                          | `1`         |
+| `output_format_parquet_geometry_logical_type`                                  | Annotate the geo columns written as WKB with the Parquet `GEOMETRY` logical type and write `GeospatialStatistics` instead of min/max statistics for them. Has no effect if `output_format_parquet_geometadata` is `0`.                                                                                                                                                                                                  | `0`         |
 | `output_format_parquet_write_file_logical_type` | Write a named `Tuple` whose element names are fields of the Parquet `FILE` logical type as a `FILE`-annotated group, see [File references](#file-type). | `0` |
 | `input_format_parquet_import_nested`                                           | Obsolete setting, does nothing.                                                                                                                                                                                                   | `0`         |
 | `input_format_parquet_local_time_as_utc` | true | Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time. |

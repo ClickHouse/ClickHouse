@@ -5,6 +5,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -16,6 +17,14 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageFile.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
@@ -51,6 +60,7 @@ namespace Setting
     extern const SettingsString format;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -186,6 +196,63 @@ void LocalConnection::captureCurrentException()
     {
         state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
+}
+
+/// Reads the data of `INSERT ... FROM INFILE` from the file, with globs and compression, the same way as `ClientBase::sendData` does.
+static QueryPipeline createPipeFromInsertInfile(
+    const ASTInsertQuery & insert, const String & format, const ColumnsDescription & columns_description, const Block & sample, ContextPtr context)
+{
+    const auto in_file = insert.infile->as<ASTLiteral &>().value.safeGet<String>();
+
+    String compression_method;
+    if (insert.compression)
+        compression_method = insert.compression->as<ASTLiteral &>().value.safeGet<String>();
+
+    /// `StorageFile` doesn't support ephemeral, materialized and alias columns, so the columns of the block are read as ordinary ones.
+    ColumnsDescription columns_for_storage_file;
+    for (const auto & column_in_sample : sample)
+    {
+        ColumnDescription column = columns_description.has(column_in_sample.name)
+            ? columns_description.get(column_in_sample.name)
+            : ColumnDescription(column_in_sample.name, column_in_sample.type);
+        column.type = column_in_sample.type;
+        column.default_desc.kind = ColumnDefaultKind::Default;
+        columns_for_storage_file.add(std::move(column));
+    }
+
+    StorageFile::CommonArguments args{
+        WithContext(context),
+        insert.table_id,
+        format,
+        getFormatSettings(context),
+        compression_method,
+        columns_for_storage_file,
+        ConstraintsDescription{},
+        String{},
+        {},
+    };
+    StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, context), args);
+    storage->startup();
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    SelectQueryInfo query_info;
+    QueryPlan plan;
+    storage->read(
+        plan,
+        sample.getNames(),
+        storage->getStorageSnapshot(metadata, context),
+        query_info,
+        context,
+        {},
+        context->getSettingsRef()[Setting::max_block_size],
+        getNumberOfCPUCoresToUse());
+
+    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    QueryPlanResourceHolder resources;
+    QueryPipeline pipeline(QueryPipelineBuilder::getPipe(std::move(*builder), resources));
+    pipeline.addResources(std::move(resources));
+    pipeline.addStorageHolder(storage);
+    return pipeline;
 }
 
 void LocalConnection::sendQuery(
@@ -358,13 +425,10 @@ void LocalConnection::sendQuery(
     next_packet_type.reset();
 
     /// Prepare input() function
-    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription & columns_description, const Block & sample)
     {
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
-
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-        Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;
         state->block = sample;
@@ -471,11 +535,11 @@ void LocalConnection::sendQuery(
                     state->max_parser_backtracks);
         }
 
-        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
-        {
-            if (!insert->format.empty())
-                current_format = insert->format;
-        }
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && !insert->format.empty())
+            current_format = insert->format;
+        else if (insert && insert->infile)
+            current_format = FormatFactory::instance().getFormatFromFileName(insert->infile->as<ASTLiteral &>().value.safeGet<String>());
 
         /// `input_format` / `format` settings override the FORMAT for input (mirrors
         /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
@@ -484,6 +548,15 @@ void LocalConnection::sendQuery(
             current_format = settings[Setting::input_format];
         else if (!settings[Setting::format].value.empty())
             current_format = settings[Setting::format];
+
+        if (insert && insert->infile)
+        {
+            /// The data of `INSERT ... RETURNING ... FROM INFILE` is read from the file, the same way as `ClientBase::sendData` does.
+            state->input_pipeline = std::make_unique<QueryPipeline>(
+                createPipeFromInsertInfile(*insert, current_format, columns_description, sample, context));
+            state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(*state->input_pipeline);
+            return;
+        }
 
         chassert(in, "ReadBuffer should be initialized");
 
@@ -498,7 +571,6 @@ void LocalConnection::sendQuery(
             settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
-        auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
             pipe.addSimpleTransform([&](const SharedHeader & header)

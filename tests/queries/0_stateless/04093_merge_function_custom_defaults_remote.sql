@@ -3,8 +3,6 @@
 -- for columns missing in some underlying remote/distributed tables.
 -- Uses the data type's zero default, consistent with the local MergeTree path.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS r_t1;
 DROP TABLE IF EXISTS r_t2;
 DROP TABLE IF EXISTS t1;
