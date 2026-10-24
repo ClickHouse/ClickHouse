@@ -160,6 +160,8 @@ private:
 
     void checkStatementCanBeForwarded() const;
 
+    void dropInnerTables(bool sync, ContextPtr local_context, bool need_ddl_guard);
+
     ContextMutablePtr createRefreshContext(const String & log_comment) const;
     /// Prepare to refresh a refreshable materialized view: create temporary table (if needed) and
     /// form the insert-select query.

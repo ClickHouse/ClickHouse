@@ -390,6 +390,7 @@ static struct InitFiu
     REGULAR(smt_part_update_duplicated_part) \
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
+    PAUSEABLE_ONCE(restart_replica_pause_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
