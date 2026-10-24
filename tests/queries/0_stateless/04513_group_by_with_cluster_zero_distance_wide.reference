@@ -1,0 +1,11 @@
+uint64 wide
+2	2
+uint64 adjacent
+3	3
+int64 wide
+3	3
+datetime64 wide
+2	2
+2d uint64 wide
+3	3
+distance > 0 still rejects wide range
