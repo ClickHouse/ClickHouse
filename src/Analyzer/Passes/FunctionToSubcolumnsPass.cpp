@@ -24,6 +24,10 @@
 
 #include <Storages/IStorage.h>
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
@@ -963,6 +967,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Object, "arrayElement"},
 };
 
 /// Transformers that should mark their identifier for filter-only optimization
@@ -998,6 +1003,7 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
+    {TypeIndex::Object, "arrayElement"},
 };
 
 /// The constant path element `tupleElement` (a `String` only) or `arrayElement` (also a `Nullable` or `LowCardinality` one)
@@ -1190,6 +1196,21 @@ void optimizeJSONArrayElementChain(
     /// First element is back-quoted (required by tryGetPrefixedSubcolumn);
     /// subsequent elements are plain dot-separated path components.
     const auto & data_type_object = assert_cast<const DataTypeObject &>(*ctx.column.type);
+    const auto & typed_paths = data_type_object.getTypedPaths();
+
+    /// Don't flatten across typed subcolumn boundaries (e.g. JSON(a JSON) or JSON(a Map)).
+    if (!typed_paths.empty())
+    {
+        String prefix;
+        for (size_t i = 0; i + 1 < keys.size(); ++i)
+        {
+            if (i > 0)
+                prefix += ".";
+            prefix += keys[i];
+            if (typed_paths.contains(prefix))
+                return;
+        }
+    }
 
     String subcolumn_name = DataTypeObject::getCombinedSubcolumnName(keys[0]);
     for (size_t i = 1; i < keys.size(); ++i)
@@ -1572,6 +1593,7 @@ public:
 
 private:
     ColumnInSourceSet all_key_columns;
+    ColumnInSourceMap<std::unordered_set<String>> key_subscript_keys;
     ColumnInSourceMap<UInt64> identifiers_count;
     ColumnInSourceMap<UInt64> optimized_identifiers_count;
     /// Counts only uses of transformers from `transformers_safe_with_indexes`.
@@ -1597,6 +1619,34 @@ private:
     /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c').
     std::unordered_set<const IQueryTreeNode *> chained_pattern_inner_nodes;
 
+    static void collectKeySubscriptKeys(
+        const IAST * ast,
+        ColumnInSourceMap<std::unordered_set<String>> & subscript_keys,
+        const QueryTreeNodePtr & column_source)
+    {
+        if (!ast)
+            return;
+
+        if (const auto * func = ast->as<ASTFunction>())
+        {
+            if (func->name == "arrayElement" && func->arguments && func->arguments->children.size() == 2)
+            {
+                const auto & args = func->arguments->children;
+                if (const auto * ident = args[0]->as<ASTIdentifier>())
+                {
+                    if (const auto * lit = args[1]->as<ASTLiteral>())
+                    {
+                        if (lit->value.getType() == Field::Types::String)
+                            subscript_keys[makeColumnInSource(column_source, ident->name())].insert(lit->value.safeGet<String>());
+                    }
+                }
+            }
+        }
+
+        for (const auto & child : ast->children)
+            collectKeySubscriptKeys(child.get(), subscript_keys, column_source);
+    }
+
     void enterColumnSource(const QueryTreeNodePtr & column_source)
     {
         auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
@@ -1620,6 +1670,19 @@ private:
 
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
             add_key_columns(index.expression->getRequiredColumns());
+
+        collectKeySubscriptKeys(metadata_snapshot->getPrimaryKeyAST().get(), key_subscript_keys, column_source);
+        collectKeySubscriptKeys(metadata_snapshot->getSortingKeyAST().get(), key_subscript_keys, column_source);
+        collectKeySubscriptKeys(metadata_snapshot->getPartitionKeyAST().get(), key_subscript_keys, column_source);
+        collectKeySubscriptKeys(metadata_snapshot->getPrimaryKey().expression_list_ast.get(), key_subscript_keys, column_source);
+        collectKeySubscriptKeys(metadata_snapshot->getSortingKey().expression_list_ast.get(), key_subscript_keys, column_source);
+        collectKeySubscriptKeys(metadata_snapshot->getPartitionKey().expression_list_ast.get(), key_subscript_keys, column_source);
+
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        {
+            collectKeySubscriptKeys(index.definition_ast.get(), key_subscript_keys, column_source);
+            collectKeySubscriptKeys(index.expression_list_ast.get(), key_subscript_keys, column_source);
+        }
     }
 
     void enterImpl(const ColumnNode & column_node)
@@ -1660,7 +1723,28 @@ private:
         {
             ++optimized_identifiers_count[qualified_name];
             if (transformers_safe_with_indexes.contains(transformer_key))
-                ++optimized_identifiers_index_safe_count[qualified_name];
+            {
+                bool is_index_safe = true;
+                if (column.type->getTypeId() == TypeIndex::Object && function_node.getFunctionName() == "arrayElement")
+                {
+                    auto it = key_subscript_keys.find(qualified_name);
+                    if (it != key_subscript_keys.end())
+                    {
+                        const auto & args = function_node.getArguments().getNodes();
+                        if (args.size() == 2)
+                        {
+                            if (auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true))
+                            {
+                                if (it->second.contains(*key))
+                                    is_index_safe = false;
+                            }
+                        }
+                    }
+                }
+
+                if (is_index_safe)
+                    ++optimized_identifiers_index_safe_count[qualified_name];
+            }
             if (transformers_optimize_in_filter_with_full_column.contains(transformer_key)
                 && !in_where_prewhere_stack.empty() && in_where_prewhere_stack.back())
                 identifiers_with_filter_optimization.insert(qualified_name);
