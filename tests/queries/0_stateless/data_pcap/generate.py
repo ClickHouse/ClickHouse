@@ -288,6 +288,12 @@ non_first_fragment = bytes([60, 0]) + struct.pack(">HI", 2 << 3, 0x12345678) + b
 padded_options.append(ethernet(ipv6(44, non_first_fragment), ether_type=0x86DD))
 write_pcap(out_dir / "options.pcap", [(packet, len(packet)) for packet in padded_options])
 
+# A raw IPv4 header with options (`IHL = 6`) cut by the snapshot length inside
+# the options, after both addresses: the header is not dissected, but the
+# version, the TTL, the protocol and the addresses are in the captured bytes.
+ip_with_options = ipv4_with_options(17, end_of_options, udp_ping)
+write_pcap(out_dir / "truncated_ip_options.pcap", [(ip_with_options[:22], len(ip_with_options))], snaplen=22, linktype=101)
+
 # First fragments (fragment offset 0, "more fragments" set): the transport
 # header is in this fragment, so the ports, the TCP fields, and the part of the
 # payload in this fragment are decoded. An IPv4 TCP first fragment, and an IPv6

@@ -44,6 +44,7 @@
 #include <pcap/pcap.h>
 
 #include <array>
+#include <bit>
 #include <optional>
 
 namespace DB
@@ -509,8 +510,9 @@ Tins::PDU::PDUType outerLayerType(int dlt, const uint8_t * data, UInt32 caplen, 
     return root.pdu_type();
 }
 
-/// The protocol named by the type field of an Ethernet II header, an 802.1Q tag or a `SNAP`
-/// header, or `UNKNOWN` for other layers and for type values that `libtins` does not know.
+/// The protocol named by the type field of an Ethernet II header, an 802.1Q tag, a `SNAP` header
+/// or a Linux cooked capture header, or by the address family of a BSD loopback header, or
+/// `UNKNOWN` for other layers and for type values that `libtins` does not know.
 Tins::PDU::PDUType carriedProtocol(const Tins::PDU & layer)
 {
     UInt16 type = 0;
@@ -520,9 +522,57 @@ Tins::PDU::PDUType carriedProtocol(const Tins::PDU & layer)
         type = tag->payload_type();
     else if (const auto * snap = dynamic_cast<const Tins::SNAP *>(&layer))
         type = snap->eth_type();
+    else if (const auto * sll = dynamic_cast<const Tins::SLL *>(&layer))
+        type = sll->protocol();
+    else if (const auto * loopback = dynamic_cast<const Tins::Loopback *>(&layer))
+    {
+        /// The address family is in the byte order of the capturing host. `AF_INET` is 2 everywhere,
+        /// while `AF_INET6` is 24 on NetBSD and OpenBSD, 28 on FreeBSD and 30 on macOS.
+        UInt32 family = loopback->family();
+        if (family > 0xFFFF)
+            family = std::byteswap(family);
+        if (family == 2)
+            return Tins::PDU::IP;
+        if (family == 24 || family == 28 || family == 30)
+            return Tins::PDU::IPv6;
+        return Tins::PDU::UNKNOWN;
+    }
     else
         return Tins::PDU::UNKNOWN;
     return Tins::Internals::ether_type_to_pdu_flag(static_cast<Tins::Constants::Ethernet::e>(type));
+}
+
+/// The captured part of an outermost IP header that the snapshot length cut, so that `libtins`
+/// did not dissect it.
+struct CutIPHeader
+{
+    UInt8 version = 0;
+    const uint8_t * data = nullptr;
+    size_t size = 0;
+};
+
+/// Finds the outermost IP header cut by the snapshot length in a frame without a dissected IP
+/// layer: the raw tail of the frame (see `dissectCompleteOuterHeaders`) is such a header when the
+/// layer before it, or the link type of a raw IP capture, names IP, and its version nibble agrees.
+std::optional<CutIPHeader> findCutIPHeader(int dlt, const uint8_t * data, UInt32 caplen, const Tins::PDU & root)
+{
+    const Tins::PDU * carrier = nullptr;
+    const Tins::PDU * last = &root;
+    while (last->inner_pdu() != nullptr)
+    {
+        carrier = last;
+        last = last->inner_pdu();
+    }
+
+    const auto * raw = dynamic_cast<const Tins::RawPDU *>(last);
+    if (raw == nullptr || raw->payload().empty())
+        return {};
+
+    const auto expected = carrier == nullptr ? outerLayerType(dlt, data, caplen, root) : carriedProtocol(*carrier);
+    const UInt8 version = raw->payload()[0] >> 4;
+    if ((expected == Tins::PDU::IP && version == 4) || (expected == Tins::PDU::IPv6 && version == 6))
+        return CutIPHeader{version, raw->payload().data(), raw->payload().size()};
+    return {};
 }
 
 /// The IPv6 extension headers (RFC 8200 and RFC 7045). `No Next Header` (59) and `ESP` (50)
@@ -941,10 +991,25 @@ Chunk PCAPBlockInputFormat::read()
             ipv6 = dynamic_cast<const Tins::IPv6 *>(p);
         }
 
+        /// When the snapshot length cut the outer IP header, the fields that were captured are
+        /// still taken from its bytes, so that the packet is not mistaken for a non-IP one.
+        std::optional<CutIPHeader> cut_ip;
+        if (ipv4 == nullptr && ipv6 == nullptr)
+            cut_ip = findCutIPHeader(dlt, data, caplen, *pdu);
+
+        /// The byte at `offset` of the cut IP header, if it was captured.
+        auto cut_ip_byte = [&](size_t offset) -> std::optional<UInt8>
+        {
+            if (cut_ip && offset < cut_ip->size)
+                return cut_ip->data[offset];
+            return {};
+        };
+
         if (need[COL_IP_VERSION])
         {
             if (ipv4) { col_ip_version->insertValue(4); col_ip_version_null->insertValue(0); }
             else if (ipv6) { col_ip_version->insertValue(6); col_ip_version_null->insertValue(0); }
+            else if (cut_ip) { col_ip_version->insertValue(cut_ip->version); col_ip_version_null->insertValue(0); }
             else { col_ip_version->insertDefault(); col_ip_version_null->insertValue(1); }
         }
 
@@ -952,7 +1017,8 @@ Chunk PCAPBlockInputFormat::read()
         {
             IPv6 src{};
             IPv6 dst{};
-            bool has = true;
+            bool has_src = true;
+            bool has_dst = true;
             if (ipv4)
             {
                 writeIPv4Mapped(static_cast<UInt32>(ipv4->src_addr()), src);
@@ -963,17 +1029,48 @@ Chunk PCAPBlockInputFormat::read()
                 writeIPv6(ipv6->src_addr(), src);
                 writeIPv6(ipv6->dst_addr(), dst);
             }
+            else if (cut_ip)
+            {
+                /// Each address is filled only when all of its bytes were captured.
+                const size_t address_size = cut_ip->version == 4 ? 4 : 16;
+                const size_t src_offset = cut_ip->version == 4 ? 12 : 8;
+                const size_t dst_offset = src_offset + address_size;
+                auto write_address = [&](size_t offset, IPv6 & out)
+                {
+                    if (offset + address_size > cut_ip->size)
+                        return false;
+                    if (address_size == 4)
+                    {
+                        UInt32 address_be = 0;
+                        memcpy(&address_be, cut_ip->data + offset, 4);
+                        writeIPv4Mapped(address_be, out);
+                    }
+                    else
+                        memcpy(&out.toUnderType(), cut_ip->data + offset, 16);
+                    return true;
+                };
+                has_src = write_address(src_offset, src);
+                has_dst = write_address(dst_offset, dst);
+            }
             else
-                has = false;
+            {
+                has_src = false;
+                has_dst = false;
+            }
 
-            if (need[COL_SRC_ADDR]) { col_src_addr->insertValue(src); col_src_addr_null->insertValue(has ? 0 : 1); }
-            if (need[COL_DST_ADDR]) { col_dst_addr->insertValue(dst); col_dst_addr_null->insertValue(has ? 0 : 1); }
+            if (need[COL_SRC_ADDR]) { col_src_addr->insertValue(src); col_src_addr_null->insertValue(has_src ? 0 : 1); }
+            if (need[COL_DST_ADDR]) { col_dst_addr->insertValue(dst); col_dst_addr_null->insertValue(has_dst ? 0 : 1); }
         }
 
         if (need[COL_IP_TTL])
         {
+            std::optional<UInt8> cut_ttl;
+            if (cut_ip)
+                cut_ttl = cut_ip_byte(cut_ip->version == 4 ? 8 : 7);
+
             if (ipv4) { col_ip_ttl->insertValue(ipv4->ttl()); col_ip_ttl_null->insertValue(0); }
             else if (ipv6) { col_ip_ttl->insertValue(ipv6->hop_limit()); col_ip_ttl_null->insertValue(0); }
+            else if (cut_ttl) { col_ip_ttl->insertValue(*cut_ttl); col_ip_ttl_null->insertValue(0); }
             else { col_ip_ttl->insertDefault(); col_ip_ttl_null->insertValue(1); }
         }
 
@@ -992,6 +1089,13 @@ Chunk PCAPBlockInputFormat::read()
                 name = ipProtocolName(ipv4->protocol());
             else if (ipv6)
                 name = ipProtocolName(ipv6FinalNextHeader(*ipv6, data, caplen, offsetOfLayer(*pdu, *ipv6, data, caplen)));
+            else if (cut_ip)
+            {
+                /// The extension headers of a cut IPv6 header were not captured, so the type of the
+                /// first one is reported, as for an extension header cut by the snapshot length.
+                if (const auto protocol = cut_ip_byte(cut_ip->version == 4 ? 9 : 6))
+                    name = ipProtocolName(*protocol);
+            }
             col_ip_protocol->insertData(name.data(), name.size());
         }
 
@@ -1221,10 +1325,10 @@ The `PCAP` format produces the following columns:
 | `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |
 | `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id`. For an IEEE 802.3 frame it is `LLC`, or the protocol named in the `SNAP` header. When the snapshot length cuts the header of that protocol, or leaves none of it, it is still named from the type field, for example `IP`, while `protocols` ends with `RAW` or with the last complete header |
 | `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier of the tag right after the outermost Ethernet header, if present |
-| `ip_version` | `Nullable(UInt8)` | Version of the outermost IP header, `4` or `6`, or `NULL` for non-IP packets |
-| `src_addr` | `Nullable(IPv6)` | Source address of the outermost IP header; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
+| `ip_version` | `Nullable(UInt8)` | Version of the outermost IP header, `4` or `6`, or `NULL` for non-IP packets. When the snapshot length cuts the IP header, it and the other IP columns are still taken from the captured bytes of the header, and the fields that were not captured are `NULL` (or empty for `ip_protocol`) |
+| `src_addr` | `Nullable(IPv6)` | Source address of the outermost IP header; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`). `NULL` when the snapshot length cut it |
 | `dst_addr` | `Nullable(IPv6)` | Destination address of the outermost IP header |
-| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outermost IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`. When the snapshot length cuts an IPv6 extension header, it is the type of that header, for example `IPv6-Route`. It is filled even when the transport header itself was not captured or is not in the packet (a fragment other than the first one), in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
+| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outermost IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`. When the snapshot length cuts an IPv6 extension header, or the fixed IPv6 header after its `next header` field, it is the type of that header, for example `IPv6-Route`. It is filled even when the transport header itself was not captured or is not in the packet (a fragment other than the first one), in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
 | `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit of the outermost IP header |
 | `src_port` | `Nullable(UInt16)` | Source port of the TCP or UDP header directly inside the outermost IP header |
 | `dst_port` | `Nullable(UInt16)` | Destination port of the TCP or UDP header directly inside the outermost IP header |

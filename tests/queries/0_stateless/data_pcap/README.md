@@ -43,6 +43,9 @@ rewrite each other's files.
   marker followed by padding, so the payload starts at the captured header
   length, and a non-first IPv6 fragment whose data looks like an extension
   header, so the extension-header chain stops at the Fragment header.
+- `truncated_ip_options.pcap` — a raw IPv4 packet whose header has options and
+  is cut inside them, after both addresses, so the header is not dissected, but
+  the IP columns are taken from its captured bytes.
 - `fragments.pcap` — a first IPv4 fragment of a TCP segment and a first IPv6
   fragment of a UDP datagram (fragment offset 0, more fragments), so the
   transport header in them is decoded.
