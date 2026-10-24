@@ -39,9 +39,12 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
 {
     auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
 
-    /// A definition is checked as a new one unless it is loaded from existing metadata. A definition that was
-    /// loaded from existing metadata before is not checked again when its disk is created anew after being
-    /// released: before the disks were released, it would have been reused without any checks.
+    /// The restrictions on user queries (credentials, `include`, `from_env`, `from_zk`, the disk name) are
+    /// applied to every definition that is not loaded from existing metadata, even if a disk with this
+    /// definition exists: they do not depend on whether the disk is created or reused.
+    /// Only the checks done when the disk itself is created are relaxed for a definition that was loaded from
+    /// existing metadata before and whose disk is created anew after being released: before the disks were
+    /// released, the existing disk would have been reused without creating it again.
     const bool existing_definition = attach || context->isCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
 
     const auto & server_config = context->getConfigRef();
@@ -50,7 +53,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
         DynamicS3DiskCredentialInfo s3_disk_info;
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, existing_definition, &s3_disk_info, for_system_database);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach, &s3_disk_info, for_system_database);
 
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
@@ -62,7 +65,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
             xml_document,
             substitutions,
             include_from_path,
-            /* throw_on_bad_incl= */!existing_definition,
+            /* throw_on_bad_incl= */!attach,
             dom_parser,
             getLogger("getOrCreateCustomDisk"),
             /*contributing_zk_paths=*/ {},
@@ -78,9 +81,9 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         if (s3_disk_info.load_anonymously)
             forceAnonymousS3DiskConfig(*config);
         else
-            validateResolvedS3DiskCredentials(*config, context, existing_definition, s3_disk_info);
+            validateResolvedS3DiskCredentials(*config, context, attach, s3_disk_info);
 
-        validateResolvedAzureDiskCredentials(*config, context, existing_definition, for_system_database);
+        validateResolvedAzureDiskCredentials(*config, context, attach, for_system_database);
     }
 
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
@@ -91,7 +94,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
             ErrorCodes::BAD_ARGUMENTS,
             "Disk function must have arguments. Invalid disk description.");
 
-    if (disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name" && !existing_definition)
+    if (disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name" && !attach)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Disk function `{}` must have other arguments apart from `name`, which describe disk configuration. Invalid disk description.",
@@ -110,7 +113,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    if (!existing_definition && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
+    if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
     /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name, see `Context::getOrCreateCustomDisk`.
