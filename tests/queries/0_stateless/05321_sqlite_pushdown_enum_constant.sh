@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A string column is compared with an `Enum` constant by the Enum's name, a numeric column by its value. The
+# A string column is compared for equality with an `Enum` constant by the Enum's name, a numeric column by its value. The
 # filter pushed to the external database must select the rows the local filter selects, so the constant must
 # reach it in that form, also inside a tuple, an `IN` list, a `Nullable`, a `Variant` or a `Dynamic`.
 
@@ -39,7 +39,6 @@ E2="CAST('3', 'Enum8(\\'3\\' = 4)')"
 VE="CAST(CAST('7', 'Enum8(\\'7\\' = 3, \\'3\\' = 4)') AS Variant(Enum8('7' = 3, '3' = 4), Array(UInt8)))"
 VE2="CAST(CAST('3', 'Enum8(\\'7\\' = 3, \\'3\\' = 4)') AS Variant(Enum8('7' = 3, '3' = 4), Array(UInt8)))"
 VS="Variant(String, Array(UInt8))"
-VT="CAST(CAST(($E, 4), 'Tuple(Enum8(\\'7\\' = 3), UInt8)') AS Variant(Tuple(Enum8('7' = 3), UInt8), String))"
 
 # Prints the rows, then the query sent to SQLite.
 function check()
@@ -53,15 +52,12 @@ function check()
 check 's = E' "s = $E"
 check 'E = s' "$E = s"
 check 's != E' "s != $E"
-check 's < E' "s < $E"
 check 's IN (E)' "s IN ($E)"
 check 's IN (E, E2)' "s IN ($E, $E2)"
 check 's NOT IN (E)' "s NOT IN ($E)"
 check 's IN (E, x)' "s IN ($E, 'x')"
 check '(s, n) IN ((E, 3))' "(s, n) IN (($E, 3))"
 check '(s, n) IN ((E, 3), (E2, 3))' "(s, n) IN (($E, 3), ($E2, 3))"
-check '(s, n) < (E, 4)' "(s, n) < ($E, 4)"
-check '(s, n) < (E, 2.5)' "(s, n) < ($E, 2.5)"
 check 's = toNullable(E)' "s = toNullable($E)"
 check 's = E OR n = 42' "s = $E OR n = 42"
 check 's = Dynamic(E)' "s = CAST($E AS Dynamic)"
@@ -72,13 +68,9 @@ check 'n = Variant(E)' "n = $VE"
 check 's IN (Variant(E), Variant(E2))' "s IN ($VE, $VE2)"
 check 'n IN (Variant(E), Variant(E2))' "n IN ($VE, $VE2)"
 check 's IN (Variant(7), Variant(x))' "s IN (CAST('7' AS $VS), CAST('x' AS $VS))"
-check '(s, f) < (E, toDecimal64(4, 1))' "(s, f) < ($E, toDecimal64(4, 1))"
 check 'n = E' "n = $E"
 check 'n IN (E)' "n IN ($E)"
 check 'f = E' "f = $E"
-check '(s, n) < Nullable((E, 4))' "(s, n) < toNullable(($E, 4))"
-check '(s, n) < Dynamic((E, 4))' "(s, n) < CAST(($E, 4) AS Dynamic)"
-check '(s, n) < Variant((E, 4))' "(s, n) < $VT"
 check '(s, n) IN (Nullable((E, 3)))' "(s, n) IN (toNullable(($E, 3)))"
 # A one-element tuple key: the local set holds the Enum's value as text, and the pushed filter follows it.
 check 'tuple(s) IN (tuple(E))' "tuple(s) IN (tuple($E))"
@@ -88,8 +80,6 @@ echo '(s, n) < (E, x)'
 ${CLICKHOUSE_CLIENT} --query "SELECT s FROM t_05321 WHERE (s, n) < ($E, 'x')" 2>&1 | grep -o 'TYPE_MISMATCH' | head -1
 
 # An Enum constant the filter cannot be written with keeps its conjunct local.
-check '(s, n) < (E, n)' "(s, n) < ($E, n)"
-check '(s, n) < (E, n) AND n = 3' "(s, n) < ($E, n) AND n = 3"
 check '(s, n) IN ((E, NULL))' "(s, n) IN (($E, NULL))"
 
 echo 'strict (s, n) < (E, n)'

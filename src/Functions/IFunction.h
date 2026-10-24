@@ -731,6 +731,8 @@ public:
     virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    /// The same for the given argument types, for a function whose answer depends on them.
+    virtual bool canBeExecutedOnDefaultArguments(const DataTypes & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
 
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }

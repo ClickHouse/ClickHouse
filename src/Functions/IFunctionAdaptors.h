@@ -10,7 +10,15 @@ namespace DB
 class FunctionToExecutableFunctionAdaptor final : public IExecutableFunction
 {
 public:
-    explicit FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
+    explicit FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_)
+        : function(std::move(function_)), can_be_executed_on_default_arguments(function->canBeExecutedOnDefaultArguments())
+    {
+    }
+
+    FunctionToExecutableFunctionAdaptor(std::shared_ptr<IFunction> function_, const DataTypes & arguments)
+        : function(std::move(function_)), can_be_executed_on_default_arguments(function->canBeExecutedOnDefaultArguments(arguments))
+    {
+    }
 
     String getName() const override { return function->getName(); }
     void cancelExecution() const override { function->cancelExecution(); }
@@ -29,7 +37,7 @@ protected:
     bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
-    bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
+    bool canBeExecutedOnDefaultArguments() const override { return can_be_executed_on_default_arguments; }
     /// TODO: most functions still answer this through `isSuitableForShortCircuitArgumentsExecution`
     /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
     /// should become the conservative `true` instead of that approximation.
@@ -38,6 +46,7 @@ protected:
 
 private:
     std::shared_ptr<IFunction> function;
+    bool can_be_executed_on_default_arguments;
 };
 
 /// Following class implement IFunctionBase via IFunction.
@@ -75,7 +84,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
-        return std::make_unique<FunctionToExecutableFunctionAdaptor>(function);
+        return std::make_unique<FunctionToExecutableFunctionAdaptor>(function, arguments);
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }

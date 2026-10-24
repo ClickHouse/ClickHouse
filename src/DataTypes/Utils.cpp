@@ -387,4 +387,45 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
+bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr & enum_side)
+{
+    const auto string_type = removeLowCardinalityAndNullable(string_side);
+    const auto enum_type = removeLowCardinalityAndNullable(enum_side);
+
+    const auto * string_tuple = typeid_cast<const DataTypeTuple *>(string_type.get());
+    const auto * enum_tuple = typeid_cast<const DataTypeTuple *>(enum_type.get());
+    if (string_tuple && enum_tuple)
+    {
+        const auto & string_elements = string_tuple->getElements();
+        const auto & enum_elements = enum_tuple->getElements();
+        if (string_elements.size() != enum_elements.size())
+            return false;
+        for (size_t i = 0; i < string_elements.size(); ++i)
+            if (comparesStringWithEnum(string_elements[i], enum_elements[i]))
+                return true;
+        return false;
+    }
+
+    /// A `Dynamic` or a `Variant` may hold a string in `string_side` or an `Enum` in `enum_side`,
+    /// also in a tuple aligned with a tuple on the other side.
+    const bool string_carrier = isDynamic(string_type) || isVariant(string_type);
+    const bool enum_carrier = isDynamic(enum_type) || isVariant(enum_type);
+    if (string_carrier && enum_tuple)
+    {
+        for (const auto & element : enum_tuple->getElements())
+            if (comparesStringWithEnum(string_type, element))
+                return true;
+        return false;
+    }
+    if (enum_carrier && string_tuple)
+    {
+        for (const auto & element : string_tuple->getElements())
+            if (comparesStringWithEnum(element, enum_type))
+                return true;
+        return false;
+    }
+
+    return (string_carrier || isStringOrFixedString(string_type)) && (enum_carrier || isEnum(enum_type));
+}
+
 }

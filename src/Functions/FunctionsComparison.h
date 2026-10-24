@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
@@ -948,6 +949,8 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
+    /// Set for the prefix equality of a tuple ordering: `=` and `!=` then compare a string with an `Enum` by value, as the ordering does.
+    bool compare_enum_with_string_by_value = false;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
     UInt64 format_settings_hash = 0;
@@ -975,8 +978,40 @@ public:
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
     bool isNameInsensitive() const override { return true; }
+
+    /// Ordering an `Enum` with a string converts the string to the `Enum`, which throws for an unused default value
+    /// of a `LowCardinality` dictionary and for a value behind a NULL.
+    bool canBeExecutedOnDefaultArguments(const DataTypes & arguments) const override
+    {
+        if ((IsOperation<Op>::equals || IsOperation<Op>::not_equals) && !params.compare_enum_with_string_by_value)
+            return true;
+        return arguments.size() != 2 || !ordersEnumWithString(arguments[0], arguments[1]);
+    }
+
 private:
     const ComparisonParams params;
+
+    /// True if the ordering may convert a string to an `Enum`, also in tuple elements.
+    /// The types in a `Dynamic` or a `Variant` are known only at execution.
+    static bool ordersEnumWithString(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        const auto left_type = removeLowCardinalityAndNullable(left);
+        const auto right_type = removeLowCardinalityAndNullable(right);
+        if (isDynamic(left_type) || isVariant(left_type) || isDynamic(right_type) || isVariant(right_type))
+            return true;
+
+        const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get());
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+        if (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (ordersEnumWithString(left_tuple->getElement(i), right_tuple->getElement(i)))
+                    return true;
+            return false;
+        }
+
+        return comparesStringWithEnum(left_type, right_type) || comparesStringWithEnum(right_type, left_type);
+    }
 
     static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
     {
@@ -1877,7 +1912,14 @@ public:
         return left_domain;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Ordering an `Enum` with a string converts the string to the `Enum`, which throws for an unknown name, as `CAST` does.
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (IsOperation<Op>::equals || IsOperation<Op>::not_equals)
+            return false;
+        else
+            return arguments.size() == 2 && ordersEnumWithString(arguments[0].type, arguments[1].type);
+    }
 
     /// Documentation-only — comparison is defined for numbers (cross-type via
     /// least-supertype), strings, dates, UUIDs, IPv4/IPv6, equivalent enums,
@@ -2157,6 +2199,17 @@ public:
             res = executeString(col_left_untyped, col_right_untyped);
             if (res)
                 return res;
+        }
+        /// Compare by the `Enum` value. A constant string takes the same `CAST` as a column, without the format settings of `executeWithConstString`.
+        if (((!IsOperation<Op>::equals && !IsOperation<Op>::not_equals) || params.compare_enum_with_string_by_value)
+            && ((isEnum(left_type) && right_is_string) || (left_is_string && isEnum(right_type))))
+        {
+            const DataTypePtr & enum_type = isEnum(left_type) ? left_type : right_type;
+            ColumnsWithTypeAndName converted{
+                {castColumn(col_with_type_and_name_left, enum_type), enum_type, ""},
+                {castColumn(col_with_type_and_name_right, enum_type), enum_type, ""},
+            };
+            return executeImpl(converted, result_type, input_rows_count);
         }
         res = executeWithConstString(result_type, col_left_untyped, col_right_untyped, left_type, right_type, input_rows_count);
         if (res)

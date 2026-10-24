@@ -434,12 +434,13 @@ bool fieldRequiresClickHouseOnlySyntax(const Field & field)
     }
 }
 
-/// Returns true if `node` references a column of UUID type, including when that reference
+/// Returns true if `node` references a column of `UUID` or `Enum` type, including when that reference
 /// is nested inside a tuple or another expression (e.g. the row comparison
 /// `(uuid_col, x) < (...)`). ClickHouse and external databases (e.g. PostgreSQL) sort UUIDs
-/// differently, so range comparisons involving a UUID column cannot be pushed down without
+/// differently, and ClickHouse orders an `Enum` by its number while the external database orders the
+/// stored string, so range comparisons involving such a column cannot be pushed down without
 /// silently dropping rows.
-bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available_columns)
+bool containsColumnWithDifferentOrder(const ASTPtr & node, const NamesAndTypesList & available_columns)
 {
     /// The depth of the AST is user-controlled: fail with TOO_DEEP_RECURSION instead of exhausting the stack.
     checkStackSize();
@@ -449,12 +450,13 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
         for (const auto & column : available_columns)
             if (column.name == identifier->name())
                 /// Unwrap LowCardinality / Nullable so e.g. LowCardinality(UUID) is recognised too.
-                return WhichDataType(removeLowCardinalityAndNullable(column.type)).isUUID();
+                return WhichDataType(removeLowCardinalityAndNullable(column.type)).isUUID()
+                    || isEnum(removeLowCardinalityAndNullable(column.type));
         return false;
     }
 
     for (const auto & child : node->children)
-        if (containsUUIDColumn(child, available_columns))
+        if (containsColumnWithDifferentOrder(child, available_columns))
             return true;
 
     return false;
@@ -642,16 +644,17 @@ bool isCompatible(
             || name == "tuple"))
             return false;
 
-        /// Range comparisons involving UUID columns must not be pushed down. ClickHouse and
-        /// the external database sort UUIDs differently, so the pushed-down predicate compares
+        /// Range comparisons involving `UUID` or `Enum` columns must not be pushed down. ClickHouse and
+        /// the external database sort UUIDs differently, and ClickHouse orders an `Enum` by its number
+        /// while the external database orders the stored string, so the pushed-down predicate compares
         /// against a different ordering and silently drops rows. This also covers tuple/row
-        /// comparisons such as `(uuid_col, x) < (...)`, where the UUID column is nested inside
+        /// comparisons such as `(uuid_col, x) < (...)`, where the column is nested inside
         /// a tuple. Equality and IN are order independent and remain compatible. Such predicates
         /// are applied locally instead. See https://github.com/ClickHouse/ClickHouse/issues/105558.
         if (name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals")
         {
             for (const auto & argument : function->arguments->children)
-                if (containsUUIDColumn(argument, available_columns))
+                if (containsColumnWithDifferentOrder(argument, available_columns))
                     return false;
         }
 

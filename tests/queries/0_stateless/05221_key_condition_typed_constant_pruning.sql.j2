@@ -51,14 +51,3 @@ INSERT INTO test_typed_constant_derived SELECT toString(number) FROM numbers(100
 {{ check('test_typed_constant_derived', "CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0)) = v", condition = true) }}
 {{ check('test_typed_constant_derived', "CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum16('zero' = 0, '37' = 3))) = v", condition = true) }}
 
--- An inequality exercises the monotonic transform without considering deterministic equality atoms.
--- The relaxed bound includes '37', so pruning reads 32 one-row granules and filtering returns 31 rows.
-CREATE TABLE test_typed_constant_monotonic (v String) ENGINE = MergeTree ORDER BY (toString(v), v)
-SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
-INSERT INTO test_typed_constant_monotonic SELECT toString(number) FROM numbers(100);
-{{ check('test_typed_constant_monotonic', "v < CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic)", condition = true) }}
-{{ check('test_typed_constant_monotonic', "v < CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0))") }}
-{{ check('test_typed_constant_monotonic', "v < CAST(CAST('37' AS Enum8('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum8('zero' = 0, '37' = 3)))") }}
-{{ check('test_typed_constant_monotonic', "v < CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic)") }}
-{{ check('test_typed_constant_monotonic', "v < CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Dynamic(max_types = 0))") }}
-{{ check('test_typed_constant_monotonic', "v < CAST(CAST('37' AS Enum16('zero' = 0, '37' = 3)) AS Variant(Array(UInt8), Enum16('zero' = 0, '37' = 3)))") }}
