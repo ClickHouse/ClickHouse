@@ -1,7 +1,9 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/sortBlock.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
@@ -86,13 +88,121 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 
 }
 
+TopKThresholdCollector::TopKThresholdCollector(
+    TopKThresholdTrackerPtr tracker_, const SortColumnDescription & description_, size_t limit_)
+    : tracker(std::move(tracker_))
+    , description(description_)
+    , limit(limit_)
+{
+    chassert(tracker);
+    chassert(limit > 0);
+}
+
+bool TopKThresholdCollector::isSupportedType(const IDataType & type)
+{
+    const IDataType * value_type = &type;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(value_type))
+        value_type = nullable_type->getNestedType().get();
+
+    /// `__topKFilter` drops `nan` rows (https://github.com/ClickHouse/ClickHouse/issues/116705).
+    if (isFloat(*value_type))
+        return false;
+
+    return value_type->isValueRepresentedByNumber() || isStringOrFixedString(*value_type);
+}
+
+int TopKThresholdCollector::compare(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row) const
+{
+    if (description.collator)
+        return description.direction
+            * lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, description.nulls_direction, *description.collator);
+    return description.direction * lhs.compareAt(lhs_row, rhs_row, rhs, description.nulls_direction);
+}
+
+void TopKThresholdCollector::add(const IColumn & sorted, size_t rows)
+{
+    rows = std::min(rows, limit);
+    if (rows == 0)
+        return;
+
+    MutableColumnPtr to_merge;
+    {
+        std::lock_guard lock(mutex);
+
+        /// Only values before the published one can change it; `sorted` is sorted, so they are a prefix of it.
+        if (boundary)
+        {
+            size_t lo = 0;
+            size_t hi = rows;
+            while (lo < hi)
+            {
+                size_t mid = lo + (hi - lo) / 2;
+                if (compare(sorted, mid, *boundary, 0) < 0)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            rows = lo;
+            if (rows == 0)
+                return;
+        }
+
+        if (!values)
+            values = sorted.cloneEmpty();
+        values->insertRangeFrom(sorted, 0, rows);
+
+        if (merging || values->size() < limit + (boundary ? limit / 2 : 0))
+            return;
+
+        to_merge = std::move(values);
+        values = to_merge->cloneEmpty();
+        merging = true;
+    }
+
+    auto direction = description.direction == -1 ? IColumn::PermutationSortDirection::Descending
+                                                 : IColumn::PermutationSortDirection::Ascending;
+    while (to_merge)
+    {
+        IColumn::Permutation perm;
+        if (description.collator)
+            to_merge->getPermutationWithCollation(
+                *description.collator, direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
+        else
+            to_merge->getPermutation(direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
+
+        ColumnPtr best = to_merge->permute(perm, limit);
+
+        Field value;
+        best->get(limit - 1, value);
+        tracker->testAndSet(value);
+
+        std::lock_guard lock(mutex);
+        size_t added_meanwhile = values->size();
+        values->insertRangeFrom(*best, 0, limit);
+        boundary = best->cut(limit - 1, 1);
+
+        /// Other threads did not merge what they added meanwhile because `merging` was set.
+        if (added_meanwhile && values->size() >= limit + limit / 2)
+        {
+            to_merge = std::move(values);
+            values = to_merge->cloneEmpty();
+        }
+        else
+        {
+            to_merge = nullptr;
+            merging = false;
+        }
+    }
+}
+
 PartialSortingTransform::PartialSortingTransform(
     SharedHeader header_, const SortDescription & description_, UInt64 limit_,
-    TopKThresholdTrackerPtr threshold_tracker_)
+    TopKThresholdTrackerPtr threshold_tracker_, TopKThresholdCollectorPtr threshold_collector_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)
     , threshold_tracker(threshold_tracker_)
+    , threshold_collector(threshold_collector_)
 {
     // Sorting by no columns doesn't make sense.
     chassert(!description_.empty());
@@ -113,6 +223,9 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     if (read_rows)
         read_rows->add(chunk.getNumRows());
+
+    /// Sorting reorders the rows, so source row numbers no longer describe them.
+    chunk.getChunkInfos().extract<ChunkInfoRowNumbers>();
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -147,6 +260,12 @@ void PartialSortingTransform::transform(Chunk & chunk)
     }
 
     sortBlock(block, description, limit);
+
+    if (threshold_collector && block.rows())
+        threshold_collector->add(
+            *removeSpecialRepresentations(
+                block.safeGetByPosition(description_with_positions[0].column_number).column->convertToFullColumnIfConst()),
+            block.rows());
 
     /// Check if we can use this block for optimization.
     if ((min_limit_for_partial_sort_optimization <= limit || threshold_tracker) && limit <= block.rows())
