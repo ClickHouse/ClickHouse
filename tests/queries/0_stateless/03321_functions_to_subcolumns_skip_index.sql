@@ -15,7 +15,6 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO bloom_filter_test VALUES (1, {'1': '1'}), (2, {'2': '2'}), (3, {'3': '3'});
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 SELECT trim(explain) FROM
