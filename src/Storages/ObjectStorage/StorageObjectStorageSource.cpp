@@ -1810,7 +1810,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         /// The metadata of the object identifies its version for the Parquet metadata cache and
         /// for the columns cache.
+        /// These caches can serve the whole file without a request, so a read pinned to an S3 version would not learn it.
+        const bool pinned_to_s3_version = object_info->relative_path_with_metadata.require_read_pinned_to_generation
+            && object_storage->getType() == ObjectStorageType::S3;
         if ((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
+            && !pinned_to_s3_version
             && (Poco::toLower(format_name) == "parquet")
             && object_info->getObjectMetadata()->getContentCacheToken().has_value())
         {

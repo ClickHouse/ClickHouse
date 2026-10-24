@@ -2255,6 +2255,8 @@ def test_azure_move_source_rewrite_buffered_copy(started_cluster):
     )
     wait_until(lambda: dest_client.exists())
     assert dest_client.download_blob().readall() == rewritten
+    # Without the read guard the retry would find a stale archive and leave the source as a collision.
+    wait_until(lambda: not client.exists())
 
 
 def test_move_after_processing_many_objects(started_cluster):

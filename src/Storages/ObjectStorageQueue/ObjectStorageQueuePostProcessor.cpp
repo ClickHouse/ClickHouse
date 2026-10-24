@@ -112,10 +112,14 @@ String makeMoveToken(
     const String & source_version_id)
 {
     SipHash hash;
-    hash.update(keeper_identity);
-    hash.update(source_path);
-    hash.update(source_etag);
+    /// Each string is length-prefixed, so two different field splits never hash the same bytes.
+    for (const auto * field : {&keeper_identity, &source_path, &source_etag})
+    {
+        hash.update(field->size());
+        hash.update(*field);
+    }
     hash.update(source_last_modified);
+    hash.update(source_version_id.size());
     hash.update(source_version_id);
     return getSipHash128AsHexString(hash);
 }
