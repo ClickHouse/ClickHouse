@@ -1,0 +1,12 @@
+wide before	4	1
+wide after	3	0
+0	[1,2]	[0,0]
+2	[3]	[0]
+3	[4,5,6]	[0,0,0]
+compact before	4	1
+compact after	3	0
+0	[1,2]	[0,0]
+2	[3]	[0]
+3	[4,5,6]	[0,0,0]
+unshared before	4	4
+unshared after	0	0

@@ -12,6 +12,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -828,12 +829,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
+        NameSet nested_columns_with_offsets;
+        const bool share_nested_offsets = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
 
         /// Collect all column names that actually exist in the source parts
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
+            {
                 columns_present_in_parts.emplace(col.name);
+                if (share_nested_offsets && isArray(col.type))
+                    nested_columns_with_offsets.emplace(Nested::extractTableName(col.name));
+            }
         }
 
         /// The only live values of a column may sit in the patch parts selected for this merge: a
@@ -891,6 +898,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
+            /// A missing `Nested` subcolumn inherits stored offsets, so its value is not the type default `[]`.
+            if (share_nested_offsets && isArray(storage_column.type)
+                && nested_columns_with_offsets.contains(Nested::extractTableName(storage_column.name)))
+                continue;
+
             if (!columns_present_in_parts.contains(storage_column.name)
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !renamed_column_targets.contains(storage_column.name)
