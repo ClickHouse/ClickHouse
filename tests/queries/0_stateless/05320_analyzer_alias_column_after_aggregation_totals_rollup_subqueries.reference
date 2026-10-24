@@ -1,0 +1,66 @@
+-- WITH TOTALS
+a	a!	a!	50
+b	b!	b!	20
+
+	!	!	70
+a	a!	50
+
+	!	50
+-- HAVING with an aggregate function
+a	a!	50
+-- ROLLUP, CUBE, GROUPING SETS
+	0	!	100	70
+a	0	a!	100	50
+a	1	a!	101	50
+b	0	b!	100	20
+b	2	b!	102	20
+	0	!	100	70
+	1	!	101	50
+	2	!	102	20
+a	0	a!	100	50
+a	1	a!	101	50
+b	0	b!	100	20
+b	2	b!	102	20
+	1	!	101	50
+	2	!	102	20
+a	0	a!	100	50
+b	0	b!	100	20
+	0	!	100	70
+a	0	a!	100	50
+a	1	a!	101	50
+b	0	b!	100	20
+b	2	b!	102	20
+
+	0	!	100	70
+-- correlated subqueries
+a
+a	a!
+b	b!
+a
+a
+b
+a	42
+b	42
+a
+
+
+a	a!	a!	50
+
+	!	!	50
+50
+
+50
+-- remote
+a	a!	100
+b	b!	40
+
+	!	140
+	0	!	140
+a	0	a!	100
+a	1	a!	100
+b	0	b!	40
+b	2	b!	40
+a	a!	50
+a	a!	50
+b	b!	20
+b	b!	20

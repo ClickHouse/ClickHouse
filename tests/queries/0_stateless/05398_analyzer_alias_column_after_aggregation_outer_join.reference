@@ -1,0 +1,17 @@
+-- the value of the ALIAS column in the row without a match
+0	0	1
+1	0	0
+-- the side that an outer JOIN fills with default values
+-- the preserved side of an outer JOIN and INNER JOIN
+0	10	1
+1	11	1
+0	1	1
+2	3	1
+0	1	10
+0	10	1
+0	10	3
+1	11	1
+1	11	3
+-- an ALIAS column that is a GROUP BY key itself
+0	1
+1	0

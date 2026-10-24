@@ -39,6 +39,9 @@ struct AggregationAnalysisResult
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    /// Computes table ALIAS columns used after aggregation from GROUP BY keys. Their values computed when the table
+    /// is read are not available after aggregation, unless the column itself is a GROUP BY key. Null if there are none.
+    ActionsAndProjectInputsFlagPtr alias_columns_after_aggregation_actions;
 };
 
 struct WindowAnalysisResult

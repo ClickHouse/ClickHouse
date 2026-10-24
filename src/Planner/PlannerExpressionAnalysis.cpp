@@ -15,6 +15,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
@@ -23,6 +24,7 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
@@ -328,6 +330,157 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
 
     return aggregation_analysis_result;
+}
+
+/** Collects table ALIAS columns used in the expressions computed after aggregation that are not available there,
+  * including the correlated columns of subqueries. An ALIAS column used in the expression of another one goes first.
+  * `validateAggregates` checks that their expressions can be computed from GROUP BY keys and aggregate functions.
+  */
+class CollectAliasColumnsAfterAggregationVisitor
+{
+public:
+    CollectAliasColumnsAfterAggregationVisitor(
+        const PlannerContext & planner_context_,
+        const ColumnsWithTypeAndName & available_columns,
+        const ColumnNodePtrWithHashSet & outer_columns_)
+        : planner_context(planner_context_)
+        , outer_columns(outer_columns_)
+    {
+        for (const auto & column : available_columns)
+            available_column_names.insert(column.name);
+    }
+
+    void visit(const QueryTreeNodePtr & node)
+    {
+        switch (node->getNodeType())
+        {
+            case QueryTreeNodeType::COLUMN:
+            {
+                visitColumn(node);
+                return;
+            }
+            case QueryTreeNodeType::FUNCTION:
+            {
+                const auto & function_node = node->as<FunctionNode &>();
+                /// Arguments of aggregate functions are computed before aggregation, arguments of `grouping` are GROUP BY keys.
+                if (function_node.isAggregateFunction() || function_node.getFunctionName() == "grouping")
+                    return;
+
+                if (available_column_names.contains(getActionNodeName(node)))
+                    return;
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                visitCorrelatedColumns(node->as<QueryNode &>().getCorrelatedColumnsNode());
+                return;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                visitCorrelatedColumns(node->as<UnionNode &>().getCorrelatedColumnsNode());
+                return;
+            }
+            default:
+                break;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                visit(child);
+    }
+
+    const ColumnNodes & getAliasColumns() const { return alias_columns; }
+
+private:
+    void visitCorrelatedColumns(const QueryTreeNodePtr & correlated_columns_node)
+    {
+        for (const auto & correlated_column : correlated_columns_node->as<ListNode &>().getNodes())
+            if (correlated_column->getNodeType() == QueryTreeNodeType::COLUMN)
+                visitColumn(correlated_column, /*is_correlated=*/ true);
+    }
+
+    void visitColumn(const QueryTreeNodePtr & node, bool is_correlated = false)
+    {
+        auto column_node = std::static_pointer_cast<ColumnNode>(node);
+        if (!column_node->hasExpression() || outer_columns.contains(column_node))
+            return;
+
+        /// Columns from JOIN USING and ARRAY JOIN also have an expression, but it is not an ALIAS expression.
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source
+            || (column_source->getNodeType() != QueryTreeNodeType::TABLE && column_source->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION))
+            return;
+
+        /// The planner computes constant ALIAS expressions in place, but a correlated subquery takes the values
+        /// of its correlated columns from the outer query, so they must be computed even if they are constant.
+        const auto & expression = column_node->getExpression();
+        if (expression->getNodeType() == QueryTreeNodeType::CONSTANT && !is_correlated)
+            return;
+
+        auto column_name = getActionNodeName(node);
+        if (available_column_names.contains(column_name) || collected_column_names.contains(column_name))
+            return;
+
+        visit(expression);
+
+        collected_column_names.insert(std::move(column_name));
+        alias_columns.push_back(std::move(column_node));
+    }
+
+    String getActionNodeName(const QueryTreeNodePtr & node)
+    {
+        return calculateActionNodeName(node, planner_context, node_to_name);
+    }
+
+    const PlannerContext & planner_context;
+    const ColumnNodePtrWithHashSet & outer_columns;
+    NameSet available_column_names;
+    QueryTreeNodeToName node_to_name;
+    NameSet collected_column_names;
+    ColumnNodes alias_columns;
+};
+
+/** Construct actions that compute table ALIAS columns used after aggregation from GROUP BY keys.
+  * The actions are added into actions chain, if result is not null.
+  */
+ActionsAndProjectInputsFlagPtr analyzeAliasColumnsAfterAggregation(
+    const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    ActionsChain & actions_chain)
+{
+    CollectAliasColumnsAfterAggregationVisitor collector(*planner_context, input_columns, correlated_columns_set);
+
+    QueryTreeNodes nodes_after_aggregation{query_node.getHaving(), query_node.getQualify(), query_node.getOrderByNode(),
+        query_node.getInterpolate(), query_node.getLimitByNode(), query_node.getLimitAfter(), query_node.getLimitUntil(),
+        query_node.getProjectionNode()};
+
+    for (const auto & node : nodes_after_aggregation)
+        if (node)
+            collector.visit(node);
+
+    const auto & alias_columns = collector.getAliasColumns();
+    if (alias_columns.empty())
+        return {};
+
+    auto actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    actions->dag = ActionsDAG(input_columns);
+    actions->dag.getOutputs().clear();
+
+    /// The expression of an ALIAS column can refer to another ALIAS column, which is computed before it.
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
+    for (const auto & alias_column : alias_columns)
+    {
+        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(actions->dag, alias_column->getExpression());
+        correlated_subtrees.assertEmpty("in ALIAS column expression");
+
+        const auto & alias_node = actions->dag.addAlias(*expression_dag_nodes.at(0), calculateActionNodeName(alias_column, *planner_context));
+        actions->dag.getOutputs().push_back(&alias_node);
+    }
+
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(actions));
+    return actions;
 }
 
 /** Construct window analysis result if query tree has window functions.
@@ -762,7 +915,18 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         correlated_columns_set,
         actions_chain);
     if (aggregation_analysis_result_optional)
+    {
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
+        aggregation_analysis_result_optional->alias_columns_after_aggregation_actions = analyzeAliasColumnsAfterAggregation(
+            query_node,
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (aggregation_analysis_result_optional->alias_columns_after_aggregation_actions)
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
 
     std::optional<FilterAnalysisResult> having_analysis_result_optional;
     std::optional<size_t> having_action_step_index_optional;

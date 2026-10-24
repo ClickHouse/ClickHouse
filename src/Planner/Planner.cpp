@@ -1277,6 +1277,29 @@ void addTotalsHavingStep(QueryPlan & query_plan,
             "Correlated subqueries in HAVING are not supported yet with WITH TOTALS, max_rows_to_group_by, "
             "group_by_overflow_mode = 'any' and totals_mode other than 'after_having_exclusive'");
 
+    /// The correlated subqueries take ALIAS columns from the stream before `TotalsHavingStep`. They are computed
+    /// for them here and once more by the actions of the step below, which also evaluate them for the totals row.
+    const auto & alias_columns_actions = aggregation_analysis_result.alias_columns_after_aggregation_actions;
+    if (alias_columns_actions && having_analysis_result.correlated_subtrees.notEmpty())
+    {
+        auto actions_for_correlated_subqueries = std::make_shared<ActionsAndProjectInputsFlag>();
+        actions_for_correlated_subqueries->dag = alias_columns_actions->dag.clone();
+        auto & outputs = actions_for_correlated_subqueries->dag.getOutputs();
+        std::unordered_set<const ActionsDAG::Node *> output_nodes(outputs.begin(), outputs.end());
+        for (const auto * input_node : actions_for_correlated_subqueries->dag.getInputs())
+            if (!output_nodes.contains(input_node))
+                outputs.push_back(input_node);
+
+        addExpressionStep(
+            planner_context,
+            query_plan,
+            actions_for_correlated_subqueries,
+            /*correlated_subtrees=*/{},
+            select_query_options,
+            "Compute ALIAS columns after aggregation for correlated subqueries",
+            useful_sets);
+    }
+
     for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
         buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
@@ -1284,6 +1307,12 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     if (having_analysis_result.filter_actions)
     {
         actions = std::move(having_analysis_result.filter_actions->dag);
+
+        /// `TotalsHavingStep` fills the keys in the totals row with default values and evaluates HAVING on it,
+        /// so ALIAS columns computed by the same actions get the same values in it as other functions of the keys.
+        if (alias_columns_actions)
+            actions = ActionsDAG::merge(std::move(alias_columns_actions->dag), std::move(*actions));
+
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
     }
@@ -3312,14 +3341,31 @@ void Planner::buildPlanForQueryNode()
             }
 
             bool having_executed = false;
+            bool alias_columns_computed = false;
 
             if (query_node.isGroupByWithTotals())
             {
+                /// Computes ALIAS columns together with HAVING, see `addTotalsHavingStep`. ROLLUP and CUBE, which would
+                /// drop them, cannot follow: the analyzer rejects WITH TOTALS together with them in presence of HAVING.
+                alias_columns_computed = expression_analysis_result.hasHaving();
                 addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
             }
 
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+
+            /// ROLLUP and CUBE produce the rows with default values of the keys from the aggregated data,
+            /// so ALIAS columns can be computed only after them.
+            auto & alias_columns_actions = expression_analysis_result.getAggregation().alias_columns_after_aggregation_actions;
+            if (!alias_columns_computed && alias_columns_actions)
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    alias_columns_actions,
+                    /*correlated_subtrees=*/{},
+                    select_query_options,
+                    "Compute ALIAS columns after aggregation",
+                    useful_sets);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
