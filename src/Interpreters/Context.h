@@ -1386,6 +1386,8 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries() const;
+    /// Registers the dictionaries from the configuration files without loading them, so the tables referring to them can be attached.
+    void registerDictionariesBeforeLoadingMetadata(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void waitForDictionariesLoad() const;
 
@@ -2309,6 +2311,7 @@ private:
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
+    void addDictionariesConfigRepository(const Poco::Util::AbstractConfiguration & config, const std::lock_guard<std::mutex> & lock);
 
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
