@@ -421,9 +421,9 @@ struct ConverterNumeric
 };
 
 /// Parquet TIME is a time of day. Scaled values must be in [0, 24:00:00).
-static constexpr Int64 PARQUET_TIME_OF_DAY_SECONDS = 24LL * 60 * 60;
+constexpr Int64 PARQUET_TIME_OF_DAY_SECONDS = 24LL * 60 * 60;
 
-static Int64 getParquetTimeOfDayMaxExclusive(const DataTypePtr & type)
+Int64 getParquetTimeOfDayMaxExclusive(const DataTypePtr & type)
 {
     const WhichDataType which(type);
     if (which.isTime())
@@ -440,7 +440,7 @@ static Int64 getParquetTimeOfDayMaxExclusive(const DataTypePtr & type)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());
 }
 
-static void validateParquetTimeOfDay(Int64 scaled_value, Int64 max_exclusive)
+void validateParquetTimeOfDay(Int64 scaled_value, Int64 max_exclusive)
 {
     if (scaled_value < 0 || scaled_value >= max_exclusive)
         throw Exception(
