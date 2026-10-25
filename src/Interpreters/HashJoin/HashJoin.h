@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include <base/defines.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowDataStore.h>
@@ -932,24 +933,13 @@ struct DecompressResolver
 
     explicit DecompressResolver(const HashJoin & join) : active(join.haveCompressed()) { }
 
-    const StoredBlock * operator()(const StoredBlock * block)
+    /// Called for every copied row, so the pass-through check is forced inline: the hot probe loops
+    /// (e.g. `buildAdditionalFilter`) must not pay for a function call when compression is off.
+    ALWAYS_INLINE const StoredBlock * operator()(const StoredBlock * block)
     {
         if (!active || block == nullptr)
             return block;
-
-        auto [it, inserted] = resolved.try_emplace(block, nullptr);
-        if (inserted)
-        {
-            if (!budget_disabled && !released_over_budget.empty() && released_over_budget.contains(block))
-                disableBudget();
-            auto decompressed = HashJoin::getDecompressedColumns(block);
-            /// Not StoredBlock::allocatedBytes: it scales by the selector, which is empty on this view.
-            for (const auto & column : decompressed->columns)
-                held_bytes += column->allocatedBytes();
-            it->second = decompressed.get();
-            held.push_back(std::move(decompressed));
-        }
-        return it->second;
+        return resolveCompressed(block);
     }
 
     /// True when resolving `block` would decompress a new block while the working set is already over
@@ -969,6 +959,7 @@ struct DecompressResolver
     void release(bool forced_by_budget = false);
 
 private:
+    const StoredBlock * resolveCompressed(const StoredBlock * block);
     void disableBudget();
 };
 }
