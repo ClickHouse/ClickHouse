@@ -77,6 +77,8 @@ INSERT INTO t_fixed_string VALUES (1, '{"s": "a"}'), (2, '{"s": "zzz"}');
 SELECT count() FROM t_fixed_string WHERE j.s = 'a' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_fixed_string WHERE j.s = 'a' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_fixed_string WHERE j.s = 'abcd';
+SELECT count() FROM t_fixed_string WHERE j.s IN (SELECT 'a') SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM t_fixed_string WHERE j.s IN (SELECT 'a') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE IF EXISTS t_fixed_string_in;
 CREATE TABLE t_fixed_string_in (id UInt64, j JSON(s FixedString(3)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'splitByNonAlpha'))

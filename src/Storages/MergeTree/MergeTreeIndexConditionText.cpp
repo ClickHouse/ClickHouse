@@ -2516,6 +2516,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
     std::optional<String> json_type_hint_default;
+    std::optional<size_t> fixed_string_size = indexed_fixed_string_size;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
@@ -2530,6 +2531,11 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         if (!tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types) || !canUseJSONAllValuesForPath(node))
             return false;
         json_type_hint_default = tryGetTextOfJSONTypeHintDefault(node);
+
+        /// `JSONAllValues` stores a `FixedString` value with its padding.
+        const auto path_type = removeNullable(removeLowCardinality(getJSONPathNode(node).getDAGNode()->result_type));
+        if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(path_type.get()))
+            fixed_string_size = fixed_string_type->getN();
         return true;
     };
 
@@ -2589,10 +2595,10 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     size_t total_row_count = prepared_set->getTotalRowCount();
     const bool set_is_fixed_string = WhichDataType(set_column_values.getDataType()).isFixedString();
     /// `IN` casts the value to the set's type, so a `FixedString` on either side drops trailing zero bytes like `equals`.
-    const bool has_fixed_string = set_is_fixed_string || indexed_fixed_string_size.has_value();
+    const bool has_fixed_string = set_is_fixed_string || fixed_string_size.has_value();
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
-        .indexed_fixed_string_size = indexed_fixed_string_size,
+        .indexed_fixed_string_size = fixed_string_size,
         .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
