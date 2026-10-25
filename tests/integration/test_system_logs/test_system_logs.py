@@ -80,6 +80,20 @@ def test_system_logs_order_by_expr(start_cluster):
     )
 
 
+def test_system_logs_order_by_alias(start_cluster):
+    node1.query("SYSTEM FLUSH LOGS opentelemetry_span_log")
+
+    # 'finish_date' in the configured keys and TTL (including GROUP BY keys and
+    # SET assignments) is an alias and should be replaced with the underlying
+    # 'event_date' column.
+    assert (
+        node1.query(
+            "SELECT partition_key, sorting_key, extract(engine_full, 'TTL (.*) SETTINGS') FROM system.tables WHERE database='system' and name='opentelemetry_span_log'"
+        )
+        == "toYYYYMM(event_date)\tevent_date, finish_time_us\tevent_date + toIntervalDay(30) GROUP BY event_date SET event_date = max(event_date)\n"
+    )
+
+
 def test_system_logs_engine_expr(start_cluster):
     node2.query("SET log_query_threads = 1")
     node2.query("SELECT count() FROM system.tables")

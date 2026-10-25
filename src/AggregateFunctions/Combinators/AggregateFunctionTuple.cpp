@@ -425,6 +425,16 @@ bool AggregateFunctionTuple::isAbleToParallelizeMerge() const
     return false;
 }
 
+bool AggregateFunctionTuple::isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+{
+    /// The whole tuple state is deferred as one unit (the deferred pointers are later passed to
+    /// `parallelizeMergeMulti` of this function), so it is large as soon as one nested pair is.
+    for (size_t i = 0; i < nested_functions.size(); ++i)
+        if (nested_functions[i]->isLargeMergePair(place + state_offsets[i], rhs + state_offsets[i]))
+            return true;
+    return false;
+}
+
 bool AggregateFunctionTuple::canOptimizeEqualKeysRanges() const
 {
     for (const auto & func : nested_functions)
@@ -613,15 +623,6 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     auto normalized_function = std::make_shared<AggregateFunctionTuple>(
         normalized_nested_name, std::move(normalized_nested_functions), argument_types, Array{});
     return std::make_shared<DataTypeAggregateFunction>(std::move(normalized_function), nested_normalized_state_types, Array{});
-}
-
-bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
-{
-    /// The elements share one printed parameter list, so a single element that needs typed
-    /// parameters decides the spelling for all of them. The base implementation delegates through
-    /// the singular `getNestedFunction()`, which this combinator has no single answer for.
-    return std::ranges::any_of(
-        nested_functions, [](const auto & nested) { return nested->shouldPrintParametersWithTypes(); });
 }
 
 bool AggregateFunctionTuple::isOnlyWindowFunction() const
