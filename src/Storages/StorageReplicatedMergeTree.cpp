@@ -8983,7 +8983,16 @@ void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(std::vecto
     CommittingBlocks committing_blocks;
     try
     {
-        auto zookeeper = getZooKeeper();
+        /// A Keeper request without a component fails in `pushRequest`, and that failure finalizes
+        /// the shared session, which turns every replicated table on this server readonly.
+        auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit");
+        auto zookeeper = tryGetZooKeeper();
+        if (!zookeeper || zookeeper->expired())
+        {
+            for (auto * status : to_check)
+                status->progress.reset();
+            return;
+        }
         std::optional<PartitionIdsHint> hint(std::move(partition_ids));
         committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, hint, /*with_data=*/ false);
     }
