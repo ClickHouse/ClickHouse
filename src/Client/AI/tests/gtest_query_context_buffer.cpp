@@ -11,8 +11,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -302,6 +305,63 @@ TEST(QueryContextBuffer, AggregateFunctionStateIsNotSampled)
 
     const String text = buffer.format(0, false);
     EXPECT_NE(text.find("[aggregate function state]\tafter"), String::npos) << text;
+}
+
+TEST(QueryContextBuffer, SampleOfAHugeJSONIsBounded)
+{
+    /// The escaped serialization of `JSON` renders the whole object before writing any of it, so a
+    /// `JSON` column is sampled through its plain serialization, which the bounded sample stops, and
+    /// a `JSON` value nested in another type is not sampled at all. The columns after it are.
+    const auto type = DataTypeFactory::instance().get("JSON");
+    auto json = type->createColumn();
+    const String object = "{\"x\":\"" + String(1'000'000, 'x') + "\"}";
+    ReadBufferFromString in(object);
+    type->getDefaultSerialization()->deserializeWholeText(*json, in, FormatSettings{});
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(1);
+    auto array = ColumnArray::create(json->cloneResized(1), std::move(offsets));
+
+    auto string = ColumnString::create();
+    string->insert(Field(String("after")));
+
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT j, [j], 'after'", false);
+    buffer.addBlock(Block{
+        ColumnWithTypeAndName{std::move(json), type, "j"},
+        ColumnWithTypeAndName{std::move(array), std::make_shared<DataTypeArray>(type), "a"},
+        ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+    buffer.finishQuery(0.1, false);
+
+    const String text = buffer.format(0, false);
+    const size_t line_start = text.find("\n{\"x\":\"xxx");
+    ASSERT_NE(line_start, String::npos) << text;
+    const size_t line_end = text.find('\n', line_start + 1);
+    const String line = text.substr(line_start + 1, line_end == String::npos ? String::npos : line_end - line_start - 1);
+    EXPECT_EQ(line.size(), QueryContextBuffer::max_line_bytes + String("…").size());
+    EXPECT_EQ(text.find("after\n"), String::npos);
+
+    /// A short object is sampled whole, and a nested one is not sampled.
+    auto short_json = type->createColumn();
+    const String short_object = "{\"a\":1}";
+    ReadBufferFromString short_in(short_object);
+    type->getDefaultSerialization()->deserializeWholeText(*short_json, short_in, FormatSettings{});
+    auto short_offsets = ColumnArray::ColumnOffsets::create();
+    short_offsets->insertValue(1);
+    auto short_array = ColumnArray::create(short_json->cloneResized(1), std::move(short_offsets));
+    auto short_string = ColumnString::create();
+    short_string->insert(Field(String("after")));
+
+    QueryContextBuffer short_buffer;
+    short_buffer.startQuery("SELECT j, [j], 'after'", false);
+    short_buffer.addBlock(Block{
+        ColumnWithTypeAndName{std::move(short_json), type, "j"},
+        ColumnWithTypeAndName{std::move(short_array), std::make_shared<DataTypeArray>(type), "a"},
+        ColumnWithTypeAndName{std::move(short_string), std::make_shared<DataTypeString>(), "s"}});
+    short_buffer.finishQuery(0.1, false);
+
+    const String short_text = short_buffer.format(0, false);
+    EXPECT_NE(short_text.find("{\"a\":1}\t[value not sampled]\tafter"), String::npos) << short_text;
 }
 
 TEST(QueryContextBuffer, SampleOfALineAtTheLimitIsNotCut)

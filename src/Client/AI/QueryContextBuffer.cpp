@@ -2,6 +2,9 @@
 
 #include <Client/AI/AITextTruncation.h>
 
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
@@ -58,20 +61,79 @@ private:
     bool full = false;
 };
 
-/// The columns whose values are not sampled: the text of an aggregate function state is its
-/// binary serialization, which says nothing to the model, and it is built whole in memory before
-/// the first byte of it is written - the bounded buffer of the sample cannot stop that, so the
-/// state of `groupArrayState` over millions of rows would be serialized whole for a short sample.
-std::vector<bool> columnsNotSampled(const Block & block)
+/// How the values of a column are written into the sample. The bounded buffer of the sample
+/// stops a serialization that writes into it, but not one that first renders the whole value into
+/// a temporary string of its own and only then copies it out - that one would render a huge value
+/// whole for a short sample. Such values are written differently or not at all.
+struct ColumnSampling
 {
-    std::vector<bool> not_sampled(block.columns());
+    enum class Kind : uint8_t
+    {
+        /// `serializeTextEscaped` straight into the sample.
+        Escaped,
+        /// A `JSON` column: its escaped serialization renders the whole object into a temporary
+        /// string before escaping it, but its plain one writes the object as it goes, so that one
+        /// is written into a bounded buffer of its own and escaped from there.
+        JSON,
+        /// Not sampled, `placeholder` is written instead.
+        Placeholder,
+    };
+
+    Kind kind = Kind::Escaped;
+    const char * placeholder = nullptr;
+};
+
+std::vector<ColumnSampling> columnsSampling(const Block & block)
+{
+    std::vector<ColumnSampling> sampling(block.columns());
     for (size_t i = 0; i < block.columns(); ++i)
-        not_sampled[i] = hasAggregateFunctionType(block.getByPosition(i).type);
-    return not_sampled;
+    {
+        const auto & column_with_type = block.getByPosition(i);
+
+        /// The text of an aggregate function state is its binary serialization, which says nothing
+        /// to the model, and it is built whole in memory before the first byte of it is written: the
+        /// state of `groupArrayState` over millions of rows would be serialized whole.
+        if (hasAggregateFunctionType(column_with_type.type))
+        {
+            sampling[i] = {ColumnSampling::Kind::Placeholder, "[aggregate function state]"};
+            continue;
+        }
+
+        if (column_with_type.type->getTypeId() == TypeIndex::Object)
+        {
+            sampling[i] = {ColumnSampling::Kind::JSON, nullptr};
+            continue;
+        }
+
+        /// A `JSON` value nested in another type (`Array(JSON)`, a `Dynamic` or a `Variant` holding
+        /// one) is serialized through the escaped or quoted serialization of `JSON`, both of which
+        /// render it whole first, and so is an aggregate function state inside a `Dynamic`. The
+        /// shared variant of a `Dynamic` can hold a value of any type, those included, which is
+        /// only known after decoding it, so a `Dynamic` that uses it is not sampled either.
+        bool has_aggregate_function_state = false;
+        bool renders_whole_values = false;
+        const auto check = [&](const IColumn & column)
+        {
+            if (typeid_cast<const ColumnAggregateFunction *>(&column))
+                has_aggregate_function_state = true;
+            else if (typeid_cast<const ColumnObject *>(&column))
+                renders_whole_values = true;
+            else if (const auto * dynamic = typeid_cast<const ColumnDynamic *>(&column); dynamic && !dynamic->getSharedVariant().empty())
+                renders_whole_values = true;
+        };
+        check(*column_with_type.column);
+        column_with_type.column->forEachSubcolumnRecursively(check);
+
+        if (has_aggregate_function_state)
+            sampling[i] = {ColumnSampling::Kind::Placeholder, "[aggregate function state]"};
+        else if (renders_whole_values)
+            sampling[i] = {ColumnSampling::Kind::Placeholder, "[value not sampled]"};
+    }
+    return sampling;
 }
 
 /// Format one row of a block as an escaped tab-separated line, capped in length.
-String formatRow(const Block & block, const std::vector<bool> & not_sampled, size_t row)
+String formatRow(const Block & block, const std::vector<ColumnSampling> & sampling, size_t row)
 {
     static const FormatSettings format_settings;
 
@@ -82,13 +144,32 @@ String formatRow(const Block & block, const std::vector<bool> & not_sampled, siz
         {
             if (i)
                 writeChar('\t', out);
-            if (not_sampled[i])
-            {
-                writeCString("[aggregate function state]", out);
-                continue;
-            }
             const auto & column_with_type = block.getByPosition(i);
-            column_with_type.type->getDefaultSerialization()->serializeTextEscaped(*column_with_type.column, row, out, format_settings);
+            const auto serialization = column_with_type.type->getDefaultSerialization();
+            switch (sampling[i].kind)
+            {
+                case ColumnSampling::Kind::Escaped:
+                    serialization->serializeTextEscaped(*column_with_type.column, row, out, format_settings);
+                    break;
+                case ColumnSampling::Kind::JSON:
+                {
+                    LineSampleWriteBuffer json;
+                    try
+                    {
+                        serialization->serializeText(*column_with_type.column, row, json, format_settings);
+                        json.finalize();
+                    }
+                    catch (const LineSampleWriteBuffer::Full &) // NOLINT(bugprone-empty-catch)
+                    {
+                        /// The object is longer than the sample: what the buffer holds is its beginning.
+                    }
+                    writeEscapedString(json.sample(), out);
+                    break;
+                }
+                case ColumnSampling::Kind::Placeholder:
+                    writeCString(sampling[i].placeholder, out);
+                    break;
+            }
         }
         out.finalize();
     }
@@ -143,15 +224,15 @@ void QueryContextBuffer::addBlock(const Block & block)
 
     /// Const and sparse columns cannot be serialized row by row directly.
     const Block materialized = materializeBlock(block);
-    const std::vector<bool> not_sampled = columnsNotSampled(materialized);
+    const std::vector<ColumnSampling> sampling = columnsSampling(materialized);
 
     for (size_t row = 0; row < rows && entry->head_lines.size() < head_rows; ++row)
-        entry->head_lines.push_back(formatRow(materialized, not_sampled, row));
+        entry->head_lines.push_back(formatRow(materialized, sampling, row));
 
     size_t tail_from = rows > tail_rows ? rows - tail_rows : 0;
     for (size_t row = tail_from; row < rows; ++row)
     {
-        entry->tail_lines.push_back(formatRow(materialized, not_sampled, row));
+        entry->tail_lines.push_back(formatRow(materialized, sampling, row));
         while (entry->tail_lines.size() > tail_rows)
             entry->tail_lines.pop_front();
     }
@@ -290,7 +371,7 @@ String formatBlockAsTextForAI(const Block & block)
         return out.str();
 
     const Block materialized = materializeBlock(block);
-    const std::vector<bool> not_sampled = columnsNotSampled(materialized);
+    const std::vector<ColumnSampling> sampling = columnsSampling(materialized);
     size_t row = 0;
     for (; row < materialized.rows(); ++row)
     {
@@ -299,7 +380,7 @@ String formatBlockAsTextForAI(const Block & block)
             writeString(fmt::format("(truncated: {} of {} rows shown)\n", row, materialized.rows()), out);
             break;
         }
-        writeString(formatRow(materialized, not_sampled, row), out);
+        writeString(formatRow(materialized, sampling, row), out);
         writeChar('\n', out);
     }
 
