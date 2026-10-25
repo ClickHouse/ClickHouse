@@ -82,6 +82,25 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
+StoragePtr StorageAlias::tryResolveChain(const StoragePtr & storage)
+{
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    StoragePtr current = storage;
+    while (current)
+    {
+        const auto * alias = current->as<StorageAlias>();
+        if (!alias)
+            return current;
+
+        /// A cyclic chain is loadable state, and it has no final table.
+        if (!visited.emplace(alias->target_database, alias->target_table).second)
+            return nullptr;
+
+        current = alias->tryGetTargetTable();
+    }
+    return nullptr;
+}
+
 bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     if (!query_context)
