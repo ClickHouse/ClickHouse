@@ -102,7 +102,8 @@ def parse_key_values(items):
 HINT_RE = re.compile(r"\{\s*(serverError|clientError|error)\b")
 # The list of the error codes or names of the hint, separated by commas, as `TestHint` parses it.
 ERROR_HINT_RE = re.compile(r"\{\s*(?:serverError|clientError|error)\b([^}]*)\}")
-INSERT_RE = re.compile(r"\s*(EXPLAIN|INSERT)\b", re.IGNORECASE)
+# `ParserInsertQuery` also accepts a `WITH` clause before `INSERT`.
+INSERT_RE = re.compile(r"\s*(EXPLAIN|INSERT|WITH)\b", re.IGNORECASE)
 FORMAT_RE = re.compile(r"FORMAT\s+(\w+)\b", re.IGNORECASE)
 HEREDOC_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
@@ -209,6 +210,9 @@ def match_insert_format(text, begin, pos):
     # query, like in `EXPLAIN AST (SELECT 1 FORMAT TSV)` or `EXPLAIN SELECT 1 FORMAT TSV`.
     words = set(top_level_words(statement))
     if "INSERT" not in words or not is_top_level_end(statement):
+        return None
+    # The format of `WITH ... SELECT ... FORMAT TSV` does not start any data.
+    if next(top_level_words(statement), None) == "WITH" and returns_result(statement):
         return None
     # The rows of `INSERT ... FROM INFILE` and of `INSERT ... SELECT` do not follow the format name,
     # unless the `SELECT` reads them with the `input` table function.
