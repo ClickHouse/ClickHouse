@@ -515,10 +515,29 @@ def _destination_table_exists(client_bin_path, table, hash_value):
     return output.strip() == "1"
 
 
+# The errors of a query on the CI Logs cluster that mean the cluster does not
+# answer at all, as opposed to a failure of the query itself: the client gave up
+# on the connection, or the client process did not finish in time.
+REMOTE_UNAVAILABLE_ERRORS = (
+    "ALL_CONNECTION_TRIES_FAILED",
+    "SOCKET_TIMEOUT",
+    "NETWORK_ERROR",
+)
+
+
+def _is_unavailable_error(error):
+    if isinstance(error, subprocess.TimeoutExpired):
+        return True
+    return any(marker in str(error) for marker in REMOTE_UNAVAILABLE_ERRORS)
+
+
 def _create_destination_table(client_bin_path, table, hash_value, statement):
     """Create the destination table of `table` on the CI Logs cluster. Returns
     True if it exists afterwards, False if it is known not to, and None if that
-    could not be determined - the caller must not remember the latter.
+    could not be determined - the caller must not remember the latter. Raises
+    when the existence check shows that the CI Logs cluster does not answer at
+    all (see _is_unavailable_error): every other table would wait for the same
+    timeouts.
 
     The DDL is idempotent (`CREATE TABLE IF NOT EXISTS`), so a transient failure
     is retried, and a failure of any other kind is followed by an existence
@@ -537,7 +556,9 @@ def _create_destination_table(client_bin_path, table, hash_value, statement):
         )
     try:
         return _destination_table_exists(client_bin_path, table, hash_value)
-    except Exception:
+    except Exception as e:
+        if _is_unavailable_error(e):
+            raise
         logging.warning(
             "CI logs export: cannot tell whether the destination table for %s exists, will retry on the next server",
             table,
@@ -582,6 +603,7 @@ def _ensure_remote_tables(client_bin_path, tables):
             connected_marker.touch()
 
     created = set()
+    lost_marker = cache_dir / "lost"
     for table, hash_value, statement in tables:
         ok_marker = cache_dir / f"ok_{table}_{hash_value}"
         failed_marker = cache_dir / f"failed_{table}_{hash_value}"
@@ -590,7 +612,22 @@ def _ensure_remote_tables(client_bin_path, tables):
             continue
         if failed_marker.exists():
             continue
-        exists = _create_destination_table(client_bin_path, table, hash_value, statement)
+        # Another worker may have found the cluster gone in the meantime
+        if lost_marker.exists():
+            logging.info("CI logs export: disabled earlier in this job: %s", lost_marker.read_text())
+            return set()
+        try:
+            exists = _create_destination_table(client_bin_path, table, hash_value, statement)
+        except Exception as e:
+            # The cluster answered the probe but stopped answering since. Stop
+            # here, and disable the export for the rest of the job (the `lost`
+            # marker overrides `connected`, see _disabled_reason): otherwise
+            # every remaining table, and every later server, would wait for the
+            # DDL and the existence check timeouts again.
+            reason = f"the CI Logs cluster stopped answering while creating the destination table for {table}: {e}"
+            logging.warning("CI logs export: disabled for the rest of the job: %s", reason)
+            lost_marker.write_text(reason)
+            return set()
         if exists is None:
             continue
         if not exists:

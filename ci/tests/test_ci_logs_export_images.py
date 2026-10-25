@@ -648,6 +648,40 @@ def test_a_destination_table_is_only_blacklisted_once_confirmed_absent(
     assert markers == []
 
 
+def test_destination_setup_stops_once_the_ci_logs_cluster_stops_answering(
+    monkeypatch, tmp_path
+):
+    """The probe succeeded, but the CI Logs cluster stopped answering while the
+    destination tables are created: the setup stops after the first table
+    instead of waiting for the timeouts of every remaining one, and the export
+    is disabled for the rest of the job, so the next server does not wait for
+    them either."""
+    monkeypatch.setattr(HELPER, "_cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(HELPER.time, "sleep", lambda seconds: None)
+    (tmp_path / "connected").touch()
+    queries = []
+
+    def run(client_bin_path, sql, timeout=90, extra_args=()):
+        queries.append(sql)
+        raise HELPER.subprocess.TimeoutExpired(client_bin_path, timeout)
+
+    monkeypatch.setattr(HELPER, "_run_remote_query", run)
+    tables = [
+        (table, "abcd", f"CREATE TABLE IF NOT EXISTS {table}_abcd (x UInt8) ORDER BY x")
+        for table in ("query_log", "text_log", "trace_log")
+    ]
+    assert HELPER._ensure_remote_tables("clickhouse", tables) == set()
+    # The DDL and the existence check of the first table only
+    assert len(queries) == 2
+    assert queries[-1].startswith("EXISTS TABLE default.query_log_abcd")
+    assert "stopped answering" in HELPER._disabled_reason(tmp_path)
+    markers = sorted(p.name for p in tmp_path.iterdir())
+    assert markers == ["connected", "lost"]
+    # The next server does not query the cluster at all
+    assert HELPER._ensure_remote_tables("clickhouse", tables) == set()
+    assert len(queries) == 2
+
+
 def test_a_graceful_stop_flushes_the_export_first():
     """`stop_clickhouse` (and `restart_clickhouse`, which delegates to it) is
     how most suites restart a server: without a flush, the rows still in the
