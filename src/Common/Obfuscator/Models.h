@@ -552,13 +552,15 @@ public:
 /// `DateLUTImpl::makeDateTime` resolves a wall-clock time in the gap of a DST transition with the offset after
 /// the gap, moving it back by the length of the gap. On a day when DST starts at midnight, e.g. `2016-03-13` in
 /// 'America/Havana' that begins at 01:00, this moves a time from 00:00 to 00:59 to the previous day. Resolve
-/// such a time with the offset before the gap instead, moving it forward past the gap.
+/// such a time with the offset before the gap instead, which is the same time of day counted from the start of
+/// the day, e.g. 00:30 becomes 01:30. It does not need the offset change of the day, which the date lookup table
+/// does not provide outside of its range, e.g. for `DateTime64` values in the year 2300.
 static Int64 makeDateTimeOnDayOf(const DateLUTImpl & date_lut, Int64 time, UInt8 hour, UInt8 minute, UInt8 second)
 {
     const auto values = date_lut.getValues(time);
     const Int64 res = date_lut.makeDateTime(static_cast<Int16>(values.year), values.month, values.day_of_month, hour, minute, second);
     if (res < values.date)
-        return res + values.amount_of_offset_change();
+        return values.date + hour * 3600 + minute * 60 + second;
     return res;
 }
 

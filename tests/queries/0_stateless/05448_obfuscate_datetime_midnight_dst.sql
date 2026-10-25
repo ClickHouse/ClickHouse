@@ -20,3 +20,8 @@ SELECT 'DateTime64, Africa/Cairo', arraySort(groupUniqArray(toDate(x))) FROM (SE
     SELECT toDateTime64('2024-04-26 01:00:00', 3, 'Africa/Cairo') + toIntervalSecond(number * 37) AS x FROM numbers(2000)) LIMIT 2000);
 SELECT 'DateTime64, America/Santiago', arraySort(groupUniqArray(toDate(x))) FROM (SELECT x FROM obfuscate(
     SELECT toDateTime64('2024-09-08 01:00:00', 3, 'America/Santiago') + toIntervalSecond(number * 37) AS x FROM numbers(2000)) LIMIT 2000);
+
+-- The same past the end of the date lookup table (the year 2299), where the time zone rules are applied without it:
+-- in 'America/Havana', DST still starts at midnight on the second Sunday of March.
+SELECT 'DateTime64, America/Havana, 2300', arraySort(groupUniqArray(toDate32(x))) FROM (SELECT x FROM obfuscate(
+    SELECT toDateTime64('2300-03-11 01:00:00', 3, 'America/Havana') + toIntervalSecond(number * 37) AS x FROM numbers(2000)) LIMIT 2000);
