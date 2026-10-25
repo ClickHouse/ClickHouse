@@ -2004,3 +2004,24 @@ The [x86-64](https://app.buildbuddy.io/invocation/abf891b5-90aa-4eb0-a521-4e4431
 - [ARM64](https://app.buildbuddy.io/invocation/61bc9e2b-d704-4bba-9883-971bce5dd181): the HDFS action query did not establish a scheduling result.
 
 The strict DWYU aspect was not requested. No production DWYU grades are attributed to these builds.
+
+## d6d0d3ff2
+
+[d6d0d3ff2](https://github.com/dzbarsky/clickhouse/commit/d6d0d3ff2038ec9d93857b9e1e085d7970e7da7e) makes the protobuf runtime an implementation dependency of libhdfs3, makes generated libc++ headers opt-in for C and assembly, and keeps zxc instruction-set variants private. It removes the unused libxml2 configuration-header alias and removes headers for two disabled backends from minizip's public headers.
+
+The [x86-64](https://app.buildbuddy.io/invocation/36d04de7-9f28-45e0-81b1-1392b4b6fec0) and [ARM64](https://app.buildbuddy.io/invocation/299e0a86-e05e-476a-95cf-c6555f00320a) builds completed all 12 native targets and returned nine JSON reports each. On each CPU, the stripped and normalized ClickHouse SHA-256 and byte count matched native CMake. The raw ClickHouse and DBMS unit-test SHA-256 and byte count matched the previous Bazel build. [All six SHA-256 digests and byte counts](../../README.bazel.md#binary-comparison).
+
+On both CPUs, the HDFS action query and the native SDK report agreed on the eight generated protobuf headers. The HDFS compilations used the private protobuf `port.h` include (88 in one compile group, one in the other); the two downstream ClickHouse source files did not receive the eight generated headers.
+
+| DWYU result | x86-64 | ARM64 | Same result on both CPUs |
+| --- | ---: | ---: | ---: |
+| Strict clean | 1 | 1 | 1 |
+| Verified header preprocessing only | 0 | 0 | 0 |
+| Verified strict finding | 0 | 0 | 0 |
+| No verified outcome | 659 | 659 | 659 |
+
+The counts refer to distinct production targets. 0 of 660 targets had a result on only one CPU or had different results on the two CPUs. Header preprocessing does not count as a strict clean result.
+
+The first native builds ([x86-64](https://app.buildbuddy.io/invocation/c77e1064-0b3b-49c1-87e0-9e35d77acaed), [ARM64](https://app.buildbuddy.io/invocation/f7169f01-b5f5-4ed3-b8f8-ce09c658ad20)) also matched all six hashes. The HDFS scheduling checks ([x86-64](https://app.buildbuddy.io/invocation/548e83e1-b95f-4f3b-ad2a-348caa2c1e4a), [ARM64](https://app.buildbuddy.io/invocation/44997d82-2370-42eb-8457-45a7063f02b6)) and the strict DWYU builds of `//base/readpassphrase` ([x86-64](https://app.buildbuddy.io/invocation/0f77e2b7-9057-4de2-be1f-5d9a3c658f19), [ARM64](https://app.buildbuddy.io/invocation/4542899f-d9b5-482c-8a55-c17bc22d4d75)) ran separately on the same source.
+The initial HDFS verifier assumed each Bazel configuration has a unique output directory. The two configuration checksums on each CPU both use `bazel-out/k8-opt/bin`. Replaying the saved action graph with configuration IDs and artifact IDs verified all eight producers, 89 HDFS compiles and two callers without another build.
+The initial builds each executed 1,244 actions on remote workers. The repeated builds of the same source reported 51,224 remote cache hits on x86-64 and 51,620 on ARM64. Neither repeat executed an action on a remote worker.

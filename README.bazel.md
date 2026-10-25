@@ -47,18 +47,18 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-At [8feca5524](https://github.com/dzbarsky/clickhouse/commit/8feca5524fe2c6ecea2e49b0723d8e3a72fb326b), the stripped and normalized ClickHouse executable matched the native CMake reference on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test executables matched the previous Bazel build. The table gives the original build-event SHA-256 and byte count for each configured target; no executable was downloaded.
+At [d6d0d3ff2](https://github.com/dzbarsky/clickhouse/commit/d6d0d3ff2038ec9d93857b9e1e085d7970e7da7e), the stripped and normalized ClickHouse executable matched native CMake on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test executables matched the previous Bazel build. The SHA-256 digests and byte counts below come from the original Bazel build events and BuildBuddy target metadata. No executable was downloaded.
 
 | Native Bazel build | ELF | SHA-256 | Bytes |
 | --- | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/abf891b5-90aa-4eb0-a521-4e4431d88889) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [x86-64](https://app.buildbuddy.io/invocation/abf891b5-90aa-4eb0-a521-4e4431d88889) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
-| [x86-64](https://app.buildbuddy.io/invocation/abf891b5-90aa-4eb0-a521-4e4431d88889) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
-| [ARM64](https://app.buildbuddy.io/invocation/61bc9e2b-d704-4bba-9883-971bce5dd181) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
-| [ARM64](https://app.buildbuddy.io/invocation/61bc9e2b-d704-4bba-9883-971bce5dd181) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
-| [ARM64](https://app.buildbuddy.io/invocation/61bc9e2b-d704-4bba-9883-971bce5dd181) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+| [x86-64](https://app.buildbuddy.io/invocation/36d04de7-9f28-45e0-81b1-1392b4b6fec0) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/36d04de7-9f28-45e0-81b1-1392b4b6fec0) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/36d04de7-9f28-45e0-81b1-1392b4b6fec0) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/299e0a86-e05e-476a-95cf-c6555f00320a) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/299e0a86-e05e-476a-95cf-c6555f00320a) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/299e0a86-e05e-476a-95cf-c6555f00320a) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
 
-Both builds completed all 12 native targets, including the Parquet reader, ORC reader and IntervalTree tests. [Validation details](bazel/initial_migration/validation-history.md#8feca5524).
+Both builds completed all 12 native targets and returned nine JSON reports each, including checks for the Parquet reader, ORC reader and IntervalTree tests. [Validation details](bazel/initial_migration/validation-history.md#d6d0d3ff2).
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-[8feca5524](https://github.com/dzbarsky/clickhouse/commit/8feca5524fe2c6ecea2e49b0723d8e3a72fb326b): the binary validation did not run the strict DWYU aspect. None of the 660 production targets has a verified DWYU result at this revision. [Validation details](bazel/initial_migration/validation-history.md#8feca5524).
+[d6d0d3ff2](https://github.com/dzbarsky/clickhouse/commit/d6d0d3ff2038ec9d93857b9e1e085d7970e7da7e): 1 of 660 production targets have a strict clean DWYU result on both CPUs; 0 have a verified header-preprocessing result on both. Strict findings were verified on 0 x86-64 targets and 0 ARM64 targets. [Validation details](bazel/initial_migration/validation-history.md#d6d0d3ff2).
