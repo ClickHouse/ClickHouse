@@ -285,7 +285,8 @@ private:
         bool user_initiated = false,
         bool deduplicate = false,
         bool cleanup = false,
-        const std::function<void()> & on_wait_for_running_merges = {});
+        const std::function<void()> & on_wait_for_running_merges = {},
+        bool merge_forced_horizontal = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,

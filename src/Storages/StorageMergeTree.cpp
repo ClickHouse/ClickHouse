@@ -2014,7 +2014,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     bool user_initiated,
     bool deduplicate,
     bool cleanup,
-    const std::function<void()> & on_wait_for_running_merges)
+    const std::function<void()> & on_wait_for_running_merges,
+    bool merge_forced_horizontal)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -2397,7 +2398,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID()
+                /*storage_id_=*/getStorageID(),
+                /*merge_forced_horizontal_=*/merge_forced_horizontal
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -2587,7 +2589,8 @@ bool StorageMergeTree::merge(
                 /*user_initiated=*/true,
                 deduplicate,
                 cleanup,
-                release_slot_before_wait);
+                release_slot_before_wait,
+                /*merge_forced_horizontal=*/deduplicate || cleanup);
         }();
 
         if (!merge_select_result.has_value())
