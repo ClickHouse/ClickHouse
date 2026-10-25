@@ -276,8 +276,8 @@ DecimalField<T> decodeDecimal(ReadBuffer & buf)
     /// fixed-size buffer in the decimal text writer, so reject it at the boundary, matching
     /// `readDecimalFieldBinary` and `DataTypeDecimalBase`.
     if (scale > DecimalUtils::max_precision<T>)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                        scale, DecimalUtils::max_precision<T>);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})", scale, DecimalUtils::max_precision<T>);
+
     T value{};
     readBinaryLittleEndian(value, buf);
     return DecimalField<T>(value, scale);
