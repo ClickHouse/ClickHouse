@@ -13,6 +13,7 @@
 
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <unordered_set>
 
@@ -554,6 +555,9 @@ struct Reader
             const IColumn::Offsets * offsets = nullptr;
         };
         std::vector<NestedArrayLevel> nested_array_offsets;
+        /// Serializes forming the columns written to the columns cache in the decoding tasks of the row subgroup,
+        /// which run in parallel, see `decodePrimitiveColumn`.
+        std::mutex form_output_for_cache_mutex;
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};

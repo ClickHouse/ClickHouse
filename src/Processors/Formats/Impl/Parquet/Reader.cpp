@@ -3474,6 +3474,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
                 if (!output_info.is_primitive && !write_to_cache)
                     continue;
 
+                /// The decoding tasks of the columns of a row subgroup run in parallel, and `formOutputColumn`
+                /// of a column that is not primitive changes the state of the row subgroup that the forming of
+                /// any column reads, e.g. `RowSubgroup::nested_array_offsets`. A column that is not primitive is
+                /// formed here only if the row group is written to the cache.
+                std::unique_lock form_lock(row_subgroup.form_output_for_cache_mutex, std::defer_lock);
+                if (!row_group.columns_cache_writes.empty())
+                    form_lock.lock();
+
                 /// The null map left on a top-level primitive column marks the values replaced with
                 /// defaults (`input_format_null_as_default`). They are reported in the block missing values
                 /// (only for the columns of the sample block, and only with `input_format_defaults_for_omitted_fields`),
@@ -3492,7 +3500,18 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
                 state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
 
                 if (write_to_cache)
+                {
+                    /// `formOutputColumn` keeps the column in `formed_output_columns` for reuse. Let it go while the
+                    /// column is written to the cache, so that `addToColumnsCacheWrite` can shrink it in place, without
+                    /// a copy, and keep the column it was shrunk to.
+                    ColumnPtr & formed_output = row_subgroup.formed_output_columns.at(*output_idx);
+                    const bool formed_output_is_state_column = formed_output.get() == state.column.get();
+                    if (formed_output_is_state_column)
+                        formed_output.reset();
                     addToColumnsCacheWrite(row_group, row_subgroup, idx_in_output_block, state.column, has_substituted_defaults);
+                    if (formed_output_is_state_column)
+                        formed_output = state.column;
+                }
             }
         }
     };
