@@ -569,8 +569,8 @@ ColumnSize partReadBytes(const IMergeTreeDataPart & part, const NamesAndTypesLis
         if (recover_dynamic_sizes && column.type->hasDynamicStructure())
         {
             const auto escaped_column_name = escapeForFileName(column.name);
-            UInt64 data_compressed = 0;
-            UInt64 data_uncompressed = 0;
+            size_t data_compressed = 0;
+            size_t data_uncompressed = 0;
             for (const auto & [file_name, checksum] : part.checksums.files)
             {
                 if (!file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
