@@ -9,6 +9,7 @@
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/WriteHelpers.h>
 #include <IO/BitHelpers.h>
 
 #include <cstring>
@@ -107,7 +108,6 @@ public:
     explicit CompressionCodecGorilla(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -320,16 +320,6 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 // 0b11 prefix
                 curr_xored_info.leading_zero_bits = static_cast<UInt8>(reader.readBits(LEADING_ZEROES_BIT_LENGTH));
                 curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
-
-                /// The encoder derives both widths from a non-zero XOR, so there is at least one data
-                /// bit and the leading zero bits and the data bits together fit into the value.
-                if (curr_xored_info.data_bits == 0
-                    || UInt32{curr_xored_info.leading_zero_bits} + UInt32{curr_xored_info.data_bits} > sizeof(T) * 8) [[unlikely]]
-                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                        "Cannot decompress Gorilla-encoded data: corrupted input data. "
-                        "It has {} leading zero bits and {} data bits, which is not a valid split of {} bits",
-                        UInt32{curr_xored_info.leading_zero_bits}, UInt32{curr_xored_info.data_bits}, sizeof(T) * 8);
-
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
             }
             // else: 0b10 prefix - use prev_xored_info
@@ -378,11 +368,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-}
-
-ASTPtr CompressionCodecGorilla::getCodecDescription() const
-{
-    return makeCodecDescription("Gorilla", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
+    setCodecDescription("Gorilla", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const
@@ -392,7 +378,7 @@ uint8_t CompressionCodecGorilla::getMethodByte() const
 
 void CompressionCodecGorilla::updateHash(SipHash & hash) const
 {
-    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(data_bytes_size);
 }
 

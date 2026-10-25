@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- `GROUP BY GROUPING SETS` under `make_distributed_plan`. There is no separate plan step: the
 -- `Aggregating` step computes every set and tags rows with `__grouping_set`. Only the
 -- partial-aggregation strategy is correct for it (a shuffle by the full key set would produce a
@@ -19,12 +22,12 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- grouping sets, group_by_use_nulls = 0';
 SELECT k1, k2, sum(v), count()
 FROM t_gs_dist GROUP BY GROUPING SETS ((k1), (k2), ()) ORDER BY ALL
-SETTINGS group_by_use_nulls = 0, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS group_by_use_nulls = 0;
 
 SELECT '-- grouping sets with grouping(), group_by_use_nulls = 1';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
 FROM t_gs_dist GROUP BY GROUPING SETS ((k1), (k1, k2)) ORDER BY ALL
-SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- distributed plan';
 -- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.

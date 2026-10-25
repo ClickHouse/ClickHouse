@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/54317
+SET enable_analyzer=1;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier};

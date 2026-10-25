@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT arrayJoin([1, 2, 3]);
 

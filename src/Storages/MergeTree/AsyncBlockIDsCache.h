@@ -9,7 +9,6 @@
 namespace DB
 {
 
-/// Snapshot of the deduplication hashes in Keeper. Each refresh increases the version, `truncate` keeps it.
 template <typename TStorage>
 class AsyncBlockIDsCache
 {
@@ -25,14 +24,7 @@ public:
 
     void stop();
 
-    struct Conflicts
-    {
-        std::vector<DeduplicationHash> hashes;
-        UInt64 version = 0;
-    };
-
-    /// Waits up to `update_wait` for a snapshot with at least `min_version`, 0 means no wait.
-    Conflicts detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 min_version);
+    std::vector<DeduplicationHash> detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version);
 
     void triggerCacheUpdate();
 

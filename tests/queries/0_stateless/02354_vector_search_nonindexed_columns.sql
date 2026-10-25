@@ -5,12 +5,9 @@
 -- in the same table.
 SET explain_query_plan_default = 'legacy';
 
+SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
-SET optimize_move_to_prewhere = 1;
-
--- The reference vector is built with a lambda over a constant range. Its body has to be deterministic
--- in the scope of the query: a lambda whose body is not (e.g. `randCanonical`) is not constant folded,
--- so the reference vector is not a constant and the vector index cannot be used for it.
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -27,8 +24,8 @@ SETTINGS index_granularity = 3;
 INSERT INTO tab
 SELECT
     number,
-    arrayMap(i -> i / 16, range(16)),
-    arrayMap(i -> i / 32, range(32))
+    arrayMap(i -> randCanonical(i), range(16)),
+    arrayMap(i -> randCanonical(i), range(32))
 FROM numbers(100);
 
 -- Test vector search on indexed column (vec1) with different filter strategies
@@ -46,7 +43,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'auto'
 )
@@ -58,7 +55,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
@@ -71,7 +68,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'auto'
 )
@@ -85,7 +82,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -99,7 +96,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec1, arrayMap(i -> i / 16, range(16)))
+    ORDER BY cosineDistance(vec1, arrayMap(i -> randCanonical(i), range(16)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )
@@ -119,7 +116,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec2, arrayMap(i -> i / 32, range(32)))
+    ORDER BY cosineDistance(vec2, arrayMap(i -> randCanonical(i), range(32)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'auto'
 )
@@ -133,7 +130,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec2, arrayMap(i -> i / 32, range(32)))
+    ORDER BY cosineDistance(vec2, arrayMap(i -> randCanonical(i), range(32)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'prefilter'
 )
@@ -147,7 +144,7 @@ FROM (
     SELECT key
     FROM tab
     WHERE key IN (0, 30, 60, 90)
-    ORDER BY cosineDistance(vec2, arrayMap(i -> i / 32, range(32)))
+    ORDER BY cosineDistance(vec2, arrayMap(i -> randCanonical(i), range(32)))
     LIMIT 1
     SETTINGS vector_search_filter_strategy = 'postfilter'
 )

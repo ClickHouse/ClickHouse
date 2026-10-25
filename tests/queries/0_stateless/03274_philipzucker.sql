@@ -1,5 +1,7 @@
 -- https://www.philipzucker.com/sql_graph_csp/
 
+set enable_analyzer = 1;
+
 WITH RECURSIVE digits AS (
     SELECT 0 AS digit
     UNION ALL

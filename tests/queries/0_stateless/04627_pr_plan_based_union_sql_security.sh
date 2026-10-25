@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
+# Tags: no-replicated-database
 # ^ creates a user and a DEFINER view; access entities are not part of the Replicated test database.
 
 # Plan-based parallel replicas merges a UNION ALL over MergeTree branches into a single distributed plan
@@ -38,6 +38,7 @@ CREATE VIEW dv1 DEFINER = ${user} SQL SECURITY DEFINER AS SELECT a FROM ub1;
 -- iv2: INVOKER over ub2 (no policy) -> returns all of ub2.
 CREATE VIEW iv2 SQL SECURITY INVOKER AS SELECT a FROM ub2;
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

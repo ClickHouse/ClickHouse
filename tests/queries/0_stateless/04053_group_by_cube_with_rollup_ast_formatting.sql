@@ -2,6 +2,8 @@
 -- formatting in debug builds because the formatted query could not be parsed back.
 -- https://github.com/ClickHouse/ClickHouse/issues/100320
 
+SET enable_analyzer = 1;
+
 SELECT t0.* FROM (SELECT 1 AS v1, 2 AS v2, 'a' AS v3) AS t0 GROUP BY CUBE (v1, v2, v3) WITH ROLLUP; -- { serverError NOT_IMPLEMENTED }
 SELECT 1 GROUP BY 1 WITH ROLLUP WITH CUBE; -- { serverError NOT_IMPLEMENTED }
 SELECT 1 GROUP BY CUBE(1) WITH ROLLUP; -- { serverError NOT_IMPLEMENTED }

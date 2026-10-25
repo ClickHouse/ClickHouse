@@ -10,12 +10,14 @@
 namespace DB
 {
 
-/// Evaluates TTL delete expressions and attaches the resulting mask to the chunk, without
-/// filtering the block or changing its header. The merging algorithm reads the mask to set skip
-/// flags in row sources for a vertical merge.
+/// Evaluates TTL delete expressions and produces a UInt8 filter column
+/// without actually filtering the block. The filter column is then used
+/// by the merging algorithm to set skip flags in row sources for vertical merge.
 class TTLDeleteFilterTransform final : public ISimpleTransform
 {
 public:
+    static inline const String TTL_FILTER_COLUMN_NAME = "_ttl_filter";
+
     /// Immutable state shared across all per-stream transform instances.
     /// Built once so that every instance references the same `FutureSet`
     /// objects that `CreatingSetStep` fills.
@@ -44,6 +46,8 @@ public:
 
     String getName() const override { return "TTLDeleteFilter"; }
 
+    static SharedHeader transformHeader(const SharedHeader & header);
+
 protected:
     void transform(Chunk & chunk) override;
 
@@ -54,7 +58,7 @@ private:
 
     /// Convert a typed TTL column into a uniform Int64 timestamp array.
     /// Resolves the concrete column type once, then extracts all values in a tight loop.
-    void extractTimestamps(const IColumn * ttl_column);
+    void extractTimestamps(const IColumn * ttl_column, size_t num_rows);
 };
 
 }

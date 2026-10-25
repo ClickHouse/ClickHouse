@@ -17,18 +17,6 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
-
-    # Disable features that aren't currently supported on illumos.
-    # `CACHE INTERNAL` forces the value, so it also applies on reconfigure of an existing build directory.
-    set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
-    set (ENABLE_HDFS OFF CACHE INTERNAL "")
-    set (ENABLE_LDAP OFF CACHE INTERNAL "")
-    set (ENABLE_LIBPQXX OFF CACHE INTERNAL "")
-    set (USE_MONGODB OFF CACHE INTERNAL "")
-    set (ENABLE_PARQUET OFF CACHE INTERNAL "")
-    set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
-    set (ENABLE_SSH OFF CACHE INTERNAL "")
-    set (ENABLE_RUST OFF CACHE INTERNAL "")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Emscripten")
     # WebAssembly, through the Emscripten toolchain. Configure with `emcmake cmake ...`, which
     # sets CMAKE_SYSTEM_NAME and points CMAKE_TOOLCHAIN_FILE at Emscripten's own toolchain file.
@@ -98,12 +86,13 @@ if (OS_WASM)
     set (ENABLE_CURL OFF CACHE INTERNAL "")
     # `libssh` needs raw sockets, and its config headers are pregenerated per platform.
     set (ENABLE_SSH OFF CACHE INTERNAL "")
-    # This also turns off `wasmtime`, the engine behind WebAssembly UDFs: a host WebAssembly
-    # runtime inside a WebAssembly sandbox would need to run guest modules from native code,
-    # which this target cannot provide.
     set (ENABLE_RUST OFF CACHE INTERNAL "")
     set (ENABLE_DELTA_KERNEL_RS OFF CACHE INTERNAL "")
     set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+    # A host WebAssembly runtime inside a WebAssembly sandbox: `WasmEdge` runs guest modules
+    # from native code that this target cannot provide. `wasmtime`, the other engine, is Rust,
+    # so `ENABLE_RUST` above already covers it.
+    set (ENABLE_WASMEDGE OFF CACHE INTERNAL "")
     set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
     set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
     set (ENABLE_VECTORSCAN OFF CACHE INTERNAL "")
@@ -123,13 +112,10 @@ if (OS_WASM)
 
     # Executable links. The Emscripten defaults are sized for small programs: a 64 KiB shadow
     # stack and a fixed 16 MiB linear memory, while `clickhouse` needs ~50 MiB for static data
-    # alone. An 8 MiB stack matches `DBMS_DEFAULT_THREAD_STACK_SIZE`. Memory starts at 2 GiB, enough for
-    # `clickhouse local` to start without growing it: V8 checks some accesses against a per-thread copy of
-    # the memory size that a grow on another thread updates later, so they can trap in just-grown memory
-    # (https://issues.chromium.org/issues/529880019). It may still grow (the maximum has to be explicit
-    # when growth is combined with shared memory).
+    # alone. An 8 MiB stack matches `DBMS_DEFAULT_THREAD_STACK_SIZE`; memory starts at 256 MiB
+    # and may grow (the maximum has to be explicit when growth is combined with shared memory).
     add_link_options (-sSTACK_SIZE=8388608)
-    add_link_options (-sINITIAL_MEMORY=2147483648)
+    add_link_options (-sINITIAL_MEMORY=268435456)
     add_link_options (-sALLOW_MEMORY_GROWTH=1)
     add_link_options (-sMAXIMUM_MEMORY=17179869184)
     # No DWARF in the linked module: binaryen's `wasm-opt` asserts in its debug-info
@@ -207,8 +193,6 @@ if (CMAKE_CROSSCOMPILING)
         # FIXME: broken dependencies
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
         set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
-    elseif (OS_SUNOS)
-        # The SunOS toolchain supplies the cross compiler and sysroot.
     elseif (OS_WASM)
         # Handled in the OS_WASM block above: it has to run before this one, because the
         # `CMAKE_CROSSCOMPILING` check below it needs `OS_WASM` to already be set.

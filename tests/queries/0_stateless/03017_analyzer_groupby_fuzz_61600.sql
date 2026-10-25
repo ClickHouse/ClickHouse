@@ -13,7 +13,8 @@ SELECT
 FROM set_index_not__fuzz_0
 GROUP BY
     toNullable(3),
-    concat(concat(NULLIF(1, 1), toNullable(toNullable(3))));
+    concat(concat(NULLIF(1, 1), toNullable(toNullable(3))))
+SETTINGS enable_analyzer = 1;
 
 -- WITH ROLLUP (note that result is different with the analyzer (analyzer is correct including all combinations)
 SELECT
@@ -23,4 +24,5 @@ FROM set_index_not__fuzz_0
 GROUP BY
     toNullable(3),
     concat(concat(NULLIF(1, 1), toNullable(toNullable(3))))
-WITH ROLLUP;
+WITH ROLLUP
+SETTINGS enable_analyzer = 1;

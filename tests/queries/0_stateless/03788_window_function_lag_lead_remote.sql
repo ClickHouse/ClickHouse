@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 -- WindowStep does not support query plan serialization yet
 SET serialize_query_plan = 0;
