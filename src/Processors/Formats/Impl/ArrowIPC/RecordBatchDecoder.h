@@ -81,11 +81,14 @@ public:
         const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
 
     /// Decodes an explicit list of fields (used for dictionary batches, which carry one value column).
+    /// With `read_undeclared_nulls`, nulls in fields declared non-nullable are read as NULL (by decoding a
+    /// copy of the field that declares them nullable) instead of being rejected.
     DecodedColumns decodeColumns(
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowFields & fields,
         const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields = nullptr,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr,
-        const VectorWithMemoryTracking<char> * reachable_buffers = nullptr);
+        const VectorWithMemoryTracking<char> * reachable_buffers = nullptr,
+        bool read_undeclared_nulls = false);
 
     /// The buffers (indices into `batch.buffers()`) referenced by the requested top-level fields, as a
     /// 0/1 mask of length `batch.buffers()->size()`. Computed by the same cursor walk decoding uses
@@ -122,6 +125,11 @@ private:
     /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
     /// flat node/buffer cursors aligned for the columns that follow.
     void skipField(const ArrowField & field);
+    /// Walks the FieldNodes of `field`'s subtree, starting `node_offset` nodes after the next one, without
+    /// consuming them, and collects the fields declared non-nullable whose nodes report nulls. Returns false
+    /// when the walk cannot continue (missing nodes or an unknown layout); decoding then reports the error.
+    bool collectUndeclaredNullFields(
+        const ArrowField & field, size_t & node_offset, UnorderedSetWithMemoryTracking<const ArrowField *> & fields) const;
     ColumnPtr decodeInner(const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
     ColumnPtr decodeDictionary(
