@@ -6,7 +6,6 @@ CREATE TABLE t1 (a Int16, b String, a1 Int16 ALIAS a+1) ENGINE = Memory;
 INSERT INTO t0 VALUES (2, 'test');
 INSERT INTO t1 VALUES (2, 'test');
 
-SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 
 SELECT tuple(*), 2 a FROM t0 JOIN t1 USING (a);

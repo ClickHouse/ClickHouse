@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -24,7 +25,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Core/UUID.h>
-#include <Parsers/getTimeSeriesSettingVersion.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 
 
 namespace DB
@@ -67,6 +68,7 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Columns definition");
     w.writeChild("columns", columns);
+    w.writeChild("codec_declarations", codec_declarations);
     w.writeChild("indices", indices);
     w.writeChild("constraints", constraints);
     w.writeChild("projections", projections);
@@ -113,6 +115,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "A column-level 'primary_key_specifier' is not allowed in `Columns` during AST JSON deserialization");
 
+    readDeclarationList.operator()<ASTCodecDeclaration>("codec_declarations", codec_declarations);
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
@@ -337,6 +340,8 @@ ASTPtr ASTColumns::clone() const
 
     if (columns)
         res->set(res->columns, columns->clone());
+    if (codec_declarations)
+        res->set(res->codec_declarations, codec_declarations->clone());
     if (indices)
         res->set(res->indices, indices->clone());
     if (constraints)
@@ -362,6 +367,16 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
             auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "";
             elem->set(elem->elem, column->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (codec_declarations)
+    {
+        for (const auto & declaration : codec_declarations->children)
+        {
+            auto elem = make_intrusive<ASTColumnsElement>();
+            elem->prefix = "CODEC";
+            elem->set(elem->elem, declaration->clone());
             list.children.push_back(elem);
         }
     }
@@ -578,7 +593,7 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     {
         std::optional<UInt64> time_series_version;
         if (is_time_series_table)
-            time_series_version = getTimeSeriesSettingVersion(*this);
+            time_series_version = getTimeSeriesVersion(*this);
         w.writeKey("targets");
         targets->writeJSON(out, time_series_version);
     }
@@ -1201,7 +1216,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         std::optional<UInt64> time_series_version;
         if (is_time_series_table)
-            time_series_version = getTimeSeriesSettingVersion(*this);
+            time_series_version = getTimeSeriesVersion(*this);
         for (const auto & target : targets->targets)
         {
             /// `To` and `Inner` are formatted separately above (for materialized views).

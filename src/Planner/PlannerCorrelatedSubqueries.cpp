@@ -28,6 +28,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PreparedSets.h>
 
 #include <Parsers/SelectUnionMode.h>
@@ -1699,6 +1700,17 @@ QueryPlan buildLogicalJoin(
             join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
+    }
+    else
+    {
+        /// For the same reason, the user-facing `join_algorithm` list must not decide whether this
+        /// internal join can run at all: the sort-merge algorithms cannot execute an `ANY RIGHT` join,
+        /// and `partial_merge` does not do `ANY` beyond `INNER`/`LEFT`, so a correlated subquery under
+        /// `join_algorithm = 'partial_merge'` used to fail with `NOT_IMPLEMENTED`. Add the algorithms
+        /// that can execute the join the decorrelation just built.
+        auto & join_settings = result_join->getJoinSettings();
+        if (!JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_kind_to_use, JoinStrictness::Any))
+            join_settings.join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
     }
 
     QueryPlan result_plan;
