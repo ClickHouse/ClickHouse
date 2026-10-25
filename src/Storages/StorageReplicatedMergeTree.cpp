@@ -7759,7 +7759,7 @@ static void copyLocalColumnComments(ColumnsDescription & columns_from_zk, const 
 void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version, const QueryStatusPtr & process_list_element)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getZooKeeperAndAssertNotReadonly();
     const String table_metadata_path = fs::path(zookeeper_path) / "metadata";
     const String table_columns_path = fs::path(zookeeper_path) / "columns";
     const String replica_metadata_version_path = fs::path(replica_path) / "metadata_version";
@@ -7867,10 +7867,8 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
             "or the table may have been altered concurrently. Wait for the replica to apply the ALTERs (SYSTEM SYNC REPLICA) and retry",
             metadata_version, getStorageID().getNameForLogs(), metadata_snapshot->getMetadataVersion(), new_metadata_version);
 
-    String replica_metadata_version_str;
     Coordination::Stat replica_metadata_version_stat;
-    while (zookeeper->tryGet(replica_metadata_version_path, replica_metadata_version_str, &replica_metadata_version_stat)
-        && parse<Int32>(replica_metadata_version_str) < new_metadata_version)
+    while (parse<Int32>(zookeeper->get(replica_metadata_version_path, &replica_metadata_version_stat)) < new_metadata_version)
     {
         auto code = zookeeper->trySet(replica_metadata_version_path, toString(new_metadata_version), replica_metadata_version_stat.version);
         if (code == Coordination::Error::ZOK)
