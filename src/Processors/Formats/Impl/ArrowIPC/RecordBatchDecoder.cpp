@@ -161,7 +161,13 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
             return tuple->getElements()[*position];
         return nullptr;
     }
-    if (pos < tuple->getElements().size())
+    return tupleElementHintByPosition(hint, pos);
+}
+
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
 }
@@ -1019,6 +1025,57 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             fillFixed<ColumnInt64>(*column, rows, values, 8, invisible_rows);
             break;
         }
+        case TypeKind::Interval:
+        {
+            /// Each value is one count (YEAR_MONTH: Int32 months) or a packed struct of counts (DAY_TIME: Int32
+            /// days, Int32 milliseconds; MONTH_DAY_NANO: Int32 months, Int32 days, Int64 nanoseconds), read into
+            /// the Int64 interval columns of the type from `fieldToCHType`. Invisible slots are zero.
+            const Slice values = nextBuffer();
+            auto fill_count = [&](IColumn & dst, size_t value_width, size_t offset, bool is_int64)
+            {
+                auto & data = assert_cast<ColumnInt64 &>(dst).getData();
+                data.resize(rows);
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    if (isInvisible(invisible_rows, i))
+                    {
+                        data[i] = 0;
+                        continue;
+                    }
+                    const char * src = values.ptr + i * value_width + offset;
+                    if (is_int64)
+                    {
+                        Int64 count = 0;
+                        memcpy(&count, src, sizeof(count));
+                        data[i] = count;
+                    }
+                    else
+                    {
+                        Int32 count = 0;
+                        memcpy(&count, src, sizeof(count));
+                        data[i] = count;
+                    }
+                }
+            };
+            if (type.unit == flatbuf::IntervalUnit_YEAR_MONTH)
+            {
+                fill_count(*column, 4, 0, false);
+            }
+            else if (type.unit == flatbuf::IntervalUnit_DAY_TIME)
+            {
+                auto & tuple = assert_cast<ColumnTuple &>(*column);
+                fill_count(tuple.getColumn(0), 8, 0, false);
+                fill_count(tuple.getColumn(1), 8, 4, false);
+            }
+            else
+            {
+                auto & tuple = assert_cast<ColumnTuple &>(*column);
+                fill_count(tuple.getColumn(0), 16, 0, false);
+                fill_count(tuple.getColumn(1), 16, 4, false);
+                fill_count(tuple.getColumn(2), 16, 8, true);
+            }
+            break;
+        }
         case TypeKind::Utf8:
         case TypeKind::Binary:
         case TypeKind::LargeUtf8:
@@ -1235,9 +1292,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false,
-                    tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, invisible_rows);
+                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -1576,8 +1632,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                childPath(path, child.name), list_depth));
+                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -2055,8 +2110,10 @@ bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn
     const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))));
-    return field.nullable && inner.canBeInsideNullable()
-        && (field.type.kind != TypeKind::Struct || preserve_struct_nulls);
+    /// A DAY_TIME or MONTH_DAY_NANO interval is also a `Tuple` (see `fieldToCHType`), with the same rule.
+    const bool is_tuple = field.type.kind == TypeKind::Struct
+        || (field.type.kind == TypeKind::Interval && field.type.unit != flatbuf::IntervalUnit_YEAR_MONTH);
+    return field.nullable && inner.canBeInsideNullable() && (!is_tuple || preserve_struct_nulls);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)
@@ -2435,6 +2492,18 @@ String RecordBatchDecoder::childPath(const String & path, const String & child_n
     return path.empty() ? seg : path + "." + seg;
 }
 
+DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+{
+    if (type.positional_fields)
+        return tupleElementHintByPosition(hint, i);
+    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+}
+
+String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
+{
+    return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
+}
+
 void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
 {
     buffer_slices.clear();
@@ -2796,8 +2865,8 @@ void RecordBatchDecoder::collectDictionaryUses(
             {
                 const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, lookup_types, uses);
+                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
+                    lookup_types, uses);
             }
             break;
         case TypeKind::RunEndEncoded:
