@@ -653,6 +653,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     catch (...)
     {
+        /// Ok: the helpers rethrow it, or return empty checksums for a retryable error, or recheck without the cache.
         if (should_return_empty_checksums())
             return {};
         return drop_cache_and_check();
