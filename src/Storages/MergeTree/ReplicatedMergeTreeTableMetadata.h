@@ -51,11 +51,13 @@ struct ReplicatedMergeTreeTableMetadata
     /// compatibility with older replicas (before 25.12) that stored them in Keeper.
     /// `columns` must match the column set described by the same metadata source as `s`
     /// (e.g. entry.columns_str for ALTER entries), not necessarily the current table columns.
+    /// `table_metadata` is the local table metadata: an index is treated as implicit only when its
+    /// stored `SETTINGS` clause enables the implicit-index policy of the indexed column's category,
+    /// the same rule as the local metadata loader in `registerStorageMergeTree` applies.
     static ReplicatedMergeTreeTableMetadata parseAndNormalize(
         const String & s,
         const ColumnsDescription & columns,
-        bool add_minmax_index_for_numeric_columns,
-        bool add_minmax_index_for_string_columns,
+        const StorageInMemoryMetadata & table_metadata,
         ContextPtr context);
 
     void write(WriteBuffer & out) const;

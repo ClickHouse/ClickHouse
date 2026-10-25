@@ -19,7 +19,7 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192;
 INSERT INTO tab SELECT number, 'tok' || toString(number % 500) || ' common' FROM numbers(100000);
 
 -- Uppercase `TEXT` must get the whole-part granularity default (100000000), same as lowercase `text`.
-SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab';
+SELECT granularity FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab' AND name = 'idx_msg';
 
 -- Prewarming the mark cache must not throw on the un-merged insert part.
 SYSTEM PREWARM MARK CACHE tab;

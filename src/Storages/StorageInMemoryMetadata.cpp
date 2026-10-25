@@ -1028,6 +1028,8 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             {
                 /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
                 auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+                /// An index may not have an alias, and one inside the expression of an ALIAS column reaches the index with it.
+                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
                 secondary_indices.push_back(std::move(index));
@@ -1057,6 +1059,53 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
         else
             ++index_it;
     }
+}
+
+NameSet StorageInMemoryMetadata::getExpressionAliasesDependingOn(const NameSet & redefined_columns) const
+{
+    const auto references_any = [](const IAST & ast, const NameSet & names, const auto & self) -> bool
+    {
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+        {
+            const auto & name = identifier->name();
+            if (names.contains(name))
+                return true;
+            /// A subcolumn of the column, e.g. `b.size0`.
+            for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+                if (names.contains(name.substr(0, pos)))
+                    return true;
+            return false;
+        }
+        for (const auto & child : ast.children)
+            if (self(*child, names, self))
+                return true;
+        return false;
+    };
+
+    NameSet reached = redefined_columns;
+    NameSet result;
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (const auto & column : columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Alias || !column.default_desc.expression
+                || reached.contains(column.name))
+                continue;
+
+            if (references_any(*column.default_desc.expression, reached, references_any))
+            {
+                /// A plain column reference has no implicit index of its own, but the expression
+                /// aliases over it reach the redefined column through it.
+                if (!column.default_desc.expression->as<ASTIdentifier>())
+                    result.insert(column.name);
+                reached.insert(column.name);
+                changed = true;
+            }
+        }
+    }
+    return result;
 }
 
 void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)

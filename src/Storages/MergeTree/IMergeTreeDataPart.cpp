@@ -3805,7 +3805,7 @@ ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
 IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const
 {
     UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
-    if (!are_columns_and_secondary_indices_sizes_calculated)
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
         calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
     auto it = secondary_index_sizes->find(secondary_index_name);
@@ -3826,7 +3826,7 @@ IMergeTreeDataPart::IndexSizeByNameConstPtr IMergeTreeDataPart::getSecondaryInde
 IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 {
     UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
-    if (!are_columns_and_secondary_indices_sizes_calculated)
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
         calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
     return total_secondary_indices_size;
@@ -3836,7 +3836,12 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
 
-    auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
+    return hasSecondaryIndex(index_name, metadata->escape_index_filenames);
+}
+
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, bool escape_index_filenames) const
+{
+    auto file_name = getIndexFileName(index_name, escape_index_filenames);
     return getStreamNameOrHashResolved(file_name, ".idx").has_value()
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
 }

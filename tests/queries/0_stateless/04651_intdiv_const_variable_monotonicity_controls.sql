@@ -3,6 +3,12 @@
 -- `getMonotonicityForRange` is strictly negative, strictly positive or spans zero, so the
 -- randomizer (`randint(1, 65536)`) would make these probes non-deterministic. It is pinned
 -- per DDL below as well.
+--
+-- `add_minmax_index_for_numeric_columns` is pinned to 0 per DDL as well: these probes measure
+-- primary-key pruning alone. With an implicit min-max index on the key column the condition
+-- becomes exactly resolvable by a skip index, so the plan collapses into
+-- `ReadFromPreparedSource (_exact_count_projection)` and the `Granules: N/M` line the case 8
+-- rows look for disappears from `EXPLAIN indexes = 1`.
 
 -- Every query prints 1 when the count read through the primary key equals the full-scan
 -- ground truth from an identical `ENGINE = Memory` table.
@@ -35,7 +41,7 @@ DROP TABLE IF EXISTS m_cv_u8g;
 -- Case 6: must-not-flip / must-stay-monotone controls.
 -- ---------------------------------------------------------------------------------------------
 -- Range spanning zero: the function is undefined at 0, so nothing may be claimed.
-CREATE TABLE t_cv_span (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_span (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_span (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_span VALUES (-20), (-10), (10), (20);
 INSERT INTO m_cv_span VALUES (-20), (-10), (10), (20);
@@ -45,11 +51,11 @@ SELECT 'c6 span ge', (SELECT count() FROM t_cv_span WHERE intDiv(toInt32(-1000),
 
 -- Zero as an ENDPOINT of the range is equally undefined, so the guards must stay STRICT. `divide`
 -- yields -inf rather than throwing at 0, which is what makes the oracle evaluable here.
-CREATE TABLE t_cv_zr (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_zr (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_zr (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_zr VALUES (-40), (-20), (-10), (0);
 INSERT INTO m_cv_zr VALUES (-40), (-20), (-10), (0);
-CREATE TABLE t_cv_zl (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_zl (a Int32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_zl (a Int32) ENGINE = Memory;
 INSERT INTO t_cv_zl VALUES (0), (10), (20), (40);
 INSERT INTO m_cv_zl VALUES (0), (10), (20), (40);
@@ -61,7 +67,7 @@ SELECT 'c6 zero left ge', (SELECT count() FROM t_cv_zl WHERE divide(toInt32(-100
 SELECT 'c6 zero left le', (SELECT count() FROM t_cv_zl WHERE divide(toInt32(-1000), a) <= -50) = (SELECT count() FROM m_cv_zl WHERE divide(toInt32(-1000), a) <= -50);
 
 -- Both operands unsigned: the dividend is not reinterpreted, so no flip.
-CREATE TABLE t_cv_u32 (a UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_u32 (a UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_u32 (a UInt32) ENGINE = Memory;
 INSERT INTO t_cv_u32 VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_u32 VALUES (10), (20), (30), (40);
@@ -76,7 +82,7 @@ SELECT 'c6 both unsigned hi le', (SELECT count() FROM t_cv_u32 WHERE intDiv(toUI
 
 -- The `Float64` fixture is the same one `..._decimal_float` uses; it is recreated here
 -- because the control below belongs with the other case 6 rows.
-CREATE TABLE t_cv_f64p (a Float64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_f64p (a Float64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_f64p (a Float64) ENGINE = Memory;
 INSERT INTO t_cv_f64p VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_f64p VALUES (10), (20), (30), (40);
@@ -88,7 +94,7 @@ SELECT 'c6 float divisor le', (SELECT count() FROM t_cv_f64p WHERE intDiv(toUInt
 
 -- An unsigned key range crossing the divisor's own `2^(8W-1)`: the VALUES jump but the ORDER is
 -- preserved (non-strict monotonicity), so these must keep pruning and must not be rejected.
-CREATE TABLE t_cv_u8 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_u8 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_u8 (a UInt8) ENGINE = Memory;
 INSERT INTO t_cv_u8 VALUES (1), (2), (50), (127), (128), (200), (254), (255);
 INSERT INTO m_cv_u8 VALUES (1), (2), (50), (127), (128), (200), (254), (255);
@@ -104,7 +110,7 @@ SELECT 'c6 wrap pos le -1', (SELECT count() FROM t_cv_u8 WHERE intDiv(toInt8(127
 
 -- Same data at granularity 2 (4 granules), so that "these still prune" is observable rather than
 -- implied: with a single granule any pruning decision reads as `Granules: 1/1`.
-CREATE TABLE t_cv_u8g (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2;
+CREATE TABLE t_cv_u8g (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_u8g (a UInt8) ENGINE = Memory;
 INSERT INTO t_cv_u8g VALUES (1), (2), (50), (127), (128), (200), (254), (255);
 INSERT INTO m_cv_u8g VALUES (1), (2), (50), (127), (128), (200), (254), (255);

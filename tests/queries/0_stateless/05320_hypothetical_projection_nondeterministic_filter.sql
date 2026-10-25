@@ -1,8 +1,10 @@
 -- every plan of the statement sees the same value of `randConstant`, so a projection with the table's own order reads the same marks
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would give the projection its own skip indexes,
+-- and `EXPLAIN WHATIF` does not estimate such projections, so the tables opt out
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS same_order;
-CREATE TABLE same_order (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+CREATE TABLE same_order (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO same_order SELECT number, number % 100 FROM numbers(100000);
 CREATE HYPOTHETICAL PROJECTION p_a ON same_order (SELECT a, b ORDER BY a);
 

@@ -8,12 +8,13 @@
 -- of AutoPR here, and the optimization logs the refusal when it declines to take it. That log line is what
 -- this test looks for, in both implementations of parallel replicas.
 
+-- The implicit minmax indices of `add_minmax_index_for_numeric_columns` change the plans this test pins.
 DROP TABLE IF EXISTS t_autopr_set_root_hits;
 DROP TABLE IF EXISTS t_autopr_set_root_keys;
 
 CREATE TABLE t_autopr_set_root_hits(WatchID UInt64, CounterID UInt32, UserID UInt64, URL String)
-ENGINE = MergeTree ORDER BY (CounterID, UserID);
-CREATE TABLE t_autopr_set_root_keys(a UInt64) ENGINE = MergeTree ORDER BY a;
+ENGINE = MergeTree ORDER BY (CounterID, UserID) SETTINGS add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE t_autopr_set_root_keys(a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_autopr_set_root_hits SELECT number, number % 100000, number * 7, repeat('u', 20) FROM numbers(1e6);
 INSERT INTO t_autopr_set_root_keys SELECT number FROM numbers_mt(1e5);

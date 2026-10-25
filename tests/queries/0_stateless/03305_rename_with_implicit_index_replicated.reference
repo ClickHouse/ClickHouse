@@ -8,10 +8,10 @@ auto_minmax_index_c	minmax	c
 3	4
 After adding column:
 auto_minmax_index_a	minmax	a
-auto_minmax_index_b	minmax	b
 auto_minmax_index_c	minmax	c
 1	2	0
 3	4	0
+2
 After dropping column b:
 auto_minmax_index_a	minmax	a
 auto_minmax_index_c	minmax	c

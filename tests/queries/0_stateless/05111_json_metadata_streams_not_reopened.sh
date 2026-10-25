@@ -18,12 +18,16 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_json_metadata_streams;
     CREATE TABLE t_json_metadata_streams (t UInt32, json JSON)
     ENGINE = MergeTree ORDER BY t
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 1, disk = 'default';
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 1, disk = 'default',
+        add_minmax_index_for_numeric_columns = 0;
 
     SYSTEM STOP MERGES t_json_metadata_streams;
 
     INSERT INTO t_json_metadata_streams VALUES (0, '{\"a\":0,\"b\":\"s0\",\"c\":[0],\"d\":0,\"e\":true}'), (1, '{\"a\":1,\"b\":\"s1\",\"c\":[1],\"d\":0.5,\"e\":true}'), (2, '{\"a\":2,\"b\":\"s2\",\"c\":[2],\"d\":1,\"e\":true}'), (3, '{\"a\":3,\"b\":\"s3\",\"c\":[3],\"d\":1.5,\"e\":true}'), (4, '{\"a\":4,\"b\":\"s4\",\"c\":[4],\"d\":2,\"e\":true}');
 "
+
+# The implicit min-max index on \`t\` is disabled: reading it opens the index files unless the server-wide
+# index mark and index uncompressed caches still hold them, so the count would depend on concurrent queries.
 
 # The table is on the local disk: for a part on a remote disk the prefetch is governed by
 # `remote_filesystem_read_prefetch` instead, and that case is checked by

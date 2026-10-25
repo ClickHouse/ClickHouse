@@ -1758,7 +1758,7 @@ void MergeTreeData::checkMetadataProperties(
 }
 
 void MergeTreeData::setProperties(
-    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & new_metadata_,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     ContextPtr local_context)
@@ -1768,6 +1768,90 @@ void MergeTreeData::setProperties(
     /// and key/index AST trees, plus any expressions built by `checkProperties`) into the
     /// dedicated MergeTree arena. This state lives as long as the table object itself.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// An implicit index is identified only by its name, which is derived from the column name. Removing
+    /// it from the metadata does not remove its files from the existing parts: dropping an `ALIAS` column
+    /// schedules no mutation at all. So when a later `ALTER` adds a column under the same name (for
+    /// example, `DROP COLUMN b` of `b ALIAS a + 1` followed by `ADD COLUMN b ALIAS a + 1000000`), the
+    /// re-created implicit index would read the files built for the previous definition and prune wrong.
+    /// Do not create the implicit index of a column that is new to the table while some active part still
+    /// has files under its name. A later metadata change that creates it again goes through the same check.
+    /// The files of an index that comes back for a column that stays as it is are valid (for example, after
+    /// `DROP INDEX` of an explicit `minmax` index that replaced it), so only new columns are checked.
+    /// A column that keeps its name but is replaced within one `ALTER` (`DROP COLUMN b, ADD COLUMN b ALIAS ...`)
+    /// is new as well: when it is an `ALIAS` before or after, no mutation rebuilds the index files, so a changed
+    /// type or default expression means the files were built for a different column.
+    /// The implicit index of an expression alias is built over its expanded expression, so the replacement
+    /// of an alias it reaches (`b` for `c ALIAS b + 1`) leaves its files stale too, even if `c` itself keeps
+    /// the same definition.
+    std::optional<StorageInMemoryMetadata> metadata_without_foreign_implicit_indices;
+    {
+        static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+
+        const auto is_redefined_alias = [](const ColumnDescription & old_column, const ColumnDescription & new_column)
+        {
+            return (old_column.default_desc.kind == ColumnDefaultKind::Alias || new_column.default_desc.kind == ColumnDefaultKind::Alias)
+                && (!old_column.type->equals(*new_column.type) || !(old_column.default_desc == new_column.default_desc));
+        };
+
+        NameSet redefined_alias_columns;
+        for (const auto & new_column : new_metadata_.columns)
+        {
+            const auto * old_column = old_metadata.columns.tryGet(new_column.name);
+            if (old_column && is_redefined_alias(*old_column, new_column))
+                redefined_alias_columns.insert(new_column.name);
+        }
+
+        NameSet dependent_alias_columns;
+        if (!redefined_alias_columns.empty())
+            dependent_alias_columns = new_metadata_.getExpressionAliasesDependingOn(redefined_alias_columns);
+
+        NameSet new_implicit_indices;
+        for (const auto & index : new_metadata_.secondary_indices)
+        {
+            if (!index.isImplicitlyCreated() || !index.name.starts_with(implicit_index_prefix))
+                continue;
+
+            const String column_name = index.name.substr(implicit_index_prefix.size());
+            const auto * new_column = new_metadata_.columns.tryGet(column_name);
+            if (!new_column)
+                continue;
+
+            const auto * old_column = old_metadata.columns.tryGet(column_name);
+            if (!old_column)
+            {
+                if (!old_metadata.secondary_indices.has(index.name))
+                    new_implicit_indices.insert(index.name);
+            }
+            else if (redefined_alias_columns.contains(column_name) || dependent_alias_columns.contains(column_name))
+            {
+                new_implicit_indices.insert(index.name);
+            }
+        }
+
+        if (!new_implicit_indices.empty())
+        {
+            NameSet foreign_implicit_indices;
+            for (const auto & part : getDataPartsVectorForInternalUsage())
+            {
+                for (const auto & index_name : new_implicit_indices)
+                {
+                    if (!foreign_implicit_indices.contains(index_name) && part->hasSecondaryIndex(index_name, old_metadata.escape_index_filenames))
+                        foreign_implicit_indices.insert(index_name);
+                }
+            }
+
+            if (!foreign_implicit_indices.empty())
+            {
+                LOG_INFO(log, "Not creating implicit indices {} because existing parts have files of previous indices with the same names",
+                    fmt::join(foreign_implicit_indices, ", "));
+                metadata_without_foreign_implicit_indices.emplace(new_metadata_);
+                std::erase_if(metadata_without_foreign_implicit_indices->secondary_indices,
+                    [&](const IndexDescription & index) { return foreign_implicit_indices.contains(index.name); });
+            }
+        }
+    }
+    const StorageInMemoryMetadata & new_metadata = metadata_without_foreign_implicit_indices ? *metadata_without_foreign_implicit_indices : new_metadata_;
 
     checkProperties(
         new_metadata,
@@ -5851,7 +5935,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
+        const auto default_storage_settings = getDefaultSettings();
+        auto mutation_commands = commands.getMutationCommands(
+            new_metadata,
+            settings[Setting::materialize_ttl_after_modify],
+            local_context,
+            /*with_alters*/ false,
+            (*settings_from_storage)[MergeTreeSetting::share_nested_offsets],
+            default_storage_settings.get());
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5941,10 +6032,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
 
         /// `StorageMergeTree::alter` queues these without `checkMutationIsPossible`.
+        const auto default_storage_settings = getDefaultSettings();
         checkUniqueKeyMutationCommands(
             commands.getMutationCommands(
                 old_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
-                /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]));
+                /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets],
+                default_storage_settings.get()));
     }
 
     /// Must be collected before the commands are applied below: dropping a column used in a key has to
@@ -6083,8 +6176,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    auto settings_defaults = getDefaultSettings();
-    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+    const auto default_storage_settings = getDefaultSettings();
+    commands.apply(new_metadata, local_context, share_nested_offsets, default_storage_settings.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
@@ -7598,6 +7691,36 @@ std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const Stora
     }
 
     return std::make_pair(new_statistics_types.safeGet<String>(), true);
+}
+
+bool MergeTreeData::implicitIndicesChanged(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata)
+{
+    auto implicit_index_names = [](const IndicesDescription & indices)
+    {
+        std::set<String> names;
+        for (const auto & index : indices)
+            if (index.is_implicitly_created)
+                names.insert(index.name);
+        return names;
+    };
+
+    if (implicit_index_names(old_metadata.secondary_indices) != implicit_index_names(new_metadata.secondary_indices))
+        return true;
+
+    /// A projection inherits the table's implicit-index policy (see `ProjectionDescription::getProjectionFromAST`),
+    /// and its implicit indices can change even when the table's own set does not, e.g. when every column of
+    /// the table already has an explicit min-max index, which suppresses the implicit one only in the table.
+    for (const auto & new_projection : new_metadata.projections)
+    {
+        if (!old_metadata.projections.has(new_projection.name))
+            continue;
+        const auto & old_projection = old_metadata.projections.get(new_projection.name);
+        if (!old_projection.metadata || !new_projection.metadata)
+            continue;
+        if (implicit_index_names(old_projection.metadata->secondary_indices) != implicit_index_names(new_projection.metadata->secondary_indices))
+            return true;
+    }
+    return false;
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)

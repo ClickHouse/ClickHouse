@@ -180,6 +180,7 @@ public:
 
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+    bool hasSecondaryIndex(const String & index_name, bool escape_index_filenames) const;
 
     /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
     /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just

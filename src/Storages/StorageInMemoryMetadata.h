@@ -348,6 +348,12 @@ struct StorageInMemoryMetadata
     void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
     void dropImplicitIndicesForColumn(const String & column_name);
 
+    /// Columns that are `ALIAS` over an expression (not a plain column reference) whose expression
+    /// references any of `redefined_columns`, directly or through other aliases. The implicit index of
+    /// such a column is built over the expanded alias expression, so a metadata-only redefinition of a
+    /// column it reaches makes the index files of the existing parts stale.
+    NameSet getExpressionAliasesDependingOn(const NameSet & redefined_columns) const;
+
     void addImplicitIndicesForVirtualColumns(ContextPtr context);
     void dropImplicitIndicesForVirtualColumns();
 
