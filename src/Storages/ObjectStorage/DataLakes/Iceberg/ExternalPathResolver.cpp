@@ -13,6 +13,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <IO/S3/URI.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/Util/MapConfiguration.h>
@@ -43,6 +44,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int PATH_ACCESS_DENIED;
@@ -900,7 +902,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             const std::string supersedes_prefix = cache_key + "#auth=";
 
             /// Clone connection parameters to preserve SAS and workload identity authentication, which config cannot express.
-            return getOrCreateStorage(
+            auto storage_and_key = getOrCreateStorage(
                 supersedes_prefix + std::to_string(auth_hash.get64()),
                 target_decomposed.key,
                 external_storages,
@@ -923,6 +925,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                         /*common_key_prefix*/ "");
                 },
                 supersedes_prefix);
+
+            /// The cached clone may have been built for a session that allows the server's own identity.
+            checkSessionMayUseServerIdentity(*storage_and_key.first, context);
+            return storage_and_key;
         }
     }
 #endif
@@ -942,6 +948,15 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Azure path '{}' does not specify a storage account", maskCredentialsInURI(path));
     }
+
+    /// The client built below has no credentials, so it would use the server's own identity. Checked before the cache
+    /// lookup, because a cached client may have been built for a session that allows it.
+    if (target_scheme_normalized == "abfs" && context->shouldRestrictUserQueryS3Credentials())
+        throw DB::Exception(
+            DB::ErrorCodes::ACCESS_DENIED,
+            "Iceberg metadata references Azure path '{}' outside the table's storage, which can only be read with the server's own "
+            "identity. User queries are not allowed to use it (`s3_allow_server_credentials_in_user_queries` = 0)",
+            maskCredentialsInURI(path));
 
     if (!azure_service_url.empty())
         check_remote_host(azure_service_url);

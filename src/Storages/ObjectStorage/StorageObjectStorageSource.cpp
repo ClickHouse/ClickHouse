@@ -1407,10 +1407,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             if (use_size_from_table)
             {
-                /// An external file lives outside the table's data source, so its identity names the storage holding it.
+                /// An external file lives outside the table's data source. The name of its storage is an opaque digest of the
+                /// endpoint and the credentials of the client, so a cached file is not served to a client that cannot read it.
                 const auto data_source_description = storage_to_use == object_storage
                     ? configuration->getDataSourceDescription()
-                    : fmt::format("{}/{}", storage_to_use->getDescription(), storage_to_use->getObjectsNamespace());
+                    : storage_to_use->getDiskName();
                 object_info->setObjectMetadata(ObjectMetadata::fromTableRecords(
                     size_from_table,
                     fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
