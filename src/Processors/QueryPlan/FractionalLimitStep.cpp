@@ -77,11 +77,6 @@ void FractionalLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("With Ties", with_ties);
 }
 
-QueryPlanStepPtr FractionalLimitStep::clone() const
-{
-    return std::make_unique<FractionalLimitStep>(*this);
-}
-
 void FractionalLimitStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;

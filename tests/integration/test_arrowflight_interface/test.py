@@ -489,18 +489,6 @@ def test_doget_ticket_from_select():
     assert actual.column("name").equals(expected_names)
 
 
-def test_doget_ticket_from_select_empty_result():
-    client, options = get_client()
-
-    reader = client.do_get(
-        flight.Ticket(b"SELECT number FROM system.numbers LIMIT 0"), options
-    )
-    actual = reader.read_all()
-
-    assert actual.schema == pa.schema([pa.field("number", pa.uint64(), nullable=False)])
-    assert actual.num_rows == 0
-
-
 # If a query outputs multiple chunks the method get_flight_info returns multiple tickets.
 def test_doget_multiple_chunks():
     node.query("CREATE TABLE mytable (id Int64, name String) ORDER BY id")

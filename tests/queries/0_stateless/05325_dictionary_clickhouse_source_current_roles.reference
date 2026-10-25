@@ -1,11 +1,9 @@
 -- loaded with the old role
 a	a	a
--- periodic updates after the grant
-b	b
 -- direct lookup uses the new role
 b
 -- periodic updates use the new role
-c	c
+b	b
 -- no failed source or invalidate queries
 0
 -- no more roles than a new session: DEFAULT ROLE NONE

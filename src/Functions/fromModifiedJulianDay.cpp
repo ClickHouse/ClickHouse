@@ -196,12 +196,18 @@ namespace DB
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
+            if (!isInteger(arguments[0]))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be integral", getName());
+            }
+
+            DataTypePtr base_type = std::make_shared<DataTypeString>();
             if constexpr (nullOnErrors)
-                return "(Integer) -> Nullable(String)";
+                return std::make_shared<DataTypeNullable>(base_type);
             else
-                return "(Integer) -> String";
+                return base_type;
         }
 
         size_t getNumberOfArguments() const override

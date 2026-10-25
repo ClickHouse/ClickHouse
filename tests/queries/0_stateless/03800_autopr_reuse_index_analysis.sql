@@ -6,11 +6,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 -- To avoid too slow test execution
 set remote_filesystem_read_method='threadpool', allow_prefetched_read_pool_for_remote_filesystem=1, filesystem_prefetch_step_marks=0, filesystem_prefetch_step_bytes='100Mi';
 
--- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
--- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
--- the S3 throughput drops the full scans become slow enough to be killed by `max_estimated_execution_time`.
-SET enable_filesystem_cache=1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0;
-
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 
 SET use_query_condition_cache=0;

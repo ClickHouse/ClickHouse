@@ -1,6 +1,5 @@
 #include <base/defines.h>
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
@@ -486,9 +485,6 @@ bool Field::operator== (const Field & rhs) const
 
 static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    /// Containers are read recursively, and the nesting depth comes from the data.
-    checkStackSize();
-
     switch (static_cast<Field::Types::Which>(type))
     {
         case Field::Types::Null:

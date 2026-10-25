@@ -13,7 +13,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableJoin.h>
-#include <Planner/Utils.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -135,6 +134,11 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto select_query_options = SelectQueryOptions(processed_stage);
     select_query_options.build_logical_plan = true;
 
+    /// Positional arguments in the outer query were already resolved by the initiator.
+    /// Use a context flag instead of disabling enable_positional_arguments so that
+    /// view-inner queries on this node are still processed correctly.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/62289.
+    new_context->setPositionalArgumentsAlreadyResolved(true);
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
     /// Disable parallel replicas in every nested QueryNode/UnionNode context — otherwise
@@ -151,14 +155,14 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
             if (auto * query_node = current->as<QueryNode>())
             {
                 auto node_context = Context::createCopy(query_node->getContext());
-                node_context->increaseDistributedDepth();
+                node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 query_node->getMutableContext() = std::move(node_context);
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
                 auto node_context = Context::createCopy(union_node->getContext());
-                node_context->increaseDistributedDepth();
+                node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 union_node->getMutableContext() = std::move(node_context);
             }
@@ -205,7 +209,12 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// The local replica's plan is united into the parent pipeline in this process.
     select_query_options.is_local_plan_for_distributed_query = true;
 
+    /// Positional arguments in the outer query were already resolved by the initiator.
+    /// Use a context flag instead of disabling enable_positional_arguments so that
+    /// view-inner queries on this node are still processed correctly.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/62289.
     auto new_context = Context::createCopy(context);
+    new_context->setPositionalArgumentsAlreadyResolved(true);
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
     /// Clone the query tree and disable parallel replicas in ALL QueryNode/UnionNode contexts.
@@ -227,14 +236,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             if (auto * query_node = current->as<QueryNode>())
             {
                 auto node_context = Context::createCopy(query_node->getContext());
-                node_context->increaseDistributedDepth();
+                node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 query_node->getMutableContext() = std::move(node_context);
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
                 auto node_context = Context::createCopy(union_node->getContext());
-                node_context->increaseDistributedDepth();
+                node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 union_node->getMutableContext() = std::move(node_context);
             }
@@ -331,30 +340,9 @@ static void collectReadFromMergeTreeSteps(QueryPlan::Node * node, std::vector<Qu
         collectReadFromMergeTreeSteps(child, result);
 }
 
-/// The fragment was planned before it became a read on a replica, so its reads have no leaf limits.
-/// A remote replica derives them from its context when it deserializes the fragment; do the same here.
-static void addLeafLimits(QueryPlan::Node * node, const SizeLimits & leaf_limits)
-{
-    if (auto * source = dynamic_cast<SourceStepWithFilter *>(node->step.get()))
-    {
-        const auto & current = source->getQueryInfo().storage_limits;
-        auto storage_limits = current ? std::make_shared<StorageLimitsList>(*current) : std::make_shared<StorageLimitsList>();
-        StorageLimits limits;
-        limits.leaf_limits = leaf_limits;
-        storage_limits->push_back(std::move(limits));
-        source->setStorageLimits(std::move(storage_limits));
-    }
-
-    for (auto * child : node->children)
-        addLeafLimits(child, leaf_limits);
-}
-
 QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     ContextPtr context, QueryPlanPtr plan_fragment, ParallelReplicasReadingCoordinatorPtr coordinator, size_t replica_number)
 {
-    if (auto leaf_limits = buildStorageLimits(*context, SelectQueryOptions(QueryProcessingStage::FetchColumns)).leaf_limits; leaf_limits.hasLimits())
-        addLeafLimits(plan_fragment->getRootNode(), leaf_limits);
-
     std::vector<QueryPlan::Node *> reading_nodes;
     collectReadFromMergeTreeSteps(plan_fragment->getRootNode(), reading_nodes);
     if (reading_nodes.empty())
@@ -408,8 +396,8 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     /// initiator over the network. The branch that is executed in this process, where nothing unmarshalls
     /// the blocks, is the sibling `createLocalPlanFragmentForParallelReplicas`.
     ///
-    /// `context` is the per-replica context, so the depth `contextAllowsBlocksMarshalling` reads is the
-    /// one the replica will see.
+    /// `context` is the per-replica context, and parallel replicas do not increase the distributed
+    /// depth, so the depth `contextAllowsBlocksMarshalling` reads is the one the replica will see.
     if (contextAllowsBlocksMarshalling(*context))
         plan_fragment->addStep(std::make_unique<BlocksMarshallingStep>(plan_fragment->getCurrentHeader()));
 

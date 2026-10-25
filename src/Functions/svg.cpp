@@ -10,6 +10,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 namespace
 {
 
@@ -42,9 +48,18 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Any, [String]) -> String";
+        if (arguments.empty() || arguments.size() > 2)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 1 or 2 arguments");
+        }
+        if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

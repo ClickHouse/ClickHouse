@@ -72,8 +72,7 @@ private:
     M(MergeTreePrefixesDeserialization, "MergeTreePrefixesDeserializationThreadPool", MergeTreeSubcolumnsReader) \
     M(DropDistributedCache, "DropDistributedCacheThreadPool", DropDistributedCache) \
     M(FormatParsing, "FormatParsingThreadPool", FormatParsing) \
-    M(IcebergManifestDecode, "IcebergManifestDecodeThreadPool", IcebergManifestDecode) \
-    M(AIRequest, "AIRequestThreadPool", AIRequest)
+    M(IcebergManifestDecode, "IcebergManifestDecodeThreadPool", IcebergManifestDecode)
 
 #define DECLARE_STATIC_THREAD_POOL_GETTER(SUFFIX, NAME, METRIC) StaticThreadPool & get##SUFFIX##ThreadPool();
 APPLY_FOR_STATIC_THREAD_POOLS(DECLARE_STATIC_THREAD_POOL_GETTER)

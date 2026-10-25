@@ -117,12 +117,15 @@ public:
                 using LeftConverter = typename LeftConverterType::Type;
                 using RightConverter = typename RightConverterType::Type;
 
-                CorrectedGeometries<LeftConverter> first(arguments[0].column);
-                CorrectedGeometries<RightConverter> second(arguments[1].column);
+                auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
+                auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    res_data.emplace_back(boost::geometry::intersects(first.get(i), second.get(i)));
+                    boost::geometry::correct(first[i]);
+                    boost::geometry::correct(second[i]);
+
+                    res_data.emplace_back(boost::geometry::intersects(first[i], second[i]));
                 }
             });
 

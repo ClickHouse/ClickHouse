@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// Integer implementation selected by `divide` when `sql_compatible_division_for_integers` is enabled.
+/// Integer implementation selected by `divide` when `exact_division_for_integers` is enabled.
 FunctionPtr createFunctionExactDivide();
 
 }

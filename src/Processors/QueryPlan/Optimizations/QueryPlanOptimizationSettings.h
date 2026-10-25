@@ -99,8 +99,6 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
-    bool parallel_distinct;
-    bool force_distinct_partitions_independently;
     bool window_partitions_independently;
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
@@ -190,7 +188,6 @@ struct QueryPlanOptimizationSettings
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_read_in_order = false; /// Allow read-in-order for ORDER BY in a distributed plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
-    bool distributed_plan_partial_aggregation_before_shuffle = true; /// Shuffle partial aggregation states instead of input rows
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
     bool distributed_plan_join_runtime_filters = false; /// Send join runtime filters between stages of a distributed query plan
@@ -261,7 +258,6 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     bool collect_hash_table_stats_during_aggregation;
-    bool optimize_uniq_exact_radix_partitioning;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;

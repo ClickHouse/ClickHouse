@@ -9,7 +9,6 @@
     M(Query, "Number of executing queries") \
     M(ASTFuzzerAccumulatedFragments, "Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.") \
     M(QueryNonInternal, "Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)") \
-    M(WaitingQuery, "Number of queries waiting for asynchronous loading or startup to finish, limited by the 'max_waiting_queries' server setting") \
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \
@@ -59,8 +58,6 @@
     M(TemporaryFilesForSet, "Number of temporary files created for `IN` sets in external memory") \
     M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
-    M(TemporaryFilesForPackedParts, "Number of temporary files with the buffered data of packed data parts being written") \
-    M(PackedPartsBufferedBytes, "Amount of memory (bytes) allocated for the buffered data of packed data parts being written. The data moved to temporary files is not included.") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
@@ -223,9 +220,6 @@
     M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
     M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
     M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed index analysis thread pool.") \
-    M(AIRequestThreads, "Number of threads in the AI request thread pool.") \
-    M(AIRequestThreadsActive, "Number of threads in the AI request thread pool running a task.") \
-    M(AIRequestThreadsScheduled, "Number of queued or active jobs in the AI request thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
@@ -464,7 +458,6 @@
     M(SharedPartColumnSubstreamsEntriesCacheSize, "Number of distinct per-column substream entries shared across data parts (sum over per-table caches)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
-    M(KeeperRaftThreadsWaitingForLogsPreprocessing, "Number of Raft event loop threads waiting for the local log entries to be preprocessed after startup. The Raft event loop also runs the listener, the election and heartbeat timers and every RPC completion, so this should stay at zero or one.") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
     M(KeeperTTLNodes, "Number of nodes with a TTL set currently stored in Keeper.") \
     M(KeeperContainerNodes, "Number of container nodes currently stored in Keeper.") \
@@ -547,7 +540,6 @@
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
     M(ConcurrencyControlPreempted, "Total number of preempted threads waiting for CPU slot") \
-    M(ConcurrencyControlParked, "Current number of threads that have parked (released) their CPU slot for a non-CPU wait, such as blocking I/O or having no task to run") \
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \

@@ -8,6 +8,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -38,8 +39,6 @@
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Fragments/FragmentGraph.h>
-#include <Processors/QueryPlan/Fragments/FragmentGraphExplain.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -53,6 +52,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -114,9 +114,13 @@ namespace ErrorCodes
 namespace
 {
     /// Walk the AST and expand parameterized view "table function" calls into their inlined,
-    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` and `EXPLAIN AST optimize = 1` show
-    /// the resolved query. Without this expansion the query tree would show the unexpanded table
-    /// function call, on either side of a JOIN.
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
+    ///
+    /// In the analyzer path, without this expansion the query tree would show the unexpanded
+    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
+    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
+    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
+    /// parameterized views that appear on the right side of a JOIN as well.
     struct ExpandParameterizedViewsMatcher
     {
         struct Data : public WithContext
@@ -239,42 +243,31 @@ namespace
     {
         struct Data : public WithContext
         {
-            Data(ContextPtr context_, bool run_passes_, Int64 passes_, bool only_analyze_)
-                : WithContext(context_), run_passes(run_passes_), passes(passes_), only_analyze(only_analyze_)
-            {
-            }
-
-            bool run_passes;
-            Int64 passes;
-            bool only_analyze;
+            explicit Data(ContextPtr context_) : WithContext(context_) {}
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
         {
-            return !node->as<ASTSelectWithUnionQuery>();
+            return !node->as<ASTSelectQuery>();
         }
 
         static void visit(ASTPtr & ast, Data & data)
         {
-            auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>();
-            if (!select_with_union_query)
-                return;
+            if (auto * select = ast->as<ASTSelectQuery>())
+                visit(*select, ast, data);
+        }
 
-            auto query_tree = buildQueryTree(ast, data.getContext());
+        static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
+        {
+            InterpreterSelectQuery interpreter(
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
-            if (data.run_passes)
+            const SelectQueryInfo & query_info = interpreter.getQueryInfo();
+            if (query_info.view_query)
             {
-                QueryTreePassManager query_tree_pass_manager(data.getContext());
-                addQueryTreePasses(query_tree_pass_manager, data.only_analyze);
-                size_t pass_index = data.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(data.passes);
-                query_tree_pass_manager.run(query_tree, pass_index);
+                ASTPtr tmp;
+                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }
-
-            ConvertToASTOptions ast_options;
-            ast_options.use_source_expression_for_constants = true;
-            auto analyzed_query = query_tree->toAST(ast_options);
-
-            *select_with_union_query = analyzed_query->as<ASTSelectWithUnionQuery &>();
         }
     };
 
@@ -646,7 +639,6 @@ struct QueryPlanSettings
             {"json", json},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
-            {"fragments", query_plan_options.fragments},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
@@ -1114,10 +1106,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
-                ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
-
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1158,8 +1147,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (explain_ok)
                 break;
 
-            /// Not a `SELECT`: the query is shown as parsed, with every `SELECT` inside it converted through the query tree.
-            ExplainAnalyzedSyntaxVisitor::Data data(query_context, settings.run_query_tree_passes, settings.query_tree_passes, /*only_analyze=*/ false);
+            /// Not a `SELECT`: there is no query tree to dump, so the query is shown as parsed.
+            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             IAST::FormatSettings format_settings(settings.oneline);
@@ -1201,16 +1190,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
 
-            if (settings.query_plan_options.fragments)
-            {
-                if (settings.json)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'json'");
-                if (settings.query_plan_options.distributed)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'fragments' is not supported with option 'distributed'");
-                if (!settings.optimize)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option 'fragments' requires option 'optimize'");
-            }
-
             QueryPlan plan;
 
             ContextPtr context;
@@ -1233,29 +1212,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 optimization_settings.is_explain = true;
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
-
-                if (settings.query_plan_options.fragments)
-                {
-                    const size_t max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-                    if (plan.staysDistributed())
-                    {
-                        /// The cut consumes the plan. That is intended: `EXPLAIN` owns this plan and discards it
-                        /// after printing. The plan is not cloned, because not every step implements `clone`.
-                        /// `cut` must outlive `graph`, whose fragments point to the plans of its stages.
-                        auto cut = plan.cutIntoDistributedPlan(optimization_settings);
-                        auto graph = buildFragmentGraph(cut.distributed_plan);
-                        FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
-                    }
-                    else
-                    {
-                        std::optional<String> fallback_reason;
-                        if (plan.didFallBackToLocal())
-                            fallback_reason = plan.getDistributedPlanFallbackReason();
-                        auto graph = buildSingleFragmentGraph(plan, std::move(fallback_reason));
-                        FragmentGraphExplain(graph, settings.query_plan_options, max_step_description_length).explain(buf);
-                    }
-                    break;
-                }
             }
 
             if (settings.json)

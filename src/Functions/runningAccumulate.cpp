@@ -86,12 +86,6 @@ public:
     /// question, so it must not decide whether unused rows of a replicated argument are finalized.
     std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
-    {
-        return "(M : AggregateFunction) -> aggregateFunctionReturnType(M)"
-               " OR (M : AggregateFunction, Any) -> aggregateFunctionReturnType(M)";
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)

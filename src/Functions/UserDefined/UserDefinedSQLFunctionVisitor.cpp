@@ -17,7 +17,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -56,15 +55,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
         /// We have to replace them if the child was replaced.
         if (new_ptr != old_ptr)
             ast->updatePointerToChild(old_ptr, new_ptr);
-    }
-
-    /// `GROUP BY` keys and `SET` assignments of a `TTL` rule are not among its children.
-    if (auto * ttl_element = ast->template as<ASTTTLElement>())
-    {
-        for (auto & key : ttl_element->group_by_key)
-            visit(key, context_);
-        for (auto & assignment : ttl_element->group_by_assignments)
-            visit(assignment, context_);
     }
 
     if (const auto * function = ast->template as<ASTFunction>())

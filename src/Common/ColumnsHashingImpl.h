@@ -613,11 +613,6 @@ protected:
         return actual_columns;
     }
 
-    const ColumnRawPtrs & getNullMaps() const
-    {
-        return null_maps;
-    }
-
     /// Create a bitmap that indicates whether, for a particular row,
     /// a key column bears a null value or not.
     KeysNullMap<Key> createBitmap(size_t row) const

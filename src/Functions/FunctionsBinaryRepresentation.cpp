@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
 }
@@ -241,20 +242,26 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// Mirrors the set of types the legacy `getReturnTypeImpl` accepted on
-        /// master. Date / DateTime / DateTime64 are not handled explicitly in
-        /// `executeImpl`, but their columns are dispatched through
-        /// `tryExecuteUIntOrInt` (Date = `ColumnVector<UInt16>`, DateTime =
-        /// `ColumnVector<UInt32>`) and `tryExecuteDecimal` (DateTime64).
-        return "(Number) -> String"
-               " OR (StringOrFixedString) -> String"
-               " OR (DateOrDateTime) -> String"
-               " OR (UUID) -> String"
-               " OR (IPv4) -> String"
-               " OR (IPv6) -> String"
-               " OR (AggregateFunction) -> String";
+        WhichDataType which(arguments[0]);
+
+        if (!which.isStringOrFixedString() &&
+            !which.isDate() &&
+            !which.isDateTime() &&
+            !which.isDateTime64() &&
+            !which.isUInt() &&
+            !which.isInt() &&
+            !which.isFloat() &&
+            !which.isDecimal() &&
+            !which.isUUID() &&
+            !which.isIPv4() &&
+            !which.isIPv6() &&
+            !which.isAggregateFunction())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -643,7 +650,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override { return "(StringOrFixedString) -> String"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        WhichDataType which(arguments[0]);
+        if (!which.isStringOrFixedString())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {

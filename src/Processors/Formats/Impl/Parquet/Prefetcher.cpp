@@ -23,8 +23,6 @@ namespace ProfileEvents
     extern const Event ParquetPrefetcherReadRandomRead;
     extern const Event ParquetPrefetcherReadSeekAndRead;
     extern const Event ParquetPrefetcherReadEntireFile;
-    extern const Event ParquetPrefetcherReadBytes;
-    extern const Event ParquetPrefetcherUsedBytes;
 }
 
 namespace DB::Parquet
@@ -104,17 +102,10 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
 
         read_mode = ReadMode::EntireFileIsInMemory;
         file_size = entire_file.size();
-        ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, file_size);
     }
 }
 
 void Prefetcher::readSync(char * to, size_t n, size_t offset)
-{
-    readImpl(to, n, offset);
-    ProfileEvents::increment(ProfileEvents::ParquetPrefetcherUsedBytes, n);
-}
-
-void Prefetcher::readImpl(char * to, size_t n, size_t offset)
 {
     if (offset > file_size || n > file_size - offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File read out of bounds: offset {}, length {}, file size {}", offset, n, file_size);
@@ -125,7 +116,6 @@ void Prefetcher::readImpl(char * to, size_t n, size_t offset)
         case ReadMode::RandomRead:
             nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, nread);
             break;
         case ReadMode::SeekAndRead:
         {
@@ -137,11 +127,9 @@ void Prefetcher::readImpl(char * to, size_t n, size_t offset)
             reader->setReadUntilPosition(offset + n);
             nread = reader->readBig(to, n);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadSeekAndRead);
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, nread);
             break;
         }
         case ReadMode::EntireFileIsInMemory:
-            /// The whole file was counted in `ParquetPrefetcherReadBytes` when loaded into memory.
             memcpy(to, entire_file.data() + offset, n);
             nread = n;
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadEntireFile);
@@ -465,7 +453,7 @@ void Prefetcher::scheduleTask(Task * task)
 
 std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
 {
-    RequestState * req = request.request;
+    const RequestState * req = request.request;
     chassert(req->state == RequestState::State::HasTask);
     Task * task = req->task;
     Task::State s = task->state.load(std::memory_order_acquire);
@@ -496,10 +484,6 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
     if (req->task_offset > task->length || req->length > task->length - req->task_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetched range [{}, {}) is outside its read task [{}, {})",
             task->offset + req->task_offset, task->offset + req->task_offset + req->length, task->offset, task->offset + task->length);
-
-    /// The same range can be requested many times (e.g. once per page), count it once.
-    if (!req->data_used.load(std::memory_order_relaxed) && !req->data_used.exchange(true, std::memory_order_relaxed))
-        ProfileEvents::increment(ProfileEvents::ParquetPrefetcherUsedBytes, req->length);
 
     if (task->cached_region.has_value())
     {
@@ -564,12 +548,11 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
             }
 
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
-            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, task->length);
         }
         else
         {
             task->buf.resize(task->length);
-            readImpl(task->buf.data(), task->length, task->offset);
+            readSync(task->buf.data(), task->length, task->offset);
         }
     }
     catch (...)

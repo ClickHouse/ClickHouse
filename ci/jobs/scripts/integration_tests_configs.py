@@ -78,12 +78,6 @@ TEST_CONFIGS = [
     ),
     TC("test_storage_iceberg_no_spark/", False, "minio/azurite per cluster; fully isolated"),
     TC("test_storage_iceberg_with_spark_cache/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
-    TC(
-        "test_storage_paimon_with_spark/",
-        False,
-        "package-scoped Spark session; each xdist worker gets its own instance",
-        dist_each_sequential=True,
-    ),
     TC("test_storage_iceberg_concurrent/", False, "package-scoped Spark session; each xdist worker gets its own instance"),
     TC(
         "test_storage_delta/test_azure_cluster.py",

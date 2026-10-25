@@ -83,7 +83,7 @@ bool dictionaryValueTypesEqual(const ArrowIPC::ArrowType & a, const ArrowIPC::Ar
         || a.decimal_bit_width != b.decimal_bit_width || a.unit != b.unit || a.time_bit_width != b.time_bit_width
         || a.timezone != b.timezone || a.byte_width != b.byte_width || a.list_size != b.list_size
         || a.union_mode != b.union_mode || a.union_type_ids != b.union_type_ids
-        || a.unsupported_type_name != b.unsupported_type_name
+        || a.unsupported_type_name != b.unsupported_type_name || a.skip_layout != b.skip_layout
         || a.children.size() != b.children.size())
         return false;
     const bool compare_child_names = a.kind == ArrowIPC::TypeKind::Struct || a.kind == ArrowIPC::TypeKind::Union;
@@ -448,7 +448,7 @@ void ArrowIPCBlockInputFormat::prepareStreamReader()
     if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
 
-    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
+    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
     /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
     message_reader->skipBody(msg.body_length);
 }
@@ -651,20 +651,11 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
 /// The schema field of the `i`-th child, or null when the field is unknown or does not have that child.
 /// Walking the fields alongside the types lets a leaf read its own metadata; a null field simply means no
 /// metadata is available and the leaf behaves as it did before.
-/// A `RunEndEncoded` field decodes to a column of its values field's shape, so metadata walks look through it.
-const ArrowIPC::ArrowField * skipRunEndEncoded(const ArrowIPC::ArrowField * field)
-{
-    while (field && !field->dictionary && field->type.kind == ArrowIPC::TypeKind::RunEndEncoded)
-        field = &field->type.children.at(1);
-    return field;
-}
-
 const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size_t i)
 {
-    field = skipRunEndEncoded(field);
     if (!field || i >= field->type.children.size())
         return nullptr;
-    return skipRunEndEncoded(&field->type.children[i]);
+    return &field->type.children[i];
 }
 
 /// Recursively rewrite the raw-byte leaves (fixed_size_binary / binary) of a decoded column into the
@@ -686,7 +677,6 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const NullMap * ancestor_nulls, bool case_insensitive, const ArrowIPC::ArrowField * field,
     const FormatSettings & format_settings)
 {
-    field = skipRunEndEncoded(field);
     const DataTypePtr from_no_null = removeNullable(from_type);
 
     const auto * from_arr = typeid_cast<const DataTypeArray *>(from_no_null.get());
@@ -1324,7 +1314,7 @@ The table below shows the supported data types and how they correspond to ClickH
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/reference/data-types/fixedstring)                                            | `FIXED_SIZE_BINARY`        |
 | `DECIMAL`                               | [Decimal](/reference/data-types/decimal)                                                    | `DECIMAL`                  |
 | `DECIMAL256`                            | [Decimal256](/reference/data-types/decimal)                                                 | `DECIMAL256`               |
-| `LIST`, `LIST_VIEW`                     | [Array](/reference/data-types/array)                                                        | `LIST`                     |
+| `LIST`                                  | [Array](/reference/data-types/array)                                                        | `LIST`                     |
 | `STRUCT`                                | [Tuple](/reference/data-types/tuple)                                                        | `STRUCT`                   |
 | `MAP`                                   | [Map](/reference/data-types/map)                                                            | `MAP`                      |
 | `UINT32`                                | [IPv4](/reference/data-types/ipv4)                                                          | `UINT32`                   |

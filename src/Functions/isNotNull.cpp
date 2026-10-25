@@ -68,9 +68,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return "(Any) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

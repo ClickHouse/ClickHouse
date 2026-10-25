@@ -23,18 +23,14 @@ namespace Setting
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_distinct_partitions_independently;
-    extern const SettingsBool allow_parallel_distinct;
-    extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool allow_window_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsBool optimize_uniq_exact_radix_partitioning;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
-    extern const SettingsBool distributed_plan_partial_aggregation_before_shuffle;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
@@ -330,8 +326,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
-    parallel_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_parallel_distinct];
-    force_distinct_partitions_independently = from[Setting::force_distinct_partitions_independently];
     window_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_window_partitions_independently];
     force_window_partitions_independently = from[Setting::force_window_partitions_independently];
     creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];
@@ -400,7 +394,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
     distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
-    distributed_plan_partial_aggregation_before_shuffle = from[Setting::distributed_plan_partial_aggregation_before_shuffle];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
     distributed_plan_join_runtime_filters = from[Setting::distributed_plan_join_runtime_filters];
@@ -445,7 +438,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_size_to_preallocate_for_joins = from[Setting::max_size_to_preallocate_for_joins];
     collect_hash_table_stats_during_joins = from[Setting::collect_hash_table_stats_during_joins];
     collect_hash_table_stats_during_aggregation = from[Setting::collect_hash_table_stats_during_aggregation];
-    optimize_uniq_exact_radix_partitioning = from[Setting::optimize_uniq_exact_radix_partitioning];
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = std::chrono::milliseconds(from[Setting::lock_acquire_timeout].totalMilliseconds());
     actions_settings = std::move(actions_settings_);

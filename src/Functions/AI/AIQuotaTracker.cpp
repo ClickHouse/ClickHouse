@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LIMIT_EXCEEDED;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -44,28 +43,15 @@ bool AIQuotaTracker::quotasExceededLocked()
 
 void AIQuotaTracker::throwIfCancelled() const
 {
-    if (!isCancelled())
+    auto status = query_status.lock();
+    if (!status)
         return;
 
     /// `checkTimeLimit` throws on `KILL QUERY` and when `max_execution_time` is exceeded.
     /// Under `timeout_overflow_mode = 'break'`, it returns false instead of throwing.
     /// A function cannot return fewer rows than it received, so throw in that case too.
-    if (auto status = query_status.lock(); status && !status->checkTimeLimit())
+    if (!status->checkTimeLimit())
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in an AI function");
-
-    /// The query has finished, and a request it submitted is still queued.
-    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-}
-
-bool AIQuotaTracker::isCancelled() const
-{
-    if (cancelled)
-        return true;
-
-    auto status = query_status.lock();
-    if (status && !status->checkTimeLimitSoft())
-        cancelled = true;
-    return cancelled;
 }
 
 bool AIQuotaTracker::checkQuotas()
