@@ -4,6 +4,10 @@
 
 #if USE_AVRO
 
+#include <cerrno>
+#include <functional>
+
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -17,6 +21,10 @@
 #include <optional>
 #include <vector>
 
+#if USE_AWS_S3
+#include <IO/S3Common.h>
+#endif
+
 using namespace DB;
 
 namespace DB::ErrorCodes
@@ -25,10 +33,30 @@ namespace DB::ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int READONLY;
 }
 
 namespace
 {
+
+using WriteErrorThrower = std::function<void(const std::string & path)>;
+
+/// A write that fails with a plain `Exception` carrying `code`.
+WriteErrorThrower throwCode(int code)
+{
+    return [code](const std::string & path) { throw Exception(code, "Write of {} failed in the test stub", path); };
+}
+
+/// A write that fails like a local file the writer cannot open, with `error` as its errno.
+WriteErrorThrower throwErrno(int error)
+{
+    return [error](const std::string & path)
+    {
+        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, error, "Cannot open file {}", path);
+    };
+}
 
 /// Serves a fixed body, so the commit's read-back sees a chosen document. Copies into the buffer the
 /// caller owns rather than pointing at its own storage, which is what the read pipeline requires
@@ -69,15 +97,15 @@ private:
     size_t file_pos = 0;
 };
 
-/// Keeps what is written in `target` once the write is finalized. With `error_after_store` it then
+/// Keeps what is written in `target` once the write is finalized. With `throw_after_store` it then
 /// throws, which is a response lost after the store accepted the object.
 class StringWriter : public WriteBufferFromFileBase
 {
 public:
-    explicit StringWriter(std::optional<std::string> & target_, std::optional<int> error_after_store_ = {})
+    explicit StringWriter(std::optional<std::string> & target_, WriteErrorThrower throw_after_store_ = {})
         : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, /*existing_memory=*/nullptr, /*alignment=*/0)
         , target(target_)
-        , error_after_store(error_after_store_)
+        , throw_after_store(std::move(throw_after_store_))
     {
     }
 
@@ -91,28 +119,30 @@ private:
     {
         next();
         target = std::move(data);
-        if (error_after_store)
-            throw Exception(*error_after_store, "Response lost after the test stub stored the object");
+        if (throw_after_store)
+            throw_after_store(getFileName());
     }
 
     std::optional<std::string> & target;
-    std::optional<int> error_after_store;
+    WriteErrorThrower throw_after_store;
     std::string data;
 };
 
 /// What the stub store holds and how it fails. The conditional metadata write fails with
-/// `write_error_code`: before storing anything, or after storing the written bytes when
+/// `throw_write_error`: before storing anything, or after storing the written bytes when
 /// `accept_write` is set. The store then holds `stored_content` (`std::nullopt` for an absent
 /// target), and the read-back fails when `read_throws` is set. That is exactly the input the commit has to
 /// distinguish: the error alone cannot tell a lost race from a response lost after the store
-/// accepted the object. `version-hint.text` holds `hint`, its first `hint_probe_failures` probes
-/// throw, and its first `hint_conflicts` writes lose to another writer that advances it by one.
+/// accepted the object. `target_exists`, when set, answers the target's existence checks instead, by call
+/// number (call 0 is the commit's pre-check). `version-hint.text` holds `hint`, its first `hint_probe_failures`
+/// probes throw, and its first `hint_conflicts` writes lose to another writer that advances it by one.
 struct StoreState
 {
-    int write_error_code = ErrorCodes::NETWORK_ERROR;
+    WriteErrorThrower throw_write_error = throwCode(ErrorCodes::NETWORK_ERROR);
     bool accept_write = false;
     std::optional<std::string> stored_content;
     bool read_throws = false;
+    std::function<bool(size_t call)> target_exists;
     std::optional<std::string> hint;
     size_t hint_probe_failures = 0;
     size_t hint_conflicts = 0;
@@ -164,8 +194,9 @@ public:
 
         ++writes;
         if (state.accept_write)
-            return std::make_unique<StringWriter>(state.stored_content, state.write_error_code);
-        throw Exception(state.write_error_code, "Write of {} failed in the test stub", object.remote_path);
+            return std::make_unique<StringWriter>(state.stored_content, state.throw_write_error);
+        state.throw_write_error(object.remote_path);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The stub must throw");
     }
 
     /// Before the write the target is absent so the commit proceeds; afterwards it reports whatever
@@ -181,6 +212,9 @@ public:
             }
             return state.hint.has_value();
         }
+        const size_t call = target_checks++;
+        if (state.target_exists)
+            return state.target_exists(call);
         return writes > 0 && state.stored_content.has_value();
     }
 
@@ -258,10 +292,12 @@ private:
 
     mutable StoreState state;
     mutable size_t writes = 0;
+    mutable size_t target_checks = 0;
     size_t hint_writes = 0;
 };
 
 constexpr auto committed_content = "{\"format-version\":2}";
+constexpr auto another_writers_content = R"({"format-version":2,"other":true})";
 
 bool commit(
     const std::shared_ptr<ReconcilingObjectStorage> & storage,
@@ -294,24 +330,167 @@ bool commitAgainst(StoreState state, CompressionMethod compression_method = Comp
     return commit(std::make_shared<ReconcilingObjectStorage>(std::move(state)), compression_method);
 }
 
+void expectUnknownCommitState(StoreState state)
+{
+    try
+    {
+        bool committed = commitAgainst(std::move(state));
+        FAIL() << "Expected an unknown commit state, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << e.message();
+        EXPECT_TRUE(Iceberg::isCommitStateUnknown(e));
+    }
+}
+
 }
 
 TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
 {
-    /// The backend refused the compare-and-swap, so retrying can never succeed: the commit must
-    /// surface the refusal rather than return `false`, which callers read as a lost race.
+    /// The backend cannot perform the write at all (it cannot express the compare-and-swap, or the disk is
+    /// read-only), so retrying can never succeed: the commit must surface the refusal rather than return `false`.
+    for (int code : {ErrorCodes::UNSUPPORTED_METHOD, ErrorCodes::READONLY})
+    {
+        try
+        {
+            StoreState state;
+            state.throw_write_error = throwCode(code);
+            bool committed = commitAgainst(state);
+            FAIL() << "Expected error " << code << " to propagate, got " << committed;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), code) << e.message();
+        }
+    }
+}
+
+TEST(IcebergCommitPropagation, OtherWriteFailuresAreReconciled)
+{
+    /// Any other failure may be a lost race or a lost response, so it is not surfaced as itself: the outcome is
+    /// established from what the store holds. Without this the refusal tests would also pass against a commit that
+    /// propagates everything.
+    std::vector<WriteErrorThrower> failures{
+        throwCode(ErrorCodes::NETWORK_ERROR),
+        /// A lost race on local storage.
+        throwCode(ErrorCodes::FILE_ALREADY_EXISTS),
+        /// An I/O error, which may be transient.
+        throwErrno(EIO),
+    };
+#if USE_AWS_S3
+    /// A lost race on S3 (412 `PreconditionFailed`), which the SDK reports without a typed error code.
+    failures.push_back([](const std::string &)
+    {
+        throw S3Exception("At least one of the pre-conditions you specified did not hold", Aws::S3::S3Errors::UNKNOWN);
+    });
+#endif
+
+    for (const auto & failure : failures)
+    {
+        StoreState lost_race;
+        lost_race.throw_write_error = failure;
+        lost_race.stored_content = another_writers_content;
+        EXPECT_FALSE(commitAgainst(lost_race));
+
+        StoreState absent;
+        absent.throw_write_error = failure;
+        expectUnknownCommitState(absent);
+    }
+}
+
+TEST(IcebergCommitPropagation, PermissionErrorIsNotReportedAsALostRace)
+{
+    /// The writer may not write the metadata file (local storage), so every retry is denied again:
+    /// the commit must surface the error with its errno rather than return `false`.
+    for (int error : {EACCES, EPERM, EROFS})
+    {
+        try
+        {
+            StoreState state;
+            state.throw_write_error = throwErrno(error);
+            bool committed = commitAgainst(state);
+            FAIL() << "Expected errno " << error << " to propagate, got " << committed;
+        }
+        catch (const ErrnoException & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_OPEN_FILE) << e.message();
+            EXPECT_EQ(e.getErrno(), error) << e.message();
+        }
+    }
+}
+
+TEST(IcebergCommitPropagation, RefusalOfAWriteThatMayHaveLandedIsReconciled)
+{
+    /// A refusal after the write was sent (e.g. of the check after an upload) is not proof that nothing was written.
+
+    /// This writer's document is there after the refusal.
+    StoreState committed;
+    committed.throw_write_error = throwErrno(EACCES);
+    committed.accept_write = true;
+    EXPECT_TRUE(commitAgainst(committed));
+
+    /// Another writer's document is there after the refusal.
+    StoreState lost_race;
+    lost_race.throw_write_error = throwErrno(EACCES);
+    lost_race.stored_content = another_writers_content;
+    EXPECT_FALSE(commitAgainst(lost_race));
+
+    /// The check after the refusal fails, so nothing is known.
+    StoreState unknown;
+    unknown.throw_write_error = throwErrno(EACCES);
+    unknown.target_exists = [](size_t call) -> bool
+    {
+        if (call == 0)
+            return false;
+        throw Exception(ErrorCodes::NETWORK_ERROR, "The existence check failed in the test stub");
+    };
+    expectUnknownCommitState(unknown);
+}
+
+#if USE_AWS_S3
+TEST(IcebergCommitPropagation, S3AccessDeniedIsNotReportedAsALostRace)
+{
+    /// S3 rejected the request's credentials or permissions, so every retry is rejected again: the
+    /// commit must surface the S3 error rather than return `false`.
+    for (auto error : {
+             Aws::S3::S3Errors::ACCESS_DENIED,
+             Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
+             Aws::S3::S3Errors::INVALID_SIGNATURE,
+             Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH})
+    {
+        try
+        {
+            StoreState state;
+            state.throw_write_error = [error](const std::string &) { throw S3Exception("Access Denied.", error); };
+            bool committed = commitAgainst(state);
+            FAIL() << "Expected S3 error " << static_cast<int>(error) << " to propagate, got " << committed;
+        }
+        catch (const S3Exception & e)
+        {
+            EXPECT_EQ(e.getS3ErrorCode(), error) << e.message();
+        }
+    }
+}
+
+TEST(IcebergCommitPropagation, RefusedExistenceCheckIsNotReportedAsALostRace)
+{
+    /// S3 answers 403 to a HEAD of an absent key without `s3:ListBucket`. Nothing was written yet, and every retry is
+    /// refused again, so the commit must surface the error without trying the write.
     try
     {
         StoreState state;
-        state.write_error_code = ErrorCodes::UNSUPPORTED_METHOD;
+        state.throw_write_error = [](const std::string &) { throw Exception(ErrorCodes::LOGICAL_ERROR, "The write must not be attempted"); };
+        state.target_exists = [](size_t) -> bool { throw S3Exception("Access Denied.", Aws::S3::S3Errors::ACCESS_DENIED); };
         bool committed = commitAgainst(state);
-        FAIL() << "Expected the refusal to propagate, got " << committed;
+        FAIL() << "Expected the refused existence check to propagate, got " << committed;
     }
-    catch (const Exception & e)
+    catch (const S3Exception & e)
     {
-        EXPECT_EQ(e.code(), ErrorCodes::UNSUPPORTED_METHOD) << e.message();
+        EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::ACCESS_DENIED) << e.message();
     }
 }
+#endif
 
 TEST(IcebergCommitPropagation, StoredContentOfThisWriterIsCommitted)
 {
@@ -379,7 +558,7 @@ TEST(IcebergCommitPropagation, ContentOfAnotherWriterIsALostRace)
     /// Someone else's document occupies the version, which is the only outcome that proves this
     /// commit did not happen, so the staged files are garbage and cleanup is correct.
     StoreState state;
-    state.stored_content = R"({"format-version":2,"other":true})";
+    state.stored_content = another_writers_content;
     EXPECT_FALSE(commitAgainst(state));
 }
 
@@ -388,34 +567,17 @@ TEST(IcebergCommitPropagation, AbsentTargetIsUnknownRatherThanALostRace)
     /// Nothing cancels a failed conditional write server-side and there is no ordering fence, so an
     /// absent target does not prove the write will not land. Treating it as a lost race deletes the
     /// files of a commit that then becomes visible.
-    try
-    {
-        bool committed = commitAgainst(StoreState{});
-        FAIL() << "Expected an unknown commit state, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << e.message();
-        EXPECT_TRUE(Iceberg::isCommitStateUnknown(e));
-    }
+    expectUnknownCommitState(StoreState{});
 }
 
 TEST(IcebergCommitPropagation, FailingReadBackIsUnknownRatherThanALostRace)
 {
     /// The outcome could not be established at all, which is not the same claim as the commit not
     /// having happened.
-    try
-    {
-        StoreState state;
-        state.stored_content = committed_content;
-        state.read_throws = true;
-        bool committed = commitAgainst(state);
-        FAIL() << "Expected an unknown commit state, got " << committed;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION) << e.message();
-    }
+    StoreState state;
+    state.stored_content = committed_content;
+    state.read_throws = true;
+    expectUnknownCommitState(state);
 }
 
 #endif

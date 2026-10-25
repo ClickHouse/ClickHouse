@@ -46,6 +46,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -268,6 +269,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_restore_replica_pause_before_metadata_version_raise[];
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
@@ -3443,6 +3445,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(part_desc->src_table_part->info),
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -5694,6 +5697,7 @@ bool StorageReplicatedMergeTree::fetchPart(
             {
                 .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
                 .keep_metadata_version = true,
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
 
             auto [cloned_part, lock] = cloneAndLoadDataPart(
@@ -5807,6 +5811,9 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
+
+            if (prewarm_caches.statistics_cache)
+                part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
             write_part_log({});
         }
@@ -5962,7 +5969,6 @@ void StorageReplicatedMergeTree::startup()
     LOG_TRACE(log, "Starting up table");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
 
     /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
     /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
@@ -5982,7 +5988,6 @@ void StorageReplicatedMergeTree::startup()
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         return;
     }
@@ -6199,13 +6204,11 @@ void StorageReplicatedMergeTree::shutdown(bool)
     /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
     const bool already_called = shutdown_called.exchange(true);
 
-    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
-    /// `shutdown(false)` would take the `already_called` branch and could leave `refreshStatistics` running
-    /// concurrently with `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation
-    /// is idempotent.
+    /// Deactivate the periodic refresh task unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would take the `already_called` branch and could leave the task running
+    /// concurrently with `~MergeTreeData`. Deactivation is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    stopStatisticsCache();
 
     if (already_called)
     {
@@ -7656,6 +7659,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         createReplica(metadata_snapshot, zookeeper_retries_info);
 
     createNewZooKeeperNodes(zookeeper_retries_info);
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_before_metadata_version_raise);
 
     /// Bump the /metadata ZNode version to match the max parts metadata version.
     /// The table's in-memory metadata_version is derived from the /metadata ZNode stat.version
@@ -7663,12 +7667,41 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     if (max_parts_metadata_version > 0)
     {
         auto zookeeper = getZooKeeper();
-        String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        for (int32_t i = 0; i < max_parts_metadata_version; ++i)
-            zookeeper->set(zookeeper_path + "/metadata", metadata_str);
-        zookeeper->set(replica_path + "/metadata_version", std::to_string(max_parts_metadata_version));
+        /// Each batch logs an ALTER_METADATA entry of the version it reaches, so a replica that cloned an earlier one catches up.
+        Coordination::Stat metadata_stat;
+        Coordination::Stat columns_stat;
+        String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+        String columns_str = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        while (metadata_stat.version < max_parts_metadata_version)
+        {
+            const auto target = static_cast<int32_t>(std::min<Int64>(
+                max_parts_metadata_version, Int64{metadata_stat.version} + static_cast<Int64>(zkutil::MULTI_BATCH_SIZE)));
 
-        LOG_INFO(log, "Bumped metadata version to {} to match parts", max_parts_metadata_version);
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/columns", columns_stat.version));
+            for (int32_t version = metadata_stat.version; version < target; ++version)
+                ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", version + 1 == target ? metadata_str : "", version));
+
+            ReplicatedMergeTreeLogEntryData entry;
+            entry.type = LogEntry::ALTER_METADATA;
+            entry.source_replica = replica_name;
+            entry.metadata_str = metadata_str;
+            entry.columns_str = columns_str;
+            entry.alter_version = target;
+            entry.create_time = time(nullptr);
+            entry.have_mutation = false;
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+            Coordination::Responses responses;
+            const Coordination::Error code = zookeeper->tryMulti(ops, responses);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
+                zkutil::KeeperMultiException::check(code, ops, responses);
+
+            metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+            columns_str = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        }
+
+        LOG_INFO(log, "Raised metadata version to {} to match parts", metadata_stat.version);
     }
 
     LOG_INFO(log, "Created ZK nodes for table");
@@ -9713,6 +9746,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             if (replace)
             {
@@ -10014,6 +10048,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,

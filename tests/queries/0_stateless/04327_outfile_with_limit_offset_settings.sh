@@ -14,7 +14,7 @@ OUT_GZ="${CLICKHOUSE_TMP}/04327_out.tsv.gz"
 rm -f "$OUT" "$OUT_GZ"
 
 echo "--- INTO OUTFILE with limit setting ---"
-${CLICKHOUSE_LOCAL} --query "SELECT number FROM numbers(10) ORDER BY number INTO OUTFILE '${OUT}' SETTINGS limit = 3, enable_analyzer = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT number FROM numbers(10) ORDER BY number INTO OUTFILE '${OUT}' SETTINGS limit = 3"
 cat "$OUT"
 rm -f "$OUT"
 
