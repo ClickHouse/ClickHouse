@@ -1,3 +1,5 @@
+-- Tags: long
+
 -- { echo }
 -- A `JSONAllValues` text index skips only granules without the text of a matching value of a typed JSON path,
 -- when that path is compared with a constant of another type, through a cast, or with an array function.
