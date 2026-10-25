@@ -36,6 +36,8 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// The argument is returned as it is.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     String getSignatureString() const override { return "(T) -> T"; }
 
