@@ -154,6 +154,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 columns_cache_size;
     extern const ServerSettingsDouble columns_cache_size_ratio;
     extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -246,9 +247,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
-    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -285,6 +286,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -342,6 +344,10 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
 
 void LocalServer::processError(std::string_view query) const
 {
+    /// The reader of the output went away, e.g. `clickhouse-local -q '...' | head -1`: stop quietly.
+    if (stdout_is_broken)
+        return;
+
     /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
     /// the exception is reported here rather than rethrown - rethrowing it would end the run.
     if (is_interactive || ignore_error)
@@ -525,10 +531,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    getIcebergManifestDecodeThreadPool().initialize(
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 }
 
 
@@ -1462,6 +1468,9 @@ try
 }
 catch (DB::Exception & e)
 {
+    if (stdout_is_broken)
+        return Application::EXIT_OK;
+
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
@@ -1469,6 +1478,9 @@ catch (DB::Exception & e)
 }
 catch (...)
 {
+    if (stdout_is_broken)
+        return Application::EXIT_OK;
+
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
@@ -1671,6 +1683,15 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
+
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
 
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];

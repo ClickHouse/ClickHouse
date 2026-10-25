@@ -17,6 +17,8 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/DefinerDependencies.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -121,6 +123,17 @@ namespace
         for (const auto & column : select_query_output_columns)
             if (!target_table_columns.has(column.name))
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
+    }
+
+    bool selectReadsView(const StorageID & view_id, const ASTPtr & select_with_union, const ContextPtr & context)
+    {
+        /// Qualified as outside this session, where the name of a temporary table is a table of the view's database.
+        /// No current database: a recursive CTE stays unqualified. No `table_name`: it would be dropped from the result.
+        ASTPtr select_copy = select_with_union->clone();
+        AddDefaultDatabaseVisitor(context->getGlobalContext(), view_id.database_name).visit(select_copy);
+        auto referenced_tables = getDependenciesFromCreateQuery(
+            context, /*table_name=*/{}, select_copy, /*current_database=*/"").dependencies;
+        return referenced_tables.contains(view_id.getQualifiedName());
     }
 
     ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
@@ -259,6 +272,8 @@ StorageMaterializedView::StorageMaterializedView(
     mv_db_context->setCurrentDatabase(table_id_.database_name);
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
+    if (mode == LoadingStrictnessLevel::CREATE && !query.refresh_strategy && selectReadsView(table_id_, select.select_query, mv_db_context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id_.getFullTableName());
     if (select.select_table_id)
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
@@ -421,6 +436,8 @@ StorageMaterializedView::StorageMaterializedView(
 
         auto new_columns_list = make_intrusive<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+        if (query.columns_list->codec_declarations)
+            new_columns_list->set(new_columns_list->codec_declarations, query.columns_list->codec_declarations->ptr());
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
@@ -610,7 +627,8 @@ void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
 
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    /// The override also looks up the target table, which may be unreachable.
+    auto view_metadata = IStorage::getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
     if (view_metadata->sql_security_type == SQLSecurityType::DEFINER)
         DefinerDependencies::instance().removeDependencies(table_id);
 
@@ -909,6 +927,13 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, mv_db_context);
 
     const auto & new_select = new_metadata.select;
+    bool modifies_query = std::ranges::any_of(params, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_QUERY; });
+    /// A refreshable view is not triggered by inserts, so its query may read the view itself.
+    if (modifies_query && !new_metadata.refresh)
+    {
+        if (selectReadsView(table_id, new_select.select_query, mv_db_context))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id.getFullTableName());
+    }
     new_metadata.setSelectQuery(new_select);
 
     /// Check the materialized view's inner table structure.
@@ -1094,7 +1119,8 @@ void StorageMaterializedView::flushAndPrepareForShutdown()
 
 void StorageMaterializedView::shutdown(bool)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    /// The override also looks up the target table, which may be unreachable.
+    auto metadata_snapshot = IStorage::getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
