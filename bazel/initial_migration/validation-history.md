@@ -1888,3 +1888,29 @@ The original builds retained 141 x86-64 and 125 ARM64 SDK objects, 23 SQLConsole
 The seven header targets covered eight standalone headers, including four Abseil headers. The intentional duplicate-include and textual-only controls received no clean grade.
 
 BuildBuddy recorded [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd): 5933 remote execution records (11 failed SDK compiles), [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027): 5933 remote execution records (12 failed SDK compiles).
+
+## bff36d83f
+
+[bff36d83f](https://github.com/dzbarsky/clickhouse/commit/bff36d83f36bcba42cb85497dc3d2b8ec3e97558) declares the public Poco Redis library and its Foundation dependency, removes duplicate ORC and LZ4 dependencies from the Parquet tools and a duplicate protobuf dependency from gRPC, and classifies Boost include fragments. Bazel’s DWYU preprocessing rules can now divide a target’s C++ inputs into smaller groups while keeping the complete target report.
+
+The native builds on [x86-64](https://app.buildbuddy.io/invocation/36bb927d-a0e6-4a4f-a548-af451198293b) and [ARM64](https://app.buildbuddy.io/invocation/4129084d-509d-4ba4-8e39-cd914535f263) reproduced all six SHA-256 and byte counts in the [build guide](../../README.bazel.md#binary-comparison). The normalized application matched native CMake on each architecture. On each CPU 38 GoogleTests, six SQL cases and 16 Decimal assertions passed. The original unit-test link and a trial with a different Arrow archive order also produced identical executables on each CPU.
+
+Each native build completed 12 of 14 requested targets (11 of 13 required). The ClickHouse-hosted Redis SDK executable ran on both CPUs; linking without its nine Redis objects failed with the five expected undefined symbols. The separate gRPC public-header client used an angle include for a quote-only include directory. A second validation target attempted to depend directly on the private Redis implementation and failed Bazel visibility analysis. Neither failed target is a passing SDK or provider check.
+
+The ordinary builds on [x86-64](https://app.buildbuddy.io/invocation/71b77f4e-bd05-49bb-bc99-ca22783a1390) and [ARM64](https://app.buildbuddy.io/invocation/8d789def-7a38-4172-a798-caea48c29a35) built the three Parquet tools, `protoc`, `grpc_cpp_plugin` and `grpc_plugin_support`; the Build Event Protocol and BuildBuddy reported the same six output SHA-256 and sizes on each CPU. The native invocations executed 15 C++ compiler actions each, compared with 5,229 on [x86-64](https://app.buildbuddy.io/invocation/a1a5e3c0-b15c-4d17-9e22-214da36ba239) and 5,228 on [ARM64](https://app.buildbuddy.io/invocation/902e45f1-7d43-4332-bde5-07fd34199dc6) for the previous source. These counts are executed actions, not total configured actions.
+
+The strict DWYU invocations on [x86-64](https://app.buildbuddy.io/invocation/2cac9d7b-5e37-4325-a35c-c25623352f7f) and [ARM64](https://app.buildbuddy.io/invocation/b25ecf0d-07a9-489d-98be-9f5f3ec17b46) also exercised five analysis fixtures per CPU. Counts below describe production targets only. An unchecked target or incomplete link/header observation does not count as clean.
+
+| DWYU result | x86-64 | ARM64 |
+| --- | ---: | ---: |
+| Clean | 6 | 5 |
+| Dependency findings | 4 | 3 |
+| Only rules_cc’s implicit link_extra_lib reported unused | 5 | 5 |
+| Link dependencies not fully verified | 26 | 27 |
+| Public-header preprocessing not fully verified | 8 | 7 |
+| Compiler did not enter every required file | 3 | 3 |
+| Failed | 1 | 2 |
+| Not checked | 731 | 732 |
+| **Total declared production targets** | **784** | **784** |
+
+On both CPUs, standalone headers from `//src/TableFunctions:headers` reached `PositionDeleteTransform.h`, which could not include `AggregateFunctions/AggregateFunctionGroupBitmapData.h`. On ARM64, preprocessing two usearch headers also failed because Clang treated usearch’s half-precision configuration warning as an error.
