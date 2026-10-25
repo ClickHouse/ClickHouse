@@ -55,6 +55,7 @@ public:
 
     /// Read state from the latest snapshot
     void init();
+    void finishSnapshotRecovery();
 
     void setLogStore(KeeperLogStore * log_store_);
     KeeperLogStore * getLogStore() { return log_store; }
