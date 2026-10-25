@@ -70,10 +70,6 @@ ch_cc_library(
     arches = [
         "x86_64",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = ["include"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,

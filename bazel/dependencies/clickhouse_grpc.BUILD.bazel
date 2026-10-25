@@ -17,11 +17,6 @@ _GENERATED_LOCAL_DEFINES_0 = [
     "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
-_GRPC_COPTS = [
-    "-w",
-    "-std=gnu11",
-]
-
 _GRPC_GENERATED_PUBLIC_HEADERS = [
     "src/core/ext/upb-gen/envoy/admin/v3/config_dump_shared.upb_minitable.h",
     "src/core/ext/upb-gen/envoy/annotations/deprecation.upb_minitable.h",
@@ -518,7 +513,6 @@ ch_cc_library(
     name = "address_sorting",
     srcs = glob(["third_party/address_sorting/*.c"]) + ["third_party/address_sorting/address_sorting_internal.h"],
     hdrs = ["third_party/address_sorting/include/address_sorting/address_sorting.h"],
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -1650,10 +1644,6 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/xds/**/*.h",
     ]),
     hdrs = _GRPC_GENERATED_PUBLIC_HEADERS,
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -2557,7 +2547,6 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/google/protobuf/timestamp.upbdefs.h",
     ],
     hdrs = _GRPC_GENERATED_PUBLIC_HEADERS,
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
@@ -2615,7 +2604,6 @@ ch_cc_library(
         "third_party/upb/upb/lex/round_trip.h",
         "third_party/upb/upb/lex/unicode.h",
     ],
-    copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_message_lib",
         ":upb_mini_descriptor_lib",
@@ -2649,7 +2637,6 @@ ch_cc_library(
         "third_party/upb/upb/json/encode.h",
         "third_party/upb/upb/port/vsnprintf_compat.h",
     ],
-    copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_message_lib",
         ":upb_mini_descriptor_lib",
@@ -2702,7 +2689,6 @@ ch_cc_library(
         "third_party/upb/upb/message/message.h",
         "third_party/upb/upb/message/value.h",
     ],
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2737,7 +2723,6 @@ ch_cc_library(
         "third_party/upb/upb/mini_table/sub.h",
         "third_party/upb/upb/wire/decode_fast/combinations.h",
     ] + glob(["third_party/upb/upb/mini_descriptor/*.h"]),
-    copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_message_lib",
     ],
@@ -2793,7 +2778,6 @@ ch_cc_library(
         "third_party/upb/upb/hash/*.h",
         "third_party/upb/upb/mem/**/*.h",
     ]),
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2874,7 +2858,6 @@ ch_cc_library(
         "third_party/upb/upb/reflection/stage0/google/protobuf/descriptor.upb.h",
         "third_party/upb/upb/wire/decode_fast/field_parsers.h",
     ],
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2906,7 +2889,6 @@ ch_cc_library(
         "third_party/upb/upb/text/encode.h",
         "third_party/upb/upb/text/options.h",
     ],
-    copts = _GRPC_COPTS,
     implementation_deps = [
         ":upb_json_lib",
         ":upb_message_lib",
@@ -2953,7 +2935,6 @@ ch_cc_library(
         "third_party/upb/upb/wire/types.h",
         "third_party/upb/upb/wire/writer.h",
     ] + glob(["third_party/upb/upb/wire/internal/*.h"]),
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
@@ -2985,7 +2966,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ["third_party/utf8_range/utf8_range_neon.inc"],
     }),
     hdrs = ["third_party/utf8_range/utf8_range.h"],
-    copts = _GRPC_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [

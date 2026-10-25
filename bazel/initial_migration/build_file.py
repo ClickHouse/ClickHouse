@@ -8,6 +8,7 @@ import re
 
 from initial_migration import llvm_targets
 from initial_migration.compact_build import compact
+from initial_migration.normalize_cpp_builds import native_compile_defaults
 from initial_migration.repository_inputs import (
     REPOSITORIES, ROOT, CC_HEADER_SUFFIXES, TEXTUAL_SOURCE_SUFFIXES, HeaderDirectory,
     configuration_owner, directory_sources, execution_path, package_source_files, package_sources,
@@ -997,8 +998,13 @@ class BuildFile:
         lines = [kind + '(\n    name = ' + json.dumps(name) + ',\n']
         if kind == 'llvm_runtime_objects':
             lines.append('    arch = _RUNTIME_ARCH,\n')
+        defaults = native_compile_defaults(attrs.get('srcs'), attrs.get('language', 'CXX'),
+                                          attrs.get('clickhouse_code', False)) if kind == 'ch_cc_library' else {}
+        # CMake does not inherit the Bazel macro's defaults when a group has no options.
+        for key in defaults:
+            attrs.setdefault(key, [])
         for key, value in attrs.items():
-            if value == []:
+            if value == [] and key not in defaults:
                 continue
             paths = key in {'copts', 'local_defines', 'linkopts'}
             if kind == 'llvm_runtime_objects' and paths:
@@ -1006,7 +1012,43 @@ class BuildFile:
             lines.append('    ' + key + ' = ' + starlark(value, 4, paths=paths, step=4) + ',\n')
         self.rules.append(''.join(lines) + ')\n')
 
+    def croaring(self, variants):
+        # CMake links clickhouse_common_io to CRoaring. The pinned C sources use only CRoaring's C headers.
+        def inputs(variant):
+            groups = []
+            for group in variant['groups']:
+                if group['language'] != 'C':
+                    raise ValueError('Expected CRoaring C sources')
+                flags = group['copts']
+                srcs = tuple(self.label(s, source_file=True) for s in group['srcs'])
+                copts = tuple(f for f in flags if f == '-w' or f.startswith('-std='))
+                forced = tuple(flags[i + 1] for i, flag in enumerate(flags) if flag == '-include')
+                groups.append((srcs, copts, forced))
+            return tuple(groups)
+
+        ((core, core_flags, core_headers), (aligned, aligned_flags, aligned_headers)), = {
+            inputs(variant) for variant in variants.values()
+        }
+        header = 'contrib/croaring-cmake/page_aligned_functions.h'
+        if core_headers or aligned != ('src/roaring.c',) or aligned_headers != (header,):
+            raise ValueError('Expected only roaring.c to force page_aligned_functions.h')
+        self.loads.setdefault('@clickhouse//bazel/rules:ch_cc_library.bzl', set()).add('ch_cc_library')
+        self.rule('ch_cc_library', '_roaring__compile_0', {
+            'srcs': list(core), 'hdrs': Glob(['include/**/*.h']), 'includes': ['include'],
+            'language': 'C', 'copts': list(core_flags),
+        })
+        self.rule('ch_cc_library', '_roaring__compile_1', {
+            'srcs': [*aligned, '@clickhouse//contrib/croaring-cmake:page_aligned_functions.h'],
+            'language': 'C', 'copts': [*aligned_flags, '-include', header], 'implementation_deps': [':_roaring__compile_0'],
+        })
+        self.rule('cc_library', '_roaring', {
+            'hdrs': Glob(['cpp/**/*.hh']), 'includes': ['cpp'], 'deps': [':_roaring__compile_0', ':_roaring__compile_1'],
+        })
+
     def target(self, name, variants, input_name=None):
+        if (self.owner, name) == ('contrib/croaring', '_roaring'):
+            self.croaring(variants)
+            return
         input_name = input_name or name
         if all('alias' in variant for variant in variants.values()):
             actual, = {variant['alias'] for variant in variants.values()}

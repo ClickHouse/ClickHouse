@@ -77,10 +77,6 @@ ch_cc_library(
         "snappy.h",
         ":configure_snappy_stubs_public_h",
     ],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         ".",
         "config/contrib/snappy-cmake",

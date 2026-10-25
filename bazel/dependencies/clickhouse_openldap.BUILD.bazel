@@ -92,10 +92,6 @@ ch_cc_library(
         "include/lber.h",
         "include/ldap_cdefs.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = ["include"],
     language = "C",
     local_defines = [
@@ -208,10 +204,6 @@ ch_cc_library(
     hdrs = [
         "include/ldap.h",
         "include/openldap.h",
-    ],
-    copts = [
-        "-w",
-        "-std=gnu11",
     ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",

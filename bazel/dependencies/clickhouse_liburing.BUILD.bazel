@@ -52,10 +52,6 @@ ch_cc_library(
         ["src/include/**/*.h"],
         exclude = ["src/include/liburing/io_uring.h"],
     ),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "config/contrib/liburing/src/include-compat",
         "config/contrib/liburing/src/include",

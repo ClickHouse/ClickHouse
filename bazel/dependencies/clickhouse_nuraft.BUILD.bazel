@@ -19,10 +19,6 @@ ch_cc_library(
         "src/tracer.hxx",
     ],
     hdrs = glob(["include/**/*.hxx"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_boost//:boost_headers",
         "@clickhouse_boost//:boost_headers_no_openssl",

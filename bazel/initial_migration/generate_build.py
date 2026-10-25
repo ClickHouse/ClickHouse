@@ -1456,16 +1456,14 @@ class Graph:
 
 
 def main():
-    # This BUILD file is maintained by hand. Restore it from Git for a fresh
-    # import. It supplies Arrow, Parquet and Flight headers and link targets;
-    # the list of search directories in a CMake compile group cannot do that.
+    # CMake does not declare the Arrow/Parquet header libraries or msgpack_c_api.
+    # Keep these hand-maintained overlays when importing a new CMake build.
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
-    if not arrow.is_file():
-        raise FileNotFoundError(f"Restore the maintained Arrow BUILD file before importing CMake: {arrow}")
-    original_arrow = arrow.read_bytes()
-    read_only = {arrow}
+    msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
+    read_only = {arrow, msgpack}
+    maintained = {path: path.read_bytes() for path in read_only}
     from initial_migration.compact_build import Source
-    arrow_targets = {kw.value.value for _, rule in Source(original_arrow.decode()).rules()
+    arrow_targets = {kw.value.value for _, rule in Source(maintained[arrow].decode()).rules()
                     for kw in rule.keywords if kw.arg == 'name' and isinstance(kw.value, ast.Constant)}
     licenses = subprocess.check_output(
         ['bash', str(ROOT / 'utils/list-licenses/list-licenses.sh'), str(ROOT)],
@@ -1788,7 +1786,7 @@ def main():
     from initial_migration.object_storage_headers import apply as declare_object_storage_headers
     declare_object_storage_headers(ROOT)
     declare_external_compiler_headers(ROOT)
-    from initial_migration.shared_compile_defines import share_local_defines
+    from initial_migration.shared_compile_defines import omit_compile_defaults, share_local_defines
     share_local_defines(ROOT, selection_builds)
     # Fold remaining CPU choices only when target_compatible_with fixes the CPU.
     # Rule transfers can also leave adjacent literal lists or empty attributes.
@@ -1802,7 +1800,7 @@ def main():
             if updated == after:
                 break
             after = updated
-        after = drop_defaults(Source(after))
+        after = omit_compile_defaults(Source(drop_defaults(Source(after))))
         after = remove_parens(remove_unused_constants(Source(after)), key=source_list_key)
         if after != before:
             path.write_text(after)
@@ -1813,8 +1811,9 @@ def main():
     # Consumers and source owners are final after the BUILD rule rewrites.
     prune_native_exports(ROOT, write=True)
     format_build_files(read_only=read_only)
-    if arrow.read_bytes() != original_arrow:
-        raise ValueError(f'The CMake importer modified {arrow}')
+    for path, original in maintained.items():
+        if path.read_bytes() != original:
+            raise ValueError(f'The CMake importer modified {path}')
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')
 

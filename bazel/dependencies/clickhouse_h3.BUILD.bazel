@@ -42,10 +42,6 @@ ch_cc_library(
         exclude = _H3_PUBLIC_HEADERS + ["src/h3lib/include/localij.h"],
     ),
     hdrs = [":config/contrib/h3/src/h3lib/include/h3api.h"] + _H3_PUBLIC_HEADERS,
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "src/h3lib/include",
         "config/contrib/h3/src/h3lib/include",

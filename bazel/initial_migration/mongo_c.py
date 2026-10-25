@@ -37,7 +37,8 @@ def declare_mongo_c_headers(path):
         "_libmongoc": {
             "srcs": " + ".join([glob(mongoc + "*.c"), c_sources, json.dumps([utf8 + "utf8proc.c", config + mongoc + "mongoc-config-private.h"]), mongoc_private]),
             "hdrs": json.dumps([config + mongoc + "mongoc-config.h", config + mongoc + "mongoc-version.h"]) + " + " + public,
-            "private_hdrs": json.dumps([mongoc + "mongoc-counters.defs", utf8 + "utf8proc_data.c"]),
+            "private_hdrs": json.dumps([mongoc + "mongoc-counters.defs"]),
+            "private_textual_srcs": json.dumps([utf8 + "utf8proc_data.c"]),
         },
     }
     # A previous import can have any of these glob declarations.

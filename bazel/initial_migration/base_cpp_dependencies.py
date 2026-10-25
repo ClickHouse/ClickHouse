@@ -172,6 +172,26 @@ cc_library(
             stats["files relabelled"] += 1
 
 
+def foundation_textual_sources(path, rule):
+    """Compile the Foundation platform implementations through their .cpp readers."""
+    patterns = ["src/*_POSIX.cpp", "src/*_UNIX.cpp", "src/FPEnvironment_C99.cpp", "src/LogFile_STD.cpp"]
+    implementations = {p.relative_to(path.parent).as_posix() for pattern in patterns for p in path.parent.glob(pattern)}
+    # Earlier CMake imports captured the inactive Android and Solaris alternatives too.
+    inactive = {"src/FPEnvironment_SUN.cpp", "src/NamedEvent_Android.cpp", "src/NamedMutex_Android.cpp", "src/RWLock_Android.cpp"}
+    changes = {"private_textual_srcs": "glob(" + strings(patterns) + ")"}
+    if "private_textual_srcs" in rule:
+        existing = rule["private_textual_srcs"]
+        if ast.dump(existing) != ast.dump(ast.parse(changes["private_textual_srcs"], mode="eval").body):
+            raise ValueError("Unexpected Poco Foundation private_textual_srcs")
+    for field in ("private_hdrs", "textual_hdrs", "additional_compiler_inputs"):
+        if field in rule:
+            files = ast.literal_eval(rule[field])
+            kept = [f for f in files if f.removeprefix(":") not in implementations | inactive]
+            if len(kept) != len(files):
+                changes[field] = strings(kept) if kept else None
+    return changes
+
+
 def poco_header_target(part):
     return "_poco_redis" if part == "Redis" else "poco_" + POCO[part] + "_headers"
 
@@ -306,6 +326,9 @@ cc_library(
                 raise ValueError(name + ": public header glob changed membership")
             stats["Poco public headers converted to glob"] += len(current)
         changes = {name: {"hdrs": 'glob(["include/**/*.h"])', "includes": '["include"]'}}
+        if part == "Foundation":
+            foundation = next(call for _, call in source.rules() if attrs(call)["name"].value == "_poco_foundation")
+            changes["_poco_foundation"] = foundation_textual_sources(path, attrs(foundation))
         if part == "Redis":
             # Poco::Redis builds src/*.cpp and publishes the entire include directory.
             changes[name]["srcs"] = 'glob(["src/*.cpp"])'
@@ -326,8 +349,10 @@ cc_library(
                     or getattr(stmt.value.func, "id", "") != "exports_files"):
                 continue
             files = ast.literal_eval(stmt.value.args[0])
-            kept = [name for name in files if not name.startswith("include/") or any(
-                "//base/poco/" + part + ":" + name in content for p, content in contents.items() if p != path)]
+            kept = [name for name in files
+                    if not (name.startswith("include/") or
+                            part == "Foundation" and name.startswith("src/") and name.endswith(".cpp"))
+                    or any("//base/poco/" + part + ":" + name in content for p, content in contents.items() if p != path)]
             stats["Poco exports removed"] += len(files) - len(kept)
             if not kept:
                 edits.append((*source.span(stmt), ""))

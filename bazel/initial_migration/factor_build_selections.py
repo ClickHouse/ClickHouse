@@ -413,7 +413,7 @@ class StrictConfigured(Configured):
                         return pairs[DEFAULT]
                     return ast.Name(id="_NO_CPU_SELECT_MATCH_", ctx=ast.Load())
         if call_name(node) in CPP_LIBRARIES:
-            node.keywords = [kw for kw in node.keywords if not removable_default(kw.arg, kw.value)]
+            node.keywords = [kw for kw in node.keywords if not removable_default(kw.arg, kw.value, node)]
         if (self.collapse_failed and self.cpu == "@platforms//cpu:unsupported"
                 and call_name(node) in CPP_RULES
                 and any(no_match(kw.value) for kw in node.keywords)):

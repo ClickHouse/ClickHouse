@@ -82,10 +82,6 @@ ch_cc_library(
         "include/private/xpath.h",
     ],
     hdrs = [":xmlversion"] + glob(["include/libxml/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "include",
         "configured_public",

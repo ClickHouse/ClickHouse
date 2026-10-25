@@ -15,10 +15,6 @@ ch_cc_library(
         "sqlite3.c",
     ],
     hdrs = glob(["**/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     language = "C",
     local_defines = CXX_RUNTIME_DEFINES,
 )

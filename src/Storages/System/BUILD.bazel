@@ -535,7 +535,6 @@ cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_mariadb_connector_c//:_mariadbclient",
         "@clickhouse_mecab//:_mecab",
-        "@clickhouse_minizip_ng//:_minizip",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "@clickhouse_nats_io//:_nats_io",
         "@clickhouse_nuraft//:_nuraft",

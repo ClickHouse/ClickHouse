@@ -116,10 +116,6 @@ ch_cc_library(
         "src/interfaces/libpq/libpq-events.h",
         "src/interfaces/libpq/libpq-fe.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",

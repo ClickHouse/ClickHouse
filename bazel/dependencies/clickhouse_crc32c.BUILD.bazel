@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -33,15 +33,9 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ["configured/aarch64/crc32c/crc32c_config.h"],
     }),
     hdrs = glob(["include/**/*.h"]),
-    copts =
-        [
-            "-w",
-            "-std=c++23",
-        ],
     includes = [
         "include",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = select({
         "@platforms//cpu:x86_64": ["configured/x86_64"],
         "@platforms//cpu:aarch64": ["configured/aarch64"],

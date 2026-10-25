@@ -108,10 +108,6 @@ ch_cc_library(
         ":config/contrib/zlib-ng-cmake/zlib.h",
         ":config/contrib/zlib-ng-cmake/zlib_name_mangling.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         ".",
         "config/contrib/zlib-ng-cmake",

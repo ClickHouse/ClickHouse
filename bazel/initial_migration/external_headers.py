@@ -91,6 +91,8 @@ class HeaderLibraries:
         if not owner:
             return None
         relative = path.removeprefix(owner + '/')
+        if HEADER_ONLY_REPOSITORIES[owner] == 'wyhash' and ('/' in relative or not relative.endswith('.h')):
+            return None
         sparsehash_textual = (HEADER_ONLY_REPOSITORIES[owner] == 'sparsehash_c11'
                               and PurePosixPath(relative).parent == PurePosixPath('sparsehash')
                               and not PurePosixPath(relative).suffix)
@@ -138,6 +140,9 @@ class HeaderLibraries:
                 for suffix in CC_HEADER_SUFFIXES
             ]
             attrs = {'hdrs': Glob(patterns, ('**/BUILD', '**/BUILD.bazel'))}
+            if name == 'wyhash':
+                # old_versions/ contains superseded wyhash algorithms.
+                attrs.update(hdrs=Glob(['*.h']), includes=['.'])
             if name == 'sparsehash_c11':
                 attrs['textual_hdrs'] = Glob(['sparsehash/*'], ['sparsehash/*.*'])
             if name == 'usearch':

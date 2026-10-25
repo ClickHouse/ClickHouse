@@ -949,11 +949,6 @@ ch_cc_binary(
     ],
 )
 
-_UTF8_COPTS = [
-    "-w",
-    "-std=gnu11",
-]
-
 ch_cc_library(
     name = "utf8_range",
     srcs = [
@@ -961,7 +956,6 @@ ch_cc_library(
         "third_party/utf8_range/range2-neon.c",
         "third_party/utf8_range/range2-sse.c",
     ],
-    copts = _UTF8_COPTS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
 )
@@ -975,7 +969,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ["third_party/utf8_range/utf8_range_neon.inc"],
     }),
     hdrs = ["third_party/utf8_range/utf8_range.h"],
-    copts = _UTF8_COPTS,
     includes = ["third_party/utf8_range"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,

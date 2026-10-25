@@ -5,6 +5,7 @@ import copy
 
 from initial_migration.compact_build import Source
 from initial_migration.factor_build_selections import StrictConfigured, call_name, no_match
+from initial_migration.normalize_cpp_builds import compile_defaults, drop_unused_loads, remove_keyword
 
 # Load modules in their Starlark dependency order. Each exported value is an
 # ordered list for each supported CPU; a missing select default is significant.
@@ -38,6 +39,61 @@ class Defines(StrictConfigured):
 
 def loaded_names(call):
     return {v.value: v.value for v in call.args[1:]} | {v.arg: v.value.value for v in call.keywords}
+
+
+def has_compile_sources(node):
+    """ch_cc_library tests srcs before Bazel resolves select()."""
+    if isinstance(node, ast.List):
+        return bool(node.elts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return has_compile_sources(node.left) or has_compile_sources(node.right)
+    if call_name(node) == "glob":
+        # Bazel rejects an empty glob unless allow_empty is enabled.
+        return not any(kw.arg == "allow_empty" and not (
+            isinstance(kw.value, ast.Constant) and kw.value.value is False) for kw in node.keywords)
+    return call_name(node) == "select"
+
+
+def omit_compile_defaults(source):
+    """Omit only exact, unconditional defaults of ch_cc_library."""
+    lists, runtime, edits, removed_names = {}, set(), [], set()
+    for stmt in source.module.body:
+        if (isinstance(stmt, ast.Assign) and isinstance(stmt.targets[0], ast.Name)
+                and isinstance(stmt.value, ast.List)
+                and all(isinstance(v, ast.Constant) and isinstance(v.value, str) for v in stmt.value.elts)):
+            lists[stmt.targets[0].id] = stmt
+        if (isinstance(stmt, ast.Expr) and call_name(stmt.value) == "load" and
+                stmt.value.args[0].value.removeprefix("@clickhouse") == "//bazel/rules:ch_cc_library.bzl"):
+            runtime.update(k for k, v in loaded_names(stmt.value).items() if v == "CXX_RUNTIME_DEFINES")
+    for _, rule in source.rules():
+        defaults = compile_defaults(rule)
+        if not defaults:
+            continue
+        # ch_grpc_cc_library always passes its generated grpc sources to ch_cc_library.
+        if call_name(rule) == "ch_cc_library" and not has_compile_sources(next(kw.value for kw in rule.keywords if kw.arg == "srcs")):
+            continue
+        for kw in rule.keywords:
+            if kw.arg not in defaults:
+                continue
+            name = kw.value.id if isinstance(kw.value, ast.Name) else None
+            if kw.arg == "local_defines":
+                matches = name in runtime
+            else:
+                flags = lists[name].value if name in lists else kw.value
+                matches = (isinstance(flags, ast.List) and all(isinstance(v, ast.Constant) for v in flags.elts)
+                           and [v.value for v in flags.elts] == defaults["copts"])
+            if matches:
+                edits.append(remove_keyword(source, kw))
+                if name in lists:
+                    removed_names.add(name)
+    if not edits:
+        return source.bytes.decode()
+    updated = Source(source.rewrite(edits))
+    used = {n.id for n in ast.walk(updated.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    updated = Source(updated.rewrite([(*updated.span(stmt), "") for stmt in updated.module.body
+                                     if isinstance(stmt, ast.Assign) and isinstance(stmt.targets[0], ast.Name)
+                                     and stmt.targets[0].id in removed_names - used]))
+    return drop_unused_loads(updated)
 
 
 def configured(source, modules):

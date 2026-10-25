@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,13 +10,7 @@ ch_cc_library(
     name = "_ch_contrib_antlr4_cpp_runtime",
     srcs = glob(["runtime/Cpp/runtime/src/**/*.cpp"]),
     hdrs = glob(["runtime/Cpp/runtime/src/**/*.h"]),
-    copts =
-        [
-            "-w",
-            "-std=c++23",
-        ],
     includes = ["runtime/Cpp/runtime/src"],
-    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "runtime/Cpp/runtime/src/atn",
         "runtime/Cpp/runtime/src/dfa",

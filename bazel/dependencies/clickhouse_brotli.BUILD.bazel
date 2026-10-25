@@ -14,10 +14,6 @@ ch_cc_library(
         "c/enc/**/*.h",
     ]),
     hdrs = glob(["c/include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "c/include",
     ],

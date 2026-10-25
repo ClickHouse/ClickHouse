@@ -14,10 +14,6 @@ ch_cc_library(
         "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.h",
         "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.h",
     ],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     link_runtime = True,
     local_defines = select({
         "@platforms//cpu:x86_64": [],

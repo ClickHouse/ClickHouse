@@ -10,10 +10,6 @@ ch_cc_library(
     name = "_cppkafka",
     srcs = glob(["src/*.cpp"]),
     hdrs = glob(["include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_librdkafka//:_rdkafka",
     ],

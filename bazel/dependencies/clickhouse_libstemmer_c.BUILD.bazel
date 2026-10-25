@@ -20,10 +20,6 @@ ch_cc_library(
         "src_c/stem_KOI8_R_*.h",
     ]) + ["src_c/stem_ISO_8859_2_hungarian.h"],
     hdrs = glob(["include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "include",
     ],

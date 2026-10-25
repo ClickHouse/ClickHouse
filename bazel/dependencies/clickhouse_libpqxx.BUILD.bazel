@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -44,16 +44,11 @@ ch_cc_library(
         ["include/pqxx/*"],
         exclude = ["include/pqxx/*.*"],
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = ["@clickhouse_postgres//:_libpq"],
     includes = [
         "config/contrib/libpqxx-cmake",
         "include",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = glob(
         ["include/**/*.hxx"],
         exclude = [

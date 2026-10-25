@@ -196,6 +196,13 @@ dwyu_cc_consumer_audit(
 )
 
 dwyu_cc_consumer_audit(
+    name = "poco_expat",
+    compiler_sources = ["base/poco/XML/src/xmlparse.cpp"],
+    consumers = ["//base/poco/XML:_poco_xml"],
+    owner = "//base/poco/XML:_poco_xml_expat",
+)
+
+dwyu_cc_consumer_audit(
     name = "negative_direct_private",
     consumers = [":private_bad_reader"],
     owner = ":private_owner",

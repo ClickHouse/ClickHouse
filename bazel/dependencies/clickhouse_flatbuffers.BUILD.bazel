@@ -37,10 +37,6 @@ ch_cc_library(
             "include/flatbuffers/grpc.h",
         ],
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         "include",
     ],

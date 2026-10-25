@@ -429,10 +429,6 @@ ch_cc_library(
         "src/include/gssapi.h",
         "src/include/krb5.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = ["@clickhouse_openssl//:crypto"],
     includes = [
         "src/include",

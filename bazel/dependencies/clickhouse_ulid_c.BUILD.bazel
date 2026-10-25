@@ -8,10 +8,6 @@ ch_cc_library(
         "src/ulid.c",
     ],
     hdrs = glob(["include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "include",
     ],

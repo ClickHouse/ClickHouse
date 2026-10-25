@@ -110,10 +110,6 @@ ch_cc_library(
             "lib/cpp/src/thrift/transport/TPipeServer.h",
         ],
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         "lib/cpp/src",
         "lib/cpp/src/thrift",

@@ -7,11 +7,6 @@ exports_files([
     "LICENSE_1_0.txt",
 ])
 
-_BOOST_COPTS = [
-    "-w",
-    "-std=c++23",
-]
-
 ch_cc_library(
     name = "_boost_context__compile_0",
     srcs = [
@@ -19,12 +14,10 @@ ch_cc_library(
         "libs/context/src/fcontext.cpp",
         "libs/context/src/posix/stack_traits.cpp",
     ],
-    copts = _BOOST_COPTS,
     implementation_deps = [
         ":boost_config",
         ":boost_headers_no_openssl",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -52,13 +45,11 @@ ch_cc_library(
         "libs/coroutine/src/exceptions.cpp",
         "libs/coroutine/src/posix/stack_traits.cpp",
     ],
-    copts = _BOOST_COPTS,
     implementation_deps = [
         ":boost_config",
         ":boost_headers_no_openssl",
         ":_boost_context",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -71,7 +62,6 @@ ch_cc_library(
         "libs/filesystem/src/posix_tools.hpp",
         "libs/filesystem/src/private_config.hpp",
     ],
-    copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers_no_openssl"],
     local_defines = [
         "BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1",
@@ -88,9 +78,7 @@ ch_cc_library(
         "libs/graph/src/graphml.cpp",
         "libs/graph/src/read_graphviz_new.cpp",
     ],
-    copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers_no_openssl"],
-    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -102,7 +90,6 @@ ch_cc_library(
         "libs/iostreams/src/zlib.cpp",
         "libs/iostreams/src/zstd.cpp",
     ],
-    copts = _BOOST_COPTS,
     implementation_deps = [
         ":boost_config",
         ":boost_headers_no_openssl",
@@ -159,12 +146,10 @@ ch_cc_library(
 ch_cc_library(
     name = "_boost_program_options",
     srcs = ["boost/program_options/detail/config_file.hpp"] + glob(["libs/program_options/src/*.cpp"]),
-    copts = _BOOST_COPTS,
     implementation_deps = [
         ":boost_config",
         ":boost_headers_no_openssl",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -173,9 +158,7 @@ ch_cc_library(
         "libs/regex/src/posix_api.cpp",
         "libs/regex/src/wide_posix_api.cpp",
     ],
-    copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers_no_openssl"],
-    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 _ASIO_COMPILER_OPTIONS = [

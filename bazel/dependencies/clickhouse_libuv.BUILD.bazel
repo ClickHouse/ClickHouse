@@ -41,10 +41,6 @@ ch_cc_library(
         "include/uv/linux.h",
         "include/uv/version.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "include",
     ],

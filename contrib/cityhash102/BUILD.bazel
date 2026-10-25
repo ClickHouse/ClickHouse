@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,12 +14,7 @@ ch_cc_library(
         "include/city.h",
         "include/citycrc.h",
     ],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = ["include"],
     link_runtime = True,
-    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = ["src"],
 )

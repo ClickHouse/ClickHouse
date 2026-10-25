@@ -20,10 +20,6 @@ ch_cc_library(
         "googlemock/src/gmock-all.cc",
     ],
     hdrs = glob(["googlemock/include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         "googlemock/include",
     ],
@@ -46,10 +42,6 @@ ch_cc_library(
     srcs = [
         "googlemock/src/gmock_main.cc",
     ],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         ":_gmock",
         ":_gtest",
@@ -63,10 +55,6 @@ ch_cc_library(
         "googletest/src/gtest-all.cc",
     ] + glob(["googletest/src/*.h"]),
     hdrs = glob(["googletest/include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         "googletest/include",
     ],

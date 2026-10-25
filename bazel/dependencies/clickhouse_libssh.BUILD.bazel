@@ -133,10 +133,6 @@ ch_cc_library(
         ],
     ),
     hdrs = [":config/contrib/libssh/include/libssh/libssh_version.h"] + _LIBSSH_PUBLIC_C_HEADERS,
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
     ],

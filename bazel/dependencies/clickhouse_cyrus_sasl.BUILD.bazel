@@ -34,10 +34,6 @@ ch_cc_library(
         "include/prop.h",
         "include/sasl.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_krb5//:_krb5",
     ],

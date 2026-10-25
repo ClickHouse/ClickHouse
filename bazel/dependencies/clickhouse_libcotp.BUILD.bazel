@@ -21,10 +21,6 @@ ch_cc_library(
         exclude = ["src/cotp.h"],
     ),
     hdrs = ["src/cotp.h"],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
     ],

@@ -7,6 +7,7 @@ ch_cc_library(
     name = "libc_angle_quote_c",
     testonly = True,
     srcs = ["libc_angle_quote.c"],
+    copts = [],
     language = "C",
     map_source_files = False,
 )
@@ -15,6 +16,7 @@ ch_cc_library(
     name = "libc_quote_angle_c",
     testonly = True,
     srcs = ["libc_quote_angle.c"],
+    copts = [],
     language = "C",
     map_source_files = False,
 )
@@ -23,6 +25,8 @@ ch_cc_library(
     name = "libc_angle_quote_cxx",
     testonly = True,
     srcs = ["libc_angle_quote.cc"],
+    copts = [],
+    local_defines = [],
     map_source_files = False,
 )
 
@@ -30,6 +34,8 @@ ch_cc_library(
     name = "libc_quote_angle_cxx",
     testonly = True,
     srcs = ["libc_quote_angle.cc"],
+    copts = [],
+    local_defines = [],
     map_source_files = False,
 )
 
@@ -37,6 +43,8 @@ ch_cc_library(
     name = "fstream_quote",
     testonly = True,
     srcs = ["fstream_quote.cc"],
+    copts = [],
+    local_defines = [],
     map_source_files = False,
 )
 
@@ -70,6 +78,7 @@ ch_cc_library(
     name = "guarded_public_direct",
     testonly = True,
     srcs = ["guarded/consumer.c"],
+    copts = [],
     implementation_deps = [":guarded_bridge"],
     language = "C",
     map_source_files = False,
@@ -81,6 +90,7 @@ ch_cc_library(
     name = "negative_guarded_public_bridge",
     testonly = True,
     srcs = ["guarded/consumer.c"],
+    copts = [],
     implementation_deps = [":guarded_bridge"],
     language = "C",
     map_source_files = False,
@@ -92,6 +102,7 @@ ch_cc_library(
     name = "once_public_direct",
     testonly = True,
     srcs = ["once/consumer.c"],
+    copts = [],
     implementation_deps = [":once_bridge"],
     language = "C",
     map_source_files = False,
@@ -103,6 +114,7 @@ ch_cc_library(
     name = "negative_once_public_bridge",
     testonly = True,
     srcs = ["once/consumer.c"],
+    copts = [],
     implementation_deps = [":once_bridge"],
     language = "C",
     map_source_files = False,
@@ -117,6 +129,7 @@ ch_cc_library(
         "guarded/api.inc",
         "guarded/consumer.c",
     ],
+    copts = [],
     implementation_deps = [
         ":guarded_bridge",
         ":guarded_unistd",
@@ -132,6 +145,7 @@ ch_cc_library(
         "guarded/api.inc",
         "guarded/consumer.c",
     ],
+    copts = [],
     implementation_deps = [":guarded_bridge"],
     language = "C",
     map_source_files = False,

@@ -11,6 +11,7 @@ package(default_visibility = ["//visibility:private"])
             "-std=" + standard,
             "-DMIGRATION_PUBLIC_HEADER=<" + header + ">",
         ] + flags,
+        local_defines = [],
     )
     for mode, standard, flags in [
         ("cxx23", "c++23", []),
@@ -38,6 +39,7 @@ ch_cc_library(
         "-DMIGRATION_PREFIX=a",
     ],
     link_runtime = True,
+    local_defines = [],
 )
 
 ch_cc_library(
@@ -47,6 +49,7 @@ ch_cc_library(
         "-std=c++23",
         "-DMIGRATION_PREFIX=b",
     ],
+    local_defines = [],
 )
 
 ch_cc_library(
@@ -57,6 +60,7 @@ ch_cc_library(
         "-DMIGRATION_PREFIX=b",
         "-D_LIBCPP_USE_FROZEN_CXX03_HEADERS",
     ],
+    local_defines = [],
 )
 
 ch_cc_library(
@@ -67,6 +71,7 @@ ch_cc_library(
         "-DMIGRATION_PREFIX=b",
         "-DMIGRATION_WRONG_ABI",
     ],
+    local_defines = [],
 )
 
 cc_test(

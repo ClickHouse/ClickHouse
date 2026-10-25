@@ -12,10 +12,6 @@ ch_cc_library(
         "wnb/nltk_similarity.hh",
         "wnb/std_ext.hh",
     ] + glob(["wnb/core/*.hh"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

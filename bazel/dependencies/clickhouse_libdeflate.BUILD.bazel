@@ -30,10 +30,6 @@ ch_cc_library(
         ),
     }),
     hdrs = ["libdeflate.h"],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         ".",
     ],

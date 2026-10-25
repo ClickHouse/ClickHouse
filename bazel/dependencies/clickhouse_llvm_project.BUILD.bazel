@@ -4216,10 +4216,6 @@ ch_cc_library(
         "llvm/lib/Support/regex_impl.h",
         "llvm/lib/Support/regutils.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         ":llvm_headers",
     ],

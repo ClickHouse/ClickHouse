@@ -13,10 +13,6 @@ ch_cc_library(
     arches = [
         "x86_64",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "include",
     ],

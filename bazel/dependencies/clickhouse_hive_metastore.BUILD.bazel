@@ -16,10 +16,6 @@ ch_cc_library(
         "ThriftHiveMetastore.h",
         "hive_metastore_types.h",
     ],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     local_defines = [
         "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
         "BOOST_ASIO_STANDALONE=1",

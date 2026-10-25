@@ -923,7 +923,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -582,5 +1323,334 @@
+@@ -582,5 +1323,335 @@
          arguments = [args],
      )
  
@@ -1202,6 +1202,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +                args.add("--included_header", item.included_header)
 +            args.add("--compiler_headers", item.compiler_headers)
 +            args.add("--consumer_root")
++            args.add("--consumer_headers", evidence.headers)
 +            args.add("--compiler_command", json.encode(item.command))
 +            args.add_all("--toolchain_files", item.toolchain_files, expand_directories = False)
 +            args.add("--output", pub)
@@ -1209,7 +1210,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            args.add("--owned_headers", data.headers)
 +            ctx.actions.run(
 +                executable = ctx.executable._tool_preprocessing,
-+                inputs = depset(direct = [item.output, item.compiler_headers, data.headers], transitive = [item.inputs]),
++                inputs = depset(direct = [item.output, item.compiler_headers, data.headers, evidence.headers], transitive = [item.inputs]),
 +                outputs = [pub, priv],
 +                mnemonic = "DwyuProcessConsumerContext",
 +                arguments = [args],
@@ -2408,10 +2409,10 @@ index e914b98d02f0a211ad9ac2aa927771f060d4b47b..96a1fc6dca64be911045c0773c05182f
          "//dwyu/cc/aspect/private/preprocessing/fast_parsing:process_files",
 diff --git a/dwyu/cc/aspect/private/preprocessing/compiler.h b/dwyu/cc/aspect/private/preprocessing/compiler.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083346ab728
+index 0000000000000000000000000000000000000000..6f0427ad27d8517e45f51f3ce308c53968e95383
 --- /dev/null
 +++ b/dwyu/cc/aspect/private/preprocessing/compiler.h
-@@ -0,0 +1,237 @@
+@@ -0,0 +1,258 @@
 +#ifndef DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
 +#define DWYU_CC_ASPECT_PRIVATE_PREPROCESSING_COMPILER_H
 +
@@ -2442,17 +2443,27 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +                                                const std::vector<std::string>& command,
 +                                                const std::vector<std::string>& toolchain_files,
 +                                                bool root_is_owned = true,
-+                                                const std::string& included_header = {}) {
++                                                const std::string& included_header = {},
++                                                const std::string& consumer_headers = {}) {
 +    std::ifstream input{compiler_output};
 +    if (!input.is_open()) abortWithError("Cannot read Clang preprocessor output ", compiler_output);
 +    std::ifstream header_trace{compiler_headers};
 +    if (!header_trace.is_open()) abortWithError("Cannot read Clang header output ", compiler_headers);
-+    std::ifstream headers_input{owned_headers};
-+    if (!headers_input.is_open()) abortWithError("Cannot read DWYU header manifest ", owned_headers);
-+    const auto headers = nlohmann::json::parse(headers_input);
++    auto readHeaders = [](const std::string& name) {
++        std::ifstream stream{name};
++        if (!stream.is_open()) abortWithError("Cannot read DWYU header manifest ", name);
++        return nlohmann::json::parse(stream);
++    };
++    const auto headers = readHeaders(owned_headers);
 +    using AliasMap = std::unordered_map<std::string, std::string>;
 +    const auto public_headers = headers.at("public").get<AliasMap>();
 +    const auto private_headers = headers.at("private").get<AliasMap>();
++    AliasMap consumer_public, consumer_private;
++    if (!consumer_headers.empty()) {
++        const auto consumer = readHeaders(consumer_headers);
++        consumer_public = consumer.at("public").get<AliasMap>();
++        consumer_private = consumer.at("private").get<AliasMap>();
++    }
 +    const std::string own_file = execPath(source);
 +    auto isOwned = [&](const std::string& file) {
 +        if (file == own_file || (!included_header.empty() && file == included_header)) return root_is_owned;
@@ -2479,9 +2490,25 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +    if (wrapped && !search.unsupportedFlag().empty())
 +        abortWithError("Cannot verify public header ", source, " with Clang option ", search.unsupportedFlag());
 +    std::string current_file = wrapped ? "<stdin>" : own_file;
-+    bool current_public = !wrapped && public_headers.find(own_file) != public_headers.end();
++    enum class Scope { foreign, private_owner, public_owner };
++    auto headerScope = [&](const std::string& from, Scope scope, const std::string& file) {
++        if (!isOwned(file)) return Scope::foreign;
++        if (public_headers.count(file)) return Scope::public_owner;
++        if (!root_is_owned && scope == Scope::foreign) {
++            // A header in both libraries' srcs remains the consumer's private
++            // input when included from a file declared by the consumer.
++            if (!consumer_private.count(original(file)) ||
++                (!consumer_private.count(original(from)) && !consumer_public.count(original(from))))
++                abortWithError("DWYU consumer ", source, " directly enters owner's private header ", file);
++            return Scope::foreign;
++        }
++        return scope == Scope::public_owner ? Scope::public_owner : Scope::private_owner;
++    };
++    const auto root_scope = !root_is_owned ? Scope::foreign
++        : (public_headers.count(own_file) ? Scope::public_owner : Scope::private_owner);
++    Scope current_scope = wrapped ? Scope::foreign : root_scope;
 +    bool saw_forced_header = false, saw_wrapper_header = false;
-+    std::vector<std::pair<std::string, bool>> include_stack;
++    std::vector<std::pair<std::string, Scope>> include_stack;
 +    bool processed_predefines = false;
 +    // HeaderIncludeGen::PrintHeaderInfo escapes, but does not surround, names.
 +    // Consume in preprocessor order, including foreign files; never search ahead.
@@ -2502,25 +2529,25 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +    };
 +    // This file is an actual preprocessing root, even if also declared textual.
 +    if (root_is_owned && !wrapped) {
-+        observations(current_file, current_public);
++        observations(current_file, current_scope == Scope::public_owner);
 +        entered_files.insert(original(current_file));
 +    }
 +    std::string pending_file;
 +    std::string pending_statement;
-+    bool pending_public = false;
++    Scope pending_scope = Scope::foreign;
 +    bool pending_include_next = false;
 +    auto complete = [&](std::string resolved) {
 +        if (pending_statement.empty()) return;
 +        const bool entered = !resolved.empty();
 +        if (resolved.empty()) {
-+            if (isOwned(pending_file) && pending_include_next)
++            if (pending_scope != Scope::foreign && pending_include_next)
 +                abortWithError("Clang skipped guarded #include_next ", pending_statement, " in ", pending_file,
 +                               "; DWYU cannot prove which directory supplied the next header.");
 +            // HeaderIncludeGen suppresses skips at the initial source and
 +            // built-in levels until the predefines have been processed.
 +            if (processed_predefines || include_stack.size() + 1 > 2)
 +                resolved = nextHeader();
-+            else if (isOwned(pending_file))
++            else if (pending_scope != Scope::foreign)
 +                abortWithError("Clang did not report guarded ", pending_statement, " in ", pending_file,
 +                               " before the end of its predefines.");
 +        }
@@ -2530,7 +2557,9 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +                abortWithError("Clang did not enter requested public header ", source, " from stdin; resolved ", path);
 +            saw_wrapper_header = true;
 +        }
-+        if (!isOwned(pending_file)) {
++        if (!entered && !resolved.empty() && !root_is_owned)
++            headerScope(pending_file, pending_scope, execPath(resolved));
++        if (pending_scope == Scope::foreign) {
 +            pending_statement.clear();
 +            pending_file.clear();
 +            return;
@@ -2539,7 +2568,7 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +        if ((!root_is_owned || (resolved != own_file && resolved != included_header)) && !search.isToolchain(resolved)) {
 +            auto include = nlohmann::json{{"include", pending_statement}, {"file", resolved}};
 +            if (!search.unsupportedFlag().empty()) include["unsupported_search_flag"] = search.unsupportedFlag();
-+            observations(pending_file, pending_public).push_back(std::move(include));
++            observations(pending_file, pending_scope == Scope::public_owner).push_back(std::move(include));
 +        }
 +        pending_statement.clear();
 +        pending_file.clear();
@@ -2556,7 +2585,7 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +                abortWithError("Unexpected Clang -dI directive: ", line);
 +            pending_file = current_file;
 +            pending_statement = line.substr(begin, end - begin + 1);
-+            pending_public = current_public;
++            pending_scope = current_scope;
 +            pending_include_next = line.rfind("#include_next ", 0) == 0;
 +            continue;
 +        }
@@ -2591,23 +2620,16 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +                            saw_forced_header = true;
 +                        pending_file = own_file;
 +                        pending_statement = statement;
-+                        pending_public = public_headers.find(own_file) != public_headers.end();
++                        pending_scope = root_scope;
 +                        pending_include_next = false;
 +                    }
 +                }
 +                complete(filename);
-+                if (!root_is_owned && !isOwned(current_file) &&
-+                    private_headers.find(next_file) != private_headers.end())
-+                    abortWithError("DWYU consumer ", source, " directly enters owner's private header ", next_file);
-+                include_stack.emplace_back(current_file, current_public);
-+                // Public use carries through only this owner's private headers.
-+                // Do not carry it across a dependency's files.
-+                current_public = public_headers.find(next_file) != public_headers.end()
-+                    || (private_headers.find(next_file) != private_headers.end()
-+                        && isOwned(current_file) && current_public);
++                include_stack.emplace_back(current_file, current_scope);
++                current_scope = headerScope(current_file, current_scope, next_file);
 +                current_file = next_file;
-+                if (isOwned(next_file)) {
-+                    observations(next_file, current_public);
++                if (current_scope != Scope::foreign) {
++                    observations(next_file, current_scope == Scope::public_owner);
 +                    entered_files.insert(original(next_file));
 +                }
 +            }
@@ -2618,7 +2640,7 @@ index 0000000000000000000000000000000000000000..caf0c7a95f2148594fcf6a10abec3083
 +                // The marker's filename can be the caller's #line name.
 +                // Restore the caller's physical file and ownership together.
 +                current_file = std::move(include_stack.back().first);
-+                current_public = include_stack.back().second;
++                current_scope = include_stack.back().second;
 +                include_stack.pop_back();
 +                if (include_stack.empty()) processed_predefines = true;
 +            }
@@ -2861,7 +2883,7 @@ index 0000000000000000000000000000000000000000..53d73ec52808388c94bd01a1cd632a43
 +
 +#endif
 diff --git a/dwyu/cc/aspect/private/preprocessing/main.cpp b/dwyu/cc/aspect/private/preprocessing/main.cpp
-index e1818bdf17328b092f32e877d5f7e23128ebc080..d12bc76e6524ae571ae18be08de84a65b26f5152 100644
+index e1818bdf17328b092f32e877d5f7e23128ebc080..cde5f92f94d9d9526f981300d20ae3455769fae7 100644
 --- a/dwyu/cc/aspect/private/preprocessing/main.cpp
 +++ b/dwyu/cc/aspect/private/preprocessing/main.cpp
 @@ -1,3 +1,4 @@
@@ -2869,12 +2891,13 @@ index e1818bdf17328b092f32e877d5f7e23128ebc080..d12bc76e6524ae571ae18be08de84a65
  #include "dwyu/cc/aspect/private/preprocessing/fast_parsing/process_files.h"
  #include "dwyu/cc/aspect/private/preprocessing/wave/gather_direct_includes_hook.h"
  #include "dwyu/cc/aspect/private/preprocessing/wave/process_files.h"
-@@ -22,16 +23,25 @@ namespace {
+@@ -22,16 +23,26 @@ namespace {
  struct ProgramOptions {
      std::vector<std::string> files{};
      std::string mode{};
 +    std::string source{};
 +    std::string owned_headers{};
++    std::string consumer_headers{};
 +    std::string private_output{};
 +    std::string compiler_headers{};
 +    std::string included_header{};
@@ -2895,13 +2918,14 @@ index e1818bdf17328b092f32e877d5f7e23128ebc080..d12bc76e6524ae571ae18be08de84a65
  
      // Files which we are preprocessing
      parser.addOptionList("--files", options.files);
-@@ -43,6 +53,13 @@ ProgramOptions parseProgramOptions(const int argc, ProgramOptionsParser::ConstCh
+@@ -43,6 +54,14 @@ ProgramOptions parseProgramOptions(const int argc, ProgramOptionsParser::ConstCh
      parser.addOptionList("--system_include_paths", options.system_include_paths);
      // Macros defined by the CC toolchain or the user
      parser.addOptionList("--defines", options.defines);
 +    parser.addOptionValue("--source", options.source);
 +    parser.addOptionValue("--included_header", options.included_header);
 +    parser.addOptionValue("--owned_headers", options.owned_headers);
++    parser.addOptionValue("--consumer_headers", options.consumer_headers);
 +    parser.addOptionValue("--private_output", options.private_output);
 +    parser.addOptionValue("--compiler_headers", options.compiler_headers);
 +    parser.addOptionList("--toolchain_files", options.toolchain_files);
@@ -2909,7 +2933,7 @@ index e1818bdf17328b092f32e877d5f7e23128ebc080..d12bc76e6524ae571ae18be08de84a65
      // Stores the discovered includes in this file
      parser.addOptionValue("--output", options.output);
      // Print debugging information
-@@ -88,7 +105,22 @@ int main_impl(const ProgramOptions& options) {
+@@ -88,7 +107,23 @@ int main_impl(const ProgramOptions& options) {
          std::cout << "Defines              : " << listToStr(options.defines) << "\n";
      }
  
@@ -2922,7 +2946,8 @@ index e1818bdf17328b092f32e877d5f7e23128ebc080..d12bc76e6524ae571ae18be08de84a65
 +        auto includes = extractCompilerIncludes(options.files.front(), options.source, options.owned_headers,
 +                                                options.compiler_headers,
 +                                                nlohmann::json::parse(options.compiler_command).get<std::vector<std::string>>(),
-+                                                options.toolchain_files, !options.consumer_root, options.included_header);
++                                                options.toolchain_files, !options.consumer_root, options.included_header,
++                                                options.consumer_headers);
 +        output_json = std::move(includes.public_files);
 +        std::ofstream private_output{options.private_output};
 +        if (!private_output.is_open()) abortWithError("Unable to open output file '", options.private_output, "'");

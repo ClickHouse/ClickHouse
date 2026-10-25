@@ -63,10 +63,6 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["src/gsasl*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_krb5//:_krb5",
         "@clickhouse_openssl//:crypto",

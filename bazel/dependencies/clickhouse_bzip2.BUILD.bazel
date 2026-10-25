@@ -33,10 +33,6 @@ ch_cc_library(
         ":config/contrib/bzip2/bz_version.h",
     ],
     hdrs = ["bzlib.h"],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         ".",
         "config/contrib/bzip2",

@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,10 +31,6 @@ ch_cc_library(
         ],
     ),
     hdrs = _RE2_PUBLIC_HEADERS,
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_hash",
         "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
@@ -46,7 +42,6 @@ ch_cc_library(
     includes = [
         ".",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         "@clickhouse_abseil_cpp//:absl_base",
         "@clickhouse_abseil_cpp//:absl_base_config",

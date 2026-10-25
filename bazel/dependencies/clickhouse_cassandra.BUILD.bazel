@@ -244,7 +244,6 @@ ch_cc_library(
             "-std=c++17",
         ],
     includes = ["src/third_party/curl"],
-    local_defines = CXX_RUNTIME_DEFINES,
     alwayslink = True,
 )
 
@@ -260,7 +259,6 @@ ch_cc_library(
             "-std=c++17",
         ],
     includes = ["src/third_party/hdr_histogram"],
-    local_defines = CXX_RUNTIME_DEFINES,
     alwayslink = True,
 )
 
@@ -270,10 +268,6 @@ ch_cc_library(
         "src/third_party/http-parser/http_parser.c",
     ],
     hdrs = glob(["src/third_party/http-parser/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = ["src/third_party/http-parser"],
     language = "C",
     local_defines = CXX_RUNTIME_DEFINES,

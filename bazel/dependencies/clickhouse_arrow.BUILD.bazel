@@ -596,10 +596,6 @@ ch_cc_library(
     additional_compiler_inputs = [
         ":config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
     ],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = ["@clickhouse_grpc//:grpc__compile_0"],
     includes = [
         "cpp/src",

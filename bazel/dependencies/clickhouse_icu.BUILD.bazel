@@ -32,10 +32,6 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["icu4c/source/i18n/unicode/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         "icu4c/source/i18n",
     ],
@@ -61,10 +57,6 @@ ch_cc_library(
         ["icu4c/source/common/**/*.h"],
         exclude = _ICUUC_PRIVATE_HEADERS,
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [":_icudata"],
     includes = [
         "icu4c/source/common",

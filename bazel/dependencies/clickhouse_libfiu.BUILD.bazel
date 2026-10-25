@@ -17,10 +17,6 @@ ch_cc_library(
         "libfiu/wtable.h",
     ],
     hdrs = glob(["libfiu/fiu*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = ["libfiu"],
     language = "C",
     local_defines = [

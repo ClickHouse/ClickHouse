@@ -31,7 +31,7 @@ CLICKHOUSE_CODE_FLAGS = CLICKHOUSE_XRAY_FLAGS + _CLICKHOUSE_CXX_WARNINGS
 def ch_cc_library(
         name,
         hdrs = [],
-        copts = [],
+        copts = None,
         clickhouse_code = False,
         source_headers = False,
         language = "CXX",
@@ -49,7 +49,16 @@ def ch_cc_library(
     libcxx_config_headers privately. link_runtime adds libc++ privately;
     libc++ supplies libc++abi and libunwind.
     source_headers adds //src:clickhouse_source_headers privately when True.
+    Compiled C++ libraries use CXX_RUNTIME_DEFINES unless local_defines is set.
+    Third-party C and C++ libraries default to -w and the ClickHouse language
+    standard. An explicit copts list replaces both flags, including when empty.
     """
+    if copts == None:
+        copts = []
+        if kwargs.get("srcs") and not clickhouse_code and language in ("C", "CXX"):
+            copts = ["-w", "-std=gnu11" if language == "C" else "-std=c++23"]
+    if kwargs.get("srcs") and language == "CXX":
+        kwargs.setdefault("local_defines", CXX_RUNTIME_DEFINES)
     cpu_flags = select({
         str(Label("@platforms//cpu:" + arch)): flags
         for arch, flags in CLICKHOUSE_TARGET_FLAGS.items()

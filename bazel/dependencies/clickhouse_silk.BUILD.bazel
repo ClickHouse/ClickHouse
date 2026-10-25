@@ -19,10 +19,6 @@ _GENERATED_LOCAL_DEFINES_0 = [
 ch_cc_library(
     name = "_silk_fibers",
     srcs = glob(["src/fibers/*.cpp"]) + glob(["src/fibers/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_liburing//:_liburing",
         ":_silk_util",
@@ -39,10 +35,6 @@ ch_cc_library(
     name = "_silk_util",
     srcs = glob(["src/util/*.cpp"]),
     hdrs = glob(["include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_librseq//:_librseq",
     ],

@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -26,12 +26,7 @@ ch_cc_library(
         exclude = _DOUBLE_CONVERSION_API_HDRS,
     ),
     hdrs = _DOUBLE_CONVERSION_API_HDRS,
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         ".",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
 )

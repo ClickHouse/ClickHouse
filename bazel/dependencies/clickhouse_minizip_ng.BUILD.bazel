@@ -46,10 +46,6 @@ ch_cc_library(
         "mz_zip.h",
         "mz_zip_rw.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_xz//:_liblzma",

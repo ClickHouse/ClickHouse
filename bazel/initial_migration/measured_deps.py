@@ -14,6 +14,7 @@ GLIBC_COMPATIBILITY = '//base/glibc-compatibility'
 UNWIND = '@clickhouse_llvm_project//:unwind'
 TZDATA = '@clickhouse_cctz//:tzdata'
 SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
+MINIZIP = '@clickhouse_minizip_ng//:_minizip'
 ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
 UNIT_TEST_FUNCTION_DEPS = [
@@ -51,10 +52,15 @@ DEPENDENCIES = {
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_libhdfs3', '_hdfs3__compile_0'): ([], ['@clickhouse_google_protobuf//:_libprotobuf'], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
+    ('src', 'headers'): (['@clickhouse_double_conversion//:_double-conversion'], [], []),
     ('src', 'clickhouse_source_headers'): ([
         '//base:common', '//src/Common', '//src/Parsers:headers', '@clickhouse_mongo_cxx_driver//:_bsoncxx',
         ARRAY_LENGTH,
     ], [], []),
+    ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP], [], []),
+    ('src/Dictionaries', 'clickhouse_dictionaries'): ([MINIZIP], [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([MINIZIP], [], []),
     ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
     ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
@@ -68,13 +74,14 @@ DEPENDENCIES = {
     ('contrib/murmurhash', '_murmurhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('programs/keeper', 'clickhouse-keeper-lib'): ([], ['//src/Dictionaries:clickhouse_dictionaries'], []),
-    ('src/Dictionaries', 'headers'): ([SPARSEHASH], [], []),
+    ('src/Dictionaries', 'headers'): ([SPARSEHASH, '//src/Functions:cast_api', '//src:core_defines'], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
     ], ['//src:headers'], []),
     ('src/Functions/URL', 'clickhouse_functions_url'): ([
+        MINIZIP,
         '@clickhouse_mongo_c_driver//:_libbson',
         '@clickhouse_arrow//:_orc',
     ], [], []),
@@ -135,7 +142,7 @@ DEPENDENCIES = {
         [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
     ('src', 'unit_tests_dbms'): (
-        ['@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
+        [MINIZIP, '@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
          *LLVM_RUNTIME_HEADERS, '@llvm-project//third-party/siphash'], [], [TZDATA]),
 }
 
@@ -150,6 +157,7 @@ _EMBEDDED_UNUSED = {
 }
 EMBEDDED_UNUSED = {
     'clickhouse_common_io_embedded': _EMBEDDED_UNUSED | {
+        MINIZIP,
         '@clickhouse_libssh//:_ssh', '@clickhouse_silk//:_silk_fibers',
         '//bazel:clickhouse_config_headers', '@clickhouse_abseil_cpp//:absl_base_config',
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_crc32c//:_crc32c',
@@ -254,7 +262,7 @@ for group in range(3):
     private.extend([SPARSEHASH, *(['//src/Common:shared_mutex'] if group < 2 else []), '//src:core_defines'])
 
 
-def editable_dependency_lists(build, node, drop, canonical, replacements=None):
+def editable_dependency_lists(build, node, drop, canonical, replacements=None, *, insert_after=None):
     """Remove labels at their declaration if every changed list has one consumer."""
     uses = Counter(n.id for n in ast.walk(build.source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load))
     subscripts = [n for n in ast.walk(build.source.module) if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name)]
@@ -275,6 +283,9 @@ def editable_dependency_lists(build, node, drop, canonical, replacements=None):
         if isinstance(n, ast.List) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in n.elts):
             labels = [e.value for e in n.elts]
             keep = [(replacements or {}).get(canonical(v), v) for v in labels if canonical(v) not in drop]
+            if insert_after and insert_after[0] in keep:
+                i = keep.index(insert_after[0]) + 1
+                keep[i:i] = insert_after[1]
             if keep != labels:
                 if not writable:
                     return False
@@ -382,6 +393,21 @@ def apply(root):
                 edits.extend(embedded_object_edits(build, rule, name, attrs, canonical))
                 embedded.add(name)
                 continue
+            if (package, name) in {('src/Functions', 'clickhouse_functions_obj'),
+                                   ('src/Functions/array', 'clickhouse_functions_array')}:
+                # Keep Minizip's LinkerInput at its original position in both Functions libraries.
+                link = ':minizip_link' if package == 'src/Functions' else '//src/Functions:minizip_link'
+                replacements = {MINIZIP: link}
+                if package == 'src/Functions' and not any(
+                        attributes(other)['name'].value == 'minizip_link' for _, other in source.rules()):
+                    start = source.span(rule)[0]
+                    edits.append((start, start,
+                                  'cc_library(name = "minizip_link", implementation_deps = [' +
+                                  json.dumps(MINIZIP) + '], visibility = ["//src/Functions/array:__pkg__"])\n\n'))
+                direct = editable_dependency_lists(build, attrs['deps'], set(), canonical, replacements)
+                if direct is None:
+                    raise ValueError(f'{name}: cannot replace the Minizip dependency in place')
+                edits.extend(direct)
             spec = DEPENDENCIES.get((package, name))
             if spec is None:
                 continue
@@ -429,6 +455,15 @@ def apply(root):
                 node = Field().visit(node)
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
                 omit = {canonical(v) for v in discard}
+                insert_after = None
+                if (package, name, field) == ('src', 'clickhouse_common_io__compile_0', 'implementation_deps'):
+                    # unit_tests_dbms links Minizip before clickhouse_common_config after FrequencyHolder.o.
+                    anchor = ':clickhouse_common_io_embedded'
+                    following = [MINIZIP, '//src/Common/Config:clickhouse_common_config']
+                    if not all({canonical(v) for v in [anchor, *following]} <= row for row in values):
+                        raise ValueError(f'{name}: expected embedded, Minizip and configuration dependencies')
+                    omit.update(canonical(v) for v in following)
+                    insert_after = (anchor, following)
                 missing = [v for v in add if not all(canonical(v) in existing for existing in values)]
                 if (package, name, field) == ('src', 'unit_tests_dbms', 'deps'):
                     # These owners are already reachable through clickhouse_functions_obj.
@@ -467,7 +502,13 @@ def apply(root):
                         ordered[i:i] = UNIT_TEST_FUNCTION_DEPS
                         branches['@platforms//cpu:' + cpu] = ordered
                     if any(branches['@platforms//cpu:' + cpu] != build.values(node, cpu) for cpu in CPUS):
-                        edits.append((*source.span(original), 'select(' + json.dumps(branches) + ')'))
+                        # Keep factored lists when only unused labels were removed.
+                        direct = editable_dependency_lists(build, original, omit, canonical)
+                        if direct is not None and all(branches['@platforms//cpu:' + cpu] ==
+                                [v for v in build.values(node, cpu) if canonical(v) not in omit] for cpu in CPUS):
+                            edits.extend(direct)
+                        else:
+                            edits.append((*source.span(original), 'select(' + json.dumps(branches) + ')'))
                     continue
                 if not missing and not any(omit & existing for existing in values):
                     continue
@@ -485,7 +526,9 @@ def apply(root):
                         edits.append((*source.span(original), json.dumps(missing + remaining[0])))
                         continue
                 if original is not None:
-                    direct = editable_dependency_lists(build, original, drop, canonical)
+                    direct = editable_dependency_lists(build, original, drop, canonical, insert_after=insert_after)
+                    if direct is None and insert_after:
+                        raise ValueError(f'{name}: cannot reorder implementation_deps')
                     if direct is not None:
                         edits.extend(direct)
                         if missing:

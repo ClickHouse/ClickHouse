@@ -23,6 +23,7 @@ cc_library(
 ch_cc_library(
     name = "clickhouse_libc",
     srcs = ["libc.c"],
+    copts = [],
     language = "C",
 )
 

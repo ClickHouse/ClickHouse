@@ -50,10 +50,6 @@ ch_cc_library(
         ],
     ),
     hdrs = ["src/liblzma/api/lzma.h"],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "src/liblzma/api",
     ],

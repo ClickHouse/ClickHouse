@@ -304,27 +304,12 @@ poco_cc_library(
     ],
     includes = ["include"],
     local_defines = _FOUNDATION_DEFINES,
-    private_hdrs = [
-        "src/DirectoryIterator_UNIX.cpp",
-        "src/Environment_UNIX.cpp",
-        "src/Event_POSIX.cpp",
+    private_textual_srcs = glob([
+        "src/*_POSIX.cpp",
+        "src/*_UNIX.cpp",
         "src/FPEnvironment_C99.cpp",
-        "src/FileStream_POSIX.cpp",
-        "src/File_UNIX.cpp",
         "src/LogFile_STD.cpp",
-        "src/Mutex_POSIX.cpp",
-        "src/NamedEvent_UNIX.cpp",
-        "src/NamedMutex_UNIX.cpp",
-        "src/Path_UNIX.cpp",
-        "src/PipeImpl_POSIX.cpp",
-        "src/Process_UNIX.cpp",
-        "src/RWLock_POSIX.cpp",
-        "src/Semaphore_POSIX.cpp",
-        "src/SharedLibrary_UNIX.cpp",
-        "src/SharedMemory_POSIX.cpp",
-        "src/Thread_POSIX.cpp",
-        "src/Timezone_UNIX.cpp",
-    ],
+    ]),
 )
 
 poco_cc_library(

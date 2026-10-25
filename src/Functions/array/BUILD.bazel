@@ -428,7 +428,7 @@ cc_library(
         "@clickhouse_llvm_project//:unwind",
         "@clickhouse_mariadb_connector_c//:_mariadbclient",
         "@clickhouse_mecab//:_mecab",
-        "@clickhouse_minizip_ng//:_minizip",
+        "//src/Functions:minizip_link",
         "@clickhouse_mongo_c_driver//:_libbson",
         "@clickhouse_mongo_c_driver//:_libmongoc",
         "@clickhouse_mongo_cxx_driver//:_bsoncxx",

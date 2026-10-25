@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -42,7 +42,6 @@ ch_cc_library(
         ],
     ),
     copts = _CAPNPROTO_COPTS,
-    local_defines = CXX_RUNTIME_DEFINES,
     deps = [":_kj"],
 )
 
@@ -78,7 +77,6 @@ ch_cc_library(
     ),
     hdrs = _CAPNPC_PUBLIC_HEADERS,
     copts = _CAPNPROTO_COPTS,
-    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":_capnp",
         ":_kj",
@@ -125,6 +123,5 @@ ch_cc_library(
     includes = [
         "c++/src",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = ["c++/src/kj/async-inl.h"],
 )

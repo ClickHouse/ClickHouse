@@ -18,10 +18,6 @@ ch_cc_library(
         "crypt_blowfish/ow-crypt.h",
     ] + glob(["crypt_blowfish/*.c"]),
     hdrs = ["bcrypt.h"],
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         ".",
     ],

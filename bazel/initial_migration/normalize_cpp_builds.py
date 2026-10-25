@@ -48,7 +48,32 @@ def file_digest(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def removable_default(name, value):
+def native_compile_defaults(sources, language, clickhouse_code):
+    """Nonempty ch_cc_library defaults for a captured native compile group."""
+    if not sources:
+        return {}
+    defaults = {"local_defines": "CXX_RUNTIME_DEFINES"} if language == "CXX" else {}
+    if not clickhouse_code and language in ("C", "CXX"):
+        defaults["copts"] = ["-w", "-std=gnu11" if language == "C" else "-std=c++23"]
+    return defaults
+
+
+def compile_defaults(call):
+    rule = call_name(call)
+    if rule not in ("ch_cc_library", "ch_grpc_cc_library"):
+        return {}
+    attrs = {kw.arg: kw.value for kw in call.keywords}
+    sources = attrs.get("srcs")
+    return native_compile_defaults(
+        rule == "ch_grpc_cc_library" or sources is not None and not (isinstance(sources, ast.List) and not sources.elts),
+        getattr(attrs.get("language", ast.Constant("CXX")), "value", None),
+        getattr(attrs.get("clickhouse_code", ast.Constant(False)), "value", True),
+    )
+
+
+def removable_default(name, value, call):
+    if name in ("copts", "local_defines") and name in compile_defaults(call):
+        return False  # An empty override must not inherit the macro's options.
     if name == "alwayslink":
         return isinstance(value, ast.Constant) and value.value is False
     return (name in EMPTY_CPP_DEFAULTS and isinstance(value, ast.List)
@@ -64,23 +89,25 @@ class CppSource(Source):
                 yield statement, call
 
 
+def remove_keyword(source, kw):
+    start, end = source.span(kw)
+    comma = end
+    while source.bytes[comma:comma + 1] in (b" ", b"\t"):
+        comma += 1
+    if source.bytes[comma:comma + 1] == b",":
+        end = comma + 1
+    return start, end, ""
+
+
 def drop_defaults(source):
     edits = []
     for _, call in source.rules():
         if call_name(call) not in CPP_LIBRARIES:
             continue
         for kw in call.keywords:
-            if not removable_default(kw.arg, kw.value):
+            if not removable_default(kw.arg, kw.value, call):
                 continue
-            start, end = source.span(kw)
-            # Keep comments and neighboring keywords intact; buildifier handles
-            # the indentation after deleting the keyword and following comma.
-            comma = end
-            while comma < len(source.bytes) and source.bytes[comma:comma + 1] in (b" ", b"\t"):
-                comma += 1
-            if source.bytes[comma:comma + 1] == b",":
-                end = comma + 1
-            edits.append((start, end, ""))
+            edits.append(remove_keyword(source, kw))
     return source.rewrite(edits)
 
 
@@ -126,7 +153,7 @@ class Configured(Expand):
                 if (keys <= cpu_keys | {"//conditions:default"} and self.cpu in pairs):
                     return pairs[self.cpu]
         if call_name(node) in CPP_LIBRARIES:
-            node.keywords = [kw for kw in node.keywords if not removable_default(kw.arg, kw.value)]
+            node.keywords = [kw for kw in node.keywords if not removable_default(kw.arg, kw.value, node)]
         # buildifier formats keyword argument order; order does not affect named
         # attributes, while all ordered list elements remain untouched.
         node.keywords.sort(key=lambda kw: kw.arg or "")
@@ -201,7 +228,7 @@ def census(text):
         if call_name(call) not in CPP_LIBRARIES:
             continue
         for kw in call.keywords:
-            if removable_default(kw.arg, kw.value):
+            if removable_default(kw.arg, kw.value, call):
                 stats["default_" + kw.arg] += 1
     for node in ast.walk(source.module):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):

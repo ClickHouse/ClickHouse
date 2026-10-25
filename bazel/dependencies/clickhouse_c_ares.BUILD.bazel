@@ -71,10 +71,6 @@ ch_cc_library(
         "src/lib/util/*.h",
     ]),
     hdrs = glob(["include/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = ["include"],
     language = "C",
     local_defines = [

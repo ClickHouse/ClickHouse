@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,11 +13,6 @@ ch_cc_library(
         "src/MurmurHash3.cpp",
     ],
     hdrs = glob(["include/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     features = ["-system_include_paths"],
-    local_defines = CXX_RUNTIME_DEFINES,
     strip_include_prefix = "include",
 )

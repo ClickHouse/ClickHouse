@@ -324,10 +324,6 @@ ch_cc_library(
         "utilities/cassandra/cassandra_options.h",
     ],
     hdrs = glob(["include/**/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_liburing//:_liburing",

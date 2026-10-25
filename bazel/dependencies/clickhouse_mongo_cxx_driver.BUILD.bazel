@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 
 package(default_visibility = ["//visibility:public"])
@@ -234,10 +234,6 @@ ch_cc_library(
         ["src/bsoncxx/include/**/*.hpp"],
         exclude = _BSONCXX_TEXTUAL_HEADERS + ["src/bsoncxx/include/bsoncxx/docs/**"],
     ) + _BSONCXX_SHARED_HEADERS,
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = [
         "src/bsoncxx/include",
         "src/bsoncxx/include/bsoncxx/v_noabi",
@@ -246,7 +242,6 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = _BSONCXX_TEXTUAL_HEADERS,
     deps = ["@clickhouse_mongo_c_driver//:_libbson"],
 )
@@ -272,10 +267,6 @@ ch_cc_library(
         ["src/mongocxx/include/**/*.hpp"],
         exclude = _MONGOCXX_TEXTUAL_HEADERS + ["src/mongocxx/include/mongocxx/docs/**"],
     ),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     implementation_deps = [
         "@clickhouse_mongo_c_driver//:_libbson",
         "@clickhouse_mongo_c_driver//:_libmongoc",
@@ -288,7 +279,6 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
     ],
-    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = _MONGOCXX_TEXTUAL_HEADERS,
     deps = [":_bsoncxx"],
 )

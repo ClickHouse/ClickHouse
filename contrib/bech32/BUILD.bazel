@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,12 +10,7 @@ ch_cc_library(
     name = "_bech32",
     srcs = ["src/bech32.cpp"],
     hdrs = glob(["include/*.h"]),
-    copts = [
-        "-w",
-        "-std=c++23",
-    ],
     includes = ["include"],
     link_runtime = True,
-    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = ["src"],
 )

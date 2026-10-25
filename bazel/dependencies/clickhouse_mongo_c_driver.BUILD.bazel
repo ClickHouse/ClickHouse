@@ -145,10 +145,6 @@ ch_cc_library(
             "src/libbson/src/bson/*-private.h",
         ],
     ),
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     includes = [
         "src/common/src",
         "src/libbson/src",
@@ -204,10 +200,6 @@ ch_cc_library(
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
     ] + _MONGOC_PUBLIC_HEADERS,
-    copts = [
-        "-w",
-        "-std=gnu11",
-    ],
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
         "@clickhouse_zstd//:_zstd",
@@ -228,10 +220,8 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    private_hdrs = [
-        "src/libmongoc/src/mongoc/mongoc-counters.defs",
-        "src/utf8proc-2.11.3/utf8proc_data.c",
-    ],
+    private_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
+    private_textual_srcs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
     deps = [
         ":_libbson",
         "@clickhouse_openssl//:ssl",
