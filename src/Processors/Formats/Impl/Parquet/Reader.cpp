@@ -2971,7 +2971,9 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         /// When the size of the decoded strings of a column is not known, a whole chunk is not risked. The dictionary of
         /// such a column is decoded in advance to bound the strings by its longest value (see
         /// `ColumnChunk::decode_dictionary_early`), unless its page is large or it does not fit the memory budget of the reader.
-        double bytes_per_row = 0;
+        /// The size of a chunk is bounded from above, not estimated on average: the chunks of a row group may differ in
+        /// size a lot, and a wide one must not be hidden by the average over the row group.
+        double chunk_bytes = 0;
         bool size_unknown = false;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
         {
@@ -2979,21 +2981,20 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             /// The columns served from the cache are counted below, by the size of the cached chunks.
             if (column.served_from_cache)
                 continue;
-            bytes_per_row += estimateColumnMemoryBytesPerRow(column, row_group, primitive_columns.at(i), /*upper_bound=*/ true);
+            chunk_bytes += estimateMaxColumnMemoryBytesOfChunk(column, row_group, primitive_columns.at(i));
             size_unknown = size_unknown || decodedSizeIsUnknown(column, primitive_columns.at(i));
         }
-        /// A cached column is counted by its largest chunk: the chunks may differ in size a lot, and a wide one must not
-        /// be hidden by the average over the row group.
+        /// A cached column is counted by its largest chunk.
         for (const auto & chunks : row_group.cached_columns)
         {
             size_t max_chunk_bytes = 0;
             for (const auto & chunk : chunks)
                 max_chunk_bytes = std::max(max_chunk_bytes, chunk->byteSize());
-            bytes_per_row += static_cast<double>(max_chunk_bytes) / static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS);
+            chunk_bytes += static_cast<double>(max_chunk_bytes);
         }
         const size_t memory_limit = memoryLimitOfCurrentThread();
         const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
-            && (size_unknown || bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4);
+            && (size_unknown || chunk_bytes > static_cast<double>(memory_limit) / 4);
         if (chunk_too_large)
             row_group.columns_cache_writes.clear();
         else
@@ -3177,7 +3178,7 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
     }
 }
 
-double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group, bool upper_bound) const
+double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
 {
     double column_chunk_bytes = 0;
     if (column.meta->meta_data.__isset.size_statistics &&
@@ -3191,13 +3192,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     {
         /// Dictionary-encoded strings. No way to know the decoded length in advance.
         double avg_string_length = 0;
-        if (column.dictionary.isInitialized() && upper_bound)
-        {
-            /// No string is longer than the longest value of the dictionary, except the strings of the data pages
-            /// that the writer did not encode with the dictionary (e.g. it has grown too large), which are added below.
-            avg_string_length = static_cast<double>(column.dictionary.getMaxValueSize());
-        }
-        else if (column.dictionary.isInitialized())
+        if (column.dictionary.isInitialized())
         {
             /// We've read the dictionary. Use the average string length in the dictionary as a guess
             /// at the average string length in the column chunk.
@@ -3214,8 +3209,6 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
         if (column.meta->meta_data.statistics.__isset.null_count)
             non_null_values = std::max(0., non_null_values - static_cast<double>(column.meta->meta_data.statistics.null_count));
         column_chunk_bytes = avg_string_length * non_null_values;
-        if (upper_bound)
-            column_chunk_bytes += static_cast<double>(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
     }
     else
     {
@@ -3226,8 +3219,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     return column_chunk_bytes / static_cast<double>(row_group.meta->num_rows);
 }
 
-double Reader::estimateColumnMemoryBytesPerRow(
-    const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info, bool upper_bound) const
+double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
 {
     double res = 0;
     if (column_info.output_type->haveMaximumSizeOfValue())
@@ -3235,7 +3227,7 @@ double Reader::estimateColumnMemoryBytesPerRow(
         res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
             * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
     else
-        res = estimateAverageStringLengthPerRow(column, row_group, upper_bound);
+        res = estimateAverageStringLengthPerRow(column, row_group);
 
     /// Outer array offsets.
     if (column_info.levels.back().rep > 0)
@@ -3245,6 +3237,63 @@ double Reader::estimateColumnMemoryBytesPerRow(
     /// are short, so inner arrays have ~num_values total elements rather than ~num_rows).
     if (column_info.levels.back().rep > 1)
         res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
+
+    return res;
+}
+
+double Reader::estimateMaxColumnMemoryBytesOfChunk(
+    const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
+{
+    const auto & meta = column.meta->meta_data;
+    const double chunk_rows = static_cast<double>(std::min(COLUMNS_CACHE_CHUNK_ROWS, size_t(std::max<Int64>(0, row_group.meta->num_rows))));
+    const size_t rep = column_info.levels.back().rep;
+    /// The values of a chunk: at most one per row, unless the column is of arrays, whose values may all be in one chunk.
+    /// The metadata of the row group has only the totals, and they are not spread over the chunks evenly in general:
+    /// e.g. the long strings, or the non-null values, may all be in one chunk.
+    double num_values = static_cast<double>(std::max<Int64>(0, meta.num_values));
+    if (rep == 0)
+        num_values = std::min(num_values, chunk_rows);
+
+    double res = 0;
+    if (column_info.output_type->haveMaximumSizeOfValue())
+    {
+        /// Fixed-size values, e.g. numbers or FixedString.
+        res = static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory()) * num_values;
+    }
+    else
+    {
+        const double uncompressed_bytes = static_cast<double>(std::max<Int64>(0, meta.total_uncompressed_size));
+        double string_bytes = 0;
+        if (meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
+        {
+            string_bytes = static_cast<double>(std::max<Int64>(0, meta.size_statistics.unencoded_byte_array_data_bytes));
+        }
+        else if (meta.__isset.dictionary_page_offset)
+        {
+            /// No string is longer than the longest value of the dictionary, except the strings of the data pages that
+            /// the writer did not encode with the dictionary (e.g. it has grown too large): they take at most the
+            /// uncompressed size of the column chunk. Without the dictionary the size is unknown, see `decodedSizeIsUnknown`.
+            double non_null_values = num_values;
+            if (meta.statistics.__isset.null_count)
+                non_null_values = std::min(
+                    non_null_values, std::max(0., static_cast<double>(meta.num_values) - static_cast<double>(meta.statistics.null_count)));
+            const double max_value_size = column.dictionary.isInitialized() ? static_cast<double>(column.dictionary.getMaxValueSize()) : 0;
+            string_bytes = max_value_size * non_null_values + uncompressed_bytes;
+        }
+        else
+        {
+            /// Non-dictionary-encoded strings.
+            string_bytes = uncompressed_bytes;
+        }
+        /// The offsets of `ColumnString`.
+        res = string_bytes + 8. * num_values;
+    }
+
+    /// Outer array offsets, and nested array offsets, at most one per value.
+    if (rep > 0)
+        res += 8. * chunk_rows;
+    if (rep > 1)
+        res += static_cast<double>(rep - 1) * 8. * num_values;
 
     return res;
 }
@@ -4644,16 +4693,19 @@ void Reader::initColumnsCache()
     size_t hits = 0;
     size_t misses = 0;
     size_t estimated_bytes_to_write = 0;
-    /// A dictionary decoded early is read before `PREWHERE`, even if no row that passes it needs the column, so only a
-    /// small dictionary page is read for that: within the memory budget of the reader, and a small part of the memory
-    /// limit of the query.
-    size_t max_early_dictionary_page_bytes = memoryEstimateLimit();
+    /// A dictionary decoded early is read before `PREWHERE`, even if no row that passes it needs the column, so only
+    /// small dictionary pages are read for that: within the memory budget of the reader, and a small part of the memory
+    /// limit of the query. The budget is for all the dictionary pages of a row group together, since they are read
+    /// in the same stage, all at once, before any of them is decoded (see `ReadStage::Dictionary`).
+    size_t max_early_dictionary_bytes = memoryEstimateLimit();
     if (const size_t memory_limit = memoryLimitOfCurrentThread())
-        max_early_dictionary_page_bytes = std::min(max_early_dictionary_page_bytes, memory_limit / 4);
+        max_early_dictionary_bytes = std::min(max_early_dictionary_bytes, memory_limit / 4);
     for (RowGroup & row_group : row_groups)
     {
         if (!row_group.need_to_process)
             continue;
+
+        size_t early_dictionary_bytes = 0;
 
         for (size_t idx = 0; idx < columns_cache_identities.size(); ++idx)
         {
@@ -4702,9 +4754,13 @@ void Reader::initColumnsCache()
                     ColumnChunk & column = row_group.columns[i];
                     estimated_bytes_to_write += size_t(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
                     const auto & meta = column.meta->meta_data;
-                    column.decode_dictionary_early = decodedSizeIsUnknown(column, primitive_columns[i])
-                        && meta.data_page_offset > meta.dictionary_page_offset
-                        && size_t(meta.data_page_offset - meta.dictionary_page_offset) <= max_early_dictionary_page_bytes;
+                    if (decodedSizeIsUnknown(column, primitive_columns[i]) && meta.data_page_offset > meta.dictionary_page_offset)
+                    {
+                        const size_t dictionary_bytes = size_t(meta.data_page_offset - meta.dictionary_page_offset);
+                        column.decode_dictionary_early = dictionary_bytes <= max_early_dictionary_bytes - early_dictionary_bytes;
+                        if (column.decode_dictionary_early)
+                            early_dictionary_bytes += dictionary_bytes;
+                    }
                 }
             }
         }
