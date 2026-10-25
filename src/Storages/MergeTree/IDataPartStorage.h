@@ -457,4 +457,11 @@ inline bool isPackedPartStorage(const IDataPartStorage & storage)
     return storage.getType() == MergeTreeDataPartStorageType::Packed;
 }
 
+/// Storage formats with one addressable object per logical file (Full), unlike the packed
+/// single-archive format. Only these support per-file hardlink reuse during mutations.
+inline bool isPerFilePartStorage(const IDataPartStorage & storage)
+{
+    return isFullPartStorage(storage);
+}
+
 }
