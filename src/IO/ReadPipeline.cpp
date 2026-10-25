@@ -388,6 +388,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
         };
     }
 
+    /// The links `readObject` gives to the readers of the source.
+    IOSchedulingSettings cache_io_scheduling;
+    if (!filesystem_caches.empty())
+        cache_io_scheduling = obj_source ? obj_source->storage->patchSettings(settings).io_scheduling : settings.io_scheduling;
+
     /// Step 2: Wrap each filesystem cache layer around the source (innermost first).
     /// With stacked CachedObjectStorage (cache-on-cache), each layer calls needFilesystemCache
     /// in inner-to-outer order. The resulting per-object chain is:
@@ -399,6 +404,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
             [prev_creator = std::move(gather_creator),
              captured_settings = settings,
              fs_cache_settings,
+             cache_io_scheduling,
              cache = dc.cache,
              cache_log = dc.cache_log,
              custom_key = dc.custom_cache_key,
@@ -435,7 +441,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
                 /* use_external_buffer */ true,
                 /* read_until_position */ std::nullopt,
                 cache_log,
-                captured_settings.local_throttler);
+                captured_settings.local_throttler,
+                cache_io_scheduling);
         };
     }
 
@@ -600,8 +607,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         /// Build innermost impl_creator (source reader).
         CachedOnDiskReadBufferFromFile::ImplementationBufferCreator impl_creator;
 
+        /// The links `readObject` gives to the readers of the source.
+        IOSchedulingSettings cache_io_scheduling = settings.io_scheduling;
+
         if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
         {
+            cache_io_scheduling = obj_src->storage->patchSettings(settings).io_scheduling;
             impl_creator = [storage = obj_src->storage, read_hint = obj_src->read_hint,
                             captured_object = object, captured_settings = settings]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
@@ -644,6 +655,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 object_size = object.bytes_size,
                 cache_log = dc.cache_log,
                 throttler = settings.local_throttler,
+                cache_io_scheduling,
                 query_id
             ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
             {
@@ -660,7 +672,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                     /* allow_seeks_after_first_read */ true,
                     /* use_external_buffer */ true,
                     /* read_until_position */ std::nullopt,
-                    cache_log, throttler);
+                    cache_log, throttler, cache_io_scheduling);
             };
         }
 
@@ -686,7 +698,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             use_ext_buf,
             /* read_until_position */ std::nullopt,
             outermost.cache_log,
-            settings.local_throttler);
+            settings.local_throttler,
+            cache_io_scheduling);
     }
 
     /// -- Stage 1 only: Source (no cache, no DC, no gather) --
@@ -697,8 +710,20 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         },
         [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
+            std::optional<size_t> file_size;
+            /// Keep zero as unknown so the reader still opens the path and reports
+            /// open-time errors, matching the behavior before the size was forwarded.
+            if (object.bytes_size != StoredObject::UnknownSize && object.bytes_size != 0)
+                file_size = object.bytes_size;
+
+            /// The known size is forwarded only for the reader's EOF guard (the O_DIRECT read
+            /// past EOF issue). Reader selection (mmap / Direct I/O) must keep the previous
+            /// behavior: it is driven by the caller's read_hint, and a missing hint must not
+            /// turn file_size into the estimate - otherwise no-hint reads would start using
+            /// different readers and caches, which is a separate behavior change.
+            const auto selection_hint = s.read_hint.value_or(0);
             return createReadBufferFromFileBase(
-                s.path, settings, s.read_hint);
+                s.path, settings, selection_hint, file_size);
         },
         [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
