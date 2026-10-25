@@ -191,3 +191,20 @@ for setting in "--input_format_try_infer_ipv4=1" "--input_format_try_infer_ipv4=
     # shellcheck disable=SC2086
     $CLICKHOUSE_CLIENT $setting --input_format_try_infer_variants=1 -q "SELECT ip FROM format(TSKV, 'ip=[\\'192.168.1.\\\\x31\\', [1]]\\n')"
 done
+
+# 23. IP-aware type merging when sampling TSKV rows
+echo '23. TSKV IP-aware type merging'
+for input in "ip=192.168.1.1\\nip=123\\n" \
+             "ip=123\\nip=192.168.1.1\\n" \
+             "ip=192.168.1.1\\nip=12.34\\n" \
+             "ip=192.168.1.1\\nip=true\\n" \
+             "ip=[\\'192.168.1.1\\']\\nip=[123]\\n" \
+             "ip=[123]\\nip=[\\'192.168.1.1\\']\\n" \
+             "ip=[\\'192.168.1.1\\', 123]\\n"; do
+    for setting in "--input_format_try_infer_ipv4=1" "--input_format_try_infer_ipv4=0"; do
+        # shellcheck disable=SC2086
+        $CLICKHOUSE_CLIENT $setting -q "DESCRIBE format(TSKV, '$input')"
+        # shellcheck disable=SC2086
+        $CLICKHOUSE_CLIENT $setting -q "SELECT ip FROM format(TSKV, '$input')"
+    done
+done

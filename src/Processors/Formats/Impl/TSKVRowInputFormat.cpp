@@ -244,6 +244,12 @@ TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
+void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, FormatSettings::EscapingRule::Escaped);
+    ISchemaReader::transformTypesIfNeeded(type, new_type);
+}
+
 /// IP readers inside arrays, tuples, maps and variants do not decode escapes either, so nested IP types become String.
 static DataTypePtr replaceIPTypesWithString(const DataTypePtr & type)
 {

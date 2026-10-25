@@ -106,3 +106,44 @@ ip	Array(Variant(Array(Nullable(Int64)), String))
 ['192.168.1.1',[1]]
 ip	Array(Variant(Array(Nullable(Int64)), String))					
 ['192.168.1.1',[1]]
+23. TSKV IP-aware type merging
+ip	Nullable(String)					
+192.168.1.1
+123
+ip	Nullable(String)					
+192.168.1.1
+123
+ip	Nullable(String)					
+123
+192.168.1.1
+ip	Nullable(String)					
+123
+192.168.1.1
+ip	Nullable(String)					
+192.168.1.1
+12.34
+ip	Nullable(String)					
+192.168.1.1
+12.34
+ip	Nullable(String)					
+192.168.1.1
+true
+ip	Nullable(String)					
+192.168.1.1
+true
+ip	Nullable(String)					
+[\'192.168.1.1\']
+[123]
+ip	Nullable(String)					
+[\'192.168.1.1\']
+[123]
+ip	Nullable(String)					
+[123]
+[\'192.168.1.1\']
+ip	Nullable(String)					
+[123]
+[\'192.168.1.1\']
+ip	Nullable(String)					
+[\'192.168.1.1\', 123]
+ip	Nullable(String)					
+[\'192.168.1.1\', 123]
