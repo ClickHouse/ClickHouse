@@ -19,6 +19,16 @@ tampered query: 403 Code: 516
 presigned with a body: 403 Code: 516
 unsigned payload with a body: 403 Code: 516
 signed payload with a body: 200 1
+signed query in a comment: 200 1
+unsigned Content-Type: 403 Code: 516
+signed multipart body: 400 Code: 36
+multipart body with a wrong hash: 400 Code: 36
+query body with a wrong hash: 400 Code: 117
+path filter: 200 1	Hello
+encoded slash instead of a separator: 403 Code: 516
+signed query with a plus: 200 a+b
+plus instead of an encoded plus: 403 Code: 516
+header with sequential spaces: 403 Code: 516
 range from the beginning: 200 1	Hello
 2	World
 range: 400 Code: 36

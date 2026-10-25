@@ -60,11 +60,13 @@ def string_to_sign(amz_date, creq):
     return "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(creq.encode()).hexdigest()])
 
 
-def send(method, path, params=(), headers=None, body=b""):
+def send(method, path, params=(), headers=None, body=b"", tamper_url=None):
     conn = http.client.HTTPConnection(host, port)
     url = quote(path, "/")
     if params:
         url += "?" + "&".join(f"{quote(k)}={quote(v)}" for k, v in params)
+    if tamper_url:
+        url = tamper_url(url)
     all_headers = {"Host": host_header}
     all_headers.update(headers or {})
     if method in ("PUT", "POST") or body:
@@ -82,7 +84,7 @@ def send(method, path, params=(), headers=None, body=b""):
 
 
 def signed_request(method, path, params=(), headers=None, body=b"", payload_hash=None, access_key=user, secret="secret",
-                   sign_headers=None, amz_date=None):
+                   sign_headers=None, amz_date=None, tamper_headers=None):
     amz_date = amz_date or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     payload_hash = payload_hash or hashlib.sha256(body).hexdigest()
     headers = dict(headers or {})
@@ -96,6 +98,8 @@ def signed_request(method, path, params=(), headers=None, body=b"", payload_hash
     sig = signature(secret, amz_date[:8], sts)
     request_headers = {k: v for k, v in all_headers.items() if k != "host"}
     request_headers.update({k: v for k, v in headers.items() if k.lower() not in all_headers})
+    # Changes made after signing, as by someone who has intercepted a signed request.
+    request_headers.update(tamper_headers or {})
     request_headers["Authorization"] = (
         f"AWS4-HMAC-SHA256 Credential={access_key}/{amz_date[:8]}/us-east-1/s3/aws4_request, "
         f"SignedHeaders={';'.join(signed_headers)}, Signature={sig}")
@@ -151,6 +155,28 @@ show("tampered query", send("GET", "/", [(k, "SELECT 43" if k == "query" else v)
 show("presigned with a body", send("POST", "/", presigned_params("POST", "/"), body=b"SELECT 1"))
 show("unsigned payload with a body", signed_request("POST", "/", body=b"SELECT 1", payload_hash="UNSIGNED-PAYLOAD"))
 show("signed payload with a body", signed_request("POST", "/", body=b"SELECT 1"))
+
+# Modifications of a signed request which would change its meaning without changing the signature.
+query_body = b"SELECT 1 /*\r\n--b\r\nContent-Disposition: form-data; name=\"query\"\r\n\r\nSELECT 2\r\n--b--\r\n*/"
+show("signed query in a comment", signed_request("POST", "/", body=query_body))
+show("unsigned Content-Type", signed_request("POST", "/", body=query_body, headers={"Content-Type": "multipart/form-data; boundary=b"},
+     sign_headers=set()))
+multipart_body = b"--b\r\nContent-Disposition: form-data; name=\"query\"\r\n\r\nSELECT 3\r\n--b--\r\nignored\r\nmore"
+show("signed multipart body", signed_request("POST", "/", body=multipart_body, headers={"Content-Type": "multipart/form-data; boundary=b"}))
+show("multipart body with a wrong hash", signed_request("POST", "/", body=multipart_body, payload_hash=hashlib.sha256(b"SELECT 1").hexdigest(),
+     headers={"Content-Type": "multipart/form-data; boundary=b"}))
+show("query body with a wrong hash", signed_request("POST", "/", body=b"INSERT INTO t VALUES (100, 'wrong hash')",
+     payload_hash=hashlib.sha256(b"SELECT 1").hexdigest(), params=[("database", database)]))
+
+filtered_path = f"/{database}/t.TSV/s=Hello/"
+show("path filter", send("GET", filtered_path, presigned_params("GET", filtered_path)))
+show("encoded slash instead of a separator", send("GET", filtered_path, presigned_params("GET", filtered_path),
+     tamper_url=lambda url: url.replace("Hello/?", "Hello%2F?")))
+show("signed query with a plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")])))
+show("plus instead of an encoded plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")]),
+     tamper_url=lambda url: url.replace("%2B", "+")))
+show("header with sequential spaces", signed_request("GET", table_path, headers={"X-ClickHouse-Database": "a b"},
+     tamper_headers={"x-clickhouse-database": "a  b"}))
 
 # Range requests are not supported, except for a range from the beginning, which is ignored.
 show("range from the beginning", signed_request("GET", table_path, headers={"Range": "bytes=0-15"}, params=[("order", "x")]))

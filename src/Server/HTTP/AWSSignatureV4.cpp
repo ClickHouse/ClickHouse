@@ -23,6 +23,7 @@
 #endif
 
 #include <algorithm>
+#include <unordered_set>
 
 
 namespace DB
@@ -77,14 +78,13 @@ String percentDecode(std::string_view str)
 }
 
 /// URI encoding as specified by AWS: every byte except the unreserved characters is encoded as `%XY` with uppercase hex.
-/// The slash is kept as is in the path, but not in the query string.
-String awsURIEncode(std::string_view str, bool encode_slash)
+String awsURIEncode(std::string_view str)
 {
     String res;
     res.reserve(str.size());
     for (char c : str)
     {
-        if (isAlphaNumericASCII(c) || c == '-' || c == '_' || c == '.' || c == '~' || (c == '/' && !encode_slash))
+        if (isAlphaNumericASCII(c) || c == '-' || c == '_' || c == '.' || c == '~')
         {
             res += c;
         }
@@ -166,6 +166,12 @@ std::string_view getRawPath(const HTTPServerRequest & request)
 /// Decoded query parameters in the order of appearance, including the repeated ones.
 std::vector<std::pair<String, String>> parseQueryString(std::string_view query)
 {
+    /// `HTMLForm`, which provides the parameters to the query, decodes a raw `+` as a space and removes a raw UTF-8 BOM,
+    /// while in the signature they would mean themselves. Such a query string could be changed without changing
+    /// the signature, so these characters must be percent-encoded, as AWS clients do.
+    if (!std::ranges::all_of(query, [](char c) { return isPrintableASCII(c) && c != '+'; }))
+        throwInvalid("the query string must not contain '+', control or non-ASCII characters, they have to be percent-encoded");
+
     std::vector<std::pair<String, String>> res;
     std::vector<std::string_view> parts;
     boost::split(parts, query, boost::is_any_of("&"));
@@ -205,7 +211,23 @@ const String & getParameter(const std::vector<std::pair<String, String>> & param
     return *res;
 }
 
-/// The values of all the headers with this name, trimmed, with sequential spaces replaced by one, joined with commas.
+/// The value trimmed, with sequential spaces replaced by one.
+String canonicalizeHeaderValue(const String & header_value)
+{
+    String value;
+    bool prev_space = false;
+    for (char c : boost::algorithm::trim_copy(header_value))
+    {
+        bool space = c == ' ' || c == '\t';
+        if (space && prev_space)
+            continue;
+        value += space ? ' ' : c;
+        prev_space = space;
+    }
+    return value;
+}
+
+/// The canonical values of all the headers with this name, joined with commas.
 std::optional<String> getCanonicalHeaderValue(const HTTPServerRequest & request, const String & name)
 {
     std::optional<String> res;
@@ -214,17 +236,7 @@ std::optional<String> getCanonicalHeaderValue(const HTTPServerRequest & request,
         if (Poco::icompare(header_name, name) != 0)
             continue;
 
-        String value;
-        bool prev_space = false;
-        for (char c : boost::algorithm::trim_copy(header_value))
-        {
-            bool space = c == ' ' || c == '\t';
-            if (space && prev_space)
-                continue;
-            value += space ? ' ' : c;
-            prev_space = space;
-        }
-
+        String value = canonicalizeHeaderValue(header_value);
         if (res)
             *res += "," + value;
         else
@@ -298,8 +310,18 @@ String buildCanonicalRequest(
     res += '\n';
 
     /// The path is encoded once (S3 does not apply the double encoding used by the other AWS services),
-    /// and it is not normalized.
-    res += awsURIEncode(percentDecode(getRawPath(request)), /* encode_slash= */ false);
+    /// and it is not normalized. Each component is decoded and encoded separately: `parseHTTPPath` splits the path
+    /// by the literal slashes, and an encoded slash (`%2F`) is a part of a component, so they must not be confused.
+    std::string_view raw_path = getRawPath(request);
+    for (size_t begin = 0;;)
+    {
+        size_t end = raw_path.find('/', begin);
+        res += awsURIEncode(percentDecode(raw_path.substr(begin, end == std::string_view::npos ? end : end - begin)));
+        if (end == std::string_view::npos)
+            break;
+        res += '/';
+        begin = end + 1;
+    }
     res += '\n';
 
     std::vector<std::pair<String, String>> canonical_params;
@@ -307,7 +329,7 @@ String buildCanonicalRequest(
     {
         if (presigned && key == "X-Amz-Signature")
             continue;
-        canonical_params.emplace_back(awsURIEncode(key, true), awsURIEncode(value, true));
+        canonical_params.emplace_back(awsURIEncode(key), awsURIEncode(value));
     }
     std::sort(canonical_params.begin(), canonical_params.end());
     for (size_t i = 0; i < canonical_params.size(); ++i)
@@ -607,13 +629,28 @@ AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & reque
 
     /// The headers which change the meaning of the request must be signed, otherwise they could be added to a
     /// presigned URL by anyone who has got it.
+    /// `Content-Type` and `Content-Encoding` change the interpretation of the body. With a presigned URL the body
+    /// is not signed and is accepted only as the data of an upload into a table, and `multipart/form-data` is not
+    /// accepted at all (see `HTTPHandler::processQuery`), so it is not required for them there.
+    /// The values of such headers are used as is, so they must be already canonical: otherwise different values,
+    /// e.g. database names with a different number of spaces, or two headers instead of one with a comma, would
+    /// have the same signature.
+    std::unordered_set<String> seen_headers;
     for (const auto & [header_name, header_value] : request)
     {
         String lower_name = Poco::toLower(header_name);
         bool must_be_signed = lower_name.starts_with("x-clickhouse-")
-            || (!presigned && (lower_name == "x-amz-content-sha256" || lower_name == "x-amz-date"));
-        if (must_be_signed && !std::ranges::binary_search(signed_headers, lower_name))
+            || (!presigned && (lower_name == "x-amz-content-sha256" || lower_name == "x-amz-date"
+                || lower_name == "content-type" || lower_name == "content-encoding"));
+        if (!must_be_signed)
+            continue;
+        if (!std::ranges::binary_search(signed_headers, lower_name))
             throwInvalid(fmt::format("the header '{}' must be signed", header_name));
+        if (!seen_headers.insert(lower_name).second)
+            throwInvalid(fmt::format("the header '{}' is specified more than once", header_name));
+        if (canonicalizeHeaderValue(header_value) != header_value)
+            throwInvalid(fmt::format(
+                "the value of the header '{}' must not contain tabs, sequential spaces, leading or trailing whitespace", header_name));
     }
 
     String canonical_request = buildCanonicalRequest(request, params, presigned, signed_headers, components.signed_headers, payload_hash);

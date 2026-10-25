@@ -626,7 +626,8 @@ void addDefaultHandlersFactory(
     {
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
-        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
+        return std::make_unique<DynamicQueryHandler>(
+            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_= */ true, /* allow_aws_signature_v4_= */ true);
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
@@ -670,7 +671,8 @@ void addCatchAllQueryHandlerFactory(
     {
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
-        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
+        return std::make_unique<DynamicQueryHandler>(
+            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_= */ true, /* allow_aws_signature_v4_= */ true);
     };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
     /// default on), evaluated here at routing time — before authentication, where the connecting
