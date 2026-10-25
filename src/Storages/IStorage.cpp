@@ -183,9 +183,9 @@ void IStorage::takeTableLocksFrom(const IStorage & other)
 {
     alter_lock = other.alter_lock;
     drop_lock = other.drop_lock;
-    is_dropped.flag = other.is_dropped.flag;
-    is_detached.flag = other.is_detached.flag;
-    is_being_restarted.flag = other.is_being_restarted.flag;
+    is_dropped.bindTo(other.is_dropped);
+    is_detached.bindTo(other.is_detached);
+    is_being_restarted.bindTo(other.is_being_restarted);
 }
 
 bool IStorage::isTableNotInUse(const StoragePtr & table)

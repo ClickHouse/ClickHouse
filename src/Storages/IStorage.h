@@ -450,8 +450,9 @@ public:
     /// And unless both share the lifecycle flags, a query that switched to the real storage while the
     /// database still held the proxy could lock a table that has just been detached through the proxy.
     ///
-    /// Must be called on a freshly created storage that has not been published anywhere yet, and
-    /// both storages must stand for the same table.
+    /// Must be called once, by the thread that created this storage, before it is published in a
+    /// database, so before anybody can lock it, and both storages must stand for the same table.
+    /// The lifecycle flags may be read concurrently while they are rebound, see SharedLifecycleFlag.
     void takeTableLocksFrom(const IStorage & other);
 
     /// Whether `table` is held by nobody but the reference passed here, e.g. a detached or dropped
@@ -784,6 +785,13 @@ public:
 
     /// A flag of the table lifecycle that can be shared with another storage, see takeTableLocksFrom.
     /// Reads and writes like a `std::atomic<bool>`.
+    ///
+    /// The storage may already be reachable from other threads when the flag is rebound: a constructor
+    /// may publish `this` before it returns (e.g. `MergeTreeData::acquireTableDiskRoots` registers the
+    /// table as the owner of its disk roots, and other tables read the flags of the owner). So the
+    /// flag never replaces an object that a reader may be using: it keeps its own `std::atomic<bool>`
+    /// alive for as long as the storage lives, keeps the shared one alive once it has been bound to it,
+    /// and readers and writers reach the current one through an atomic pointer.
     class SharedLifecycleFlag
     {
     public:
@@ -793,15 +801,25 @@ public:
 
         SharedLifecycleFlag & operator=(bool value)
         {
-            flag->store(value);
+            current.load(std::memory_order_acquire)->store(value);
             return *this;
         }
-        operator bool() const { return flag->load(); } // NOLINT(google-explicit-constructor)
-        bool load() const { return flag->load(); }
+        operator bool() const { return load(); } // NOLINT(google-explicit-constructor)
+        bool load() const { return current.load(std::memory_order_acquire)->load(); }
 
     private:
         friend class IStorage;
-        std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(false);
+
+        /// Must be called at most once, and only by the thread that owns the storage being set up.
+        void bindTo(const SharedLifecycleFlag & other)
+        {
+            shared = other.shared ? other.shared : other.own;
+            current.store(shared.get(), std::memory_order_release);
+        }
+
+        const std::shared_ptr<std::atomic<bool>> own = std::make_shared<std::atomic<bool>>(false);
+        std::shared_ptr<std::atomic<bool>> shared;
+        std::atomic<std::atomic<bool> *> current{own.get()};
     };
 
     SharedLifecycleFlag is_dropped;
