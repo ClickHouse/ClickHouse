@@ -50,10 +50,6 @@ SELECT 1 and sin(1);
 
 SELECT '=====';
 
-SELECT 'enable_analyzer';
-
-SET enable_analyzer = 1;
-
 SELECT toBool(sin(SUM(number))) AS x
 FROM
 (
