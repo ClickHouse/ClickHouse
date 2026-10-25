@@ -24,6 +24,7 @@
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include "config.h"
 
@@ -483,6 +484,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         /// otherwise all allocations may get slow when above memory limit.
         if (memoryTrackerCanThrow(level, false) && enforce_memory_limit)
         {
+            refusing_amount.fetch_add(size, std::memory_order_relaxed);
+            SCOPE_EXIT(refusing_amount.fetch_sub(size, std::memory_order_relaxed));
+
             OvercommitResult overcommit_result = OvercommitResult::NONE;
 
             /// Try to shrink the userspace page cache.
@@ -644,9 +648,14 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
         allocation_traced = true;
     }
 
-    bool peak_updated = false;
-    if (!memory_limit_exceeded_ignored)
-        peak_updated = updatePeak(will_be, enforce_memory_limit);
+    /// An allocation over the limit without a check is real memory, but `will_be` may include the allocations that are
+    /// being refused, and `refusing_amount` read later may not match them. Both are read now, so that the peak excludes the
+    /// allocations being refused at this moment. A refusal that ends between the two loads makes the peak slightly off,
+    /// which is close enough for a peak, and much closer than ignoring these allocations.
+    const Int64 peak_candidate = memory_limit_exceeded_ignored
+        ? amount.load(std::memory_order_relaxed) - refusing_amount.load(std::memory_order_relaxed)
+        : will_be;
+    const bool peak_updated = updatePeak(peak_candidate, enforce_memory_limit);
 
     if (memory_limit_exceeded_ignored || !enforce_memory_limit)
         incrementAllocationWithoutCheck(size);
