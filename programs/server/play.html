@@ -16969,10 +16969,16 @@ async function learnImplicitUser(server_address, password) {
 /// probe can wait as long as the runs go on. A run that is stopped while it waits (`signal`) stops
 /// waiting and proceeds with its aborted request, which fails without being sent, as a run stopped
 /// at any other point.
+///
+/// An export (`submitDownload`) is the exception: the browser sends it as a form submission, and the
+/// page can observe neither when the request is dispatched nor when the response ends, so there is no
+/// point at which the export could stop counting as a run. Once an export has been submitted to a
+/// server (`exported`), the probes of that server are skipped for the rest of the visit, without being
+/// sent: they are best-effort, and a skipped probe returns no name, as when the server cannot tell.
 function implicitUserProbeAdmission(server_address) {
     const all = implicitUserProbeAdmission.servers ??= new Map();
     const key = serverAdmissionKey(server_address) ?? server_address;
-    if (!all.has(key)) all.set(key, { runs: 0, probes: new Set(), idle: [] });
+    if (!all.has(key)) all.set(key, { runs: 0, probes: new Set(), idle: [], exported: false });
     return all.get(key);
 }
 async function admitRunQuery(server_address, signal, run) {
@@ -16994,6 +17000,7 @@ async function admitImplicitUserProbe(server_address, probe) {
     const admission = implicitUserProbeAdmission(server_address);
     /// Rechecked after every wake-up: a run may have been admitted between the wake-up and this point.
     while (admission.runs) await new Promise(resolve => admission.idle.push(resolve));
+    if (admission.exported) return null;
     const pending = probe();
     admission.probes.add(pending);
     try {
@@ -22688,11 +22695,13 @@ const formatExtensions = {
 /// saves the response as a file. The export is a query of the user, so it is admitted like the query of a
 /// run (`admitRunQuery`): it is sent only after an implicit-user probe in flight has settled, or the
 /// probe could take the last query slot of the user (`max_concurrent_queries_for_user`) and the export
-/// would fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. The page cannot see when the browser finishes
-/// receiving the file, so the admission ends with the submission; a probe that starts while the export
-/// still holds the slot is the one the server rejects, which only leaves the login unrecorded.
+/// would fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. The page cannot see when the browser dispatches the
+/// request (`form.submit` only plans a navigation) or when it finishes receiving the file, so a probe
+/// started after the submission could still reach the server first. The probes of the server are
+/// therefore skipped from the submission on (`exported` in `implicitUserProbeAdmission`).
 async function submitDownload(server_address, url, query) {
     await admitRunQuery(server_address, new AbortController().signal, async () => {
+        implicitUserProbeAdmission(server_address).exported = true;
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = url;

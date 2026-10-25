@@ -615,6 +615,24 @@ scenario('download-and-panel-wait-for-probe', async js => {
     if (!String(ctx.fetched[0].options.body).includes('currentUser()')) throw new Error('the probe is not sent first');
 });
 
+/// The page cannot observe when the browser dispatches a submitted export (`form.submit` only plans a
+/// navigation), so a probe queued after the submission could reach the server before the export and
+/// take its query slot. Once an export has been submitted to a server, its probes are skipped: neither
+/// a probe started right after the submission nor a later one is sent, and they return no name.
+scenario('probe-after-download-is-skipped', async js => {
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.server = 'http://host:8123/';
+    await vm.runInContext("submitDownload(server, server + '?default_format=CSV', 'SELECT 1')", ctx);
+    assertEqual(ctx.submitted.length, 1, 'the Download is submitted');
+    assertEqual(await vm.runInContext("learnImplicitUser(server, 'secret')", ctx), '', 'a probe after the Download returns no name');
+    assertEqual(await vm.runInContext("learnImplicitUser(server + '?session_id=s1', 'secret')", ctx), '',
+        'nor does a probe of another connection to the same server');
+    assertEqual(ctx.fetched.length, 0, 'no probe is sent after the Download');
+    ctx.other = 'http://other:8123/';
+    assertEqual(await vm.runInContext("learnImplicitUser(other, 'secret')", ctx), 'alice', 'the probes of another server are sent');
+});
+
 /// The login of an empty field is saved under the name of the account (`storeCredentials`), so the
 /// next visit refills that name. A later passwordless authentication of the empty field must be
 /// recorded for that name as well, or the stale autofilled password of the refilled login is kept,
