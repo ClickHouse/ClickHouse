@@ -1,7 +1,6 @@
 -- A spill-capable hash join (the default) keeps its delayed blocks stage off the data path,
 -- and still returns the same rows when it does spill.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET query_plan_join_swap_table = 0;
