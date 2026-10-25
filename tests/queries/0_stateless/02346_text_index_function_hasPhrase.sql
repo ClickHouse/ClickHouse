@@ -1,8 +1,6 @@
 -- Tags: no-parallel-replicas
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 SELECT '-- Default tokenizer';

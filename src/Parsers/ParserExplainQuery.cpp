@@ -383,6 +383,7 @@ Settings:
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
+- `fragments` — For a query executed by stateless workers (`make_distributed_plan = 1`), prints the plan of every query fragment and the exchanges between the fragments. Requires `optimize = 1`. Not supported together with `json` or `distributed`. Default: 0. See [Query fragments](#explain-plan-fragments).
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
@@ -849,6 +850,63 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
+#### Query fragments {#explain-plan-fragments}
+
+With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks. The fragments are printed in the reverse order of their ids: the fragment that produces the result of the query comes first, and every fragment comes before the fragments it reads from, so that data flows upward as in a plan tree. Every fragment starts with a header `Query fragment <id> (<stage name>) · tasks=<N>` that shows its id, its stage name and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
+
+The fragments are followed by two sections, which refer to query fragment `<id>` as `F<id>`:
+
+- `Exchanges` — one line per exchange, with the fragment that sends the data and the fragment that reads it (`F0 -> F2`), and how the data is transferred: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`streaming`) or written to temporary files first (`persisted`, see [`distributed_plan_force_exchange_kind`](/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind)), in which case the consumer starts only after the producer has finished; and the number of source and destination buckets.
+- `Levels` — fragment ids grouped by their depth, from the fragments without dependencies to the fragment that produces the result. The fragments of one level do not depend on each other.
+
+The sets of `IN` subqueries are not shown yet: the plan names such a set (for example `bid IN subquery1`), but no fragment builds it.
+
+A distributed query without exchanges is printed as one query fragment that sends the result through the `final_result` exchange.
+
+When the query is not distributed, the plan is printed as without `fragments`. If the query could not be distributed and fell back to local execution, the reason is printed after the plan as `Not distributed: <reason>`.
+
+Example:
+
+```sql
+EXPLAIN fragments = 1
+SELECT count()
+FROM big, small
+WHERE small.sid = (big.bid + 1) % 5000
+SETTINGS make_distributed_plan = 1, explain_query_plan_default = 'legacy';
+```
+
+```text
+Query fragment 3 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      GatherReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+GatherSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        BroadcastReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=1
+BroadcastSend (exchange_1)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.small)
+
+Query fragment 0 (stage_0) · tasks=1
+ShuffleSend (exchange_0)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: any, streaming, F0 -> F2, buckets 1 -> 3
+  exchange_1: broadcast, streaming, F1 -> F2, buckets 1 -> 3
+  exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
+Levels: [F0, F1] -> [F2] -> [F3]
+```
+
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
@@ -1300,7 +1358,7 @@ The report gives the marks and rows it would read, a `read_ratio` against the ba
 
 When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
 
-Aggregate projections, projections with a `WHERE` clause, their own skip indexes, a commit-order or virtual-column key or a stored `_block_number`, and projections that do not cover every column the query reads are reported as `not_applicable`. `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored, and `force_optimize_projection` does not fail the statement.
+WHATIF reports aggregate projections and projections with their own skip indexes as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 

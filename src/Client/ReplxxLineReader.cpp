@@ -95,7 +95,7 @@ int executeCommand(char * const argv[])
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
-      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
@@ -329,7 +329,10 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-static bool replxx_last_is_delimiter = false;
+/// Thread-local, because several embedded clients (e.g. concurrent web terminal sessions) can run
+/// in the same process. The flag is written by the highlighter and read by the Enter key handler,
+/// and replxx invokes both on the thread that runs the input loop of the session.
+static thread_local bool replxx_last_is_delimiter = false;
 void ReplxxLineReader::setLastIsDelimiter(bool flag)
 {
     replxx_last_is_delimiter = flag;

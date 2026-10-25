@@ -31,7 +31,8 @@ struct NormalizeTimeSeriesDefinitionParams
     /// Required for a new table with that clause.
     boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
 
-    /// The columns of every external target table of the query, by the kind of the target.
+    /// The columns of every external target table of the query, by the kind of the target
+    /// (a table of version 9 or earlier could have external target tables, see TimeSeriesVersion.h).
     /// Required for a new table.
     std::map<ViewTarget::Kind, ColumnsDescription> external_target_columns;
 
