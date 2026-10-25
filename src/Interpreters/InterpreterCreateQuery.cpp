@@ -2163,8 +2163,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
-    // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    /// If this is a stub ATTACH query, read the query definition from the database.
+    /// A parameterized view with a `SELECT` is a full definition even without a column list: that is
+    /// its canonical stored form when the declared schema is not latched, and a full `ATTACH VIEW` of
+    /// it is replayed in exactly that form on the replicas of a `Replicated` database.
+    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list && !create.isParameterizedView())
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
