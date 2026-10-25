@@ -287,15 +287,17 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .source = RowEstimateSource::NoStatistics};
 
         /// `selected_rows` counts physical rows in the selected ranges, so it is the exact row count
-        /// only when nothing drops rows afterwards: no filter, SAMPLE or FINAL, and no mutation
-        /// applied while reading (a lightweight delete or patch part filters at read time).
+        /// only when nothing drops rows afterwards: no filter, SAMPLE or FINAL, no mutation applied
+        /// while reading (a lightweight delete or patch part filters at read time) and no `UNIQUE KEY`
+        /// delete bitmap.
         const auto & mutations = reading->getMutationsSnapshot();
         const bool mutations_can_remove_rows = mutations
             && (mutations->hasLightweightDeletedMask() || mutations->hasDataMutations() || mutations->hasPatchParts());
         /// A runtime-filter `PREWHERE` is not a plan-time filter (`has_filter`), but it still drops rows.
         const bool no_row_removal_after_read = !has_filter && !reading->getPrewhereInfo() && !reading->getRowLevelFilter()
             && !reading->getDeferredRowLevelFilter() && !reading->isQueryWithSampling()
-            && !reading->isQueryWithFinal() && !mutations_can_remove_rows;
+            && !reading->isQueryWithFinal() && !mutations_can_remove_rows
+            && !reading->getStorageMetadata()->hasUniqueKey();
 
         return RelationStats{
             .estimated_rows = analyzed_result->selected_rows,
