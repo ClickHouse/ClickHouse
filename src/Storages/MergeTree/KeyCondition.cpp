@@ -6043,6 +6043,18 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     const_type = key_expr_type_not_null;
                 }
 
+                /// A `FixedString` inside a composite type, such as `Array(FixedString(N))`, is compared with
+                /// a `String` element of the other side zero-padded (`[toFixedString('a', 2)] = ['a']`), but
+                /// the conversion to the common type keeps its padding, so neither the key nor the constant
+                /// can be converted for a range: decline.
+                auto has_nested_fixed_string = [](const DataTypePtr & type)
+                {
+                    return !isFixedString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+                };
+                if ((!key_expr_type_not_null->equals(*common_type) || !const_type->equals(*common_type))
+                    && (has_nested_fixed_string(key_expr_type_not_null) || has_nested_fixed_string(const_type)))
+                    return std::nullopt;
+
                 if (!const_type->equals(*common_type))
                 {
                     /// An unrepresentable constant cannot supply a comparison bound.
