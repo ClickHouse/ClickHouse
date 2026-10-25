@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-msan
+-- Tags: no-fasttest, no-msan, long
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 -- Tests the PromQL aggregation operators topk/bottomk/limitk end to end: the streaming plan built around the
