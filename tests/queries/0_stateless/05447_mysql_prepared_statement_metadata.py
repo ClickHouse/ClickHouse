@@ -144,7 +144,8 @@ def query(sock, text):
 
 def query_metadata(sock, text):
     """Runs a query returning a result set (text protocol) and prints its column definitions."""
-    print(f"--- query: {text}")
+    # The name of the test database is random, so it is masked in the output.
+    print(f"--- query: {text.replace(CLICKHOUSE_DATABASE + '.', '<database>.')}")
     send_command(sock, COM_QUERY, text.encode())
     response = read_packet(sock)
     if is_err(response):

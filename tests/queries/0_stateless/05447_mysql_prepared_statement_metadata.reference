@@ -19,7 +19,7 @@ name=dt64 org_name=dt64 schema=<database> table=types org_table=types type=12 le
 name=fs org_name=fs schema=<database> table=types org_table=types type=254 length=3
 name=n org_name=n schema=<database> table=types org_table=types type=1 length=3
 name=lc org_name=lc schema=<database> table=types org_table=types type=254 length=0
---- query: SELECT id FROM test_mm.t
+--- query: SELECT id FROM <database>.t
 name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
 --- query: SELECT id AS x, a.s, flag + 1 AS expr, 1 AS const FROM t AS a
 name=x org_name=id schema=<database> table=a org_table=t type=8 length=20
