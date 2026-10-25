@@ -2141,16 +2141,16 @@ bool RestCatalog::tableHasSnapshot(const std::string & namespace_name, const std
         return false;
     });
 
-    const auto state_snapshot = state.get();
-    const std::string endpoint
-        = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-
     try
     {
         fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_throw,
         {
             throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected read-back failure");
         });
+
+        const auto state_snapshot = state.get();
+        const std::string endpoint
+            = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
 
         auto buf = createReadBuffer(
             *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
