@@ -2,16 +2,21 @@
 #include <cmath>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -105,11 +110,52 @@ bool isSupportedDictGetFunction(const String & name)
 bool isSafePassThroughQuery(const QueryNode & query_node)
 {
     if (query_node.hasGroupBy() || query_node.isGroupByWithTotals() || query_node.isDistinct() || query_node.hasHaving()
-        || query_node.hasWindow() || query_node.hasQualify() || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy())
+        || query_node.hasWindow() || query_node.hasQualify() || query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy()
+        || query_node.hasInterpolate())
         return false;
+
+    /// `WITH FILL` synthesizes rows where the projected columns hold their types' defaults instead of
+    /// the result of their defining expressions.
+    for (const auto & sort_node : query_node.getOrderBy().getNodes())
+    {
+        if (sort_node->as<const SortNode &>().withFill())
+            return false;
+    }
 
     auto join_tree_node_type = query_node.getJoinTree().getNodeType();
     return join_tree_node_type == QueryTreeNodeType::TABLE || join_tree_node_type == QueryTreeNodeType::QUERY;
+}
+
+/// Collect the table expressions of a join tree whose columns hold values read from their source in
+/// every output row. The side of an outer join that is extended with defaults (or `NULL`s) for
+/// unmatched rows is excluded: there a column defined as `dictGet(..., key)` holds the default
+/// value instead of the result of `dictGet` for the default key.
+void collectRowPreservingTableExpressions(const QueryTreeNodePtr & node, std::unordered_set<const IQueryTreeNode *> & result)
+{
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::TABLE:
+        case QueryTreeNodeType::TABLE_FUNCTION:
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+            result.insert(node.get());
+            return;
+        case QueryTreeNodeType::ARRAY_JOIN:
+            collectRowPreservingTableExpressions(node->as<const ArrayJoinNode &>().getTableExpressionNode(), result);
+            return;
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = node->as<const JoinNode &>();
+            const auto kind = join_node.getKind();
+            if (isInner(kind) || isCrossOrComma(kind) || isLeft(kind))
+                collectRowPreservingTableExpressions(join_node.getLeftTableExpressionNode(), result);
+            if (isInner(kind) || isCrossOrComma(kind) || isRight(kind))
+                collectRowPreservingTableExpressions(join_node.getRightTableExpressionNode(), result);
+            return;
+        }
+        default:
+            return;
+    }
 }
 
 /// Resolving a view's inner query (buildQueryTree + full QueryAnalyzer::resolve) is expensive, and
@@ -677,8 +723,27 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>;
     using Base::Base;
 
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (!query_scopes.empty() && parent.get() == query_scopes.back().query_node)
+            query_scopes.back().current_section = child.get();
+        return true;
+    }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (!query_scopes.empty() && node.get() == query_scopes.back().query_node)
+            query_scopes.pop_back();
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>())
+        {
+            query_scopes.push_back(QueryScope{.query_node = node.get()});
+            return;
+        }
+
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
@@ -708,7 +773,7 @@ public:
         Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info;
 
-        if (arguments[1]->as<ConstantNode>())
+        if (arguments[1]->as<ConstantNode>() && canLookThroughColumn(arguments[0]))
         {
             if (auto info_lhs = tryParseDictFunctionCall(arguments[0], getContext(), view_inspection_cache))
             {
@@ -717,7 +782,7 @@ public:
             }
         }
 
-        if (dict_side == Side::NONE && arguments[0]->as<ConstantNode>())
+        if (dict_side == Side::NONE && arguments[0]->as<ConstantNode>() && canLookThroughColumn(arguments[1]))
         {
             if (auto info_rhs = tryParseDictFunctionCall(arguments[1], getContext(), view_inspection_cache))
             {
@@ -1060,6 +1125,45 @@ public:
     }
 
 private:
+    struct QueryScope
+    {
+        const IQueryTreeNode * query_node = nullptr;
+        /// The child of `query_node` that is being visited, e.g. its `WHERE` or projection.
+        const IQueryTreeNode * current_section = nullptr;
+    };
+
+    /// A comparison with a column of a view or a subquery is rewritten into a comparison with the key
+    /// column of the same source. This is equivalent only where the key column is available and every
+    /// row of the source column holds the result of its `dictGet`. So the rewrite is limited to `WHERE`
+    /// and `PREWHERE` of the query that reads the source: after aggregation the key column is not
+    /// available, and on the side of an outer join extended with defaults the source column holds the
+    /// default value. A direct `dictGet` call is not restricted: its key expression is evaluated in place.
+    bool canLookThroughColumn(const QueryTreeNodePtr & node) const
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return true;
+
+        if (query_scopes.empty())
+            return false;
+
+        const auto & scope = query_scopes.back();
+        const auto & query_node = scope.query_node->as<const QueryNode &>();
+        if (!scope.current_section
+            || (scope.current_section != query_node.getWhere().get() && scope.current_section != query_node.getPrewhere().get()))
+            return false;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source)
+            return false;
+
+        std::unordered_set<const IQueryTreeNode *> row_preserving_table_expressions;
+        collectRowPreservingTableExpressions(query_node.getJoinTreeNode(), row_preserving_table_expressions);
+        return row_preserving_table_expressions.contains(column_source.get());
+    }
+
+    std::vector<QueryScope> query_scopes;
+
     bool isCreateTemporaryTableGranted()
     {
         if (!create_temporary_table_granted.has_value())
