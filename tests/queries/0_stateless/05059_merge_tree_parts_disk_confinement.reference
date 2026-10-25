@@ -10,6 +10,9 @@ no directory
 -- the compatibility name of a local object storage outside the base directory
 BAD_ARGUMENTS
 no directory
+-- a wrapper disk type with an object_storage_type
+cannot read from a disk of type `cache, object_storage_type = local`
+cannot read from a disk of type `encrypted, object_storage_type = local`
 -- the metadata of an object storage disk outside the base directory
 BAD_ARGUMENTS
 no directory

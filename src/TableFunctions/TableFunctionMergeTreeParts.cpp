@@ -557,8 +557,12 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// `object_storage_type` when it is given and the `type` itself otherwise, the same way
         /// `ObjectStorageFactory::create` picks it. `object_storage` is only a wrapper, so it always
         /// needs the `object_storage_type`.
+        /// `DiskFactory` dispatches on the `type`, so it must be a direct disk or object storage type on its
+        /// own: a wrapper such as `cache` or `encrypted` reads from another disk, which is not the one described,
+        /// whatever `object_storage_type` says.
+        const bool direct_type = type == "object_storage" || source_for_backend(type).has_value();
         const auto & backend = (type == "local" || object_storage_type.empty()) ? type : object_storage_type;
-        source_access = source_for_backend(backend);
+        source_access = direct_type ? source_for_backend(backend) : std::nullopt;
         if (!source_access)
             throw_bad_argument(disk_arg_num, fmt::format(
                 "table function `{}` cannot read from a disk of type `{}`",

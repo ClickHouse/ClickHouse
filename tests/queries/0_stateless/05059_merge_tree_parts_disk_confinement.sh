@@ -47,6 +47,18 @@ echo "-- the compatibility name of a local object storage outside the base direc
 read_empty "type = local_blob_storage, path = '${OUTSIDE_ROOT}'"
 check_outside
 
+# `DiskFactory` dispatches on the `type`, so a wrapper reads from another disk whatever `object_storage_type` says.
+echo "-- a wrapper disk type with an object_storage_type"
+for wrapper in cache encrypted
+do
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM mergeTreeParts(
+            structure('id Int64'),
+            parts(),
+            disk(type = ${wrapper}, object_storage_type = local, metadata_type = plain, disk = default, path = '${INSIDE_ROOT}${wrapper}/'),
+            table_settings(index_granularity_bytes = ${INDEX_GRANULARITY_BYTES}))" 2>&1 | grep -o "cannot read from a disk of type \`${wrapper}, object_storage_type = local\`" | head -1
+done
+
 echo "-- the metadata of an object storage disk outside the base directory"
 read_empty "type = object_storage, object_storage_type = local, metadata_type = local, path = '${INSIDE_ROOT}', metadata_path = '${OUTSIDE_ROOT}'"
 check_outside
