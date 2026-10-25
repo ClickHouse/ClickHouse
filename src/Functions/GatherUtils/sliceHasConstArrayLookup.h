@@ -413,7 +413,7 @@ void searchThenLookup(
         allowed_search_work += lookup_work_per_wasted_search_work * saved_work;
         return searched;
     };
-    auto add_lookup_work = [&](size_t lookup_work) ALWAYS_INLINE { allowed_search_work += lookup_work; };
+    auto add_lookup_work = [&](size_t lookup_work) ALWAYS_INLINE { allowed_search_work += static_cast<Int64>(lookup_work); };
     lookup_rows(row, try_search, add_lookup_work);
 }
 
