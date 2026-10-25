@@ -1728,6 +1728,37 @@ private:
             }
         }
 
+        /// A NULL is equal only to another NULL and sorts after every non-NULL value.
+        auto apply_null_order = [&]()
+        {
+            for (size_t row = 0; row < rows; ++row)
+            {
+                bool left_is_null = left.column->isNullAt(row);
+                bool right_is_null = right.column->isNullAt(row);
+                if (left_is_null && right_is_null)
+                    verdict[row] = 0;
+                else if (left_is_null || right_is_null)
+                    verdict[row] = (order_is_less ? right_is_null : left_is_null) ? 1 : -1;
+            }
+        };
+
+        /// A `Nullable` tuple is compared as the tuple of its non-NULL values, which goes element by element below,
+        /// and then the NULLs of the tuple itself are applied.
+        if ((left.type->isNullable() || right.type->isNullable()) && !is_always_null(left.type) && !is_always_null(right.type)
+            && isTuple(removeNullable(left.type)) && isTuple(removeNullable(right.type)))
+        {
+            auto remove_nullable = [](const ColumnWithTypeAndName & argument) -> ColumnWithTypeAndName
+            {
+                ColumnPtr column = argument.column->convertToFullColumnIfConst();
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+                    return {nullable->getNestedColumnPtr(), removeNullable(argument.type), argument.name};
+                return {column, argument.type, argument.name};
+            };
+            compareElementsForOrder(equals_resolver, order_resolver, remove_nullable(left), remove_nullable(right), rows, verdict);
+            apply_null_order();
+            return;
+        }
+
         /// The comparison of tuples may return `Nullable(UInt8)` (when an element is `Nullable` or `Dynamic`), which
         /// does not tell which element is NULL, so tuples are compared element by element, lexicographically.
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left.type.get());
@@ -1792,15 +1823,7 @@ private:
             }
         }
 
-        for (size_t row = 0; row < rows; ++row)
-        {
-            bool left_is_null = left.column->isNullAt(row);
-            bool right_is_null = right.column->isNullAt(row);
-            if (left_is_null && right_is_null)
-                verdict[row] = 0;
-            else if (left_is_null || right_is_null)
-                verdict[row] = (order_is_less ? right_is_null : left_is_null) ? 1 : -1;
-        }
+        apply_null_order();
     }
 
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
