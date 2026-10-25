@@ -28,6 +28,9 @@ DEPENDENCIES = {
     ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
+    ('src', 'clickhouse_source_headers'): ([
+        '//base:common', '//src/Common', '//src/Parsers:headers', '@clickhouse_mongo_cxx_driver//:_bsoncxx',
+    ], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
     ('base/poco/Foundation', '_poco_foundation'): ([], [UNWIND], []),
     ('base/widechar_width', 'widechar_width'): ([UNWIND], [], []),
@@ -38,6 +41,7 @@ DEPENDENCIES = {
     ('contrib/libmetrohash', '_metrohash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('contrib/murmurhash', '_murmurhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
+    ('programs/keeper', 'clickhouse-keeper-lib'): ([], ['//src/Dictionaries:clickhouse_dictionaries'], []),
     ('src/Dictionaries', 'headers'): ([SPARSEHASH], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([

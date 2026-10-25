@@ -2122,7 +2122,6 @@ _DBMS_0_PRIVATE_SRC_HEADERS = _PRIVATE_DBMS_0_HEADERS + [
 ]
 
 _DBMS_IMPLEMENTATION_DEPS_BEFORE_ARCH = [
-    "//src/Parsers:clickhouse_parsers",
     "@clickhouse_jemalloc//:_jemalloc",
     "@clickhouse_llvm_project//:LLVMPasses",
     "//contrib/prometheus-protobufs-cmake:_prometheus_protobufs",
@@ -3081,6 +3080,7 @@ ch_cc_library(
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//src/AggregateFunctions:aggregate_api",
+        "//src/Parsers:clickhouse_parsers",
     ],
 )
 
@@ -4427,10 +4427,8 @@ cc_library(
     ],
     deps = [
         ":core_types",
-        "//base:common",
         "//src/Access/Common:headers",
         "//src/AggregateFunctions:headers",
-        "//src/Common",
         "//src/Common/ZooKeeper:headers",
         "//src/Common/mysqlxx",
         "//src/Dictionaries:headers",
@@ -4441,12 +4439,10 @@ cc_library(
         "//src/Functions/URL:clickhouse_functions_url__compile_1",
         "//src/Functions/array:headers",
         "//src/Loggers:headers",
-        "//src/Parsers:headers",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
         "//src/Storages/System:headers",
         "//src/TableFunctions:headers",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
-        "@clickhouse_mongo_cxx_driver//:_bsoncxx",
         "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//src/Common:memory_tracking_api",
     ],

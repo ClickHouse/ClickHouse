@@ -18,6 +18,7 @@ ch_cc_library(
     additional_compiler_inputs = ["//bazel:gen/embedded/programs/keeper/keeper_embedded.xml"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/Dictionaries:clickhouse_dictionaries",
         "//bazel:clickhouse_config_headers",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
@@ -43,8 +44,5 @@ ch_cc_library(
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
-    ],
-    deps = [
-        "//src/Dictionaries:clickhouse_dictionaries",
     ],
 )
