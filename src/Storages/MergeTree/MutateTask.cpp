@@ -4748,7 +4748,11 @@ bool MutateTask::prepare()
         const bool part_has_only_rows_ttl = source_ttl_infos.table_ttl.min != 0
             && source_ttl_infos.columns_ttl.empty() && source_ttl_infos.rows_where_ttl.empty()
             && source_ttl_infos.moves_ttl.empty() && source_ttl_infos.recompression_ttl.empty()
-            && source_ttl_infos.group_by_ttl.empty();
+            && source_ttl_infos.group_by_ttl.empty()
+            /// `MergeTreeDataPartTTLInfo::update` starts `max` at zero, so for a part whose TTL values are
+            /// all negative (before the epoch) the stored `max` is that zero sentinel rather than the real
+            /// maximum. Shifting it would record a bogus upper bound, so such a part is not eligible.
+            && source_ttl_infos.table_ttl.max > 0;
 
         /// The delta proof below requires the part's stored TTL expression to shift the same column that
         /// the new TTL reads under the CURRENT column definitions, and then shifts the part's stored TTL
