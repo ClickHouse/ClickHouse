@@ -248,9 +248,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
-    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
     extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
     extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
@@ -535,11 +532,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
-
-    getIcebergManifestDecodeThreadPool().initialize(
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
     getAIRequestThreadPool().initialize(
         server_settings[ServerSetting::ai_function_max_thread_pool_size],

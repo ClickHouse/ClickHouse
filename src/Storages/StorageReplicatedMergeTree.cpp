@@ -6706,7 +6706,8 @@ bool StorageReplicatedMergeTree::optimize(
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
+                            /*storage_id_=*/getStorageID(),
+                            /*merge_forced_horizontal_=*/deduplicate || cleanup
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
