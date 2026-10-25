@@ -922,13 +922,20 @@ String DatabaseDataLake::getNewTableLocation(
     const String & namespace_name,
     const String & table_name) const
 {
-    /// The table is read back from `storage_endpoint` with the bucket of the location as a path prefix,
+    /// The table is read back from `storage_endpoint` with the bucket or container of the location as a path prefix,
     /// see `getStorageEndpointForTable`. Returns `location` rewritten to the objects it is reopened at.
     auto get_reopened_location = [&](const String & location) -> String
     {
-        if (settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
-            || settings[DatabaseDataLakeSetting::storage_uri_style].value == S3UriStyle::VIRTUAL_HOSTED
-            || DataLake::parseStorageTypeFromLocation(location) != DatabaseDataLakeStorageType::S3)
+        if (settings[DatabaseDataLakeSetting::storage_endpoint].value.empty())
+            return location;
+
+        const auto storage_type = DataLake::parseStorageTypeFromLocation(location);
+        if (storage_type == DatabaseDataLakeStorageType::S3)
+        {
+            if (settings[DatabaseDataLakeSetting::storage_uri_style].value == S3UriStyle::VIRTUAL_HOSTED)
+                return location;
+        }
+        else if (storage_type != DatabaseDataLakeStorageType::Azure)
             return location;
 
         auto table_metadata = DataLake::TableMetadata().withLocation();
@@ -942,6 +949,26 @@ String DatabaseDataLake::getNewTableLocation(
             path.erase(0, 1);
         while (path.ends_with('/'))
             path.pop_back();
+
+        if (storage_type == DatabaseDataLakeStorageType::Azure)
+        {
+            /// Same split as in the Azure table engine: `abfss://<container>@<host>/<path>`
+            /// or `https://<host>/<container>/<path>`.
+            String container = reopened_uri.getUserInfo();
+            if (container.empty())
+            {
+                auto slash = path.find('/');
+                container = path.substr(0, slash);
+                path = slash == String::npos ? "" : path.substr(slash + 1);
+            }
+            /// The account is the first label of the host; its blob and dfs endpoints address the same objects.
+            auto account_of = [](const String & host) { return host.substr(0, host.find('.')); };
+            String host = reopened_uri.getHost();
+            if (String location_host = Poco::URI(location).getHost(); account_of(location_host) == account_of(host))
+                host = std::move(location_host);
+            return fmt::format("abfss://{}@{}/{}", container, host, path);
+        }
+
         /// An HTTP endpoint names the bucket in the first path component, an `s3://` one in the authority.
         if (reopened_uri.getScheme() != "http" && reopened_uri.getScheme() != "https")
             path = reopened_uri.getAuthority() + "/" + path;
@@ -979,8 +1006,8 @@ String DatabaseDataLake::getNewTableLocation(
             if (without_scheme(reopened_location) != without_scheme(location))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Table location '{}' derived from the default base location is reopened under `storage_endpoint` ('{}') "
-                    "as '{}', so the table would be unreadable immediately after creation. Make the bucket of the default "
-                    "base location match `storage_endpoint`",
+                    "as '{}', so the table would be unreadable immediately after creation. Make the bucket or container of the "
+                    "default base location match `storage_endpoint`",
                     location, settings[DatabaseDataLakeSetting::storage_endpoint].value, reopened_location);
         }
         return location;

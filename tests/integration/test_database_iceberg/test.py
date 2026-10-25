@@ -3147,6 +3147,32 @@ def test_create_table_with_engine_virtual_hosted_location_rejected(started_clust
     assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
 
 
+def test_create_table_azure_base_location_outside_storage_endpoint_rejected(started_cluster):
+    # The table would be reopened in the container of `storage_endpoint` with the other container as a path prefix.
+    node = started_cluster.instances["node1"]
+
+    namespace = f"test_ns_azure_container_{uuid.uuid4().hex[:8]}"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        {
+            "storage_endpoint": "abfss://container-a@account.dfs.core.windows.net",
+            "default_base_location": "abfss://container-b@account.dfs.core.windows.net/base",
+        },
+    )
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.t` (id Int64) ENGINE = IcebergAzure",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "is reopened under `storage_endpoint`" in error, error
+    assert "abfss://container-a@account.dfs.core.windows.net/container-b/base/" in error, error
+
+    catalog = load_catalog_impl(started_cluster)
+    assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
+
+
 def test_drop_table_purge_with_query_setting(started_cluster):
     node = started_cluster.instances["node1"]
 
