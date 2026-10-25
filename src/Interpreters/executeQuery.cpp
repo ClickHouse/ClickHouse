@@ -3827,13 +3827,23 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// the pair are still sent to the client of the outer query, like those of the outer query itself.
         auto execute_internal = [&](const String & internal_query)
         {
-            auto internal_context = make_internal_context();
-            auto internal_thread_group = ThreadGroup::createForQuery(internal_context);
-            if (const auto outer_thread_group = CurrentThread::getGroup())
+            /// The context and the thread group are allocated while the thread is still on the outer query's
+            /// memory tracker, so an injected fault there (`memory_tracker_fault_probability`, which can hit
+            /// an ordinary allocation with `min_allocation_size_to_throw_on_memory_limit = 1` and
+            /// `max_untracked_memory = 0`) would fail the recovery `ATTACH` before it starts and leave the
+            /// table detached. The allocations stay accounted; only the exceptions are suppressed.
+            ContextMutablePtr internal_context;
+            ThreadGroupPtr internal_thread_group;
             {
-                const auto outer_shared_data = outer_thread_group->getSharedData();
-                if (const auto logs_queue = outer_shared_data.logs_queue_ptr.lock())
-                    internal_thread_group->attachInternalTextLogsQueue(logs_queue, outer_shared_data.client_logs_level);
+                LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+                internal_context = make_internal_context();
+                internal_thread_group = ThreadGroup::createForQuery(internal_context);
+                if (const auto outer_thread_group = CurrentThread::getGroup())
+                {
+                    const auto outer_shared_data = outer_thread_group->getSharedData();
+                    if (const auto logs_queue = outer_shared_data.logs_queue_ptr.lock())
+                        internal_thread_group->attachInternalTextLogsQueue(logs_queue, outer_shared_data.client_logs_level);
+                }
             }
             ThreadGroupSwitcher thread_group_switcher(internal_thread_group, getThreadName(), /*allow_existing_group=*/ true);
             auto io = executeQuery(internal_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true, .ignore_quota = true}).second;
