@@ -504,8 +504,7 @@ String ReplicatedMergeTreeLogEntryData::toString() const
 namespace
 {
 
-/// `create_time` is written as wall-clock time of the server time zone, so it cannot tell the two occurrences of the hour
-/// repeated at the end of DST apart.
+/// `create_time` is written as wall-clock time of the server time zone, which is ambiguous in the hour repeated at the end of DST.
 bool isInRepeatedHour(time_t create_time)
 {
     const auto & time_zone = DateLUT::serverTimezoneInstance();
