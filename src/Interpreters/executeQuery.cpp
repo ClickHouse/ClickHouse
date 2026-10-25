@@ -1415,6 +1415,13 @@ struct CollectTablesData
     /// current database.
     String default_database;
 
+    /// The database that is actually the current one while the children are analyzed, which is what
+    /// `joinGet` resolves an unqualified name against: the view's own database inside the `SELECT` of a
+    /// refreshable materialized view. Unlike `default_database`, this is not set for the mutation carriers,
+    /// whose interpreters only qualify the names and keep the session's current database. Empty everywhere
+    /// else, which keeps the session's current database.
+    String current_database;
+
     /// The dictionaries a `dictGet`-family function names, as written in the query (the database is empty
     /// for an unqualified name). `FunctionDictHelper::getDictionary` checks `dictGet` on each of them when
     /// the function is built, so the access preflight in `reattachTablesUsedInQuery` checks it too.
@@ -2787,6 +2794,25 @@ void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & ali
     }
 }
 
+/// Whether an identifier in `ast`, outside the `excluded` subtree, may refer to `name`: a CTE name or a
+/// scalar alias, including through a compound identifier such as `name.field`. An over-approximation,
+/// because an identifier of the same name may also refer to a column or a table.
+bool astMayReferenceName(const ASTPtr & ast, const IAST * excluded, const String & name)
+{
+    if (ast.get() == excluded)
+        return false;
+
+    /// `ASTTableIdentifier` derives from `ASTIdentifier`, which `as` does not match.
+    if (const auto * id = dynamic_cast<const ASTIdentifier *>(ast.get()))
+        if (id->name() == name || id->name().starts_with(name + ".") || id->shortName() == name)
+            return true;
+
+    for (const auto & child : ast->children)
+        if (astMayReferenceName(child, excluded, name))
+            return true;
+    return false;
+}
+
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
 /// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
@@ -2914,6 +2940,23 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                 body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
 
                 const auto * with_element = with_child->as<ASTWithElement>();
+
+                /// The analyzer registers the `WITH` definitions for a later lookup and analyzes only the
+                /// referenced ones, so `WITH unused AS (SELECT x FROM t) SELECT 1` never reads `t`. Collecting
+                /// such a definition would reattach a table the query does not use, while not collecting it
+                /// would be wrong for the old analyzer, which may still evaluate it. So a query with an unused
+                /// definition that names any object skips the hook.
+                const String definition_name = with_element ? with_element->name : with_child->tryGetAlias();
+                if (!definition_name.empty() && !astMayReferenceName(ast, with_child.get(), definition_name))
+                {
+                    CollectTablesData unused_data(data.context);
+                    unused_data.default_database = data.default_database;
+                    unused_data.current_database = data.current_database;
+                    collectTablesInQuery(with_child, unused_data, body_ctes, active_aliases);
+                    if (!unused_data.tables.empty() || !unused_data.dictionaries.empty() || unused_data.has_unverifiable_reference)
+                        data.has_unverifiable_reference = true;
+                    continue;
+                }
 
                 if (!select->recursive_with || !with_element)
                 {
@@ -3113,10 +3156,13 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             if (create->is_materialized_view && create->refresh_strategy && !create->getDatabase().empty())
             {
                 const auto saved_default_database = data.default_database;
+                const auto saved_current_database = data.current_database;
                 data.default_database = create->getDatabase();
+                data.current_database = create->getDatabase();
                 for (const auto & child : ast->children)
                     collectTablesInQuery(child, data, active_ctes, active_aliases);
                 data.default_database = saved_default_database;
+                data.current_database = saved_current_database;
                 return;
             }
         }
@@ -3226,10 +3272,10 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             else if (functionIsJoinGet(function->name))
             {
                 /// `getJoin` resolves the name with `Context::resolveStorageID` (`ResolveAll`) against the
-                /// session's current database — also inside mutation expressions, whose default database
+                /// current database — also inside mutation expressions, whose default database
                 /// `AddDefaultDatabaseVisitor` does not apply to `joinGet` — and no CTE shadows it.
                 const auto saved_default_database = data.default_database;
-                data.default_database.clear();
+                data.default_database = data.current_database;
                 data.addTableIfNotEmpty(object_name->database, object_name->table, /* active_ctes */ {}, Context::ResolveAll, AccessType::SELECT);
                 data.default_database = saved_default_database;
             }
@@ -3375,7 +3421,18 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
         if (!database || !database->supportsDetachingTables())
             continue;
-        if (castStorage<const StorageView>(database->tryGetTable(table.id.getTableName(), context), DeferredTable::Skip))
+        const auto storage = database->tryGetTable(table.id.getTableName(), context);
+        if (castStorage<const StorageView>(storage, DeferredTable::Skip))
+            return;
+
+        /// The storages that read other tables (`Buffer`, `Merge`, `Distributed`, `Alias`, ...) check the
+        /// access to them only in their `read`, and those tables are not collected either, so such a read
+        /// skips the hook as well. A lazily loaded table that is not loaded yet may be one of them, and
+        /// telling it would require loading it, so it skips the hook too.
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+            proxy && proxy->isLazyStandIn() && !proxy->tryGetNested())
+            return;
+        if (storage && storage->readsFromOtherTables())
             return;
     }
 
@@ -3741,6 +3798,11 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                             ProjectionDescription::getProjectionFromAST(
                                 projection, columns, /* partition_key */ nullptr, validation_context, LoadingStrictnessLevel::ATTACH,
                                 /* attach_short_syntax */ true);
+
+                    /// The constraints are analyzed by `InterpreterCreateQuery::getConstraintsDescription` on
+                    /// `ATTACH` as well, executing their scalar subqueries.
+                    if (create->columns_list->constraints)
+                        InterpreterCreateQuery::getConstraintsDescription(create->columns_list->constraints, columns, validation_context);
 
                     /// The `MergeTree` keys are rebuilt by `registerStorageMergeTree` under the same settings,
                     /// and a key set with `ALTER ... MODIFY ORDER BY` under a query-level setting can be
