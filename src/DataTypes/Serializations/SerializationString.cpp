@@ -235,10 +235,16 @@ catch (...)
 }
 
 /// Reads one string value of a known size from the buffer and appends it to `data` (updating `offset`)
-/// if it matches the filter; a non-matching value is consumed from the buffer but not appended.
-/// Returns true if the value matched.
+/// if it matches the filter; a non-matching value is consumed from the buffer but not appended
+/// (only accounted in `skipped`, if it is set, with its size inline or not). Returns true if the value matched.
 static ALWAYS_INLINE bool readFilteredStringValue(
-    ColumnString::Chars & data, size_t & offset, ReadBuffer & istr, size_t size, const StringValueFilter & filter)
+    ColumnString::Chars & data,
+    size_t & offset,
+    ReadBuffer & istr,
+    size_t size,
+    const StringValueFilter & filter,
+    StringValuesSkippedByFilter * skipped,
+    bool size_is_inline)
 {
     /// Note: `istr.available()` instead of `istr.position() + size <= istr.buffer().end()`,
     /// because the buffer may be empty and its pointers null, and offsetting a null pointer is UB.
@@ -253,6 +259,8 @@ static ALWAYS_INLINE bool readFilteredStringValue(
             memcpy(&data[offset], istr.position(), size);
             offset += size;
         }
+        else if (skipped)
+            skipped->add(istr.position(), size, size_is_inline);
         istr.position() += size;
         return matched;
     }
@@ -265,6 +273,8 @@ static ALWAYS_INLINE bool readFilteredStringValue(
     bool matched = filter.match(reinterpret_cast<const char *>(&data[offset]), size);
     if (matched)
         offset += size;
+    else if (skipped)
+        skipped->add(reinterpret_cast<const char *>(&data[offset]), size, size_is_inline);
     return matched;
 }
 
@@ -277,12 +287,14 @@ static ALWAYS_INLINE bool readFilteredStringValue(
 /// buffer of concatenated values is scanned for the needle only once, and the found occurrences
 /// are mapped to values. This is much faster than a search per value, and together with the
 /// skipped copying it is faster than reading all the values.
-static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
+/// Returns the total size of the replaced values, and accounts them in `skipped` if it is set.
+static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
     ColumnString::Chars & data,
     ColumnString::Offsets & offsets,
     ReadBuffer & istr,
     size_t first_row,
-    const StringValueFilter & filter)
+    const StringValueFilter & filter,
+    StringValuesSkippedByFilter * skipped)
 {
     const size_t num_rows = offsets.size();
     size_t offset = data.size();
@@ -307,6 +319,11 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
     size_t original_pos = offset;
     /// Values in the current buffer that contain the bulk-scanned needle.
     std::vector<size_t> matched_values;
+
+    /// The values of the first rows are measured, see `StringValuesSkippedByFilter::rows_to_measure`.
+    const size_t measure_end = skipped ? first_row + std::min(skipped->rows_to_measure, num_rows - first_row) : first_row;
+    if (skipped)
+        skipped->rowsRead(num_rows - first_row);
 
     size_t i = first_row;
     try
@@ -333,7 +350,9 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 ++values_checked;
 
                 /// An empty string never matches the filter.
-                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter))
+                if (value_size == 0
+                    || !readFilteredStringValue(
+                        data, offset, istr, value_size, filter, i < measure_end ? skipped : nullptr, /* size_is_inline = */ false))
                 {
                     ++values_replaced;
                     bytes_skipped += value_size;
@@ -382,6 +401,8 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
                 {
                     ++bulk_values_replaced;
                     bulk_bytes_skipped += value_size;
+                    if (i < measure_end)
+                        skipped->add(value_data, value_size, /* size_is_inline = */ false);
                 }
 
                 offsets[i] = offset;
@@ -401,19 +422,31 @@ static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
     filter.updateStatsOfBulkScan(bulk_values_checked, bulk_values_replaced, bulk_bytes_skipped, bulk_values_checked_individually);
+    return bytes_skipped + bulk_bytes_skipped;
 }
 
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
 /// See the comment for `StringValueFilter`: it is only correct because the rows with non-matching values
 /// are guaranteed to be filtered out later by PREWHERE.
-static NO_INLINE void deserializeBinaryFiltered(
-    ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit, const StringValueFilter & filter)
+/// Returns the total size of the replaced values, and accounts them in `skipped` if it is set.
+static NO_INLINE size_t deserializeBinaryFiltered(
+    ColumnString::Chars & data,
+    ColumnString::Offsets & offsets,
+    ReadBuffer & istr,
+    size_t limit,
+    const StringValueFilter & filter,
+    StringValuesSkippedByFilter * skipped)
 try
 {
     size_t offset = data.size();
     size_t values_checked = 0;
     size_t values_replaced = 0;
     size_t bytes_skipped = 0;
+
+    /// The values of the first rows are measured, see `StringValuesSkippedByFilter::rows_to_measure`.
+    const size_t measure_end = skipped ? std::min(skipped->rows_to_measure, limit) : 0;
+    if (skipped)
+        skipped->rowsRead(limit);
 
     for (size_t i = 0; i < limit; ++i)
     {
@@ -433,7 +466,7 @@ try
         ++values_checked;
 
         /// An empty string never matches the filter.
-        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter))
+        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter, i < measure_end ? skipped : nullptr, /* size_is_inline = */ true))
         {
             ++values_replaced;
             bytes_skipped += size;
@@ -444,6 +477,7 @@ try
 
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
+    return bytes_skipped;
 }
 catch (...)
 {
@@ -626,7 +660,10 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
         auto & column_string = assert_cast<ColumnString &>(column);
 
         column_string.getOffsets().reserve(column_string.getOffsets().size() + limit);
-        deserializeBinaryFiltered(column_string.getChars(), column_string.getOffsets(), *stream, limit, *settings.string_value_filter);
+        const size_t bytes_skipped = deserializeBinaryFiltered(
+            column_string.getChars(), column_string.getOffsets(), *stream, limit, *settings.string_value_filter, settings.string_values_skipped_by_filter);
+        if (settings.string_values_skipped_by_filter)
+            settings.string_values_skipped_by_filter->bytes += bytes_skipped;
 
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         /// Note: we intentionally do not update the average value size hint from a filtered column.
@@ -1173,7 +1210,10 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
+        const size_t bytes_skipped = deserializeBinaryFilteredWithKnownSizes(
+            data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter, settings.string_values_skipped_by_filter);
+        if (settings.string_values_skipped_by_filter)
+            settings.string_values_skipped_by_filter->bytes += bytes_skipped;
     }
     else
     {

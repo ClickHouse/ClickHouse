@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringSearcher.h>
+#include <IO/WriteHelpers.h>
 
 #include <cstring>
 
@@ -204,6 +205,16 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
     if (total_checked_individually >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
         && total_bytes_skipped < total_checked_individually * MIN_AVG_BYTES_SKIPPED_PER_VALUE)
         disabled.store(true, std::memory_order_relaxed);
+}
+
+void StringValuesSkippedByFilter::writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline)
+{
+    measured_bytes += size;
+    if (size_is_inline)
+        writeVarUInt(size, *values_compressed_size_measurement);
+    else
+        writeBinaryLittleEndian(static_cast<UInt64>(size), *sizes_compressed_size_measurement);
+    values_compressed_size_measurement->write(data, size);
 }
 
 }

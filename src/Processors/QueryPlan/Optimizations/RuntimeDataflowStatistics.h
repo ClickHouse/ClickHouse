@@ -12,6 +12,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/StringValueFilter.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
@@ -127,6 +128,10 @@ struct RuntimeDataflowStatisticsBlock
     struct Statistics
     {
         std::atomic_size_t counter{0};
+        /// The blocks counted before they were read and given back because they had no rows, by whether they were
+        /// sampled, see `takeInputBlockReadFromDisk`.
+        std::atomic_size_t sampled_blocks_given_back{0};
+        std::atomic_size_t not_sampled_blocks_given_back{0};
 
         std::mutex mutex;
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
@@ -230,15 +235,29 @@ public:
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
+    /// `string_values_skipped_by_filters` are the values read from disk but replaced with empty strings
+    /// in `input_columns` (see `StringValueFilter`), by column name.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,
+        const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
+
+    /// The number of rows to sample at most from a block read with `max_rows` requested: at least as many as are sampled
+    /// from a block of `max_rows`, and from a block of a granule or less.
+    static size_t maxRowsToSample(size_t max_rows);
+
+    /// For a read that decides whether to sample a block before reading it, and passes the decision to
+    /// `recordInputColumns` as `should_continue_sampling`: counts the next block read from disk and returns whether
+    /// it is sampled. The block is given back if it has no rows, so that it does not use up the blocks to sample: the
+    /// next block that is read takes its place, with the same decision, since the counter may be already past it.
+    bool takeInputBlockReadFromDisk();
+    void giveBackInputBlockReadFromDisk(bool sampled);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
