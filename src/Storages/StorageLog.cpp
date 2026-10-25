@@ -744,7 +744,7 @@ namespace
     }
 
     /// Like the Variant prefix, the codebook of `Quantized('product')` is written per insert but read once per source.
-    /// A column inferred from `AS SELECT` keeps this serialization without the codec, so the serialization is checked.
+    /// A column inferred from `AS SELECT` keeps the codec's serialization in its type, but not the codec itself.
     void checkSupportedCodecs(const ColumnsDescription & columns, const String & storage_name)
     {
         for (const auto & column : columns)
