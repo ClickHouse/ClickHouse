@@ -33,6 +33,15 @@ J: DELETE WHERE, subcolumn also a skip index input
 K: rows TTL on the subcolumn, subcolumn also in the sorting key
 200	100
 100	0
+L: DELETE WHERE, the whole predicate also in the sorting key
+200	100
+100	0
+M: DELETE WHERE, the whole predicate also a skip index, part TTL info written at insert
+200	100
+100	0
+N: DELETE WHERE typed by the column queries read, JSON declared first
+200	0
+200	0
 merge algorithms
 t_a	Horizontal
 t_b	Vertical

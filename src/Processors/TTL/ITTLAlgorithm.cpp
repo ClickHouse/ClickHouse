@@ -47,8 +47,9 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
         return {};
     };
 
-    auto result_input = listed_subcolumn(result_column);
-    if (block.has(result_column) && !(result_input && block.has(result_input->getNameInStorage())))
+    bool reads_owner = std::ranges::any_of(
+        inputs, [&](const NameAndTypePair & input) { return input.isSubcolumn() && block.has(input.getNameInStorage()); });
+    if (block.has(result_column) && !reads_owner)
     {
         /// When the TTL expression is a bare source column (e.g. `TTL ts`), the block holds
         /// it in the original type, which may differ from the type the analyzed expression

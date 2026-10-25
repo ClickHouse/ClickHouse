@@ -12,6 +12,9 @@ DROP TABLE IF EXISTS t_h;
 DROP TABLE IF EXISTS t_i;
 DROP TABLE IF EXISTS t_j;
 DROP TABLE IF EXISTS t_k;
+DROP TABLE IF EXISTS t_l;
+DROP TABLE IF EXISTS t_m;
+DROP TABLE IF EXISTS t_n;
 
 SELECT 'A: DELETE WHERE, horizontal merge';
 CREATE TABLE t_a (id UInt64, `j.m` Map(String, String), j JSON(`m.keys` Array(String)), ts DateTime('UTC') DEFAULT '2000-01-01', v String)
@@ -151,6 +154,43 @@ SYSTEM START MERGES t_k;
 OPTIMIZE TABLE t_k FINAL;
 SELECT count(), countIf(j.m.ts < '2050-01-01') FROM t_k;
 
+SELECT 'L: DELETE WHERE, the whole predicate also in the sorting key';
+CREATE TABLE t_l (id UInt64, `j.m` Map(String, String), j JSON(`m.keys` Array(String)), ts DateTime('UTC') DEFAULT '2000-01-01', v String)
+ENGINE = MergeTree ORDER BY (id, has(j.m.keys, 'a')) TTL ts + INTERVAL 1 DAY DELETE WHERE has(j.m.keys, 'a')
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 10, ttl_only_drop_parts = 0, enable_vertical_merge_algorithm = 0;
+SYSTEM STOP MERGES t_l;
+INSERT INTO t_l (id, `j.m`, j, v) SELECT number, if(number % 2, map('a', ''), map('b', '')), '{"m":{"keys":["a"]}}', 'v' FROM numbers(100);
+INSERT INTO t_l (id, `j.m`, j, v) SELECT number, if(number % 2, map('a', ''), map('b', '')), '{"m":{"keys":["a"]}}', 'v' FROM numbers(100);
+SELECT count(), countIf(has(j.m.keys, 'a')) FROM t_l;
+SYSTEM START MERGES t_l;
+OPTIMIZE TABLE t_l FINAL;
+SELECT count(), countIf(has(j.m.keys, 'a')) FROM t_l;
+
+SELECT 'M: DELETE WHERE, the whole predicate also a skip index, part TTL info written at insert';
+CREATE TABLE t_m (id UInt64, `j.m` Map(String, String), j JSON(`m.keys` Array(String)), ts DateTime('UTC') DEFAULT '2000-01-01', v String,
+    INDEX i has(j.m.keys, 'a') TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 1 DAY DELETE WHERE has(j.m.keys, 'a')
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 10, ttl_only_drop_parts = 0, enable_vertical_merge_algorithm = 0;
+SYSTEM STOP MERGES t_m;
+INSERT INTO t_m (id, `j.m`, j, v) SELECT number, if(number % 2, map('a', ''), map('b', '')), '{"m":{"keys":["zzz"]}}', 'v' FROM numbers(100);
+INSERT INTO t_m (id, `j.m`, j, v) SELECT number, if(number % 2, map('a', ''), map('b', '')), '{"m":{"keys":["zzz"]}}', 'v' FROM numbers(100);
+SELECT count(), countIf(has(j.m.keys, 'a')) FROM t_m;
+SYSTEM START MERGES t_m;
+OPTIMIZE TABLE t_m FINAL;
+SELECT count(), countIf(has(j.m.keys, 'a')) FROM t_m;
+
+SELECT 'N: DELETE WHERE typed by the column queries read, JSON declared first';
+CREATE TABLE t_n (id UInt64, j JSON, `j.m` Tuple(x UInt64), ts DateTime('UTC') DEFAULT '2000-01-01', v String)
+ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 1 DAY DELETE WHERE toTypeName(j.m.x) = 'Dynamic'
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 10, ttl_only_drop_parts = 0, enable_vertical_merge_algorithm = 0;
+SYSTEM STOP MERGES t_n;
+INSERT INTO t_n (id, j, `j.m`, v) SELECT number, '{"m":{"x":1}}', tuple(256), 'v' FROM numbers(100);
+INSERT INTO t_n (id, j, `j.m`, v) SELECT number, '{"m":{"x":1}}', tuple(256), 'v' FROM numbers(100);
+SELECT count(), countIf(toTypeName(j.m.x) = 'Dynamic') FROM t_n;
+SYSTEM START MERGES t_n;
+OPTIMIZE TABLE t_n FINAL;
+SELECT count(), countIf(toTypeName(j.m.x) = 'Dynamic') FROM t_n;
+
 SELECT 'merge algorithms';
 SYSTEM FLUSH LOGS part_log;
 SELECT DISTINCT table, merge_algorithm FROM system.part_log
@@ -168,3 +208,6 @@ DROP TABLE t_h;
 DROP TABLE t_i;
 DROP TABLE t_j;
 DROP TABLE t_k;
+DROP TABLE t_l;
+DROP TABLE t_m;
+DROP TABLE t_n;

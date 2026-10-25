@@ -1444,7 +1444,21 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     return {};
 }
 
-/// A subcolumn input is read from the column the table resolves its name to, as queries read it.
+/// A subcolumn input is typed and read from the column the table resolves its name to, as queries do.
+static NamesAndTypesList getSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns)
+{
+    auto source_columns = columns.getAllPhysical();
+    IdentifierNameSet names;
+    ast->collectIdentifierNames(names);
+    for (const auto & name : names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (column && column->isSubcolumn())
+            source_columns.push_back(*column);
+    }
+    return source_columns;
+}
+
 static void resolveSubcolumnOwners(NamesAndTypesList & inputs, const ColumnsDescription & columns)
 {
     for (auto & input : inputs)
@@ -1489,7 +1503,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns).expression;
+    auto expression = buildExpressionAndSets(ttl_ast, getSourceColumns(ttl_ast, columns), expression_context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
     resolveSubcolumnOwners(result.expression_columns, columns);
 
@@ -1518,7 +1532,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
                 = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
+                    ast, getSourceColumns(ast, columns), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 resolveSubcolumnOwners(result.where_expression_columns, columns);
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
