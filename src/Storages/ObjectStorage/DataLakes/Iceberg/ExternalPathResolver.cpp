@@ -795,7 +795,12 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         }
 
         if (use_base_storage)
+        {
+            check_access();
+            if (access_check != nullptr)
+                return std::nullopt;
             return std::make_pair(base_storage, hdfs_key);
+        }
     }
     #endif
 
