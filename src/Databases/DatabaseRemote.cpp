@@ -24,6 +24,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Common/NetException.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
@@ -33,6 +34,11 @@
 
 #include <algorithm>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -798,15 +804,20 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIterator(
 
 
 DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorWithHint(
-    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */, const TablesFilter & /*tables_filter*/) const
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */, const TablesFilter & tables_filter) const
 {
     /// This is the `system.tables` path, which null-guards every metadata column (see
     /// `StorageSystemTables`), so keep a table whose structure could not be fetched instead of hiding
     /// it: the name has already been established by `fetchTablesList`, and a row with an empty engine
     /// is a far better answer than a table that silently disappears from `system.tables` because the
     /// caller lacks `SHOW COLUMNS` on it or a single `DESC TABLE` failed.
+    /// The names the query can ask for are combined into the filter, so that only their structure is
+    /// fetched, rather than that of every table of the remote database.
     return getTablesIteratorImpl(
-        local_context, filter_by_table_name, /* keep_unresolved_tables = */ true, /* throw_on_error = */ true);
+        local_context,
+        combineFilters(filter_by_table_name, tables_filter),
+        /* keep_unresolved_tables = */ true,
+        /* throw_on_error = */ true);
 }
 
 
@@ -837,6 +848,7 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorImpl(
         LOG_DEBUG(log, "Cannot list the tables of the remote database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
@@ -864,6 +876,7 @@ std::vector<LightWeightTableDetails> DatabaseRemote::getLightweightTablesIterato
         result.emplace_back(LightWeightTableDetails{table_name});
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, result.size());
     return result;
 }
 

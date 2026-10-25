@@ -14,8 +14,28 @@ namespace ErrorCodes
 {
 extern const int CANNOT_UNPACK_ARCHIVE;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int CANNOT_READ_ALL_DATA;
 extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+
+/// `archive_error_string` returns nullptr if libarchive failed without setting a message.
+const char * getArchiveErrorMessage(struct archive * archive)
+{
+    const char * message = archive_error_string(archive);
+    return message ? message : "unknown error";
+}
+
+/// `archive_entry_pathname` returns nullptr for an entry without a name, e.g. in a 7z archive without file names.
+const char * getEntryPathname(struct archive_entry * entry)
+{
+    const char * pathname = archive_entry_pathname(entry);
+    return pathname ? pathname : "";
+}
+
 }
 
 /// C++ exceptions must not propagate through the libarchive C library (undefined behavior).
@@ -135,14 +155,14 @@ public:
             if (err != ARCHIVE_OK)
                 break;
 
-            if (filter(archive_entry_pathname(current_entry)))
+            if (filter(getEntryPathname(current_entry)))
             {
                 valid = true;
                 return true;
             }
         }
 
-        checkError(err);
+        checkError(err, current_archive);
         valid = false;
         return false;
     }
@@ -156,7 +176,7 @@ public:
             err = readNextHeader(current_archive, &current_entry);
         } while (err == ARCHIVE_RETRY);
 
-        checkError(err);
+        checkError(err, current_archive);
         valid = err == ARCHIVE_OK;
         return valid;
     }
@@ -176,14 +196,14 @@ public:
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
             chassert(entry != nullptr);
-            std::string name = archive_entry_pathname(entry);
+            std::string name = getEntryPathname(entry);
             if (!filter || filter(name))
                 files.push_back(std::move(name));
 
             error = readNextHeader(archive, &entry, rs.get());
         }
 
-        checkError(error);
+        checkError(error, archive);
         return files;
     }
 
@@ -193,7 +213,7 @@ public:
         if (!valid)
             throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "No current file");
         if (!file_name)
-            file_name.emplace(archive_entry_pathname(current_entry));
+            file_name.emplace(getEntryPathname(current_entry));
 
         return *file_name;
     }
@@ -222,7 +242,7 @@ public:
         return result;
     }
 
-    const char * getArchiveError() { return archive_error_string(current_archive); }
+    const char * getArchiveError() { return getArchiveErrorMessage(current_archive); }
 
     /// Re-throws a stored exception from the stream's C callback, if any.
     void rethrowStreamException()
@@ -235,13 +255,13 @@ private:
     using Archive = struct archive *;
     using Entry = struct archive_entry *;
 
-    void checkError(int error) const
+    static void checkError(int error, Archive archive)
     {
         if (error == ARCHIVE_FATAL)
             throw Exception(
                 ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                 "Failed to read archive while fetching all files: {}",
-                archive_error_string(current_archive));
+                getArchiveErrorMessage(archive));
     }
 
     void resetFileInfo()
@@ -277,7 +297,7 @@ private:
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                     "Couldn't open archive {}: {}",
                     quoteString(path_to_archive),
-                    archive_error_string(archive));
+                    getArchiveErrorMessage(archive));
             }
         }
         catch (...)
@@ -312,7 +332,7 @@ private:
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                     "Couldn't open archive {}: {}",
                     quoteString(path_to_archive),
-                    archive_error_string(archive));
+                    getArchiveErrorMessage(archive));
         }
         catch (...)
         {
@@ -554,7 +574,7 @@ void LibArchiveReader::setPassword(const String & password_)
 {
     if (password_.empty())
         return;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set password to {} archive", archive_name);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot set password to {} archive", archive_name);
 }
 
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()

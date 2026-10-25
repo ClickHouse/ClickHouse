@@ -15,9 +15,9 @@ doc_type: 'guide'
 QUOTA를 사용하면 일정 기간 동안의 리소스 사용량을 제한하거나 리소스 사용을 추적할 수 있습니다.
 QUOTA는 사용자 구성 파일에 설정되며, 일반적으로 &#39;users.xml&#39;을 사용합니다.
 
-시스템에는 단일 쿼리의 복잡도를 제한하는 기능도 있습니다. [쿼리 복잡도 제한](/ko/concepts/features/configuration/settings/query-complexity) 섹션을 참조하십시오.
+시스템에는 단일 쿼리의 복잡성을 제한하는 기능도 있습니다. [쿼리 복잡성 제한](/ko/concepts/features/configuration/settings/query-complexity) 섹션을 참조하십시오.
 
-쿼리 복잡도 제한과 달리, QUOTA에는 다음과 같은 특징이 있습니다.
+쿼리 복잡성 제한과 달리, QUOTA에는 다음과 같은 특징이 있습니다.
 
 * 단일 쿼리를 제한하는 대신, 일정 기간 동안 실행할 수 있는 쿼리 집합에 제한을 둡니다.
 * 분산 쿼리 처리 중 모든 원격 서버에서 사용된 리소스를 집계합니다.
@@ -61,6 +61,7 @@ QUOTA는 사용자 구성 파일에 설정되며, 일반적으로 &#39;users.xml
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
         <written_bytes>5000000</written_bytes>
+        <written_rows>100000</written_rows>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -107,6 +108,8 @@ QUOTA는 사용자 구성 파일에 설정되며, 일반적으로 &#39;users.xml
 `read_bytes` - 모든 원격 서버에서 쿼리를 실행하기 위해 TABLES에서 읽은 총 크기입니다.
 
 `written_bytes` - 쓰기 작업의 총 크기입니다.
+
+`written_rows` - `INSERT` 쿼리로 기록된 행의 총수입니다.
 
 `execution_time` – 총 쿼리 실행 시간(초, wall time)입니다.
 

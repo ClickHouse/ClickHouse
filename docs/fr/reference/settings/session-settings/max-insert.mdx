@@ -13,40 +13,38 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
-**Alias** : `max_insert_block_size_rows`
+**Alias** : `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
 
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "Ajout de l'alias `max_insert_block_size_rows`."}]}]} />
+
 Taille maximale des blocs (en nombre de lignes) à former pour l&#39;insertion dans une table.
 
-Ce paramètre contrôle la formation des blocs dans deux contextes :
+Ce paramètre contrôle la formation des blocs dans deux contextes :
 
-1. Analyse des formats : lorsque le serveur analyse des formats d&#39;entrée orientés lignes (CSV, TSV, JSONEachRow, etc.) depuis n&#39;importe quelle interface (HTTP, clickhouse-client avec des données intégrées, gRPC, protocole wire de PostgreSQL), les blocs sont émis lorsque :
+1. Analyse des formats : lorsque le serveur analyse des formats d&#39;entrée orientés lignes (CSV, TSV, JSONEachRow, etc.) depuis n&#39;importe quelle interface (HTTP, clickhouse-client avec des données intégrées, gRPC, protocole wire de PostgreSQL), les blocs sont émis lorsque :
 
    * Les deux seuils min&#95;insert&#95;block&#95;size&#95;rows AND min&#95;insert&#95;block&#95;size&#95;bytes sont atteints, OR
    * L&#39;un des deux seuils max&#95;insert&#95;block&#95;size&#95;rows OR max&#95;insert&#95;block&#95;size&#95;bytes est atteint
 
-   Remarque : lorsque vous utilisez clickhouse-client ou clickhouse-local pour lire à partir d&#39;un fichier, c&#39;est le client lui-même qui analyse les données, et ce paramètre s&#39;applique côté client.
+   Remarque : lorsque vous utilisez clickhouse-client ou clickhouse-local pour lire à partir d&#39;un fichier, c&#39;est le client lui-même qui analyse les données, et ce paramètre s&#39;applique côté client.
 
-2. Opérations INSERT : pendant les requêtes INSERT et lorsque les données transitent par des vues matérialisées, le comportement de ce paramètre dépend de `use_strict_insert_block_limits` :
+2. Opérations INSERT : pendant les requêtes INSERT et lorsque les données transitent par des vues matérialisées, le comportement de ce paramètre dépend de `use_strict_insert_block_limits` :
 
-   * Lorsqu&#39;il est activé : les blocs sont émis lorsque :
-     * Seuils minimums (AND) : les deux seuils min&#95;insert&#95;block&#95;size&#95;rows AND min&#95;insert&#95;block&#95;size&#95;bytes sont atteints
-     * Seuils maximums (OR) : l&#39;un des deux seuils max&#95;insert&#95;block&#95;size&#95;rows OR max&#95;insert&#95;block&#95;size&#95;bytes est atteint
+   * Lorsqu&#39;il est activé : les blocs sont émis lorsque :
+     * Seuils minimums (AND) : les deux seuils min&#95;insert&#95;block&#95;size&#95;rows AND min&#95;insert&#95;block&#95;size&#95;bytes sont atteints
+     * Seuils maximums (OR) : l&#39;un des deux seuils max&#95;insert&#95;block&#95;size&#95;rows OR max&#95;insert&#95;block&#95;size&#95;bytes est atteint
 
-   * Lorsqu&#39;il est désactivé : les blocs sont émis lorsque min&#95;insert&#95;block&#95;size&#95;rows OR min&#95;insert&#95;block&#95;size&#95;bytes est atteint. Les paramètres max&#95;insert&#95;block&#95;size ne sont pas appliqués.
+   * Lorsqu&#39;il est désactivé : les blocs sont émis lorsque min&#95;insert&#95;block&#95;size&#95;rows OR min&#95;insert&#95;block&#95;size&#95;bytes est atteint. Les paramètres max&#95;insert&#95;block&#95;size ne sont pas appliqués.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * Entier positif.
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ Valeurs possibles :
 * Entier positif.
 * 0 — le paramètre n&#39;entre pas en compte dans la formation des blocs.
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ Le nombre maximal de flux (colonnes) pour lesquels le flush final des parts est 
 
 Valeur par défaut dans Cloud : `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -106,9 +100,7 @@ La parallélisation de la partie écriture s&#39;applique uniquement aux simples
 La partie écriture n&#39;est parallélisée que lorsque cela ne pose aucun risque ; sinon, elle reste sur un seul flux et ce paramètre n&#39;a aucun effet. En particulier, l&#39;écriture reste sur un seul flux lorsque [`use_strict_insert_block_limits`](/fr/reference/settings/session-settings/use#use_strict_insert_block_limits) est activé, qu&#39;une table de destination (ou une table vers laquelle elle redirige) déduplique les blocs insérés et que la déduplication des insertions est activée pour la requête (consultez [`deduplicate_insert`](/fr/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)), lorsque la destination possède des vues matérialisées dépendantes — y compris des vues d&#39;une table vers laquelle la destination redirige, par exemple derrière un `Alias` — (sauf si [`parallel_view_processing`](/fr/reference/settings/session-settings/parallel#parallel_view_processing) est activé et que les chaînes de vues dépendantes ne présentent aucun risque de déduplication — la déduplication dans les vues est désactivée ([`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) ou aucun chemin de vue dépendante ne peut dédupliquer), et systématiquement pour les destinations `Buffer` et `Distributed`. Un `Buffer` effectue son flush dans son propre contexte et un `Distributed` transmet l&#39;écriture à un fragment distant (qui peut lui-même mettre les données en mémoire tampon) ; les paramètres de déduplication de cette requête ne régissent donc pas l&#39;écriture finale, qui reste sur un seul flux indépendamment de ces paramètres. Une insertion par quorum non parallèle ([`insert_quorum`](/fr/reference/settings/session-settings/insert-quorum#insert_quorum) est égal à `2` ou plus, ou à `'auto'`, et [`insert_quorum_parallel`](/fr/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) est désactivé) reste également sur un seul flux, car elle n&#39;autorise qu&#39;une seule part de quorum en cours par table.
 Des valeurs plus élevées entraînent une utilisation accrue de la mémoire.
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 
