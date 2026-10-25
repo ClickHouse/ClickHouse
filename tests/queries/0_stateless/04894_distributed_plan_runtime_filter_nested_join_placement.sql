@@ -7,7 +7,7 @@ INSERT INTO fact SELECT number, number, number FROM numbers(1000000);
 INSERT INTO dim1 SELECT number * 10 FROM numbers(10000);
 INSERT INTO dim2 SELECT number * 100, number FROM numbers(1000);
 
-SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 -- The plan shape and transported-filter admission depend on the join order and the estimate
