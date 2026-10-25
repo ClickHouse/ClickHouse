@@ -91,7 +91,7 @@ private:
     /// predicate runs at most ~100 times per second regardless of how many paths there are.
     static constexpr UInt64 check_period_microseconds = 10 * 1000;
 
-    /// The clock is read at least every 4 KiB of work and every 256 calls.
+    /// The clock is read once the work accounted since the last read reaches 4 KiB, a call counting at least 16 bytes.
     static constexpr size_t clock_read_bytes = 4096;
     static constexpr size_t min_call_bytes = 16;
 
