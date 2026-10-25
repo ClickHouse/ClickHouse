@@ -2374,12 +2374,15 @@ void Context::setUserFilesPolicy(const String & policy_name, const String & path
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "User files disk is null");
 
     /// User files are mutable and the disk may be shared by several servers. The object metadata
-    /// cache of a plain disk is invalidated only by the writes of this server, so another server
-    /// would keep using a stale size and modification time: return no rows for a file that is no
-    /// longer empty, or choose to rewrite a file instead of rejecting an append.
+    /// cache of a plain disk (`object_metadata_cache_size`) and the in-memory file tree snapshot of
+    /// a `plain_rewritable` disk are updated only by the writes of this server, so another server
+    /// would keep using a stale existence, size and modification time: return no rows for a file
+    /// that is no longer empty, or choose to rewrite a file instead of rejecting an append.
+    /// The check goes through `getMetadataStorage`, which wrappers such as `encrypted` forward.
     if (disk->isPlain() && disk->getMetadataStorage()->cachesObjectMetadata())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Disk `{}` of the user files policy `{}` caches the object metadata (`object_metadata_cache_size`), "
+            "Disk `{}` of the user files policy `{}` caches the object metadata in memory "
+            "(a `plain_rewritable` disk, or a plain disk with `object_metadata_cache_size`), "
             "which is not supported for user files", disk->getName(), policy_name);
 
     if (!sub_path.empty())
