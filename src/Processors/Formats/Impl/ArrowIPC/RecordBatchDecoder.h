@@ -304,6 +304,7 @@ private:
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
+    /// With `validate_lengths`, also collects the non-nullable fields with nulls into `undeclared_null_fields`.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
@@ -351,7 +352,7 @@ private:
     /// sit at the position of the field encoding the dictionary.
     DecodedColumn decodeBatchColumn(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        ColumnUInt8::Ptr * decoded_null_map = nullptr);
+        bool read_undeclared_nulls, ColumnUInt8::Ptr * decoded_null_map = nullptr);
     /// Verifies that the batch's nodes, buffers and variadic counts were consumed exactly, then releases the
     /// per-batch state `beginBatch` set up.
     void finishBatch();
@@ -383,6 +384,7 @@ private:
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
     VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
+    UnorderedSetWithMemoryTracking<const ArrowField *> undeclared_null_fields;
 };
 
 }
