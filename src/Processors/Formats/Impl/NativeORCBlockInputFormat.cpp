@@ -1755,7 +1755,7 @@ readColumnWithStringData(const ORC::ColumnVectorBatch * orc_column, const String
 {
     ColumnPtr column;
     getStringColumnFromBatch(orc_column, column);
-    return {std::move(column), std::make_shared<DataTypeString>(), column_name};
+    return {column, std::make_shared<DataTypeString>(), column_name};
 }
 
 static ColumnWithTypeAndName
@@ -1832,7 +1832,7 @@ readIPv6ColumnFromBinaryData(const ORC::ColumnVectorBatch * orc_column, const St
     {
         /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
         if ((!orc_column->hasNulls || orc_column->notNull[i]) && strings.getDataAt(i).size() != sizeof(IPv6))
-            return {std::move(holder), std::make_shared<DataTypeString>(), column_name};
+            return {holder, std::make_shared<DataTypeString>(), column_name};
     }
 
     auto internal_type = std::make_shared<DataTypeIPv6>();

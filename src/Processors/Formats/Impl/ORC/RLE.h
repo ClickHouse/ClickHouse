@@ -94,7 +94,7 @@ private:
     static constexpr size_t MAX_REPEAT_SIZE = 127 + MIN_REPEAT;
 
     OutputByteStream & stream;
-    char literals[MAX_LITERAL_SIZE];
+    char literals[MAX_LITERAL_SIZE]{};
     size_t num_literals = 0;
     size_t tail_run_length = 0;
     bool repeat = false;
@@ -144,7 +144,7 @@ private:
 
     OutputByteStream & stream;
     const bool is_signed;
-    Int64 literals[MAX_LITERAL_SIZE];
+    Int64 literals[MAX_LITERAL_SIZE]{};
     size_t num_literals = 0;
 };
 

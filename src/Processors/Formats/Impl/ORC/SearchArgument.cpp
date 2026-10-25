@@ -955,7 +955,7 @@ UInt64 murmur3Hash64(const UInt8 * data, size_t size)
     size_t blocks = size >> 3;
     for (size_t i = 0; i < blocks; ++i)
     {
-        UInt64 k;
+        UInt64 k = 0;
         memcpy(&k, data + i * 8, 8);
         if constexpr (std::endian::native == std::endian::big)
             k = std::byteswap(k);

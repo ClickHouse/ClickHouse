@@ -213,7 +213,7 @@ void BooleanRleDecoder::next(char * data, size_t num_values, const char * not_nu
         }
         if (remaining_bits == 0)
         {
-            char byte;
+            char byte = 0;
             byte_decoder.next(&byte, 1, nullptr);
             last_byte = static_cast<UInt8>(byte);
             remaining_bits = 8;
@@ -234,7 +234,7 @@ void BooleanRleDecoder::skip(size_t num_values)
     byte_decoder.skip(num_values / 8);
     if (num_values % 8)
     {
-        char byte;
+        char byte = 0;
         byte_decoder.next(&byte, 1, nullptr);
         last_byte = static_cast<UInt8>(byte);
         remaining_bits = 8 - num_values % 8;
@@ -252,7 +252,7 @@ void BooleanRleDecoder::seek(PositionProvider & positions)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid seek position {} of a boolean stream in ORC file", consumed);
     if (consumed)
     {
-        char byte;
+        char byte = 0;
         byte_decoder.next(&byte, 1, nullptr);
         last_byte = static_cast<UInt8>(byte);
         remaining_bits = 8 - consumed;
@@ -1029,8 +1029,7 @@ void IntRleEncoderV2::encodeLiterals(const Int64 * values, size_t count)
     }
 
     UInt32 patch_gap_width = (max_gap == 0) ? 1 : findClosestNumBits(static_cast<Int64>(max_gap));
-    if (patch_gap_width > 8)
-        patch_gap_width = 8;
+    patch_gap_width = std::min(patch_gap_width, 8u);
 
     Int64 patch_list[MAX_LITERAL_SIZE];
     size_t patch_list_length = 0;

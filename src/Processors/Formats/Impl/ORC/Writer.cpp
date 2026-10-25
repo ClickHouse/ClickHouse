@@ -1075,8 +1075,8 @@ public:
         {
             if (null_map && null_map[i])
                 continue;
-            Int64 secs;
-            Int64 nano;
+            Int64 secs = 0;
+            Int64 nano = 0;
             if (scale)
             {
                 /// For the values before the epoch, the nanoseconds are negative (as in the Arrow ORC adapter).

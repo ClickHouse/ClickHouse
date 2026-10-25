@@ -190,7 +190,7 @@ void OutputByteStream::flushChunk()
     output.append(COMPRESSION_HEADER_SIZE, '\0');
     size_t compressed_size = compressor->compress(buffer.data(), buffer.size(), output);
 
-    UInt32 header_value;
+    UInt32 header_value = 0;
     if (compressed_size)
         header_value = static_cast<UInt32>(compressed_size << 1);
     else

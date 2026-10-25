@@ -4,6 +4,7 @@
 
 #include <bit>
 #include <cstring>
+#include <exception>
 #include <limits>
 
 
@@ -41,7 +42,7 @@ UInt64 WireReader::readVarint()
 UInt64 WireReader::readFixed64()
 {
     check(8);
-    UInt64 v;
+    UInt64 v = 0;
     memcpy(&v, pos, 8);
     pos += 8;
     if constexpr (std::endian::native == std::endian::big)
@@ -52,7 +53,7 @@ UInt64 WireReader::readFixed64()
 UInt32 WireReader::readFixed32()
 {
     check(4);
-    UInt32 v;
+    UInt32 v = 0;
     memcpy(&v, pos, 4);
     pos += 4;
     if constexpr (std::endian::native == std::endian::big)
@@ -183,7 +184,7 @@ using WireType = WireReader::WireType;
 
 /// A field with an unexpected wire type is an unknown field, which the Protocol Buffers rules
 /// require to skip. It is detected before anything is read, and handled in `parseMessage`.
-struct WireTypeMismatch
+struct WireTypeMismatch : std::exception
 {
 };
 
@@ -235,8 +236,8 @@ template <typename F>
 void parseMessage(std::string_view data, F && handle_field)
 {
     WireReader r(data);
-    UInt32 field;
-    WireType type;
+    UInt32 field = 0;
+    WireType type = WireReader::VARINT;
     while (r.nextField(field, type))
     {
         bool handled = false;

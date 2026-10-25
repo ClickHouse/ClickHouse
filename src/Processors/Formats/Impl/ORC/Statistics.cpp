@@ -3,6 +3,8 @@
 
 #include <base/extended_types.h>
 
+#include <algorithm>
+
 
 namespace DB::ORC
 {
@@ -53,10 +55,8 @@ void StatisticsBuilder::updateDouble(double value)
     }
     else
     {
-        if (value < double_minimum)
-            double_minimum = value;
-        if (value > double_maximum)
-            double_maximum = value;
+        double_minimum = std::min(double_minimum, value);
+        double_maximum = std::max(double_maximum, value);
     }
     double_sum += value;
 }
@@ -217,10 +217,8 @@ void StatisticsBuilder::merge(const StatisticsBuilder & other)
                 }
                 else
                 {
-                    if (other.double_minimum < double_minimum)
-                        double_minimum = other.double_minimum;
-                    if (other.double_maximum > double_maximum)
-                        double_maximum = other.double_maximum;
+                    double_minimum = std::min(double_minimum, other.double_minimum);
+                    double_maximum = std::max(double_maximum, other.double_maximum);
                 }
                 has_minimum = true;
             }
