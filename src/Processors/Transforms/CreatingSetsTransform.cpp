@@ -265,14 +265,13 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
-        /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
-        /// (as a subquery timeout with `overflow_mode = 'break'` does). Only a recoverable build may be
+        /// Simulate a silent in-place build failure: stop as if the pipeline never reached `generate`, leaving the set
+        /// not created (as a subquery timeout with `overflow_mode = 'break'` does). Only a recoverable build may be
         /// abandoned, and the check precedes the injection so another build cannot spend the one shot.
         if (recoverable_build)
         {
             fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
             {
-                finishSubquery();
                 return {};
             });
         }
