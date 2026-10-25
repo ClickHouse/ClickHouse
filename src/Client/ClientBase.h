@@ -342,6 +342,10 @@ protected:
     /// `recordErrorForAIContext` to pick up, and the agent would not see the failed query at all.
     /// The string literals of the query are hidden, and with them the message, which may quote them.
     void recordParseErrorForAIContext(std::string_view query, const String & message);
+
+    /// The same, for an exception of the interactive loop: the AST of the input, if it was parsed
+    /// at all, is not available there, so the input is masked like a query that failed to parse.
+    void recordUnparsedErrorForAIContext(std::string_view input, const Exception & e);
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;

@@ -5633,16 +5633,18 @@ void ClientBase::recordErrorForAIContext(std::string_view query_or_input, const 
     ai_query_context->recordError(queryTextForAIContext(query_or_input, parsed_query), message, /*from_ai=*/ ai_running_query);
 }
 
-void ClientBase::recordParseErrorForAIContext(std::string_view query, const String & message)
+namespace
 {
-    if (!is_interactive || !ai_query_context)
-        return;
 
-    /// The query was not parsed, so the secret parts of a statement (the credentials of an external
-    /// engine or of a user, a presigned URL) cannot be found the way `formatForLogging` finds them.
-    /// They are always string literals, so every string literal is hidden, and everything after a
-    /// literal that is not closed. The structure of the query, where the syntax error is, survives.
-    bool hidden_parts = false;
+/// Hide the secret parts of a query that was not parsed, for the context of the AI agent. They
+/// cannot be found the way `formatForLogging` finds them (the credentials of an external engine or
+/// of a user, a presigned URL), but they are always string literals, so every string literal is
+/// hidden, and everything after a literal that is not closed. The structure of the query, where
+/// the syntax error is, survives. KQL quotes its string literals with double quotes, which are
+/// names in SQL, so `hide_double_quoted_identifiers` hides those as well.
+String hideStringLiteralsOfUnparsedQuery(std::string_view query, bool hide_double_quoted_identifiers, bool & hidden_parts)
+{
+    hidden_parts = false;
     String masked_query;
     Lexer lexer(query.data(), query.data() + query.size());
     for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
@@ -5659,9 +5661,26 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
             masked_query += "'[HIDDEN]'";
             hidden_parts = true;
         }
+        else if (hide_double_quoted_identifiers && token.type == TokenType::QuotedIdentifier && *token.begin == '"')
+        {
+            masked_query += "\"[HIDDEN]\"";
+            hidden_parts = true;
+        }
         else
             masked_query.append(token.begin, token.end);
     }
+    return masked_query;
+}
+
+}
+
+void ClientBase::recordParseErrorForAIContext(std::string_view query, const String & message)
+{
+    if (!is_interactive || !ai_query_context)
+        return;
+
+    bool hidden_parts = false;
+    const String masked_query = hideStringLiteralsOfUnparsedQuery(query, /*hide_double_quoted_identifiers=*/ false, hidden_parts);
 
     /// The message of a parse error quotes the text around the position of the error, literals
     /// included, so it is not recorded when any were hidden. Otherwise it is formatted for the
@@ -5675,6 +5694,32 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
         wipeSensitiveDataAndCutToLength(masked_query, /*max_length=*/ 0, /*wipe_sensitive=*/ true),
         wipeSensitiveDataAndCutToLength(masked_message, /*max_length=*/ 0, /*wipe_sensitive=*/ true),
         /*from_ai=*/ ai_running_query);
+}
+
+void ClientBase::recordUnparsedErrorForAIContext(std::string_view input, const Exception & e)
+{
+    if (!is_interactive || !ai_query_context)
+        return;
+
+    /// The input is in the dialect of the session, which is not necessarily SQL: a KQL query that
+    /// fails to parse is thrown from `parseKQLQuery`, and KQL quotes its string literals with
+    /// double quotes.
+    const bool is_kusto = client_context->getSettingsRef()[Setting::dialect] == Dialect::kusto;
+    bool hidden_parts = false;
+    const String masked_input = hideStringLiteralsOfUnparsedQuery(input, /*hide_double_quoted_identifiers=*/ is_kusto, hidden_parts);
+
+    /// The message of the error can quote the input (a parse error quotes the text around its
+    /// position), so it is not recorded when anything was hidden: the model gets the code of the
+    /// error and its name.
+    const String message = hidden_parts
+        ? fmt::format(
+              "Code: {}. ({}) The text of the error is not shown, because it can quote the string literals of the query, which are hidden.",
+              e.code(),
+              ErrorCodes::getName(e.code()))
+        : errorMessageForAIContext(stripTerminalEscapeSequences(getExceptionMessage(e, false)), e.code(), nullptr);
+
+    ai_query_context->recordError(
+        wipeSensitiveDataAndCutToLength(masked_input, /*max_length=*/ 0, /*wipe_sensitive=*/ true), message, /*from_ai=*/ false);
 }
 #endif
 
@@ -7026,9 +7071,19 @@ void ClientBase::runInteractive()
             client_exception.reset(e.clone());
 
 #if USE_CLIENT_AI
-            if (ai_query_context)
-                ai_query_context->recordError(
-                    queryTextForAIContext(input, nullptr), errorMessageForAIContext(getExceptionMessage(e, false), e.code(), nullptr), /*from_ai=*/ false);
+            /// The query of the input was not parsed, or its AST is lost here: an exception of a
+            /// parser that is not caught where the query is parsed (`parseKQLQuery`) ends up here.
+            /// So its secret parts are hidden like those of a query that failed to parse. A question
+            /// to the agent (`? ...`) is sent to the AI provider anyway, and it is natural language,
+            /// whose apostrophes would hide the whole of it, so it is recorded as it is.
+            if (trim(input, [](char c) { return isWhitespaceASCII(c); }).starts_with("?"))
+            {
+                if (ai_query_context)
+                    ai_query_context->recordError(
+                        queryTextForAIContext(input, nullptr), errorMessageForAIContext(getExceptionMessage(e, false), e.code(), nullptr), /*from_ai=*/ false);
+            }
+            else
+                recordUnparsedErrorForAIContext(input, e);
 #endif
         }
 
