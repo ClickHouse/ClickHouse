@@ -70,3 +70,11 @@ the query condition cache keeps no verdict over a default that changes between r
 10000
 05297_qcc_1	0	1
 05297_qcc_2	0	1
+neither the top-K threshold nor the query condition cache skips rows before a default that depends on them
+1
+100
+100
+1808
+8192
+05297_row_set_qcc_1	0	1
+05297_row_set_qcc_2	0	0

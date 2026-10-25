@@ -23,6 +23,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -94,6 +95,7 @@ struct MemorySourceFilter
         /// The requested physical columns that the step's actions take as input.
         /// Those not produced by the previous steps are read before the step is executed.
         NamesAndTypesList input_columns;
+        bool is_top_k_threshold = false;
     };
 
     std::vector<Step> steps;
@@ -173,6 +175,8 @@ struct MemorySourceDefaults
     mutable std::optional<NamesAndTypesList> stored_inputs TSA_GUARDED_BY(mutex);
     /// Parallel to `stored_inputs`: whether the column has a default expression.
     mutable std::vector<bool> stored_input_has_default TSA_GUARDED_BY(mutex);
+    /// Whether a default of the table depends on the set of rows it is evaluated over (e.g. `rowNumberInBlock()`).
+    mutable bool has_row_set_dependent_default TSA_GUARDED_BY(mutex) = false;
     /// Shared by all sources of the step, so that a stateless default (e.g. `now()`) is analyzed once and has one value per header shape.
     mutable std::map<std::tuple<MemorySourceColumnListId, std::vector<bool>, std::vector<bool>>, Evaluation> evaluations
         TSA_GUARDED_BY(mutex);
@@ -185,14 +189,23 @@ void MemorySourceDefaults::initialize() const
     if (stored_inputs)
         return;
 
+    auto default_context = Context::createCopy(global_context);
+    enableAllExperimentalSettings(default_context);
+
     NamesAndTypesList inputs;
     std::vector<bool> has_default;
+    bool row_set_dependent = false;
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
     NameSet stored_input_names;
+    const TablesWithColumns no_tables;
     for (const auto & column : storage_snapshot->metadata->getColumns())
     {
         if (!column.default_desc.expression)
             continue;
+
+        ExpressionInfoVisitor::Data expression_info{WithContext{default_context}, no_tables};
+        ExpressionInfoVisitor(expression_info).visit(column.default_desc.expression);
+        row_set_dependent = row_set_dependent || expression_info.is_stateful_function || !expression_info.is_deterministic_function;
 
         IdentifierNameSet identifiers;
         column.default_desc.expression->collectIdentifierNames(identifiers);
@@ -207,10 +220,8 @@ void MemorySourceDefaults::initialize() const
         }
     }
 
-    auto default_context = Context::createCopy(global_context);
-    enableAllExperimentalSettings(default_context);
-
     context = std::move(default_context);
+    has_row_set_dependent_default = row_set_dependent;
     stored_input_has_default = std::move(has_default);
     stored_inputs = std::move(inputs);
 }
@@ -509,6 +520,26 @@ private:
         return execution_index++;
     }
 
+    /// Whether reading `src` may evaluate a default that depends on the set of rows it is evaluated over: the top-K
+    /// threshold and the query condition cache must not skip rows of such a block, the default sees only the others.
+    bool evaluatesRowSetDependentDefault(const Block & src) const
+    {
+        if (!defaults)
+            return false;
+
+        const bool lacks_column_with_default = std::ranges::any_of(physical_columns, [&](const NameAndTypePair & column)
+        {
+            return !src.has(column.getNameInStorage()) && defaults->storage_snapshot->getDefault(column.getNameInStorage());
+        });
+        if (!lacks_column_with_default)
+            return false;
+
+        const auto & cache = *defaults;
+        std::lock_guard lock(cache.mutex);
+        cache.initialize();
+        return cache.has_row_set_dependent_default;
+    }
+
     /// Reads `columns` from the stored block, cut by `mask`, with a null column for each one the block lacks.
     static Columns readStoredColumns(
         const Block & src, const NamesAndTypesList & columns, const IColumn::Filter * mask, size_t num_rows, size_t & read_bytes)
@@ -753,9 +784,11 @@ private:
         /// read after some step has filtered. Empty while no step has filtered anything.
         IColumn::Filter combined_mask;
 
+        const bool may_skip_rows = !evaluatesRowSetDependentDefault(src);
+
         const size_t granule_rows = MemorySourceFilter::query_condition_cache_granule_rows;
         const size_t num_granules = (num_src_rows + granule_rows - 1) / granule_rows;
-        const bool use_query_condition_cache = filter->query_condition_cache && num_granules;
+        const bool use_query_condition_cache = filter->query_condition_cache && num_granules && may_skip_rows;
         String query_condition_cache_part_name;
 
         /// The granules skipped by the entry of the filter of the query. Nothing is known about PREWHERE
@@ -889,6 +922,8 @@ private:
         {
             const auto & step = filter->steps[step_index];
             read_missing_columns(step.input_columns, {MemorySourceColumnList::FilterStepInputs, step_index});
+            if (step.is_top_k_threshold && !may_skip_rows)
+                continue;
             step.actions->execute(block, num_rows);
 
             const size_t filter_column_position = block.getPositionByName(step.filter_column_name);
@@ -1514,6 +1549,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
                 .filter_column_name = std::move(filter_column_name),
                 .remove_filter_column = true,
                 .input_columns = {},
+                .is_top_k_threshold = true,
             });
         }
     }

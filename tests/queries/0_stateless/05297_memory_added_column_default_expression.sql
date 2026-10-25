@@ -163,3 +163,33 @@ ORDER BY log_comment;
 DROP TABLE t_memory_add_default_qcc;
 DROP DICTIONARY d_memory_add_default_qcc;
 DROP TABLE t_memory_add_default_qcc_source;
+
+SELECT 'neither the top-K threshold nor the query condition cache skips rows before a default that depends on them';
+SET max_threads = 1, optimize_move_to_prewhere = 0, query_plan_optimize_lazy_materialization = 0,
+    use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000;
+DROP TABLE IF EXISTS t_memory_add_default_row_set;
+CREATE TABLE t_memory_add_default_row_set (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_add_default_row_set VALUES (100), (200), (300);
+INSERT INTO t_memory_add_default_row_set SELECT [300, 400, 500][number % 3 + 1] FROM numbers(60) SETTINGS max_block_size = 3;
+INSERT INTO t_memory_add_default_row_set VALUES (300), (100), (150);
+ALTER TABLE t_memory_add_default_row_set ADD COLUMN r UInt64 DEFAULT rowNumberInBlock();
+ALTER TABLE t_memory_add_default_row_set ADD COLUMN s UInt64 DEFAULT r * 10;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k FROM t_memory_add_default_row_set WHERE r = 1 ORDER BY k LIMIT 1 SETTINGS use_query_condition_cache = 0)
+WHERE explain LIKE '%TopN filter column: k%';
+SELECT k FROM t_memory_add_default_row_set WHERE r = 1 ORDER BY k LIMIT 1 SETTINGS use_query_condition_cache = 0;
+SELECT k FROM t_memory_add_default_row_set WHERE s = 10 ORDER BY k LIMIT 1 SETTINGS use_query_condition_cache = 0;
+DROP TABLE t_memory_add_default_row_set;
+
+DROP TABLE IF EXISTS t_memory_add_default_row_set_qcc;
+CREATE TABLE t_memory_add_default_row_set_qcc (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_add_default_row_set_qcc SELECT number FROM numbers(10000) SETTINGS max_block_size = 10000;
+ALTER TABLE t_memory_add_default_row_set_qcc ADD COLUMN r UInt64 DEFAULT rowNumberInBlock();
+SELECT count() FROM t_memory_add_default_row_set_qcc WHERE k >= 8192 SETTINGS use_query_condition_cache = 1, log_comment = '05297_row_set_qcc_1';
+SELECT min(r) FROM t_memory_add_default_row_set_qcc WHERE k >= 8192 SETTINGS use_query_condition_cache = 1, log_comment = '05297_row_set_qcc_2';
+SYSTEM FLUSH LOGS query_log;
+-- The first read looks the block up in the cache, the second one, which evaluates `r` for it, does not.
+SELECT log_comment, ProfileEvents['QueryConditionCacheHits'], ProfileEvents['QueryConditionCacheMisses']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05297_row_set_qcc_1', '05297_row_set_qcc_2') AND event_date >= yesterday()
+ORDER BY log_comment;
+DROP TABLE t_memory_add_default_row_set_qcc;
