@@ -11,3 +11,15 @@ s	16	1048576
 [false,false]
 0	0
 0	0
+--- several small dictionary pages of columns that PREWHERE does not need
+[false,false,false,false,false,false,false]
+0	0	0	0	0	0	0
+0	0	0	0	0	0	0
+--- the long strings of a row group in one chunk, with size statistics
+[true]
+1048576	134217728
+1048576	134217728
+--- the non-null strings of a row group in one chunk, without size statistics
+[false]
+1048576	134217728
+1048576	134217728

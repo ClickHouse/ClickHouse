@@ -350,9 +350,10 @@ struct Reader
         /// this row group, so its data is neither prefetched nor decoded.
         bool served_from_cache = false;
         /// The column is written to the columns cache, which makes the row group read in whole chunks
-        /// unless they would take too much memory, but the length of its strings is not in the metadata.
+        /// unless they would take too much memory, but the length of its strings is not in the metadata,
+        /// or only the total for the row group is, which bounds a chunk too loosely.
         /// So its dictionary is decoded in the `Dictionary` stage, before the row group is split into
-        /// row subgroups, to estimate the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
+        /// row subgroups, to bound the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
         /// Only if the dictionary pages of the row group decoded early are small together: they are read before
         /// `PREWHERE`, even if no row needs the column, see `initColumnsCache`.
         bool decode_dictionary_early = false;

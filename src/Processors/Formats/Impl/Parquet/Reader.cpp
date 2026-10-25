@@ -3263,30 +3263,32 @@ double Reader::estimateMaxColumnMemoryBytesOfChunk(
     else
     {
         const double uncompressed_bytes = static_cast<double>(std::max<Int64>(0, meta.total_uncompressed_size));
-        double string_bytes = 0;
+        /// The smallest of the bounds that are known. Without any, the size is unknown, see `decodedSizeIsUnknown`.
+        std::optional<double> string_bytes;
         if (meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
-        {
             string_bytes = static_cast<double>(std::max<Int64>(0, meta.size_statistics.unencoded_byte_array_data_bytes));
-        }
-        else if (meta.__isset.dictionary_page_offset)
+        if (meta.__isset.dictionary_page_offset)
         {
             /// No string is longer than the longest value of the dictionary, except the strings of the data pages that
             /// the writer did not encode with the dictionary (e.g. it has grown too large): they take at most the
-            /// uncompressed size of the column chunk. Without the dictionary the size is unknown, see `decodedSizeIsUnknown`.
-            double non_null_values = num_values;
-            if (meta.statistics.__isset.null_count)
-                non_null_values = std::min(
-                    non_null_values, std::max(0., static_cast<double>(meta.num_values) - static_cast<double>(meta.statistics.null_count)));
-            const double max_value_size = column.dictionary.isInitialized() ? static_cast<double>(column.dictionary.getMaxValueSize()) : 0;
-            string_bytes = max_value_size * non_null_values + uncompressed_bytes;
+            /// uncompressed size of the column chunk.
+            if (column.dictionary.isInitialized())
+            {
+                double non_null_values = num_values;
+                if (meta.statistics.__isset.null_count)
+                    non_null_values = std::min(
+                        non_null_values, std::max(0., static_cast<double>(meta.num_values) - static_cast<double>(meta.statistics.null_count)));
+                const double dictionary_bound = static_cast<double>(column.dictionary.getMaxValueSize()) * non_null_values + uncompressed_bytes;
+                string_bytes = std::min(string_bytes.value_or(dictionary_bound), dictionary_bound);
+            }
         }
-        else
+        else if (!string_bytes)
         {
             /// Non-dictionary-encoded strings.
             string_bytes = uncompressed_bytes;
         }
         /// The offsets of `ColumnString`.
-        res = string_bytes + 8. * num_values;
+        res = string_bytes.value_or(0) + 8. * num_values;
     }
 
     /// Outer array offsets, and nested array offsets, at most one per value.
@@ -4697,8 +4699,9 @@ void Reader::initColumnsCache()
     /// small dictionary pages are read for that: within the memory budget of the reader, and a small part of the memory
     /// limit of the query. The budget is for all the dictionary pages of a row group together, since they are read
     /// in the same stage, all at once, before any of them is decoded (see `ReadStage::Dictionary`).
+    const size_t memory_limit = memoryLimitOfCurrentThread();
     size_t max_early_dictionary_bytes = memoryEstimateLimit();
-    if (const size_t memory_limit = memoryLimitOfCurrentThread())
+    if (memory_limit)
         max_early_dictionary_bytes = std::min(max_early_dictionary_bytes, memory_limit / 4);
     for (RowGroup & row_group : row_groups)
     {
@@ -4754,7 +4757,14 @@ void Reader::initColumnsCache()
                     ColumnChunk & column = row_group.columns[i];
                     estimated_bytes_to_write += size_t(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
                     const auto & meta = column.meta->meta_data;
-                    if (decodedSizeIsUnknown(column, primitive_columns[i]) && meta.data_page_offset > meta.dictionary_page_offset)
+                    /// The dictionary also bounds the size of a chunk tighter than `size_statistics`, which has only the
+                    /// total length of the strings of the row group, all of which a chunk may hold. So it is decoded
+                    /// early also when that total would take a large part of the memory limit.
+                    const bool need_dictionary = decodedSizeIsUnknown(column, primitive_columns[i])
+                        || (memory_limit != 0 && meta.__isset.dictionary_page_offset
+                            && !primitive_columns[i].output_type->haveMaximumSizeOfValue()
+                            && estimateMaxColumnMemoryBytesOfChunk(column, row_group, primitive_columns[i]) > static_cast<double>(memory_limit) / 4);
+                    if (need_dictionary && meta.data_page_offset > meta.dictionary_page_offset)
                     {
                         const size_t dictionary_bytes = size_t(meta.data_page_offset - meta.dictionary_page_offset);
                         column.decode_dictionary_early = dictionary_bytes <= max_early_dictionary_bytes - early_dictionary_bytes;
