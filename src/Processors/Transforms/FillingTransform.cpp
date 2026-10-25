@@ -346,6 +346,31 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "STEP of Interval type can be used only with Date/DateTime types, but got {}", type->getName());
     }
+    else if (which.isUInt64() && step.getType() == Field::Types::Int64)
+    {
+        /// The bounds of a UInt64 column are converted to the Int64 carrier, which cannot hold the upper half of the
+        /// range of the column, while a cursor anchored at a data value is a UInt64. A step from an Int64 cursor to
+        /// a value past `INT64_MAX` that the column can hold continues as a UInt64, so that the filling from an
+        /// explicit FROM goes on like it does from a data value. Any other step wraps around in the carrier like
+        /// for the other integer types, which `FillingRow` takes for passing the border of the filling.
+        return [step_value = step.safeGet<Int64>()](Field & field, Int64 jumps_count)
+        {
+            const UInt64 shift = static_cast<UInt64>(step_value) * static_cast<UInt64>(jumps_count);
+
+            if (field.getType() == Field::Types::UInt64)
+            {
+                field = field.safeGet<UInt64>() + shift;
+                return;
+            }
+
+            const Int64 value = field.safeGet<Int64>();
+            const Int128 res = static_cast<Int128>(value) + static_cast<Int128>(step_value) * jumps_count;
+            if (res > static_cast<Int128>(std::numeric_limits<Int64>::max()) && res <= static_cast<Int128>(std::numeric_limits<UInt64>::max()))
+                field = static_cast<UInt64>(res);
+            else
+                field = static_cast<Int64>(static_cast<UInt64>(value) + shift);
+        };
+    }
     else
     {
         return [step](Field & field, Int64 jumps_count)
@@ -571,7 +596,7 @@ static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDes
         if (which.isDate32() || which.isDateTime64())
             return {};
 
-        const auto last_value = walkIntervalFillToStorageTypeBoundary(descr, direction);
+        auto last_value = walkIntervalFillToStorageTypeBoundary(descr, direction);
         if (!last_value)
             return descr.fill_to;
 
