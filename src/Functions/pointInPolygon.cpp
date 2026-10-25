@@ -439,9 +439,10 @@ public:
         };
         auto make_const_result = [&](const auto & impl) -> ColumnPtr
         {
+            const auto constant_result_type = (nullable_x || nullable_y) ? makeNullable(result_type) : result_type;
             if (point_is_null(0))
-                return result_type->createColumnConst(input_rows_count, Null());
-            return result_type->createColumnConst(input_rows_count, impl.contains(point_x.getFloat64(0), point_y.getFloat64(0)));
+                return constant_result_type->createColumnConst(input_rows_count, Null());
+            return constant_result_type->createColumnConst(input_rows_count, impl.contains(point_x.getFloat64(0), point_y.getFloat64(0)));
         };
         bool poly_is_const = true;
 

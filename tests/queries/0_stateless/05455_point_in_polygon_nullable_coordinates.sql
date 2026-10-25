@@ -61,3 +61,16 @@ SELECT pointInPolygon((CAST(NULL AS Nullable(Float64)), toNullable(5.5)),
 -- Nullable integer coordinates are supported too.
 SELECT pointInPolygon((CAST(1 AS Nullable(UInt8)), CAST(1 AS Nullable(UInt8))),
     [(0., 0.), (2., 0.), (2., 2.), (0., 2.)]) AS result, toTypeName(result);
+
+SELECT
+    number,
+    pointInPolygon(toNullable((CAST(NULL AS Nullable(Float64)), toNullable(0.5))), [(0., 0.), (1., 0.), (1., 1.), (0., 1.)]) AS const_ring,
+    pointInPolygon(toNullable((CAST(NULL AS Nullable(Float64)), toNullable(0.5))), [[[(0., 0.), (1., 0.), (1., 1.), (0., 1.)]]]) AS const_multi,
+    pointInPolygon(toNullable((CAST(NULL AS Nullable(Float64)), toNullable(0.5))), materialize([(0., 0.), (1., 0.), (1., 1.), (0., 1.)])) AS dynamic_ring,
+    pointInPolygon(toNullable((CAST(NULL AS Nullable(Float64)), toNullable(0.5))), materialize([[[(0., 0.), (1., 0.), (1., 1.), (0., 1.)]]])) AS dynamic_multi,
+    toTypeName(const_ring), toTypeName(const_multi)
+FROM numbers(2)
+ORDER BY number;
+
+SELECT pointInPolygon(toNullable((toNullable(0.5), CAST(NULL AS Nullable(Float64)))), [(0., 0.), (1., 0.), (1., 1.), (0., 1.)]) AS result, toTypeName(result);
+SELECT pointInPolygon(toNullable((toNullable(0.5), toNullable(0.5))), [(0., 0.), (1., 0.), (1., 1.), (0., 1.)]) AS result, toTypeName(result);
