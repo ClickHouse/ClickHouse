@@ -402,12 +402,13 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         /// a later backup of `Join(ANY, ...)` shadows. An interrupted rewrite (for example a server
         /// crash) is finished or rolled back on the next start by `recoverInterruptedMutation`.
         ///
-        /// Backup names must stay unique for the lifetime of the table: an insert that reserved its
-        /// backup number before this mutation started may still be streaming its staged file, and
-        /// will promote it under that name after the mutation finishes. Reuse the smallest
-        /// committed number for the consolidated backup -- `increment` is never rewound, so that
-        /// number can no longer be handed out to a new insert -- and leave `increment` itself
-        /// untouched. `recoverInterruptedMutation` relies on this choice to find the commit point.
+        /// Backup names must stay unique for the lifetime of the table, and their numbers must keep
+        /// the publication order: an insert that is still streaming its staged file will promote it
+        /// after this mutation finishes, under a number taken from `increment` at that time. Reuse
+        /// the smallest committed number for the consolidated backup -- `increment` is never
+        /// rewound, so that number can no longer be handed out to a new insert -- and leave
+        /// `increment` itself untouched. `recoverInterruptedMutation` relies on this choice to find
+        /// the commit point.
         const String aside_path = fs::path(path) / mutation_backups_dir;
         recoverInterruptedMutation();
 

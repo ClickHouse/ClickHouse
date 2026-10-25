@@ -84,7 +84,11 @@ private:
     StorageMetadataPtr metadata_snapshot;
     String backup_path;
     String backup_tmp_path;
+    /// The name of the staged file in `backup_tmp_path`. It is reserved when the `INSERT` starts and
+    /// only has to be unique among the staged files.
     String backup_file_name;
+    /// The name of the committed file in `backup_path`, assigned when the staged file is promoted.
+    String promoted_file_name;
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
     std::optional<CompressedWriteBuffer> compressed_backup_buf;
     std::optional<NativeWriter> backup_stream;
@@ -151,7 +155,7 @@ void SetOrJoinSink::discardStagedBackup() noexcept
         /// A promoted file left in the table directory would be replayed by the next publish and
         /// restored on restart, bringing back the rows of this failed `INSERT`. Usually it is
         /// already gone: `onFinish` discards it before leaving the publish critical section.
-        table.discardPromotedBackup(backup_file_name);
+        table.discardPromotedBackup(promoted_file_name);
     }
     else
     {
@@ -239,7 +243,14 @@ void SetOrJoinSink::onFinish()
         compressed_backup_buf->finalize();
         backup_buf->finalize();
 
-        table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+        /// Committed backups are replayed in the order of their numbers (on restart, and by the
+        /// rebuild of the live state after a failed `INSERT` or a mutation), which must be the order
+        /// in which they were published: for `Join(ANY, ...)` it decides which row of a duplicate key
+        /// is kept. The number reserved in `write` does not give that order, because concurrent
+        /// inserts can finish in any order, so take a new number here, in the publish critical
+        /// section. It is greater than the number of every committed backup.
+        promoted_file_name = toString(++table.increment) + ".bin";
+        table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / promoted_file_name);
         backup_promoted = true;
 
         /// From here on, any exception (a lock timeout, a failed rebuild of a lost state, a failed
@@ -252,11 +263,11 @@ void SetOrJoinSink::onFinish()
 
             /// Replays the promoted backup into the live state with the strong exception guarantee:
             /// if the replay fails, the state is restored before the exception leaves this call.
-            table.publishBackup(fs::path(backup_path) / backup_file_name, getContext());
+            table.publishBackup(fs::path(backup_path) / promoted_file_name, getContext());
         }
         catch (...)
         {
-            table.discardPromotedBackup(backup_file_name);
+            table.discardPromotedBackup(promoted_file_name);
             throw;
         }
     }
