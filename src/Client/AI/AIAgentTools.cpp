@@ -179,13 +179,16 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                         /// The `query` column is logged masked (`query_for_logging`), but `exception` is the
                         /// raw message, which a parse or a connection error fills with the fragment of the
                         /// query that failed - secrets included. Only the name of the error is returned.
-                        /// A query that could not be parsed is logged as `ExceptionBeforeStart` without
-                        /// a `query_kind` and is masked only by `query_masking_rules`, not by the AST-based
-                        /// hiding of the secret parts, so its text is not returned either.
+                        /// A query that failed before it started is logged as `ExceptionBeforeStart`, and
+                        /// its text is not returned either: the AST-based hiding of the secret parts may
+                        /// not have been applied to it. It is not only a query that could not be parsed:
+                        /// one that was parsed can fail before `formatForLogging` (an unknown query
+                        /// parameter fails the substitution of the parameters), and then its text is
+                        /// logged masked only by `query_masking_rules`, while `query_kind` is set.
                         String query = "SELECT event_time, query_duration_ms, read_rows, result_rows, formatReadableSize(memory_usage) AS memory, "
                             "if(exception_code = 0, '', errorCodeToName(exception_code)) AS error, "
-                            "if(type = 'ExceptionBeforeStart' AND query_kind = 'None', "
-                            "'(the text of a query that could not be parsed is not shown)', query) AS query "
+                            "if(type = 'ExceptionBeforeStart', "
+                            "'(the text of a query that failed before it started is not shown)', query) AS query "
                             "FROM system.user_query_log WHERE type != 'QueryStart' AND log_comment != {ai_marker:String} "
                             "AND NOT startsWith(query_id, {ai_query_id_prefix:String})";
                         if (only_errors)
