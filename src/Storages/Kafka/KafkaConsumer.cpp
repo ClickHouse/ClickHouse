@@ -306,6 +306,10 @@ void KafkaConsumer::subscribe()
 
         if (current_subscription_valid)
             return;
+
+        /// Re-subscribing under the cooperative protocol keeps the assignment and the fetch positions.
+        if (consumer->get_rebalance_protocol() == "COOPERATIVE")
+            resetToLastCommitted("Rewinding dirty consumer.");
     }
 
     size_t max_retries = 5;
@@ -410,7 +414,8 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 
 /// The cooperative rebalance protocol (always used by `group.protocol=consumer`, KIP-848) rejects `assign`, so seek
 /// instead. Only the partitions read from need it, the others still start from the committed offsets, and librdkafka
-/// rejects seeking a partition before its fetcher starts.
+/// rejects seeking a partition before its fetcher starts. Unlike `assign`, `seek` keeps the stored offsets, which the
+/// next commit would persist, so reset them too.
 void KafkaConsumer::rewindTo(const cppkafka::TopicPartitionList & offsets)
 {
     if (consumer->get_rebalance_protocol() != "COOPERATIVE")
@@ -427,6 +432,7 @@ void KafkaConsumer::rewindTo(const cppkafka::TopicPartitionList & offsets)
 
     if (!read_from.empty())
         consumer->seek(read_from, SEEK_TIMEOUT_MS);
+    consumer->store_offsets(offsets);
 }
 
 void KafkaConsumer::rewindToLastCommitted()

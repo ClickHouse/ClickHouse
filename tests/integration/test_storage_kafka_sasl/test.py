@@ -183,7 +183,8 @@ def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
                          kafka_topic_list = 'kip848',
                          kafka_group_name = 'kip848',
                          kafka_format = 'JSONEachRow';
-            CREATE MATERIALIZED VIEW test.{name}_mv TO test.messages AS SELECT id FROM test.{name};
+            CREATE MATERIALIZED VIEW test.{name}_mv TO test.messages AS SELECT id FROM test.{name}
+                WHERE NOT throwIf((SELECT count() FROM test.fail_inserts) > 0);
             """
         )
 
@@ -199,17 +200,21 @@ def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
     producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
     produced = 0
 
-    def produce_and_wait(count):
+    def produce(count):
         nonlocal produced
         for i in range(produced, produced + count):
             producer.send(topic="kip848", value=f'{{"id":{i}}}', partition=i % 6)
         producer.flush()
         produced += count
+
+    def produce_and_wait(count):
+        produce(count)
         assert_eq_with_retry(
             instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
         )
 
     instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.fail_inserts (x UInt8) ENGINE = Memory")
     create_kafka_table("kafka1")
     produce_and_wait(1000)
     wait_assigned_partitions("kafka1", "= 6")
@@ -223,6 +228,15 @@ def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
     instance.query("DROP TABLE test.kafka2_mv; DROP TABLE test.kafka2 SYNC")
     wait_assigned_partitions("kafka1", "= 6")
     produce_and_wait(1000)
+
+    # The messages of a failed insert are read again, not skipped.
+    errors_query = "SELECT sum(value) FROM system.errors WHERE name = 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO'"
+    errors = int(instance.query(errors_query))
+    instance.query("INSERT INTO test.fail_inserts VALUES (1)")
+    produce(1000)
+    assert_eq_with_retry(instance, f"SELECT ({errors_query}) > {errors}", "1", retry_count=120, sleep_time=0.5)
+    instance.query("TRUNCATE TABLE test.fail_inserts")
+    produce_and_wait(0)
     producer.close()
 
     assert instance.query("SELECT min(id), max(id) FROM test.messages") == f"0\t{produced - 1}\n"
