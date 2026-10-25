@@ -14,6 +14,7 @@ fail startup with UNKNOWN_ELEMENT_IN_CONFIG).
 
 import json
 import os
+import re
 import uuid
 
 import pytest
@@ -123,6 +124,12 @@ def token_exchanges(port):
     )
     parsed = json.loads(response)
     return parsed["exchanges"], parsed["last_body"]
+
+
+def has_server_credentials_marker(create_query):
+    # Match the S3/GCS marker key exactly: the Azure one, `_azure_server_credentials_allowed`, which every
+    # `include`/`from_env` disk gets, ends with the same text.
+    return re.search(r"\b_server_credentials_allowed\b", create_query) is not None
 
 
 def gcs_url(path):
@@ -290,8 +297,8 @@ def test_dynamic_gcs_disk_with_header_from_env_persists_credential_opt_in(
             "s3_allow_server_credentials_in_user_queries": 1,
         },
     )
-    assert "_server_credentials_allowed" in node.query(
-        "SHOW CREATE TABLE gcs_env_header"
+    assert has_server_credentials_marker(
+        node.query("SHOW CREATE TABLE gcs_env_header")
     )
     node.query("INSERT INTO gcs_env_header SELECT number FROM numbers(3)")
 
@@ -532,9 +539,7 @@ def test_dynamic_disk_credential_grant_is_scoped_to_the_resolved_backend(
         ")",
         settings=opt_in,
     )
-    assert "_server_credentials_allowed" in node.query(
-        "SHOW CREATE TABLE gcs_marker_adc"
-    )
+    assert has_server_credentials_marker(node.query("SHOW CREATE TABLE gcs_marker_adc"))
     after, _ = token_exchanges(ADC_TOKEN_PORT)
     assert after > before, "the disk did not resolve Application Default Credentials"
     node.query("DROP TABLE gcs_marker_adc SYNC")
@@ -549,8 +554,8 @@ def test_dynamic_disk_credential_grant_is_scoped_to_the_resolved_backend(
         ")",
         settings=opt_in,
     )
-    assert "_server_credentials_allowed" not in node.query(
-        "SHOW CREATE TABLE gcs_marker_local_include"
+    assert not has_server_credentials_marker(
+        node.query("SHOW CREATE TABLE gcs_marker_local_include")
     )
     node.query("DROP TABLE gcs_marker_local_include SYNC")
 
