@@ -564,7 +564,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
     {
         const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
 
-        if (node.order_by_combinator)
+        if (node.hasOrderByCombinator())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "ORDER BY inside the arguments of aggregate function {} is not supported in this context",
                 backQuote(node.name));

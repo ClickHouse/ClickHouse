@@ -113,17 +113,17 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
     }
 
-    if (order_by_combinator && order_by_combinator_columns)
+    if (hasOrderByCombinator())
     {
         FormatSettings format_settings{true /* one_line */};
         FormatState state;
         FormatStateStacked frame;
         writeCString(" ORDER BY ", ostr);
         order_by_combinator_columns->format(ostr, format_settings, state, frame);
-        if (order_by_combinator_limit.has_value())
+        if (auto limit = getOrderByCombinatorLimit())
         {
             writeCString(" LIMIT ", ostr);
-            writeIntText(*order_by_combinator_limit, ostr);
+            writeIntText(*limit, ostr);
         }
     }
 
@@ -410,10 +410,13 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     hash_state.update(getNullsAction());
 
     /// The ORDER BY sort list of the aggregate function combinator is a child, but the LIMIT is not.
-    hash_state.update(order_by_combinator);
-    hash_state.update(order_by_combinator_limit.has_value());
-    if (order_by_combinator_limit.has_value())
-        hash_state.update(*order_by_combinator_limit);
+    if (hasOrderByCombinator())
+    {
+        auto limit = getOrderByCombinatorLimit();
+        hash_state.update(limit.has_value());
+        if (limit)
+            hash_state.update(*limit);
+    }
 
     /// The function composition operator `f | g` and an ordinary call to a function of the same
     /// name are different expressions, see the formatting of `__compose` below.
@@ -1235,12 +1238,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// Aggregate function combinator: ORDER BY ... [LIMIT N] inside the function arguments.
     /// Example: groupArray(value ORDER BY ts DESC LIMIT 10).
     /// Must be printed BEFORE the closing parenthesis so the syntactic sugar round-trips correctly.
-    if (order_by_combinator && order_by_combinator_columns)
+    if (hasOrderByCombinator())
     {
         ostr << " ORDER BY ";
         order_by_combinator_columns->format(ostr, settings, state, frame);
-        if (order_by_combinator_limit.has_value())
-            ostr << " LIMIT " << *order_by_combinator_limit;
+        if (auto limit = getOrderByCombinatorLimit())
+            ostr << " LIMIT " << *limit;
     }
 
     if (need_parens)

@@ -1002,7 +1002,7 @@ void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    if (node.order_by_combinator)
+    if (node.hasOrderByCombinator())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "ORDER BY inside the arguments of function {} is not supported in this context",
             backQuote(node.name));

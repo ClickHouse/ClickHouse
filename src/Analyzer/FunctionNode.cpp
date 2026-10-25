@@ -317,11 +317,9 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// ORDER BY combinator (with optional LIMIT N).
     if (hasOrderByCombinator())
     {
-        function_ast->order_by_combinator = true;
         function_ast->order_by_combinator_columns = getOrderByColumnsNode()->toAST(new_options);
         function_ast->children.push_back(function_ast->order_by_combinator_columns);
-        if (order_by_limit.has_value())
-            function_ast->order_by_combinator_limit = order_by_limit;
+        function_ast->setOrderByCombinatorLimit(order_by_limit);
     }
 
     return function_ast;

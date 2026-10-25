@@ -1324,10 +1324,9 @@ public:
 
             if (has_order_by)
             {
-                function_node->order_by_combinator = true;
                 function_node->order_by_combinator_columns = std::move(order_by_columns);
                 function_node->children.push_back(function_node->order_by_combinator_columns);
-                function_node->order_by_combinator_limit = order_by_limit;
+                function_node->setOrderByCombinatorLimit(order_by_limit);
             }
 
             ParserKeyword filter(Keyword::FILTER);

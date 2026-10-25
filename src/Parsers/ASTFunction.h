@@ -7,7 +7,6 @@
 #include <Parsers/NullsAction.h>
 
 #include <initializer_list>
-
 #include <optional>
 
 
@@ -23,7 +22,7 @@ class ASTFunction : public ASTWithAlias
     struct ASTFunctionFlags
     {
         using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 12;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 13;
 
         UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
         UInt32 is_operator : 1;
@@ -35,7 +34,8 @@ class ASTFunction : public ASTWithAlias
         UInt32 is_compound_name : 1;
         UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
         UInt32 kind : 3; /// 3 bits for Kind (8 values)
-        UInt32 unused : 19;
+        UInt32 has_order_by_combinator_limit : 1;
+        UInt32 unused : 18;
     };
 
 public:
@@ -48,9 +48,24 @@ public:
 
     /// Aggregate function combinator: ORDER BY inside function arguments.
     /// Example: groupArray(x ORDER BY y DESC LIMIT 10)
-    bool order_by_combinator = false;
+    /// The sort list is non-null if and only if the function has the combinator.
+    /// The fields are kept compact, because every function in every query has them.
     ASTPtr order_by_combinator_columns;
-    std::optional<UInt64> order_by_combinator_limit;
+
+    bool hasOrderByCombinator() const { return order_by_combinator_columns != nullptr; }
+
+    std::optional<UInt64> getOrderByCombinatorLimit() const
+    {
+        if (flags<ASTFunctionFlags>().has_order_by_combinator_limit)
+            return order_by_combinator_limit;
+        return {};
+    }
+
+    void setOrderByCombinatorLimit(std::optional<UInt64> limit)
+    {
+        flags<ASTFunctionFlags>().has_order_by_combinator_limit = limit.has_value();
+        order_by_combinator_limit = limit.value_or(0);
+    }
 
     /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
     bool isOperator() const { return flags<ASTFunctionFlags>().is_operator; }
@@ -82,6 +97,12 @@ public:
 
     String window_name;
     ASTPtr window_definition;
+
+private:
+    /// Meaningful only if the `has_order_by_combinator_limit` flag is set.
+    UInt64 order_by_combinator_limit = 0;
+
+public:
 
     NullsAction getNullsAction() const { return static_cast<NullsAction>(flags<ASTFunctionFlags>().nulls_action); }
     void setNullsAction(NullsAction value) { flags<ASTFunctionFlags>().nulls_action = static_cast<UInt32>(value); }
