@@ -364,7 +364,7 @@ void GPUHashJoin::finishBuild()
         const UInt64 moved_us = watch.elapsedMicroseconds();
         hash_join = std::make_unique<GPU::CudfHashJoin>(
             key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
-        markBuilt(rows);
+        markBuilt();
         LOG_DEBUG(
             log,
             "Built the hash table of {} rows of the right table, {} bytes, on the GPU with its columns: {} us to put them "
@@ -429,7 +429,7 @@ void GPUHashJoin::finishBuild()
     const UInt64 moved_us = watch.elapsedMicroseconds();
     hash_join = std::make_unique<GPU::CudfHashJoin>(
         key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
-    markBuilt(rows);
+    markBuilt();
     LOG_DEBUG(
         getLogger("GPUHashJoin"),
         "Built the hash table of {} rows of the right table, {} bytes, on the GPU: {} us to take the columns, {} us to build",
@@ -602,13 +602,10 @@ JoinResultPtr GPUHashJoin::joinDeviceChunk(const Chunk & chunk, const Block & he
     return probeOnDevice(device.get(), {}, header, chunk.getNumRows());
 }
 
-void GPUHashJoin::markBuilt(size_t rows)
+void GPUHashJoin::markBuilt()
 {
-    auto set = std::make_shared<const GPU::DeviceKeySet>(
-        GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows}, GPU::GPUResources::get().compute);
     {
         std::lock_guard lock(built_mutex);
-        key_set = std::move(set);
         built.store(true, std::memory_order_release);
     }
     built_changed.notify_all();
@@ -618,13 +615,23 @@ std::shared_ptr<const GPU::DeviceKeySet> GPUHashJoin::waitForKeySet(const std::f
 {
     /// Woken by the build's end, and now and then to ask whether to go on waiting: whoever waits is stopped by its own
     /// query's end or error, which knows nothing of this join.
-    std::unique_lock lock(built_mutex);
-    while (!built.load(std::memory_order_acquire))
     {
-        if (stop())
-            return nullptr;
-        built_changed.wait_for(lock, std::chrono::milliseconds(100));
+        std::unique_lock lock(built_mutex);
+        while (!built.load(std::memory_order_acquire))
+        {
+            if (stop())
+                return nullptr;
+            built_changed.wait_for(lock, std::chrono::milliseconds(100));
+        }
     }
+
+    /// Made once, by the first to ask: a join whose left table no read filters by its keys makes none.
+    std::call_once(key_set_once, [this]
+    {
+        key_set = std::make_shared<const GPU::DeviceKeySet>(
+            GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = build_rows.load(std::memory_order_relaxed)},
+            GPU::GPUResources::get().compute);
+    });
     return key_set;
 }
 

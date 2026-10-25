@@ -6,6 +6,8 @@
 #include <cuco/static_set.cuh>
 #include <rmm/device_uvector.hpp>
 #include <rmm/exec_policy.hpp>
+#include <rmm/mr/polymorphic_allocator.hpp>
+#include <rmm/resource_ref.hpp>
 #include <thrust/count.h>
 #include <thrust/remove.h>
 
@@ -58,7 +60,16 @@ rmm::device_uvector<uint64_t> widened(DeviceFixedColumn keys, cuda::stream_ref s
 
 struct DeviceKeySet::State
 {
-    using Set = cuco::static_set<uint64_t>;
+    /// Allocated through rmm in the order of the stream, as cuDF allocates its own: the default allocator of cuCollections
+    /// goes through `cudaMalloc`, which waits for the whole device, and so for every read in flight on it.
+    using Set = cuco::static_set<
+        uint64_t,
+        cuco::extent<size_t>,
+        cuda::thread_scope_device,
+        cuda::std::equal_to<uint64_t>,
+        cuco::double_hashing<4, cuco::default_hash_function<uint64_t>>,
+        rmm::mr::polymorphic_allocator<char>,
+        cuco::storage<1>>;
 
     const GPUElementType type;
     std::unique_ptr<Set> set;
@@ -87,7 +98,15 @@ DeviceKeySet::DeviceKeySet(DeviceFixedColumn keys, cuda::stream_ref stream)
     new_state->set = guarded("building a set of " + std::to_string(num_keys) + " keys", [&]
     {
         std::unique_ptr<State::Set> set(new State::Set(
-            cuco::extent<size_t>{std::max<size_t>(num_keys, 1)}, 0.5, cuco::empty_key<uint64_t>{sentinel}, {}, {}, {}, {}, {}, stream));
+            cuco::extent<size_t>{std::max<size_t>(num_keys, 1)},
+            0.5,
+            cuco::empty_key<uint64_t>{sentinel},
+            {},
+            {},
+            {},
+            {},
+            rmm::mr::polymorphic_allocator<char>{rmm::mr::get_current_device_resource_ref()},
+            stream));
         if (num_keys != 0)
             set->insert_async(all.begin(), end, stream);
         return set;

@@ -121,8 +121,8 @@ private:
     /// Builds the hash table over the keys sent so far, once.
     void finishBuild();
 
-    /// After the hash table: the set of the keys, and the build marked as ended for the probes and the waits on it.
-    void markBuilt(size_t rows);
+    /// After the hash table: the build marked as ended, for the probes and the waits on it.
+    void markBuilt();
 
     /// Of a join on the device: the keys and the columns of the result of the right table's chunks, put together on the
     /// device in the order of the chunks.
@@ -180,8 +180,9 @@ private:
 
     GPU::DeviceBuffer build_keys;
     std::unique_ptr<GPU::CudfHashJoin> hash_join;
-    /// The build keys as a set, made along with the hash table, for the reads of the left table that filter by them.
-    std::shared_ptr<const GPU::DeviceKeySet> key_set;
+    /// The build keys as a set, made once the first read of the left table asks for them, see `waitForKeySet`.
+    mutable std::once_flag key_set_once;
+    mutable std::shared_ptr<const GPU::DeviceKeySet> key_set;
     mutable std::mutex built_mutex;
     mutable std::condition_variable built_changed;
 
