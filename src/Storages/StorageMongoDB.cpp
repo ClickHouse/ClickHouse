@@ -23,6 +23,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
@@ -413,8 +414,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     auto column_type = column_node->getResultType();
     auto const_value = const_node->getValue();
 
-    bool is_const_number = WhichDataType(const_type).isNumber();
-    bool is_column_number = WhichDataType(column_type).isNumber();
+    bool is_const_number = WhichDataType(const_type).isNumber() && !isBool(const_type);
+    bool is_column_number = WhichDataType(column_type).isNumber() && !isBool(column_type);
 
     if (func_name == "$in" || func_name == "$nin")
     {
@@ -479,10 +480,15 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
-    if (!const_type->equals(*column_type) && (!is_const_number || !is_column_number))
+    const bool different_bool_types = isBool(removeNullable(const_type)) != isBool(removeNullable(column_type));
+    if ((!const_type->equals(*column_type) || different_bool_types) && (!is_const_number || !is_column_number))
     {
         /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
-        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type.get());
+        const auto * const_type_hint = const_type.get();
+        /// `Bool` and `UInt8` compare equal, so the hint would bypass even strict conversion.
+        if (different_bool_types && removeNullable(const_type)->equals(*removeNullable(column_type)))
+            const_type_hint = nullptr;
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type_hint);
 
         if (converted_value.isNull())
         {
