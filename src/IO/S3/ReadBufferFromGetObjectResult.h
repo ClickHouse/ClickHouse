@@ -45,6 +45,9 @@ public:
 
     void releaseResult();
 
+    /// Releases the session without reading the rest of the response, so the connection is dropped.
+    void detachSession();
+
     bool isResultReleased() const { return !result; }
 
     /// Whether everything the response contains has been read. Reported as soon as the last byte
