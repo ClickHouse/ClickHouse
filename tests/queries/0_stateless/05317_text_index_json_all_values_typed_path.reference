@@ -392,6 +392,29 @@ SELECT count() FROM t_sub_dynamic WHERE j.x.:`Array(Nullable(String))`.size0 = 1
 SELECT count() FROM t_sub_dynamic WHERE j.x.:`Array(Nullable(String))`.size0 = 1 SETTINGS use_skip_indexes = 0;
 1
 SELECT count() FROM t_sub_dynamic WHERE j.x.:`Array(Nullable(String))`.size0 = 1 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+-- A `.:T` element reads the default of `T` where the path is missing or holds another type.
+DROP TABLE IF EXISTS t_type_hint_default;
+CREATE TABLE t_type_hint_default (id UInt64, j JSON, INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_type_hint_default VALUES (1, '{"x": "foo"}'), (2, '{}'), (3, '{"x": [1]}');
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Int64)` = []::Array(Int64);
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Int64)` = []::Array(Int64) SETTINGS use_skip_indexes = 0;
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Map(String, Int64)` = map()::Map(String, Int64);
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Map(String, Int64)` = map()::Map(String, Int64) SETTINGS use_skip_indexes = 0;
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Int64)` IN (SELECT '[]');
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Int64)` IN (SELECT '[]') SETTINGS use_skip_indexes = 0;
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Variant(Int64, String))` = '[ ]';
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Variant(Int64, String))` = '[ ]' SETTINGS use_skip_indexes = 0;
+3
+SELECT count() FROM t_type_hint_default WHERE j.x.:`Array(Nullable(Int64))` = [1]::Array(Nullable(Int64)) SETTINGS force_data_skipping_indices = 'idx';
+1
 DROP TABLE IF EXISTS t_tuple_json;
 CREATE TABLE t_tuple_json (id UInt64, t Tuple(j JSON(n Int64)), INDEX idx JSONAllValues(t.j) TYPE text(tokenizer = 'array'))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
@@ -469,6 +492,7 @@ DROP TABLE t_sub_tuple;
 DROP TABLE t_sub_object;
 DROP TABLE t_sub_nullable;
 DROP TABLE t_sub_dynamic;
+DROP TABLE t_type_hint_default;
 DROP TABLE t_tuple_json;
 DROP TABLE t_implicit_zone;
 DROP TABLE t_implicit_zone_array;

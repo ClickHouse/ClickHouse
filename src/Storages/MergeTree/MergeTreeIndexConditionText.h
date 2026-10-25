@@ -230,9 +230,12 @@ private:
 
     /// Whether the node reads the value `JSONAllValues` stores for its path: a typed path, or a `.:T` element of a
     /// dynamic path. A subcolumn of a typed path reads a part of that text.
-    bool readsStoredJSONValue(const RPNBuilderTreeNode & path) const;
+    bool readsStoredJSONValue(const RPNBuilderTreeNode & path, bool * is_type_hint = nullptr) const;
     /// Whether a `JSONAllValues` index can answer a condition on the JSON path node, possibly under a cast.
     bool canUseJSONAllValuesForPath(const RPNBuilderTreeNode & node) const;
+    /// The text of the default of `T` that a `.:T` element reads where the path is missing or holds another type,
+    /// unless it is NULL. `JSONAllValues` does not store it.
+    std::optional<String> tryGetTextOfJSONTypeHintDefault(const RPNBuilderTreeNode & node) const;
 
     bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
 

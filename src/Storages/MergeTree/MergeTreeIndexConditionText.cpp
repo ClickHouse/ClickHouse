@@ -1180,7 +1180,7 @@ static std::optional<String> getTextOfEqualValue(
     return serializeFieldAsText(converted, type);
 }
 
-bool MergeTreeIndexConditionText::readsStoredJSONValue(const RPNBuilderTreeNode & path) const
+bool MergeTreeIndexConditionText::readsStoredJSONValue(const RPNBuilderTreeNode & path, bool * is_type_hint) const
 {
     const auto name = path.getColumnName();
     const auto info = tryMatchJSONSubcolumnToIndex(name, header, "JSONAllValues", json_argument_types);
@@ -1200,10 +1200,24 @@ bool MergeTreeIndexConditionText::readsStoredJSONValue(const RPNBuilderTreeNode 
     if (!subcolumn.starts_with(type_hint_prefix) || subcolumn.find('`', type_hint_prefix.size()) != subcolumn.size() - 1)
         return false;
 
+    if (is_type_hint)
+        *is_type_hint = true;
+
     return std::ranges::none_of(typed_paths, [&](const auto & typed_path)
     {
         return info->path == typed_path.first || info->path.starts_with(typed_path.first + ".");
     });
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetTextOfJSONTypeHintDefault(const RPNBuilderTreeNode & node) const
+{
+    const auto path = getJSONPathNode(node);
+    const auto * path_dag_node = path.getDAGNode();
+    bool is_type_hint = false;
+    if (!path_dag_node || canContainNull(*path_dag_node->result_type) || !readsStoredJSONValue(path, &is_type_hint) || !is_type_hint)
+        return {};
+
+    return serializeFieldAsText(path_dag_node->result_type->getDefault(), path_dag_node->result_type);
 }
 
 bool MergeTreeIndexConditionText::canUseJSONAllValuesForPath(const RPNBuilderTreeNode & node) const
@@ -1395,7 +1409,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             if (function_name == "equals")
             {
                 auto text = getTextOfEqualValue(path_type, value_field, value_type, getContext());
-                if (!text)
+                if (!text || text == tryGetTextOfJSONTypeHintDefault(index_column_node))
                     return false;
 
                 value_field = std::move(*text);
@@ -1405,6 +1419,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 return false;
             }
+        }
+        else if (function_name == "equals" && tryGetTextOfJSONTypeHintDefault(index_column_node))
+        {
+            /// `equals` converts the constant to the path's type, so a constant of another text can equal the default.
+            return false;
         }
 
         has_index_column = true;
@@ -2496,6 +2515,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
+    std::optional<String> json_type_hint_default;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
@@ -2505,8 +2525,12 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             has_index_for_map_element_value = true;
             return true;
         }
-        return hasIndexForColumn(node.getColumnName())
-            || (tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types) && canUseJSONAllValuesForPath(node));
+        if (hasIndexForColumn(node.getColumnName()))
+            return true;
+        if (!tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types) || !canUseJSONAllValuesForPath(node))
+            return false;
+        json_type_hint_default = tryGetTextOfJSONTypeHintDefault(node);
+        return true;
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
@@ -2599,7 +2623,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
+        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)) || element == json_type_hint_default)
         {
             out.text_search_queries.clear();
             return false;
