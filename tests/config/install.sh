@@ -638,7 +638,7 @@ fi
 
 ln -sf $SRC_PATH/config.d/storage_conf_local.xml $DEST_SERVER_PATH/config.d/
 # The `borrow_from_cache` object storage type is unknown to older servers (upgrade and compatibility checks).
-if check_clickhouse_version 26.10; then
+if check_clickhouse_version 26.11; then
     ln -sf $SRC_PATH/config.d/storage_conf_borrow_from_cache.xml $DEST_SERVER_PATH/config.d/
 fi
 
