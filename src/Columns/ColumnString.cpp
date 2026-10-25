@@ -362,14 +362,15 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
-    chassert(memories.size() == size());
+    chassert(start_row + memories.size() <= size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     for (size_t i = 0; i < memories.size(); ++i)
     {
-        size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
-        size_t offset = offsetAt(i);
+        size_t string_size = sizeAt(start_row + i) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(start_row + i);
 
         memcpy(memories[i], &string_size, sizeof(string_size));
         memories[i] += sizeof(string_size);
@@ -688,6 +689,20 @@ void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
+namespace
+{
+
+void restoreOffsets(const Memory<> & offsets_compressed, bool offsets_were_compressed, IColumn::Offsets & offsets)
+{
+    if (offsets_were_compressed)
+        ColumnCompressed::decompressBuffer(
+            offsets_compressed.data(), offsets.data(), offsets_compressed.size(), offsets.size() * sizeof(IColumn::Offset));
+    else
+        memcpy(offsets.data(), offsets_compressed.data(), offsets_compressed.size());
+}
+
+}
+
 ColumnPtr ColumnString::compress(bool force_compression) const
 {
     const size_t source_chars_size = chars.size();
@@ -720,6 +735,17 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();
+
+    ColumnPtr offsets_part = ColumnCompressed::create(
+        source_offsets_elements,
+        offsets_compressed_size,
+        [my_offsets_compressed = offsets_compressed, source_offsets_elements, offsets_were_compressed]
+        {
+            auto res = ColumnUInt64::create(source_offsets_elements);
+            restoreOffsets(*my_offsets_compressed, offsets_were_compressed, res->getData());
+            return res;
+        });
+
     return ColumnCompressed::create(
         source_offsets_elements,
         chars_compressed_size + offsets_compressed_size,
@@ -736,22 +762,11 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 
             ColumnCompressed::decompressBuffer(
                 my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
-
-            if (offsets_were_compressed)
-            {
-                ColumnCompressed::decompressBuffer(
-                    my_offsets_compressed->data(),
-                    res->getOffsets().data(),
-                    my_offsets_compressed->size(),
-                    source_offsets_elements * sizeof(Offset));
-            }
-            else
-            {
-                memcpy(res->getOffsets().data(), my_offsets_compressed->data(), my_offsets_compressed->size());
-            }
+            restoreOffsets(*my_offsets_compressed, offsets_were_compressed, res->getOffsets());
 
             return res;
-        });
+        },
+        Columns{std::move(offsets_part)});
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -852,20 +867,17 @@ void ColumnString::validate() const
                         last_offset, chars.size());
 }
 
-void ColumnString::updateHashWithStringValue(std::string_view value, SipHash & hash)
-{
-    /// For compatibility, which is required in certain aggregate function states.
-    size_t size_used_in_hash = value.size() + 1;
-
-    hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
-    hash.update(value.data(), value.size());
-    /// This is for compatibility
-    hash.update(UInt8(0));
-}
-
 void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    updateHashWithStringValue({reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, hash);
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+    /// For compatibility, which is required in certain aggregate function states.
+    size_t size_used_in_hash = string_size + 1;
+
+    hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
+    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    /// This is for compatibility
+    hash.update(UInt8(0));
 }
 
 void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const

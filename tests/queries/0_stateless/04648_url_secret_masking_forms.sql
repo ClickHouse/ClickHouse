@@ -6,7 +6,6 @@
 -- `urlCluster` table functions (including their named-collection forms) and the `URL` table engine.
 -- urlCluster puts the cluster name first, so the url is its second argument.
 
-SET enable_analyzer = 1;
 SET format_display_secrets_in_show_and_select = 0;
 
 -- Function forms via the query-tree dump (run_passes = 0 keeps them unresolved, so no network access).
