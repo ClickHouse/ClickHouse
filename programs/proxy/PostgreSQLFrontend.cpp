@@ -155,6 +155,10 @@ void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx)
 
                 /// No rule needs the user or the database: route by peer address or the default pool
                 /// and forward the bytes verbatim, so the backend negotiates encryption end to end.
+                /// The proxy cannot see an encrypted `CancelRequest` to broadcast it, so choose the backend
+                /// by the client address: the cancellation connection of an encrypted session, which
+                /// keeps its encryption, then reaches the backend serving that session.
+                attributes.force_sticky_by_peer_address = true;
                 LOG_DEBUG(ctx.log, "PostgreSQL connection begins with an encryption request ({}); "
                     "routing by peer address or the default pool", code);
                 break;

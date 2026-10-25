@@ -51,7 +51,10 @@ encrypt the connection first (`SSLRequest` or `GSSENCRequest`) is handled in one
   continues in cleartext (or disconnects, if it requires encryption) and its `StartupMessage` can be
   routed by the rules.
 - Otherwise the connection is routed by peer address or the listener's default pool, and the bytes are
-  forwarded verbatim, so the backend negotiates encryption end to end.
+  forwarded verbatim, so the backend negotiates encryption end to end. Such a connection chooses its
+  backend in the pool by a consistent hash of the client address, whatever the pool's load balancing
+  and stickiness, so that the encrypted `CancelRequest` of an encrypted session (which the proxy cannot
+  read) reaches the backend serving that session.
 
 A `CancelRequest` arrives on a new connection, and the proxy does not track which backend serves the
 session it cancels. Its key is a random secret, so the proxy delivers the request to every backend

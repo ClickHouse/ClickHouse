@@ -17,6 +17,9 @@ struct RouteAttributes
     String authorized_key;  /// The SSH public key offered by the client, as "<type> <base64>".
     String session_id;      /// From the HTTP URL.
     String peer_address;    /// Client IP address, without the port.
+    /// Choose the backend by the peer address even when the pool is not configured to: for a connection
+    /// whose later requests (e.g. an encrypted PostgreSQL `CancelRequest`) must reach the same backend.
+    bool force_sticky_by_peer_address = false;
 };
 
 /// A named group of backends with a load balancing strategy.

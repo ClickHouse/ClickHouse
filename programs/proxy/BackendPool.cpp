@@ -37,7 +37,7 @@ BackendPtr BackendPool::choose(const RouteAttributes & attributes) const
     if (stickiness.by_session_id && !attributes.session_id.empty())
         return chooseByConsistentHash(alive, "session:" + attributes.session_id);
 
-    if (stickiness.by_peer_address && !attributes.peer_address.empty())
+    if ((stickiness.by_peer_address || attributes.force_sticky_by_peer_address) && !attributes.peer_address.empty())
         return chooseByConsistentHash(alive, "peer:" + attributes.peer_address);
 
     return strategy->choose(alive);
