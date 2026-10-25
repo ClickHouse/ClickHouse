@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-parallel, no-replicated-database
 # Restoring a metadata version higher than the one in ZooKeeper into a read-only replica is rejected
 # before /metadata or the replication log of the table are changed.
 
