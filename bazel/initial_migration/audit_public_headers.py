@@ -20,7 +20,7 @@ SOURCE_SHA256 = {
     "bazel/rules/dwyu.bzl": "d9bcd9782eb753ca8287bbb7698216bfd56251fc0c35adebb05edaf3d9b1637f",
     "bazel/rules/dwyu_tool.bzl": "9fbe5b5759ed86eb74c46f2bf753dd922cbf767fadb6fc52b9ca7e09ce38260f",
     "bazel/rules/BUILD.bazel": "5419adcf5cedb4752e8a4303bb5b413115b96c3bdd234b2cf11302d3ea457b81",
-    "bazel/patches/dwyu-compiler-preprocessing.patch": "f0a76bdb045e456c998d123df40818bb93cc152a55e280c397d847d8efd627c0",
+    "bazel/patches/dwyu-compiler-preprocessing.patch": "8287705125854596985b4d03fec14254f35a3a8748273a49e46f868ae1bd2de1",
     "bazel/patches/rules_cc-implementation-deps-local-includes.patch": "1e8f54793cf1989dc11017982e75bd18f22bd09fc89d077c7749edcc146b6714",
     "bazel/patches/llvm-clickhouse-runtime.patch": "ffc1537fb817152a7651ea8ef1007c3799b46b496c8dcc8f6c05eac2836a1a48",
 }

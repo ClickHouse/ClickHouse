@@ -2047,3 +2047,42 @@ The native builds ([x86-64](https://app.buildbuddy.io/invocation/98cda839-df36-4
 | [ARM64](https://app.buildbuddy.io/invocation/05a7e316-40ed-4f63-93cd-976f08571b8c) | 160 | 0 | 46,439 | 5,181 |
 
 Both workflows configured 159 of 160 candidate libraries, and all five planning queries succeeded. The fourth action query returned 297,075,444 bytes on x86-64 and 290,823,928 bytes on ARM64, higher than the 167,772,160-byte limit per query. Neither native build requested a DWYU report. The previous revision’s readpassphrase result is recorded above.
+
+The later standalone DWYU workflows for [e26b08b54](https://github.com/dzbarsky/clickhouse/commit/e26b08b541135bc07cca2332f840b4fbd3bd3b48) ([x86-64](https://app.buildbuddy.io/invocation/26343a4c-e5ac-4611-8f5e-10abc911eb82), [ARM64](https://app.buildbuddy.io/invocation/daadb83e-e055-4e8f-898a-94b79e777291)) did not launch a Bazel product build and produced no grades.
+
+## 9f73209fb
+
+[9f73209fb](https://github.com/dzbarsky/clickhouse/commit/9f73209fbdb82524602e54ad558b2013f5699c99) removes 299 repeated `copts` and `local_defines` attributes from 267 libraries by putting their defaults in `ch_cc_library`. Poco Foundation declares 19 included platform `.cpp` files in `private_textual_srcs` so callers no longer inherit them as headers. The wyhash `hdrs` glob now requests only `wyhash.h` and `wyhash32.h`; it no longer includes the 13 headers under `old_versions/`.
+
+Seven targets drop direct Minizip dependencies, including `//src:unit_tests_dbms` and `//src:clickhouse_common_io_embedded`, which only compiles `FrequencyHolder.cpp`. The ZIP reader and writer keep Minizip. Two Functions libraries use `//src/Functions:minizip_link` to keep Minizip in the same link order without exporting its headers.
+
+After the builds, [audit_public_headers.py](audit_public_headers.py) updated its expected SHA-256 for [dwyu-compiler-preprocessing.patch](../patches/dwyu-compiler-preprocessing.patch); the results below are for [9f73209fb](https://github.com/dzbarsky/clickhouse/commit/9f73209fbdb82524602e54ad558b2013f5699c99).
+
+The native builds ([x86-64](https://app.buildbuddy.io/invocation/3f874738-3c71-4f05-80ae-5eb8db2e6be8), [ARM64](https://app.buildbuddy.io/invocation/e1df4b7d-e11c-4f49-b292-9328ab4253f9)) matched native CMake for the stripped and normalized ClickHouse executable on both CPUs. The raw ClickHouse and DBMS unit-test executables matched the previous Bazel builds. The unit-test hash compares the linked executable; it does not record a run of the full test suite. All 12 native targets completed on each CPU. Each CPU returned nine validation JSON reports, including the SDK ownership, Parquet reader, ORC reader and IntervalTree checks. [Six SHA-256 digests and byte counts](../../README.bazel.md#binary-comparison).
+
+On both CPUs, Bazel built 51 of 52 requested targets and exited with code 1. The sole failed target was `//bazel/fixtures/dwyu_joint:strict_6`, the DWYU check for `//contrib/cityhash102:_cityhash`.
+
+| Bazel build | BuildBuddy workflow | Remote cache hits | Actions executed on remote workers |
+| --- | --- | ---: | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/3f874738-3c71-4f05-80ae-5eb8db2e6be8) | [failed](https://app.buildbuddy.io/invocation/b474dfe7-5816-423b-a811-9255b67f5c75) | 45,692 | 6,101 |
+| [ARM64](https://app.buildbuddy.io/invocation/e1df4b7d-e11c-4f49-b292-9328ab4253f9) | [failed](https://app.buildbuddy.io/invocation/911176a5-fe5c-4997-aa62-5d4fc5bf6ebb) | 46,088 | 6,101 |
+
+| DWYU result (661 production targets) | x86-64 | ARM64 | Same status on both CPUs |
+| --- | ---: | ---: | ---: |
+| Strict clean | 19 | 19 | 19 |
+| Verified header preprocessing only | 0 | 0 | 0 |
+| Verified strict finding | 0 | 0 | 0 |
+| No verified outcome | 642 | 642 | 642 |
+
+0 targets had a verified outcome on only one CPU or different outcomes across CPUs. Header preprocessing does not count as strict clean.
+
+| Bazel build with DWYU results | Initial reader | Review of retained reports | Candidates | Requested owners | Requested without a verified result | Original reports missing | Failed analyzers |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/3f874738-3c71-4f05-80ae-5eb8db2e6be8) | `invalid` | `partial` | 20 | 20 | 1 | 1 | 1 |
+| [ARM64](https://app.buildbuddy.io/invocation/e1df4b7d-e11c-4f49-b292-9328ab4253f9) | `invalid` | `partial` | 20 | 20 | 1 | 1 | 1 |
+
+Only an independently verified original report counts as a strict result; a successful target or a failed analyzer alone does not.
+
+The initial reader rejected three Cassandra libraries because their Bazel alwayslink archives end in `.lo`. The independent review accepted those archives and checked the original DWYU JSON from the same builds.
+
+On both CPUs, DWYU reported `unverified_link_deps` for `//contrib/cityhash102:_cityhash`: it could not verify whether the target needs `@clickhouse_llvm_project//:cxx` at link time. This is not an unused-dependency finding.
