@@ -3171,6 +3171,22 @@ def test_a_projection_of_a_document_collection_reads_the_stored_field(started_cl
     collection.drop()
 
 
+def test_a_projected_json_field_does_not_capture_the_stored_document(started_cluster):
+    """A field of the result named `json`, like the column a document collection keeps its documents
+    in, does not change what a preceding `$match` reads: the filter is over the stored document."""
+    collection = make_client()["db"]["projection_json_alias"]
+    collection.drop()
+    collection.insert_one({"a": 1})
+
+    pipeline = [{"$match": {"a": 99}}, {"$project": {"_id": 0, "json": {"$literal": {"a": 99}}}}]
+    assert list(collection.aggregate(pipeline)) == []
+
+    pipeline = [{"$match": {"a": 1}}, {"$project": {"_id": 0, "json": {"$literal": {"a": 99}}}}]
+    assert list(collection.aggregate(pipeline)) == [{"json": {"a": 99}}]
+
+    collection.drop()
+
+
 def test_distinct_of_arrays_in_a_document_collection(started_cluster):
     """`distinct` is element-wise over the arrays a document holds, also in a collection created by
     the endpoint, where the field is a path of the document column."""

@@ -220,10 +220,13 @@ void collectLambdaParameters(const ASTFunction & lambda, std::unordered_set<Stri
 }
 
 /// `json.<path>` for a field: the parts of the path are the parts of the identifier, so that the
-/// dotted name of a nested field addresses the nested path of the document.
-ASTPtr makeDocumentPath(const ASTIdentifier & identifier)
+/// dotted name of a nested field addresses the nested path of the document. A non-empty
+/// `input_table` qualifies the path with the table it is read from - see `rewriteField`.
+ASTPtr makeDocumentPath(const ASTIdentifier & identifier, const String & input_table = {})
 {
     std::vector<String> parts;
+    if (!input_table.empty())
+        parts.push_back(input_table);
     parts.emplace_back(DOCUMENT_COLUMN);
     for (const auto & part : identifier.name_parts)
     {
@@ -300,7 +303,7 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
                 return make_intrusive<ASTIdentifier>(String(OBJECT_ID_COLUMN));
             return make_intrusive<ASTIdentifier>(std::vector<String>{input_table, String(OBJECT_ID_COLUMN)});
         }
-        return makeDocumentPath(field);
+        return makeDocumentPath(field, input_table);
     };
 
     if (function.name == "has")
@@ -347,9 +350,9 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
   * the field: `json.name` as a column name would be read back as the `name` member of a `json`
   * document, because a dotted column name is the nested document it names.
   *
-  * `input_table` is the alias of the table the select reads, which the object id is qualified with
-  * when it is not empty, so that it names the column of the input even where the select list has
-  * an alias `_id` of its own - see `rewriteSelect`.
+  * `input_table` is the alias of the table the select reads, which the object id and the paths of
+  * the document are qualified with when it is not empty, so that they name the columns of the input
+  * even where the select list has an alias `_id` or `json` of its own - see `rewriteSelect`.
   */
 void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_name_as_alias = false, const String & input_table = {})
 {
@@ -395,7 +398,7 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
         }
 
         ASTIdentifier identifier(*field);
-        node = makeDocumentPath(identifier);
+        node = makeDocumentPath(identifier, input_table);
         if (keep_name_as_alias)
             node->setAlias(*field);
         return;
@@ -415,7 +418,7 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
 
         auto field_name = identifier->name();
         const bool named_by_itself = identifier->tryGetAlias().empty();
-        node = makeDocumentPath(*identifier);
+        node = makeDocumentPath(*identifier, input_table);
         if (keep_name_as_alias && named_by_itself)
             node->setAlias(field_name);
         return;
@@ -512,13 +515,16 @@ void rewriteSelect(ASTSelectQuery & select)
             throwCannotExcludeFieldOfDocument();
     }
 
-    /** The fields of a document are paths of the `json` column, which no alias of the select list
-      * captures, but the object id is a column of its own, and an alias wins over a column of the
-      * same name here (see `preferAliasesToColumns`). `{$group: {_id: null, ids: {$push: "$_id"}}}`
-      * would collect its own key rather than the object ids of the documents it groups, so the object
-      * id of the input is qualified with the table it is read from when the select binds `_id`.
+    /** The object id and the document are columns of the table, and an alias wins over a column of
+      * the same name here (see `preferAliasesToColumns`). `{$group: {_id: null, ids: {$push: "$_id"}}}`
+      * would collect its own key rather than the object ids of the documents it groups, and a
+      * `$match` under `{$project: {json: ...}}` would filter on the paths of the projected `json`
+      * rather than of the stored document. So the columns of the input are qualified with the table
+      * they are read from when the select binds either name.
       */
-    const String input_table = aliases.contains(String(OBJECT_ID_COLUMN)) ? aliasInputTable(select) : String{};
+    const String input_table = aliases.contains(String(OBJECT_ID_COLUMN)) || aliases.contains(String(DOCUMENT_COLUMN))
+        ? aliasInputTable(select)
+        : String{};
 
     /// A field of the select list becomes a path that keeps the name of the field as its alias.
     if (const auto select_list = select.select())
