@@ -8,13 +8,17 @@ CREATE TYPE AS String; -- { clientError SYNTAX_ERROR }
 CREATE TYPE TypeA AS TypeB; -- { serverError UNKNOWN_TYPE }
 CREATE TYPE SelfRef AS Array(SelfRef); -- { serverError UNKNOWN_TYPE }
 
-CREATE TYPE `Type-With-Dashes` AS String;
-SHOW TYPE `Type-With-Dashes`;
-DROP TYPE `Type-With-Dashes`;
+-- Only the names that can be used where a data type is expected are accepted.
+CREATE TYPE `Type-With-Dashes` AS String; -- { clientError SYNTAX_ERROR }
+CREATE TYPE `тип_utf8` AS String; -- { clientError SYNTAX_ERROR }
+CREATE TYPE `Null` AS String; -- { clientError SYNTAX_ERROR }
+CREATE TYPE `8Bit` AS String; -- { clientError SYNTAX_ERROR }
+CREATE TYPE WithBadParameter(`T-1`) AS Array(`T-1`); -- { clientError SYNTAX_ERROR }
 
-CREATE TYPE `тип_utf8` AS String;
-SHOW TYPE `тип_utf8`;
-DROP TYPE `тип_utf8`;
+CREATE TYPE `Quoted_Type$1` AS String;
+SHOW TYPE `Quoted_Type$1`;
+SELECT CAST('x' AS `Quoted_Type$1`), toTypeName(CAST('x' AS Quoted_Type$1));
+DROP TYPE `Quoted_Type$1`;
 
 CREATE TYPE NestedComplex AS Array(Tuple(Map(String, Array(Tuple(String, UInt64))), Nullable(String)));
 SHOW TYPE NestedComplex;

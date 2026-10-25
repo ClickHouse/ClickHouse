@@ -1,5 +1,6 @@
 #include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/ASTCreateTypeQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
@@ -19,7 +20,6 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ParserIdentifier name_p;
     ParserDataType type_p;
-    ParserExpressionList params_p(false);
 
     ASTPtr name;
     ASTPtr base_type;
@@ -38,13 +38,37 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     else if (s_or_replace.ignore(pos, expected))
         or_replace = true;
 
-    if (!name_p.parse(pos, name, expected))
+    /// The name of the type and the names of its parameters are used where `ParserDataType` parses a type name, so
+    /// only the names it accepts are allowed: ``CREATE TYPE `Type-With-Dashes` AS String`` would create a type that no
+    /// column declaration or `CAST` could refer to.
+    auto parse_type_name = [&](ASTPtr & result)
+    {
+        auto begin = pos;
+        if (!name_p.parse(pos, result, expected))
+            return false;
+        if (!isValidDataTypeName(typeid_cast<const ASTIdentifier &>(*result).name()))
+        {
+            pos = begin;
+            expected.add(pos, "type name");
+            return false;
+        }
+        return true;
+    };
+
+    if (!parse_type_name(name))
         return false;
 
     if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        if (!params_p.parse(pos, params_ast, expected))
-            return false;
+        params_ast = make_intrusive<ASTExpressionList>();
+        do
+        {
+            ASTPtr param;
+            if (!parse_type_name(param))
+                return false;
+            params_ast->children.push_back(param);
+        } while (ParserToken(TokenType::Comma).ignore(pos, expected));
+
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
     }
