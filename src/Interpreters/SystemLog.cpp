@@ -16,6 +16,9 @@
 #include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -49,6 +52,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -659,6 +663,10 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
+        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
+        if (trace_log && !ignore_errors)
+            TraceCollector::flush();
+
         for (auto * log : getAllLogs())
         {
             log->flushBufferToLog(std::chrono::system_clock::now());
@@ -723,6 +731,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
+            else if (log == trace_log.get())
+                TraceCollector::flush();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -1541,6 +1551,15 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     auto alias_columns = LogElement::getNamesAndAliases();
     if constexpr (std::is_same_v<LogElement, BucketedMetricLogElement>)
     {
+        /// The `Enum16` keys of `metrics` are numbered by the position of a metric, which changes between versions,
+        /// and a cast between two such enums fails or relabels the keys. A `String` key is cast by name.
+        ordinary_columns.modify("metrics", [](ColumnDescription & column)
+        {
+            const auto & map_type = typeid_cast<const DataTypeMap &>(*column.type);
+            column.type = std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), map_type.getValueType());
+        });
+
         /// The per-metric columns of the `bucketed` schema are `ALIAS metrics['...']`, while the rotated
         /// tables of the `wide` schema (which was the default before) have them as ordinary columns and
         /// have no `metrics` column at all. An `ALIAS` in the union table would be expanded before reading
