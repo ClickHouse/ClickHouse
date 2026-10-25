@@ -33,7 +33,8 @@ write_file "${DATA_FILE_NO_BLOOM}" 0
 
 # Disable the min/max and page filters so pruning happens only via the dictionary or the bloom filter,
 # and keep a generous dictionary-page eligibility limit so the dictionary filter is always applicable.
-CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0"
+# Disable the query condition cache too: a query that hits it skips the file without reading anything.
+CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0 --use_query_condition_cache=0"
 
 # `no_such_value` is in no row group, so the bloom filters alone rule out the whole file.
 QUERY_ABSENT="select count() from file('${DATA_FILE}', Parquet) where category = 'no_such_value'"
@@ -57,7 +58,9 @@ without_filter=$(bytes_read 0 "${QUERY_ABSENT}")
 with_filter=$(bytes_read 100000000 "${QUERY_ABSENT}")
 
 echo "the bloom filters rule out every row group, so the dictionary filter reads no extra bytes"
-[ "${with_filter}" -le "${without_filter}" ] && echo "OK" || echo "FAIL: ${with_filter} > ${without_filter}"
+# Each measurement must read the file (at least the bloom filters), or the comparison measures nothing.
+[ "${without_filter}" -gt 0 ] && [ "${with_filter}" -gt 0 ] && [ "${with_filter}" -le "${without_filter}" ] \
+    && echo "OK" || echo "FAIL: with_filter=${with_filter} without_filter=${without_filter}"
 
 # Prints the query result and the number of rows read from the file.
 rows_read() {
