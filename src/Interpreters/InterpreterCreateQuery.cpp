@@ -1315,6 +1315,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 
         auto columns_from_select = as_select_sample->getNamesAndTypesList();
+        /// An inferred column gets the type of the SELECT result but not its codec,
+        /// so it must not keep a serialization that only a `Quantized` codec justifies.
+        for (auto & column : columns_from_select)
+            column.type = removeQuantizeSerializations(column.type);
         if (mode < LoadingStrictnessLevel::ATTACH)
         {
             /// A fresh `...State(...)` result type already spells its state version out, but an
