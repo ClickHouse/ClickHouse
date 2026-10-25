@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_minizip",
-    srcs = ([
+    srcs = [
         "mz_crypt.c",
         "mz_os.c",
         "mz_strm.c",
@@ -26,7 +26,7 @@ ch_cc_library(
         "mz_strm_pkcrypt.c",
         "mz_os_posix.c",
         "mz_strm_os_posix.c",
-    ] + glob(["compat/*.c"])),
+    ] + glob(["compat/*.c"]),
     hdrs = glob(["**/*.h"]),
     copts = [
         "-w",

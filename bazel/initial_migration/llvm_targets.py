@@ -280,7 +280,7 @@ def declare_from_references(root, references):
     # LLVM puts zos_wrappers on the system include path only when building for OS390.
     zos_wrappers = 'llvm/include/llvm/Support/SystemZ/zos_wrappers/*.h'
     build.rule('filegroup', 'llvm_source_headers', {'srcs': Concat([
-        Glob(header_patterns, (*component_header_exclusions(), zos_wrappers)),
+        Glob(header_patterns, (*component_header_exclusions(), 'llvm/include/llvm/Testing/**', zos_wrappers)),
         select({
             '@platforms//os:linux': [],
             '//conditions:default': Glob([zos_wrappers]),

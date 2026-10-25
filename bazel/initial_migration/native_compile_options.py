@@ -30,32 +30,46 @@ def render(atoms):
 
 def shared_native_compile_options(root, paths):
     definitions = Source((root / MODULE).read_text()).module.body
-    codegen = next(n.value for n in definitions if isinstance(n, ast.Assign) and n.targets[0].id == "NATIVE_CODEGEN_COPTS")
+    def assignments(statements):
+        return {n.targets[0].id: n.value for n in statements
+                if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)}
+
+    constants = assignments(definitions)
     functions = {n.name: n.body[-1].value for n in definitions if isinstance(n, ast.FunctionDef)}
 
-    def expand(node, standard):
+    def expand(node, standard, bindings=constants):
         # Read the two return expressions from native_compile_options.bzl so a
         # changed CMake option cannot match a stale second copy in the importer.
         if isinstance(node, ast.IfExp) and isinstance(node.test, ast.Name) and node.test.id == "standard":
-            return expand(node.body if standard else node.orelse, standard)
+            return expand(node.body if standard else node.orelse, standard, bindings)
         if call_name(node) == "native_release_copts":
             return expand(functions["native_release_copts"], standard)
         if isinstance(node, ast.Name):
             if node.id == "standard":
                 return [ast.Constant(value=standard)]
-            if node.id == "NATIVE_CODEGEN_COPTS":
-                return option_atoms(codegen)
-        if isinstance(node, (ast.BinOp, ast.List)):
-            return [v for term in option_atoms(node) for v in expand(term, standard)]
+            if node.id in bindings:
+                return expand(bindings[node.id], standard, bindings)
+            if bindings is not constants:
+                raise ValueError(f"Unknown name in imported Clang option list: {node.id}")
+        if isinstance(node, ast.List) or (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)):
+            return [v for term in option_atoms(node) for v in expand(term, standard, bindings)]
         return [node]
+
+    # Resolve only the imported option list and the constants it references in its own module.
+    for filename, symbol in (("ch_cc_library.bzl", "CLICKHOUSE_CODE_FLAGS"),
+                             ("repository_paths.bzl", "CLICKHOUSE_WARNINGS")):
+        module = Source((root / "bazel/rules" / filename).read_text()).module
+        bindings = assignments(module.body)
+        constants[symbol] = ast.List(elts=expand(bindings[symbol], None, bindings), ctx=ast.Load())
 
     patterns = []
     for symbol, standards in (("native_cxx_tool_copts", ("-std=c++17", "-std=c++23")),
                               ("NATIVE_CODEGEN_COPTS", (None,)),
+                              ("DBMS_TEST_DRIVER_COPTS", (None,)),
                               ("native_release_copts", ("-std=c++23", None))):
         for standard in standards:
             new = symbol if symbol not in functions else "{}({})".format(symbol, repr(standard) if standard else "")
-            old = expand(functions.get(symbol, codegen), standard)
+            old = expand((functions | constants)[symbol], standard)
             patterns.append((symbol, list(map(ast_key, old)), ast.parse(new, mode="eval").body))
 
     for path in sorted(paths):
@@ -63,15 +77,18 @@ def shared_native_compile_options(root, paths):
         edits, imports = [], set()
         for _, rule in source.rules():
             kind = call_name(rule)
-            if kind not in {"cc_binary", "ch_cc_binary", "llvm_runtime_objects"}:
+            if kind not in {"cc_binary", "ch_cc_binary", "ch_cc_test", "llvm_runtime_objects"}:
                 continue
+            attributes = ("copts", "linkopts") if kind == "ch_cc_test" else ("copts",)
             for attr in rule.keywords:
-                if attr.arg != "copts" or not isinstance(attr.value, ast.BinOp):
+                if attr.arg not in attributes or not isinstance(attr.value, ast.BinOp):
                     continue
                 atoms = option_atoms(attr.value)
                 original = list(map(ast_key, atoms))
                 for name, match, replacement in patterns:
-                    if kind == "llvm_runtime_objects" and name != "native_cxx_tool_copts":
+                    if kind == "ch_cc_test":
+                        start = 0 if name == "DBMS_TEST_DRIVER_COPTS" and original[:len(match)] == match else None
+                    elif kind == "llvm_runtime_objects" and name in {"NATIVE_CODEGEN_COPTS", "native_release_copts"}:
                         start = next((i for i in range(len(atoms) - len(match) + 1)
                                       if [ast_key(a) for a in atoms[i:i + len(match)]] == match), None)
                     else:

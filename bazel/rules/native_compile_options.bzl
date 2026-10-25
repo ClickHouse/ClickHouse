@@ -1,6 +1,7 @@
-"""Clang options for ClickHouse's native build tools and LLVM runtime sources."""
+"""Clang options for ClickHouse's native tools, unit_tests_dbms, and LLVM runtime sources."""
 
-load("//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
+load("//bazel/rules:ch_cc_library.bzl", "CLICKHOUSE_CODE_FLAGS")
+load("//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps")
 
 # Preserve CMake's position of -mbranches-within-32B-boundaries after the section flags.
 NATIVE_CODEGEN_COPTS = select({
@@ -23,6 +24,18 @@ NATIVE_CODEGEN_COPTS = select({
     "-ffp-contract=off",
     "-fno-math-errno",
 ]
+
+# CMake passes the same Clang options when compiling and linking unit_tests_dbms.
+DBMS_TEST_DRIVER_COPTS = [
+    "--no-default-config",
+    "-fdiagnostics-color=always",
+    "-pipe",
+] + NATIVE_CODEGEN_COPTS + [
+    "-fdiagnostics-absolute-paths",
+    "-fstrict-vtable-pointers",
+    "-fPIE",
+    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
+] + CLICKHOUSE_CODE_FLAGS + ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + ["-O3", "-DNDEBUG"]
 
 def native_release_copts(standard = None):
     """Return the Linux release flags, with the language standard in CMake order."""

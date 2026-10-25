@@ -23,6 +23,14 @@ UNIT_TEST_FUNCTION_DEPS = [
 # Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
 DEPENDENCIES = {
     ('@clickhouse_arrow', '_arrow__compile_0'): ([], ['@clickhouse_boost//:boost_headers_no_openssl'], []),
+    ('@clickhouse_aws', '_aws'): ([
+        '@clickhouse_aws_c_auth//:aws_c_auth',
+        '@clickhouse_aws_c_cal//:aws_c_cal',
+        '@clickhouse_aws_c_event_stream//:aws_c_event_stream',
+        '@clickhouse_aws_c_common//:aws_c_common',
+        '@clickhouse_aws_c_io//:aws_c_io',
+        '@clickhouse_aws_c_http//:aws_c_http',
+    ], [], []),
     ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_grpc', 'grpc_cpp_plugin'): ([

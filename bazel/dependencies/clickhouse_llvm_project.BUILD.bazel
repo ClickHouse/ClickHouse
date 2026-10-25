@@ -1728,18 +1728,6 @@ cc_library(
     ]),
 )
 
-cc_library(
-    name = "llvm_testing",
-    testonly = True,
-    hdrs = glob(["llvm/include/llvm/Testing/**/*.h"]),
-    textual_hdrs = glob(["llvm/include/llvm/Testing/**/*.inc"]),
-    deps = [
-        ":llvm_headers",
-        "@clickhouse_googletest//:_gmock",
-        "@clickhouse_googletest//:_gtest",
-    ],
-)
-
 _GENERATED_LOCAL_DEFINES_0 = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
@@ -5056,7 +5044,7 @@ _CLANG_RT_BUILTINS_OUTLINE_LOCAL_INCLUDES = select({
 
 llvm_runtime_objects(
     name = "clang_rt_builtins__runtime_objects_0",
-    srcs = ([
+    srcs = [
         "compiler-rt/lib/builtins/absvdi2.c",
         "compiler-rt/lib/builtins/absvsi2.c",
         "compiler-rt/lib/builtins/absvti2.c",
@@ -5249,7 +5237,7 @@ llvm_runtime_objects(
         "compiler-rt/lib/builtins/truncxfbf2.c",
         "compiler-rt/lib/builtins/truncsfbf2.c",
         "compiler-rt/lib/builtins/trunctfbf2.c",
-    ]) + _BUILTINS_HEADERS,
+    ] + _BUILTINS_HEADERS,
     arch = _RUNTIME_ARCH,
     copts = ["--no-default-config"] + select({
         "@platforms//cpu:x86_64": [
@@ -5434,7 +5422,7 @@ _GENERATED_LOCAL_DEFINES_3 = [
 
 llvm_runtime_objects(
     name = "clang_rt_xray__runtime_objects_0",
-    srcs = ([
+    srcs = [
         "compiler-rt/lib/xray/xray_buffer_queue.cpp",
         "compiler-rt/lib/xray/xray_init.cpp",
         "compiler-rt/lib/xray/xray_flags.cpp",
@@ -5502,7 +5490,7 @@ llvm_runtime_objects(
         "compiler-rt/lib/sanitizer_common/sanitizer_stoptheworld_linux_libcdep.cpp",
         "compiler-rt/lib/sanitizer_common/sanitizer_stoptheworld_netbsd_libcdep.cpp",
         "@clickhouse//contrib:compiler-rt-cmake/xray_reject_modes.cpp",
-    ]) + _XRAY_HEADERS + _LIBCXX_PUBLIC_HEADERS,
+    ] + _XRAY_HEADERS + _LIBCXX_PUBLIC_HEADERS,
     arch = _RUNTIME_ARCH,
     copts = ["--no-default-config"] + select({
         "@platforms//cpu:x86_64": [

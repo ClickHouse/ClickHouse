@@ -314,10 +314,26 @@ def normalize(text, stats=None):
         text = changed
 
 
-def remove_parens(text):
-    """Remove select/list grouping only if Python's parsed BUILD AST is identical."""
+def source_list_key(module):
+    """Compare srcs sums by operand order; leave all other expressions intact."""
+    class SourceLists(ast.NodeTransformer):
+        def visit_BinOp(self, node):
+            node = self.generic_visit(node)
+            if (isinstance(node.op, ast.Add) and
+                    all(isinstance(part, ast.List) or call_name(part) == "glob"
+                        or select_dictionary(part) is not None for part in list_parts(node))):
+                return canonical_list(node)
+            return node
+
+    for keyword in ast.walk(module):
+        if isinstance(keyword, ast.keyword) and keyword.arg == "srcs":
+            keyword.value = SourceLists().visit(keyword.value)
+    return ast_key(module)
+
+
+def remove_parens(text, key=ast_key):
+    """Remove grouping only when the compared BUILD expressions agree."""
     source = Source(text)
-    wanted = ast_key(source.module)
     tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
     pairs, stack = [], []
     previous = None
@@ -337,6 +353,9 @@ def remove_parens(text):
             if not called:
                 pairs.append((first, index))
         previous = token
+    if not pairs:
+        return text
+    wanted = key(source.module)
     # AST offsets count bytes, while tokenize columns count characters.
     lines = text.splitlines(keepends=True)
     def pos(where):
@@ -353,7 +372,7 @@ def remove_parens(text):
             parsed = ast.parse(candidate)
         except SyntaxError:
             continue
-        if ast_key(parsed) == wanted:
+        if key(parsed) == wanted:
             removed = proposed
     return source.rewrite(removed)
 

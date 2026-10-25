@@ -19,13 +19,14 @@ CLICKHOUSE_TARGET_FLAGS = {
     "aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
 }
 
-CLICKHOUSE_CODE_FLAGS = [
+CLICKHOUSE_XRAY_FLAGS = [
     "-fxray-instrument",
     "-fxray-modes=none",
     "-fxray-instrumentation-bundle=function",
-    "-Wall",
-    "-Wextra",
 ]
+
+_CLICKHOUSE_CXX_WARNINGS = ["-Wall", "-Wextra"]
+CLICKHOUSE_CODE_FLAGS = CLICKHOUSE_XRAY_FLAGS + _CLICKHOUSE_CXX_WARNINGS
 
 def ch_cc_library(
         name,
@@ -53,15 +54,18 @@ def ch_cc_library(
         str(Label("@platforms//cpu:" + arch)): flags
         for arch, flags in CLICKHOUSE_TARGET_FLAGS.items()
     } | {"//conditions:default": []})
-    code_flags = CLICKHOUSE_CODE_FLAGS if clickhouse_code else []
+    code_flags = []
     if source_headers:
         headers = [Label("@clickhouse//src:clickhouse_source_headers")]
         kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + select({
             str(Label("@platforms//cpu:" + arch)): headers
             for arch in arches
         } | {"//conditions:default": []})
-    if clickhouse_code and language == "CXX":
-        defaults = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + ["-std=c++23"]
+    if clickhouse_code:
+        code_flags = CLICKHOUSE_XRAY_FLAGS if language == "C" else CLICKHOUSE_CODE_FLAGS
+    if clickhouse_code and language in ["C", "CXX"]:
+        standard = "-std=gnu11" if language == "C" else "-std=c++23"
+        defaults = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [standard]
         code_flags = code_flags + select({
             str(Label("@platforms//cpu:" + arch)): defaults if arch in arches else []
             for arch in CLICKHOUSE_TARGET_FLAGS

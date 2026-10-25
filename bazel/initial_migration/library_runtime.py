@@ -117,8 +117,8 @@ def normalize(text, package):
         original = fields(rule)
         attrs = fields(expanded_rules[literal(original["name"])])
         arches = ast.literal_eval(attrs["arches"]) if "arches" in attrs else CPUS
-        own = literal(attrs.get("clickhouse_code"), False)
         language = literal(attrs.get("language"), "CXX")
+        own_cxx = language == "CXX" and literal(attrs.get("clickhouse_code"), False)
         deps = attrs.get("deps", empty)
         configured = [[literal(item) for item in selected(deps, cpu)] for cpu in arches]
         headers = "llvm_headers" not in original and all(
@@ -137,7 +137,7 @@ def normalize(text, package):
                 headers = headers and not any(label in inactive for label in HEADERS)
                 runtime = runtime and not any(label in inactive for label in RUNTIME)
         include_values = ()
-        if own and language == "CXX":
+        if own_cxx:
             depth = len(package.split("/")) if package else 0
             include_values = tuple("../" * depth + "<llvm-toolchain>" + suffix for suffix in LLVM_INCLUDES)
             for cpu in arches:
@@ -175,7 +175,7 @@ def normalize(text, package):
                 requested = {name for name, items in requests.items() if len(items) != previous.get(name, 0)}
                 attributes.append((original[field], named, replacement, requested))
         options = []
-        if "llvm_headers" not in original and headers != own and (headers or changed_includes):
+        if "llvm_headers" not in original and headers != own_cxx and (headers or changed_includes):
             options.append("llvm_headers = " + str(headers))
         if "link_runtime" not in original and runtime:
             options.append("link_runtime = True")

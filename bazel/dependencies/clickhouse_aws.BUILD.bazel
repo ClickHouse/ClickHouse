@@ -20,7 +20,7 @@ expand_template(
 
 ch_cc_library(
     name = "_aws__compile_0",
-    srcs = (glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/endpoint/**/*.cpp"]) + [
+    srcs = glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/endpoint/**/*.cpp"]) + [
         "src/aws-cpp-sdk-core/source/external/cjson/cJSON.cpp",
         "src/aws-cpp-sdk-core/source/external/tinyxml2/tinyxml2.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/http/*.cpp"]) + [
@@ -36,7 +36,7 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/smithy/tracing/TracingUtils.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/**/*.cpp"]) + [
         "@clickhouse//contrib:aws-cmake/aws_stubs.cpp",
-    ]),
+    ],
     # This target builds CRT HTTP and no-op telemetry. These SDK backends
     # require sources and system APIs that this target does not compile.
     hdrs = glob(
@@ -93,13 +93,7 @@ cc_library(
     name = "_aws",
     deps = [
         ":_aws__compile_0",
-        "@clickhouse_aws_c_auth//:aws_c_auth",
-        "@clickhouse_aws_c_cal//:aws_c_cal",
-        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
-        "@clickhouse_aws_c_common//:aws_c_common",
         "@clickhouse_aws_checksums//:aws_checksums",
-        "@clickhouse_aws_c_io//:aws_c_io",
-        "@clickhouse_aws_c_http//:aws_c_http",
         "@clickhouse_aws_c_compression//:aws_c_compression",
         "@clickhouse_aws_c_s3//:aws_c_s3",
         "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",

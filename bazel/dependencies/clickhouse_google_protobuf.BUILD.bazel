@@ -272,7 +272,7 @@ ch_cc_library(
     ] + glob(
         ["src/google/protobuf/json/internal/*.cc"],
         exclude = ["**/*_test.cc"],
-    ) + ([
+    ) + [
         "src/google/protobuf/json/json.cc",
         "src/google/protobuf/json_enumvalue_options.pb.cc",
         "src/google/protobuf/map_field.cc",
@@ -296,7 +296,7 @@ ch_cc_library(
         ],
     ) + [
         "src/google/protobuf/wire_format.cc",
-    ]) + glob([
+    ] + glob([
         "src/google/protobuf/json/internal/*.h",
     ]),
     hdrs = _PROTOBUF_LITE_HDRS + [

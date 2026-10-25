@@ -117,7 +117,7 @@ _HDFS3_LOCAL_DEFINES = select({
 
 ch_cc_library(
     name = "_hdfs3__compile_0",
-    srcs = ((glob(["src/network/*.cpp"]) + [
+    srcs = glob(["src/network/*.cpp"]) + [
         "src/client/ReadShortCircuitInfo.cpp",
         "src/client/Pipeline.cpp",
         "src/client/Hdfs.cpp",
@@ -154,10 +154,10 @@ ch_cc_library(
         "src/client/NativeRSRawEncoder.cpp",
         "src/client/Preconditions.cpp",
         "src/client/RSUtil.cpp",
-    ]) + glob(["src/client/RawErasure*.cpp"]) + [
+    ] + glob(["src/client/RawErasure*.cpp"]) + [
         "src/client/StatefulStripeReader.cpp",
         "src/client/PositionStripeReader.cpp",
-    ] + glob(["src/client/Stripe*.cpp"]) + ([
+    ] + glob(["src/client/Stripe*.cpp"]) + [
         "src/client/SystemECPolicies.cpp",
         "src/client/dump.cpp",
         "src/client/erasure_coder.cpp",
@@ -194,7 +194,7 @@ ch_cc_library(
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
         "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
-    ])) + glob(
+    ] + glob(
         ["src/**/*.h"],
         exclude = _HDFS3_API_HDRS + [
             "src/client/TokenInternal.h",

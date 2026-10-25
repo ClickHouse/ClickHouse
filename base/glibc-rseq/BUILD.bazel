@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -7,13 +6,8 @@ ch_cc_library(
     name = "glibc-rseq",
     srcs = ["rseq.c"],
     hdrs = ["rseq.h"],
+    clickhouse_code = True,
     copts = [
-        "-fxray-instrument",
-        "-fxray-modes=none",
-        "-fxray-instrumentation-bundle=function",
-        "-Wframe-larger-than=65536",
-    ] + CLICKHOUSE_WARNINGS + [
-        "-std=gnu11",
         "-fno-direct-access-external-data",
         "-Wno-declaration-after-statement",
     ],

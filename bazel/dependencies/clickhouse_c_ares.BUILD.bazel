@@ -8,7 +8,7 @@ exports_files([
 
 ch_cc_library(
     name = "_c-ares",
-    srcs = ([
+    srcs = [
         "src/lib/ares_addrinfo2hostent.c",
         "src/lib/ares_addrinfo_localhost.c",
         "src/lib/ares_android.c",
@@ -44,7 +44,7 @@ ch_cc_library(
         "src/lib/ares_timeout.c",
         "src/lib/ares_update_servers.c",
         "src/lib/ares_version.c",
-    ]) + glob(["src/lib/dsa/*.c"]) + [
+    ] + glob(["src/lib/dsa/*.c"]) + [
         "src/lib/event/ares_event_configchg.c",
         "src/lib/event/ares_event_epoll.c",
         "src/lib/event/ares_event_kqueue.c",

@@ -730,7 +730,7 @@ _GENERATED_COPTS_2 = [
 
 ch_cc_library(
     name = "grpc__compile_0",
-    srcs = glob(["src/core/call/call_*.cc"]) + ([
+    srcs = glob(["src/core/call/call_*.cc"]) + [
         "src/core/call/client_call.cc",
         "src/core/call/interception_chain.cc",
         "src/core/call/message.cc",
@@ -742,7 +742,7 @@ ch_cc_library(
         "src/core/call/security_context.cc",
         "src/core/call/server_call.cc",
         "src/core/call/status_util.cc",
-    ] + glob(["src/core/channelz/*.cc"])) + glob(["src/core/channelz/v2tov1/*.cc"]) + [
+    ] + glob(["src/core/channelz/*.cc"]) + glob(["src/core/channelz/v2tov1/*.cc"]) + [
         "src/core/client_channel/backup_poller.cc",
         "src/core/client_channel/buffered_call.cc",
     ] + glob(["src/core/client_channel/client_*.cc"]) + [

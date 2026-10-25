@@ -444,7 +444,7 @@ ch_cc_library(
         "providers/implementations/ciphers/cipher_tdes.c",
     ] + glob(["providers/implementations/ciphers/cipher_tdes_*.c"]) + [
         "providers/implementations/ciphers/ciphercommon.c",
-    ] + glob(["providers/implementations/ciphers/ciphercommon_*.c"]) + (glob(["providers/implementations/digests/blake2*.c"]) + [
+    ] + glob(["providers/implementations/ciphers/ciphercommon_*.c"]) + glob(["providers/implementations/digests/blake2*.c"]) + [
         "providers/implementations/digests/digestcommon.c",
         "providers/implementations/digests/md4_prov.c",
         "providers/implementations/digests/md5_prov.c",
@@ -456,7 +456,7 @@ ch_cc_library(
         "providers/implementations/digests/sha3_prov.c",
         "providers/implementations/digests/sm3_prov.c",
         "providers/implementations/digests/wp_prov.c",
-    ]) + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + [
+    ] + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + [
         "providers/implementations/keymgmt/dh_kmgmt.c",
         "providers/implementations/keymgmt/dsa_kmgmt.c",
         "providers/implementations/keymgmt/ec_kmgmt.c",

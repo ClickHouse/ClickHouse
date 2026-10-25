@@ -372,7 +372,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "FunctionsStringDistance.cpp",
         ],
-    }) + ([
+    }) + [
         "FunctionsStringHash.cpp",
         "FunctionsStringHashFixedString.cpp",
         "FunctionsStringSimilarity.cpp",
@@ -755,12 +755,12 @@ ch_cc_library(
         "randomFixedString.cpp",
         "randomHadamardTransform.cpp",
         "randomPrintableASCII.cpp",
-    ]) + select({
+    ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "randomString.cpp",
         ],
-    }) + ([
+    }) + [
         "randomStringUTF8.cpp",
         "readWkb.cpp",
         "readWkt.cpp",
@@ -894,7 +894,7 @@ ch_cc_library(
         "wkt.cpp",
         "yesterday.cpp",
         "ztest.cpp",
-    ]) + glob(["AI/*.cpp"]) + glob(["Kusto/*.cpp"]) + _PRIVATE_FUNCTIONS_OBJ_0_HEADERS,
+    ] + glob(["AI/*.cpp"]) + glob(["Kusto/*.cpp"]) + _PRIVATE_FUNCTIONS_OBJ_0_HEADERS,
     hdrs = ["registerFunctions.h"],
     clickhouse_code = True,
     copts = ["-g1"],

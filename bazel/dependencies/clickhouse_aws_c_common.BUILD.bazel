@@ -42,7 +42,7 @@ expand_template(
 
 ch_cc_library(
     name = "aws_c_common",
-    srcs = ([
+    srcs = [
         "source/allocator.c",
         "source/allocator_sba.c",
         "source/array_list.c",
@@ -96,7 +96,7 @@ ch_cc_library(
     }) + glob(["source/external/**/*.h"]) + glob([
         "include/aws/common/private/*.h",
         "include/aws/common/private/*.inl",
-    ]) + ["include/aws/common/posix/common.inl"]),
+    ]) + ["include/aws/common/posix/common.inl"],
     hdrs = glob([
         "include/aws/common/*.h",
         "include/aws/common/external/*.h",

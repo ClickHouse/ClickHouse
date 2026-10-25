@@ -106,10 +106,28 @@ CLICKHOUSE_WARNINGS = ast.literal_eval(next(
 _LIBRARY_FLAGS = {
     node.targets[0].id: ast.literal_eval(node.value)
     for node in ast.parse((ROOT / 'bazel/rules/ch_cc_library.bzl').read_text()).body
-    if isinstance(node, ast.Assign)
+    if isinstance(node, ast.Assign) and isinstance(node.value, (ast.Dict, ast.List))
 }
 CLICKHOUSE_TARGET_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_TARGET_FLAGS']
-CLICKHOUSE_CODE_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_CODE_FLAGS']
+CLICKHOUSE_XRAY_FLAGS = _LIBRARY_FLAGS['CLICKHOUSE_XRAY_FLAGS']
+CLICKHOUSE_CODE_FLAGS = CLICKHOUSE_XRAY_FLAGS + _LIBRARY_FLAGS['_CLICKHOUSE_CXX_WARNINGS']
+
+def clickhouse_code_flags(language):
+    if language == 'ASM':
+        return CLICKHOUSE_CODE_FLAGS
+    standard = '-std=gnu11' if language == 'C' else '-std=c++23'
+    flags = CLICKHOUSE_XRAY_FLAGS if language == 'C' else CLICKHOUSE_CODE_FLAGS
+    return flags + ['-Wframe-larger-than=65536'] + CLICKHOUSE_WARNINGS + [standard]
+
+
+def has_clickhouse_code_flags(group):
+    language = group['language']
+    if language not in GLOBAL_COMPILE_OPTIONS:
+        return False
+    prefix = clickhouse_code_flags(language)
+    flags = remove_global_compile_options(group.get('copts', []), language)
+    return any(flags[i:i + len(prefix)] == prefix for i in range(len(flags)))
+
 
 def remove_global_compile_options(flags, language):
     """Omit flags from .bazelrc, including CMake's split -D definitions."""
@@ -903,12 +921,13 @@ class BuildFile:
                 and all(group['language'] in GLOBAL_COMPILE_OPTIONS for group in copts.groups.values())):
             kind = 'ch_cc_library'
             self.loads.setdefault('@clickhouse//bazel/rules:ch_cc_library.bzl', set()).add(kind)
-            if attrs.get('clickhouse_code', False) and name not in TARGETS_WITH_DIRECT_SOURCE_HEADERS:
-                attrs.setdefault('source_headers', True)
             languages = {group['language'] for group in copts.groups.values()}
             if len(languages) != 1:
                 raise ValueError(f'{name}: expected one native compiler language, got {languages}')
             language = next(iter(languages))
+            if (language == 'CXX' and attrs.get('clickhouse_code', False)
+                    and name not in TARGETS_WITH_DIRECT_SOURCE_HEADERS):
+                attrs.setdefault('source_headers', True)
             if language != 'CXX':
                 attrs['language'] = language
             arches = list(copts.groups)
@@ -1091,9 +1110,7 @@ class BuildFile:
             attrs = {}
             native_library = kind != 'EXECUTABLE' or index != 0 or name == 'clickhouse'
             clickhouse_code = native_library and bool(groups) and all(
-                any(group.get('copts', [])[start:start + len(CLICKHOUSE_CODE_FLAGS)] == CLICKHOUSE_CODE_FLAGS
-                    for start in range(len(group.get('copts', []))))
-                for group in groups.values()
+                has_clickhouse_code_flags(group) for group in groups.values()
             )
             system_includes = {}
             native_includes = {}
@@ -1168,13 +1185,10 @@ class BuildFile:
                                 # ch_cc_library adds this after the native sysroot options.
                                 value = [flag for flag in value if flag != '-nostdinc++']
                             if clickhouse_code:
-                                start = value.index(CLICKHOUSE_CODE_FLAGS[0])
-                                value = value[:start] + value[start + len(CLICKHOUSE_CODE_FLAGS):]
-                                if language == 'CXX':
-                                    code_defaults = ['-Wframe-larger-than=65536'] + CLICKHOUSE_WARNINGS + ['-std=c++23']
-                                    if value[:len(code_defaults)] != code_defaults:
-                                        raise ValueError(f'{name} {arch}: ch_cc_library CXX flags are not the expected prefix')
-                                    value = value[len(code_defaults):]
+                                prefix = clickhouse_code_flags(language)
+                                if value[:len(prefix)] != prefix:
+                                    raise ValueError(f'{name} {arch}: ch_cc_library {language} flags are not the expected prefix')
+                                value = value[len(prefix):]
                             if self.owner:
                                 prefix = '--embed-dir=' + self.owner + '/'
                                 value = [PackageEmbedDirectory(name, flag.removeprefix(prefix))

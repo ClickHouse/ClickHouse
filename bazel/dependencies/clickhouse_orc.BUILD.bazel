@@ -40,7 +40,7 @@ expand_template(
 
 ch_cc_library(
     name = "_orc",
-    srcs = ([
+    srcs = [
         "c++/include/orc_proto.pb.cc",
         "c++/include/orc_proto.pb.h",
         ":config/contrib/orc/c++/include/Adaptor.hh",
@@ -49,7 +49,7 @@ ch_cc_library(
         "c++/src/BloomFilter.cc",
         "c++/src/BpackingDefault.cc",
         "c++/src/ByteRLE.cc",
-    ] + glob(["c++/src/Column*.cc"]) + ([
+    ] + glob(["c++/src/Column*.cc"]) + [
         "c++/src/Common.cc",
         "c++/src/Dictionary.cc",
         "c++/src/DictionaryLoader.cc",
@@ -76,7 +76,7 @@ ch_cc_library(
         "c++/src/TypeImpl.cc",
         "c++/src/Vector.cc",
         "c++/src/Writer.cc",
-    ] + glob(["c++/src/io/*.cc"]))) + glob(["c++/src/sargs/*.cc"]) + glob(
+    ] + glob(["c++/src/io/*.cc"]) + glob(["c++/src/sargs/*.cc"]) + glob(
         [
             "c++/src/*.hh",
             "c++/src/io/*.hh",

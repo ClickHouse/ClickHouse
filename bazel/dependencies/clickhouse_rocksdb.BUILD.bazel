@@ -37,7 +37,7 @@ ch_cc_library(
         "db/blob/blob_file_meta.cc",
         "db/blob/blob_file_reader.cc",
         "db/blob/blob_garbage_meter.cc",
-    ] + glob(["db/blob/blob_log_*.cc"]) + ([
+    ] + glob(["db/blob/blob_log_*.cc"]) + [
         "db/blob/blob_source.cc",
         "db/blob/prefetch_buffer_collection.cc",
         "db/builder.cc",
@@ -109,7 +109,7 @@ ch_cc_library(
         "env/fs_remap.cc",
         "env/mock_env.cc",
         "env/unique_id_gen.cc",
-    ]) + glob(
+    ] + glob(
         ["file/*.cc"],
         exclude = ["**/*_test.cc"],
     ) + [
@@ -179,7 +179,7 @@ ch_cc_library(
         "table/merging_iterator.cc",
         "table/meta_blocks.cc",
         "table/persistent_cache_helper.cc",
-    ] + glob(["table/plain/*.cc"]) + ([
+    ] + glob(["table/plain/*.cc"]) + [
         "table/sst_file_dumper.cc",
         "table/sst_file_reader.cc",
         "table/sst_file_writer.cc",
@@ -238,12 +238,12 @@ ch_cc_library(
         "utilities/env_timed.cc",
         "utilities/leveldb_options/leveldb_options.cc",
         "utilities/merge_operators.cc",
-    ]) + glob(
+    ] + glob(
         ["utilities/merge_operators/**/*.cc"],
         exclude = ["**/*_test.cc"],
     ) + [
         "utilities/object_registry.cc",
-    ] + glob(["utilities/persistent_cache/block_*.cc"]) + ([
+    ] + glob(["utilities/persistent_cache/block_*.cc"]) + [
         "utilities/persistent_cache/persistent_cache_tier.cc",
         "utilities/persistent_cache/volatile_tier_impl.cc",
         "utilities/simulator_cache/cache_simulator.cc",
@@ -266,7 +266,7 @@ ch_cc_library(
         "utilities/wal_filter.cc",
         "utilities/write_batch_with_index/write_batch_with_index.cc",
         "utilities/write_batch_with_index/write_batch_with_index_internal.cc",
-    ]) + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + [
+    ] + glob(["utilities/transactions/lock/range/range_tree/lib/locktree/*.cc"]) + [
         "utilities/transactions/lock/range/range_tree/lib/standalone_port.cc",
         "utilities/transactions/lock/range/range_tree/lib/util/dbt.cc",
         "utilities/transactions/lock/range/range_tree/lib/util/memarena.cc",

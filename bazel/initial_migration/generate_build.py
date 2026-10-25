@@ -1754,7 +1754,9 @@ def main():
     format_build_files(read_only=read_only)
     # Factor formatted lists last: earlier normalization folds equal CPU
     # branches and would discard required no-match errors.
-    from initial_migration.factor_build_selections import fold_single_cpu_lists, run as factor_build_selections
+    from initial_migration.factor_build_selections import (
+        fold_single_cpu_lists, remove_parens, run as factor_build_selections, source_list_key,
+    )
     selection_builds = {
         path for path in build_paths
         if not (package := path.parent.relative_to(ROOT).as_posix().removeprefix('.'))
@@ -1791,7 +1793,7 @@ def main():
                 break
             after = updated
         after = drop_defaults(Source(after))
-        after = remove_unused_constants(Source(after))
+        after = remove_parens(remove_unused_constants(Source(after)), key=source_list_key)
         if after != before:
             path.write_text(after)
     publish_redis_sdk(ROOT)
