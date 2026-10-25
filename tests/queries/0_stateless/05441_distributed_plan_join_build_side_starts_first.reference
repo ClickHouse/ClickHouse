@@ -1,0 +1,81 @@
+probe_t ⋈ build_t, count()
+└──GatherExchange
+      └──JoinLogical
+         ├──ShuffleExchange (by hash([k]))
+         │  └──ReadFromMergeTree (probe_t)
+         └──ShuffleExchange (by hash([bk]))
+            └──ReadFromMergeTree (build_t)
+  start order, execute_locally = 1: build_t probe_t
+  start order, execute_locally = 0: build_t probe_t
+probe_t ⋈ build_t, p.k
+GatherExchange
+└──JoinLogical
+   ├──ShuffleExchange (by hash([k]))
+   │  └──ReadFromMergeTree (probe_t)
+   └──ShuffleExchange (by hash([bk]))
+      └──ReadFromMergeTree (build_t)
+  start order, execute_locally = 1: build_t probe_t
+build_t ⋈ probe_t, swapped by the planner
+└──GatherExchange
+      └──JoinLogical
+         ├──ShuffleExchange (by hash([k]))
+         │  └──ReadFromMergeTree (probe_t)
+         └──ShuffleExchange (by hash([bk]))
+            └──ReadFromMergeTree (build_t)
+  start order, execute_locally = 1: build_t probe_t
+five tables, left-deep
+└──GatherExchange
+      └──JoinLogical
+         ├──ShuffleExchange (by hash([dk]))
+         │  └──JoinLogical
+         │     ├──ShuffleExchange (by hash([ck]))
+         │     │  └──JoinLogical
+         │     │     ├──ShuffleExchange (by hash([bk]))
+         │     │     │  └──JoinLogical
+         │     │     │     ├──ShuffleExchange (by hash([k]))
+         │     │     │     │  └──ReadFromMergeTree (probe_t)
+         │     │     │     └──ShuffleExchange (by hash([bk]))
+         │     │     │        └──ReadFromMergeTree (build_t)
+         │     │     └──ShuffleExchange (by hash([ck]))
+         │     │        └──ReadFromMergeTree (third_t)
+         │     └──ShuffleExchange (by hash([dk]))
+         │        └──ReadFromMergeTree (fourth_t)
+         └──ShuffleExchange (by hash([ek]))
+            └──ReadFromMergeTree (fifth_t)
+  start order, execute_locally = 1: fifth_t fourth_t third_t build_t probe_t
+five tables, bushy
+└──GatherExchange
+      └──JoinLogical
+         ├──ShuffleExchange (by hash([bk]))
+         │  └──JoinLogical
+         │     ├──ShuffleExchange (by hash([k]))
+         │     │  └──ReadFromMergeTree (probe_t)
+         │     └──ShuffleExchange (by hash([bk]))
+         │        └──ReadFromMergeTree (build_t)
+         └──ShuffleExchange (by hash([ck]))
+            └──JoinLogical
+               ├──ShuffleExchange (by hash([dk]))
+               │  └──JoinLogical
+               │     ├──ShuffleExchange (by hash([ck]))
+               │     │  └──ReadFromMergeTree (third_t)
+               │     └──ShuffleExchange (by hash([dk]))
+               │        └──ReadFromMergeTree (fourth_t)
+               └──ShuffleExchange (by hash([ek]))
+                  └──ReadFromMergeTree (fifth_t)
+  start order, execute_locally = 1: fifth_t fourth_t third_t build_t probe_t
+five tables, star of broadcast joins
+└──GatherExchange
+      └──JoinLogical
+         ├──JoinLogical
+         │  ├──JoinLogical
+         │  │  ├──JoinLogical
+         │  │  │  ├──ReadFromMergeTree (probe_t)
+         │  │  │  └──BroadcastExchange
+         │  │  │     └──ReadFromMergeTree (build_t)
+         │  │  └──BroadcastExchange
+         │  │     └──ReadFromMergeTree (third_t)
+         │  └──BroadcastExchange
+         │     └──ReadFromMergeTree (fourth_t)
+         └──BroadcastExchange
+            └──ReadFromMergeTree (fifth_t)
+  start order, execute_locally = 1: probe_t fifth_t fourth_t third_t build_t

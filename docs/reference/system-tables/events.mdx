@@ -158,6 +158,18 @@ Number of aggregation streams that rebuilt their hash table to the shared set of
 
 Number of times a hash table restricted to the shared set of kept keys of the trivial GROUP BY LIMIT cutoff was re-seeded with those keys after being flushed to a temporary file by external aggregation (see the `optimize_trivial_group_by_limit_query` setting).
 
+### AggregationThresholdTopKMergedGroups {#aggregationthresholdtopkmergedgroups}
+
+Number of groups the top-K threshold merge actually merged and ranked as candidates.
+
+### AggregationThresholdTopKMerges {#aggregationthresholdtopkmerges}
+
+Number of two-level buckets merged through the top-K threshold merge (Fagin's Threshold Algorithm) instead of the ordinary merge of every group.
+
+### AggregationThresholdTopKPrunedCells {#aggregationthresholdtopkprunedcells}
+
+Number of per-thread hash table cells the top-K threshold merge never touched because no group hiding behind them could rank among the top K.
+
 ### AggregationTopKHeapsFrozen {#aggregationtopkheapsfrozen}
 
 How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
@@ -177,6 +189,18 @@ How many rows were skipped during aggregation because their grouping key could n
 ### AIAPICalls {#aiapicalls}
 
 Number of HTTP requests dispatched to AI providers.
+
+### AIAPICallsFailed {#aiapicallsfailed}
+
+Number of AI provider requests that failed after all retries.
+
+### AIAPICallsRetried {#aiapicallsretried}
+
+Number of AI provider requests retried after a transient failure.
+
+### AIAPICallsThrottled {#aiapicallsthrottled}
+
+Number of AI provider requests rejected with HTTP 429 (Too Many Requests).
 
 ### AIInputTokens {#aiinputtokens}
 
@@ -622,17 +646,33 @@ Number of BlobCopier thread executes
 
 Number of blobs lock errors occurred during BlobKiller execution
 
+### BlobKillerThreadLockedBatchedBlobs {#blobkillerthreadlockedbatchedblobs}
+
+Number of blobs returned from metadata storage as part of a batch
+
 ### BlobKillerThreadLockedBlobs {#blobkillerthreadlockedblobs}
 
 Number of blobs returned from metadata storage
+
+### BlobKillerThreadLockedSingleBlobs {#blobkillerthreadlockedsingleblobs}
+
+Number of blobs returned from metadata storage one by one
 
 ### BlobKillerThreadRecordBlobsErrors {#blobkillerthreadrecordblobserrors}
 
 Number of blobs recording errors occurred during BlobKiller execution
 
+### BlobKillerThreadRecordedBatchedBlobs {#blobkillerthreadrecordedbatchedblobs}
+
+Number of blobs removed as part of a batch whose removal by BlobKiller was recorded in metadata storage
+
 ### BlobKillerThreadRecordedBlobs {#blobkillerthreadrecordedblobs}
 
 Number of blobs which removal by BlobKiller was recorded in metadata storage
+
+### BlobKillerThreadRecordedSingleBlobs {#blobkillerthreadrecordedsingleblobs}
+
+Number of blobs removed one by one whose removal by BlobKiller was recorded in metadata storage
 
 ### BlobKillerThreadRemoveBlobsErrors {#blobkillerthreadremoveblobserrors}
 
@@ -1256,6 +1296,18 @@ Number of directories created by the 'plain_rewritable' metadata storage for S3O
 
 Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 
+### DiskPlainRewritableSnapshotRead {#diskplainrewritablesnapshotread}
+
+Number of times a read-only 'plain_rewritable' disk loaded its state from the snapshot file instead of listing the object storage (a refresh that finds the snapshot unchanged does not read it and is not counted).
+
+### DiskPlainRewritableSnapshotWriteFailed {#diskplainrewritablesnapshotwritefailed}
+
+Number of failed attempts to write the snapshot file of a 'plain_rewritable' disk (the write is retried).
+
+### DiskPlainRewritableSnapshotWritten {#diskplainrewritablesnapshotwritten}
+
+Number of snapshot files written by 'plain_rewritable' disks.
+
 ### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
 
 Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.
@@ -1443,6 +1495,14 @@ Distributed Cache registry event. Number of distributed cache hash ring rebuilds
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
 Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (writes of temporary data, which has no object storage write to overlap with)
+
+### DistrCacheKeptConnectionsInflightBytes {#distrcachekeptconnectionsinflightbytes}
+
+Distributed Cache read buffer event. The estimated in-flight bytes of the connections counted in DistrCacheKeptConnectionsWithInflightData (compare with DistrCacheUnusedDataPacketsBytesUnknownRequest)
+
+### DistrCacheKeptConnectionsWithInflightData {#distrcachekeptconnectionswithinflightdata}
+
+Distributed Cache read buffer event. The number of times a connection was kept in the pool when a read request was cancelled while data could still arrive, because the estimated in-flight bytes did not exceed `distributed_cache_min_inflight_bytes_to_discard_connection`
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -1960,6 +2020,10 @@ Number of column-wise data-hash computations performed while deduplicating INSER
 
 Total time spent checking for duplication of INSERTed blocks to *MergeTree tables.
 
+### ElasticsearchPointInTimeCloseFailures {#elasticsearchpointintimeclosefailures}
+
+Number of failed attempts to close an Elasticsearch point in time.
+
 ### EncryptionHeaderCacheHits {#encryptionheadercachehits}
 
 Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.
@@ -2063,6 +2127,18 @@ Amount of data (uncompressed, before compression) written for JOIN in external m
 ### ExternalJoinWritePart {#externaljoinwritepart}
 
 Number of times a temporary file was written to disk for JOIN in external memory.
+
+### ExternalPackedPartWriterCompressedBytes {#externalpackedpartwritercompressedbytes}
+
+Number of compressed bytes written to temporary files to free the memory taken by the buffered data of packed data parts being written.
+
+### ExternalPackedPartWriterUncompressedBytes {#externalpackedpartwriteruncompressedbytes}
+
+Amount of data (uncompressed, before compression) written to temporary files to free the memory taken by the buffered data of packed data parts being written.
+
+### ExternalPackedPartWriterWritePart {#externalpackedpartwriterwritepart}
+
+Number of times the buffered data of a packed data part being written was moved to its temporary file to free memory.
 
 ### ExternalProcessingCompressedBytesTotal {#externalprocessingcompressedbytestotal}
 
@@ -2552,9 +2628,37 @@ Number of times the removal of data files superseded by Iceberg compaction was p
 
 Number of times the removal of data files superseded by Iceberg compaction was postponed because the compaction or a snapshot it superseded was fresher than `iceberg_outdated_snapshot_lifetime_seconds`.
 
+### IcebergGetTableStateMicroseconds {#iceberggettablestatemicroseconds}
+
+Total time spent resolving the current state of Iceberg tables: finding the current metadata file (version hint or listing), then reading and parsing it.
+
 ### IcebergIteratorInitializationMicroseconds {#icebergiteratorinitializationmicroseconds}
 
 Total time spent on synchronous initialization of iceberg data iterators.
+
+### IcebergManifestFileIteratorCreateMicroseconds {#icebergmanifestfileiteratorcreatemicroseconds}
+
+Total time spent preparing Iceberg manifest files for iteration: parsing their partition spec and schema headers and checking the schema against the table metadata. It is paid for every manifest file in every query, also when the manifest file is served from the Iceberg metadata cache.
+
+### IcebergManifestFilesRead {#icebergmanifestfilesread}
+
+Number of Iceberg manifest files read from storage (not served from the Iceberg metadata cache).
+
+### IcebergManifestFilesReadBytes {#icebergmanifestfilesreadbytes}
+
+Total size of Iceberg manifest files read from storage.
+
+### IcebergManifestFilesReadMicroseconds {#icebergmanifestfilesreadmicroseconds}
+
+Total time spent reading and decoding Iceberg manifest files from storage.
+
+### IcebergManifestListsRead {#icebergmanifestlistsread}
+
+Number of Iceberg manifest lists read from storage (not served from the Iceberg metadata cache).
+
+### IcebergManifestListsReadMicroseconds {#icebergmanifestlistsreadmicroseconds}
+
+Total time spent reading and decoding Iceberg manifest lists from storage.
 
 ### IcebergMetadataFilesCacheHits {#icebergmetadatafilescachehits}
 
@@ -2571,6 +2675,26 @@ Number of times iceberg metadata files have been found in the cache, but were co
 ### IcebergMetadataFilesCacheWeightLost {#icebergmetadatafilescacheweightlost}
 
 Approximate number of bytes evicted from the iceberg metadata cache.
+
+### IcebergMetadataJSONParsedBytes {#icebergmetadatajsonparsedbytes}
+
+Total size of the Iceberg `metadata.json` content parsed.
+
+### IcebergMetadataJSONParseMicroseconds {#icebergmetadatajsonparsemicroseconds}
+
+Total time spent parsing Iceberg `metadata.json` files.
+
+### IcebergMetadataJSONParses {#icebergmetadatajsonparses}
+
+Number of times an Iceberg `metadata.json` was parsed. The parsing happens on every access, also when the file content is served from the Iceberg metadata cache.
+
+### IcebergMetadataJSONReadMicroseconds {#icebergmetadatajsonreadmicroseconds}
+
+Total time spent reading Iceberg `metadata.json` files from storage, including decompression.
+
+### IcebergMetadataJSONReads {#icebergmetadatajsonreads}
+
+Number of Iceberg `metadata.json` files read from storage (not served from the Iceberg metadata cache).
 
 ### IcebergMetadataReadWaitTimeMicroseconds {#icebergmetadatareadwaittimemicroseconds}
 
@@ -2607,6 +2731,10 @@ Number of Iceberg manifest files skipped without being read, using the partition
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Trivial count optimization applied while reading from Iceberg
+
+### IcebergVersionHintReadMicroseconds {#icebergversionhintreadmicroseconds}
+
+Total time spent reading and resolving `version-hint.text` of Iceberg tables.
 
 ### IcebergVersionHintUsed {#icebergversionhintused}
 
@@ -4032,9 +4160,25 @@ Objects that did not match the glob or regex pattern and were skipped during lis
 
 Total objects returned by object storage listing API before any filtering.
 
+### ObjectStorageMetadataFetchedForRead {#objectstoragemetadatafetchedforread}
+
+Number of object metadata requests (e.g. S3 HEAD) issued to read objects (by the object storage source, its file iterators, and schema inference), because the size and ETag of the object were not known from listing or table metadata.
+
+### ObjectStorageMetadataFetchMicroseconds {#objectstoragemetadatafetchmicroseconds}
+
+Total time spent on object metadata requests counted in `ObjectStorageMetadataFetchedForRead`.
+
 ### ObjectStoragePredicateFilteredObjects {#objectstoragepredicatefilteredobjects}
 
 Objects removed by virtual column predicate filtering on _path/_file.
+
+### ObjectStorageQueryConditionCacheSkippedFiles {#objectstoragequeryconditioncacheskippedfiles}
+
+Number of objects skipped entirely by the object storage source because the query condition cache showed that none of their row groups match the filter.
+
+### ObjectStorageQueryConditionCacheSkippedRowGroups {#objectstoragequeryconditioncacheskippedrowgroups}
+
+Number of row groups skipped by the object storage source because the query condition cache showed that they don't match the filter.
 
 ### ObjectStorageQueueBucketLockLostOwnership {#objectstoragequeuebucketlocklostownership}
 
@@ -4147,6 +4291,10 @@ The number of times we successfully set file as processing
 ### ObjectStorageQueueUnsuccessfulCommits {#objectstoragequeueunsuccessfulcommits}
 
 Number of unsuccessful keeper commits
+
+### ObjectStorageReaderWaitMicroseconds {#objectstoragereaderwaitmicroseconds}
+
+Total time object storage sources spent waiting for the reader of the next object, which is prepared in the background.
 
 ### ObjectStorageReadObjects {#objectstoragereadobjects}
 
@@ -4352,6 +4500,14 @@ Number of replicas which was chosen, but found to be unavailable during query ex
 
 Number of replicas used to execute a query with task-based parallel replicas
 
+### ParquetBloomFilterPrunedRowGroups {#parquetbloomfilterprunedrowgroups}
+
+The total number of parquet row groups pruned by bloom filters.
+
+### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
+
+Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 The total number of columns that were passed through filter
@@ -4364,9 +4520,25 @@ Task groups sent to a thread pool by parquet reader
 
 Tasks issued by parquet reader
 
+### ParquetDecompressedBytes {#parquetdecompressedbytes}
+
+Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.
+
+### ParquetDictionaryFilterPrunedRowGroups {#parquetdictionaryfilterprunedrowgroups}
+
+The total number of parquet row groups pruned by dictionary filters (with a bloom filter fallback for columns whose dictionary does not fit the pruning memory budget).
+
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Time of waiting for parquet file reads from decoding threads (not prefetching threads)
+
+### ParquetFilesSkippedByCachedStatistics {#parquetfilesskippedbycachedstatistics}
+
+The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group
+
+### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
+
+Total time spent reading and deserializing parquet file footers (not served from the parquet metadata cache).
 
 ### ParquetMetadataCacheHits {#parquetmetadatacachehits}
 
@@ -4380,6 +4552,14 @@ Number of times parquet metadata has not been found in the cache and had to be r
 
 Approximate number of bytes evicted from the parquet metadata cache.
 
+### ParquetPagesDecompressedToSkipRows {#parquetpagesdecompressedtoskiprows}
+
+Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).
+
+### ParquetPrefetcherReadBytes {#parquetprefetcherreadbytes}
+
+Total bytes read from parquet files by DB::Parquet::Prefetcher. It is larger than `ParquetPrefetcherUsedBytes` when reads are coalesced over ranges that are not used in the end, e.g. column chunks of row groups pruned later by bloom filters.
+
 ### ParquetPrefetcherReadEntireFile {#parquetprefetcherreadentirefile}
 
 The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher
@@ -4392,13 +4572,17 @@ The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher
 
 The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher
 
+### ParquetPrefetcherUsedBytes {#parquetprefetcherusedbytes}
+
+Total bytes of the ranges read by DB::Parquet::Prefetcher that were actually used by the parquet reader.
+
 ### ParquetPrunedPages {#parquetprunedpages}
 
 The total number of pages pruned from parquet data via column index
 
 ### ParquetPrunedRowGroups {#parquetprunedrowgroups}
 
-The total number of row groups pruned from parquet data
+The total number of row groups pruned from parquet data before reading them (by min/max statistics and row group selection). Row groups pruned later by bloom filters and dictionaries are counted in `ParquetBloomFilterPrunedRowGroups` and `ParquetDictionaryFilterPrunedRowGroups`.
 
 ### ParquetReadMinMaxFromStatistics {#parquetreadminmaxfromstatistics}
 
@@ -4411,6 +4595,10 @@ The total number of Parquet data pages read
 ### ParquetReadRowGroups {#parquetreadrowgroups}
 
 The total number of row groups read from parquet data
+
+### ParquetRowsDecodedAsDictionaryIndexes {#parquetrowsdecodedasdictionaryindexes}
+
+Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so that the functions applied to such a column are evaluated once per dictionary value
 
 ### ParquetRowsFilterExpression {#parquetrowsfilterexpression}
 
@@ -6336,6 +6524,14 @@ Number of times a text index pattern dictionary scan was skipped because an earl
 
 Candidate rows (postings intersection) examined by candidate-driven phrase search.
 
+### TextIndexPhraseCandidatesMicroseconds {#textindexphrasecandidatesmicroseconds}
+
+Total time spent finding the candidate rows of a phrase search: reading and intersecting the phrase tokens' posting lists.
+
+### TextIndexPhraseCursorSearches {#textindexphrasecursorsearches}
+
+Number of phrase searches that found their candidate rows with posting list cursors instead of intersecting bitmaps.
+
 ### TextIndexPhraseFallbacks {#textindexphrasefallbacks}
 
 Number of times a phrase query skipped the text index because the phrase was estimated to match more rows than 'text_index_hint_max_selectivity', and was evaluated on the column instead.
@@ -6346,7 +6542,7 @@ Total time spent matching phrase positions over candidate rows.
 
 ### TextIndexPhraseSearches {#textindexphrasesearches}
 
-Number of phrase searches executed over a text index. Repeated searches of the same phrase in the same part are served from the cache and are not counted.
+Number of phrase searches executed over a text index, one per reader of a granule. Readers served entirely from the cache are not counted.
 
 ### TextIndexPositionsBlocksRead {#textindexpositionsblocksread}
 
@@ -6527,6 +6723,94 @@ Number of TLS handshakes completed for incoming (server) connections, across the
 ### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
 
 Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).
+
+### TransactionBeginMicroseconds {#transactionbeginmicroseconds}
+
+Time spent in `BEGIN TRANSACTION`, explicit or implicit
+
+### TransactionBegins {#transactionbegins}
+
+Number of `BEGIN TRANSACTION`, explicit or implicit
+
+### TransactionBeginSnapshotBehindLatest {#transactionbeginsnapshotbehindlatest}
+
+Number of transactions that began with a snapshot below the latest CSN, because the global watermark lags
+
+### TransactionCommitAfterCSNMicroseconds {#transactioncommitaftercsnmicroseconds}
+
+Time spent finalizing committed transactions after their CSN was allocated
+
+### TransactionCommitAllocateCSNMicroseconds {#transactioncommitallocatecsnmicroseconds}
+
+Time from the start of a transaction commit until Keeper allocated its CSN
+
+### TransactionCommitConflicts {#transactioncommitconflicts}
+
+Number of transaction commits that failed with `SERIALIZATION_ERROR` because a concurrent operation changed a part
+
+### TransactionCommitMicroseconds {#transactioncommitmicroseconds}
+
+Time spent committing transactions, without waiting for the CSN to be loaded
+
+### TransactionCommits {#transactioncommits}
+
+Number of transaction commits started, including read-only and unsuccessful ones
+
+### TransactionCommitsWithCSN {#transactioncommitswithcsn}
+
+Number of transaction commits for which Keeper allocated a CSN
+
+### TransactionCommitUnknownStatus {#transactioncommitunknownstatus}
+
+Number of transaction commits whose outcome is unknown because of a Keeper hardware error
+
+### TransactionCommitUnknownStatusWaitMicroseconds {#transactioncommitunknownstatuswaitmicroseconds}
+
+Time spent waiting for the outcome of commits with unknown status
+
+### TransactionDeadReplicasMarked {#transactiondeadreplicasmarked}
+
+Number of replicas this replica marked dead for transactions
+
+### TransactionLogLoadedEntries {#transactionlogloadedentries}
+
+Number of transaction log (`/log`) entries read from Keeper
+
+### TransactionLogLoadMicroseconds {#transactionlogloadmicroseconds}
+
+Time spent loading the transaction log (`/log`) from Keeper: listing it, reading the new entries and applying them
+
+### TransactionLogLoads {#transactionlogloads}
+
+Number of loads of the transaction log (`/log`) from Keeper
+
+### TransactionsCommitted {#transactionscommitted}
+
+Number of committed transactions, including read-only ones
+
+### TransactionsRolledBack {#transactionsrolledback}
+
+Number of rolled back transactions
+
+### TransactionTIDsInvalidated {#transactiontidsinvalidated}
+
+Number of transaction IDs this replica invalidated
+
+### TransactionWaitCSNLoaded {#transactionwaitcsnloaded}
+
+Number of waits until a CSN is loaded into the latest snapshot, by a synchronous `COMMIT` or `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitCSNLoadedMicroseconds {#transactionwaitcsnloadedmicroseconds}
+
+Time spent waiting until a CSN is loaded into the latest snapshot
+
+### TransactionWaitWatermark {#transactionwaitwatermark}
+
+Number of waits until the watermark reaches a CSN, so a new transaction on this replica sees it, by `COMMIT` with `wait_visible` or `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitWatermarkMicroseconds {#transactionwaitwatermarkmicroseconds}
+
+Time spent waiting until the watermark reaches a CSN
 
 ### UncompressedCacheHits {#uncompressedcachehits}
 
