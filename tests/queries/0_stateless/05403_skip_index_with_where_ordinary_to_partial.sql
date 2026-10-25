@@ -73,7 +73,8 @@ ALTER TABLE t_ord_materialize DROP INDEX i;
 ALTER TABLE t_ord_materialize ADD INDEX i id TYPE minmax WHERE p = 1;
 ALTER TABLE t_ord_materialize ATTACH PARTITION tuple();
 ALTER TABLE t_ord_materialize MATERIALIZE INDEX i;
-SELECT is_done, latest_fail_reason = '' FROM system.mutations WHERE database = currentDatabase() AND table = 't_ord_materialize';
+SELECT is_done, latest_fail_reason = '' FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_ord_materialize' AND command LIKE '%MATERIALIZE INDEX%';
 SELECT count() FROM t_ord_materialize WHERE id = 3 AND p = 1;
 SELECT count() FROM t_ord_materialize WHERE id = 2 AND p = 1;
 
