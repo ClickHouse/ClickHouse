@@ -190,6 +190,11 @@ void profilingRecentAllocReset(ThreadState & thread_state, Extent * extent)
     if (extentProfilingRecentAllocGetNoLock(extent) == nullptr)
         return;
 
+    /// Sampled allocations refresh the name; frees must do it themselves. Same guard as `profilingThreadContextCreate`:
+    /// a reentrant free (e.g. from a `prof_sample` hook) records no deallocation context and must not touch the
+    /// thread data.
+    if (options.profiling_system_thread_name && thread_state.nominal() && thread_state.reentrancyLevel() == 0)
+        profilingSystemThreadNameFetch(thread_state);
     ProfilingThreadContext * deallocation_thread_context = profilingThreadContextCreate(thread_state);
     /// In case dalloc_tctx is null, e.g. due to OOM, we will not record the deallocation time / tctx, which is
     /// handled later, after we check again when holding the lock.
@@ -213,6 +218,9 @@ void profilingRecentAllocReset(ThreadState & thread_state, Extent * extent)
         {
             recent->deallocation_time.profilingUpdate();
             recent->deallocation_thread_context = deallocation_thread_context;
+            /// Own thread data: this thread is the only writer of the name.
+            ALLOCATOR_ASSERT(deallocation_thread_context->thread_data == profilingThreadDataGet(thread_state, false));
+            strncpy(recent->deallocation_thread_name, deallocation_thread_context->thread_data->thread_name, PROFILING_THREAD_NAME_MAX_LEN);
             deallocation_thread_context = nullptr;
         }
         extentProfilingRecentAllocReset(thread_state, extent, recent);
@@ -332,8 +340,13 @@ void profilingRecentAlloc(ThreadState & thread_state, Extent * extent, size_t si
     tail->usable_size = usable_size;
     tail->alloc_time.copy(*extent->profilingAllocTime());
     tail->alloc_thread_context = thread_context;
+    /// The thread context was created by this thread, the only writer of the name. Its thread data may already be
+    /// detached by a concurrent `prof.reset` (then nothing writes it anymore), so compare by `thread_uid`, not by pointer.
+    ALLOCATOR_ASSERT(thread_context->thread_uid == profilingThreadDataGet(thread_state, false)->thread_uid);
+    strncpy(tail->alloc_thread_name, thread_context->thread_data->thread_name, PROFILING_THREAD_NAME_MAX_LEN);
     tail->deallocation_time.initZero();
     tail->deallocation_thread_context = nullptr;
+    tail->deallocation_thread_name[0] = '\0';
     extentProfilingRecentAllocSet(thread_state, extent, tail);
 
     ALLOCATOR_ASSERT(!profilingRecentAllocIsEmpty(thread_state));
@@ -468,11 +481,9 @@ void profilingRecentAllocDumpNode(Emitter & emitter, ProfilingRecent * node)
     emitter.jsonKeyValue("released", EmitterType::Bool, &released);
 
     emitter.jsonKeyValue("alloc_thread_uid", EmitterType::Uint64, &node->alloc_thread_context->thread_uid);
-    ProfilingThreadData * alloc_thread_data = node->alloc_thread_context->thread_data;
-    ALLOCATOR_ASSERT(alloc_thread_data != nullptr);
-    if (!profilingThreadNameEmpty(alloc_thread_data))
+    if (node->alloc_thread_name[0] != '\0')
     {
-        const char * thread_name = alloc_thread_data->thread_name;
+        const char * thread_name = node->alloc_thread_name;
         emitter.jsonKeyValue("alloc_thread_name", EmitterType::String, &thread_name);
     }
     uint64_t alloc_time_ns = node->alloc_time.ns();
@@ -484,11 +495,9 @@ void profilingRecentAllocDumpNode(Emitter & emitter, ProfilingRecent * node)
     if (released && node->deallocation_thread_context != nullptr)
     {
         emitter.jsonKeyValue("dalloc_thread_uid", EmitterType::Uint64, &node->deallocation_thread_context->thread_uid);
-        ProfilingThreadData * thread_data_to_deallocate = node->deallocation_thread_context->thread_data;
-        ALLOCATOR_ASSERT(thread_data_to_deallocate != nullptr);
-        if (!profilingThreadNameEmpty(thread_data_to_deallocate))
+        if (node->deallocation_thread_name[0] != '\0')
         {
-            const char * thread_name = thread_data_to_deallocate->thread_name;
+            const char * thread_name = node->deallocation_thread_name;
             emitter.jsonKeyValue("dalloc_thread_name", EmitterType::String, &thread_name);
         }
         ALLOCATOR_ASSERT(node->deallocation_time.ns() != 0);

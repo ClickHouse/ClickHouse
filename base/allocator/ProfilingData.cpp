@@ -474,13 +474,20 @@ size_t profilingBacktraceCount()
 namespace
 {
 
-/// jemalloc: prof_thread_name_write_tdata
-void profilingThreadNameWriteThreadData(ProfilingThreadData * thread_data, const char * thread_name)
+/// jemalloc: prof_thread_name_write_unlocked
+void profilingThreadNameWriteUnlocked(ProfilingThreadData * thread_data, const char * thread_name)
 {
     strncpy(thread_data->thread_name, thread_name, PROFILING_THREAD_NAME_MAX_LEN);
     thread_data->thread_name[PROFILING_THREAD_NAME_MAX_LEN - 1] = '\0';
 }
 
+}
+
+/// Other threads read the name under `thread_data->lock` (heap dumps). jemalloc: prof_thread_name_write_tdata
+void profilingThreadNameWriteThreadData(ThreadState & thread_state, ProfilingThreadData * thread_data, const char * thread_name)
+{
+    MutexLock lock(&thread_state, *thread_data->lock);
+    profilingThreadNameWriteUnlocked(thread_data, thread_name);
 }
 
 /// jemalloc: prof_thread_name_set_impl
@@ -500,7 +507,7 @@ int profilingThreadNameSetImpl(ThreadState & thread_state, const char * thread_n
     if (thread_data == nullptr)
         return ENOMEM;
 
-    profilingThreadNameWriteThreadData(thread_data, thread_name);
+    profilingThreadNameWriteThreadData(thread_state, thread_data, thread_name);
 
     return 0;
 }
@@ -837,10 +844,17 @@ void profilingThreadDataDumpIterate(ProfilingDumpIterateArg * arg, ProfilingThre
     profilingDumpPrintf(
         arg->profiling_dump_write, arg->callback_argument, "  t%llu: ", static_cast<unsigned long long>(thread_data->thread_uid));
     profilingDumpPrintCounts(arg->profiling_dump_write, arg->callback_argument, &thread_data->count_summed);
-    if (!profilingThreadNameEmpty(thread_data))
+    /// The owner may rename itself concurrently: copy the name under its lock, so that the writer never sees it change
+    /// between `strlen` and `memcpy` (which would embed a NUL and truncate the dump).
+    char thread_name[PROFILING_THREAD_NAME_MAX_LEN];
+    {
+        MutexLock lock(arg->thread_state, *thread_data->lock);
+        strncpy(thread_name, thread_data->thread_name, PROFILING_THREAD_NAME_MAX_LEN);
+    }
+    if (thread_name[0] != '\0')
     {
         arg->profiling_dump_write(arg->callback_argument, " ");
-        arg->profiling_dump_write(arg->callback_argument, thread_data->thread_name);
+        arg->profiling_dump_write(arg->callback_argument, thread_name);
     }
     arg->profiling_dump_write(arg->callback_argument, "\n");
 }
@@ -1138,10 +1152,7 @@ ProfilingThreadData * profilingThreadDataInitImpl(
     thread_data->attached = true;
     thread_data->setExpired(false);
     thread_data->thread_context_uid_next = 0;
-    if (thread_name == nullptr)
-        profilingThreadNameClear(thread_data);
-    else
-        profilingThreadNameWriteThreadData(thread_data, thread_name);
+    profilingThreadNameWriteUnlocked(thread_data, thread_name == nullptr ? "" : thread_name);
     profilingThreadNameAssert(thread_data);
 
     if (thread_data->backtrace_to_thread_context.init(

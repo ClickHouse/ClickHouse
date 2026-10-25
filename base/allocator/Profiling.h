@@ -243,9 +243,12 @@ public:
     std::atomic<Extent *> alloc_extent;
     ProfilingThreadContext * alloc_thread_context;
     ProfilingThreadContext * deallocation_thread_context;
+    /// Copied at the event; the thread may be renamed later.
+    char alloc_thread_name[PROFILING_THREAD_NAME_MAX_LEN];
+    char deallocation_thread_name[PROFILING_THREAD_NAME_MAX_LEN];
 };
 
-static_assert(sizeof(ProfilingRecent) == 72, "Must have the size of prof_recent_t");
+static_assert(sizeof(ProfilingRecent) == 104, "Must have the size of prof_recent_t");
 
 /// jemalloc: prof_recent_list_t
 using ProfilingRecentList = IntrusiveList<ProfilingRecent, &ProfilingRecent::link>;
@@ -347,19 +350,6 @@ ALLOCATOR_ALWAYS_INLINE ProfilingThreadData * profilingThreadDataGet(ThreadState
     return thread_data;
 }
 
-/// jemalloc: prof_thread_name_clear (`prof_data.h`)
-ALLOCATOR_ALWAYS_INLINE void profilingThreadNameClear(ProfilingThreadData * thread_data)
-{
-    thread_data->thread_name[0] = '\0';
-}
-
-/// jemalloc: prof_thread_name_empty (`prof_data.h`)
-ALLOCATOR_ALWAYS_INLINE bool profilingThreadNameEmpty(const ProfilingThreadData * thread_data)
-{
-    profilingThreadNameAssert(thread_data);
-    return thread_data->thread_name[0] == '\0';
-}
-
 /// --- prof.c --------------------------------------------------------------------------------------------------------
 
 /// Dump a heap profile when the total virtual memory reaches a new high (`prof.gdump`).
@@ -398,6 +388,8 @@ void profilingFragmentationTrack(ThreadState & thread_state, Extent * extent, Pr
 ProfilingThreadContext * profilingLookup(ThreadState & thread_state, ProfilingBacktrace * backtrace);
 /// jemalloc: prof_thread_name_set_impl
 int profilingThreadNameSetImpl(ThreadState & thread_state, const char * thread_name);
+/// Writes the name under `thread_data->lock`. jemalloc: prof_thread_name_write_tdata
+void profilingThreadNameWriteThreadData(ThreadState & thread_state, ProfilingThreadData * thread_data, const char * thread_name);
 /// jemalloc: prof_unbias_map_init
 void profilingUnbiasMapInit();
 /// Requires `profiling_dump_mutex`. jemalloc: prof_dump_impl

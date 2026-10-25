@@ -138,10 +138,11 @@ void profilingSystemThreadNameFetch(ThreadState & thread_state)
     if (thread_data == nullptr)
         return;
 
-    if (profilingSystemThreadNameRead(thread_data->thread_name, PROFILING_THREAD_NAME_MAX_LEN) != 0)
-        profilingThreadNameClear(thread_data);
-
-    thread_data->thread_name[PROFILING_THREAD_NAME_MAX_LEN - 1] = '\0';
+    char thread_name[PROFILING_THREAD_NAME_MAX_LEN];
+    if (profilingSystemThreadNameRead(thread_name, PROFILING_THREAD_NAME_MAX_LEN) != 0)
+        thread_name[0] = '\0';
+    thread_name[PROFILING_THREAD_NAME_MAX_LEN - 1] = '\0';
+    profilingThreadNameWriteThreadData(thread_state, thread_data, thread_name);
 }
 
 /// --- Process identity ----------------------------------------------------------------------------------------------
@@ -257,14 +258,19 @@ constexpr uint32_t MH_MAGIC_VALUE = MH_MAGIC_64;
 constexpr uint32_t MH_CIGAM_VALUE = MH_CIGAM_64;
 constexpr uint32_t LC_SEGMENT_VALUE = LC_SEGMENT_64;
 
+/// Longest "%016llx-%016llx: %s\n" line, excluding the terminating NUL: 36 bytes of fixed text plus a path of at most
+/// `PATH_MAX` bytes. jemalloc: PROF_DUMP_MAPS_ENTRY_MAX
+constexpr size_t PROFILING_DUMP_MAPS_ENTRY_MAX = PATH_MAX + 36;
+
+/// Formats the entry into `buf` (`PROFILING_DUMP_MAPS_ENTRY_MAX + 1` bytes), returns its length.
 /// jemalloc: prof_dump_dyld_image_vmaddr
-void profilingDumpDyldImageVmaddr(BufferedWriter * buf_writer, uint32_t image_index)
+size_t profilingDumpDyldImageVmaddr(char * buf, uint32_t image_index)
 {
     const auto * header = reinterpret_cast<const MachHeader *>(_dyld_get_image_header(image_index));
     if (header == nullptr || (header->magic != MH_MAGIC_VALUE && header->magic != MH_CIGAM_VALUE))
     {
         /// Invalid header.
-        return;
+        return 0;
     }
 
     intptr_t slide = _dyld_get_image_vmaddr_slide(image_index);
@@ -277,36 +283,46 @@ void profilingDumpDyldImageVmaddr(BufferedWriter * buf_writer, uint32_t image_in
             const auto * segment = reinterpret_cast<const SegmentCommand *>(command);
             if (!strcmp(segment->segname, "__TEXT"))
             {
-                char buffer[PATH_MAX + 1];
-                format(
-                    buffer,
-                    sizeof(buffer),
+                size_t len = format(
+                    buf,
+                    PROFILING_DUMP_MAPS_ENTRY_MAX + 1,
                     "%016llx-%016llx: %s\n",
                     static_cast<unsigned long long>(segment->vmaddr + slide),
                     static_cast<unsigned long long>(segment->vmaddr + slide + segment->vmsize),
                     name);
-                buf_writer->write(buffer);
-                return;
+                return len > PROFILING_DUMP_MAPS_ENTRY_MAX ? PROFILING_DUMP_MAPS_ENTRY_MAX : len;
             }
         }
         command = reinterpret_cast<const struct load_command *>(reinterpret_cast<const char *>(command) + command->cmdsize);
     }
+    return 0;
 }
 
-/// jemalloc: prof_dump_dyld_maps
-void profilingDumpDyldMaps(BufferedWriter * buf_writer)
+/// libSystem's fork prepare takes dyld's loaders lock before it calls the malloc zone's `zoneForceLock` (which takes
+/// `profiling_dump_mutex` in `profilingPrefork0`), so the dyld image APIs must not be called with
+/// `profiling_dump_mutex` (or any other mutex taken on prefork) held: format the image list beforehand.
+/// jemalloc: prof_dump_maps_prepare (Darwin)
+char * profilingDumpMapsPrepare(ThreadState & thread_state)
 {
     uint32_t image_count = _dyld_image_count();
+    size_t size = static_cast<size_t>(image_count) * PROFILING_DUMP_MAPS_ENTRY_MAX + 1;
+    auto * maps = static_cast<char *>(profilingAllocArena0(thread_state, size, false));
+    if (maps == nullptr)
+        return nullptr;
+    size_t len = 0;
     for (uint32_t i = 0; i < image_count; ++i)
-        profilingDumpDyldImageVmaddr(buf_writer, i);
+        len += profilingDumpDyldImageVmaddr(maps + len, i);
+    maps[len] = '\0';
+    return maps;
 }
 
 /// jemalloc: prof_dump_maps (Darwin)
-void profilingDumpMaps(BufferedWriter * buf_writer)
+void profilingDumpMaps(BufferedWriter * buf_writer, const char * maps)
 {
     buf_writer->write("\nMAPPED_LIBRARIES:\n");
     /// No proc map file to read on MacOS, dump dyld maps for backtrace.
-    profilingDumpDyldMaps(buf_writer);
+    if (maps != nullptr)
+        buf_writer->write(maps);
 }
 
 #else
@@ -352,8 +368,14 @@ ssize_t profilingDumpReadMapsCallback(void * read_callback_argument, void * buf,
     return readFD(maps_fd, buf, limit);
 }
 
+/// jemalloc: prof_dump_maps_prepare
+char * profilingDumpMapsPrepare(ThreadState &)
+{
+    return nullptr;
+}
+
 /// jemalloc: prof_dump_maps
-void profilingDumpMaps(BufferedWriter * buf_writer)
+void profilingDumpMaps(BufferedWriter * buf_writer, const char *)
 {
     int maps_fd = profilingDumpOpenMaps();
     if (maps_fd == -1)
@@ -365,6 +387,13 @@ void profilingDumpMaps(BufferedWriter * buf_writer)
 }
 
 #endif
+
+/// jemalloc: prof_dump_maps_release
+void profilingDumpMapsRelease(ThreadState & thread_state, char * maps)
+{
+    if (maps != nullptr)
+        profilingInternalDeallocate(&thread_state, maps);
+}
 
 /// jemalloc: prof_dump
 bool profilingDump(ThreadState & thread_state, bool propagate_error, const char * filename, bool leak_check)
@@ -378,6 +407,7 @@ bool profilingDump(ThreadState & thread_state, bool propagate_error, const char 
     ProfilingDumpArg arg = {/* handle_error_locally */ !propagate_error, /* error */ false, /* prof_dump_fd */ -1};
 
     preReentrancy(thread_state, nullptr);
+    char * maps = profilingDumpMapsPrepare(thread_state);
     profiling_dump_mutex.lock(&thread_state);
 
     profilingDumpOpen(&arg, filename);
@@ -386,7 +416,7 @@ bool profilingDump(ThreadState & thread_state, bool propagate_error, const char 
     ALLOCATOR_ASSERT(!error);
     (void)error;
     profilingDumpImpl(thread_state, BufferedWriter::callback, &buf_writer, thread_data, leak_check);
-    profilingDumpMaps(&buf_writer);
+    profilingDumpMaps(&buf_writer, maps);
     buf_writer.terminate(&thread_state);
     profilingDumpClose(&arg);
 
@@ -394,6 +424,7 @@ bool profilingDump(ThreadState & thread_state, bool propagate_error, const char 
     if (dump_hook != nullptr)
         dump_hook(filename);
     profiling_dump_mutex.unlock(&thread_state);
+    profilingDumpMapsRelease(thread_state, maps);
     postReentrancy(thread_state);
 
     return arg.error;

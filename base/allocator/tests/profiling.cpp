@@ -4,6 +4,7 @@
 /// The allocator is initialized with `log2_profiling_sample:0` and a deterministic backtrace hook; sampled allocations are
 /// made through the same inline functions the front-end uses (`profilingAllocPrepare`, `profilingMalloc`, `profilingFree`).
 
+#include <allocator/BufferedWriter.h>
 #include <allocator/Frontend.h>
 #include <allocator/Init.h>
 #include <allocator/Mallctl.h>
@@ -693,4 +694,132 @@ TEST(Profiling, RecentAllocations)
     sampledFree(p1);
     sampledFree(p2);
     CHECK_EQ(profilingBacktraceCount(), size_t(0));
+}
+
+/// The names are copied into the record at the allocation and at the deallocation: later renames do not change them.
+/// jemalloc: test_prof_recent_alloc_thread_name
+TEST(Profiling, RecentAllocationsThreadName)
+{
+    init();
+    installBacktraceHook();
+    ThreadState & thread_state = ThreadState::fetch();
+
+    auto set_name = [&](const char * name)
+    { CHECK_EQ(mallctlByName(thread_state, "thread.prof.name", nullptr, nullptr, &name, sizeof(name)), 0); };
+
+    ssize_t max = 1;
+    CHECK_EQ(mallctlByName(thread_state, "experimental.prof_recent.alloc_max", nullptr, nullptr, &max, sizeof(max)), 0);
+
+    setBacktrace({0x9999});
+    set_name("alloc");
+    void * p = sampledMalloc(2100000);
+    set_name("dalloc");
+    sampledFree(p);
+    set_name("late");
+
+    std::string json;
+    struct
+    {
+        WriteCallback * write_callback;
+        void * callback_argument;
+    } packet = {appendCallback, &json};
+    CHECK_EQ(mallctlByName(thread_state, "experimental.prof_recent.alloc_dump", nullptr, nullptr, &packet, sizeof(packet)), 0);
+    CHECK(json.find("\"alloc_thread_name\":\"alloc\",") != std::string::npos);
+    CHECK(json.find("\"dalloc_thread_name\":\"dalloc\",") != std::string::npos);
+    CHECK(json.find("late") == std::string::npos);
+
+    max = 0;
+    CHECK_EQ(mallctlByName(thread_state, "experimental.prof_recent.alloc_max", nullptr, nullptr, &max, sizeof(max)), 0);
+    set_name("prof test");
+    CHECK_EQ(profilingBacktraceCount(), size_t(0));
+}
+
+namespace
+{
+
+constexpr unsigned NUM_RENAMERS = 8;
+const char * const rename_names[] = {"aaaaaaaaaaaaaaa", "b"};
+std::atomic<unsigned> renamers_ready{0};
+std::atomic<bool> renamers_stop{false};
+
+void * renamerBody(void *)
+{
+    ThreadState & thread_state = ThreadState::fetch();
+    for (unsigned i = 0; !renamers_stop.load(std::memory_order_acquire); ++i)
+    {
+        const char * name = rename_names[i % 2];
+        REQUIRE(mallctlByName(thread_state, "thread.prof.name", nullptr, nullptr, &name, sizeof(name)) == 0);
+        if (i == 0)
+            renamers_ready.fetch_add(1, std::memory_order_release);
+    }
+    return nullptr;
+}
+
+/// Like `profilingDumpFlush`: the flushed chunk is a NUL-terminated string.
+void appendFlushCallback(void * opaque, const char * s)
+{
+    static_cast<std::string *>(opaque)->append(s, strlen(s));
+}
+
+/// The dump is complete and each of the renamers has a "  t<uid>: ... [..: ..] <name>" line with one of `rename_names`.
+bool dumpIsIntact(const std::string & dump)
+{
+    if (dump.empty() || dump.back() != '\n')
+        return false;
+    unsigned named = 0;
+    for (size_t line = dump.find("\n  t"); line != std::string::npos; line = dump.find("\n  t", line + 1))
+    {
+        size_t end = dump.find('\n', line + 1);
+        size_t bracket = dump.find(']', line);
+        if (bracket == std::string::npos || bracket > end)
+            return false;
+        if (bracket + 1 == end)
+            continue;
+        if (dump[bracket + 1] != ' ')
+            return false;
+        std::string name = dump.substr(bracket + 2, end - bracket - 2);
+        if (name == rename_names[0] || name == rename_names[1])
+            ++named;
+    }
+    return named == NUM_RENAMERS;
+}
+
+}
+
+/// A thread renaming itself during a heap dump must not truncate it (the dump copies the name under the lock of the
+/// thread data). jemalloc: test_prof_thread_name_dump_concurrent_rename
+TEST(Profiling, DumpConcurrentRename)
+{
+    init();
+    ThreadState & thread_state = ThreadState::fetch();
+    ProfilingThreadData * thread_data = profilingThreadDataGet(thread_state, true);
+    REQUIRE(thread_data != nullptr);
+
+    pthread_t threads[NUM_RENAMERS];
+    for (auto & thread : threads)
+        REQUIRE(pthread_create(&thread, nullptr, renamerBody, nullptr) == 0);
+    while (renamers_ready.load(std::memory_order_acquire) < NUM_RENAMERS)
+    {
+    }
+
+    unsigned corrupted = 0;
+    for (unsigned i = 0; i < 500; ++i)
+    {
+        std::string out;
+        char buf[256];
+        preReentrancy(thread_state, nullptr);
+        profiling_dump_mutex.lock(&thread_state);
+        BufferedWriter buf_writer;
+        REQUIRE(!buf_writer.init(&thread_state, appendFlushCallback, &out, buf, sizeof(buf)));
+        profilingDumpImpl(thread_state, BufferedWriter::callback, &buf_writer, thread_data, false);
+        buf_writer.terminate(&thread_state);
+        profiling_dump_mutex.unlock(&thread_state);
+        postReentrancy(thread_state);
+        corrupted += !dumpIsIntact(out);
+    }
+
+    renamers_stop.store(true, std::memory_order_release);
+    for (auto & thread : threads)
+        pthread_join(thread, nullptr);
+    CHECK_EQ(corrupted, 0u);
 }
