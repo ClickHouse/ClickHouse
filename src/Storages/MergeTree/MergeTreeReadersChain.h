@@ -52,8 +52,8 @@ public:
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
-    /// If `sampling_updater` is set, it decides whether `update_cb` samples the block before the block is read,
-    /// see `RuntimeDataflowStatisticsCacheUpdater::takeInputBlockReadFromDisk`.
+    /// If `sampling_updater` is set, it decides whether `update_cb` samples the block before a reader that measures
+    /// the string values skipped by filters reads it, see `RuntimeDataflowStatisticsCacheUpdater::takeInputBlockReadFromDisk`.
     ReadResult
     read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
          RuntimeDataflowStatisticsCacheUpdater * sampling_updater = nullptr, size_t max_block_size_rows = 0);
