@@ -7,8 +7,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 SELECT toDate('2020-01-01') IN (toDateTime('2020-01-01 12:34:56'));
 SELECT toDate('2020-01-01') IN (materialize(toDateTime('2020-01-01 12:34:56')));
 SELECT toDate('2020-01-01') NOT IN (materialize(toDateTime('2020-01-01 12:34:56')));

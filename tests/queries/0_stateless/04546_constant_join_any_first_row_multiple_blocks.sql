@@ -3,7 +3,6 @@
 -- nothing.
 
 -- These joins return different results with the old analyzer, so the test enforces the analyzer.
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
 SET max_block_size = 1000;
