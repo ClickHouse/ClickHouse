@@ -134,7 +134,7 @@ namespace
 // clang-format off
 
 /// Settings without path are top-level server settings (no nesting).
-#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
@@ -210,6 +210,15 @@ Maximum number of idle standby threads to keep in the thread pool for decoding I
 )", 0) \
     DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+)", 0) \
+    DECLARE(NonZeroUInt64, ai_function_max_thread_pool_size, 1000, R"(
+Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of it.
+)", 0) \
+    DECLARE(UInt64, ai_function_max_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
+)", 0) \
+    DECLARE(UInt64, ai_function_thread_pool_queue_size, 10'000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
@@ -1677,7 +1686,7 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
-    DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
+    DECLARE_WITH_ALIAS(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
 Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
 `DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
 its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
@@ -1691,17 +1700,34 @@ permitted source again. It never silently regains the server's identity. This ke
 for example one created in an older version before the restriction existed, or one whose named collection was
 later re-bound to `use_environment_credentials = 1` — from aborting server startup.
 
+It applies to Azure the same way: a persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic
+`disk(type = azure_blob_storage, ...)`, whose definition would authenticate with the server's own Azure identity
+(the AKS workload identity or the machine's managed identity) is loaded at server startup with a client that carries
+no credentials. `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead. A table on
+such a dynamic Azure disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree` table
+with local metadata; a table with data parts, or a disk with `plain_rewritable` metadata, may still fail to load,
+because those requests are denied as well. A dynamic Azure disk created with
+`s3_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
+
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
-)", 0) \
-    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+
+Also available under the alias `load_table_anonymously_if_credentials_restricted`, as it applies to Azure as well.
+)", 0, load_table_anonymously_if_credentials_restricted) \
+    DECLARE_WITH_ALIAS(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
 Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
 S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
 server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
 cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
 exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
 database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
-)", 0) \
+
+It applies to a dynamic `disk(type = azure_blob_storage, ...)` the same way: such a disk may use the server's own
+Azure identity (the AKS workload identity or the machine's managed identity) despite
+`s3_allow_server_credentials_in_user_queries`.
+
+Also available under the alias `allow_server_credentials_for_system_table_disks`, as it applies to Azure as well.
+)", 0, allow_server_credentials_for_system_table_disks) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
@@ -2065,7 +2091,7 @@ that no disk of this type reads is reported as `UNKNOWN_ELEMENT_IN_CONFIG` inste
 )", 0)
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
-#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, named_collections_storage_type, "local", R"(
 The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
 `keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`.
@@ -2121,7 +2147,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(String, openssl_client_cipher_suites, "", R"(Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.)", 0, "openSSL.client.cipherSuites") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
-    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
     DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
     DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
@@ -2200,6 +2226,29 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
+
+        /// A setting may also be configured under one of its aliases, but only under one name.
+        String configured_alias;
+        if (path.empty())
+        {
+            const auto & aliases = ServerSettingsTraits::settingsToAliases();
+            if (auto it = aliases.find(name); it != aliases.end())
+            {
+                for (const auto & alias : it->second)
+                {
+                    if (!config.has(String(alias)))
+                        continue;
+                    const String & other = configured_alias.empty() && config.has(name) ? name : configured_alias;
+                    if (!other.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Server setting `{}` is configured under more than one name: `{}` and `{}`", name, other, alias);
+                    configured_alias = alias;
+                }
+            }
+        }
+        if (!configured_alias.empty())
+            path_or_name = &configured_alias;
+
         /// `set` names the setting and the value it was given, so nothing has to be added here.
         if (config.has(*path_or_name))
             set(name, config.getString(*path_or_name));
@@ -2296,6 +2345,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
+        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+            known_keys.insert(String(alias));
     }
 
     /// Known config sections that have complex/dynamic structure
@@ -2364,6 +2415,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "profiles",
         "quotas",
         "roles",
+        "masking_policies",
         "users_config",
         "user_directories",
         "ldap_servers",
@@ -3918,6 +3970,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"iceberg_manifest_decode_thread_pool_queue_size",
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_free_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_thread_pool_queue_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 
