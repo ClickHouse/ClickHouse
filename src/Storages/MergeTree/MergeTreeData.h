@@ -598,6 +598,7 @@ public:
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumnCodecs() const override { return true; }
 
     bool supportsTTL() const override { return true; }
 
@@ -1187,6 +1188,10 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
+    /// Only for a definition written now: an existing table with such a column must still load and replicate.
+    static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -2056,7 +2061,7 @@ protected:
     void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;
 
     /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
-    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
+    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under a unique lock.
     void calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
@@ -2457,12 +2462,14 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
