@@ -28,6 +28,8 @@ DEPENDENCIES = {
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
+    ('base/poco/Foundation', '_poco_foundation'): ([], [UNWIND], []),
+    ('base/widechar_width', 'widechar_width'): ([UNWIND], [], []),
     ('contrib/bech32', '_bech32'): ([GLIBC_COMPATIBILITY], [], []),
     ('contrib/cityhash102', '_cityhash'): ([GLIBC_COMPATIBILITY], [], []),
     ('contrib/consistent-hashing', '_consistent_hashing'): ([GLIBC_COMPATIBILITY], [], []),
@@ -40,6 +42,10 @@ DEPENDENCIES = {
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
+    ], [], []),
+    ('src/Functions/URL', 'clickhouse_functions_url__compile_1'): ([
+        '@clickhouse_llvm_project//:LLVMBitReader', '@clickhouse_llvm_project//:LLVMBitstreamReader',
+        '@clickhouse_llvm_project//:LLVMSupport', GLIBC_COMPATIBILITY,
     ], [], []),
     ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
     ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA], [], []),
@@ -69,6 +75,7 @@ DEPENDENCIES = {
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_fmtlib//:_fmt', '@clickhouse_openssl//:crypto',
     ], []),
     ('src', 'dbms__compile_0'): ([
+        '//base/widechar_width',
         '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2', '@clickhouse_xz//:_liblzma',
         '@clickhouse_grpc//:address_sorting', '@clickhouse_mongo_c_driver//:_libbson',
     ], [
@@ -79,6 +86,7 @@ DEPENDENCIES = {
         '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv',
         '@clickhouse_openssl//:crypto', '@clickhouse_openssl//:ssl', '@clickhouse_sparsehash_c11//:sparsehash_c11',
         '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
+        '@lz4//:lz4',
     ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
         '@clickhouse_libhdfs3//:_hdfs3', '//src/Common:string_utils']),
     ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
@@ -343,6 +351,12 @@ def apply(root):
                         edits.append((*source.span(original), 'select(' + json.dumps(branches) + ')'))
                     continue
                 if not missing and not any(omit & existing for existing in values):
+                    continue
+                if (package, name, field) == ('base/poco/Foundation', '_poco_foundation', 'implementation_deps'):
+                    # Keep libunwind immediately after PCRE in the ARM unit_tests_dbms link.
+                    pcre, = [v for v in original.elts if getattr(v, 'value', None) == ':_poco_foundation_pcre']
+                    end = source.span(pcre)[1]
+                    edits.append((end, end, ', ' + json.dumps(UNWIND)))
                     continue
                 drop = omit | {canonical(v) for v in missing}
                 if (package, name, field) == ('programs', 'clickhouse__compile_0', 'deps'):

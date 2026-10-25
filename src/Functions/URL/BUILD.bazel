@@ -69,9 +69,7 @@ ch_cc_library(
     local_defines = DBMS_CONSUMER_DEFINES,
     deps = [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
-        "@clickhouse_llvm_project//:LLVMBitReader",
         "@clickhouse_llvm_project//:LLVMBitWriter",
-        "@clickhouse_llvm_project//:LLVMBitstreamReader",
         "@clickhouse_llvm_project//:LLVMCFGuard",
         "@clickhouse_llvm_project//:LLVMCodeGenTypes",
         "@clickhouse_llvm_project//:LLVMHipStdPar",
@@ -81,8 +79,6 @@ ch_cc_library(
         "@clickhouse_llvm_project//:LLVMMCDisassembler",
         "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSandboxIR",
-        "@clickhouse_llvm_project//:LLVMSupport",
-        "//base/glibc-compatibility",
     ],
     alwayslink = True,
 )

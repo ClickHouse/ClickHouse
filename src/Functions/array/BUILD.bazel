@@ -279,7 +279,6 @@ ch_cc_library(
         "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    source_headers = True,
     alwayslink = True,
 )
 
@@ -306,7 +305,6 @@ ch_cc_library(
         "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    source_headers = True,
     alwayslink = True,
 )
 
@@ -327,7 +325,6 @@ ch_cc_library(
         "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    source_headers = True,
     alwayslink = True,
 )
 

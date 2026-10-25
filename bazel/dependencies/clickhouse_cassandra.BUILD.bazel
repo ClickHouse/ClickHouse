@@ -31,6 +31,7 @@ expand_template(
 ch_cc_library(
     name = "_cassandra",
     srcs = [
+        ":config/contrib/cassandra-cmake/driver_config.hpp",
         "src/abstract_data.cpp",
         "src/address.cpp",
         "src/address_factory.cpp",
@@ -153,9 +154,7 @@ ch_cc_library(
             "src/third_party/rapidjson/rapidjson/schema.h",
         ],
     ),
-    hdrs = [
-        ":config/contrib/cassandra-cmake/driver_config.hpp",
-    ] + glob(["include/**/*.h"]),
+    hdrs = glob(["include/**/*.h"]),
     copts = [
         "-w",
         "-std=c++17",

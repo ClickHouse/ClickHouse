@@ -50,7 +50,10 @@ LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
 # Headers read by ClickHouse source files in compiler dependency reports.
 # Public headers use deps so consumers receive the same CcInfo.
 SYSTEM_TABLE_REGISTRATION = "//src/Storages/System:clickhouse_storages_system__compile_1"
+CLIENT_PARSER_HEADER_DEPS = ["//src/Common:string_utils", "@clickhouse_boost//:boost_headers_no_openssl"]
+BENCHMARK_PARSER_DEPS = ["//src:dbms", "@clickhouse_boost//:_boost_program_options"]
 FIRST_PARTY_HEADER_DEPS = {
+    ("src", "dbms", "deps"): CLIENT_PARSER_HEADER_DEPS,
     ("src", "clickhouse_common_io__compile_0", "implementation_deps"): [
         "//src/Parsers:parser_api", "//src/Parsers:clickhouse_parsers",
     ],
@@ -65,7 +68,9 @@ FIRST_PARTY_HEADER_DEPS = {
         "@clickhouse_abseil_cpp//:absl_synchronization", "@clickhouse_arrow//:_arrow__compile_0",
         "@clickhouse_aws//:_aws__compile_0", "@lz4//:lz4",
     ],
-    ("programs/benchmark", "clickhouse-benchmark-lib", "implementation_deps"): ["//src/Parsers:parser_api"],
+    ("programs/benchmark", "clickhouse-benchmark-lib", "implementation_deps"): [
+        "//src/Parsers:parser_api", *BENCHMARK_PARSER_DEPS,
+    ],
     ("programs/client", "clickhouse-client-lib", "implementation_deps"): ["//src/Parsers:headers", FUNCTION_REGISTRATION],
     ("programs/format", "clickhouse-format-lib", "implementation_deps"): [
         "//src/Parsers:parser_api", "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION,
@@ -202,10 +207,14 @@ def append_header_names(document, node, headers):
     return end, end, " + " + json.dumps(headers)
 
 
-def exclude_common_headers(document, target, headers):
+def header_glob_exclusion(target):
     hdrs = next(kw.value for kw in target.keywords if kw.arg == "hdrs")
     glob, = [n for n in ast.walk(hdrs) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "glob"]
-    exclude = next((kw.value for kw in glob.keywords if kw.arg == "exclude"), None)
+    return glob, next((kw.value for kw in glob.keywords if kw.arg == "exclude"), None)
+
+
+def exclude_common_headers(document, target, headers):
+    glob, exclude = header_glob_exclusion(target)
     if exclude is not None:
         return append_header_names(document, exclude, headers)
     end = document.source.span(glob)[1] - 1
@@ -420,24 +429,15 @@ ch_cc_library(
     return edges
 
 
-def declare_function_group_headers(path, public_owner):
-    """Declare the headers read by the CPU-specific Functions compilation groups."""
+def declare_group_header_deps(root, package, paired_headers, providers, public_owner, public_target=None):
+    """Declare each source's private header and the direct dependencies used to compile both."""
     from initial_migration.factor_build_selections import canonical_list
     from initial_migration.prune_inherited_headers import ARCHES, Document
 
-    doc = Document(path, package="src/Functions", files=["PolygonUtils.h"])
+    path = root / package / "BUILD.bazel"
+    doc = Document(path, package=package, files=list(paired_headers.values()))
     source = doc.source
     edits = []
-    providers = {
-        # PolygonUtils.h is private here, so its own includes need direct providers too.
-        "pointInPolygon.cpp": [
-            ":headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api",
-            "//src/Common:cache_policy", "//src:core_defines", "//src/Common:exception_api",
-        ],
-        "FunctionsHashingMisc.cpp": [
-            ":headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api", "//src/Common:target_specific",
-        ],
-    }
 
     def append(node, labels):
         return canonical_list(ast.BinOp(node, ast.Add(), ast.List([ast.Constant(label) for label in labels], ast.Load())))
@@ -446,20 +446,28 @@ def declare_function_group_headers(path, public_owner):
         fields = {kw.arg: kw.value for kw in call.keywords}
         name = fields["name"].value
         if name == "headers":
-            headers = fields["hdrs"]
-            excluded = next((kw for kw in headers.keywords if kw.arg == "exclude"), None)
-            if excluded is None:
-                headers.keywords.append(ast.keyword("exclude", ast.List([ast.Constant("PolygonUtils.h")], ast.Load())))
-                edits.append((*source.span(headers), ast.unparse(headers)))
-            elif "PolygonUtils.h" not in doc.values(excluded.value, ARCHES[0]):
-                edits.append((*source.span(excluded.value), ast.unparse(append(excluded.value, ["PolygonUtils.h"]))))
-        if name not in ("clickhouse_functions_obj__compile_1", "clickhouse_functions_obj__compile_2"):
+            _, excluded = header_glob_exclusion(call)
+            missing = [h for h in paired_headers.values() if h not in doc.values(excluded, ARCHES[0])]
+            if missing:
+                edits.append(exclude_common_headers(doc, call, missing))
+        if name == public_target:
+            hdrs = fields.get("hdrs")
+            missing = [h for h in paired_headers.values() if h not in doc.values(hdrs, ARCHES[0])]
+            if missing:
+                if hdrs is None:
+                    end = source.span(fields["name"])[1]
+                    edits.append((end, end, ", hdrs = " + json.dumps(missing)))
+                else:
+                    edits.append(append_header_names(doc, hdrs, missing))
+        srcs = fields.get("srcs")
+        if srcs is None or not any(isinstance(n, ast.Constant) and n.value in providers for n in ast.walk(srcs)):
             continue
-        srcs, deps = fields["srcs"], fields["implementation_deps"]
+        deps = fields["implementation_deps"]
         for items in (n for n in ast.walk(srcs) if isinstance(n, ast.List)):
             files = [item.value for item in items.elts if isinstance(item, ast.Constant)]
-            if "pointInPolygon.cpp" in files and "PolygonUtils.h" not in files:
-                edits.append((*source.span(items), ast.unparse(append(items, ["PolygonUtils.h"]))))
+            missing = [h for cpp, h in paired_headers.items() if cpp in files and h not in files]
+            if missing:
+                edits.append((*source.span(items), ast.unparse(append(items, missing))))
         additions = {}
         for cpu in ARCHES:
             inputs = {f.removeprefix(":") for f in doc.values(srcs, cpu)}
@@ -532,7 +540,19 @@ def declare_first_party_header_deps(root):
             return common_list(node.right) or common_list(node.left)
         return None
 
-    declare_function_group_headers(root / "src/Functions/BUILD.bazel", public_owner)
+    declare_group_header_deps(root, "src/Functions", {"pointInPolygon.cpp": "PolygonUtils.h"}, {
+        # PolygonUtils.h is private here, so its own includes need direct providers too.
+        "pointInPolygon.cpp": [
+            ":headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api",
+            "//src/Common:cache_policy", "//src:core_defines", "//src/Common:exception_api",
+        ],
+        "FunctionsHashingMisc.cpp": [
+            ":headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api", "//src/Common:target_specific",
+        ],
+    }, public_owner)
+    parser = "Client/ClientApplicationBaseParser.cpp"
+    declare_group_header_deps(root, "src", {parser: parser.removesuffix(".cpp") + ".h"},
+                              {parser: CLIENT_PARSER_HEADER_DEPS}, public_owner, public_target="dbms")
     for (package, target, field), deps in (*FIRST_PARTY_HEADER_DEPS.items(), *declare_common_header_owners(root, rules).items()):
         path = root / package / "BUILD.bazel"
         doc = Document(path, package=package)
@@ -603,7 +623,19 @@ def declare_first_party_header_deps(root):
                 start = doc.source.span(dbms)[0]
                 path.write_text(doc.source.rewrite([(start, start, json.dumps(missing[0]) + ", ")]))
                 continue
-        if literal is not None:
+        # Keep the direct parser dependencies beside the dependency that already supplies their CcInfo.
+        insert_after = {
+            ("src", "dbms"): (":dbms__compile_0", CLIENT_PARSER_HEADER_DEPS),
+            ("programs/benchmark", "clickhouse-benchmark-lib"): ("//programs/client:clickhouse-client-lib", BENCHMARK_PARSER_DEPS),
+        }.get((package, target))
+        if insert_after is not None and literal is not None:
+            anchor, ordered = insert_after
+            values = ast.literal_eval(literal)
+            pos = values.index(anchor) + 1
+            values[pos:pos] = [d for d in ordered if d in missing]
+            values.extend(d for d in missing if d not in ordered)
+            edit = (*doc.source.span(literal), json.dumps(values))
+        elif literal is not None:
             start, end = doc.source.span(literal)
             text = doc.source.text(literal)[:-1].rstrip()
             separator = "," if literal.elts and not text.endswith(",") else ""
@@ -1731,6 +1763,8 @@ def main():
     declare_unit_test_private_hdrs(ROOT / "src/BUILD.bazel")
     from initial_migration.openldap import declare_openldap
     declare_openldap(ROOT, {arch: graph.targets for arch, graph in graphs.items()})
+    from initial_migration.mongo_c import declare_mongo_c_headers
+    declare_mongo_c_headers(ROOT / 'bazel/dependencies/clickhouse_mongo_c_driver.BUILD.bazel')
     declare_first_party_header_deps(ROOT)
     declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import share_local_defines

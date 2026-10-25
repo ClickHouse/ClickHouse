@@ -2,7 +2,13 @@ load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-_ICUUC_PRIVATE_DATA_HEADERS = glob(["icu4c/source/common/*_data.h"])
+_ICUUC_PRIVATE_HEADERS = glob(
+    [
+        "icu4c/source/common/*_data.h",
+        "icu4c/source/common/rbbi*.h",
+    ],
+    exclude = ["icu4c/source/common/rbbidata.h"],
+)
 
 exports_files([
     "LICENSE",
@@ -50,10 +56,10 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_icuuc",
-    srcs = glob(["icu4c/source/common/*.cpp"]) + _ICUUC_PRIVATE_DATA_HEADERS,
+    srcs = glob(["icu4c/source/common/*.cpp"]) + _ICUUC_PRIVATE_HEADERS,
     hdrs = glob(
         ["icu4c/source/common/**/*.h"],
-        exclude = _ICUUC_PRIVATE_DATA_HEADERS,
+        exclude = _ICUUC_PRIVATE_HEADERS,
     ),
     copts = [
         "-w",

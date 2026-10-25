@@ -24,16 +24,11 @@ TARGETS_WITH_DIRECT_SOURCE_HEADERS = {
     'clickhouse-benchmark-lib', 'clickhouse-client-lib', 'clickhouse-format-lib',
     'clickhouse-install-lib', 'clickhouse-keeper-lib', 'clickhouse-keeper-utils-lib',
     'clickhouse-local-lib', 'clickhouse-server-lib', 'clickhouse_common_zookeeper',
+    'clickhouse_functions_array__compile_1', 'clickhouse_functions_array__compile_2',
+    'clickhouse_functions_array__compile_3',
     'clickhouse_functions_time_series', 'clickhouse_functions_uniqtheta', 'dbms_embedded',
 }
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
-
-# These are textual includes with extensions that rules_cc does not classify
-# as ordinary headers. str_vec.h and mongoc-counters-private.h include them.
-OWNED_TEXTUAL_HEADERS = {
-    '_libbson': ('contrib/mongo-c-driver/src/common/src/mlib/vec.th',),
-    '_libmongoc': ('contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-counters.defs',),
-}
 
 # These libraries already export their complete public C/C++ headers. Private
 # sources and generated configuration files must still be declared separately.
@@ -542,7 +537,6 @@ class BuildFile:
                 if dep_group.get('cmake_runtime') or dep_group.get('language') == 'ASM_NASM':
                     continue
                 pending.extend(dep_group.get('deps', []))
-                headers.update(source_label(path) for path in OWNED_TEXTUAL_HEADERS.get(target_name, ()))
                 headers.update(
                     item for field in ('hdrs', 'textual_hdrs') for item in dep_group.get(field, [])
                     if isinstance(item, str) and item.endswith((*CC_HEADER_SUFFIXES, '.th', '.defs'))
@@ -594,6 +588,15 @@ class BuildFile:
         for old_field, directories in original.items():
             for directory in directories:
                 owner = repository(directory)
+                if (old_field == 'hdrs' and owner == self.owner == 'contrib/icu' and name == '_icuuc'
+                        and directory == 'contrib/icu/icu4c/source/common'):
+                    # ICU installs unicode/*.h. Its genbrk tool also includes rbbidata.h.
+                    common = 'icu4c/source/common/'
+                    private = [common + '*_data.h', common + 'rbbi*.h']
+                    shared = common + 'rbbidata.h'
+                    fields['srcs'].append(Glob(private, [shared]))
+                    fields['hdrs'].extend([Glob([common + '**/*.h'], private), shared])
+                    continue
                 if directory == 'contrib/zstd/lib' and owner == self.owner and name == '_zstd':
                     # zstd installs lib/*.h; also retain its deprecated zbuff API.
                     if group['language'] == 'C':
@@ -653,6 +656,12 @@ class BuildFile:
                         fields[non_header_field].append(Glob([pattern], (*excluded, *headers)))
                 else:
                     for path in directory_sources(directory):
+                        # vec.th belongs to upstream tests; mongoc-counters.defs belongs to libmongoc.
+                        if not custom and owner == 'contrib/mongo-c-driver' and path in {
+                            'contrib/mongo-c-driver/src/common/src/mlib/vec.th',
+                            'contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-counters.defs',
+                        }:
+                            continue
                         public = PUBLIC_HEADERS.get(owner)
                         pqxx_wrapper = (
                             owner == 'contrib/libpqxx'
@@ -678,10 +687,12 @@ class BuildFile:
         if not custom and self.external_headers is not None:
             self.external_headers.use(fields, self.owner)
         if not custom and not binary:
-            if self.owner == 'contrib/mongo-c-driver':
-                fields['textual_hdrs'].extend(
-                    source_label(path) for path in OWNED_TEXTUAL_HEADERS.get(name, ())
-                )
+            if self.owner == 'contrib/cassandra' and name == '_cassandra':
+                # CMake's binary directory contains the private driver configuration.
+                config = [item for item in fields['hdrs']
+                          if isinstance(item, str) and item.endswith('/contrib/cassandra-cmake/driver_config.hpp')]
+                fields['srcs'].extend(config)
+                fields['hdrs'] = [item for item in fields['hdrs'] if item not in config]
             for field in ('hdrs', 'textual_hdrs', 'additional_compiler_inputs'):
                 fields[field] = [
                     item for item in fields[field]
@@ -689,8 +700,7 @@ class BuildFile:
                 ]
             if self.owner == 'contrib/mongo-cxx-driver' and name in {'_bsoncxx', '_mongocxx'}:
                 # The pinned Mongo C++ sources include none of Mongo C's .c
-                # sources or build data. The two nonstandard textual headers
-                # used by Mongo C headers are published by the C libraries.
+                # sources, private textual includes, or build data.
                 fields['additional_compiler_inputs'] = [
                     item for item in fields['additional_compiler_inputs']
                     if not isinstance(item, str)

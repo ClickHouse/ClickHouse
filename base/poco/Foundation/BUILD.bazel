@@ -147,7 +147,7 @@ _PCRE_INTERNAL_HEADERS = [
 
 poco_cc_library(
     name = "_poco_foundation",
-    srcs = ([
+    srcs = [
         "src/AbstractObserver.cpp",
         "src/ActiveDispatcher.cpp",
         "src/ArchiveStrategy.cpp",
@@ -283,7 +283,7 @@ poco_cc_library(
         "src/VarHolder.cpp",
         "src/VarIterator.cpp",
         "src/Void.cpp",
-    ]) + _PCRE_INTERNAL_HEADERS + _FOUNDATION_PRIVATE_HEADERS,
+    ] + _PCRE_INTERNAL_HEADERS + _FOUNDATION_PRIVATE_HEADERS,
     hdrs = glob(
         ["include/**/*.h"],
         exclude = [
@@ -296,6 +296,7 @@ poco_cc_library(
     copts = _FOUNDATION_COPTS,
     implementation_deps = [
         ":_poco_foundation_pcre",
+        "@clickhouse_llvm_project//:unwind",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_zlib_ng//:_zlib",
         "@lz4",

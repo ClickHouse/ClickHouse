@@ -18,6 +18,8 @@ ch_cc_library(
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Parsers:clickhouse_parsers",
         "//programs/client:clickhouse-client-lib",
+        "//src:dbms",
+        "@clickhouse_boost//:_boost_program_options",
         "//src/Common:current_metrics",
         "//src/Common:exception_api",
         "//src/Common:stopwatch",

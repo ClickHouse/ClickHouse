@@ -143,7 +143,7 @@ def declare_parser_interface(rows):
     ))
 
 
-def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
+def declare_compiled_headers(rows, files, compiler, headers, field="hdrs", *, when_compiling=None):
     """Assign headers to their compiling target. Use srcs for implementation and test headers."""
     globs = GlobFiles(files)
 
@@ -193,9 +193,22 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
         for kw in rule.keywords:
             if kw.arg in {"srcs", "hdrs", "textual_hdrs", "private_hdrs"}:
                 kw.value = RemoveHeaders().visit(kw.value)
-    for name in [compiler] if isinstance(compiler, str) else compiler:
+    names = [compiler] if isinstance(compiler, str) else compiler
+    if when_compiling:
+        from initial_migration.web_resources import eval_node
+        srcs = attributes(compilers[compiler])["srcs"]
+        owners = {cpu: compiler if when_compiling in {
+            src.removeprefix(":") for src in files_in(eval_node(srcs, {}, cpu))
+        } else "headers" for cpu in CPUS}
+        names = sorted(set(owners.values()))
+    for name in names:
         owner = compilers[name]
         value = deepcopy(headers)
+        if when_compiling and len(names) > 1:
+            value = expr("select(" + json.dumps({
+                "@platforms//cpu:" + cpu: sorted(selected) if target == name else []
+                for cpu, target in owners.items()
+            }) + ")")
         attribute = next((kw for kw in owner.keywords if kw.arg == field), None)
         if attribute is None:
             owner.keywords.append(ast.keyword(arg=field, value=value))
@@ -214,7 +227,7 @@ DBMS_PUBLIC_HEADERS = {
         "QueryNode.h", "TableFunctionNode.h", "TableNode.h", "Utils.h",
     ),
     "Backups": (
-        "BackupEntryWithChecksumCalculation.h", "BackupFileInfo.h", "IBackupEntry.h",
+        "BackupEntryWithChecksumCalculation.h", "BackupFactory.h", "BackupFileInfo.h", "IBackupEntry.h",
     ),
     "BridgeHelper": ("IBridgeHelper.h", "XDBCBridgeHelper.h"),
     "Client": (
@@ -233,7 +246,7 @@ DBMS_PUBLIC_HEADERS = {
     "DataTypes": ("DataTypeSet.h", "FieldToDataType.h", "getMostSubtype.h"),
     "DataTypes/Serializations": ("SerializationObjectHelpers.h", "SerializationObjectSharedData.h"),
     "Databases": ("DatabaseOverlay.h", "DatabaseURL.h"),
-    "Databases/DataLake": ("HTTPBasedCatalogUtils.h",),
+    "Databases/DataLake": ("HTTPBasedCatalogUtils.h", "HiveCatalog.h"),
     "Databases/MySQL": ("DatabaseMySQL.h",),
     "Disks": (
         "DiskEncryptedTransaction.h", "IDiskTransaction.h", "MetadataStorageWithPathWrapper.h",
@@ -297,6 +310,7 @@ DBMS_PUBLIC_HEADERS = {
         "ChunkRowRange.h", "ColumnGathererTransform.h", "Distinct*.h", "JoiningTransform.h",
         "SortingTransform.h", "getSourceFromASTInsertQuery.h",
     ),
+    "QueryPipeline": ("DistributedPlanExecutor.h",),
     "Server": (
         "GRPCServer.h", "HTTPHandlerFactory.h", "HTTPHandlerRequestFilter.h",
         "HTTPRequestHandlerFactoryMain.h", "KeeperHTTPHandlerFactory.h",
@@ -356,13 +370,15 @@ COMMON_IO_PUBLIC_HEADERS = {
     "IO": (
         "*BufferFromEncryptedFile.h", "Ask.h", "AsynchronousReadBufferFromFile.h",
         "AsynchronousReadBufferFromFileDescriptor.h", "BoundedReadBuffer.h",
-        "BufferWithOwnMemoryImpl.h", "Expect404ResponseScope.h", "LZMA*Buffer.h", "Libdeflate*.h",
-        "LimitSeekableReadBuffer.h", "LocalSourceReader.h", "MMappedFileCache.h", "MySQL*.h",
+        "BufferWithOwnMemoryImpl.h", "CascadeWriteBuffer.h", "Expect404ResponseScope.h",
+        "LZMA*Buffer.h", "Libdeflate*.h",
+        "LimitSeekableReadBuffer.h", "LocalSourceReader.h", "MMappedFile.h", "MMappedFileCache.h", "MySQL*.h",
         "PackedFilesWriter.h", "PageCacheProvider.h", "PeekableWriteBuffer.h",
         "PipelineReadBuffer.h", "ReadBufferFromFileDecorator.h", "ReadBufferFromFileView.h",
         "ReadPipeline.h", "SilkFiberStreamSocketImpl.h", "SilkSecureFiberStreamSocketImpl.h",
-        "SocketPeerClosed.h", "SynchronousReader.h", "WriteBufferFromArena.h", "WriteBufferFromS3.h",
-        "Zlib*Buffer.h", "ZstdDeflatingWriteBuffer.h", "parseHTTPDate.h", "writeValidUTF8.h",
+        "SocketPeerClosed.h", "StdIStreamFromMemory.h", "SynchronousReader.h", "TimeoutSetter.h",
+        "WriteBufferFromArena.h", "WriteBufferFromFileDecorator.h", "WriteBufferFromS3.h",
+        "Zlib*Buffer.h", "ZstdDeflatingWriteBuffer.h", "parseHTTPDate.h", "preadNoWait.h", "writeValidUTF8.h",
     ),
 }
 
@@ -377,6 +393,9 @@ def declare_src_compiled_headers(rows, files):
         literals = list_expr([p for p in paths if "*" not in p])
         headers = ast.BinOp(left=expr("glob(" + json.dumps(patterns) + ")"), op=ast.Add(), right=literals)
         declare_compiled_headers(rows, files, compiler, headers)
+    # dbms group 0 publishes IStorage's full interface where it compiles StorageGenerateRandom.
+    declare_compiled_headers(rows, files, "dbms__compile_0", list_expr(["Storages/StorageGenerateRandom.h"]),
+                             when_compiling="Storages/StorageGenerateRandom.cpp")
 
 
 def declare_dictionary_private_headers(rows, files):

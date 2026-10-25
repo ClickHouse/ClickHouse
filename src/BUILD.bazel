@@ -73,6 +73,7 @@ _DBMS_0_PUBLIC_HEADERS = glob([
     "Analyzer/Utils.h",
     "Backups/BackupCoordinationLocal.h",
     "Backups/BackupEntryWithChecksumCalculation.h",
+    "Backups/BackupFactory.h",
     "Backups/BackupFileInfo.h",
     "Backups/BackupIO_Default.h",
     "Backups/BackupImpl.h",
@@ -132,6 +133,7 @@ _DBMS_0_PUBLIC_HEADERS = glob([
     "DataTypes/getMostSubtype.h",
     "Databases/DataLake/GlueCatalog.h",
     "Databases/DataLake/HTTPBasedCatalogUtils.h",
+    "Databases/DataLake/HiveCatalog.h",
     "Databases/DataLake/RestCatalog.h",
     "Databases/DataLake/StaticStorageCredentials.h",
     "Databases/DatabaseOverlay.h",
@@ -295,6 +297,7 @@ _DBMS_0_PUBLIC_HEADERS = glob([
     "Processors/Transforms/ScatterByPartitionTransform.h",
     "Processors/Transforms/SortingTransform.h",
     "Processors/Transforms/getSourceFromASTInsertQuery.h",
+    "QueryPipeline/DistributedPlanExecutor.h",
     "QueryPipeline/ReadProgressCallback.h",
     "QueryPipeline/printPipeline.h",
     "QueryPipeline/receiveExchangeStreams.h",
@@ -1323,6 +1326,7 @@ _IO_COMPILED_API_HEADERS = glob([
     "IO/BoundedReadBuffer.h",
     "IO/BufferWithOwnMemoryImpl.h",
     "IO/CachedInMemoryReadBufferFromFile.h",
+    "IO/CascadeWriteBuffer.h",
     "IO/ConcatReadBufferFromFile.h",
     "IO/Expect404ResponseScope.h",
     "IO/ForkWriteBuffer.h",
@@ -1331,6 +1335,7 @@ _IO_COMPILED_API_HEADERS = glob([
     "IO/LimitSeekableReadBuffer.h",
     "IO/LocalSourceReader.h",
     "IO/MMapReadBufferFromFileWithCache.h",
+    "IO/MMappedFile.h",
     "IO/MMappedFileCache.h",
     "IO/NetUtils.h",
     "IO/PackedFilesOperations.h",
@@ -1359,12 +1364,16 @@ _IO_COMPILED_API_HEADERS = glob([
     "IO/SilkSecureFiberStreamSocketImpl.h",
     "IO/SnappyBasicWriteBuffer.h",
     "IO/SocketPeerClosed.h",
+    "IO/StdIStreamFromMemory.h",
     "IO/SynchronousReader.h",
+    "IO/TimeoutSetter.h",
     "IO/WriteBufferFromArena.h",
+    "IO/WriteBufferFromFileDecorator.h",
     "IO/WriteBufferFromS3.h",
     "IO/ZstdDeflatingAppendableWriteBuffer.h",
     "IO/ZstdDeflatingWriteBuffer.h",
     "IO/parseHTTPDate.h",
+    "IO/preadNoWait.h",
     "IO/writeValidUTF8.h",
 ]
 
@@ -2216,7 +2225,6 @@ _DBMS_0_COMPILE_ATTRIBUTES = dict(
         "//base/poco/Redis:_poco_redis",
         "//base/poco/Util:_poco_util",
         "//base/poco/XML:_poco_xml",
-        "//base/widechar_width",
         "//base:common",
         "//src/Access/Common:clickhouse_common_access",
         "//src/AggregateFunctions:headers",
@@ -2252,7 +2260,6 @@ _DBMS_0_COMPILE_ATTRIBUTES = dict(
         "@clickhouse_croaring//:_roaring",
         "//base:pcg_random",
         "@clickhouse_krb5//:_krb5",
-        "@lz4//:lz4",
         "@clickhouse_double_conversion//:_double-conversion",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
         "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
@@ -3012,9 +3019,13 @@ ch_cc_library(
         "//src/Functions:UserDefined/UserDefinedWebAssemblyTypeHelpers.cpp",
         "//src/Functions:UserDefined/createUserDefinedSQLObjectsStorage.cpp",
     ] + glob(["Processors/Formats/Impl/Parquet/*.cpp"]) + glob(["Processors/Formats/Impl/ArrowIPC/*.cpp"]) + glob(["Coordination/*.cpp"]) + glob(["Coordination/Storage/*.cpp"]) + _DBMS_0_PRIVATE_SRC_HEADERS + ["//src/Common:GeoBbox.h"] + _DBMS_EMBEDDED_PRIVATE_HEADERS,
-    hdrs = _DBMS_0_COMPILE_ATTRIBUTES["hdrs"] + _DBMS_0_PUBLIC_HEADERS,
+    hdrs = _DBMS_0_COMPILE_ATTRIBUTES["hdrs"] + _DBMS_0_PUBLIC_HEADERS + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": ["Storages/StorageGenerateRandom.h"],
+    }),
     clickhouse_code = _DBMS_0_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = [
+        "@lz4//:lz4",
         "//bazel:arrow_flatbuffer_headers",
         "//contrib/librdkafka-cmake:rdhttp_poco_transport",
         "@clickhouse_abseil_cpp//:absl_function_ref",
@@ -3293,7 +3304,10 @@ ch_cc_library(
     name = "dbms__compile_3",
     srcs = select({
         "@platforms//cpu:x86_64": ["Storages/StorageGenerateRandom.cpp"],
-        "@platforms//cpu:aarch64": ["Client/ClientApplicationBaseParser.cpp"],
+        "@platforms//cpu:aarch64": [
+            "Client/ClientApplicationBaseParser.cpp",
+            "Client/ClientApplicationBaseParser.h",
+        ],
     }),
     clickhouse_code = True,
     copts = select({
@@ -3319,7 +3333,10 @@ ch_cc_library(
             "//src/Common:memory_tracking_api",
             "//src:io_string_buffers",
         ],
-        "@platforms//cpu:aarch64": [],
+        "@platforms//cpu:aarch64": [
+            "//src/Common:string_utils",
+            "@clickhouse_boost//:boost_headers_no_openssl",
+        ],
     }),
     local_defines = _DBMS_LOCAL_DEFINES,
 )
@@ -3327,13 +3344,20 @@ ch_cc_library(
 ch_cc_library(
     name = "dbms__compile_4",
     srcs = select({
-        "@platforms//cpu:x86_64": ["Client/ClientApplicationBaseParser.cpp"],
+        "@platforms//cpu:x86_64": [
+            "Client/ClientApplicationBaseParser.cpp",
+            "Client/ClientApplicationBaseParser.h",
+        ],
         "@platforms//cpu:aarch64": [],
     }),
     arches = ["x86_64"],
     clickhouse_code = True,
     implementation_deps = select({
-        "@platforms//cpu:x86_64": [":dbms__compile_0"],
+        "@platforms//cpu:x86_64": [
+            ":dbms__compile_0",
+            "//src/Common:string_utils",
+            "@clickhouse_boost//:boost_headers_no_openssl",
+        ],
         "@platforms//cpu:aarch64": [
             "//bazel:clickhouse_config_headers",
             "@clickhouse_cctz//:_cctz",
@@ -3501,9 +3525,12 @@ ch_cc_library(
 
 cc_library(
     name = "dbms",
+    hdrs = ["Client/ClientApplicationBaseParser.h"],
     deps = [
         "//src/Daemon:daemon",
         ":dbms__compile_0",
+        "//src/Common:string_utils",
+        "@clickhouse_boost//:boost_headers_no_openssl",
         ":dbms__compile_1",
         ":dbms__compile_2",
         ":dbms__compile_3",
@@ -4460,8 +4487,14 @@ ch_cc_library(
             "Core/Defines.h",
             "Access/GSSAcceptor.h",
             "Interpreters/Context_fwd.h",
-        ] + _IO_STRING_BUFFER_HEADERS + _COLUMN_TYPE_HEADERS + _UNIT_TEST_HEADERS + _SERVER_FACTORY_HEADERS + _DBMS_EMBEDDED_PRIVATE_HEADERS,
-    ),
+        ] + _IO_STRING_BUFFER_HEADERS + _COLUMN_TYPE_HEADERS + _UNIT_TEST_HEADERS + _SERVER_FACTORY_HEADERS + _DBMS_EMBEDDED_PRIVATE_HEADERS + [
+            "Storages/StorageGenerateRandom.h",
+            "Client/ClientApplicationBaseParser.h",
+        ],
+    ) + select({
+        "@platforms//cpu:x86_64": ["Storages/StorageGenerateRandom.h"],
+        "@platforms//cpu:aarch64": [],
+    }),
     clickhouse_code = True,
     includes = [
         ".",

@@ -125,25 +125,12 @@ expand_template(
     template = ":src/libmongoc/src/mongoc/mongoc-version.h.in",
 )
 
-_BSON_PRIVATE_HEADERS = glob(["src/libbson/src/bson/*-private.h"])
-
-_MONGOC_PRIVATE_HEADERS = glob(
-    ["src/libmongoc/src/mongoc/*-private.h"],
-    exclude = [
-        "src/libmongoc/src/mongoc/mongoc-buffer-private.h",
-        "src/libmongoc/src/mongoc/mongoc-cyrus-private.h",
-        "src/libmongoc/src/mongoc/mongoc-http-private.h",
-        "src/libmongoc/src/mongoc/mongoc-secure-channel-private.h",
-        "src/libmongoc/src/mongoc/mongoc-secure-transport-private.h",
-        "src/libmongoc/src/mongoc/mongoc-sspi-private.h",
-    ],
-)
-
 ch_cc_library(
     name = "_libbson",
-    srcs = glob(["src/libbson/src/bson/*.c"]) + [
-        "src/libbson/src/jsonsl/jsonsl.c",
-    ] + glob(["src/common/src/*.c"]) + _BSON_PRIVATE_HEADERS,
+    srcs = glob(["src/libbson/src/bson/*.c"]) + ["src/libbson/src/jsonsl/jsonsl.c"] + glob(["src/common/src/*.c"]) + glob([
+        "src/libbson/src/bson/*-private.h",
+        "src/libbson/src/jsonsl/*.h",
+    ]),
     hdrs = [
         ":config/contrib/mongo-c-driver/src/common/src/common-config.h",
         ":config/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
@@ -151,9 +138,12 @@ ch_cc_library(
     ] + glob(
         [
             "src/common/src/**/*.h",
-            "src/libbson/src/**/*.h",
+            "src/libbson/src/bson/*.h",
         ],
-        exclude = _BSON_PRIVATE_HEADERS,
+        exclude = [
+            "src/common/src/mlib/str_vec.h",
+            "src/libbson/src/bson/*-private.h",
+        ],
     ),
     copts = [
         "-w",
@@ -180,7 +170,14 @@ ch_cc_library(
     local_includes = [
         "src/common/src/src",
     ],
-    textual_hdrs = ["src/common/src/mlib/vec.th"],
+)
+
+_MONGOC_PUBLIC_HEADERS = glob(
+    ["src/libmongoc/src/mongoc/mongoc*.h"],
+    exclude = [
+        "src/libmongoc/src/mongoc/*-private.h",
+        "src/libmongoc/src/mongoc/mongoc-stream-tls-secure-*.h",
+    ],
 )
 
 ch_cc_library(
@@ -188,23 +185,26 @@ ch_cc_library(
     srcs = glob(["src/libmongoc/src/mongoc/*.c"]) + glob(["src/common/src/*.c"]) + [
         "src/utf8proc-2.11.3/utf8proc.c",
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
-    ] + _MONGOC_PRIVATE_HEADERS,
-    hdrs = [
-        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
-        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
     ] + glob(
         [
-            "src/libmongoc/src/**/*.h",
-            "src/utf8proc-2.11.3/**/*.h",
+            "src/libmongoc/src/mongoc/*.h",
+            "src/utf8proc-2.11.3/*.h",
             "src/uthash/**/*.h",
         ],
-        exclude = _MONGOC_PRIVATE_HEADERS + [
+        exclude = _MONGOC_PUBLIC_HEADERS + [
+            "src/libmongoc/src/mongoc/mcd-integer.h",
             "src/libmongoc/src/mongoc/mongoc-cyrus-private.h",
             "src/libmongoc/src/mongoc/mongoc-secure-channel-private.h",
             "src/libmongoc/src/mongoc/mongoc-secure-transport-private.h",
             "src/libmongoc/src/mongoc/mongoc-sspi-private.h",
+            "src/libmongoc/src/mongoc/mongoc-stream-tls-secure-channel.h",
+            "src/libmongoc/src/mongoc/mongoc-stream-tls-secure-transport.h",
         ],
     ),
+    hdrs = [
+        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
+        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
+    ] + _MONGOC_PUBLIC_HEADERS,
     copts = [
         "-w",
         "-std=gnu11",
@@ -230,8 +230,10 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    private_hdrs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
-    textual_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
+    private_hdrs = [
+        "src/libmongoc/src/mongoc/mongoc-counters.defs",
+        "src/utf8proc-2.11.3/utf8proc_data.c",
+    ],
     deps = [
         ":_libbson",
         "@clickhouse_openssl//:ssl",
