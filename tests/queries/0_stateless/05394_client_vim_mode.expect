@@ -1,0 +1,430 @@
+#!/usr/bin/expect -f
+
+# Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
+# from any text displayed while typing it, so that matching the result checks the edit.
+# Escape is followed by a pause longer than the escape delay, so that it is not read as Meta.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc escape {} {
+    send -- "\033"
+    sleep 0.3
+}
+
+# Ctrl-J submits the query: Enter inserts a new line in the vim mode.
+proc submit {} {
+    send -- "\n"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --vim"
+expect ":) "
+
+# Multibyte characters: Escape, a motion and a deletion around `é`.
+send -- "SELECT concat('ab', 'éa')"
+escape
+send -- "hhx"
+submit
+expect "abé"
+expect ":) "
+
+# `dh` deletes the character before the cursor.
+send -- "SELECT 1000+123"
+escape
+send -- "dh"
+submit
+expect "1013"
+expect ":) "
+
+# `dl` deletes the last character.
+send -- "SELECT 2000+456"
+escape
+send -- "dl"
+submit
+expect "2045"
+expect ":) "
+
+# `de` deletes the last character when it is the end of the word.
+send -- "SELECT 4000+12"
+escape
+send -- "de"
+submit
+expect "4001"
+expect ":) "
+
+# `dj` deletes the current and the next line.
+send -- "SELECT 3000 + 1\r+ 7\r+ 8"
+escape
+send -- "kdj"
+submit
+expect "3001"
+expect ":) "
+
+# A query submitted with a pending operator does not leave it to the next input,
+# which starts in insert mode.
+send -- "SELECT 5000+1"
+escape
+send -- "d"
+submit
+expect "5001"
+expect ":) "
+send -- "SELECT 5000+2"
+submit
+expect "5002"
+expect ":) "
+
+# A paste in normal mode, and with a pending motion, inserts the text.
+send -- "SELECT 6000+1 "
+escape
+send -- "\033\[200~2\033\[201~"
+submit
+expect "6012"
+expect ":) "
+
+send -- "SELECT 7000+1 "
+escape
+send -- "f\033\[200~3\033\[201~"
+submit
+expect "7013"
+expect ":) "
+
+# Repeating `t` and `T` with `;` skips the previous match.
+send -- "SELECT concat('a,b,c', '!')"
+escape
+send -- "0f't,;x"
+submit
+expect "a,,c!"
+expect ":) "
+
+send -- "SELECT concat('x,y,z', '?')"
+escape
+send -- "0f';T,;x"
+submit
+expect "x,,z?"
+expect ":) "
+
+# `t` selects the character under the cursor when the target is right after it.
+send -- "SELECT 1100+21"
+escape
+send -- "hdt1"
+submit
+expect "1101"
+expect ":) "
+
+send -- "SELECT 2100+21"
+escape
+send -- "hct14"
+submit
+expect "2141"
+expect ":) "
+
+# The character of `r` and `f` can be a multibyte one.
+send -- "SELECT concat('ab', 'c')"
+escape
+send -- "0f'lré"
+submit
+expect "ébc"
+expect ":) "
+
+send -- "SELECT concat('éqz', 'w')"
+escape
+send -- "0féx"
+submit
+expect "qzw"
+expect ":) "
+
+# An operator applies to the Enter motion linewise.
+send -- "SELECT 8000\r+ 3\r+ 9\r+ 20"
+escape
+send -- "kkd\r"
+submit
+expect "8020"
+expect ":) "
+
+send -- "SELECT 9000\r+ 3\r+ 9\r+ 40"
+escape
+send -- "kkc\r+ 1"
+submit
+expect "9041"
+expect ":) "
+
+# `dd` and `dG` on the last line leave the cursor at the start of the remaining last line.
+send -- "SELECT 1200\r+ 34"
+escape
+send -- "ddwi9"
+submit
+expect "91200"
+expect ":) "
+
+send -- "SELECT 1300\r+ 34"
+escape
+send -- "dGwi9"
+submit
+expect "91300"
+expect ":) "
+
+# Ctrl-P in insert mode recalls the previous query and keeps editing it at its end.
+send -- "SELECT 1400+1"
+submit
+expect "1401"
+expect ":) "
+send -- "\x10"
+send -- "0"
+submit
+expect "1410"
+expect ":) "
+
+# Ctrl-P in normal mode recalls the previous query with the cursor on its last character.
+send -- "SELECT 1500+12"
+submit
+expect "1512"
+expect ":) "
+escape
+send -- "\x10"
+send -- "x"
+submit
+expect "1501"
+expect ":) "
+
+# The regular history search (Ctrl-T) works in normal mode and stays in normal mode.
+send -- "SELECT 1600+17"
+submit
+expect "1617"
+expect ":) "
+send -- "SELECT 3"
+escape
+send -- "\x14"
+send -- "1600"
+expect "1600+17"
+send -- "\r"
+send -- "\$x"
+submit
+expect "1601"
+expect ":) "
+
+# `x` on a one-character buffer leaves the buffer empty.
+send -- "X"
+escape
+send -- "x"
+send -- "iSELECT 1700+1"
+submit
+expect "1701"
+expect ":) "
+
+# `dd` on the last (and only) line leaves the buffer empty.
+send -- "SELECT garbage"
+escape
+send -- "dd"
+send -- "iSELECT 1800+2"
+submit
+expect "1802"
+expect ":) "
+
+# Enter on an empty buffer inserts a new line.
+send -- "\r"
+send -- "SELECT 1900+3"
+submit
+expect "1903"
+expect ":) "
+
+# A counted Enter past the last line stays inside the buffer: on a one-line buffer and on an
+# empty buffer there is no next line, so it neither moves nor deletes anything.
+send -- "SELECT 2100+56"
+escape
+send -- "d20\r20\rx"
+submit
+expect "2105"
+expect ":) "
+
+escape
+send -- "d20\r20\r"
+send -- "iSELECT 2200+1"
+submit
+expect "2201"
+expect ":) "
+
+# A counted Enter stops on the last line.
+send -- "SELECT 2300\r+ 4\r+ 50"
+escape
+send -- "gg20\rwx"
+submit
+expect "2304"
+expect ":) "
+
+# A count on `$` moves to the end of a following line.
+send -- "SELECT 2500 + 1\r+ 2\r+ 30"
+escape
+send -- "gg2\$x"
+submit
+expect "2531"
+expect ":) "
+
+# `D` and `C` take the count of `$`.
+send -- "SELECT 2600 + 7\r+ 2\r+ 30"
+escape
+send -- "ggf72D"
+submit
+expect "2630"
+expect ":) "
+
+send -- "SELECT 2800 + 7\r+ 2\r+ 30"
+escape
+send -- "ggf72C1"
+submit
+expect "2831"
+expect ":) "
+
+# Over several lines from the start of a line, `D` is linewise.
+send -- "garbage\r+ more\rSELECT 2700+5"
+escape
+send -- "gg2DA0"
+submit
+expect "2750"
+expect ":) "
+
+# A count on `$` fails on the last line.
+send -- "SELECT 2900+56"
+escape
+send -- "2Dx"
+submit
+expect "2905"
+expect ":) "
+
+# `db` and `cb` from the start of a line keep the preceding line break.
+send -- "SELECT 3100 -- note\r+ 23"
+escape
+send -- "0db"
+submit
+expect "3123"
+expect ":) "
+
+send -- "SELECT 3200 -- note\r+ 45"
+escape
+send -- "0cb1"
+submit
+expect "3245"
+expect ":) "
+
+# From the start of a line to the start of a previous one, `db` is linewise.
+send -- "SELECT 3300\rgarbage\r+ 6"
+escape
+send -- "0db"
+submit
+expect "3306"
+expect ":) "
+
+# `G` moves to the first non-blank of the last line.
+send -- "SELECT 3400\r  + 23"
+escape
+send -- "ggGi+ 1 -- "
+submit
+expect "3401"
+expect ":) "
+
+# `%` uses the first bracket after the cursor on the line.
+send -- "SELECT 3500 + plus(20, 30)"
+escape
+send -- "0fpc%7"
+submit
+expect "3507"
+expect ":) "
+
+# `~` takes a count and moves the cursor forward.
+send -- "SELECT 'abcd'"
+escape
+send -- "0fa3~"
+submit
+expect "ABCd"
+expect ":) "
+
+send -- "SELECT 'wxyz'"
+escape
+send -- "0fw~~"
+submit
+expect "WXyz"
+expect ":) "
+
+# `2S` changes two lines, like `2cc`.
+send -- "garbage\r+ 23\r+ 45"
+escape
+send -- "gg2SSELECT 3600"
+submit
+expect "3645"
+expect ":) "
+
+# `%` and the bracket text objects ignore brackets inside quotes.
+send -- "SELECT (length(')') + 20) + 3700"
+escape
+send -- "0f(c%5"
+submit
+expect "3705"
+expect ":) "
+
+send -- "SELECT length(')') + 3800"
+escape
+send -- "0f(ci('abc'"
+submit
+expect "3803"
+expect ":) "
+
+# Counted word objects continue across lines.
+send -- "SELECT 3900 - 200\r- 30"
+escape
+send -- "gg0f2d2aw"
+submit
+expect "3870"
+expect ":) "
+
+send -- "SELECT 4000 - 200\r- 30"
+escape
+send -- "gg0f2d3iw"
+submit
+expect "3970"
+expect ":) "
+
+# An empty line is a word for `w`.
+send -- "SELECT 4100\r\r+ 234"
+escape
+send -- "ggwwxi+ 1 -- "
+escape
+submit
+expect "4335"
+expect ":) "
+
+# A line number past the end moves to the first non-blank of the last line.
+send -- "SELECT 4200\r+ 234"
+escape
+send -- "gg99Gi+1 -- "
+escape
+submit
+expect "4201"
+expect ":) "
+
+send -- "SELECT 4300\r+ 345"
+escape
+send -- "gg99ggi+2 -- "
+escape
+submit
+expect "4302"
+expect ":) "
+
+send -- "\4"
+expect eof
