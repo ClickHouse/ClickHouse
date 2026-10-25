@@ -87,7 +87,8 @@ defined_globals() {
     { "$NM" "$1" 2>/dev/null; "$NM" -D "$1" 2>/dev/null; } \
         | grep -E '^([0-9a-f]+|-+) [TDBCWVi] ' \
         | awk '{print $3}' \
-        | sed 's/@.*//'
+        | sed 's/@.*//' \
+        | grep -v -E '^(DW\.ref\.|__clang_call_terminate$)'
 }
 
 # Defined globals from our own reference libraries: the set we are allowed to
