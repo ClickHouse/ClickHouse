@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Parsers/NullsAction.h>
 
@@ -209,7 +210,8 @@ void serializeAggregateDescriptions(
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+void deserializeAggregateDescriptions(
+    AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header)
 {
     UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
@@ -228,7 +230,13 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         for (auto & arg_name : aggregate.argument_names)
         {
             readStringBinary(arg_name, in);
-            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+            auto & argument_type = argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+            if (input_header && std::ranges::count(*input_header, arg_name, &ColumnWithTypeAndName::name) == 1)
+            {
+                const auto & column_type = input_header->getByName(arg_name).type;
+                if (differsOnlyByAggregateStateVariant(column_type, argument_type))
+                    argument_type = column_type;
+            }
         }
 
         String function_name;
