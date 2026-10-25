@@ -24,6 +24,12 @@ query_id="background_rewrite_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&query_rules=rule_background_rewrite&run_query_in_background=1&async_insert=0&query_id=${query_id}" -d "SELECT 12345"
 wait_for_query_log "$(finished_in_query_log "$query_id")"
 $CLICKHOUSE_CLIENT -q "SELECT x FROM t"
+# The worker executes the rewritten query, but `system.query_log` describes the query as submitted
+# and lists the rule applied at dispatch.
+$CLICKHOUSE_CLIENT -q "
+    SELECT query, applied_rules, normalized_query_hash = normalizedQueryHash('SELECT 12345')
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_id = '${query_id}' AND type = 'QueryFinish'"
 
 $CLICKHOUSE_CLIENT -q "
     DROP RULE rule_background_rewrite;

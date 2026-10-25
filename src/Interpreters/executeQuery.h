@@ -112,7 +112,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
 /// Schedules the query on the background query pool. The returned future becomes ready once the query
 /// passes all the checks and starts its execution, or holds the exception thrown before that.
-std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context);
+/// `rewritten_query_origin` is set when `query` is the result of a rewrite rule (see `RewrittenQueryOrigin`).
+std::future<void> executeQueryInBackground(
+    std::string_view query, ContextMutablePtr context, std::shared_ptr<const RewrittenQueryOrigin> rewritten_query_origin = nullptr);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.

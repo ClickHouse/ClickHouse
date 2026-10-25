@@ -2779,6 +2779,13 @@ static BlockIO executeQueryImpl(
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+        /// The background run of a query rewritten at dispatch is given the rewritten text; log the
+        /// query as submitted instead, like for a rewritten query run in the foreground.
+        if (flags.rewritten_query_origin)
+        {
+            query_for_logging = flags.rewritten_query_origin->query_for_logging;
+            normalized_query_hash = flags.rewritten_query_origin->normalized_query_hash;
+        }
         /// Make the hash available to the parts of execution that account `NORMALIZED_QUERY_HASH`
         /// quotas but do not otherwise have it (e.g. the insert path).
         context->setNormalizedQueryHash(normalized_query_hash);
@@ -2797,7 +2804,7 @@ static BlockIO executeQueryImpl(
         ///
         /// `astTraversal` rewrites `out_ast` in place (replacing the pointer with the result
         /// template), so keep the original AST first for consistent `formatted_query` logging.
-        ast_for_formatted_query = out_ast;
+        ast_for_formatted_query = flags.rewritten_query_origin ? flags.rewritten_query_origin->ast_for_formatted_query : out_ast;
         /// Apply rules only to the initial user query, never to an internal helper query.
         /// Several user-facing statements are implemented by copying the user's context and
         /// re-entering `executeQuery(..., QueryFlags{ .internal = true })` with a different SQL
@@ -2841,9 +2848,12 @@ static BlockIO executeQueryImpl(
         ///
         /// A query run in the background (`run_query_in_background`) had the rules applied when it
         /// was dispatched, and the worker receives the already rewritten query (see the dispatch
-        /// below), so the rules are not applied a second time.
+        /// below), so the rules are not applied a second time. The names of the rules applied at
+        /// dispatch come with it, to be recorded in `system.query_log`.
         if ((!internal || flags.user_initiated) && !context->isDDLOrOnClusterInternal() && !flags.background)
             astTraversal(out_ast, context, applied_rewrite_rules);
+        else if (flags.rewritten_query_origin)
+            applied_rewrite_rules = flags.rewritten_query_origin->applied_rewrite_rules;
 
         /// Checked before the interpreter runs, so a rewrite into e.g. DDL has no side effects.
         if (flags.rewritten_query_must_return_rows && !applied_rewrite_rules.empty()
@@ -3032,7 +3042,15 @@ static BlockIO executeQueryImpl(
                     /// it as such regardless of the dialect the original request was submitted in.
                     auto rewritten_query_context = Context::createCopy(context);
                     rewritten_query_context->setSetting("dialect", String("clickhouse"));
-                    background_query_execution_started = executeQueryInBackground(out_ast->formatWithSecretsOneLine(), rewritten_query_context);
+                    /// The worker logs the query as submitted, not the rewritten text it executes. The AST
+                    /// is cloned because the worker formats it after this query has returned.
+                    auto rewritten_query_origin = std::make_shared<RewrittenQueryOrigin>();
+                    rewritten_query_origin->query_for_logging = query_for_logging;
+                    rewritten_query_origin->normalized_query_hash = normalized_query_hash;
+                    rewritten_query_origin->ast_for_formatted_query = ast_for_formatted_query ? ast_for_formatted_query->clone() : nullptr;
+                    rewritten_query_origin->applied_rewrite_rules = applied_rewrite_rules;
+                    background_query_execution_started = executeQueryInBackground(
+                        out_ast->formatWithSecretsOneLine(), rewritten_query_context, std::move(rewritten_query_origin));
                 }
                 background_query_dispatched = true;
                 background_query_execution_started.get();
@@ -4392,7 +4410,8 @@ void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & contex
 
 }
 
-std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context)
+std::future<void> executeQueryInBackground(
+    std::string_view query, ContextMutablePtr context, std::shared_ptr<const RewrittenQueryOrigin> rewritten_query_origin)
 {
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -4432,7 +4451,8 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     auto background_query_execution_started = std::make_shared<ExecutionStart>();
     background_context->setQueryExecutionStartedCallback([background_query_execution_started] { background_query_execution_started->setStarted(); });
 
-    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context, background_query_execution_started]
+    context->getBackgroundQueryPool().scheduleOrThrow(
+        [query_text = String(query), background_context, background_query_execution_started, rewritten_query_origin]
     {
         try
         {
@@ -4440,7 +4460,7 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
             ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
             SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
 
-            auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
+            auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true, .rewritten_query_origin = rewritten_query_origin }).second;
             background_context->onQueryExecutionStarted();
             try
             {
