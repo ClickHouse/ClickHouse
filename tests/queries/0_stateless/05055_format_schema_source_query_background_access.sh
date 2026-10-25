@@ -14,7 +14,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 BG_MESSAGE="M_bg_${CLICKHOUSE_DATABASE}"
 FG_MESSAGE="M_fg_${CLICKHOUSE_DATABASE}"
 
-START=$(${CLICKHOUSE_CLIENT} --query "SELECT toString(now64(6))")
+START=$(${CLICKHOUSE_CLIENT} --query "SELECT toUnixTimestamp64Micro(now64(6))")
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE dest_bg (s String) ENGINE = File(ProtobufSingle)
@@ -33,10 +33,11 @@ do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
     # The logger is checked too because this query is itself written to the text log, so otherwise
     # an iteration would match the previous one instead of the background exception.
+    # `event_date` is in the server time zone, and the session one is randomized.
     refused=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count() > 0 FROM system.text_log
-        WHERE event_date >= toDate('${START}')
-          AND event_time_microseconds >= toDateTime64('${START}', 6)
+        WHERE event_date >= yesterday()
+          AND event_time_microseconds >= fromUnixTimestamp64Micro(${START})
           AND logger_name LIKE '%StorageBuffer%'
           AND message LIKE '%can only be executed on behalf of a user%'")
     [ "$refused" = "1" ] && break
