@@ -89,6 +89,15 @@ echo "-- limit_ratio over abs(up), which has no metric name, hashes the labels l
 echo -n "abs, r=0.5:  "; promql_instances "limit_ratio(0.5, abs(up))"
 echo -n "abs, r=-0.5: "; promql_instances "limit_ratio(-0.5, abs(up))"
 
+echo "-- limit_ratio over label values of 255 bytes and more, whose length Prometheus hashes as 4 bytes."
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
+INSERT INTO ts (metric_name, tags, samples)
+SELECT 'lng', map('instance', 'host' || toString(number), 'pad', repeat('p', [5, 100, 254, 255, 256, 300, 1000][number + 1])),
+    [(toDateTime64(1700000000, 3, 'UTC'), 1)]
+FROM numbers(7)"
+echo -n "long, r=0.5:  "; promql_instances "limit_ratio(0.5, lng)"
+echo -n "long, r=-0.5: "; promql_instances "limit_ratio(-0.5, lng)"
+
 echo "-- limit_ratio keeps the original series labels (including the metric name)."
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 \
     -q "limit_ratio(1, up)" | sort | head -1
