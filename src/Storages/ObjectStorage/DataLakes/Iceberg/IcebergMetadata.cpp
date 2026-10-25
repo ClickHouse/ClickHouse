@@ -36,6 +36,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/maskSensitiveQueryParameters.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
@@ -2243,7 +2244,8 @@ void IcebergMetadata::drop(ContextPtr context)
     std::reverse(external_files.begin(), external_files.end());
     for (const auto & file : external_files)
     {
-        LOG_DEBUG(log, "Removing external file during drop: storage={}, key={}", file.storage->getDescription(), file.key);
+        LOG_DEBUG(
+            log, "Removing external file during drop: storage={}, key={}", maskCredentialsInURI(file.storage->getDescription()), file.key);
         file.storage->removeObjectIfExists(StoredObject(file.key));
     }
 
@@ -2252,7 +2254,7 @@ void IcebergMetadata::drop(ContextPtr context)
     base_objects.reserve(files.size());
     for (const auto & file : files)
         base_objects.emplace_back(file);
-    const auto base_description = object_storage->getDescription();
+    const auto base_description = maskCredentialsInURI(object_storage->getDescription());
     for (const auto & object : base_objects)
         LOG_DEBUG(log, "Removing file during drop: storage={}, key={}", base_description, object.remote_path);
     object_storage->removeObjectsIfExist(base_objects);
