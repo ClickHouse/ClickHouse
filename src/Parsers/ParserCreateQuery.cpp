@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -23,6 +24,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserViewTargets.h>
+#include <Parsers/isCompressionCodec.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -424,6 +426,7 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
     ParserForeignKeyDeclaration foreign_key_p;
+    ParserCodecDeclaration codec_p;
     ParserColumnDeclaration column_p{true, true};
     ParserExpression primary_key_p;
 
@@ -456,11 +459,41 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     }
     else
     {
-        if (!column_p.parse(pos, new_node, expected))
+        if (!codec_p.parse(pos, new_node, expected) && !column_p.parse(pos, new_node, expected))
             return false;
     }
 
     node = new_node;
+    return true;
+}
+
+bool ParserCodecDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_codec(Keyword::CODEC);
+    ParserCompoundIdentifier name_p;
+    ParserCodec codec_p;
+
+    ASTPtr name;
+    ASTPtr codec;
+
+    if (!s_codec.ignore(pos, expected))
+        return false;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!codec_p.parse(pos, codec, expected))
+        return false;
+
+    /// "codec Nullable(String)" is a column named `codec`, not a codec declaration.
+    /// A target name without dots may be a data type like here, so in this case we also check
+    /// that the expression in parentheses looks like a codec: there is no codec named "String",
+    /// so this example fails here and the caller parses it as a column.
+    const String target_name = getIdentifierName(name);
+    if (!target_name.contains('.') && !isCompressionCodec(codec))
+        return false;
+
+    node = make_intrusive<ASTCodecDeclaration>(target_name, codec);
     return true;
 }
 
@@ -492,6 +525,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     ASTPtr columns = make_intrusive<ASTExpressionList>();
+    ASTPtr codec_declarations = make_intrusive<ASTExpressionList>();
     ASTPtr indices = make_intrusive<ASTExpressionList>();
     ASTPtr constraints = make_intrusive<ASTExpressionList>();
     ASTPtr projections = make_intrusive<ASTExpressionList>();
@@ -517,6 +551,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             }
             columns->children.push_back(elem);
         }
+        else if (elem->as<ASTCodecDeclaration>())
+            codec_declarations->children.push_back(elem);
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
@@ -545,6 +581,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (!columns->children.empty())
         res->set(res->columns, columns);
+    if (!codec_declarations->children.empty())
+        res->set(res->codec_declarations, codec_declarations);
     if (!indices->children.empty())
         res->set(res->indices, indices);
     if (!constraints->children.empty())
@@ -939,7 +977,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
         }
 
         return true;
@@ -2156,6 +2194,8 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 For both features, you can specify a different engine for the table.
 If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
+A copy of the schema needs the `SHOW COLUMNS` privilege on `db.table`. If the inherited definition holds credentials, which `SHOW CREATE TABLE` masks, the copy also needs the `SELECT` privilege, because the new table can read the data with those credentials.
+
 ### Create a table with a table function {#from-a-table-function}
 
 ```sql
@@ -2475,6 +2515,26 @@ ENGINE = <Engine>
 ```
 
 For the available general purpose, specialized and encryption codecs, see [Column compression codecs](/reference/statements/create/table/codec).
+
+### Codecs for subcolumns {#subcolumn-codecs}
+
+This feature is experimental and requires the setting [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+A `CODEC name (codec, ...)` entry in the column list declares a codec for a subcolumn, such as an element of a `Tuple` or the values of a `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Only the engines of the `MergeTree` family support codecs for subcolumns. A column has either its own codec or codecs for its subcolumns. Codecs cannot be specified for nested subcolumns: if a codec is declared for `payload.meta`, none can be declared for `payload.meta.seq`. An element of an unnamed `Tuple` is addressed with quoted names, as in ``CODEC `pair`.`2` (ZSTD)``, because `pair.2` would be read as a number. The subcolumn must exist in the type of the column and cannot be inside a `JSON`, `Dynamic` or `Variant` value. Streams that hold only structure, such as array sizes or null maps, get only the general purpose part of the codec. The declarations are shown in `SHOW CREATE TABLE` and in the `subcolumn_codecs` column of `system.columns`.
 
 ## Create temporary tables {#temporary-tables}
 
@@ -2902,6 +2962,22 @@ The codec accepts an optional variant argument:
 This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 </Note>
 
+### PCO {#pco}
+
+<BetaBadge/>
+
+`PCO(level)` — Lossless compression for sequences of fixed-width numbers, using the [pcodec](https://github.com/pcodec/pcodec) library. Applicable to all numeric types of 1, 2, 4 or 8 bytes (`Int8`..`Int64`, `UInt8`..`UInt64`, `Float32`, `Float64`, and the types backed by them such as `Date`, `DateTime`, `Decimal32`, `Decimal64`, `IPv4`, and `Enum`). `Decimal128`/`Decimal256` and non-numeric types are not supported.
+
+pcodec identifies an approximate structure of the numbers (a "mode", e.g. an approximate common multiplier) and splits each value into "latents" that it then compresses with delta encoding and an interleaved [tANS](https://en.wikipedia.org/wiki/Asymmetric_numeral_systems) entropy coder. On numeric columns with smooth, multimodal, or high-entropy distributions (measurements, timings, counters, identifiers) it often compresses better than `Gorilla`/`FPC`/`ZSTD`/`ALP`; it has no run-length or match-based path, so constant or low-cardinality columns compress worse. Encoding is several times slower than `ZSTD`; decoding is workload-dependent.
+
+The optional `level` argument sets the compression level from 0 to 12; the default is 8. When a block would not compress (e.g. incompressible data), it is stored uncompressed, so the codec never expands data by more than a small constant per block.
+
+The payload of each compression block is a standalone [`.pco`](https://github.com/pcodec/pcodec) stream, compatible with the reference pcodec implementation.
+
+<Note>
+This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
+</Note>
+
 ### FPC {#fpc}
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
@@ -2911,6 +2987,7 @@ This codec is in beta and requires `SET enable_alp_codec = 1` to use.
 <ExperimentalBadge/>
 
 `SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+The codec is also not applicable to LowCardinality columns of MergeTree tables (also inside Array, Tuple or Nested), because their dictionaries would be corrupted.
 
 <Note>
 This codec is experimental and requires `SET enable_sz3_codec = 1` to use.

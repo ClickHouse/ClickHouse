@@ -64,6 +64,8 @@ Snapshots are found by listing the distinct `check_start_time` values in the win
 
 If CIDB is unavailable for a request of the selection, the targeted job is `SKIPPED` instead of failing, so it does not skip the jobs that wait for it. Unavailable means that the last attempt timed out or got `(total) memory limit exceeded`, or that the connection was still refused after 3 minutes of retries, and that no attempt got another error answer. It adds a workflow warning and a comment that is shown in the summary table of the pull request comment, and it is not cached, so a rerun or the next commit selects again. Any other selection failure is still an `ERROR`.
 
+A GitHub API request of the selection (the pull request, its diff, and the start of a rerun attempt) is retried for 3 minutes when it gets a server error, a network error, or the answer that the diff is still being generated. A rate limit is not retried. If it still fails, the targeted job is skipped in the same way.
+
 ## Validation and rollout
 
 Run deterministic smoke without network access:
