@@ -3651,6 +3651,9 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
+        /// The tables (including the ones in the `system` database) can depend on the dictionaries from the configuration files,
+        /// so register them before loading the databases. They start loading later, in `loadOrReloadDictionaries`.
+        global_context->registerDictionariesBeforeLoadingMetadata(config());
         load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
