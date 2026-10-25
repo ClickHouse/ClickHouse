@@ -165,6 +165,9 @@ namespace
         std::unordered_set<String> with_expression_aliases;
         /// The aliases of the expressions of the current select query.
         std::unordered_set<String> expression_aliases;
+        /// The aliases of the expressions of the current select query which enclose the visited node. Like the analyzer,
+        /// a name does not refer to the alias of an expression while that expression is resolved, e.g. `1 IN ids AS ids`.
+        std::vector<String> enclosing_aliases;
         /// The table names which refer to a common table expression or to an alias of an expression rather than to a table.
         std::unordered_set<const IAST *> non_table_references;
 
@@ -341,7 +344,7 @@ namespace
         /// Collects them with the scoping `AddDefaultDatabaseVisitor` leaves them unqualified with. Like the analyzer,
         /// a select query in which `enable_global_with_statement` is disabled sees only its own common table expressions.
         /// Also collects the right arguments of `IN` which are aliases of expressions, which `AddDefaultDatabaseVisitor`
-        /// leaves unqualified with the same scoping.
+        /// leaves unqualified with the same scoping, except the aliases of the enclosing expressions.
         /// Runs on the whole query before it is visited, so that the `SETTINGS` clauses of the enclosing select queries are known.
         void collectNonTableReferences(const ASTPtr & ast)
         {
@@ -350,6 +353,8 @@ namespace
                 auto enclosing_with_declarations = with_declarations;
                 auto enclosing_with_expression_aliases = with_expression_aliases;
                 auto enclosing_expression_aliases = std::move(expression_aliases);
+                auto outer_enclosing_aliases = std::move(enclosing_aliases);
+                enclosing_aliases.clear();
                 const bool enclosing_enable_global_with_statement = enable_global_with_statement;
                 enable_global_with_statement = applyEnableGlobalWithStatement(select->settings(), enable_global_with_statement);
                 if (!enable_global_with_statement)
@@ -394,6 +399,7 @@ namespace
                 with_declarations = std::move(enclosing_with_declarations);
                 with_expression_aliases = std::move(enclosing_with_expression_aliases);
                 expression_aliases = std::move(enclosing_expression_aliases);
+                enclosing_aliases = std::move(outer_enclosing_aliases);
                 enable_global_with_statement = enclosing_enable_global_with_statement;
                 return;
             }
@@ -424,6 +430,10 @@ namespace
             if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->database_and_table_name)
                 addCteReference(*table_expression->database_and_table_name);
 
+            const String alias = ast->tryGetAlias();
+            if (!alias.empty())
+                enclosing_aliases.push_back(alias);
+
             if (const auto * function = ast->as<ASTFunction>();
                 function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() > 1)
             {
@@ -433,6 +443,9 @@ namespace
 
             for (const auto & child : ast->children)
                 collectNonTableReferences(child);
+
+            if (!alias.empty())
+                enclosing_aliases.pop_back();
         }
 
     private:
@@ -490,7 +503,11 @@ namespace
             if (!identifier || identifier->compound())
                 return;
 
-            if (expression_aliases.contains(identifier->name()) || with_expression_aliases.contains(identifier->name()))
+            const String & name = identifier->name();
+            if (std::ranges::contains(enclosing_aliases, name))
+                return;
+
+            if (expression_aliases.contains(name) || with_expression_aliases.contains(name))
                 non_table_references.insert(identifier);
         }
 
