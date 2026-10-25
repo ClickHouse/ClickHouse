@@ -251,9 +251,19 @@ protected:
             const auto & [name, type] = packed;
 
             if (metadata->isVirtualColumn(name))
+            {
                 columns.push_back(fillVirtualColumn(name, type, buffer.data.rows()));
-            else if (auto physical_column = tryGetColumnFromBlock(buffer.data, metadata->columns.getColumnOrSubcolumn(GetColumnsOptions::All, name)))
+                continue;
+            }
+
+            const auto column = metadata->columns.getColumnOrSubcolumn(GetColumnsOptions::All, name);
+            if (auto physical_column = tryGetColumnFromBlock(buffer.data, column))
                 columns.push_back(std::move(physical_column));
+            /// Some subcolumns are not part of the value, e.g. the codes of a `Quantized('product', ...)` column.
+            else if (column.isSubcolumn() && buffer.data.has(column.getNameInStorage()))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Subcolumn '{}' cannot be read from the rows of Buffer table {} that are held in memory",
+                    name, storage_id.getNameForLogs());
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column or subcolumn '{}' not found in Buffer table", name);
         }
