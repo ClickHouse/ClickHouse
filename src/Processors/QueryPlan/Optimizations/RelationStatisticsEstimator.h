@@ -3,6 +3,11 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
+namespace DB
+{
+class AggregatingStep;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -15,5 +20,9 @@ namespace DB::QueryPlanOptimizations
 /// exact phase, so an unindexed plan-time filter yields no estimate instead of a statistics guess.
 RelationStats estimateReadRowsCount(
     QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
+
+/// The statistics of the groups of `aggregating_step` over rows of `input_stats`: as many rows as the keys have distinct
+/// values together, at most as many as the input has.
+RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats);
 
 }

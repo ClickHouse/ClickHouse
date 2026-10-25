@@ -11378,10 +11378,16 @@ Requires a build with `-DENABLE_GPU=1` and has no effect without one.
     DECLARE(Bool, gpu_read_decompression_zstd, false, R"(
 Whether a read of a `MergeTree` table that decompresses on the GPU, see `allow_experimental_gpu_read_decompression`,
 expands its `ZSTD` blocks there as well. Off, they are decompressed on the CPU: nvcomp expands `ZSTD` at about 9 GB/s
-of expanded bytes on an A10G, below what the disk delivers and far below what the CPU cores do together, where it
-expands `LZ4` and `GDeflate` many times faster.
+of expanded bytes on an A10G, below what the disk delivers and far below what the CPU cores do together.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting: whether GPU reads expand `ZSTD` on the device."}) \
+    DECLARE(Bool, gpu_read_decompression_lz4, false, R"(
+Whether a read of a `MergeTree` table that decompresses on the GPU, see `allow_experimental_gpu_read_decompression`,
+expands its plain `LZ4` blocks there as well. Off, they are decompressed on the CPU, which expands `LZ4` at several
+gigabytes per second per core, faster than a batch goes to the device and back. Blocks of `GDeflate`, and of `LZ4` or
+`ZSTD` after `BitPacking`, always go to the device, which the CPU expands slowly.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting: whether GPU reads expand plain `LZ4` on the device."}) \
     DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
 Compute supported aggregations on a CUDA GPU instead of on the CPU.
 
@@ -11471,6 +11477,13 @@ The largest share of the rows of a table that its `PREWHERE` is estimated to kee
 back from the device, and is faster on the CPU.
 )", EXPERIMENTAL, \
         {"26.11", 0.2, 0.2, "New setting: the selectivity above which a read is not filtered on a GPU."}) \
+    DECLARE(UInt64, gpu_aggregation_max_estimated_groups, 10000000, R"(
+An aggregation that a rewrite made after the planner, such as the decorrelation of a subquery, runs on the GPU only
+where the statistics estimate at most this many groups. Its groups come back to the host for the steps above, which
+is what the aggregation then mostly costs, and the CPU groups as many rows into as many groups about as fast as the
+device and the copy together.
+)", EXPERIMENTAL, \
+        {"26.11", 10000000, 10000000, "New setting: the estimated groups above which an aggregation made after the planner stays on the CPU."}) \
     DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
 How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
 to the device.

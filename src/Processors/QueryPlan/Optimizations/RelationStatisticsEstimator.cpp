@@ -51,6 +51,8 @@ String dumpStatsForLogs(const RelationStats & stats)
             ", "));
 }
 
+}
+
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
@@ -97,6 +99,9 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 
     return aggregation_stats;
 }
+
+namespace
+{
 
 /// Rows dropped by a limit are not a value-uniform sample (e.g. a TopN keeps one end of the
 /// sorted range), so the child's value ranges and NULL fraction do not describe the output.

@@ -10,6 +10,7 @@
 #include <GPU/GPUDeviceColumns.h>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUTypes.cuh>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Common/Logger.h>
 
@@ -64,7 +65,11 @@ public:
     /// width the device holds.
     static bool runsOnDevice(const TableJoin & table_join, const Block & left_sample_block, const Block & right_sample_block);
 
-    GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_);
+    GPUHashJoin(
+        std::shared_ptr<TableJoin> table_join_,
+        SharedHeader left_sample_block_,
+        SharedHeader right_sample_block_,
+        HashJoinStatsCollectingParams stats_collecting_params_ = {});
 
     ~GPUHashJoin() override;
 
@@ -92,6 +97,7 @@ public:
     JoinResultPtr joinDeviceChunk(const Chunk & chunk, const Block & header) override;
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
     size_t getTotalRowCount() const override { return build_rows.load(std::memory_order_relaxed); }
     size_t getTotalByteCount() const override { return build_bytes.load(std::memory_order_relaxed); }
@@ -190,6 +196,12 @@ private:
     std::atomic<size_t> build_bytes{0};
 
     std::atomic<UInt64> probe_rows_total{0};
+
+    /// The sizes of the hash table and of its matches, told to the statistics the planner orders joins by, as `HashJoin`
+    /// tells them: a join on the GPU that told none left the order to change from one run to the next.
+    const HashJoinStatsCollectingParams stats_collecting_params;
+    bool probe_phase_finished = false;
+    std::optional<size_t> hash_table_matches;
 
     LoggerPtr log;
 };

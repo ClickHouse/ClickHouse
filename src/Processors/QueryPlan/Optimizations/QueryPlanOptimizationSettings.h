@@ -157,6 +157,7 @@ struct QueryPlanOptimizationSettings
     /// `allow_experimental_gpu_aggregation`: an `AggregatingStep` a rewrite made after the planner is made a `GPUAggregatingStep` where the device runs it.
     bool gpu_aggregation = false;
     UInt64 gpu_aggregation_batch_bytes = 0;
+    UInt64 gpu_aggregation_max_estimated_groups = 0;
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;

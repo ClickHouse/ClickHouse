@@ -33,13 +33,16 @@ namespace DB
   * device and pinned, are taken from a pool of the server and given back at the end, so that a read pays neither for
   * making a stream nor for the first allocations of its memory, which cost a small read more than its blocks.
   *
-  * `ZSTD` blocks are decompressed on the CPU unless `zstd_on_device_` says otherwise: the device expands them slower
-  * than the disk delivers them, and far slower than the cores do, see `gpu_read_decompression_zstd`.
+  * Plain `ZSTD` and `LZ4` blocks are decompressed on the CPU unless `zstd_on_device_` and `lz4_on_device_` say
+  * otherwise: the device expands `ZSTD` slower than the disk delivers it, and the cores expand `LZ4` faster than a batch
+  * goes to the device and back, see `gpu_read_decompression_zstd` and `gpu_read_decompression_lz4`. `GDeflate`, and a
+  * chain of `BitPacking` and either, always go to the device.
   */
 class GPUCompressedReadBuffer final : public CompressedReadBufferBase, public ReadBuffer
 {
 public:
-    GPUCompressedReadBuffer(std::unique_ptr<ReadBufferFromFileBase> file_in_, bool allow_different_codecs_, bool zstd_on_device_ = false);
+    GPUCompressedReadBuffer(
+        std::unique_ptr<ReadBufferFromFileBase> file_in_, bool allow_different_codecs_, bool zstd_on_device_ = false, bool lz4_on_device_ = false);
     ~GPUCompressedReadBuffer() override;
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
@@ -116,6 +119,7 @@ private:
 
     std::unique_ptr<ReadBufferFromFileBase> file_in;
     const bool zstd_on_device;
+    const bool lz4_on_device;
 
     std::unique_ptr<Slot> slots[2];
     /// The batch whose blocks are given out, and the one read ahead, if any: each is one of `slots` or nothing.

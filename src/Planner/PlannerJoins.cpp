@@ -1329,7 +1329,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         && (table_join->getEnabledJoinAlgorithms().size() == 1
             || GPUHashJoin::runsOnDevice(*table_join, *left_table_expression_header, *right_table_expression_header)
             || gpuHashJoinPays(params)))
-        return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
+        return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header, stats_collecting_params);
 #endif
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)

@@ -142,7 +142,11 @@ bool GPUHashJoin::runsOnDevice(const TableJoin & table_join, const Block & left_
     return allOnDevice(left_sample_block) && allOnDevice(payload);
 }
 
-GPUHashJoin::GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_)
+GPUHashJoin::GPUHashJoin(
+    std::shared_ptr<TableJoin> table_join_,
+    SharedHeader left_sample_block_,
+    SharedHeader right_sample_block_,
+    HashJoinStatsCollectingParams stats_collecting_params_)
     : table_join(std::move(table_join_))
     , left_sample_block(*left_sample_block_)
     , right_sample_block(*right_sample_block_)
@@ -150,6 +154,7 @@ GPUHashJoin::GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader le
     , key_name_right(table_join->getOnlyClause().key_names_right[0])
     , key_type(integerKeyTypeOf(*right_sample_block.getByName(key_name_right).type).value_or(GPU::GPUElementType::UInt8))
     , build_keys(GPU::GPUResources::get().compute)
+    , stats_collecting_params(std::move(stats_collecting_params_))
     , log(getLogger("GPUHashJoin"))
 {
     if (!isSupported(*table_join, left_sample_block, right_sample_block))
@@ -244,6 +249,22 @@ private:
 
 GPUHashJoin::~GPUHashJoin()
 {
+    if (built.load(std::memory_order_acquire))
+    {
+        try
+        {
+            const size_t rows = build_rows.load(std::memory_order_relaxed);
+            if (stats_collecting_params.build.isCollectionAndUseEnabled() && rows != 0)
+                getHashTablesStatistics<HashJoinEntry>().update({.ht_size = rows, .source_rows = rows}, stats_collecting_params.build);
+            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
+                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, stats_collecting_params.match);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     /// The blocks of a build that did not end, as of a query cancelled while it read the right table.
     for (BuildChunk * node = build_chunks.exchange(nullptr, std::memory_order_acquire); node;)
     {
@@ -450,23 +471,29 @@ void GPUHashJoin::finishBuildOnDevice(const std::vector<std::unique_ptr<BuildChu
         build_columns.push_back(std::make_unique<GPU::DeviceBuffer>(stream));
     const auto target = [&](size_t c) -> GPU::DeviceBuffer & { return c == 0 ? build_keys : *build_columns[c - 1]; };
 
-    /// The rows of the chunks in host memory first, a column of them in one pinned buffer and one copy, and then those
-    /// on the device: the same order for every column.
-    std::vector<GPU::PinnedBuffer> staged(num_columns);
+    /// The rows of the chunks in host memory first, each column of each chunk copied from where it is: a copy from
+    /// pageable memory goes through the driver's own pinned buffers, and does not take a pinned buffer of the size of
+    /// the table, which the first query to need one would wait for the system to pin. Then those on the device: the
+    /// same order for every column.
     GPU::waitOnFailure(stream, [&]
     {
         for (size_t c = 0; c < num_columns; ++c)
+            target(c).reserve(rows * GPU::sizeOf(element_type_of(c)));
+        for (const auto & chunk : chunks)
         {
-            const size_t size = GPU::sizeOf(element_type_of(c));
-            target(c).reserve(rows * size);
-            for (const auto & chunk : chunks)
+            if (chunk->device)
+                continue;
+            for (size_t c = 0; c < num_columns; ++c)
             {
-                if (chunk->device)
-                    continue;
+                const size_t size = GPU::sizeOf(element_type_of(c));
                 const IColumn & column = c == 0 ? *chunk->keys : *chunk->payload[c - 1];
-                GPU::appendHostBytes(staged[c], GPU::rawValuesOf(column, column.size(), size));
+                const std::string_view values = GPU::rawValuesOf(column, column.size(), size);
+                if (values.empty())
+                    continue;
+                GPU::checkCuda(
+                    cudaMemcpyAsync(target(c).grow(values.size()), values.data(), values.size(), cudaMemcpyHostToDevice, stream.get()),
+                    "Cannot send the right table of a join to the device");
             }
-            target(c).append(GPU::bytesOf(staged[c]));
         }
 
         for (const auto & chunk : chunks)
@@ -638,6 +665,12 @@ std::shared_ptr<const GPU::DeviceKeySet> GPUHashJoin::waitForKeySet(const std::f
 void GPUHashJoin::onBuildPhaseFinish()
 {
     finishBuild();
+}
+
+void GPUHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
+{
+    probe_phase_finished = true;
+    hash_table_matches = matched_right_rows;
 }
 
 Block GPUHashJoin::assembleOutputBlock(const Block & probe_block, const ColumnPtr & probe_indices, const ColumnPtr & build_indices) const

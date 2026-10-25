@@ -5,6 +5,7 @@
 #if USE_GPU
 
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -843,6 +844,28 @@ void replaceWithGPUAggregating(QueryPlan::Node & node, const QueryPlanOptimizati
     const SharedHeader input_header = aggregating->getInputHeaders().front();
     if (!GPUAggregatingStep::canRunOnDevice(*input_header, aggregating->getParams()))
         return;
+
+    /// The groups come back to the host for the steps above, which is most of what the aggregation then costs: many of
+    /// them are made about as fast on the CPU, see `gpu_aggregation_max_estimated_groups`.
+    if (!aggregating->getParams().keys.empty())
+    {
+        const RelationStats input_stats = estimateReadRowsCount(*node.children.front());
+        const RelationStats output_stats = estimateAggregatingStepStats(*aggregating, input_stats);
+        LOG_TRACE(
+            getLogger("GPUCompressedColumns"),
+            "An aggregation made after the planner: an estimated {} rows into {} groups",
+            input_stats.estimated_rows ? toString(*input_stats.estimated_rows) : "unknown",
+            output_stats.estimated_rows ? toString(*output_stats.estimated_rows) : "unknown");
+        if (output_stats.estimated_rows && *output_stats.estimated_rows > settings.gpu_aggregation_max_estimated_groups)
+        {
+            LOG_TRACE(
+                getLogger("GPUCompressedColumns"),
+                "Not aggregating on the device an aggregation made after the planner: an estimated {} groups, more than {}",
+                *output_stats.estimated_rows,
+                settings.gpu_aggregation_max_estimated_groups);
+            return;
+        }
+    }
 
     auto on_device = std::make_unique<GPUAggregatingStep>(input_header, aggregating->getParams(), settings.gpu_aggregation_batch_bytes);
     if (!blocksHaveEqualStructure(*on_device->getOutputHeader(), *aggregating->getOutputHeader()))

@@ -5,6 +5,7 @@
 #include <GPU/GPUDevice.h>
 #include <GPU/GPUTypes.cuh>
 
+#include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -99,10 +100,12 @@ private:
     std::vector<std::unique_ptr<Slot>> idle;
 };
 
-GPUCompressedReadBuffer::GPUCompressedReadBuffer(std::unique_ptr<ReadBufferFromFileBase> file_in_, bool allow_different_codecs_, bool zstd_on_device_)
+GPUCompressedReadBuffer::GPUCompressedReadBuffer(
+    std::unique_ptr<ReadBufferFromFileBase> file_in_, bool allow_different_codecs_, bool zstd_on_device_, bool lz4_on_device_)
     : ReadBuffer(nullptr, 0)
     , file_in(std::move(file_in_))
     , zstd_on_device(zstd_on_device_)
+    , lz4_on_device(lz4_on_device_)
 {
     compressed_in = file_in.get();
     allow_different_codecs = allow_different_codecs_;
@@ -166,9 +169,13 @@ bool GPUCompressedReadBuffer::startBatch(Slot & slot)
 
         /// Every block of a codec the device expands goes to it. Those of the device come first, of one codec, as one call
         /// of nvcomp expands them.
+        /// A plain `ZSTD` or `LZ4` block, one not after `BitPacking`, is for the CPU unless told otherwise.
         const auto codec_on_device = GPU::deviceCodecOf(method, payload);
-        const bool on_device = codec_on_device && (zstd_on_device || *codec_on_device != GPU::GPUCodec::ZSTD)
-            && (!slot.device_codec || *slot.device_codec == *codec_on_device) && expanded_bytes == slot.device_blocks_expanded;
+        const bool plain = method != static_cast<UInt8>(CompressionMethodByte::Multiple);
+        const bool codec_for_device = codec_on_device
+            && (*codec_on_device == GPU::GPUCodec::GDEFLATE || !plain || (*codec_on_device == GPU::GPUCodec::ZSTD ? zstd_on_device : lz4_on_device));
+        const bool on_device = codec_for_device && (!slot.device_codec || *slot.device_codec == *codec_on_device)
+            && expanded_bytes == slot.device_blocks_expanded;
         if (on_device)
         {
             {

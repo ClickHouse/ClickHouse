@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool allow_experimental_gpu_aggregation;
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
+    extern const SettingsUInt64 gpu_aggregation_max_estimated_groups;
     extern const SettingsBool optimize_distinct_in_order;
     extern const SettingsBool optimize_limit_by_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -341,6 +342,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order];
     gpu_aggregation = from[Setting::allow_experimental_gpu_aggregation];
     gpu_aggregation_batch_bytes = from[Setting::gpu_aggregation_batch_bytes];
+    gpu_aggregation_max_estimated_groups = from[Setting::gpu_aggregation_max_estimated_groups];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
