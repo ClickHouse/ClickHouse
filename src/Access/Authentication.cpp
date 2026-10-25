@@ -8,7 +8,6 @@
 #include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
-#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Common/OneTimePassword.h>
