@@ -592,3 +592,31 @@ TEST(MultipartUploadMemory, NonAdaptiveStreamStartsFromCallerBufferSize)
         EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(marks_memory, 10ULL * 1024), 16ULL * 1024);
     }
 }
+
+TEST(MultipartUploadMemory, FirstBufferKeepsTheAllocationOfALargerInitialBuffer)
+{
+    /// A writer whose initial buffer is larger than the policy's first part shrinks that buffer only logically
+    /// (`allocateBuffer` calls `Memory::resize`, which keeps the capacity), and the allocation stays alive with
+    /// the first part until its upload releases it. With 64-KiB parts, a single in-flight part and a 1-MiB
+    /// initial buffer, the first flush keeps the 1-MiB allocation next to the following 64-KiB buffer.
+    constexpr UInt64 part_size = 64 * 1024;
+
+    BufferAllocationPolicy::Settings strict;
+    strict.strict_size = part_size;
+
+    BufferAllocationPolicy::Settings exponential;
+    exponential.max_single_size = part_size;
+    exponential.min_size = part_size;
+    exponential.max_size = part_size;
+
+    for (const auto & settings : {strict, exponential})
+    {
+        auto memory = getMultipartUploadMemory(settings, 1);
+        memory.initial_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+        EXPECT_EQ(memory.ceiling, DBMS_DEFAULT_BUFFER_SIZE + part_size);
+        /// Before the first part is full, the writer holds the whole initial allocation.
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1000), DBMS_DEFAULT_BUFFER_SIZE);
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, DBMS_DEFAULT_BUFFER_SIZE), DBMS_DEFAULT_BUFFER_SIZE + part_size);
+    }
+}

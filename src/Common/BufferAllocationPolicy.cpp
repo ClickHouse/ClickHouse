@@ -143,6 +143,18 @@ MultipartUploadMemory getMultipartUploadMemoryForStream(
     return result;
 }
 
+namespace
+{
+
+/// How much more than `first_buffer_size` the first buffer of a writer holds when the writer starts with a buffer
+/// of `initial_buffer_size` (see the comment in getMultipartUploadMemory).
+UInt64 getFirstBufferRetainedExcess(UInt64 initial_buffer_size, UInt64 first_buffer_size)
+{
+    return initial_buffer_size > first_buffer_size ? initial_buffer_size - first_buffer_size : 0;
+}
+
+}
+
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
 {
     MultipartUploadMemory result;
@@ -177,9 +189,14 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
     /// the task still owns its PartData for a moment longer. Saturate rather than wrap around - a
     /// configuration that allows an enormous number of in-flight parts is indistinguishable from an unlimited
     /// one here.
+    /// The first buffer keeps the allocation of the buffer the writer starts with when that one is larger than
+    /// the policy's first part: `allocateBuffer` only shrinks its logical size, and `Memory::resize` never gives
+    /// the capacity back. The default initial_buffer_size is the largest one a writer can start with (callers
+    /// can only lower it), so the ceiling stays an upper bound for every stream.
     UInt64 live_buffers = 0;
     if (__builtin_add_overflow(max_inflight_parts_for_one_file, static_cast<UInt64>(1), &live_buffers)
-        || __builtin_mul_overflow(live_buffers, largest_buffer_size, &result.ceiling))
+        || __builtin_mul_overflow(live_buffers, largest_buffer_size, &result.ceiling)
+        || __builtin_add_overflow(result.ceiling, getFirstBufferRetainedExcess(result.initial_buffer_size, largest_buffer_size), &result.ceiling))
         result.ceiling = MultipartUploadMemory::UNLIMITED;
 
     return result;
@@ -240,14 +257,18 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         if (!replayFirstBufferGrowth(memory.initial_buffer_size, settings.strict_size, bytes_written, first_buffer_size))
             return MultipartUploadMemory::UNLIMITED;
 
+        /// A first buffer the writer shrank from a larger initial buffer keeps that allocation (see
+        /// getMultipartUploadMemory) until its upload releases it.
+        const UInt64 first_buffer_excess = getFirstBufferRetainedExcess(memory.initial_buffer_size, first_buffer_size);
         if (bytes_written < first_buffer_size)
-            return first_buffer_size;
+            return std::min(memory.ceiling, first_buffer_size + first_buffer_excess);
 
         /// Every full buffer, including one filled exactly by the last byte, is detached by the final flush,
         /// which then allocates the next buffer.
         const UInt64 reachable_buffers = bytes_written / settings.strict_size + 1;
         const UInt64 live_buffers = std::min(memory.max_inflight_parts + 1, reachable_buffers);
-        if (__builtin_mul_overflow(live_buffers, settings.strict_size, &largest_reachable_buffer))
+        if (__builtin_mul_overflow(live_buffers, settings.strict_size, &largest_reachable_buffer)
+            || __builtin_add_overflow(largest_reachable_buffer, first_buffer_excess, &largest_reachable_buffer))
             return MultipartUploadMemory::UNLIMITED;
         return std::min(memory.ceiling, largest_reachable_buffer);
     }
@@ -266,8 +287,11 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         if (!replayFirstBufferGrowth(memory.initial_buffer_size, first_policy_buffer_size, bytes_written, first_buffer_size))
             return MultipartUploadMemory::UNLIMITED;
 
+        /// A first buffer the writer shrank from a larger initial buffer keeps that allocation (see
+        /// getMultipartUploadMemory): it is replayed at its real capacity, not at its logical size.
+        const UInt64 first_buffer_excess = getFirstBufferRetainedExcess(memory.initial_buffer_size, first_buffer_size);
         if (bytes_written < first_buffer_size)
-            return std::min(memory.ceiling, first_buffer_size);
+            return std::min(memory.ceiling, first_buffer_size + first_buffer_excess);
 
         /// The buffer being filled coexists with up to max_inflight_parts earlier, detached or in-flight
         /// buffers (the extra slot over the in-flight limit is explained in getMultipartUploadMemory). Uploads
@@ -283,10 +307,11 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         UInt64 peak_live_memory = 0;
         UInt64 written = 0;
         UInt64 buffer_size = first_policy_buffer_size;
+        UInt64 buffer_memory = first_policy_buffer_size + first_buffer_excess;
         while (true)
         {
             UInt64 live_memory = 0;
-            if (__builtin_add_overflow(earlier_memory, buffer_size, &live_memory))
+            if (__builtin_add_overflow(earlier_memory, buffer_memory, &live_memory))
                 return MultipartUploadMemory::UNLIMITED;
             peak_live_memory = std::max(peak_live_memory, live_memory);
 
@@ -298,8 +323,8 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
                 break;
 
             /// The filled buffer is detached; keep it if it is among the largest earlier ones.
-            largest_earlier_buffers.push(buffer_size);
-            earlier_memory += buffer_size;
+            largest_earlier_buffers.push(buffer_memory);
+            earlier_memory += buffer_memory;
             if (largest_earlier_buffers.size() > max_earlier_buffers)
             {
                 earlier_memory -= largest_earlier_buffers.top();
@@ -308,6 +333,7 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
 
             policy->nextBuffer();
             buffer_size = policy->getBufferSize();
+            buffer_memory = buffer_size;
         }
 
         return std::min(memory.ceiling, peak_live_memory);
