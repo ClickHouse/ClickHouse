@@ -266,8 +266,9 @@ protected:
 
     VendedStorageCredentials getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
+    /// Returns nothing if `state_snapshot` is no longer the current state.
     std::optional<VendedStorageCredentials> tryGetCachedCredentials(
-        const std::string & namespace_name, const std::string & table_name) const;
+        const std::string & namespace_name, const std::string & table_name, const CatalogStateVersion & state_snapshot) const;
 
     void cacheCredentials(
         const std::string & namespace_name,

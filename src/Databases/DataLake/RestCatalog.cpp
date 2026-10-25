@@ -526,11 +526,11 @@ void RestCatalog::commitSettingsChanges(ICatalog::PreparedSettingsChangesPtr pre
     if (!prepared_auth || !prepared_auth->new_state)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Settings changes to commit were not prepared by this catalog");
 
+    /// Publish the state and clear the cache atomically, so a cache lookup never sees entries of an older state.
+    std::lock_guard lock(credentials_cache_mutex);
     state.set(std::move(prepared_auth->new_state));
     if (prepared_auth->new_access_token)
         access_token.set(std::move(prepared_auth->new_access_token));
-
-    std::lock_guard lock(credentials_cache_mutex);
     credentials_cache.clear();
 }
 
@@ -1834,12 +1834,13 @@ bool RestCatalog::getTableMetadataImpl(
     DB::HTTPHeaderEntries headers;
 
     const bool want_credentials = result.requiresCredentials();
+    const auto state_snapshot = state.get();
 
     std::optional<VendedStorageCredentials> cached_credentials;
     if (want_credentials)
     {
         if (allow_credentials_cache)
-            cached_credentials = tryGetCachedCredentials(namespace_name, table_name);
+            cached_credentials = tryGetCachedCredentials(namespace_name, table_name, state_snapshot);
 
         /// Header `X-Iceberg-Access-Delegation` tells catalog to include storage credentials in LoadTableResponse.
         /// Value can be one of the two:
@@ -1854,7 +1855,6 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
-    const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
 
@@ -2570,10 +2570,10 @@ VendedStorageCredentials RestCatalog::getCredentialsAndEndpoint(Poco::JSON::Obje
 }
 
 std::optional<VendedStorageCredentials> RestCatalog::tryGetCachedCredentials(
-    const std::string & namespace_name, const std::string & table_name) const
+    const std::string & namespace_name, const std::string & table_name, const CatalogStateVersion & state_snapshot) const
 {
     std::lock_guard lock(credentials_cache_mutex);
-    if (vended_credentials_cache_ttl <= std::chrono::seconds::zero())
+    if (vended_credentials_cache_ttl <= std::chrono::seconds::zero() || state.get() != state_snapshot)
         return std::nullopt;
 
     auto it = credentials_cache.find({namespace_name, table_name});
