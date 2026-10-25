@@ -7756,10 +7756,27 @@ static void copyLocalColumnComments(ColumnsDescription & columns_from_zk, const 
     }
 }
 
-void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version, const QueryStatusPtr & process_list_element)
+void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version, const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
-    auto zookeeper = getZooKeeperAndAssertNotReadonly();
+
+    /// A table which has just been created or attached by RESTORE is read-only until the restarting thread
+    /// activates it, so wait for that, as `ReplicatedMergeTreeSink` does when it attaches restored parts.
+    /// A replica without metadata in ZooKeeper or in shutdown is not going to become writable.
+    zkutil::ZooKeeperPtr zookeeper;
+    ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::restoreMetadataVersionFromBackup", log.load(), zookeeper_retries_info};
+    retries_ctl.retryLoop([&]
+    {
+        zookeeper = getZooKeeper();
+        assertNotStaticStorage();
+        if (!is_readonly)
+            return;
+        if (shutdown_prepared_called || (has_metadata_in_zookeeper.has_value() && !*has_metadata_in_zookeeper))
+            assertNotReadonly();
+        retries_ctl.setUserError(
+            Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path));
+    });
+
     const String table_metadata_path = fs::path(zookeeper_path) / "metadata";
     const String table_columns_path = fs::path(zookeeper_path) / "columns";
     const String replica_metadata_version_path = fs::path(replica_path) / "metadata_version";
@@ -7780,8 +7797,8 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     while (metadata_stat.version < metadata_version)
     {
         /// The number of bumps comes from the backup, so make it interruptible.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
+        if (zookeeper_retries_info.query_status)
+            zookeeper_retries_info.query_status->checkTimeLimit();
 
         const size_t max_bumps = std::clamp<size_t>(max_bumps_bytes / std::max<size_t>(metadata_str.size(), 1), 1, zkutil::MULTI_BATCH_SIZE);
         const Int32 target_version = static_cast<Int32>(

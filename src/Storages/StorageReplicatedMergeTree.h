@@ -333,9 +333,10 @@ public:
     /// raises it to the version in ZooKeeper; throws if this replica does not have the structure the table has at that version.
     /// Used by RESTORE to apply the metadata version saved in a backup, so that restored parts
     /// with a non-zero metadata version don't block merges. Never decreases the version.
-    /// Reaching the target version takes one ZooKeeper write per version, so `process_list_element`
-    /// (may be null) is used to interrupt that loop when the RESTORE query is cancelled or times out.
-    void restoreMetadataVersionFromBackup(Int32 metadata_version, const QueryStatusPtr & process_list_element);
+    /// Waits for the replica to become writable within `zookeeper_retries_info`. Reaching the target version takes
+    /// one ZooKeeper write per version, so `zookeeper_retries_info.query_status` (may be null) is used to interrupt
+    /// that loop when the RESTORE query is cancelled or times out.
+    void restoreMetadataVersionFromBackup(Int32 metadata_version, const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const

@@ -1062,7 +1062,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     metadata_path = table_infos.at(table_name).metadata_path_in_backup;
                 }
                 if (auto version = readMetadataVersionFromBackup(*backup, metadata_path))
-                    replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
+                    replicated_storage->restoreMetadataVersionFromBackup(*version, zookeeper_retries_info);
             }
         }
     }
@@ -1199,7 +1199,7 @@ void RestorerFromBackup::insertDataToTableImpl(
         if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
         {
             if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup))
-                replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
+                replicated_storage->restoreMetadataVersionFromBackup(*version, zookeeper_retries_info);
         }
     }
     catch (Exception & e)
