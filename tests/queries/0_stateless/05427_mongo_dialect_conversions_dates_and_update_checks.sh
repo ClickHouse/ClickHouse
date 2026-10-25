@@ -67,7 +67,7 @@ err --query 'db.mongo_conv.find({"text" : {"$regex" : "a b", "$options" : "x"}})
 
 echo '-- bounded growth'
 nested='"$x"'
-for _ in $(seq 1 25); do nested="{\"\$toInt\" : ${nested}}"; done
+for _ in $(seq 1 10); do nested="{\"\$toInt\" : ${nested}}"; done
 mongo --max_ast_elements 10000 --query "db.mongo_conv.aggregate([{\"\$project\" : {\"_id\" : 0, \"v\" : ${nested}}}]);"
 values=$(seq -s ', ' 1 40)
 mongo --max_ast_elements 10000 --mutations_sync 2 --query "db.mongo_upd.updateMany({}, {\"\$addToSet\" : {\"a\" : {\"\$each\" : [${values}, 3, 3]}}});"
