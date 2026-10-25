@@ -18,6 +18,7 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <sys/stat.h>
 
 namespace DB
@@ -198,8 +199,6 @@ private:
 
     void setStorageMetadata(CommonArguments args);
 
-    Strings getPathsSnapshot() const;
-
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
@@ -211,9 +210,30 @@ private:
     String compression_method;
 
     std::string base_path;
-    /// Grows when a writer creates an extra file (`engine_file_allow_create_multiple_files`).
-    /// Mutations hold `rwlock` exclusively and `paths_mutex`; plan-time readers hold `paths_mutex`.
+
+    /// The list of the files of the table. A write mutates it - an insert with
+    /// `engine_file_allow_create_multiple_files` or `engine_file_split_on_write_by_size_bytes` appends the new
+    /// numbered files to it, and a truncating insert retires them - while a read snapshots it at planning time,
+    /// so every access outside the constructors goes through the accessors below and is guarded by `paths_mutex`.
     std::vector<std::string> paths;
+    /// The files of `paths` written by an insert with `engine_file_split_on_write_by_size_bytes`. A truncating
+    /// insert that is not split itself deletes only these: the files that an insert stepped aside into with
+    /// `engine_file_allow_create_multiple_files` alone are kept, as they always were.
+    std::unordered_set<std::string> paths_written_by_split;
+    mutable std::mutex paths_mutex;
+
+    /// A copy of the list of the files, safe to use while a concurrent insert is appending to it.
+    std::vector<std::string> getPathsSnapshot() const;
+    size_t getPathsCount() const;
+    void setPaths(std::vector<std::string> new_paths);
+    /// Appends a file to the list, unless it is already there.
+    void appendPath(const std::string & path, bool written_by_split);
+    /// The files after the first one that were written by an insert split by size, in the order of the list.
+    std::vector<std::string> getSplitTailSnapshot() const;
+    /// Drops a file from the list. Used to retire a file as soon as it has been deleted.
+    void retirePath(const std::string & path);
+    /// Replaces a file in the list, keeping its position. Used when a file is renamed after processing.
+    void renamePath(const std::string & path, const std::string & new_path);
 
     std::optional<ArchiveInfo> archive_info;
 
@@ -228,9 +248,6 @@ private:
 
     RWLockImpl::LockHolder tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
     RWLockImpl::LockHolder lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
-
-    /// Guards the `paths` vector object; `rwlock` serialises the writes themselves.
-    mutable std::mutex paths_mutex;
 
     LoggerPtr log = getLogger("StorageFile");
 
@@ -270,9 +287,20 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            RWLockImpl::LockHolder read_lock_ = {});
 
         String next();
+
+        /// The number of files the iterator was created with, before the `_path` / `_file` filter.
+        size_t getTotalFilesCount() const { return total_files_count; }
+
+        /// Releases the shared lock on the storage that the file list was taken under, see `read_lock`.
+        /// Called by the last reader when it needs the exclusive lock to rename the files it has read.
+        void releaseReadLock()
+        {
+            read_lock.reset();
+        }
 
         /// The files `next` returns, if they are known before reading: not with distributed processing,
         /// from an archive, or with a `_path` / `_file` filter that can only be applied while reading.
@@ -312,6 +340,16 @@ private:
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
+
+        size_t total_files_count = 0;
+
+        /// The shared lock on `StorageFile::rwlock` that the file list was taken under. A writer holds
+        /// the exclusive lock for the whole insert and publishes the files it has written one by one,
+        /// so the list is a consistent set of complete files only while no writer is active. The lock
+        /// is taken when the list is snapshotted (at planning time, which happens before the sources
+        /// are created), and it stays held for as long as a source reads from this list, because every
+        /// source shares this iterator. The sources take no lock of their own.
+        RWLockImpl::LockHolder read_lock;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
@@ -468,8 +506,6 @@ private:
     LazyFileRegistryPtr lazy_row_index_registry;
     /// The registry index of the file currently being read. Assigned on the first chunk.
     std::optional<UInt64> current_file_index;
-
-    RWLockImpl::LockHolder read_lock;
 };
 
 class ReadFromFile : public SourceStepWithFilter
@@ -501,7 +537,6 @@ public:
         size_t num_streams_)
         : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
-        , paths_snapshot(storage->getPathsSnapshot())
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , max_block_size(max_block_size_)
@@ -524,7 +559,6 @@ private:
     StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 
     std::shared_ptr<StorageFile> storage;
-    const Strings paths_snapshot;
     ReadFromFormatInfo info;
     const bool need_only_count;
 

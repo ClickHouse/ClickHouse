@@ -1,0 +1,41 @@
+--- The number goes after the partition id, not into it
+p_a.5_part.1.tsv
+p_a.5_part.2.tsv
+p_a.5_part.3.tsv
+p_a.5_part.tsv
+p_a.6_part.1.tsv
+p_a.6_part.2.tsv
+p_a.6_part.3.tsv
+p_a.6_part.tsv
+p_a.b_part.1.tsv
+p_a.b_part.2.tsv
+p_a.b_part.3.tsv
+p_a.b_part.tsv
+a.5	400	239800	4
+a.6	400	399800	4
+a.b	400	79800	4
+--- A truncating rewrite of a.5 deletes only its own numbered files
+p_a.5_part.tsv
+p_a.6_part.1.tsv
+p_a.6_part.2.tsv
+p_a.6_part.3.tsv
+p_a.6_part.tsv
+p_a.b_part.1.tsv
+p_a.b_part.2.tsv
+p_a.b_part.3.tsv
+p_a.b_part.tsv
+a.5	100	4950	1
+a.6	400	399800	4
+a.b	400	79800	4
+--- A split is refused when a numbered name of a partition may be the first name of another partition
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+p_a.5_part.tsv
+p_a.6_part.1.tsv
+p_a.6_part.2.tsv
+p_a.6_part.3.tsv
+p_a.6_part.tsv
+p_a.b_part.1.tsv
+p_a.b_part.2.tsv
+p_a.b_part.3.tsv
+p_a.b_part.tsv

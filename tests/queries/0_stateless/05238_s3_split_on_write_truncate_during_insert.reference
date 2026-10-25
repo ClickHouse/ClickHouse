@@ -1,0 +1,6 @@
+--- A shard of the running insert is published
+1
+--- The truncating insert rewrote the base object, the running insert kept every row
+210	210	200	10
+--- The table reads all of them
+210

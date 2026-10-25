@@ -1,0 +1,11 @@
+--- engine_file_allow_create_multiple_files, then a truncating insert
+2
+3
+data.1.json
+data.json
+--- engine_file_allow_create_multiple_files, a split insert, then a truncating insert
+302	1
+2
+3
+data.1.json
+data.json
