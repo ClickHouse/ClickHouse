@@ -480,6 +480,13 @@ int main(int argc_, char ** argv_)
     static const UINT original_console_output_code_page = GetConsoleOutputCP();
     if (original_console_output_code_page != 0 && original_console_output_code_page != CP_UTF8 && SetConsoleOutputCP(CP_UTF8))
         std::atexit([] { SetConsoleOutputCP(original_console_output_code_page); });
+
+    /// The input code page is separate. It decides the bytes that narrow reads of the console
+    /// (`ReadFile` of stdin, as by a `File` table over it in `clickhouse-local`) produce from the
+    /// characters typed. Redirected input has no console code page and is read as it is.
+    static const UINT original_console_input_code_page = GetConsoleCP();
+    if (original_console_input_code_page != 0 && original_console_input_code_page != CP_UTF8 && SetConsoleCP(CP_UTF8))
+        std::atexit([] { SetConsoleCP(original_console_input_code_page); });
 #endif
 
     /// PHDR cache is required for query profiler to work reliably
