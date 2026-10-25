@@ -35,3 +35,15 @@ $CLICKHOUSE_CLIENT --query "DETACH TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glo
 $CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "ATTACH TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf"
 $CLICKHOUSE_CLIENT --query "SELECT name FROM system.tables WHERE database = currentDatabase() AND name = 'remote_mixed_glob_tf'"
 $CLICKHOUSE_CLIENT --query "DROP TABLE ${CLICKHOUSE_DATABASE}.remote_mixed_glob_tf"
+
+# The same for a `Remote` database: the short `ATTACH DATABASE` replays its stored definition.
+REMOTE_DB="${CLICKHOUSE_DATABASE}_remote_mixed_db"
+$CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('$ADDRESSES', 'default')" 2>&1 \
+    | grep -oF -e "Database engine 'Remote'" -e "too many result addresses: 4, while at most 3 are allowed" \
+    | head -n 2
+
+$CLICKHOUSE_CLIENT --table_function_remote_max_addresses 4 --query "CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('$ADDRESSES', 'default')"
+$CLICKHOUSE_CLIENT --query "DETACH DATABASE ${REMOTE_DB}"
+$CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "ATTACH DATABASE ${REMOTE_DB}"
+$CLICKHOUSE_CLIENT --query "SELECT name = '${REMOTE_DB}' FROM system.databases WHERE name = '${REMOTE_DB}'"
+$CLICKHOUSE_CLIENT --query "DROP DATABASE ${REMOTE_DB}"

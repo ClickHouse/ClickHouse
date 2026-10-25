@@ -1259,8 +1259,10 @@ void registerDatabaseRemote(DatabaseFactory & factory)
                 password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
+        /// A short `ATTACH DATABASE` reads the definition the server stored itself, like loading on startup.
+        const bool is_stored_definition = args.isLoadingFromExistingMetadata() || args.create_query.attach_short_syntax;
         auto clusters = buildClusters(
-            addresses_expr, username, password, secure, /* limit_total_addresses = */ !args.isLoadingFromExistingMetadata(), args.context);
+            addresses_expr, username, password, secure, /* limit_total_addresses = */ !is_stored_definition, args.context);
 
         auto database = std::make_shared<DatabaseRemote>(
             args.context,
