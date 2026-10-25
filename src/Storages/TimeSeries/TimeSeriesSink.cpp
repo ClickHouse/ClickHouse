@@ -506,8 +506,10 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     const auto & tags_id_col = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID);
     id_type = tags_id_col.type;
     ASTPtr id_generator = settings[TimeSeriesSetting::id_generator].value;
-    if (!id_generator)
-        id_generator = tags_id_col.default_desc.expression;
+    /// The DEFAULT expression may contain column matchers (e.g. `COLUMNS('^tags$')`), which must be expanded
+    /// against the schema of the tags table, not against the single-column description used below.
+    if (!id_generator && tags_id_col.default_desc.expression)
+        id_generator = cloneAndExpandColumnDefaultExpression(tags_id_col.default_desc, tags_target_metadata->columns);
     if (!id_generator)
         id_generator = TimeSeriesIDGenerator::getDefault(id_type, time_series_storage.getStorageID());
     id_generator_uses_all_tags = TimeSeriesIDGenerator::usesAllTags(id_generator);

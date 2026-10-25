@@ -1992,8 +1992,10 @@ namespace
             /// The expression is resolved the same way as TimeSeriesSink does it: the DEFAULT expression
             /// of the `id` column of the external tags table, then the expression chosen for the `id` type.
             ASTPtr id_generator;
-            if (const auto * id_column = external_tags_columns->tryGet(TimeSeriesColumnNames::ID))
-                id_generator = id_column->default_desc.expression;
+            /// Column matchers in the DEFAULT expression are expanded against the external tags table,
+            /// because the recorded expression is evaluated without its schema.
+            if (const auto * id_column = external_tags_columns->tryGet(TimeSeriesColumnNames::ID); id_column && id_column->default_desc.expression)
+                id_generator = cloneAndExpandColumnDefaultExpression(id_column->default_desc, *external_tags_columns);
             if (!id_generator)
                 id_generator = TimeSeriesIDGenerator::getDefault(resolved_types.id_type, table_id);
 
