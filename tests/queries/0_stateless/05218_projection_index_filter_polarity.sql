@@ -6,7 +6,6 @@
 -- comparison operand or as a branch condition it makes the restricted filter stronger instead, and the
 -- projection index then prunes granules holding rows that do match.
 
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET use_indexes_refiner_in_read_pools = 0;  -- decides whether pruned ranges are dropped or skipped while reading, which moves read_rows
 SET use_query_condition_cache = 0;          -- a cached granule set would leak between the read_rows arms below
