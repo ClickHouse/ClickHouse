@@ -259,6 +259,13 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
+    /// True if `rhs` is the same callable for ColumnFunction concatenation.
+    /// `ColumnFunction::insertRangeFrom` keeps the destination FunctionBasePtr for all rows,
+    /// so structureEquals must only succeed when executing either instance is equivalent.
+    /// Default: the same object. Wrappers that mint a fresh IFunctionBase per chunk (e.g.
+    /// FunctionExpression) override this to compare the underlying expression identity.
+    virtual bool isEqual(const IFunctionBase & rhs) const { return this == &rhs; }
+
     /** Contributes whatever decides the values this function produces beyond its name, its
       * parameters and the types it was resolved for: a conversion, for instance, captures the
       * settings that tell it how to parse. Anything that keys an expression by a hash - the query
