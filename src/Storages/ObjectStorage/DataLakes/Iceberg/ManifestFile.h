@@ -16,6 +16,11 @@
 
 #include <boost/noncopyable.hpp>
 
+namespace DB
+{
+struct FormatSettings;
+}
+
 namespace DB::Iceberg
 {
 
@@ -70,10 +75,18 @@ struct PartitionFieldSummary
 
 using PartitionFieldSummaries = std::vector<PartitionFieldSummary>;
 
+/// The bytes of a manifest file, parsed by the first `getDeserializer` call.
 struct ManifestFileCacheableInfo
 {
-    std::shared_ptr<AvroForIcebergDeserializer> deserializer;
-    size_t file_bytes_size;
+    struct State;
+
+    static ManifestFileCacheableInfo fromBytes(String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings);
+
+    /// Thread-safe. Concurrent callers wait for one parse; if it throws, the next caller parses again.
+    std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
+
+    std::shared_ptr<State> state;
+    size_t file_bytes_size = 0;
 };
 
 /// Description of Data file in manifest file
