@@ -928,32 +928,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         return DecimalField<Time64>(Time64(local_seconds * to_scale_multiplier + fraction_to), time64_type.getScale());
     }
-    if (which_type.isTime() && which_from_type.isDate())
+    if ((which_type.isTime() || which_type.isTime64()) && (which_from_type.isDate() || which_from_type.isDate32()))
     {
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt64>())));
-    }
-    if (which_type.isTime() && which_from_type.isDate32())
-    {
-        /// Same as above: use `ExtendedDayNum` instead of narrowing the day number to `UInt16`.
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-    }
-    if (which_type.isTime64() && which_from_type.isDate())
-    {
-        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
-        const auto value = time64_type.getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt16>())));
-        return DecimalField<Time64>(
-            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
-            time64_type.getScale());
-    }
-    if (which_type.isTime64() && which_from_type.isDate32())
-    {
-        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
-        const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        /// Same as the `Date32` -> `DateTime64` branch above: an unrepresentable value cannot match anything.
-        Time64 result;
-        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier(), result))
-            return {};
-        return DecimalField<Time64>(result, time64_type.getScale());
+        /// A date carries no time of day, so `CAST(x AS Time)` and `CAST(x AS Time64)` give midnight for every
+        /// `Date` and `Date32`. Writing the day's Unix timestamp instead would make `IN` and `values` disagree
+        /// with `CAST`, and a timestamp beyond the `Time` range would wrap when inserted into its `Int32` column.
+        if (which_type.isTime())
+            return static_cast<Int64>(0);
+        return DecimalField<Time64>(Time64(0), static_cast<const DataTypeTime64 &>(type).getScale());
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
