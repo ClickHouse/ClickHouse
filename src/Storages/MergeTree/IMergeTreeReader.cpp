@@ -495,6 +495,39 @@ NamesAndTypesList IMergeTreeReader::getMissingDefaultInputs(const NamesAndTypesL
     return result;
 }
 
+NameSet IMergeTreeReader::getDefaultExpressionInputs(const String & name) const
+{
+    NameSet result;
+    auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+
+    auto get_name_in_storage = [&](const String & column_name)
+    {
+        if (auto column = combined_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+            return column->getNameInStorage();
+        return column_name;
+    };
+
+    auto name_in_storage = get_name_in_storage(name);
+    if (name_in_storage != name)
+        result.insert(name_in_storage);
+
+    auto column_default = combined_columns.getDefault(name_in_storage);
+    if (!column_default || !column_default->expression)
+        return result;
+
+    RequiredSourceColumnsVisitor::Data columns_context;
+    auto expression = column_default->expression->clone();
+    RequiredSourceColumnsVisitor(columns_context).visit(expression);
+    for (const auto & identifier : columns_context.requiredColumns())
+    {
+        result.insert(identifier);
+        result.insert(get_name_in_storage(identifier));
+    }
+
+    result.erase(name);
+    return result;
+}
+
 void IMergeTreeReader::evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const
 {
     try

@@ -736,6 +736,8 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     for (const auto & column : remaining)
         remaining_names.insert(column.name);
 
+    std::vector<NameAndTypePair> order;
+    order.reserve(remaining.size());
     while (!remaining.empty())
     {
         /// A `DEFAULT` reads the final values of the columns evaluated again before it, not the stale ones,
@@ -756,50 +758,117 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic dependency between the DEFAULT expressions of columns {}",
                 fmt::join(remaining_names, ", "));
 
-        const auto * mask = result.rows_filled_by_defaults.findByName(it->name);
-        if (!mask)
-        {
-            reader.evaluateDefaults(block, {*it});
-        }
-        else
-        {
-            /// The expression is executed only in the rows that hold its `DEFAULT`. In a patched row,
-            /// it may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
-            const auto & filter = assert_cast<const ColumnUInt8 &>(*mask->column).getData();
-            size_t num_filtered_rows = countBytesInFilter(filter);
-
-            Block filtered;
-            for (const auto & column : block)
-            {
-                if (!column.column)
-                    continue;
-
-                chassert(column.column->size() == filter.size());
-                filtered.insert({column.column->filter(filter, num_filtered_rows), column.type, column.name});
-            }
-
-            reader.evaluateDefaults(filtered, {*it});
-
-            auto & target = block.getByName(it->name);
-            auto new_values = removeSpecialRepresentations(filtered.getByName(it->name).column->convertToFullColumnIfConst());
-            auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
-            chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
-
-            auto combined = new_values->cloneEmpty();
-            combined->reserve(filter.size());
-            for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
-            {
-                if (filter[row])
-                    combined->insertFrom(*new_values, filtered_row++);
-                else
-                    combined->insertFrom(*old_values, row);
-            }
-
-            target.column = std::move(combined);
-        }
-
+        order.push_back(*it);
         remaining_names.erase(it->name);
         remaining.erase(it);
+    }
+
+    /// The rows in which each column is evaluated; a null filter stands for all of them. A column of `columns_to_evaluate`
+    /// is evaluated in its rows of `result.rows_filled_by_defaults`. An intermediate only serves the columns that read it,
+    /// so it is evaluated in the union of their rows, and in none if no column needs it: its expression must not be executed
+    /// on the values of a row its result is never used for, e.g. `b DEFAULT intDiv(100, a)` read by a patched `z DEFAULT b`.
+    /// The consumers of a column go after it, so the rows are known when they are walked in the reverse order.
+    NameSet intermediate_names;
+    for (const auto & column : intermediates)
+        intermediate_names.insert(column.name);
+
+    std::unordered_map<String, ColumnPtr> filters;
+    std::unordered_map<String, NameSet> inputs;
+    NameSet skipped;
+    for (auto it = order.rbegin(); it != order.rend(); ++it)
+    {
+        inputs[it->name] = reader.getDefaultExpressionInputs(it->name);
+
+        if (!intermediate_names.contains(it->name))
+        {
+            const auto * mask = result.rows_filled_by_defaults.findByName(it->name);
+            filters[it->name] = mask ? mask->column : nullptr;
+            continue;
+        }
+
+        bool needed = false;
+        ColumnPtr filter;
+        for (auto consumer = order.rbegin(); consumer != it; ++consumer)
+        {
+            if (skipped.contains(consumer->name) || !inputs[consumer->name].contains(it->name))
+                continue;
+
+            const auto & consumer_filter = filters[consumer->name];
+            if (!consumer_filter)
+            {
+                needed = true;
+                filter = nullptr;
+                break;
+            }
+
+            if (!needed)
+            {
+                needed = true;
+                filter = consumer_filter;
+                continue;
+            }
+
+            auto combined = IColumn::mutate(std::move(filter));
+            auto & combined_data = assert_cast<ColumnUInt8 &>(*combined).getData();
+            const auto & consumer_data = assert_cast<const ColumnUInt8 &>(*consumer_filter).getData();
+            for (size_t row = 0; row < combined_data.size(); ++row)
+                combined_data[row] |= consumer_data[row];
+            filter = std::move(combined);
+        }
+
+        if (needed)
+            filters[it->name] = filter;
+        else
+            skipped.insert(it->name);
+    }
+
+    for (const auto & column_to_evaluate : order)
+    {
+        if (skipped.contains(column_to_evaluate.name))
+            continue;
+
+        const auto & filter_column = filters[column_to_evaluate.name];
+        if (!filter_column)
+        {
+            reader.evaluateDefaults(block, {column_to_evaluate});
+            continue;
+        }
+
+        /// The expression is executed only in the rows that hold its `DEFAULT`. In a patched row,
+        /// it may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
+        const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+        size_t num_filtered_rows = countBytesInFilter(filter);
+        if (num_filtered_rows == 0)
+            continue;
+
+        Block filtered;
+        for (const auto & column : block)
+        {
+            if (!column.column)
+                continue;
+
+            chassert(column.column->size() == filter.size());
+            filtered.insert({column.column->filter(filter, num_filtered_rows), column.type, column.name});
+        }
+
+        reader.evaluateDefaults(filtered, {column_to_evaluate});
+
+        auto & target = block.getByName(column_to_evaluate.name);
+        auto new_values = removeSpecialRepresentations(filtered.getByName(column_to_evaluate.name).column->convertToFullColumnIfConst());
+        auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
+        chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
+
+        auto combined = new_values->cloneEmpty();
+        combined->reserve(filter.size());
+        for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                combined->insertFrom(*new_values, filtered_row++);
+            else
+                combined->insertFrom(*old_values, row);
+        }
+
+        target.column = std::move(combined);
     }
 
     for (const auto & column : intermediates)

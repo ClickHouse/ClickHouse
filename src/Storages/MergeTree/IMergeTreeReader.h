@@ -100,6 +100,10 @@ public:
     /// `evaluateDefaults` would evaluate them anew for each column it is called for.
     NamesAndTypesList getMissingDefaultInputs(const NamesAndTypesList & columns, const Block & block) const;
 
+    /// Returns the columns the `DEFAULT` expression of `name` reads directly, both as written and as their names
+    /// in storage. For a subcolumn, which `evaluateDefaults` takes from its parent, the parent is among them too.
+    NameSet getDefaultExpressionInputs(const String & name) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
