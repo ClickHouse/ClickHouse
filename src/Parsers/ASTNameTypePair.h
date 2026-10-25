@@ -27,6 +27,14 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
+    /// `type` and `default_expression` duplicate pointers held in `children`, so a visitor that
+    /// replaces a child (e.g. the expansion of SQL UDFs) must update them as well.
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(nullptr, &type);
+        f(nullptr, &default_expression);
+    }
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

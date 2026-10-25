@@ -1,0 +1,5 @@
+id	
+c	tuple(id + 1)
+d	tuple((id + 10) + 1)
+e	tuple((id + 20) + 1)
+2	(3)	(13)	(23)
