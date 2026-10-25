@@ -3432,7 +3432,26 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
         if (!database || !database->supportsDetachingTables())
             continue;
-        if (const auto storage = DatabaseCatalog::instance().tryGetTable(table.id, context); storage && (storage->isView() || storage->readsFromOtherTables()))
+        auto storage = DatabaseCatalog::instance().tryGetTable(table.id, context);
+        /// Ask the storage behind the proxies, without running a table function on the way. A permanent table
+        /// created `AS` a table function is a `StorageTableFunctionProxy`, which builds its storage only on the
+        /// first read, and `StorageProxy::readsFromOtherTables` would build it here: e.g. for
+        /// `DETACH TABLE t` over `url('http://unresolvable/...')` the hook then fails the query with
+        /// `DNS_ERROR`, though the statement itself never resolves the table function. What such a table
+        /// reads is unknown until it is resolved (`merge`, `view` and `remote` read other tables), so skip the
+        /// hook for the whole query. A lazily loaded table (`lazy_load_tables`) is only a deferred load of a
+        /// table the query names, so loading it is the query's own cost. A resolved table function is asked
+        /// directly: `StorageTableFunctionProxy` reports `isView() == false` even around a `StorageView`.
+        for (size_t depth = 0; depth < max_storage_proxy_depth && storage; ++depth)
+        {
+            const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+            if (!proxy)
+                break;
+            storage = proxy->isLazyStandIn() ? proxy->getNested() : proxy->tryGetNested();
+            if (!storage)
+                return;
+        }
+        if (storage && (storage->isView() || storage->readsFromOtherTables()))
             return;
     }
 
