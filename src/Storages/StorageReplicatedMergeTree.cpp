@@ -5755,6 +5755,16 @@ bool StorageReplicatedMergeTree::fetchPart(
 
         if (!to_detached)
         {
+            /// The fetched part replaces the local parts it covers, and it is synced only according to
+            /// `min_compressed_bytes_to_fsync_after_fetch`, or not at all if it is on a disk that cannot
+            /// sync finalized files. A covered part whose fsync is deferred to the end of an `INSERT`
+            /// still running on this replica has to be made durable before it is replaced, the same as
+            /// before a merge or a mutation reads it, see IMergeTreeDataPart::syncIfPendingFsyncAfterInsert.
+            /// This is done before the parts lock is taken, because an fsync of a whole part is slow.
+            for (const auto & covered_part : getDataPartsVectorInPartitionForInternalUsage(DataPartState::Active, part_info.getPartitionId()))
+                if (part_info.contains(covered_part->info))
+                    covered_part->syncIfPendingFsyncAfterInsert();
+
             Transaction transaction(*this, NO_TRANSACTION_RAW);
             /// The table size limits are not checked on replicated fetches: the data has been already
             /// accepted by another replica. This permits a race condition when parallel inserts into
@@ -5793,6 +5803,9 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             for (const auto & replaced_part : replaced_parts)
             {
+                /// A part that became active after the loop above, before the fetched part was committed.
+                /// Its files are still there, as it is only outdated now.
+                replaced_part->syncIfPendingFsyncAfterInsert();
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
