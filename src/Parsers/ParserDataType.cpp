@@ -195,6 +195,23 @@ private:
             return true;
         }
 
+        /// DEFAULT PATH TYPE SomeType
+        /// If not all three keywords follow, `default` is parsed as a typed path name below.
+        auto begin = pos;
+        if (ParserKeyword(Keyword::DEFAULT).ignore(pos) && ParserKeyword(Keyword::PATH).ignore(pos) && ParserKeyword(Keyword::TYPE).ignore(pos))
+        {
+            ParserDataType type_parser;
+            ASTPtr type;
+            if (!type_parser.parse(pos, type, expected))
+                return false;
+
+            argument->default_path_type = type;
+            argument->children.push_back(argument->default_path_type);
+            node = argument;
+            return true;
+        }
+        pos = begin;
+
         ParserCompoundIdentifier compound_identifier_parser;
         ASTPtr identifier;
         if (!compound_identifier_parser.parse(pos, identifier, expected))

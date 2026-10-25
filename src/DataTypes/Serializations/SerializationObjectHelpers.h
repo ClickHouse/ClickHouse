@@ -19,12 +19,14 @@ namespace DB
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column);
 
 /// Flatten paths from shared data for a single bucket only.
-/// Only materializes ColumnDynamic columns for paths belonging to target_bucket.
+/// Only materializes columns of type `path_type` for paths belonging to target_bucket.
+/// `path_type` is `Dynamic` for ordinary JSON. With `DEFAULT PATH TYPE T` it is either `T`
+/// or `Variant(T)` (the type of dynamic paths, where NULL means the path is missing).
 /// IMPORTANT: returned string_views reference data inside shared_data_column,
 /// which must stay alive while the result is used.
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBucket(
     const IColumn & shared_data_column, size_t start, size_t end,
-    const DataTypePtr & dynamic_type, size_t target_bucket, size_t num_buckets);
+    const DataTypePtr & path_type, size_t target_bucket, size_t num_buckets);
 
 /// Scan shared data for path names belonging to a single bucket without materializing ColumnDynamic columns.
 /// Returns a sorted list of unique path names. Used by Compact serialization to write StructurePrefix

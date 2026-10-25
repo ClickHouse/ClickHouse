@@ -131,10 +131,12 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
+        /// With `DEFAULT PATH TYPE T` all non-typed paths have type `T`.
+        const auto & default_path_type = column.getDefaultPathType();
         for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
         {
             if (!dynamic_column->isNullAt(row_num))
-                data[path].insert(dynamic_column->getTypeNameAt(row_num));
+                data[path].insert(default_path_type ? default_path_type->getName() : assert_cast<const ColumnDynamic &>(*dynamic_column).getTypeNameAt(row_num));
         }
 
         /// Iterate over paths on shared data in this row and decode the data types.
@@ -145,6 +147,11 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         for (size_t i = start; i != end; ++i)
         {
             std::string path{shared_data_paths->getDataAt(i)};
+            if (default_path_type)
+            {
+                data[path].insert(default_path_type->getName());
+                continue;
+            }
             auto value = shared_data_values->getDataAt(i);
             ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
@@ -158,12 +165,18 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
+        /// With `DEFAULT PATH TYPE T` all non-typed paths have type `T`.
+        const auto & default_path_type = column.getDefaultPathType();
         for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
         {
             /// Add dynamic path only if it has at least one non-null value.
             /// getNumberOfDefaultRows for Dynamic column is O(1).
-            if (dynamic_column->getNumberOfDefaultRows() != dynamic_column->size())
-                dynamic_column->getAllTypeNamesInto(data[path]);
+            if (dynamic_column->getNumberOfDefaultRows() == dynamic_column->size())
+                continue;
+            if (default_path_type)
+                data[path].insert(default_path_type->getName());
+            else
+                assert_cast<const ColumnDynamic &>(*dynamic_column).getAllTypeNamesInto(data[path]);
         }
 
         /// Iterate over all paths in shared data and decode the data types.
@@ -171,6 +184,11 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         for (size_t i = 0; i != shared_data_paths->size(); ++i)
         {
             std::string path{shared_data_paths->getDataAt(i)};
+            if (default_path_type)
+            {
+                data[path].insert(default_path_type->getName());
+                continue;
+            }
             auto value = shared_data_values->getDataAt(i);
             ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
