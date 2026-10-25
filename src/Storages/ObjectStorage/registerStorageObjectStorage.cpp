@@ -1,6 +1,5 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <algorithm>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
