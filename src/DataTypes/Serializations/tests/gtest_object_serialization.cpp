@@ -1408,10 +1408,11 @@ TEST(ObjectSerialization, CumulativeSubThresholdPrefixesObserveCancellation)
     });
 }
 
-/// The `reportBroken` suppression the readers apply is keyed on `isCancelledPrefixRead`, so its
-/// directions are what keep that suppression narrow: true when the prefix-read checkpoint raised the
-/// in-flight exception, false for every other failure - including one raised while the query IS
-/// cancelled, which is exactly the race a "is the query cancelled right now" test would mishandle.
+/// Every broken-part verdict (the readers' `reportBroken`, part checks, part loading) is skipped when
+/// `isRetryableException` holds, so its directions for this exception are what keep that suppression
+/// narrow: true when the prefix-read checkpoint raised the in-flight exception, false for a read
+/// failure - including one raised while the query IS cancelled, which is exactly the race a "is the
+/// query cancelled right now" test would mishandle.
 ///
 /// It must also be non-consuming and survive being re-thrown, because guarded handlers nest:
 /// `MergeTreeSequentialSource::generate`'s function-try encloses `MergeTreeReaderWide::readRows`' catch,
@@ -1423,8 +1424,6 @@ TEST(ObjectSerialization, CancelledPrefixReadIsKeyedOnTheExceptionAndDoesNotChan
     {
         ThreadStatus thread_status;
         CancellableQueryFixture query;
-
-        ASSERT_FALSE(isCancelledPrefixRead()) << "reported a cancellation with no exception in flight";
 
         /// A read failure that is not a cancellation: a truncated prefix, whose declared path count the
         /// stream cannot back.
@@ -1439,7 +1438,7 @@ TEST(ObjectSerialization, CancelledPrefixReadIsKeyedOnTheExceptionAndDoesNotChan
         }
         catch (const Exception &)
         {
-            ASSERT_FALSE(isCancelledPrefixRead()) << "a read failure was mistaken for a cancellation";
+            ASSERT_FALSE(isRetryableException(std::current_exception())) << "a read failure was mistaken for a cancellation";
         }
 
         /// The same read failure, raised while the query IS cancelled, must still answer false: this is
@@ -1453,7 +1452,7 @@ TEST(ObjectSerialization, CancelledPrefixReadIsKeyedOnTheExceptionAndDoesNotChan
         }
         catch (const Exception &)
         {
-            ASSERT_FALSE(isCancelledPrefixRead())
+            ASSERT_FALSE(isRetryableException(std::current_exception()))
                 << "a read failure raised while the query is cancelled was mistaken for a cancellation";
         }
 
@@ -1467,8 +1466,8 @@ TEST(ObjectSerialization, CancelledPrefixReadIsKeyedOnTheExceptionAndDoesNotChan
         }
         catch (const Exception &)
         {
-            ASSERT_TRUE(isCancelledPrefixRead()) << "the checkpoint's own exception was not recognised";
-            ASSERT_TRUE(isCancelledPrefixRead()) << "asking twice changed the answer";
+            ASSERT_TRUE(isRetryableException(std::current_exception())) << "the checkpoint's own exception was not recognised";
+            ASSERT_TRUE(isRetryableException(std::current_exception())) << "asking twice changed the answer";
 
             /// Exactly what MergeTreeReaderWide::readRows does between the two guarded handlers.
             try
@@ -1485,7 +1484,7 @@ TEST(ObjectSerialization, CancelledPrefixReadIsKeyedOnTheExceptionAndDoesNotChan
             }
             catch (const Exception & e)
             {
-                ASSERT_TRUE(isCancelledPrefixRead())
+                ASSERT_TRUE(isRetryableException(std::current_exception()))
                     << "the derived type was lost across addMessage and a bare rethrow: " << e.message();
                 /// The type must stay invisible to users: `Poco::Exception::displayText` prepends
                 /// `name()`, and nine in-tree tests assert the literal "DB::Exception: Query was

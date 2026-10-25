@@ -30,9 +30,7 @@ public:
     void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
-/// True when `exception_ptr` holds a `PrefixReadCancelledException`. The one type test for it;
-/// `isCancelledPrefixRead` delegates here, because `src/DataTypes` must not depend on
-/// `Storages/MergeTree/checkDataPart.h`.
+/// True when `exception_ptr` holds a `PrefixReadCancelledException`.
 bool isPrefixReadCancelled(std::exception_ptr exception_ptr);
 
 /// Polls query cancellation from inside a structure-prefix read, which the executor cannot interrupt

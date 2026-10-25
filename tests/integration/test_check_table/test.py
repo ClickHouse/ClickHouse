@@ -440,3 +440,56 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
 
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
     node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_check_cancelled_in_json_prefix_read_keeps_part(started_cluster):
+    # A Wide part without columns_substreams.txt (written before that file existed) is checked by
+    # reading its JSON structure prefix, where a cancelled query interrupts the check. That says nothing
+    # about the data, so CHECK TABLE must fail without detaching the part and fetching it again.
+    table_name = "replicated_json_check_cancelled"
+    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node1.query(
+        f"""
+        CREATE TABLE {table_name} (id UInt64, j JSON)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table_name}', '{node1.name}') ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+        """
+    )
+    node1.query(
+        f"INSERT INTO {table_name} SELECT number, toJSONString(map(concat('key_', toString(number)), number))::JSON FROM numbers(1000)"
+    )
+    part_path = node1.query(
+        f"SELECT path FROM system.parts WHERE table = '{table_name}' AND active"
+    ).strip()
+    node1.query(f"DETACH TABLE {table_name}")
+    node1.exec_in_container(
+        ["bash", "-c", f"rm {part_path}/columns_substreams.txt"], privileged=True
+    )
+    node1.query(f"ATTACH TABLE {table_name}")
+
+    # The delay before the part check outlasts the timeout, so the check meets the cancellation at its
+    # first cancellable point, the structure prefix read.
+    node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
+    try:
+        for _ in range(5):
+            error = node1.query_and_get_error(
+                f"CHECK TABLE {table_name}",
+                settings={"max_threads": 1, "max_execution_time": 0.001},
+            )
+            assert "TIMEOUT_EXCEEDED" in error, error
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+
+    assert (
+        node1.query(f"SELECT count() FROM system.detached_parts WHERE table = '{table_name}'")
+        == "0\n"
+    )
+    assert node1.query(f"SELECT count() FROM {table_name}") == "1000\n"
+
+    # Without a check that was interrupted before reaching a verdict, the assertions above hold on any build.
+    logger = f"{table_name} (ReplicatedMergeTreePartCheckThread)"
+    started = int(node1.count_in_log(f"{logger}: Checking data of part all_0_0_0"))
+    finished = int(node1.count_in_log(f"{logger}: Part all_0_0_0 looks"))
+    assert started > finished, (started, finished)
+
+    node1.query(f"DROP TABLE {table_name} SYNC")
