@@ -708,8 +708,7 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
 
-            const auto send_profile_events = query_state->query_context->getSettingsRef()[Setting::send_profile_events];
-            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && send_profile_events)
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && shouldSendProfileEvents(*query_state))
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
@@ -1016,6 +1015,9 @@ void TCPHandler::runImpl()
                         !query_state->need_receive_data_for_input && callback)
                     {
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+                        /// The callback sends `ProfileEvents` packets periodically, so the client accepts them
+                        /// at any moment, including right before an `Exception`.
+                        query_state->sending_interactive_updates = true;
                     }
 
                     executor.execute();
@@ -1201,12 +1203,13 @@ void TCPHandler::runImpl()
                 /// Flush the tail of the profile events accumulated since the last periodic report,
                 /// so that the initiator of a distributed query charges them to the quotas over
                 /// profile events even when this query fails. Only do it while streaming the result
-                /// of a `SELECT`, where `ProfileEvents` packets are already sent periodically, or for a
-                /// secondary `INSERT` that has received all its data: its initiator (`RemoteInserter`)
+                /// of a `SELECT` or executing a completed pipeline (e.g. a secondary `INSERT SELECT` of
+                /// `parallel_distributed_insert_select`), where `ProfileEvents` packets are already sent
+                /// periodically, or for a secondary `INSERT` that has received all its data: its initiator (`RemoteInserter`)
                 /// is then waiting for the end of the query and accepts the final report, the same as
                 /// on the success path (`sendInsertProfileEvents` checks the query kind and the protocol
                 /// version). In other states the clients do not expect them before the `Exception`.
-                if (query_scope && query_state->streaming_select_result)
+                if (query_scope && (query_state->streaming_select_result || query_state->sending_interactive_updates))
                     sendSelectProfileEvents(*query_state);
                 else if (query_scope && query_state->need_receive_data_for_insert && query_state->read_all_data
                     && query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
@@ -2012,9 +2015,21 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 }
 
 
+bool TCPHandler::shouldSendProfileEvents(const QueryState & state) const
+{
+    /// The initiator of a distributed query charges the profile events reported by the remote servers to
+    /// the quotas over profile events of the initiating user, so a secondary query reports them regardless
+    /// of `send_profile_events`: the setting could be turned off by the `SETTINGS` clause of the query
+    /// (applied after the settings of the query packet), or by a constraint of the user on this server
+    /// (to which the settings of a secondary query are clamped), and bypass the limits.
+    return query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || state.query_context->getSettingsRef()[Setting::send_profile_events];
+}
+
+
 void TCPHandler::sendProfileEvents(QueryState & state)
 {
-    if (!state.query_context->getSettingsRef()[Setting::send_profile_events])
+    if (!shouldSendProfileEvents(state))
         return;
 
     Stopwatch stopwatch;

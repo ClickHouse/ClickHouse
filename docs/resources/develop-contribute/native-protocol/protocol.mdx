@@ -794,6 +794,8 @@ The 8 columns, in this exact order:
 
 Server → Client. Carries per-query performance counters.
 
+The server sends them when `send_profile_events` is enabled for the query, and for a secondary query (`query_kind = SecondaryQuery` in [ClientInfo](#clientinfo)) regardless of that setting: the initiator of a distributed query charges the profile events reported by the remote servers to the quotas of the initiating user, so neither the `SETTINGS` clause of the query nor a constraint of the user on the remote server may turn the reports off.
+
 Same envelope and body format as [Data](#data). The block has a fixed `num_columns = 6` and a predefined schema. Each event is one row.
 
 ```text

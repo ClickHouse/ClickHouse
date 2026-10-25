@@ -1,0 +1,10 @@
+constraint of the remote user
+45
+1	3
+SETTINGS clause of an INSERT SELECT executed on the remote server
+13
+2	13
+failed INSERT SELECT executed on the remote server
+VIOLATED_CONSTRAINT
+0
+3	13
