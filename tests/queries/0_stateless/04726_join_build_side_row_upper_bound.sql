@@ -406,6 +406,17 @@ SELECT 'IN subquery keeps orientation',
     JOIN fact_04726 ON d.id = fact_04726.id
 );
 
+-- `DISTINCT` only removes rows, so the bound of the filtered `dim_04726` must survive it. The first
+-- condition keeps the assertion non-vacuous if the distinct step stops appearing.
+SELECT 'DISTINCT subquery keeps orientation',
+        countIf(explain ILIKE '%Distinct%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT DISTINCT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+);
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)

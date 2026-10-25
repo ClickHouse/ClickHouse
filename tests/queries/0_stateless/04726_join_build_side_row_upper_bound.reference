@@ -26,6 +26,7 @@ limited subquery keeps orientation	1
 sorted limited subquery keeps orientation	1
 OFFSET subquery keeps orientation	1
 IN subquery keeps orientation	1
+DISTINCT subquery keeps orientation	1
 build side rows	0	4
 rows	0
 rows non-empty filter	25

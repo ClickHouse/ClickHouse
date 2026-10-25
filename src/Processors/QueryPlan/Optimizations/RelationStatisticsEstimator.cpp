@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -462,6 +463,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         || typeid_cast<const SaveSubqueryResultToBufferStep *>(step) || typeid_cast<const StreamInQueryResultCacheStep *>(step)
         || typeid_cast<const DelayedCreatingSetsStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
+
+    /// `DISTINCT` only removes rows: the input's bound still holds, but its point estimate does not.
+    if (typeid_cast<const DistinctStep *>(step))
+    {
+        RelationStats stats;
+        stats.estimated_rows_upper = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport).estimated_rows_upper;
+        return stats;
+    }
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
