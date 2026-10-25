@@ -2025,3 +2025,25 @@ The counts refer to distinct production targets. 0 of 660 targets had a result o
 The first native builds ([x86-64](https://app.buildbuddy.io/invocation/c77e1064-0b3b-49c1-87e0-9e35d77acaed), [ARM64](https://app.buildbuddy.io/invocation/f7169f01-b5f5-4ed3-b8f8-ce09c658ad20)) also matched all six hashes. The HDFS scheduling checks ([x86-64](https://app.buildbuddy.io/invocation/548e83e1-b95f-4f3b-ad2a-348caa2c1e4a), [ARM64](https://app.buildbuddy.io/invocation/44997d82-2370-42eb-8457-45a7063f02b6)) and the strict DWYU builds of `//base/readpassphrase` ([x86-64](https://app.buildbuddy.io/invocation/0f77e2b7-9057-4de2-be1f-5d9a3c658f19), [ARM64](https://app.buildbuddy.io/invocation/4542899f-d9b5-482c-8a55-c17bc22d4d75)) ran separately on the same source.
 The initial HDFS verifier assumed each Bazel configuration has a unique output directory. The two configuration checksums on each CPU both use `bazel-out/k8-opt/bin`. Replaying the saved action graph with configuration IDs and artifact IDs verified all eight producers, 89 HDFS compiles and two callers without another build.
 The initial builds each executed 1,244 actions on remote workers. The repeated builds of the same source reported 51,224 remote cache hits on x86-64 and 51,620 on ARM64. Neither repeat executed an action on a remote worker.
+
+## e26b08b54
+
+[e26b08b54](https://github.com/dzbarsky/clickhouse/commit/e26b08b541135bc07cca2332f840b4fbd3bd3b48) limits `Functions/array/length.h` to its direct C++ consumers, lists seven Expat implementation headers in the two Poco XML libraries that compile them, and declares librdkafka’s included C source and four LZ4 headers as implementation files. The migration scripts reproduce these declarations.
+
+The native builds ([x86-64](https://app.buildbuddy.io/invocation/98cda839-df36-4d0b-b153-05a0346451d3), [ARM64](https://app.buildbuddy.io/invocation/9e22c5ce-64d1-45d7-84dc-02efc4f68a07)) matched the native CMake stripped and normalized executable on each CPU. The raw ClickHouse and DBMS unit-test executables matched the prior Bazel builds. All 18 SDK reports passed. [Six SHA-256 digests and byte counts](../../README.bazel.md#binary-comparison).
+
+| DWYU result | x86-64 | ARM64 | Same result on both CPUs |
+| --- | ---: | ---: | ---: |
+| Strict clean | 0 | 0 | 0 |
+| Verified header preprocessing only | 0 | 0 | 0 |
+| Verified strict finding | 0 | 0 | 0 |
+| No verified outcome | 660 | 660 | 660 |
+
+0 of the 660 production targets had a result on only one CPU or a different result on each CPU. Header preprocessing does not count as a strict clean result.
+
+| BuildBuddy workflow | DWYU candidates | DWYU targets requested by Bazel | Remote cache hits | Actions executed on remote workers |
+| --- | ---: | ---: | ---: | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/593e8129-0fce-4816-bc46-4f90a6398ccf) | 160 | 0 | 46,043 | 5,181 |
+| [ARM64](https://app.buildbuddy.io/invocation/05a7e316-40ed-4f63-93cd-976f08571b8c) | 160 | 0 | 46,439 | 5,181 |
+
+Both workflows configured 159 of 160 candidate libraries, and all five planning queries succeeded. The fourth action query returned 297,075,444 bytes on x86-64 and 290,823,928 bytes on ARM64, higher than the 167,772,160-byte limit per query. Neither native build requested a DWYU report. The previous revision’s readpassphrase result is recorded above.
