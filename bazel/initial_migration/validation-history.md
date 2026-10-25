@@ -1982,3 +1982,14 @@ All five Bazel planning commands succeeded on both CPUs. The DWYU planner could 
 | --- | ---: | ---: | ---: | ---: | ---: |
 | x86-64 | 51,213 | 0 | 0 | 5 | 117,727,417 |
 | ARM64 | 51,734 | 0 | 0 | 5 | 5,327,520,462 |
+
+### readpassphrase on x86-64 and ARM64
+
+The [x86-64](https://app.buildbuddy.io/invocation/6e74aec9-40e4-48fb-9783-b0a1f2c83ab1) and [ARM64](https://app.buildbuddy.io/invocation/f1ec45f9-8cbd-46f4-a241-925501f04d4f) Bazel builds each completed all 14 requested targets: 12 native checks, `//base/readpassphrase`, and its strict DWYU report. The stripped and normalized ClickHouse executables matched native CMake. The raw ClickHouse and unit-test executables matched their Bazel references. [All six SHA-256 values and sizes](../../README.bazel.md#binary-comparison).
+
+Both builds produced the same 510-byte DWYU report (SHA-256 `00220fb6f73ae8b6823d3bd6cade43067f8f05b072d68d19844cc3a028254311`). The [x86-64](https://app.buildbuddy.io/invocation/0eb0d36a-7354-4bbb-86ce-fa382e11c766) and [ARM64](https://app.buildbuddy.io/invocation/122f79c0-6cba-4881-aa9e-22ec1907cebe) workflows failed after Bazel finished: their post-build Git check exited before the collector recorded the report. A separate review fetched the report named by each original build, verified the compiler, archive, and analyzer records for `//base/readpassphrase`, and found no unused dependencies, missing includes, or unchecked inputs. This verifies one of the 785 targets on each CPU.
+
+| CPU | Bazel remote cache hits | C++ compilations executed | DWYU analyzers executed | Worker input bytes |
+| --- | ---: | ---: | ---: | ---: |
+| x86-64 | 51,321 | 0 | 1 | 1,450,311 |
+| ARM64 | 51,842 | 0 | 1 | 1,491,819 |
