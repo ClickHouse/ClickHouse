@@ -47,12 +47,16 @@ ${CLIENT_STANDARD} --query 'SELECT x, y FROM (SELECT 1, 2) AS t(X, "Y")' 2>&1 | 
 ${CLIENT_STANDARD} --query 'SELECT x, "Y" FROM (SELECT 1, 2) AS t(X, "Y") FORMAT TSVWithNames'
 
 echo '--- standard: inlined views carry pins, quotes are not persisted across metadata reload'
-${CLICKHOUSE_CLIENT} --query 'CREATE VIEW v_col_pin AS SELECT 1 AS "MyAlias"'
-${CLIENT_STANDARD} --query 'SELECT myalias FROM v_col_pin'
-${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT myalias FROM v_col_pin' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
-${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT "MyAlias" FROM v_col_pin'
-${CLICKHOUSE_CLIENT} --query 'DETACH TABLE v_col_pin; ATTACH TABLE v_col_pin'
-${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT myalias FROM v_col_pin'
+# An explicit `Atomic` database: `Replicated` re-executes `CREATE VIEW` from the formatted query, which drops the quotes.
+DB_ATOMIC="${CLICKHOUSE_DATABASE}_atomic"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_ATOMIC} ENGINE = Atomic"
+${CLICKHOUSE_CLIENT} --query "CREATE VIEW ${DB_ATOMIC}.v_col_pin AS SELECT 1 AS \"MyAlias\""
+${CLIENT_STANDARD} --query "SELECT myalias FROM ${DB_ATOMIC}.v_col_pin"
+${CLIENT_STANDARD} --analyzer_inline_views=1 --query "SELECT myalias FROM ${DB_ATOMIC}.v_col_pin" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --analyzer_inline_views=1 --query "SELECT \"MyAlias\" FROM ${DB_ATOMIC}.v_col_pin"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${DB_ATOMIC}.v_col_pin; ATTACH TABLE ${DB_ATOMIC}.v_col_pin"
+${CLIENT_STANDARD} --analyzer_inline_views=1 --query "SELECT myalias FROM ${DB_ATOMIC}.v_col_pin"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_ATOMIC}"
 
 echo '--- standard: recursive CTE quoted column definitions pin inside recursive members'
 ${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
@@ -98,4 +102,4 @@ ${CLIENT_STANDARD} --group_by_use_nulls=1 --query "SELECT Val FROM (SELECT x, su
 ${CLICKHOUSE_CLIENT} --group_by_use_nulls=1 --query "SELECT Val FROM (SELECT x, sum(Val) AS Val FROM t_col_interp_nulls GROUP BY ROLLUP(x) ORDER BY x ASC NULLS LAST WITH FILL FROM 1 TO 3 INTERPOLATE (Val AS Val + 1)) WHERE Val IS NOT NULL"
 ${CLICKHOUSE_CLIENT} --group_by_use_nulls=1 --query "SELECT Val FROM (SELECT x, sum(Val) AS Val FROM t_col_interp_nulls GROUP BY ROLLUP(x) ORDER BY x ASC NULLS LAST WITH FILL FROM 1 TO 3 INTERPOLATE (val AS Val + 1)) WHERE Val IS NOT NULL" 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW v_col_pin; DROP TABLE t_col_interp; DROP TABLE t_col_interp_nulls; DROP TABLE t_col_match; DROP TABLE t_col_siblings; DROP TABLE t_col_group; DROP TABLE t_col_join_l; DROP TABLE t_col_join_r; DROP TABLE t_col_join_sib"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_col_interp; DROP TABLE t_col_interp_nulls; DROP TABLE t_col_match; DROP TABLE t_col_siblings; DROP TABLE t_col_group; DROP TABLE t_col_join_l; DROP TABLE t_col_join_r; DROP TABLE t_col_join_sib"
