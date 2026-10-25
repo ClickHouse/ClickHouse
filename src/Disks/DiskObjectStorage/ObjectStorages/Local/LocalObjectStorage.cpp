@@ -42,6 +42,7 @@ namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
     extern const char local_object_storage_network_error_during_every_remove[];
+    extern const char local_object_storage_pause_before_staging_file_lock[];
 }
 
 namespace ErrorCodes
@@ -183,6 +184,15 @@ bool removeAbandonedStagingFile(const String & path)
 
     SCOPE_EXIT({ [[maybe_unused]] int err = ::close(fd); });
 
+    /// Without the mark, it is either an object that only looks like a staging file, see `setStagingMark`,
+    /// or a staging file that its writer has created but not locked yet, see `createStagingFile`.
+    /// It must not be locked here: the writer would fail to take its own lock.
+    struct stat opened_stat{};
+    if (0 != ::fstat(fd, &opened_stat))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, path, "Cannot stat file {}", path);
+    if (!S_ISREG(opened_stat.st_mode) || !(opened_stat.st_mode & S_ISVTX))
+        return false;
+
     if (0 != ::flock(fd, LOCK_EX | LOCK_NB))
     {
         if (errno == EWOULDBLOCK)
@@ -205,7 +215,7 @@ bool removeAbandonedStagingFile(const String & path)
     if (locked_stat.st_dev != path_stat.st_dev || locked_stat.st_ino != path_stat.st_ino)
         return false;
 
-    /// Without the mark, it is an object that only looks like a staging file, see `setStagingMark`.
+    /// The writer clears the mark right before it publishes the file, so check it again under the lock.
     if (!S_ISREG(locked_stat.st_mode) || !(locked_stat.st_mode & S_ISVTX))
         return false;
 
@@ -226,6 +236,7 @@ std::unique_ptr<WriteBufferFromFile> createStagingFile(const String & path, size
     auto buffer = std::make_unique<WriteBufferFromFile>(path, buf_size, O_WRONLY | O_CREAT | O_EXCL);
     try
     {
+        FailPointInjection::pauseFailPoint(FailPoints::local_object_storage_pause_before_staging_file_lock);
         if (0 != ::flock(buffer->getFD(), LOCK_EX | LOCK_NB))
             ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, path, "Cannot lock file {}", path);
         setStagingMark(buffer->getFD(), path, true);

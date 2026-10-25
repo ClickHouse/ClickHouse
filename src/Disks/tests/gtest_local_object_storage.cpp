@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/FailPoint.h>
 
 #include <unistd.h> /// for ::getpid
 
@@ -23,6 +24,11 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+
+namespace DB::FailPoints
+{
+    extern const char local_object_storage_pause_before_staging_file_lock[];
+}
 
 namespace
 {
@@ -1004,5 +1010,49 @@ TEST(LocalObjectStorage, StartupRemovesAbandonedStagingFiles)
     /// A restart does not remove published objects either.
     storage->startup();
     EXPECT_EQ(listDirectory(directory).size(), 5u);
+}
+
+/// A writer creates its staging file before it locks and marks it. A startup that runs in between must leave the file
+/// alone: if it took the lock of the unmarked file, the writer would fail to take its own lock and abort the write.
+TEST(LocalObjectStorage, StartupDoesNotDisturbStagingFileBeforeItIsLocked)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_staging_before_lock");
+    const auto & root = tmp.path;
+
+    auto storage = makeLocalObjectStorage(root.string());
+    const auto directory = root / "__meta" / "directory";
+    const auto path = directory / "prefix.path";
+
+    writeObject(storage, path, "previous", DB::WriteSettings{});
+
+    DB::WriteSettings atomic_settings;
+    atomic_settings.object_storage_write_atomically = true;
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::local_object_storage_pause_before_staging_file_lock);
+    std::exception_ptr writer_error;
+    std::thread writer([&]
+    {
+        try
+        {
+            writeObject(storage, path, "new", atomic_settings);
+        }
+        catch (...)
+        {
+            writer_error = std::current_exception();
+        }
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::local_object_storage_pause_before_staging_file_lock);
+    EXPECT_EQ(listDirectory(directory).size(), 2u) << "the writer must have created its staging file";
+
+    storage->startup();
+    EXPECT_EQ(listDirectory(directory).size(), 2u) << "the staging file of the paused writer must not be removed";
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::local_object_storage_pause_before_staging_file_lock);
+    writer.join();
+
+    EXPECT_FALSE(writer_error) << "the write must not be disturbed by the startup";
+    EXPECT_EQ(readObject(storage, path).data, "new");
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{"prefix.path"}));
 }
 #endif
