@@ -8,6 +8,6 @@ Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
             Expression (Change column names to column identifiers) (rows: ~100000.0, source: primary_index)
               ReadFromMergeTree (default.t_dl_fact) (rows: <unknown>, cost: <unknown>)
           Expression (Right Pre Join Actions) (rows: <unknown>, cost: <unknown>)
-            Expression (Change column names to column identifiers) (rows: ~5.0, source: statistics)
+            Expression (Change column names to column identifiers) (rows: ~5.0, source: data_lake_metadata)
               ReadFromObjectStorage (rows: <unknown>, cost: <unknown>)
 100000
