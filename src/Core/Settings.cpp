@@ -8101,7 +8101,7 @@ For a join other than `LEFT`, the read stays in order only when every part of th
 When reading a `MergeTree` table in primary key order with an `OFFSET`, skip reading leading granules entirely consumed by the offset.
 Only takes effect if setting [`optimize_read_in_order`](#optimize_read_in_order) is 1.
 )", 0, \
-        {"26.10", false, true, "New setting that skips reading leading granules entirely consumed by `OFFSET` when reading a `MergeTree` table in primary key order."}) \
+        {"26.11", false, true, "New setting that skips reading leading granules entirely consumed by `OFFSET` when reading a `MergeTree` table in primary key order."}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
