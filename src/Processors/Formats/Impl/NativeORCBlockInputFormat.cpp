@@ -2348,6 +2348,11 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::INT:
             return which.isInt32() || which.isUInt32() || which.isIPv4() || orcIntegerBranchWidensTo(type, 4);
         case orc::TypeKind::LONG:
+            /// An Iceberg `time` is read as `Time64(6)`, which casts to any `Time` or `Time64`, and still as is to
+            /// an integer (see `readColumnFromORCColumn`); a plain `long` never matches a time of day, so in a union
+            /// of both kinds the plain `long` takes the integer alternative and the `time` one the `Time64`.
+            if (isIcebergTimeLong(*orc_branch_type) && (which.isTime64() || which.isTime()))
+                return true;
             return which.isInt64() || which.isUInt64() || orcIntegerBranchWidensTo(type, 8);
         case orc::TypeKind::FLOAT:
             return which.isFloat32() || which.isFloat64();
@@ -2474,7 +2479,7 @@ static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::INT:
             return which.isInt32();
         case orc::TypeKind::LONG:
-            return which.isInt64();
+            return isIcebergTimeLong(*orc_branch_type) ? which.isTime64() || which.isTime() : which.isInt64();
         case orc::TypeKind::FLOAT:
             return which.isFloat32();
         case orc::TypeKind::DOUBLE:

@@ -73,7 +73,8 @@ orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
 }
 
 /// Two ORC types get the same key exactly when `parseORCType` (NativeORCBlockInputFormat.cpp) reads
-/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, and a nested
+/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, a `LONG` with
+/// the attribute `iceberg.long-type` = `TIME` reads as `Time64(6)` unlike a plain `LONG`, and a nested
 /// `UNION` reads as a `Variant`, which sorts its branches, while ORC keeps them positional.
 /// A field name is length-prefixed so a name containing `:` or `,` cannot forge another key.
 String orcTypeDedupKey(const orc::Type & type)
@@ -83,6 +84,9 @@ String orcTypeDedupKey(const orc::Type & type)
         return "string";
     if (kind == orc::TypeKind::DECIMAL)
         return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
+    /// A `long` marked as an Iceberg `time` is read as `Time64(6)`, not as `Int64`.
+    if (kind == orc::TypeKind::LONG && type.hasAttributeKey("iceberg.long-type") && type.getAttributeValue("iceberg.long-type") == "TIME")
+        return "time";
 
     std::vector<String> children;
     for (size_t i = 0; i < type.getSubtypeCount(); ++i)
