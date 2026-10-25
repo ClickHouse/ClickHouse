@@ -872,7 +872,14 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
     }
     else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
     {
-        if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
+        const auto & from_function = agg_type->getFunction();
+        const auto & to_function = to_type->getFunction();
+        /// An aggregate function's own state does not depend on the state variant of its arguments.
+        bool differs_only_by_argument_variant = from_function->getStateVariant() == to_function->getStateVariant()
+            && !from_function->haveEqualArgumentTypes(*to_function)
+            && differsOnlyByAggregateStateVariant(from_type_untyped, to_type->getPtr());
+
+        if (from_function->haveSameStateRepresentation(*to_function) || differs_only_by_argument_variant)
         {
             /// The states are shared as they are, but the result column must take the state version
             /// of the target type (e.g. `AggregateFunction(1, uniq, UInt64)`), because the version
@@ -903,9 +910,9 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
 
         /// Different state variants (e.g. Window vs Aggregation) of the same aggregate function
         /// can be converted by merging the source state into a fresh target state.
-        if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
+        if (to_function->canMergeStateFromDifferentVariant(*from_function))
         {
-            return [function = to_type->getFunction(), from_function = agg_type->getFunction(), version = to_type->getVersionIfExplicit()](
+            return [function = to_function, from_function, version = to_type->getVersionIfExplicit()](
                        ColumnsWithTypeAndName & arguments,
                        const DataTypePtr & /* result_type */,
                        const ColumnNullable * /* nullable_source */,
