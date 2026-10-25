@@ -18,4 +18,4 @@ $CLICKHOUSE_LOCAL --ignore-error --query "
     SET max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
     SYSTEM ENABLE FAILPOINT adaptive_aggregation_spill_no_room_to_append;
     SELECT count(), sum(c) FROM (SELECT toUInt64(number % 100000) AS k, count() AS c FROM numbers_mt(400000) GROUP BY k);
-" 2>&1 | grep -oE "NOT_ENOUGH_SPACE|cannot reserve [0-9]+ bytes" | sort -u
+" 2>&1 | grep -oE "NOT_ENOUGH_SPACE|cannot reserve [0-9]+ bytes" | LC_ALL=C sort -u
