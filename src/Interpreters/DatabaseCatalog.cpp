@@ -1707,6 +1707,8 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(true);
     interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
+    /// The metadata file was moved back into the database above and stays there if the attach fails.
+    interpreter.setKeepDependenciesOfFailedAttach();
     interpreter.execute();
 
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());

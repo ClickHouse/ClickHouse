@@ -113,6 +113,11 @@ public:
     /// recorded under the same UUID with another name (a concurrent `CREATE TABLE ... UUID` reusing it) are
     /// left alone.
     void removeDependenciesOfFailedCreate(const StorageID & table_id);
+    /// Like `removeDependenciesOfFailedCreate`, but records the removed entries as dependencies of a
+    /// detached table (see `markDependenciesDetached`). `UNDROP TABLE` uses it: it moves the metadata of the
+    /// dropped table back into the database before attaching it, and a failed attach leaves that metadata
+    /// behind, so the next server start attaches it and needs the collections.
+    void markDependenciesOfFailedCreateDetached(const StorageID & table_id);
     /// Follows a `RENAME TABLE`: moves the entries recorded under the exact old name to the new one.
     /// An `EXCHANGE` calls this once with `exchange = true`, which swaps the entries of the two names.
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange);

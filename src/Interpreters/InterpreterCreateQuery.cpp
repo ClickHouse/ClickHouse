@@ -2956,12 +2956,18 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// collection (`CREATE TABLE ... UUID`), refusing `DROP NAMED COLLECTION` of the old collection while
     /// no metadata references it any more. The `DDLGuard` of the table name is held by this query, so the
     /// entries recorded under the exact name and UUID are its own. A failed `ATTACH` of a detached table
-    /// keeps its detached entry, which is not touched here and keeps refusing the drop.
+    /// keeps its detached entry, which is not touched here and keeps refusing the drop. A failed `UNDROP`
+    /// leaves the restored metadata in the database without such an entry, so its dependencies become one.
     bool committed = false;
     const StorageID created_table_id{create.getDatabase(), create.getTable(), create.uuid};
     SCOPE_EXIT({
         if (!committed)
-            NamedCollectionFactory::instance().removeDependenciesOfFailedCreate(created_table_id);
+        {
+            if (keep_dependencies_of_failed_attach)
+                NamedCollectionFactory::instance().markDependenciesOfFailedCreateDetached(created_table_id);
+            else
+                NamedCollectionFactory::instance().removeDependenciesOfFailedCreate(created_table_id);
+        }
     });
 
     bool only_replicated_engine_allowed = isOnlyReplicatedEngineAllowed(create, database, getContext());

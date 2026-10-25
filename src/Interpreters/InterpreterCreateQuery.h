@@ -72,6 +72,13 @@ public:
         is_metadata_replay = is_metadata_replay_;
     }
 
+    /// The metadata of the table stays in the database if the query fails (`UNDROP TABLE`), so the named
+    /// collection dependencies registered by the query are kept as those of a detached table.
+    void setKeepDependenciesOfFailedAttach()
+    {
+        keep_dependencies_of_failed_attach = true;
+    }
+
     void setDontNeedDDLGuard()
     {
         need_ddl_guard = false;
@@ -215,6 +222,7 @@ private:
     bool force_attach = false;
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
+    bool keep_dependencies_of_failed_attach = false;
     bool is_restore_from_backup = false;
     bool is_metadata_replay = false;
 
