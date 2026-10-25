@@ -54,7 +54,6 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     request.priority = Priority{base_priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     request.direct_io = direct_io;
-    bytes_to_ignore = 0;
 
     return reader.submit(request);
 }
@@ -63,6 +62,11 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 {
     if (prefetch_future.valid())
+        return;
+
+    /// Nothing to prefetch at a known EOF: nextImpl reports EOF without submitting. An O_DIRECT
+    /// read starting there returns EINVAL on some kernels/filesystems instead of 0.
+    if (isNextReadAtOrPastKnownEOF())
         return;
 
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
@@ -119,6 +123,12 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     }
     else
     {
+        /// Same guard as ReadBufferFromFileDescriptor::readImpl: with a known size, never submit
+        /// a read that starts at or past EOF. Some kernels/filesystems reject such O_DIRECT reads
+        /// with EINVAL instead of returning 0 (see #33372).
+        if (isNextReadAtOrPastKnownEOF())
+            return false;
+
         /// No pending request. Do synchronous read.
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousReadWaitMicroseconds);
         /// * If prefetch() was never called, internal_buffer may point to existing_memory, so we want
@@ -132,6 +142,9 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         chassert(memory.size() == 0 || memory.size() == internal_buffer.size());
         result = asyncReadInto(buf, internal_buffer.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
+
+    /// The skipped bytes belong to the request just consumed; until then getPosition counts them.
+    bytes_to_ignore = 0;
 
     chassert(!result.page_cache_cell);
     chassert(result.size >= result.offset);

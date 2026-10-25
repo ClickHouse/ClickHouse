@@ -126,6 +126,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
     }
+
+    /// The callback is called with `true` when the interactive client starts waiting for the user
+    /// to type a query, and with `false` when it stops waiting to process the query.
+    void setWaitingForQueryInputCallback(std::function<void(bool)> callback) { on_waiting_for_query_input = std::move(callback); }
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -299,7 +303,7 @@ private:
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQueryForInsert();
+    bool receiveEndOfQueryForInsert(ASTPtr parsed_query);
     void cancelQuery();
 
     /// Print an interactive message (a line to output_stream) through the bounded best-effort
@@ -799,6 +803,8 @@ protected:
     /// The handler is already stopped by the time the post-query epilogue is printed, so this is
     /// what tells the epilogue that an output sink may be stuck and its writes must be bounded.
     bool query_received_interrupt = false;
+
+    std::function<void(bool)> on_waiting_for_query_input;
 
     /// Unpacked descriptors and streams for the ease of use.
     std::istream & input_stream;

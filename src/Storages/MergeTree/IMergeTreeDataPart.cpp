@@ -1108,7 +1108,19 @@ void IMergeTreeDataPart::clearCaches()
         /// there is no in-flight write to guard against, and removing the entries is enough.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
-            columns_cache->removePart(storage.getStorageID().uuid, name);
+            columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name));
+        }
+    }
+
+    /// The projection parts go away with this part. Their entries are removed when they are destroyed, but a part
+    /// whose caches are cleared early (an outdated part that nobody else holds) should not keep them until then.
+    /// A reader of a projection part holds its parent part, so no reader can still write them either.
+    if (auto columns_cache = storage.getContext()->getColumnsCache())
+    {
+        for (const auto & [_, projection_part] : projection_parts)
+        {
+            if (projection_part->mayStoreColumnsInColumnsCache())
+                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
         }
     }
 }
@@ -1116,10 +1128,9 @@ void IMergeTreeDataPart::clearCaches()
 bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
 {
     /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
-    /// keyed by the UUID of the table and the name of the part.
+    /// keyed by the UUID of the table and the name of the part, see `getColumnsCachePartName`.
     return getType() == MergeTreeDataPartType::Wide
-        && !isProjectionPart()
-        && storage.getStorageID().uuid != UUIDHelpers::Nil;
+        && canUseColumnsCacheForPart(storage.getStorageID().uuid);
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1139,11 +1150,21 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     /// know nothing about it: a part whose only footprint is there has to be cleared as well, or its
     /// entries stay resident until a much later filesystem cleanup and evict entries of live parts
     /// in the meantime. Asking the cache is one lookup in its per-part index.
-    if (!mayStoreColumnsInColumnsCache())
+    auto columns_cache = storage.getContext()->getColumnsCache();
+    if (!columns_cache)
         return false;
 
-    auto columns_cache = storage.getContext()->getColumnsCache();
-    return columns_cache && columns_cache->containsPart(storage.getStorageID().uuid, name);
+    if (mayStoreColumnsInColumnsCache() && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name)))
+        return true;
+
+    /// The entries of the projection parts are removed with the caches of this part, see `clearCaches`.
+    for (const auto & [_, projection_part] : projection_parts)
+    {
+        if (projection_part->mayStoreColumnsInColumnsCache()
+            && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name)))
+            return true;
+    }
+    return false;
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -1732,8 +1753,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
-        if (!isRetryableException(std::current_exception()))
+        /// Don't scare people with broken part error if it's retryable or an I/O error.
+        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception()))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
