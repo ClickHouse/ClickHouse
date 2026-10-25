@@ -54,6 +54,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <base/itoa.h>
 
 #include <algorithm>
 #include <ranges>
@@ -1708,6 +1709,18 @@ KeyCondition::KeyCondition(
         rpn[i].position_in_filter_rpn = i;
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
+    size_t next_function_number = 0;
+    for (auto & element : expandAtomGroups(rpn))
+    {
+        /// A set atom applies only the chains of its set index (see `tryPrepareSetAtom`).
+        chassert(element.monotonic_functions_chain.empty() || !element.set_index);
+        element.first_function_number = next_function_number;
+        next_function_number += element.monotonic_functions_chain.size();
+        if (element.set_index)
+            for (const auto & mapping : element.set_index->getIndexesMapping())
+                next_function_number += mapping.functions.size();
+    }
 }
 
 KeyCondition::KeyCondition(
@@ -1920,7 +1933,7 @@ static Field applyFunctionForField(
 /// Returns `std::nullopt` when an earlier call already failed to evaluate the same (function, column)
 /// pair: the cache remembers the failure, so the caller can answer "unknown" for the range at once
 /// instead of re-running the throwing expression over the whole column.
-static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, size_t function_number, const DataTypePtr & current_type, const FieldRef & field)
 {
     chassert(func != nullptr);
     /// Fallback for fields without block reference.
@@ -1929,12 +1942,15 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
 
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
-    /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
-    WriteBufferFromOwnString buf;
-    writeText("_", buf);
-    writePointerHex(func.get(), buf);
-    writeText("_" + toString(field.column_idx), buf);
-    String result_name = buf.str();
+    /// The cache key is `_[function_number]_[param_column_id]`. It is unique because the block serves one condition
+    /// (and its copies), and the columns the caller put into the block are unnamed.
+    char key_buf[2 * (1 + std::numeric_limits<size_t>::digits10 + 1)];
+    char * key_end = key_buf;
+    *key_end++ = '_';
+    key_end = itoa(function_number, key_end);
+    *key_end++ = '_';
+    key_end = itoa(field.column_idx, key_end);
+    const std::string_view result_name(key_buf, key_end - key_buf);
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
 
@@ -1980,10 +1996,10 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
         }
         catch (...)
         {
-            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), String(result_name)});
             throw;
         }
-        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), String(result_name)});
     }
 
     return FieldRef(field.columns, field.row_idx, result_idx);
@@ -7309,6 +7325,7 @@ size_t KeyCondition::getNumUnevaluableChainApplications()
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
+    size_t first_function_number,
     DataTypePtr current_type,
     bool single_point)
 {
@@ -7332,8 +7349,11 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     /// exception, or makes it depend on whether another index happened to prune the range first.
     try
     {
-        for (const auto & func : functions)
+        for (size_t i = 0; i < functions.size(); ++i)
         {
+            const auto & func = functions[i];
+            const size_t function_number = first_function_number + i;
+
             /// We check the monotonicity of each function on a specific range.
             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
             IFunction::Monotonicity monotonicity = single_point
@@ -7366,7 +7386,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
                 if (!key_range.left.isNull())
                 {
-                    auto transformed = applyFunction(func, current_type, key_range.left);
+                    auto transformed = applyFunction(func, function_number, current_type, key_range.left);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7378,7 +7398,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
                 if (!key_range.right.isNull())
                 {
-                    auto transformed = applyFunction(func, current_type, key_range.right);
+                    auto transformed = applyFunction(func, function_number, current_type, key_range.right);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -8072,6 +8092,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_ptr,
                     element.monotonic_functions_chain,
+                    element.first_function_number,
                     data_types[key_column],
                     single_point
                 );
@@ -8408,7 +8429,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point));
 
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
             {
@@ -8558,6 +8579,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     std::move(sparse_key_range),
                     element.monotonic_functions_chain,
+                    element.first_function_number,
                     sparse_data_types[sparse_pos],
                     single_point);
 
@@ -8912,7 +8934,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(
+                key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point));
 
             /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
             /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.

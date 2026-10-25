@@ -4,8 +4,6 @@
 -- by representation (with negative zero canonicalized to positive zero). The results must be the same
 -- with the optimization on and off.
 
-SET enable_analyzer = 1;
-
 DROP DICTIONARY IF EXISTS dict_array;
 DROP DICTIONARY IF EXISTS dict_array_composite;
 DROP DICTIONARY IF EXISTS dict_map;
