@@ -87,3 +87,35 @@ def test_conversion_keeps_queue_keeper_path():
 
     for database in databases:
         node.query(f"DROP DATABASE {database} SYNC")
+
+
+def test_failed_queue_load_blocks_rename_database():
+    # A queue whose load failed has no storage object, but the next startup loads it under the new name.
+    node.query("DROP DATABASE IF EXISTS failed_db SYNC")
+    node.query("CREATE DATABASE failed_db ENGINE = Atomic")
+    node.query(
+        "CREATE TABLE failed_db.q (a UInt32) "
+        "ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV) "
+        "SETTINGS mode = 'unordered', keeper_path = '/failed{bound_path}q'"
+    )
+
+    macros = "/etc/clickhouse-server/conf.d/macros.xml"
+    node.stop_clickhouse()
+    node.exec_in_container(["bash", "-c", f"mv {macros} /tmp/macros.xml"], user="root")
+    node.start_clickhouse()
+
+    assert "No macro 'bound_path'" in node.query_and_get_error("SELECT * FROM failed_db.q")
+    node.query_and_get_error("RENAME DATABASE failed_db TO failed_db_renamed")
+
+    node.stop_clickhouse()
+    node.exec_in_container(["bash", "-c", f"mv /tmp/macros.xml {macros}"], user="root")
+    node.start_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT database, value FROM system.s3_queue_settings "
+            "WHERE name = 'keeper_path' AND database LIKE 'failed_db%'"
+        )
+        == "failed_db\t/failed/clickhouse/tables/failed_db/q\n"
+    )
+    node.query("DROP DATABASE failed_db SYNC")
