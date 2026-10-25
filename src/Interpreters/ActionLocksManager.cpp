@@ -55,6 +55,21 @@ StoragePtr resolveActionLockOwner(StoragePtr table)
     return table;
 }
 
+/// The storage a chain of aliases resolves to, or the storage itself when it is not an alias. Null when an
+/// alias in the chain has no target.
+StoragePtr resolveAliases(StoragePtr table)
+{
+    /// Bound the walk in case of a cycle of aliases.
+    for (size_t depth = 0; depth < 16 && table; ++depth)
+    {
+        const auto * alias = typeid_cast<const StorageAlias *>(table.get());
+        if (!alias)
+            break;
+        table = alias->tryGetTargetTable();
+    }
+    return table;
+}
+
 }
 
 ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
@@ -69,12 +84,23 @@ void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType 
 
 void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    ActionLock action_lock = table->getActionLock(action_type);
+    /// Take the lock and determine its owner from one resolution of the aliases. `StorageAlias::getActionLock`
+    /// resolves its target by name on its own, so asking the alias for the lock and resolving the owner
+    /// separately could pair the lock with another storage: if `EXCHANGE TABLES t AND oldt` lands between
+    /// the two lookups for an alias to `t`, the lock is taken on the storage now named `oldt` while the
+    /// storage now named `t` is recorded as its owner, and `SYSTEM START MERGES oldt` does not release it.
+    /// The inner table of a materialized view is bound to the view by its UUID, so the view itself is asked:
+    /// it also stops or pauses its refresher for the corresponding lock types.
+    const auto lock_source = resolveAliases(table);
+    if (!lock_source)
+        return;
+
+    ActionLock action_lock = lock_source->getActionLock(action_type);
 
     if (action_lock.expired())
         return;
 
-    auto owner = resolveActionLockOwner(table);
+    auto owner = resolveActionLockOwner(lock_source);
     if (!owner)
         owner = table;
 
