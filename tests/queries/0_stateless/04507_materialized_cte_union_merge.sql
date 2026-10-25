@@ -6,7 +6,6 @@
 -- output is never pinned directly for the merged cases; instead we count how many
 -- `MaterializingCTE (Materializing CTE: <name>)` plan-step lines the query plan has.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- 1. Two-branch UNION ALL, same CTE, referenced once per branch: single materialization.

@@ -41,7 +41,7 @@ RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.9.22.3"
+ARG VERSION="26.10.2.103"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off
@@ -158,11 +158,17 @@ RUN mkdir -p \
 COPY docker_related_config.xml /output/etc/clickhouse-server/config.d/
 
 # Set ownership after all config files are in place (including docker_related_config.xml above).
+# Others get access too: the container can be started with an arbitrary uid (`docker run --user`), as in Dockerfile.ubuntu.
 RUN chown -R clickhouse:clickhouse \
         /output/etc/clickhouse-server \
         /output/var/lib/clickhouse \
         /output/var/log/clickhouse-server \
         /output/docker-entrypoint-initdb.d \
+    && chmod -R ugo+Xrw \
+        /output/etc/clickhouse-server \
+        /output/etc/clickhouse-client \
+        /output/var/lib/clickhouse \
+        /output/var/log/clickhouse-server \
     && chmod 1777 /output/tmp
 
 # Create /etc/passwd and /etc/group that include the clickhouse user (uid/gid 101).

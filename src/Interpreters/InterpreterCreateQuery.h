@@ -16,6 +16,7 @@ namespace DB
 {
 
 class ASTCreateQuery;
+class ASTColumns;
 class ASTColumnDeclaration;
 class ASTExpressionList;
 class ASTStorage;
@@ -39,6 +40,8 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
+    /// `CODEC name (...)` entries for the subcolumn codecs of the columns.
+    static ASTPtr formatCodecDeclarations(const ColumnsDescription & columns);
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);
@@ -89,7 +92,8 @@ public:
     /// `is_full_definition_attach` marks a user-supplied `ATTACH TABLE t (...) ENGINE = ...` query
     /// (`attach` without `attach_short_syntax`), which is validated like `CREATE TABLE`; it is
     /// ignored unless `mode` is `LoadingStrictnessLevel::ATTACH`.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true, bool is_full_definition_attach = false);
+    /// The codecs declared with `CODEC name (...)` in the list are applied to the columns. `columns_list.columns` must not be null.
+    static ColumnsDescription getColumnsDescription(const ASTColumns & columns_list, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true, bool is_full_definition_attach = false);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
