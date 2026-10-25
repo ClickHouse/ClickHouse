@@ -5,11 +5,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/bound_path_macro.xml"],
     user_configs=[
         "configs/users.xml",
     ],
     with_zookeeper=True,
-    macros={"bound_path": "/clickhouse/tables/{database}/"},
     stay_alive = True
 )
 
@@ -99,16 +99,17 @@ def test_failed_queue_load_blocks_rename_database():
         "SETTINGS mode = 'unordered', keeper_path = '/failed{bound_path}q'"
     )
 
-    macros = "/etc/clickhouse-server/conf.d/macros.xml"
+    # Remove only `bound_path`: the server needs the harness macros (e.g. the database disk's `{shard}`) to start.
+    macro = "/etc/clickhouse-server/config.d/bound_path_macro.xml"
     node.stop_clickhouse()
-    node.exec_in_container(["bash", "-c", f"mv {macros} /tmp/macros.xml"], user="root")
+    node.exec_in_container(["bash", "-c", f"mv {macro} /tmp/bound_path_macro.xml"], user="root")
     node.start_clickhouse()
 
     assert "No macro 'bound_path'" in node.query_and_get_error("SELECT * FROM failed_db.q")
     node.query_and_get_error("RENAME DATABASE failed_db TO failed_db_renamed")
 
     node.stop_clickhouse()
-    node.exec_in_container(["bash", "-c", f"mv /tmp/macros.xml {macros}"], user="root")
+    node.exec_in_container(["bash", "-c", f"mv /tmp/bound_path_macro.xml {macro}"], user="root")
     node.start_clickhouse()
 
     assert (
