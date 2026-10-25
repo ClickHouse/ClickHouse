@@ -95,6 +95,18 @@ SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_wide USING (a) PR
 SELECT a, v FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT (w)), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
 SELECT a, v FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT (w)), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 0;
 
+-- An inner `RIGHT JOIN` resolves its `USING` key to the column of its right table, but `PREWHERE` still reads the leftmost table.
+DROP TABLE IF EXISTS t_05233_using_semi;
+CREATE TABLE t_05233_using_semi (a UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_05233_using_semi VALUES (9);
+SELECT a FROM t_05233_using_left RIGHT JOIN t_05233_using_right USING (a) FULL JOIN t_05233_using_semi USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a;
+
+-- The same when the right side of a `SEMI`/`ANTI` join is hidden.
+SELECT a FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) LEFT SEMI JOIN t_05233_using_semi USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS semi_join_include_columns_from_both_sides = 0;
+SELECT a FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) LEFT ANTI JOIN t_05233_using_semi USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS anti_join_include_columns_from_both_sides = 0;
+SELECT a FROM t_05233_using_semi RIGHT SEMI JOIN t_05233_using_left USING (a) PREWHERE arrayMap(z -> tuple(*), [1])[1].1 = 9 ORDER BY a SETTINGS semi_join_include_columns_from_both_sides = 0;
+
 DROP TABLE t_05233_using_left;
 DROP TABLE t_05233_using_right;
 DROP TABLE t_05233_using_wide;
+DROP TABLE t_05233_using_semi;
