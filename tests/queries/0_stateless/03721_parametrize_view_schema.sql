@@ -16,12 +16,12 @@ SHOW COLUMNS IN 03271_parametrized_v;
 SHOW COLUMNS IN 03271_parametrized_v_expl;
 
 -- Should return no columns
-SELECT *
+SELECT database, table, name, type, position
 FROM system.columns
 WHERE table = '03271_parametrized_v' AND database = currentDatabase();
 
 -- Should return no columns
-SELECT *
+SELECT database, table, name, type, position
 FROM system.columns
 WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
 
@@ -59,12 +59,12 @@ SHOW COLUMNS IN 03271_parametrized_v;
 SHOW COLUMNS IN 03271_parametrized_v_expl;
 
 -- Should return no columns
-SELECT *
+SELECT database, table, name, type, position
 FROM system.columns
 WHERE table = '03271_parametrized_v' AND database = currentDatabase();
 
 -- Should return one column 'n' of type 'UInt64'
-SELECT *
+SELECT database, table, name, type, position
 FROM system.columns
 WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
 
@@ -98,7 +98,7 @@ ATTACH TABLE 03271_parametrized_v_expl_mismatch;
 SHOW COLUMNS IN 03271_parametrized_v_expl;
 
 -- Should still return one column 'n' of type 'UInt64' after reload
-SELECT *
+SELECT database, table, name, type, position
 FROM system.columns
 WHERE table = '03271_parametrized_v_expl' AND database = currentDatabase();
 
@@ -120,7 +120,7 @@ FROM numbers({upper_bound:UInt64});
 SET use_declared_schema_for_parameterized_views = 0;
 -- Created while the setting was on: turning it off later must not hide the declared schema.
 SHOW COLUMNS IN 03271_parametrized_v_toggle;
-SELECT *
+SELECT database, table, name, type, position
 FROM system.columns
 WHERE table = '03271_parametrized_v_toggle' AND database = currentDatabase();
 -- Validation is latched together with exposure: a view that advertises a declared schema also
