@@ -146,8 +146,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
-    /// user-supplied value.
-    auto is_indirect_value = [](const std::string & v) { return startsWith(v, "from_env") || startsWith(v, "from_zk"); };
+    /// user-supplied value. A `${key}` property reference is indirect as well: `Poco::Util::AbstractConfiguration`
+    /// expands it whenever the value is read, so `google_adc_client_secret = '${name}'` next to
+    /// `name = 'from_env SECRET'` reads a server-side value through a literal-looking field.
+    auto is_indirect_value = [](const std::string & v)
+    {
+        return startsWith(v, "from_env") || startsWith(v, "from_zk") || v.contains("${");
+    };
     auto is_s3_credential_or_auth_field = [](const std::string & k)
     {
         return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
@@ -228,10 +233,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_include = true;
         else if (key == "type" || key == "object_storage_type")
         {
-            /// `Poco::Util::AbstractConfiguration` expands a `${key}` property reference whenever the value is
-            /// read, so `type = '${name}', name = 'gcs'` selects whatever the referenced key holds. Such a value
-            /// is indirect as well: it cannot be classified here and must go through the resolved checks.
-            const bool type_indirect = indirect || value_str.contains("${");
+            /// A `${key}` property reference counts as indirect too (see `is_indirect_value`): with
+            /// `type = '${name}', name = 'gcs'` the backend is whatever the referenced key holds, so it cannot be
+            /// classified here and must go through the resolved checks.
+            const bool type_indirect = indirect;
             const bool is_s3_value = (value_str == "s3" || value_str.starts_with("s3_"));
             is_s3_disk |= is_s3_value;
             type_is_indirect |= type_indirect;
@@ -361,10 +366,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             ErrorCodes::ACCESS_DENIED,
             "A dynamic GCS disk created from user SQL may not supply a credential field (`service_account_key`, "
             "`access_token`, or `google_adc_*`, including the `google_adc_token_uri` the refresh token is sent "
-            "to) indirectly via `from_env`/`from_zk`: the placeholder resolves on the server, so the disk would "
-            "authenticate with server-managed auth material, or present its credential to a server-chosen "
-            "endpoint (this also applies when the backend type is supplied indirectly). Provide the value as a "
-            "literal, or configure the disk in the server configuration instead.");
+            "to) indirectly via `from_env`/`from_zk` or a property reference to another key: the value resolves "
+            "on the server, so the disk would authenticate with server-managed auth material, or present its "
+            "credential to a server-chosen endpoint (this also applies when the backend type is supplied "
+            "indirectly). Provide the value as a literal, or configure the disk in the server configuration instead.");
 
     /// Match the table-function/engine restriction for a dynamic native GCS disk. Without an explicit
     /// native credential or `NOSIGN`, the client falls back to ADC and can borrow the server identity.
