@@ -84,9 +84,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_add_col_multi"
 # TRUNCATE (no table lock at all on MergeTree).
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_excl_lock_mv"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_excl_lock"
+# Local disk for both tables: a write-through filesystem cache can stall the flush's part write past the writer's timeout.
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE test_async_sel_excl_lock (a UInt32)
-    ENGINE = MergeTree ORDER BY a
+    ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 'default'
 "
 ${CLICKHOUSE_CLIENT} \
     --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 \
@@ -102,7 +103,7 @@ wait_for_query_to_start "insert_case6_${CLICKHOUSE_DATABASE}" 30 "$INSERT_PID"
 # timeout: it bounds what the deadlock costs here, and the good path needs only the SELECT to end.
 ${CLICKHOUSE_CLIENT} --lock_acquire_timeout=10 -q "
     CREATE MATERIALIZED VIEW test_async_sel_excl_lock_mv
-    ENGINE = MergeTree ORDER BY a POPULATE
+    ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 'default' POPULATE
     AS SELECT a FROM test_async_sel_excl_lock
 "
 wait "$INSERT_PID"
