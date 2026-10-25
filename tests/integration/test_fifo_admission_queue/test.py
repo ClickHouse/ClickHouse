@@ -254,7 +254,7 @@ def test_all_queued_queries_admitted(started_cluster):
 
     # Kill blockers to release slots — waiters drain
     for qid in blocker_ids:
-        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -352,7 +352,7 @@ def test_replace_running_query_with_admission_queue(started_cluster):
     wait_for_query_cancelled(node, victim_id)
 
     # Kill the blocker to free a slot — this should admit the replacement
-    node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC")
+    node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -448,11 +448,11 @@ def test_two_replacements_of_the_same_victim(started_cluster):
     wait_for_queue_length(node, 2)
 
     # Free one slot: the first replacement is admitted and registers the shared query_id.
-    node.query(f"KILL QUERY WHERE query_id = '{queued_id}' SYNC")
+    node.query(f"KILL QUERY WHERE query_id = '{queued_id}' SYNC SETTINGS kill_throw_if_noop = false")
     wait_for_query_start(node, victim_id)
 
     # Free another slot: the second replacement is admitted while the first one still runs.
-    node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC")
+    node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC SETTINGS kill_throw_if_noop = false")
 
     rejected = None
     start = time.monotonic()
@@ -463,7 +463,7 @@ def test_two_replacements_of_the_same_victim(started_cluster):
         time.sleep(0.1)
 
     # Whichever replacement won the race is still sleeping; stop it so the pool can be joined.
-    node.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC")
+    node.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC SETTINGS kill_throw_if_noop = false")
     pool.close()
     pool.join()
 
@@ -518,7 +518,7 @@ def test_no_slot_leak_on_timeout(started_cluster):
 
     # Kill blockers to free slots
     for qid in blocker_ids:
-        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -593,7 +593,7 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
 
     # Clean up: kill blockers
     for qid in blocker_ids:
-        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -667,7 +667,7 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
         wait_for_queue_length(node, 0)
     finally:
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
         pool.close()
         pool.join()
@@ -727,7 +727,7 @@ def test_grpc_client_cancel_while_waiting_in_queue(started_cluster):
         wait_for_queue_length(node, 0)
     finally:
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
         pool.close()
         pool.join()
@@ -804,7 +804,7 @@ def test_grpc_streaming_cancel_after_input_data_while_waiting_in_queue(started_c
     finally:
         send_cancel.set()
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
         pool.close()
         pool.join()
@@ -901,7 +901,7 @@ def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_clu
     finally:
         stop_sending.set()
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
         pool.close()
         pool.join()
@@ -984,7 +984,7 @@ def check_client_disconnect_while_replacing_query(target):
             f"(QueryStart count: {starts})"
         )
     finally:
-        target.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
+        target.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
 
@@ -1053,7 +1053,7 @@ def test_queue_wait_time_profile_event(started_cluster):
     # Once the waiter is in the queue it accumulates a nonzero queue wait time; then kill blockers
     wait_for_queue_length(node, 1)
     for qid in blocker_ids:
-        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -1159,7 +1159,7 @@ def test_timed_out_waiter_records_wait_time(started_cluster):
     )
 
     for qid in blocker_ids:
-        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -1234,8 +1234,8 @@ def test_reload_config_bypasses_admission_queue(started_cluster):
         assert get_prometheus_metric(node, "QueryAdmissionQueueLength") == 0
     finally:
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
-        node.query(f"KILL QUERY WHERE query_id = '{waiter_id}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
+        node.query(f"KILL QUERY WHERE query_id = '{waiter_id}' SYNC SETTINGS kill_throw_if_noop = false")
 
         pool.close()
         pool.join()
@@ -1302,7 +1302,7 @@ def test_max_execution_time_fallback_timeout(started_cluster):
 
     # Clean up
     for qid in blocker_ids:
-        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -1371,13 +1371,13 @@ def test_no_timeout_when_both_zero(started_cluster):
     )
 
     # Kill one blocker to free a slot — the waiting query should get admitted
-    node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[0]}' SYNC")
+    node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[0]}' SYNC SETTINGS kill_throw_if_noop = false")
 
     # Wait for the waiter to be admitted
     wait_for_queue_length(node, 0)
 
     # Kill the remaining blocker
-    node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[1]}' SYNC")
+    node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[1]}' SYNC SETTINGS kill_throw_if_noop = false")
 
     pool.close()
     pool.join()
@@ -1467,7 +1467,7 @@ def test_runtime_unlimit_drains_admission_queue(started_cluster):
     finally:
         # KILL QUERY bypasses admission, so it works even with a full queue.
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
         # Restore the original limit and confirm it before the next test runs.
@@ -1549,7 +1549,7 @@ def test_runtime_increase_preserves_fifo(started_cluster):
             except RuntimeError:
                 pass  # already finished or never admitted
         for qid in blocker_ids + waiter_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
         # Restore the original limit and confirm it before the next test runs.
@@ -1616,7 +1616,7 @@ def test_normal_release_preserves_fifo(started_cluster):
         # Release exactly one slot via the normal path: kill a single blocker.
         # Its teardown frees one admission slot, which `releaseAdmissionSlotLocked`
         # must hand to the front (oldest) waiter — not to a younger one.
-        node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[0]}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[0]}' SYNC SETTINGS kill_throw_if_noop = false")
 
         # The oldest waiter must now be running.
         wait_for_query_start(node, waiter_ids[0])
@@ -1643,7 +1643,7 @@ def test_normal_release_preserves_fifo(started_cluster):
             except RuntimeError:
                 pass  # already finished or never admitted
         for qid in blocker_ids + waiter_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
         # Restore the original limit and confirm it before the next test runs.
@@ -1873,7 +1873,7 @@ def test_fast_path_slot_not_hoarded_at_secondary_limit(started_cluster):
             f"instead of failing immediately (legacy behavior)"
         )
     finally:
-        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
         node.query(f"DROP USER IF EXISTS {other_user}")
@@ -1926,11 +1926,11 @@ def test_all_users_limit_waits_for_queue_max_wait_ms(started_cluster):
             f"B finished before the blocker was released: {b_future.get()}"
         )
 
-        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC SETTINGS kill_throw_if_noop = false")
         # Raises if B was rejected with `TOO_MANY_SIMULTANEOUS_QUERIES`.
         b_future.get(timeout=60)
     finally:
-        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{a_id}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
 
@@ -2021,7 +2021,7 @@ def test_zero_to_finite_reload_enforces_limit(started_cluster):
         # 5. Drain below the limit: with only one of the three queries left running,
         #    admission_running drops under N and queries are admitted again.
         for qid in blocker_ids[1:]:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
         deadline = time.monotonic() + 15
         admitted = False
         while time.monotonic() < deadline:
@@ -2039,7 +2039,7 @@ def test_zero_to_finite_reload_enforces_limit(started_cluster):
         )
     finally:
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
         # Restore the baseline limit for subsequent tests.
@@ -2135,7 +2135,7 @@ def test_background_query_ignores_the_submitting_connection(started_cluster):
 
         # Free the slots: the background query must now be admitted and actually run.
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
         deadline = time.monotonic() + 30
         inserted = "0"
@@ -2151,7 +2151,7 @@ def test_background_query_ignores_the_submitting_connection(started_cluster):
         if sock is not None:
             sock.close()
         for qid in blocker_ids:
-            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
         pool.close()
         pool.join()
         node.query(f"DROP TABLE IF EXISTS default.{table} SYNC")
@@ -2275,4 +2275,4 @@ def test_client_disconnect_at_secondary_limit_wakeup(started_cluster):
             victim_sock.close()
         if waiter_sock is not None:
             waiter_sock.close()
-        node_slow_liveness_poll.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC")
+        node_slow_liveness_poll.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC SETTINGS kill_throw_if_noop = false")
