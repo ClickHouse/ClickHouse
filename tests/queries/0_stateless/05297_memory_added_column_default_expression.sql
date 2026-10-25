@@ -1,3 +1,5 @@
+-- Tags: need-query-parameters
+
 -- A column added to a Memory table by ALTER TABLE ... ADD COLUMN has its DEFAULT or MATERIALIZED expression
 -- evaluated for the rows inserted before the ALTER, in reads, filters, row policies and mutations.
 
@@ -135,3 +137,29 @@ INSERT INTO t_memory_add_default_now VALUES (8);
 ALTER TABLE t_memory_add_default_now ADD COLUMN n DateTime64(6) DEFAULT now64(6);
 SELECT count(DISTINCT n), min(n) > '2020-01-01' FROM t_memory_add_default_now SETTINGS max_threads = 4;
 DROP TABLE t_memory_add_default_now;
+
+SELECT 'the query condition cache keeps no verdict over a default that changes between reads';
+DROP TABLE IF EXISTS t_memory_add_default_qcc;
+DROP DICTIONARY IF EXISTS d_memory_add_default_qcc;
+DROP TABLE IF EXISTS t_memory_add_default_qcc_source;
+CREATE TABLE t_memory_add_default_qcc_source (k UInt64, v UInt8) ENGINE = Memory;
+INSERT INTO t_memory_add_default_qcc_source VALUES (0, 0);
+CREATE DICTIONARY d_memory_add_default_qcc (k UInt64, v UInt8) PRIMARY KEY k
+    SOURCE(CLICKHOUSE(TABLE 't_memory_add_default_qcc_source' DB currentDatabase())) LIFETIME(0) LAYOUT(FLAT());
+CREATE TABLE t_memory_add_default_qcc (k UInt64) ENGINE = Memory;
+INSERT INTO t_memory_add_default_qcc SELECT number FROM numbers(10000);
+ALTER TABLE t_memory_add_default_qcc ADD COLUMN v UInt8 DEFAULT dictGet({CLICKHOUSE_DATABASE:String} || '.d_memory_add_default_qcc', 'v', 0);
+SELECT count() FROM t_memory_add_default_qcc WHERE v = 1 SETTINGS use_query_condition_cache = 1, log_comment = '05297_qcc_1';
+TRUNCATE TABLE t_memory_add_default_qcc_source;
+INSERT INTO t_memory_add_default_qcc_source VALUES (0, 1);
+SYSTEM RELOAD DICTIONARY d_memory_add_default_qcc;
+SELECT count() FROM t_memory_add_default_qcc WHERE v = 1 SETTINGS use_query_condition_cache = 1, log_comment = '05297_qcc_2';
+SYSTEM FLUSH LOGS query_log;
+-- Both reads look the block up in the cache, and neither finds a verdict.
+SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['QueryConditionCacheMisses'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05297_qcc_1', '05297_qcc_2') AND event_date >= yesterday()
+ORDER BY log_comment;
+DROP TABLE t_memory_add_default_qcc;
+DROP DICTIONARY d_memory_add_default_qcc;
+DROP TABLE t_memory_add_default_qcc_source;

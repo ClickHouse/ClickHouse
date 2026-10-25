@@ -163,6 +163,8 @@ struct MemorySourceDefaults
         NamesAndTypesList stored_inputs_to_read;
         /// The arrays of the table that are members of the `Nested` of an input; see `findSizesSource`.
         Names nested_arrays;
+        /// False if the expressions may return other values on another read (e.g. `now64()`).
+        bool is_deterministic = true;
     };
 
     mutable std::mutex mutex;
@@ -526,18 +528,21 @@ private:
 
     void fillPhysicalColumns(const Block & src, Columns & result_columns, size_t & read_bytes)
     {
-        result_columns = readColumns(src, physical_columns, {MemorySourceColumnList::Physical, 0}, nullptr, src.rows(), read_bytes);
+        bool is_deterministic = true;
+        result_columns = readColumns(src, physical_columns, {MemorySourceColumnList::Physical, 0}, nullptr, src.rows(), read_bytes, is_deterministic);
     }
 
     /// Reads `columns` from the stored block, the `num_rows` rows selected by `mask` (all rows if it is null). A column the
     /// block lacks gets its `DEFAULT` or `MATERIALIZED` expression evaluated over those rows, or the default value of its type.
+    /// `is_deterministic` is set to false if an evaluated expression may return other values on another read.
     Columns readColumns(
         const Block & src,
         const NamesAndTypesList & columns,
         MemorySourceColumnListId columns_id,
         const IColumn::Filter * mask,
         size_t num_rows,
-        size_t & read_bytes)
+        size_t & read_bytes,
+        bool & is_deterministic)
     {
         Columns result = readStoredColumns(src, columns, mask, num_rows, read_bytes);
 
@@ -557,7 +562,7 @@ private:
         }
 
         if (has_missing)
-            evaluateDefaults(src, columns, columns_id, mask, num_rows, result, read_bytes);
+            evaluateDefaults(src, columns, columns_id, mask, num_rows, result, read_bytes, is_deterministic);
 
         chassert(std::all_of(result.begin(), result.end(), [](const auto & column) { return column != nullptr; }));
         return result;
@@ -571,7 +576,8 @@ private:
         const IColumn::Filter * mask,
         size_t num_rows,
         Columns & result,
-        size_t & read_bytes)
+        size_t & read_bytes,
+        bool & is_deterministic)
     {
         chassert(defaults);
 
@@ -662,6 +668,7 @@ private:
                     new_evaluation.nested_arrays = getArraysOfRequestedNested(new_evaluation.stored_inputs_to_read, cache.storage_snapshot);
 
                     is_stateful = dag->hasStatefulFunctions();
+                    new_evaluation.is_deterministic = std::ranges::all_of(dag->getOutputs(), VirtualColumnUtils::isDeterministic);
                     dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
                     new_evaluation.actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(cache.context));
                 }
@@ -694,6 +701,7 @@ private:
         {
             size_t rows = num_rows;
             evaluation->actions->execute(block, rows);
+            is_deterministic = is_deterministic && evaluation->is_deterministic;
         }
 
         it = columns.begin();
@@ -753,6 +761,9 @@ private:
         /// The granules skipped by the entry of the filter of the query. Nothing is known about PREWHERE
         /// on them, so they must not be recorded as having no rows satisfying it.
         QueryConditionCache::MatchingMarks granules_skipped_by_filter_condition;
+
+        /// A verdict over a default that may return other values on another read must not be recorded.
+        bool defaults_are_deterministic = true;
 
         if (use_query_condition_cache)
         {
@@ -816,7 +827,7 @@ private:
         /// Records the granules where no row has passed the steps.
         auto write_to_query_condition_cache = [&](bool no_rows_passed)
         {
-            if (!use_query_condition_cache || !filter->write_prewhere_condition)
+            if (!use_query_condition_cache || !filter->write_prewhere_condition || !defaults_are_deterministic)
                 return;
 
             if (!no_rows_passed && combined_mask.empty())
@@ -863,7 +874,8 @@ private:
                 return;
 
             Columns columns = readColumns(
-                src, missing, columns_id, combined_mask.empty() ? nullptr : &combined_mask, num_rows, num_read_bytes);
+                src, missing, columns_id, combined_mask.empty() ? nullptr : &combined_mask, num_rows, num_read_bytes,
+                defaults_are_deterministic);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -955,7 +967,7 @@ private:
 
         Chunk chunk(std::move(result_columns), num_rows);
 
-        if (use_query_condition_cache && filter->attach_mark_ranges_info)
+        if (use_query_condition_cache && filter->attach_mark_ranges_info && defaults_are_deterministic)
         {
             /// Without the granules removed above, which are already known to have no matches, the chunk
             /// does not hold all rows of the block, so only the whole block can be recorded.

@@ -65,3 +65,8 @@ a stateful default starts over in every block
 4	1
 a non-deterministic default has one value for the whole read
 1	1
+the query condition cache keeps no verdict over a default that changes between reads
+0
+10000
+05297_qcc_1	0	1
+05297_qcc_2	0	1
