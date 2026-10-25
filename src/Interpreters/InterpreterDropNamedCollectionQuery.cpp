@@ -121,6 +121,16 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         if (query.if_exists && !NamedCollectionFactory::instance().exists(query.collection_name))
             return {};
 
+        /// With `async_load_databases`, the server accepts queries while the tables are still being
+        /// loaded, and a table registers its named collection dependencies only in its load job (a lazily
+        /// loaded table from its metadata in `DatabaseOrdinary::loadTableLazy`, any other one while its
+        /// storage resolves the engine arguments). Until then its persisted metadata references the
+        /// collection without any recorded dependency, so wait for the pending loads before taking the
+        /// snapshot of the dependents. A database that failed to start makes the drop fail: the
+        /// dependencies of its tables are unknown.
+        for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
+            database->waitDatabaseStarted();
+
         auto dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
         if (!dependents.empty())
         {

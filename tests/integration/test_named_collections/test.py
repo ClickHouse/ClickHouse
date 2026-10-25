@@ -1706,3 +1706,79 @@ def test_drop_while_used_by_database_qualified_config_dictionary(cluster):
         "DROP NAMED COLLECTION config_dict_db_collection",
         settings={"check_named_collection_dependencies": 0},
     )
+
+
+def test_drop_waits_for_pending_table_load(cluster):
+    """With `async_load_databases`, the server accepts queries while the tables are still being loaded,
+    and a table registers its named collection dependencies only in its load job. `DROP NAMED COLLECTION`
+    must wait for the pending loads instead of taking the missing dependency for the absence of one:
+    otherwise it drops the collection, and the table, loaded right after, cannot be used."""
+    node = cluster.instances["node"]
+    failpoint = "database_ordinary_load_table_pause"
+
+    node.query("DROP DATABASE IF EXISTS pending_load_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS pending_load_collection")
+
+    node.query(
+        "CREATE DATABASE pending_load_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION pending_load_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    node.query(
+        "CREATE TABLE pending_load_db.t (x UInt32) ENGINE = URL(pending_load_collection)"
+    )
+
+    replace_in_server_config(
+        node, f"<{failpoint}>false</{failpoint}>", f"<{failpoint}>true</{failpoint}>"
+    )
+    try:
+        # The failpoint is enabled at startup and holds the load job of the table, while the server
+        # already accepts queries.
+        node.restart_clickhouse()
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        result = {}
+
+        def drop():
+            try:
+                node.query("DROP NAMED COLLECTION pending_load_collection")
+                result["error"] = ""
+            except QueryRuntimeException as e:
+                result["error"] = str(e)
+
+        drop_thread = threading.Thread(target=drop)
+        drop_thread.start()
+
+        # Release the load job only once the drop has started; without waiting for the load, the drop
+        # would already have finished by then.
+        deadline = time.monotonic() + 60
+        while (
+            drop_thread.is_alive()
+            and node.query(
+                "SELECT count() FROM system.processes WHERE query LIKE 'DROP NAMED COLLECTION pending_load_collection%'"
+            ).strip()
+            == "0"
+        ):
+            assert time.monotonic() < deadline, "The drop did not start"
+            time.sleep(0.1)
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        drop_thread.join(timeout=60)
+        assert not drop_thread.is_alive()
+        assert "NAMED_COLLECTION_IS_USED" in result["error"], result["error"]
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        replace_in_server_config(
+            node, f"<{failpoint}>true</{failpoint}>", f"<{failpoint}>false</{failpoint}>"
+        )
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'pending_load_collection'"
+        ).strip()
+        == "1"
+    )
+    node.query("DROP TABLE pending_load_db.t")
+    node.query("DROP NAMED COLLECTION pending_load_collection")
+    node.query("DROP DATABASE pending_load_db")

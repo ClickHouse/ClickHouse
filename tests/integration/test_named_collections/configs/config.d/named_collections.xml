@@ -5,4 +5,8 @@
     </collection1>
   </named_collections>
   <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+  <!-- Enabled by `test_drop_waits_for_pending_table_load` for one restart. -->
+  <fail_points_active>
+    <database_ordinary_load_table_pause>false</database_ordinary_load_table_pause>
+  </fail_points_active>
 </clickhouse>

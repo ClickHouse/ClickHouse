@@ -41,6 +41,7 @@
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
@@ -86,6 +87,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_TOO_LARGE;
+}
+
+namespace FailPoints
+{
+    extern const char database_ordinary_load_table_pause[];
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -764,6 +770,10 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
             SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
+            /// The tables of the `system` database are loaded synchronously at startup, pausing them would
+            /// keep the server from starting.
+            if (name.database != DatabaseCatalog::SYSTEM_DATABASE)
+                FailPointInjection::pauseFailPoint(FailPoints::database_ordinary_load_table_pause);
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
 
