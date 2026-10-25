@@ -107,6 +107,9 @@ struct MergeTreeReaderSettings
     /// PREWHERE-filtered granules, so the entries are only reused under the same TopK plan, part
     /// set, and threshold-determining predicate. Unset for non-TopK reads.
     std::optional<UInt64> query_condition_cache_top_k_salt;
+    /// `TopKFilterInfo::rows_equal_to_threshold_dropped`: once set, a granule left without rows by the filter may hold rows
+    /// of the result, so the read records nothing more in the query condition cache.
+    std::shared_ptr<std::atomic<bool>> top_k_filter_rows_equal_to_threshold_dropped;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
@@ -209,6 +212,7 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
+    float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
 };

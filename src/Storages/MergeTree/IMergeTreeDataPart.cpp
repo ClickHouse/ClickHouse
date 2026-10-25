@@ -1129,8 +1129,7 @@ bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
 {
     /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
     /// keyed by the UUID of the table and the name of the part, see `getColumnsCachePartName`.
-    return getType() == MergeTreeDataPartType::Wide
-        && canUseColumnsCacheForPart(storage.getStorageID().uuid);
+    return canUseColumnsCacheForPart(storage.getStorageID().uuid);
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1668,8 +1667,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
-        if (!isRetryableException(std::current_exception()))
+        /// Don't scare people with broken part error if it's retryable or an I/O error.
+        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception()))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
