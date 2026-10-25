@@ -59,3 +59,20 @@ target_link_libraries (_avrocpp PRIVATE boost::headers_only boost::iostreams)
 target_compile_definitions (_avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
 target_include_directories (_avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
 target_link_libraries (_avrocpp PRIVATE ch_contrib::snappy)
+
+# The `bzip2` and `xz` codecs use the Boost.Iostreams filters, which are not part of `boost::iostreams`,
+# because Boost is added before the compression libraries.
+set (BOOST_IOSTREAMS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/boost/libs/iostreams/src")
+
+if (TARGET ch_contrib::bzip2)
+    target_sources (_avrocpp PRIVATE "${BOOST_IOSTREAMS_SOURCE_DIR}/bzip2.cpp")
+    target_compile_definitions (_avrocpp PUBLIC BZIP2_CODEC_AVAILABLE)
+    target_link_libraries (_avrocpp PRIVATE ch_contrib::bzip2)
+endif ()
+
+if (TARGET ch_contrib::xz)
+    target_sources (_avrocpp PRIVATE "${BOOST_IOSTREAMS_SOURCE_DIR}/lzma.cpp")
+    target_compile_definitions (_avrocpp PUBLIC XZ_CODEC_AVAILABLE)
+    target_compile_definitions (_avrocpp PRIVATE BOOST_IOSTREAMS_LZMA_NO_MULTITHREADED)
+    target_link_libraries (_avrocpp PRIVATE ch_contrib::xz)
+endif ()

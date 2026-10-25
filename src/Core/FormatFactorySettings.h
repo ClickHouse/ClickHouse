@@ -1405,7 +1405,7 @@ Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `
 )", 0, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
-Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
+Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd', 'bzip2', 'xz'.
 )", 0) \
     DECLARE(UInt64, output_format_avro_sync_interval, 16 * 1024, R"(
 Sync interval in bytes.
