@@ -714,6 +714,15 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+
+            /// Synthesized in the requested type (see above), so it is labeled with that type and needs no conversion.
+            /// It stays in the block, because a default of another column may read it.
+            if (isColumnDroppedByPendingMutation(pos))
+            {
+                copy_block.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+                continue;
+            }
+
             auto column_in_part = getColumnInPart(*name_and_type);
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
         }
