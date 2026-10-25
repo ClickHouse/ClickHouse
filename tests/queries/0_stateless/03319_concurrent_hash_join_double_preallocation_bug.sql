@@ -10,7 +10,7 @@ insert into lhs select number, number from numbers_mt(2e5);
 -- rhs should be bigger to trigger tables swap (see `query_plan_join_swap_table`)
 insert into rhs select number, number from numbers_mt(1e6);
 
-set max_threads = 8, query_plan_join_swap_table = 1, join_algorithm = 'parallel_hash', enable_analyzer = 1, enable_join_runtime_filters = 0, query_plan_read_in_order_through_join = 0, query_plan_optimize_join_order_limit = 10; -- runtime filters and read-in-order-through-join change execution path, bypassing hash table preallocation; CI may inject join_order_limit=0, skipping chooseJoinOrder so join swap never happens and preallocation cache key mismatches
+set max_threads = 8, query_plan_join_swap_table = 1, join_algorithm = 'parallel_hash', enable_join_runtime_filters = 0, query_plan_read_in_order_through_join = 0, query_plan_optimize_join_order_limit = 10; -- runtime filters and read-in-order-through-join change execution path, bypassing hash table preallocation; CI may inject join_order_limit=0, skipping chooseJoinOrder so join swap never happens and preallocation cache key mismatches
 
 -- First populate the cache of hash table sizes
 select * from lhs as t1 join rhs as t2 on t1.a = t2.a format Null;
