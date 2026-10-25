@@ -26,6 +26,8 @@
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -51,6 +53,29 @@ namespace
 
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
+
+bool hasClusterVariant(std::string_view engine_name)
+{
+    static constexpr std::string_view engines[] = {
+        AzureClusterDefinition::non_clustered_storage_engine_name,
+        S3ClusterDefinition::non_clustered_storage_engine_name,
+        HDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergClusterDefinition::non_clustered_storage_engine_name,
+        IcebergS3ClusterDefinition::non_clustered_storage_engine_name,
+        IcebergAzureClusterDefinition::non_clustered_storage_engine_name,
+        IcebergHDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergLocalClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeS3ClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeAzureClusterDefinition::non_clustered_storage_engine_name,
+        HudiClusterDefinition::non_clustered_storage_engine_name,
+        PaimonClusterDefinition::non_clustered_storage_engine_name,
+        PaimonS3ClusterDefinition::non_clustered_storage_engine_name,
+        PaimonAzureClusterDefinition::non_clustered_storage_engine_name,
+        PaimonHDFSClusterDefinition::non_clustered_storage_engine_name,
+    };
+    return std::ranges::find(engines, engine_name) != std::end(engines);
+}
 
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
@@ -139,6 +164,9 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         metadata.settings_changes = args.storage_def->settings->ptr();
         storage->setInMemoryMetadata(metadata);
     }
+
+    if (hasClusterVariant(args.engine_name))
+        storage->setHasClusterVariant();
 
     return storage;
 }
