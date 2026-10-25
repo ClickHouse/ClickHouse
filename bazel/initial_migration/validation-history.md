@@ -1856,3 +1856,35 @@ BuildBuddy reported x86-64: 6,235 remote actions and 45,487 remote cache hits, A
 The first fixture-only requests returned no invocation IDs. Their outcomes remain unknown and contribute no result to this comparison.
 
 The [x86-64 hosted build](https://app.buildbuddy.io/invocation/2e6acbd2-2e61-4bce-93dd-3c97b101302b) and [ARM64 hosted build](https://app.buildbuddy.io/invocation/90c60326-199e-4e2c-acc1-06c8e3f235db) both failed `git diff-files --quiet` after Bazel returned success. The saved validator results remain partial. The native build events, configured target and artifact records agree on all 14 outputs on each CPU. The reported command omits `--invocation_id`; the start event and BuildBuddy record identify that same invocation, and all 12 remaining arguments match. For `zstd_zbuff.c`, the failed and successful remote compiler actions had the same input directory. The only compiler argument added was `-DZBUFF_DISABLE_DEPRECATE_WARNINGS`. The successful action result identifies the object returned by the native target. This comparison does not identify the file changed after the build.
+
+## 64428e351
+
+[64428e351](https://github.com/dzbarsky/clickhouse/commit/64428e351e9ffd558316be1c0a003ed8b7285386). DBMS and IO now declare their SDK headers. The DBMS benchmark declares its parser dependency. MongoDB C, ICU and Cassandra keep implementation headers private; the array, URL and Poco libraries drop unused dependencies.
+
+At [64428e351](https://github.com/dzbarsky/clickhouse/commit/64428e351e9ffd558316be1c0a003ed8b7285386), the normalized ClickHouse executable matched the native CMake build on x86-64 and ARM64. The raw ClickHouse and unit-test executables matched [66af9c131](https://github.com/dzbarsky/clickhouse/commit/66af9c131dcb0647b0132eb0b8a2b6d10d714c29).
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The original builds completed 64 of 65 targets per CPU and passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. Only the new SDK fixture failed. Separate [x86-64](https://app.buildbuddy.io/invocation/85101748-8ef3-41a7-add6-663da508c0b0) and [ARM64](https://app.buildbuddy.io/invocation/54df9dd8-f829-4b59-8c36-527a83dd71b5) builds of that target compiled its first-party callers with C++23 and produced all 20 and 21 expected objects, respectively.
+
+| CPU | Original native build | Failed SDK compiles | C++23 fixture | Verified SDK objects | Byte-identical to the prior 9 SDK objects | Strict DWYU |
+| --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | [64/65](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | 11 | [1/1](https://app.buildbuddy.io/invocation/85101748-8ef3-41a7-add6-663da508c0b0) | 20 | 9 | [37/783](https://app.buildbuddy.io/invocation/bf0324b9-deaa-44a9-973f-8f9535d63e37) |
+| ARM64 | [64/65](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | 12 | [1/1](https://app.buildbuddy.io/invocation/54df9dd8-f829-4b59-8c36-527a83dd71b5) | 21 | 9 | [37/783](https://app.buildbuddy.io/invocation/e552d3c9-7580-4365-aefd-ee533c4db606) |
+
+The new builds changed only the compiler standard for 14 x86-64 and 15 ARM64 first-party SDK examples. The six vendor objects and the Array SQL result were byte-identical on each CPU. The positive Array query returned its expected output; the unequal-length case returned SIZES_OF_ARRAYS_DONT_MATCH (190).
+
+The original builds retained 141 x86-64 and 125 ARM64 SDK objects, 23 SQLConsole files and ten benchmark archives per CPU. The seven zstd, Disk and Arrow callers built and Arrow serialization passed. The DBMS and IO providers matched the expected values for all 17 CcInfo fields.
+
+[64428e351](https://github.com/dzbarsky/clickhouse/commit/64428e351e9ffd558316be1c0a003ed8b7285386): strict DWYU checked 37 of 783 production targets on both [x86-64](https://app.buildbuddy.io/invocation/bf0324b9-deaa-44a9-973f-8f9535d63e37) and [ARM64](https://app.buildbuddy.io/invocation/e552d3c9-7580-4365-aefd-ee533c4db606). 25 compiled targets were clean, 7 header targets passed their selected checks, and 5 targets lacked link-dependency verification. The other 746 targets were not checked. [Validation history](bazel/initial_migration/validation-history.md#64428e351).
+
+The seven header targets covered eight standalone headers, including four Abseil headers. The intentional duplicate-include and textual-only controls received no clean grade.
+
+BuildBuddy recorded [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd): 5933 remote execution records (11 failed SDK compiles), [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027): 5933 remote execution records (12 failed SDK compiles).

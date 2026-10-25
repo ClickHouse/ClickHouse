@@ -47,18 +47,18 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-At [66af9c131](https://github.com/dzbarsky/clickhouse/commit/66af9c131dcb0647b0132eb0b8a2b6d10d714c29), the normalized ClickHouse binary matched the native CMake build on x86-64 and ARM64.
+At [64428e351](https://github.com/dzbarsky/clickhouse/commit/64428e351e9ffd558316be1c0a003ed8b7285386), the normalized ClickHouse executable matched the native CMake build on x86-64 and ARM64. The raw ClickHouse and unit-test executables matched [66af9c131](https://github.com/dzbarsky/clickhouse/commit/66af9c131dcb0647b0132eb0b8a2b6d10d714c29).
 
 | Native Bazel build | ELF | SHA-256 | Bytes |
 | --- | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/00194708-dec9-4d82-8f97-8e6f296db8f5) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [x86-64](https://app.buildbuddy.io/invocation/00194708-dec9-4d82-8f97-8e6f296db8f5) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
-| [x86-64](https://app.buildbuddy.io/invocation/00194708-dec9-4d82-8f97-8e6f296db8f5) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
-| [ARM64](https://app.buildbuddy.io/invocation/06d17df4-4465-4d01-a6a9-4e66490fce8b) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
-| [ARM64](https://app.buildbuddy.io/invocation/06d17df4-4465-4d01-a6a9-4e66490fce8b) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
-| [ARM64](https://app.buildbuddy.io/invocation/06d17df4-4465-4d01-a6a9-4e66490fce8b) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+| [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/6d01006b-eb8e-41d1-a74a-8c5e6c4318bd) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/30e04222-5aae-4ee6-a092-7ebe047e4027) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
 
-The raw ClickHouse and `unit_tests_dbms` hashes and byte sizes matched [2421d8299](https://github.com/dzbarsky/clickhouse/commit/2421d8299505b09f2232f1c51de770ed0f66acdb). Each original build passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. Each original build completed 63 of 64 targets. The SDK fixture failed: Clang rejected a reference to the deprecated `ZBUFF_createCCtx`. The native fixture builds succeeded on [x86-64](https://app.buildbuddy.io/invocation/e17db761-df33-41ef-b7dc-f75122a5c2e3) and [ARM64](https://app.buildbuddy.io/invocation/982a6289-5948-47dc-a51d-dafac3a8ae68). Both hosted builds then failed a Git working-tree check; the logs do not identify the changed file.
+The original builds completed 64 of 65 targets per CPU and passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. Only the new SDK fixture failed. Separate [x86-64](https://app.buildbuddy.io/invocation/85101748-8ef3-41a7-add6-663da508c0b0) and [ARM64](https://app.buildbuddy.io/invocation/54df9dd8-f829-4b59-8c36-527a83dd71b5) builds of that target compiled its first-party callers with C++23 and produced all 20 and 21 expected objects, respectively.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-At [66af9c131](https://github.com/dzbarsky/clickhouse/commit/66af9c131dcb0647b0132eb0b8a2b6d10d714c29), strict DWYU reported x86-64: 54/783 production targets (50 `clean`, 1 `header_pp_not_verified`, 3 `header_pp_verified`); ARM64: 54/783 production targets (50 `clean`, 1 `header_pp_not_verified`, 3 `header_pp_verified`). See the [scoped results and validation history](bazel/initial_migration/validation-history.md#66af9c131).
+[64428e351](https://github.com/dzbarsky/clickhouse/commit/64428e351e9ffd558316be1c0a003ed8b7285386): strict DWYU checked 37 of 783 production targets on both [x86-64](https://app.buildbuddy.io/invocation/bf0324b9-deaa-44a9-973f-8f9535d63e37) and [ARM64](https://app.buildbuddy.io/invocation/e552d3c9-7580-4365-aefd-ee533c4db606). 25 compiled targets were clean, 7 header targets passed their selected checks, and 5 targets lacked link-dependency verification. The other 746 targets were not checked. [Validation history](bazel/initial_migration/validation-history.md#64428e351).
