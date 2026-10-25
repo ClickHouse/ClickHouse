@@ -745,6 +745,25 @@ TEST(AIQueryValidation, RejectsQueryConstructionSettings)
     EXPECT_TRUE(isAllowed("SELECT 1 SETTINGS max_threads = 1"));
 }
 
+TEST(AIQueryValidation, RejectsParallelReplicasSettings)
+{
+    /// Parallel replicas run the query on other servers, and the custom-key modes add a filter
+    /// parsed from `parallel_replicas_custom_key` after the validation, even to a local table.
+    EXPECT_FALSE(isAllowed(
+        "SELECT x FROM t SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 2, "
+        "parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_count = 2, parallel_replica_offset = 0, "
+        "parallel_replicas_custom_key = 'generateSerialID(''ai-counter'')'"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS parallel_replicas_custom_key = 'generateSerialID(''ai-counter'')'"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS enable_parallel_replicas = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS allow_experimental_parallel_reading_from_replicas = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS cluster_for_parallel_replicas = 'remote_cluster'"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS max_parallel_replicas = 2"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS parallel_replica_offset = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS automatic_parallel_replicas_mode = 1"));
+    EXPECT_FALSE(isAllowed("SELECT x FROM t SETTINGS enable_parallel_replicas = DEFAULT"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT x FROM t SETTINGS cluster_for_parallel_replicas = 'remote_cluster')"));
+}
+
 #endif
 
 TEST(AIQueryValidation, RejectsGetServerSetting)

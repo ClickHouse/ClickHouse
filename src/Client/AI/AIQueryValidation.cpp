@@ -122,6 +122,18 @@ bool isQueryConstructionSetting(const String & name)
         || name == "database";
 }
 
+/// The settings of parallel replicas: they make the server run the query on other replicas than
+/// the tables it was checked on (`cluster_for_parallel_replicas`), and in the custom-key modes they
+/// add a filter parsed from `parallel_replicas_custom_key` after this validation - even to a read
+/// of a `Memory` table on this server, so `parallel_replicas_custom_key = 'generateSerialID(...)'`
+/// would call a function the validation refuses. The sandbox turns parallel replicas off, so a
+/// `SETTINGS` clause must not turn them back on or configure them.
+bool isParallelReplicasSetting(const String & name)
+{
+    return name == "allow_experimental_parallel_reading_from_replicas"
+        || name.contains("parallel_replica");
+}
+
 void checkNoProtectedSettingChanges(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
@@ -151,6 +163,14 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 "or a table to read) after the read-only tool has validated it. Use the run_query tool for this query",
                 name);
         };
+        const auto reject_parallel_replicas = [](const String & name)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The query changes the setting `{}` of parallel replicas, which can run the query on other servers "
+                "or add an expression to it after the read-only tool has validated it. Use the run_query tool for this query",
+                name);
+        };
         for (const auto & change : set_query->changes)
         {
             if (isProtectedSetting(change.name))
@@ -159,6 +179,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject_format_schema(change.name);
             if (isQueryConstructionSetting(change.name))
                 reject_query_construction(change.name);
+            if (isParallelReplicasSetting(change.name))
+                reject_parallel_replicas(change.name);
         }
         /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
         /// and resets the limit after the sandbox has tightened it.
@@ -170,6 +192,8 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 reject_format_schema(name);
             if (isQueryConstructionSetting(name))
                 reject_query_construction(name);
+            if (isParallelReplicasSetting(name))
+                reject_parallel_replicas(name);
         }
     }
 

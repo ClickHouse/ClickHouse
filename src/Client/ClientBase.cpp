@@ -4925,6 +4925,14 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         client_context->setSetting("show_remote_databases_in_system_tables", false);
         client_context->setSetting("show_data_lake_catalogs_in_system_tables", false);
 
+        /// Parallel replicas would run the validated query on other servers than the tables were
+        /// checked on (`cluster_for_parallel_replicas`), and in the custom-key modes they add a filter
+        /// parsed from `parallel_replicas_custom_key` - an expression the validation has not seen -
+        /// even to a read of a local `Memory` table. A settings profile can enable them unseen, so
+        /// they are turned off for the query whatever the session has; the validation refuses a
+        /// `SETTINGS` clause that touches them.
+        client_context->setSetting("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
+
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
 
@@ -6003,6 +6011,10 @@ Block ClientBase::fetchInternalQueryResult(
     {
         settings_to_send->set("show_remote_databases_in_system_tables", false);
         settings_to_send->set("show_data_lake_catalogs_in_system_tables", false);
+        /// Nor to run on other replicas, or to evaluate the `parallel_replicas_custom_key` of the
+        /// session, which parallel replicas would do (see the sandbox of the read-only tool in
+        /// `runQueryForAI`).
+        settings_to_send->set("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
     }
 #endif
 
