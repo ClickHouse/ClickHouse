@@ -84,8 +84,8 @@ SELECT pointInPolygon((0., 0.), materialize(CAST([], 'Polygon')));
 SELECT pointInPolygon((100., 100.), materialize(CAST([], 'Polygon')));
 
 SELECT 'MultiPolygon: Polygon With No Rings (non-const)';
-SELECT pointInPolygon((0., 0.), materialize(CAST([[]], 'MultiPolygon')));
-SELECT pointInPolygon((100., 100.), materialize(CAST([[]], 'MultiPolygon')));
+SELECT pointInPolygon((0., 0.), materialize(CAST([CAST([], 'Polygon')], 'MultiPolygon')));
+SELECT pointInPolygon((100., 100.), materialize(CAST([CAST([], 'Polygon')], 'MultiPolygon')));
 
 SELECT 'MultiPolygon: Empty Then Valid Polygon (non-const)';
 SELECT pointInPolygon((1., 1.), materialize(CAST([[], [[(0., 0.), (2., 0.), (2., 2.), (0., 2.)]]], 'MultiPolygon')));
