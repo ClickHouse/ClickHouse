@@ -43,11 +43,13 @@ def test_limited_fetches(started_cluster):
     """
     Test checks that that we utilize all available threads for fetches
     """
+    # The repeated string is longer than the LZ4 window, so the parts stay large and every fetch
+    # lasts long enough to be observed in system.replicated_fetches.
     node1.query(
-        "CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '1') ORDER BY tuple() PARTITION BY key"
+        "CREATE TABLE t (key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '1') ORDER BY tuple() PARTITION BY key"
     )
     node2.query(
-        "CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '2') ORDER BY tuple() PARTITION BY key"
+        "CREATE TABLE t (key UInt64, data String CODEC(LZ4)) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '2') ORDER BY tuple() PARTITION BY key"
     )
 
     with PartitionManager() as pm:
@@ -86,7 +88,6 @@ def test_limited_fetches(started_cluster):
         node2.query("SYSTEM START FETCHES t")
         fetches_result = []
         background_fetches_metric = []
-        fetched_parts = set([])
         for _ in range(1000):
             result = (
                 node2.query("SELECT result_part_name FROM system.replicated_fetches")
@@ -101,12 +102,15 @@ def test_limited_fetches(started_cluster):
                 )
             )
             if not result:
-                if len(fetched_parts) == 6:
+                if (
+                    node2.query(
+                        "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active"
+                    ).strip()
+                    == "6"
+                ):
                     break
                 time.sleep(0.1)
             else:
-                for part in result:
-                    fetched_parts.add(part)
                 fetches_result.append(result)
                 print(fetches_result[-1])
                 print(background_fetches_metric[-1])
