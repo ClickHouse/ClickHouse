@@ -161,7 +161,13 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
             return tuple->getElements()[*position];
         return nullptr;
     }
-    if (pos < tuple->getElements().size())
+    return tupleElementHintByPosition(hint, pos);
+}
+
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
 }
@@ -1286,9 +1292,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false,
-                    tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, invisible_rows);
+                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -1627,8 +1632,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                childPath(path, child.name), list_depth));
+                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -2488,6 +2492,18 @@ String RecordBatchDecoder::childPath(const String & path, const String & child_n
     return path.empty() ? seg : path + "." + seg;
 }
 
+DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+{
+    if (type.positional_fields)
+        return tupleElementHintByPosition(hint, i);
+    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+}
+
+String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
+{
+    return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
+}
+
 void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
 {
     buffer_slices.clear();
@@ -2849,8 +2865,8 @@ void RecordBatchDecoder::collectDictionaryUses(
             {
                 const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, lookup_types, uses);
+                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
+                    lookup_types, uses);
             }
             break;
         case TypeKind::RunEndEncoded:
