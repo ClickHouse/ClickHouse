@@ -19,10 +19,10 @@ namespace ErrorCodes
 /// if the nested function does not support them.
 enum class VariantArgumentsOfNestedFunction : UInt8
 {
-    /// The adapter is applied to the nested function, and the combinator sees the original values (example: -Distinct, -State).
+    /// The adapter is applied to the nested function, and the combinator sees the original values (example: -Distinct).
     ConvertedByNested,
     /// Same as `ConvertedByNested`, but an outer combinator with `ConvertedAround` converts them around itself as well.
-    /// The combinator must pass the arguments to the nested function at the same positions (example: -If).
+    /// The combinator must pass the arguments to the nested function at the same positions (example: -If, -State).
     Forwarded,
     /// The adapter is applied around the combinator, so that the rows with NULL values are skipped before the combinator
     /// processes them, as the `Null` combinator does for `Nullable` arguments. Otherwise, the result would differ

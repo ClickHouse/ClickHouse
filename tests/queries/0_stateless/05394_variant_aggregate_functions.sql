@@ -66,10 +66,21 @@ SELECT
 FROM values('v Variant(UInt64), k UInt8', (NULL, 2), (3, 1), (NULL, 0));
 SELECT sumIfOrDefault(v, toNullable(1)), sumOrNull(v), groupArrayArgMax(v, k), toTypeName(sumArgMax(v, k))
 FROM values('v Variant(UInt64), k UInt8', (NULL, 2), (3, 1));
+SELECT finalizeAggregation(a), finalizeAggregation(b), c, d
+FROM
+(
+    SELECT
+        sumStateArgMax(v, k) AS a, sumStateArgMax(CAST(v AS Nullable(UInt64)), k) AS b,
+        sumSimpleStateArgMax(v, k) AS c, sumSimpleStateArgMax(CAST(v AS Nullable(UInt64)), k) AS d
+    FROM values('v Variant(UInt64), k UInt8', (NULL, 2), (3, 1))
+);
 
 -- DISTINCT distinguishes equal values of different alternatives, as a distinct subquery does.
 SELECT sum(DISTINCT v), sumDistinct(v), sumDistinctIf(v, 1), uniqExact(v), (SELECT sum(v) FROM (SELECT DISTINCT v FROM (SELECT arrayJoin([1::UInt8::Variant(UInt8, UInt16), 1::UInt16::Variant(UInt8, UInt16)]) AS v)))
 FROM (SELECT arrayJoin([1::UInt8::Variant(UInt8, UInt16), 1::UInt16::Variant(UInt8, UInt16)]) AS v);
+
+-- groupBitmap does not convert Variant arguments, because the bitmap functions cannot consume such states.
+SELECT groupBitmap(v) FROM values('v Variant(UInt64)', 1, NULL, 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- No common supertype.
 SELECT sum(v) FROM values('v Variant(String, UInt64)', 'a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

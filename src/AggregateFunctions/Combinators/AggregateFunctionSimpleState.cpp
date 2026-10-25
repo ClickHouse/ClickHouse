@@ -11,6 +11,8 @@ namespace
     public:
         String getName() const override { return "SimpleState"; }
 
+        VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+
         DataTypes transformArguments(const DataTypes & arguments) const override { return arguments; }
 
         AggregateFunctionPtr transformAggregateFunction(

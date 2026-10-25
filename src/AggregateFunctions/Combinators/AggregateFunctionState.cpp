@@ -16,6 +16,8 @@ class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "State"; }
 
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         return arguments;
