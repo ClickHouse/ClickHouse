@@ -57,45 +57,11 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
     }
 }
 
-/// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
-inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
-{
-    /// Unlike `WriteBuffer::write`, it does not check that the buffer is neither finalized nor canceled, which
-    /// saves a load per value in loops that write many small values of a size known at compile time.
-    if (size <= buf.available()) [[likely]]
-    {
-        __builtin_memcpy(buf.position(), input, size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.write(input, size);
-    }
-}
-
-/// Largest value for which __builtin_memcpy still beats a call. Above it clang emits a memcpy call
-/// anyway, so the inline path would only add branches.
-constexpr size_t MAX_INLINE_WRITE_SIZE = 64;
-
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    if constexpr (sizeof(T) <= MAX_INLINE_WRITE_SIZE)
-        writeNBytes(reinterpret_cast<const char *>(&x), sizeof(x), buf); /// NOLINT
-    else
-        buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
-}
-
-/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it, just as the
-/// WriteBuffer overloads advance theirs. Restricted to trivially serializable types, for which
-/// `writeBinary` is `writePODBinary`, so a caller cannot pick up a different encoding than the
-/// WriteBuffer overloads produce.
-template <is_trivially_serializable T>
-inline void writePODBinary(const T & x, char * & dst)
-{
-    __builtin_memcpy(dst, reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
-    dst += sizeof(x);
+    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
 }
 
 inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
@@ -224,44 +190,9 @@ inline void writeString(std::string_view ref, WriteBuffer & buf)
  */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
-    /// A byte with a nonzero entry never gets copied verbatim; it always reaches the switch below.
-    /// 0xE2 needs an entry because it leads U+2028 and U+2029: a bulk copy would swallow the lead byte and
-    /// emit the sequence raw. Their continuation bytes need none, being written unchanged either way.
-    static constexpr auto stop_tables = []
-    {
-        std::array<std::array<UInt8, 256>, 2> tables{};
-        for (auto & table : tables)
-        {
-            for (size_t i = 0; i <= 0x1F; ++i)
-                table[i] = 1;
-            table['"'] = 1;
-            table['\\'] = 1;
-            table[0xE2] = 1;
-        }
-        tables[true]['/'] = 1;
-        return tables;
-    }();
-    const auto & stop = stop_tables[settings.json.escape_forward_slashes];
-
     writeChar('"', buf);
-
-    const char * it = begin;
-
-    while (true)
+    for (const char * it = begin; it != end; ++it)
     {
-        const char * run_end = it;
-        while (run_end != end && !stop[static_cast<UInt8>(*run_end)])
-            ++run_end;
-
-        if (run_end != it)
-        {
-            buf.write(it, static_cast<size_t>(run_end - it));
-            it = run_end;
-        }
-
-        if (it == end)
-            break;
-
         switch (*it)
         {
             case '\b':
@@ -330,10 +261,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 else
                     writeChar(*it, buf);
         }
-
-        ++it;
     }
-
     writeChar('"', buf);
 }
 
@@ -363,48 +291,49 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
         {
             buf.write(pos, next_pos - pos);
             pos = next_pos;
-            /// One `write` of a constant size per escape sequence keeps this function small enough to be inlined.
-            char escaped[2] = {'\\', 0};
-            size_t escaped_size = 2;
             switch (*pos)
             {
                 case quote_character:
+                {
                     if constexpr (escape_quote_with_quote)
-                        escaped[0] = quote_character;
-                    escaped[1] = quote_character;
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
                     break;
+                }
                 case '\b':
-                    escaped[1] = 'b';
+                    writeChar('\\', buf);
+                    writeChar('b', buf);
                     break;
                 case '\f':
-                    escaped[1] = 'f';
+                    writeChar('\\', buf);
+                    writeChar('f', buf);
                     break;
                 case '\n':
-                    escaped[1] = 'n';
+                    writeChar('\\', buf);
+                    writeChar('n', buf);
                     break;
                 case '\r':
-                    escaped[1] = 'r';
+                    writeChar('\\', buf);
+                    writeChar('r', buf);
                     break;
                 case '\t':
-                    escaped[1] = 't';
+                    writeChar('\\', buf);
+                    writeChar('t', buf);
                     break;
                 case '\0':
-                    escaped[1] = '0';
+                    writeChar('\\', buf);
+                    writeChar('0', buf);
                     break;
                 case '\\':
                     if constexpr (escape_backslash_with_backslash)
-                        escaped[1] = '\\';
-                    else
-                        escaped_size = 1;
+                        writeChar('\\', buf);
+                    writeChar('\\', buf);
                     break;
                 default:
-                    escaped[0] = *pos;
-                    escaped_size = 1;
+                    writeChar(*pos, buf);
             }
-            if (escaped_size == 2)
-                buf.write(escaped, 2);
-            else
-                buf.write(escaped[0]);
             ++pos;
         }
         /// NOLINTEND(readability-else-after-return)
@@ -726,21 +655,6 @@ inline void writeDoubleQuotedStringSQLite(std::string_view ref, WriteBuffer & bu
     writeChar('"', buf);
 }
 
-/// PostgreSQL quoted identifiers: a `"` is escaped by doubling it, and every other byte, backslash
-/// included, is literal. `writeDoubleQuotedString` instead emits an embedded `"` as `\"`, which
-/// PostgreSQL reads as the end of the identifier followed by SQL, and doubles a real backslash.
-inline void writeDoubleQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
-{
-    writeChar('"', buf);
-    for (char c : ref)
-    {
-        if (c == '"')
-            writeChar('"', buf);
-        writeChar(c, buf);
-    }
-    writeChar('"', buf);
-}
-
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
@@ -765,27 +679,11 @@ inline void writeBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
     writeChar('`', buf);
 }
 
-/// Outputs a string in backquotes with SQLite identifier escaping. Unlike MySQL-style formatting, control
-/// characters and backslashes stay literal; only an embedded backquote is escaped by doubling it.
-inline void writeBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
-{
-    writeChar('`', buf);
-    for (char c : s)
-    {
-        if (c == '`')
-            writeChar('`', buf);
-        writeChar(c, buf);
-    }
-    writeChar('`', buf);
-}
-
 
 /// Write quoted if the string doesn't look like and identifier.
 void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf);
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf);
-void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf);
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf);
-void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
@@ -954,7 +852,7 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1178,7 +1076,7 @@ inline void writeTime64FractionalText(typename DecimalType::NativeType fractiona
                 last_non_zero_pos = pos;
             }
         }
-        size_t new_scale = ((last_non_zero_pos / 3) + 1) * 3;
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
         writeString(&data[0], new_scale, buf);
     }
     else
@@ -1321,11 +1219,6 @@ inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, 
 template <is_trivially_serializable T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it. Lets one
-/// body serialize a value to either destination.
-template <is_trivially_serializable T>
-inline void writeBinary(const T & x, char * & dst) { writePODBinary(x, dst); }
-
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 
@@ -1415,10 +1308,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     /// belongs to the whole part, which has already been written by then.
     chassert(!fixed_fractional_length || fractional_length >= scale);
 
-    /// The decimal point and the digits are written with one `write`.
-    char point_and_digits[max_digits + 1];
-    point_and_digits[0] = '.';
-    char * buf = point_and_digits + 1;
+    char buf[max_digits];
     if constexpr (sizeof(T) <= sizeof(UInt64))
         writeFixedDigits(static_cast<UInt64>(x), scale, buf);
     else if constexpr (sizeof(T) <= sizeof(UInt128))
@@ -1444,7 +1334,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
             --length;
     }
 
-    ostr.write(point_and_digits, length + 1);
+    writeChar('.', ostr);
+    ostr.write(buf, length);
 }
 
 template <typename T>
@@ -1702,18 +1593,17 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-/// `out` is either a WriteBuffer or a raw `char *` cursor holding at least sizeof(T) bytes.
-template <std::endian endian, typename T, typename Out>
-inline void writeBinaryEndian(T x, Out & out)
+template <std::endian endian, typename T>
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     transformEndianness<endian>(x);
-    writeBinary(x, out);
+    writeBinary(x, buf);
 }
 
-template <typename T, typename Out>
-inline void writeBinaryLittleEndian(T x, Out & out)
+template <typename T>
+inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
 {
-    writeBinaryEndian<std::endian::little>(x, out);
+    writeBinaryEndian<std::endian::little>(x, buf);
 }
 
 template <typename T>

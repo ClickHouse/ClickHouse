@@ -44,12 +44,8 @@ settings=(
 
 mod_prefix="${CLICKHOUSE_DATABASE}_04625_mod_$RANDOM$RANDOM"
 
-# Pin `index_granularity`: the randomizer sets it as low as ~10 rows, which splits the table into
-# over 100k marks. `FINAL` reads them in order with `max_threads = 1`, and on the `s3 storage` jobs
-# a single run of the `FINAL` query took ~300 seconds, so the two sequential `FINAL` runs exceeded the
-# 600-second test timeout.
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE t_04625 (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k SETTINGS index_granularity = 8192;
+    CREATE TABLE t_04625 (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k;
     SYSTEM STOP MERGES t_04625;
     INSERT INTO t_04625 SELECT number, number FROM numbers(650e3);
     INSERT INTO t_04625 SELECT number, number % 520000 FROM numbers(650e3);

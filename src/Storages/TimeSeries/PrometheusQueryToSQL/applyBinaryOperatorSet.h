@@ -16,8 +16,4 @@ void checkArgumentTypesForSetBinaryOperator(
 /// Build a compact per-step presence mask for a vector grid.
 ASTPtr makePresenceMask(ASTPtr values);
 
-/// A JOIN ON expression needs a column from each side. When the join key is the constant group 0 (empty on()),
-/// the side is wrapped into a subquery that exposes the constant as the `join_group` column.
-ASTPtr makeJoinKeyColumn(String & side, ASTPtr && join_group, ConverterContext & context);
-
 }

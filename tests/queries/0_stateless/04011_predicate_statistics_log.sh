@@ -9,7 +9,7 @@ TABLE="test_pred_ext_${CLICKHOUSE_DATABASE}"
 TABLE_MC="${TABLE}_mc"
 TABLE_OFF="${TABLE}_disabled"
 
-ENABLE_STATS="SET predicate_statistics_sample_rate = 1, optimize_move_to_prewhere = 1"
+ENABLE_STATS="SET predicate_statistics_sample_rate = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
 ENABLE_STATS_MULTI_STEP="$ENABLE_STATS, enable_multiple_prewhere_read_steps = 1"
 
 # Per-invocation token so that re-running against a fixed database (direct `bash`, or
@@ -79,14 +79,14 @@ CREATE TABLE $TABLE_OFF (id UInt64, status String) ENGINE = MergeTree ORDER BY i
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 INSERT INTO $TABLE_OFF SELECT number, 'x' FROM numbers(1000);
 "
-$CLICKHOUSE_CLIENT --query_id="$Q5" --query "SET predicate_statistics_sample_rate = 0, optimize_move_to_prewhere = 1; SELECT * FROM $TABLE_OFF WHERE status = 'x' FORMAT Null"
+$CLICKHOUSE_CLIENT --query_id="$Q5" --query "SET predicate_statistics_sample_rate = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1; SELECT * FROM $TABLE_OFF WHERE status = 'x' FORMAT Null"
 
 # Q6: conjunction split across multiple prewhere steps — total_selectivity is consistent and low
 $CLICKHOUSE_CLIENT --query_id="$Q6" --query "$ENABLE_STATS_MULTI_STEP; SELECT * FROM $TABLE WHERE status = 'active' AND category = 'cat_a' FORMAT Null"
 
 # Q7: force real remote parallel-replica reads so the `initial_query_id` mapping is always exercised,
 # independent of the randomized `parallel_replicas_local_plan`. Rows land under the remote sub-query ids.
-ENABLE_STATS_PR="$ENABLE_STATS, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0, parallel_replicas_min_number_of_rows_per_replica = 0"
+ENABLE_STATS_PR="$ENABLE_STATS, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, automatic_parallel_replicas_mode = 0, parallel_replicas_min_number_of_rows_per_replica = 0, parallel_replicas_only_with_analyzer = 0"
 $CLICKHOUSE_CLIENT --query_id="$Q7" --query "$ENABLE_STATS_PR; SELECT * FROM $TABLE WHERE status = 'active' FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS predicate_statistics_log, query_log"

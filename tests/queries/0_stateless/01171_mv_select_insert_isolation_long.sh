@@ -46,7 +46,7 @@ function run_with_time_and_iterations_limits()
     started_time=$SECONDS
     local iteration=0
 
-    while clickhouse_test_time_left
+    while true
     do
         $function_to_run $iteration "$@"
 

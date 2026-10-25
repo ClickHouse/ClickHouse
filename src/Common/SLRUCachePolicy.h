@@ -76,28 +76,20 @@ public:
 
     void setMaxCount(size_t max_count_) override
     {
-        const size_t old_size_in_bytes = current_size_in_bytes;
-        const size_t old_count = cells.size();
-
         max_protected_count = calculateMaxProtectedValue(max_count_, size_ratio);
         max_count = max_count_;
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
-        updateMetrics(old_size_in_bytes, old_count);
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
-        const size_t old_size_in_bytes = current_size_in_bytes;
-        const size_t old_count = cells.size();
-
         max_protected_size = calculateMaxProtectedValue(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
-        updateMetrics(old_size_in_bytes, old_count);
     }
 
     void clear() override
@@ -127,7 +119,7 @@ public:
     void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
     {
         const size_t old_size_in_bytes = current_size_in_bytes;
-        const size_t old_count = cells.size();
+        const size_t old_size = cells.size();
 
         for (auto it = cells.begin(); it != cells.end();)
         {
@@ -147,7 +139,8 @@ public:
                 ++it;
         }
 
-        updateMetrics(old_size_in_bytes, old_count);
+        CurrentMetrics::sub(current_size_in_bytes_metric, old_size_in_bytes - current_size_in_bytes);
+        CurrentMetrics::sub(count_metric, old_size - cells.size());
     }
 
     MappedPtr get(const Key & key) override
@@ -200,7 +193,7 @@ public:
     void set(const Key & key, const MappedPtr & mapped) override
     {
         const size_t old_size_in_bytes = current_size_in_bytes;
-        const size_t old_count = cells.size();
+        const size_t old_size = cells.size();
 
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -240,9 +233,11 @@ public:
         current_size_in_bytes += cell.size;
         current_protected_size += cell.is_protected ? cell.size : 0;
 
+        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
+
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
-        updateMetrics(old_size_in_bytes, old_count);
     }
 
     std::vector<KeyMapped> dump() const override
@@ -297,10 +292,11 @@ private:
         return static_cast<size_t>(max_protected_value);
     }
 
-    /// While `queue` exceeds its limits, moves its oldest cells out of it: a protected cell moves to the
-    /// probationary queue, and a probationary cell leaves the cache. The callers update the metrics.
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
     {
+        const size_t old_size_in_bytes = current_size_in_bytes;
+        const size_t old_size = cells.size();
+
         size_t current_weight_lost = 0;
         size_t queue_size = queue.size();
 
@@ -361,19 +357,9 @@ private:
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent
-    }
 
-    /// Adds to the metrics how much the size and the count of the cache changed since they were
-    /// `old_size_in_bytes` and `old_count`. All threads that use caches of the same kind update the same
-    /// metrics, so each method updates them once, after all its changes, and skips a metric that did not
-    /// change. A lookup only moves a cell between the queues, so it does not update the metrics at all.
-    void updateMetrics(size_t old_size_in_bytes, size_t old_count)
-    {
-        if (current_size_in_bytes != old_size_in_bytes)
-            CurrentMetrics::add(
-                current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
-        if (cells.size() != old_count)
-            CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - static_cast<Int64>(old_count));
+        CurrentMetrics::sub(current_size_in_bytes_metric, old_size_in_bytes - current_size_in_bytes);
+        CurrentMetrics::sub(count_metric, old_size - cells.size());
     }
 
     void clearImpl()

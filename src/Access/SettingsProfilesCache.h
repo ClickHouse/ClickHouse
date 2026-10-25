@@ -31,9 +31,6 @@ public:
 
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
-    /// The profile every user gets, named by `default_profile` in the server configuration.
-    std::optional<UUID> getDefaultProfileId() const;
-
 private:
     void ensureAllProfilesRead();
     void profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile) TSA_REQUIRES(mutex);
@@ -42,8 +39,13 @@ private:
     void mergeSettingsAndConstraints() TSA_REQUIRES(mutex);
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const TSA_REQUIRES(mutex);
 
+    void substituteProfiles(SettingsProfileElements & elements,
+        std::vector<UUID> & profiles,
+        std::vector<UUID> & substituted_profiles,
+        std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
+
     const AccessControl & access_control;
-    std::map<UUID, SettingsProfilePtr> all_profiles;
+    std::unordered_map<UUID, SettingsProfilePtr> all_profiles;
     std::unordered_map<String, UUID> profiles_by_name;
     bool all_profiles_read = false;
     /// Set while applying a batch of changes; the rebuild is coalesced to once per notification batch.

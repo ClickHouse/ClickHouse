@@ -903,7 +903,7 @@ protected:
     int state = 0;
 };
 
-/// Tweaks for better highlighting of LIKE, SIMILAR TO and REGEXP functions.
+/// Tweaks for better highlighting of LIKE and REGEXP functions.
 static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t depth)
 {
     static constexpr size_t max_depth = 1000;
@@ -925,16 +925,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
         return;
 
     bool is_like = false;
-    bool is_similar_to = false;
     bool is_regexp = false;
     if (func->name == "like" || func->name == "notLike"
         || func->name == "ilike" || func->name == "notILike")
     {
         is_like = true;
-    }
-    else if (func->name == "similarTo" || func->name == "notSimilarTo")
-    {
-        is_similar_to = true;
     }
     else if (func->name == "match" || func->name == "notMatch"
              || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
@@ -974,11 +969,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!token_info)
         return;
 
-    chassert(is_like || is_similar_to || is_regexp);
+    chassert(is_like || is_regexp);
     expected.highlight({
        .begin = token_info->begin,
        .end = token_info->end,
-       .highlight = is_like ? Highlight::string_like : (is_similar_to ? Highlight::string_similar_to : Highlight::string_regexp)});
+       .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
 struct ParserExpressionImpl
@@ -1517,17 +1512,11 @@ public:
 class CastLayer : public Layer
 {
 public:
-    /// `is_try` is for `TRY_CAST`, which returns NULL instead of throwing when the value cannot be converted.
-    explicit CastLayer(bool is_try_ = false)
-        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true)
-        , is_try(is_try_)
-    {
-    }
+    CastLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// CAST(x [AS alias1], T [AS alias2]) or CAST(x [AS alias1] AS T)
-        /// TRY_CAST takes the same forms.
         ///
         /// 0. Parse all the cases (-> 1)
         /// 1. Parse closing token (finished)
@@ -1538,8 +1527,6 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            rememberLiteralArgument(pos);
-
             std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
@@ -1547,22 +1534,19 @@ public:
                 auto old_pos = pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected))
+                    as_keyword_parser.ignore(pos, expected) &&
+                    (type_text = parseDataTypeAsText(pos, expected)) &&
+                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
-                    type_text = parseDataTypeAsText(pos, expected);
-                    if (type_text &&
-                        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-                    {
-                        if (!insertAlias(alias))
-                            return false;
+                    if (!insertAlias(alias))
+                        return false;
 
-                        if (!mergeElement())
-                            return false;
+                    if (!mergeElement())
+                        return false;
 
-                        elements = {makeCast(elements[0], std::move(*type_text), pos)};
-                        finished = true;
-                        return true;
-                    }
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    finished = true;
+                    return true;
                 }
 
                 pos = old_pos;
@@ -1583,14 +1567,13 @@ public:
 
                 pos = old_pos;
 
-                type_text = parseDataTypeAsText(pos, expected);
-                if (type_text &&
+                if ((type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {makeCast(elements[0], std::move(*type_text), pos)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1619,16 +1602,7 @@ public:
                 if (elements.size() != 2)
                     return false;
 
-                ASTPtr argument = elements[0];
-
-                /// The functional form carries the type as an ordinary argument, so the type is only
-                /// known here when it is spelled out as a string.
-                if (const auto * type_literal = elements[1]->as<ASTLiteral>();
-                    type_literal && type_literal->value.getType() == Field::Types::String)
-                    argument = exactArgument(argument, type_literal->value.safeGet<String>(), pos);
-
-                const String function_name = is_try ? "accurateCastOrNull" : toString(toStringView(Keyword::CAST));
-                elements = {makeASTFunction(function_name, std::move(argument), elements[1])};
+                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), elements[0], elements[1])};
                 finished = true;
                 return true;
             }
@@ -1636,52 +1610,6 @@ public:
 
         return true;
     }
-
-private:
-    /// The first argument, when it is a literal, kept as text. `CAST(0.1 AS Decimal256(76))` is exact
-    /// because the `Decimal` reads those digits itself, instead of `0.1` being read as a `Float64`
-    /// and rounded on the way. Which types read the text this way is only known once the type has
-    /// been parsed, which is after the argument - hence keeping the text around.
-    std::optional<LiteralAsText> literal_argument;
-
-    /// Peeks at the first argument, without consuming it, before it is parsed as an expression. Only
-    /// a whole argument can be replaced by its text, so the literal has to be followed by the end of
-    /// the argument - the `AS` of `CAST(x AS T)` or of an alias, or the comma of `CAST(x, T)`.
-    void rememberLiteralArgument(IParser::Pos pos)
-    {
-        if (!elements.empty() || !isCurrentElementEmpty())
-            return;
-
-        LiteralAsText literal;
-        if (!parseLiteralAsText(pos, literal))
-            return;
-
-        /// An `Expected` of its own: this only looks ahead, and what it finds is not what the query
-        /// is expected to hold at that position.
-        Expected lookahead;
-        if (pos->type != TokenType::Comma && !ParserKeyword(Keyword::AS).checkWithoutMoving(pos, lookahead))
-            return;
-
-        literal_argument = std::move(literal);
-    }
-
-    /// `argument` put back as text, when it is a literal and the target type reads the text more
-    /// precisely - see `exactCastArgument`.
-    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
-    {
-        return exactCastArgument(argument, literal_argument, type_text, pos);
-    }
-
-    /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`. It reads a literal argument as exactly as `CAST` does.
-    ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
-    {
-        auto exact_argument = exactArgument(argument, type_text, pos);
-        if (is_try)
-            return makeASTFunction("accurateCastOrNull", std::move(exact_argument), make_intrusive<ASTLiteral>(std::move(type_text)));
-        return createFunctionCast(exact_argument, std::move(type_text));
-    }
-
-    const bool is_try;
 };
 
 enum class ExtractUnit : uint8_t
@@ -1766,7 +1694,7 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
 /// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
 /// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
 /// `ns`). Keep in sync with `parseIntervalKind.cpp`.
-static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind & result)
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
 {
     if (IntervalKind::tryParseString(unit_lower, result))
         return true;
@@ -1835,8 +1763,12 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    if (tryParseIntervalKindFromLowerString(unit_lower, interval_kind))
+    IntervalKind::Kind kind{};
+    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
+    {
+        interval_kind = IntervalKind{kind};
         return true;
+    }
 
     if (unit_lower == "epoch")
         extract_unit = ExtractUnit::Epoch;
@@ -2678,9 +2610,9 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         return {group.begin() + from_idx, group.begin() + to_idx + 1};
     };
 
-    auto range = extract_range(year_month_group, from_kind, to_kind);
+    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
     if (range.empty())
-        range = extract_range(day_time_group, from_kind, to_kind);
+        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
     if (range.empty())
         return {};
 
@@ -3014,46 +2946,6 @@ private:
     bool has_case_expr{};
 };
 
-/// Layer for table function 'obfuscate'
-class ObfuscateLayer : public Layer
-{
-public:
-    bool getResult(ASTPtr & node) override
-    {
-        node = makeASTFunction("obfuscate", std::move(elements));
-        return true;
-    }
-
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
-    {
-        /// obfuscate(SELECT ...)
-        ///
-        /// 0. Parse the SELECT query (finished)
-
-        ASTPtr query;
-
-        bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
-
-        if (!ParserSelectWithUnionQuery().parse(pos, query, expected))
-            return false;
-
-        auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
-        if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
-        {
-            // It's an subquery. Bail out.
-            return false;
-        }
-
-        pushResult(query);
-
-        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            return false;
-
-        finished = true;
-        return true;
-    }
-};
-
 /// Layer for table function 'view' and 'viewIfPermitted'
 class ViewLayer : public Layer
 {
@@ -3232,8 +3124,6 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
-        if (function_name_lowercase == "obfuscate")
-            return std::make_unique<ObfuscateLayer>();
         if (function_name_lowercase == "eval")
             return std::make_unique<EvalLayer>();
     }
@@ -3243,8 +3133,6 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
 
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
-    if (function_name_lowercase == "try_cast")
-        return std::make_unique<CastLayer>(/*is_try*/ true);
     if (function_name_lowercase == "extract")
         return std::make_unique<ExtractLayer>();
     if (function_name_lowercase == "date_part" || function_name_lowercase == "datepart")
@@ -3288,50 +3176,6 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
     return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, identifier->as<ASTIdentifier>()->compound());
 }
 
-
-/// Checks whether the tokens are `ARRAY[]` or `ARRAY[x, y, ...]` - the array constructor of the SQL standard,
-/// PostgreSQL and Trino. A single element `ARRAY[x]` is not accepted here, because it cannot be distinguished
-/// from subscripting a column named `ARRAY`: it is parsed as a subscript, and the analyzer turns it into the
-/// array constructor if there is no such column.
-static bool isArrayConstructorWithKeyword(IParser::Pos pos)
-{
-    if (pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "array"))
-        return false;
-    ++pos;
-    if (pos->type != TokenType::OpeningSquareBracket)
-        return false;
-    ++pos;
-    if (pos->type == TokenType::ClosingSquareBracket)
-        return true;
-
-    /// Look for a comma between the elements, skipping the commas nested in brackets.
-    size_t depth = 0;
-    for (; pos.isValid(); ++pos)
-    {
-        switch (pos->type)
-        {
-            case TokenType::OpeningRoundBracket:
-            case TokenType::OpeningSquareBracket:
-            case TokenType::OpeningCurlyBrace:
-                ++depth;
-                break;
-            case TokenType::ClosingRoundBracket:
-            case TokenType::ClosingSquareBracket:
-            case TokenType::ClosingCurlyBrace:
-                if (depth == 0)
-                    return false;
-                --depth;
-                break;
-            case TokenType::Comma:
-                if (depth == 0)
-                    return true;
-                break;
-            default:
-                break;
-        }
-    }
-    return false;
-}
 
 static bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -3475,11 +3319,6 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
     {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
-    /// Function composition: `f | g` applies `f` and then `g`, and is resolved as a lambda
-    /// where a higher-order function expects one. The single `|` is not bitwise OR (`bitOr`).
-    /// The internal name keeps the operator from stealing the public name `compose`; it must
-    /// stay in sync with `function_composition_name` in `FunctionCompositionRewrite.h`.
-    {"|",             Operator("__compose",       8,  2)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
@@ -3502,8 +3341,6 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
-    {toStringView(Keyword::SIMILAR_TO),    Operator("similarTo",       9,  2)},
-    {toStringView(Keyword::NOT_SIMILAR_TO),Operator("notSimilarTo",    9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
@@ -3653,30 +3490,20 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 /// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
 /// form, never the subquery -> `IN` rewrite, which has no meaning for them.
 ///
-/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`,
-/// `SIMILAR TO`, `NOT SIMILAR TO`) are included: `MatchImpl` supports a constant haystack with a
-/// non-constant needle (`constantVector`), so `'abc' LIKE SOME(['a%', 'b%'])` rewrites to
-/// `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])` and evaluates without throwing. Keep this in
-/// sync with the operator documentation for the array quantifier.
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
+/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
+/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
+/// and evaluates without throwing. Keep this in sync with the operator documentation for the
+/// array quantifier.
 static bool isArrayQuantifierPredicate(std::string_view function_name)
 {
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
         "like", "ilike", "notLike", "notILike",
-        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive",
-        "similarTo", "notSimilarTo"
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
     };
     return predicates.contains(function_name);
-}
-
-/// Predicates that accept a trailing `ESCAPE 'char'` clause: `LIKE` and `SIMILAR TO`
-/// with their case-insensitive and negated variants.
-static bool isEscapeSupportingPredicate(std::string_view function_name)
-{
-    return function_name == "like" || function_name == "ilike"
-        || function_name == "notLike" || function_name == "notILike"
-        || function_name == "similarTo" || function_name == "notSimilarTo";
 }
 
 /// See the declaration for the ambiguity this resolves. The word is read as a column only when an
@@ -3765,10 +3592,9 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     const auto * prev_operator = layers.back()->previousOperator();
     const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
     /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
-    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` /
-    /// `SIMILAR TO` / `NOT SIMILAR TO` are not tagged `OperatorType::Comparison`. They are valid
-    /// on the left of the array form of `SOME`/`ALL`, but not of the subquery form (lowered to
-    /// `IN`/`NOT IN`).
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
+    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
+    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
     const bool prev_is_array_predicate
         = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
 
@@ -3788,8 +3614,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
         /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
         /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
-        /// `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO`, and `NOT SIMILAR TO`, which only go
-        /// through the lambda form.
+        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
         /// `ANY` is excluded from the array form because `any` is also an aggregate
         /// function, so `expr = any(x)` must keep its function-call meaning.
         const bool any_kw = any_parser.ignore(pos, expected);
@@ -3894,29 +3719,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                     for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
                         lambda_var = "_a" + std::to_string(suffix);
 
-                    /// `LIKE` / `SIMILAR TO` (and their variants) accept a trailing `ESCAPE 'char'`
-                    /// clause after the array quantifier: `expr SIMILAR TO SOME(arr) ESCAPE '#'`.
-                    /// It must be consumed here, before the predicate is lowered into the lambda,
-                    /// because afterwards no `LIKE`-family operator remains on the operator stack
-                    /// for the `ESCAPE` handler in `tryParseOperator` to attach to. The escape
-                    /// literal becomes the third argument of the lambda body, mirroring the direct
-                    /// (non-quantified) form.
-                    ASTPtr escape_ast;
-                    if (isEscapeSupportingPredicate(prev_op.function_name))
-                    {
-                        Expected escape_stub;
-                        if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, escape_stub))
-                        {
-                            auto escape_pos = pos;
-                            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
-                            if (!ParserStringLiteral().parse(pos, escape_ast, expected))
-                                pos = escape_pos;
-                        }
-                    }
-
-                    auto body = escape_ast
-                        ? makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var), escape_ast)
-                        : makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
                     auto lambda = makeASTLambda({lambda_var}, std::move(body));
                     const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
                     function = makeASTFunction(fn_name, std::move(lambda), tmp);
@@ -3982,14 +3785,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     }
     else
     {
-        if (isArrayConstructorWithKeyword(pos))
-        {
-            ++pos;
-            ++pos;
-            layers.push_back(std::make_unique<ArrayLayer>());
-            return Action::OPERAND;
-        }
-
         old_pos = pos;
         if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
         {
@@ -4052,12 +3847,12 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
-    /// 'ESCAPE' can follow a LIKE or SIMILAR TO expression: expr LIKE pattern ESCAPE char
+    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
     if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
     {
         /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
         /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
-        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE`/`SIMILAR TO`/`NOT SIMILAR TO` itself.
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
         constexpr int like_priority = 9;
         while (layers.back()->previousPriority() > like_priority)
         {
@@ -4077,10 +3872,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         Operator top_op;
         bool popped = layers.back()->popOperator(top_op);
 
-        /// LIKE and SIMILAR TO both accept a trailing `ESCAPE 'char'` clause.
-        bool supports_escape = popped && isEscapeSupportingPredicate(top_op.function_name);
+        bool is_like = popped
+            && (top_op.function_name == "like" || top_op.function_name == "ilike"
+                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
 
-        if (supports_escape)
+        if (is_like)
         {
             auto saved_pos = pos;
 
@@ -4306,14 +4102,6 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!type_text)
             return Action::NONE;
 
-        /// Nothing binds tighter than `::`, so its operand is complete: when it is a literal the
-        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `0xFF::UInt128` - it goes
-        /// as text, the way `ParserCastOperator` sends a literal written plainly.
-        ASTPtr argument;
-        if (!layers.back()->popOperand(argument))
-            return Action::NONE;
-        layers.back()->pushOperand(exactCastArgument(argument, std::nullopt, *type_text, pos));
-
         layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
@@ -4325,379 +4113,6 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         ++layers.back()->between_counter;
 
     return Action::OPERAND;
-}
-
-std::map<String, Documentation> ParserExpression::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
-
-    documentation["IN"] =
-    {
-        .description = R"DOCS_MD(
-The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
-
-The left side of the operator is either a single column or a tuple.
-
-Examples:
-
-```sql
-SELECT UserID IN (123, 456) FROM ...
-SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
-```
-
-If the left side is a single column that is in the index, and the right side is a set of constants, the system uses the index for processing the query.
-
-Don't list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section [External data for query processing](/reference/engines/table-engines/special/external-data)), then use a subquery.
-
-The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
-
-For historical compatibility, when the right side is a single `tuple` expression, it can be interpreted either as a set of values or as one tuple value, depending on the left side of the `IN` operator. If the left side is a scalar value, ClickHouse treats the elements of this single right-side `tuple` expression as separate `IN` values:
-
-```sql title="Query"
-SELECT
-    1 IN (tuple(1, 2)) AS one_in_tuple,
-    2 IN (tuple(1, 2)) AS two_in_tuple,
-    3 IN (tuple(1, 2)) AS three_in_tuple;
-```
-
-```text title="Response"
-┌─one_in_tuple─┬─two_in_tuple─┬─three_in_tuple─┐
-│            1 │            1 │              0 │
-└──────────────┴──────────────┴────────────────┘
-```
-
-This behaves like `SELECT 1 IN (1, 2)`. If the left side is also a tuple, the right side is interpreted as a set of tuple values:
-
-```sql title="Query"
-SELECT tuple(1, 2) IN (tuple(1, 2)) AS tuple_in_tuple;
-```
-
-```text title="Response"
-┌─tuple_in_tuple─┐
-│              1 │
-└────────────────┘
-```
-
-This special handling applies only when the right side is a single `tuple` expression. A scalar left side cannot be matched against a right side that contains multiple tuple values:
-
-```sql title="Query"
-SELECT 1 IN (tuple(1, 2), tuple(3, 4));
-```
-
-```text title="Response"
-Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Second argument type Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8)). (ILLEGAL_TYPE_OF_ARGUMENT)
-```
-
-ClickHouse allows types to differ in the left and the right parts of the `IN` subquery.
-In this case, it converts the right side value to the type of the left side, as
-if the [accurateCastOrNull](/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) function were applied to the right side.
-
-This means that the data type becomes [Nullable](/reference/data-types/nullable), and if the conversion
-cannot be performed, it returns [NULL](/reference/settings/formats/input-format#input_format_null_as_default).
-
-**Example**
-
-```sql title="Query"
-SELECT '1' IN (SELECT 1);
-```
-
-```text title="Response"
-┌─in('1', _subquery49)─┐
-│                    1 │
-└──────────────────────┘
-```
-
-If the right side of the operator is the name of a table (for example, `UserID IN users`), this is equivalent to the subquery `UserID IN (SELECT * FROM users)`. Use this when working with external data that is sent along with the query. For example, the query can be sent together with a set of user IDs loaded to the 'users' temporary table, which should be filtered.
-
-If the right side of the operator is a table name that has the Set engine (a prepared data set that is always in RAM), the data set will not be created over again for each query.
-
-The subquery may specify more than one column for filtering tuples.
-
-Example:
-
-```sql title="Query"
-SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
-```
-
-The columns to the left and right of the `IN` operator should have the same type.
-
-The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
-Example:
-
-```sql title="Query"
-SELECT
-    EventDate,
-    avg(UserID IN
-    (
-        SELECT UserID
-        FROM test.hits
-        WHERE EventDate = toDate('2014-03-17')
-    )) AS ratio
-FROM test.hits
-GROUP BY EventDate
-ORDER BY EventDate ASC
-```
-
-```text title="Response"
-┌──EventDate─┬────ratio─┐
-│ 2014-03-17 │        1 │
-│ 2014-03-18 │ 0.807696 │
-│ 2014-03-19 │ 0.755406 │
-│ 2014-03-20 │ 0.723218 │
-│ 2014-03-21 │ 0.697021 │
-│ 2014-03-22 │ 0.647851 │
-│ 2014-03-23 │ 0.648416 │
-└────────────┴──────────┘
-```
-
-For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
-A subquery in the `IN` clause is always run just one time on a single server. There are no dependent subqueries.
-
-## NULL Processing {#null-processing}
-
-During request processing, the `IN` operator assumes that the result of an operation with [NULL](/reference/settings/formats/input-format#input_format_null_as_default) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](/reference/settings/session-settings/other#transform_null_in).
-
-Here is an example with the `t_null` table:
-
-```text
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-│ 2 │    3 │
-└───┴──────┘
-```
-
-Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
-
-```text
-┌─x─┐
-│ 2 │
-└───┘
-```
-
-You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
-
-```sql
-SELECT y IN (NULL, 3)
-FROM t_null
-```
-
-```text
-┌─in(y, tuple(NULL, 3))─┐
-│                     0 │
-│                     1 │
-└───────────────────────┘
-```
-
-## IN in External Memory {#in-in-external-memory}
-
-The set that `IN` builds from a subquery or a table can be written to disk when it is too large to
-keep in memory. Lookups then read the set from disk, which requires additional disk I/O and can make
-queries slower. A list of values, such as `IN (1, 2, 3)`, and a table with the `Set` engine always
-stay in memory.
-
-Two settings control when spilling starts:
-
-- `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
-  (disabled).
-- `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
-  limits, measured at the start of execution. It defaults to `0.5`, half of the available memory, and
-  has no effect when neither limit applies.
-
-When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
-16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
-takes at least 16 MiB:
-
-```sql
-SELECT count()
-FROM numbers(10000000)
-WHERE number IN (SELECT number * 3 FROM numbers(10000000))
-SETTINGS max_bytes_before_external_set = 16777216;
-```
-
-A set is usually built before the rest of the query takes much memory. A set that stays in memory while
-it is built can still be written to disk later, while the query uses it: once query memory, together with
-the memory that the set keeps when it is on disk, such as its Bloom filter, exceeds the threshold, the set is
-written to disk, and most of its memory is released for the rest of the query, such as an aggregation that
-grows after the set is built.
-
-`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
-set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
-other query processing and the spill itself.
-
-A set on disk keeps a Bloom filter of its keys in memory, so that lookups of keys that are not in the set
-can skip reading the disk. `max_bytes_for_external_set_bloom_filter` limits the memory of the filter,
-128 MiB by default.
-
-A set on disk also caches in memory the blocks that its lookups read, so that later lookups of keys in
-the same blocks do not read the disk again. `max_bytes_for_external_set_cache` limits the memory of the
-cache, 128 MiB by default.
-
-A set written to disk while it is built cannot be used by the primary key or data skipping indexes. With
-`GLOBAL IN`, the temporary table that sends the result of the subquery to the remote servers stays in
-memory, while the sets that the remote servers build from it can be written to disk.
-
-When a set is written to disk while it is built, the whole subquery is read before the size limits of the
-set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts each key at
-its width in the set, from 1 to 32 bytes, such as 8 bytes for a `UInt64` and 16 bytes for a `String`, but
-not the memory that lookups use, such as the Bloom filter and the cache. With
-`set_overflow_mode = 'break'`, the set keeps the keys that come first in the order in which it stores
-them on disk, up to the limits, and not the keys of the first rows of the subquery. For keys of numbers,
-dates and short `FixedString` values, alone or in a tuple, these are the smallest keys. Other keys, such
-as `String`, form an arbitrary subset.
-
-## Distributed Subqueries {#distributed-subqueries}
-
-There are two options for `IN` operators with subqueries (similar to `JOIN` operators): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
-
-<Note>
-Remember that the algorithms described below may work differently depending on the [settings](/reference/settings/session-settings) `distributed_product_mode` setting.
-</Note>
-
-When using the regular `IN`, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
-
-When using `GLOBAL IN` / `GLOBAL JOIN`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOIN`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
-
-For `GLOBAL ... JOIN`, which side of the join is calculated as the subquery depends on the join kind: for `LEFT` and `INNER` joins, the right table is calculated; for `RIGHT` joins, the left table is calculated instead, since the right table is the preserved side and should be read from shards.
-
-For a non-distributed query, use the regular `IN` / `JOIN`.
-
-Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
-
-Let's look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
-
-For a query to the **distributed_table**, the query will be sent to all the remote servers and run on them using the **local_table**.
-
-For example, the query
-
-```sql
-SELECT uniq(UserID) FROM distributed_table
-```
-
-will be sent to all remote servers as
-
-```sql
-SELECT uniq(UserID) FROM local_table
-```
-
-and run on each of them in parallel, until it reaches the stage where intermediate results can be combined. Then the intermediate results will be returned to the requestor server and merged on it, and the final result will be sent to the client.
-
-Now let's examine a query with `IN`:
-
-```sql
-SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
-```
-
-- Calculation of the intersection of audiences of two sites.
-
-This query will be sent to all remote servers as
-
-```sql
-SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
-```
-
-In other words, the data set in the `IN` clause will be collected on each server independently, only across the data that is stored locally on each of the servers.
-
-This will work correctly and optimally if you are prepared for this case and have spread data across the cluster servers such that the data for a single UserID resides entirely on a single server. In this case, all the necessary data will be available locally on each server. Otherwise, the result will be inaccurate. We refer to this variation of the query as "local IN".
-
-To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
-
-```sql
-SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
-```
-
-This query will be sent to all remote servers as
-
-```sql
-SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
-```
-
-The subquery will begin running on each remote server. Since the subquery uses a distributed table, the subquery that is on each remote server will be resent to every remote server as:
-
-```sql
-SELECT UserID FROM local_table WHERE CounterID = 34
-```
-
-For example, if you have a cluster of 100 servers, executing the entire query will require 10,000 elementary requests, which is generally considered unacceptable.
-
-In such cases, you should always use `GLOBAL IN` instead of `IN`. Let's look at how it works for the query:
-
-```sql
-SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
-```
-
-The requestor server will run the subquery:
-
-```sql
-SELECT UserID FROM distributed_table WHERE CounterID = 34
-```
-
-and the result will be put in a temporary table in RAM. Then the request will be sent to each remote server as:
-
-```sql
-SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
-```
-
-The temporary table `_data1` will be sent to every remote server with the query (the name of the temporary table is implementation-defined).
-
-This is more optimal than using the normal `IN`. However, keep the following points in mind:
-
-1.  When creating a temporary table, data is not made unique. To reduce the volume of data transmitted over the network, specify DISTINCT in the subquery. (You do not need to do this for a normal `IN`.)
-2.  The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using `GLOBAL IN`.
-3.  When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
-4.  Try to distribute data across servers so that you do not need to use `GLOBAL IN` on a regular basis.
-5.  If you need to use `GLOBAL IN` often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
-
-It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
-
-### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
-
-You can use [`max_rows_in_set`](/reference/settings/session-settings/max-rows#max_rows_in_set) and [`max_bytes_in_set`](/reference/settings/session-settings/max-bytes#max_bytes_in_set) to control how much data is transferred during distributed queries.
-
-This is specially important if the `GLOBAL IN` query returns a large amount of data. Consider the following SQL:
-
-```sql
-SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
-```
-
-If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](/reference/settings/session-settings/other#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
-
-### Distributed Subqueries and max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
-
-When [max_parallel_replicas](#distributed-subqueries-and-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
-
-For example, the following:
-
-```sql
-SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
-SETTINGS max_parallel_replicas=3
-```
-
-is transformed on each server into:
-
-```sql
-SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
-SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
-```
-
-where `M` is between `1` and `3` depending on which replica the local query is executing on.
-
-These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
-
-Therefore adding the [max_parallel_replicas](#distributed-subqueries-and-max_parallel_replicas) setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if `local_table_2` does not have a sampling key, incorrect results will be produced. The same rule applies to `JOIN`.
-
-One workaround if `local_table_2` does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
-
-If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.
-)DOCS_MD",
-        .syntax = R"(
-expr IN (literal [, ...])
-expr IN table | (subquery) | table_function(...)
-expr [GLOBAL] [NOT] IN ...
-)",
-        .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
-    };
-
-    return documentation;
 }
 
 }

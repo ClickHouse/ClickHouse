@@ -325,12 +325,24 @@ public:
         return {};
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if constexpr (has_size_optimization)
-            return "(StringOrFixedString, [const NativeUInt]) -> String";
+        {
+            FunctionArgumentDescriptors mandatory_args{
+                {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
+            FunctionArgumentDescriptors optional_args{
+                {"expected_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Native unsigned integer"}};
+            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        }
         else
-            return "(StringOrFixedString) -> String";
+        {
+            FunctionArgumentDescriptors args{
+                {"arg", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
+            validateFunctionArguments(*this, arguments, args);
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }

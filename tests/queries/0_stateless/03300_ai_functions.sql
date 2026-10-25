@@ -15,9 +15,6 @@
 -- `ai_function_text_default_credentials` / `ai_function_embedding_default_credentials`.
 -- =============================================================================
 
--- The requests below go to unreachable endpoints. One retry keeps each failing row fast.
-SET ai_function_max_retries = 1;
-
 -- Helper table: a String column with zero rows, used to test function behavior
 -- without triggering actual HTTP calls. A non-constant column prevents the
 -- optimizer from constant-folding the AI function during analysis.
@@ -110,12 +107,9 @@ CREATE TABLE _03300_no_api_key_in (x String) ENGINE = Memory;
 INSERT INTO _03300_no_api_key_in VALUES ('hello');
 SET ai_function_throw_on_error = 0;
 SET ai_function_request_timeout_sec = 3;
--- The connection to localhost:1 is refused at once; skip the 1s backoff before the retry.
-SET ai_function_retry_initial_delay_ms = 0;
 SELECT length(aiGenerate(x, map('credentials', 'ai_no_api_key'))) FROM _03300_no_api_key_in;
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
-SET ai_function_retry_initial_delay_ms = 1000;
 DROP TABLE _03300_no_api_key_in;
 
 DROP NAMED COLLECTION ai_no_api_key;
@@ -664,8 +658,6 @@ DROP NAMED COLLECTION ai_anthropic_sim;
 
 SET ai_function_throw_on_error = 0;
 SET ai_function_request_timeout_sec = 3;
--- The connection to localhost:1 is refused at once; skip the 1s backoff before the retry.
-SET ai_function_retry_initial_delay_ms = 0;
 
 SELECT '-- aiEmbed: DEFAULT survives INSERT (no exception)';
 DROP TABLE IF EXISTS _03300_embed_default;
@@ -773,7 +765,6 @@ DROP TABLE _03300_similarity_default;
 
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
-SET ai_function_retry_initial_delay_ms = 1000;
 
 -- =============================================================================
 -- Cleanup

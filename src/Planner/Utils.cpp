@@ -28,12 +28,11 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
@@ -338,8 +337,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        if (context.getClientInfo().distributed_depth > 0)
-            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -596,20 +594,11 @@ NameSet checkAccessRights(
           */
         auto access = query_context->getAccess();
         const auto * alias = storage->as<StorageAlias>();
-        NameSet chain_granted;
-        if (alias)
-        {
-            Names all_columns;
-            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
-            for (const auto & column : storage_snapshot->metadata->getColumns())
-                all_columns.push_back(column.name);
-            chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
-        }
         for (const auto & column : storage_snapshot->metadata->getColumns())
         {
             /// An `Alias` also requires access to the selected column of its target table.
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                && (!alias || chain_granted.contains(column.name)))
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
                 accessible_columns.insert(column.name);
         }
 
@@ -714,19 +703,6 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             filter_expression,
             make_intrusive<ASTLiteral>(Field(UInt8(0))));
     }
-
-    /// The expression is a predicate (or, for `parallel_replicas_custom_key`, a key) over the rows of a single table
-    /// expression, not a projection, so a column matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would
-    /// only ever expand into the argument list of a function such as `ignore(*)`. Reject it deliberately, with a
-    /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope. The
-    /// check descends into SQL UDF bodies, and skips subqueries, e.g. `x IN (SELECT * FROM allowed)`, which resolve
-    /// against their own tables.
-    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
-            "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",
-            matcher->formatForErrorMessage(),
-            filter_expression->formatForErrorMessage());
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
