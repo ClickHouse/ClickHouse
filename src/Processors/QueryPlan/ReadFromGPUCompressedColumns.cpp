@@ -279,9 +279,10 @@ size_t automaticReaders(const SharedState & state)
 {
     /// Where the device expands the blocks, a reader only copies them into pinned memory, and two keep the link busy
     /// from the page cache; but a cold read is bound by the disk, which wants many reads in flight: TPC-H Q7 at SF100
-    /// read `lineitem` cold in 3.4 s with 4 readers and in 3.0 s with 16 or 32.
+    /// read `lineitem` cold in 3.4 s with 4 readers and in 3.0 s with 8. Each reader holds pieces of the parts on the
+    /// device while they are expanded, and 16 of them ran a 24 GB device out of memory.
     if (expandsOnDevice(state.decompression))
-        return std::clamp<size_t>(getNumberOfCPUCoresToUse() / 2, 2, 16);
+        return std::clamp<size_t>(getNumberOfCPUCoresToUse() / 4, 2, 8);
     return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
 }
 
