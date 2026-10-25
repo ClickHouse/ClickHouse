@@ -93,6 +93,16 @@ ALTER TABLE t_memory_add_default_nested ADD COLUMN `n.b` Array(UInt64) DEFAULT a
 SELECT k, n.b FROM t_memory_add_default_nested ORDER BY k;
 DROP TABLE t_memory_add_default_nested;
 
+SELECT 'a default reading a Nested member added without a default';
+DROP TABLE IF EXISTS t_memory_add_default_nested_input;
+CREATE TABLE t_memory_add_default_nested_input (k UInt64, n Nested(a UInt64)) ENGINE = Memory;
+INSERT INTO t_memory_add_default_nested_input VALUES (1, [10, 20]), (2, [30]);
+ALTER TABLE t_memory_add_default_nested_input ADD COLUMN `n.b` Array(UInt64);
+ALTER TABLE t_memory_add_default_nested_input ADD COLUMN c UInt64 DEFAULT length(n.b);
+SELECT k, c FROM t_memory_add_default_nested_input ORDER BY k;
+SELECT k, c, n.b FROM t_memory_add_default_nested_input ORDER BY k;
+DROP TABLE t_memory_add_default_nested_input;
+
 SELECT 'only the rows that passed PREWHERE';
 DROP TABLE IF EXISTS t_memory_add_default_div;
 CREATE TABLE t_memory_add_default_div (k UInt64) ENGINE = Memory;

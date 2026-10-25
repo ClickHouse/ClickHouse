@@ -149,6 +149,8 @@ enum class MemorySourceColumnList : uint8_t
 /// Identifies a list of columns a source reads: the kind of the list and, for `FilterStepInputs`, the index of the step.
 using MemorySourceColumnListId = std::pair<MemorySourceColumnList, size_t>;
 
+static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot);
+
 /// What a source needs to evaluate the default expressions of requested columns that a block written before `ADD COLUMN` lacks.
 struct MemorySourceDefaults
 {
@@ -159,6 +161,8 @@ struct MemorySourceDefaults
     {
         ExpressionActionsPtr actions; /// null: nothing to execute
         NamesAndTypesList stored_inputs_to_read;
+        /// The arrays of the table that are members of the `Nested` of an input; see `findSizesSource`.
+        Names nested_arrays;
     };
 
     mutable std::mutex mutex;
@@ -655,6 +659,7 @@ private:
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input '{}' of the default expressions is not a column of the table", input.name);
                         new_evaluation.stored_inputs_to_read.push_back(std::move(*input_in_storage));
                     }
+                    new_evaluation.nested_arrays = getArraysOfRequestedNested(new_evaluation.stored_inputs_to_read, cache.storage_snapshot);
 
                     is_stateful = dag->hasStatefulFunctions();
                     dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
@@ -676,8 +681,8 @@ private:
 
         const auto & inputs_to_read = evaluation->stored_inputs_to_read;
         Columns inputs = readStoredColumns(src, inputs_to_read, mask, num_rows, read_bytes);
-        /// An input the block lacks has no default of its own: it gets the default value of its type.
-        fillMissingColumns(inputs, num_rows, inputs_to_read, inputs_to_read, {}, nullptr);
+        /// An input the block lacks has no default of its own: it is filled as when it is read.
+        fillColumnsMissingFromBlock(src, inputs_to_read, mask, num_rows, inputs, evaluation->nested_arrays, nullptr);
         auto input_it = inputs_to_read.begin();
         for (const auto & input : inputs)
         {
