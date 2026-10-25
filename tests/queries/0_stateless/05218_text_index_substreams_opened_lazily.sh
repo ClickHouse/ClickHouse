@@ -35,7 +35,8 @@ for i in $(seq 1 $PARTS); do
         FROM numbers(8)"
 done
 
-SETTINGS_COMMON="use_query_condition_cache = 0, use_query_cache = 0, use_text_index_negative_tokens_cache = 1,
+SETTINGS_COMMON="use_query_condition_cache = 0, use_query_cache = 0, use_columns_cache = 0,
+    use_text_index_negative_tokens_cache = 1,
     use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, load_marks_asynchronously = 0,
     enable_parallel_replicas = 0, max_threads = 1"
 
