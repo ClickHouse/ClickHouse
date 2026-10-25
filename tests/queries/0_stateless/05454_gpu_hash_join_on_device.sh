@@ -13,16 +13,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The device takes a join on the estimates the statistics of the tables give, made as the rows are inserted.
+# The device takes a join on the estimates the statistics of the tables give, made as the rows are inserted, and reads
+# wide parts only.
 $CLICKHOUSE_CLIENT --materialize_statistics_on_insert 1 --query "
     CREATE TABLE gpu_dj_fact (k UInt32, d UInt32, v Float64, q Int32, day Date, code FixedString(4), s String)
-    ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic, uniq_v2';
     CREATE TABLE gpu_dj_dim (k UInt32, w Int64, day2 Date, f Float32)
-    ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic, uniq_v2';
     CREATE TABLE gpu_dj_dim2 (d UInt32, n UInt16)
-    ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic, uniq_v2';
     CREATE TABLE gpu_dj_empty (k UInt32, w Int64)
-    ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic, uniq_v2';
 
     INSERT INTO gpu_dj_fact
     SELECT number % 20000, number % 300, number / 8, -number, toDate('2020-01-01') + number % 1000,
