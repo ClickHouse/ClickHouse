@@ -1,0 +1,6 @@
+template, small limit: too big
+template, generous limit: accepted
+submitted SET ROLE, small limit: too big
+submitted SET ROLE, generous limit: accepted
+submitted SET DEFAULT ROLE, small limit: too big
+submitted SHOW GRANTS, small limit: too big

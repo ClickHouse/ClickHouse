@@ -13,8 +13,15 @@
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/IAST.h>
@@ -84,13 +91,45 @@ namespace
         }
         else if (auto * row_policy = node.template as<ASTCreateRowPolicyQuery>())
         {
+            visit_if(row_policy->names);
             for (auto & filter_pair : row_policy->filters)
                 visit_if(filter_pair.second);
+            visit_if(row_policy->roles);
         }
         else if (auto * masking_policy = node.template as<ASTCreateMaskingPolicyQuery>())
         {
             visit_if(masking_policy->update_assignments);
             visit_if(masking_policy->where_condition);
+            visit_if(masking_policy->roles);
+        }
+        else if (auto * set_role = node.template as<ASTSetRoleQuery>())
+        {
+            /// The role sets of `SET ROLE` / `SET DEFAULT ROLE ... TO ...` are kept outside
+            /// `children`, but the tree hash folds them in, e.g. the role names of `SET ROLE a, b, c`.
+            visit_if(set_role->roles);
+            visit_if(set_role->to_users);
+        }
+        else if (auto * grant = node.template as<ASTGrantQuery>())
+        {
+            visit_if(grant->roles);
+            visit_if(grant->grantees);
+        }
+        else if (auto * show_grants = node.template as<ASTShowGrantsQuery>())
+        {
+            visit_if(show_grants->for_roles);
+        }
+        else if (auto * drop_access_entity = node.template as<ASTDropAccessEntityQuery>())
+        {
+            visit_if(drop_access_entity->names);
+            visit_if(drop_access_entity->row_policy_names);
+        }
+        else if (auto * move_access_entity = node.template as<ASTMoveAccessEntityQuery>())
+        {
+            visit_if(move_access_entity->row_policy_names);
+        }
+        else if (auto * show_create_access_entity = node.template as<ASTShowCreateAccessEntityQuery>())
+        {
+            visit_if(show_create_access_entity->row_policy_names);
         }
         else if (auto * apply_transformer = node.template as<ASTColumnsApplyTransformer>())
         {
