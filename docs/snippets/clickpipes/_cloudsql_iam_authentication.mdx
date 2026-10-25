@@ -1,0 +1,90 @@
+export const CloudSQLIAMAuthentication = ({ engine }) => {
+  const engines = {
+    postgres: {
+      docsPath: 'postgres',
+      flag: 'cloudsql.iam_authentication',
+      port: '5432',
+      createUserName: '<name>@<project>.iam',
+      userNameHint: <>For Postgres, the user name is the service account email <strong>without</strong> the <code>.gserviceaccount.com</code> suffix:</>,
+      grantsStep: <>Connect through the admin user and complete the steps in <a href="/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">Creating ClickPipes user and granting permissions</a>, skipping step 1 because the user already exists. Use <code>{'"<name>@<project>.iam"'}</code> in place of <code>clickpipes_user</code>, and keep the double quotes: the name contains special characters.</>,
+      firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
+    },
+    mysql: {
+      docsPath: 'mysql',
+      flag: 'cloudsql_iam_authentication',
+      port: '3306',
+      createUserName: 'SERVICE_ACCOUNT_EMAIL',
+      userNameHint: <>For MySQL, pass the full service account email. Cloud SQL creates the MySQL user from the part of the email <strong>before</strong> the <code>@</code>, and that shorter name (<code>{'<name>'}</code>) is the one you use in the grants below:</>,
+      grantsStep: <>Connect as the root user and complete the steps in <a href="/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">Configure a database user</a>, skipping step 1 because the user already exists. Use <code>{"'<name>'@'%'"}</code> in place of <code>'clickpipes_user'@'host'</code> and <code>'clickpipes_user'@'%'</code>.</>,
+      firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
+      tlsSuffix: <> You can skip the <a href="/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">certificate step</a>.</>,
+    },
+  };
+  const cfg = engines[String(engine).toLowerCase()];
+
+  if (!cfg)
+    throw new Error(`Unsupported Cloud SQL IAM authentication engine: ${engine}`);
+
+  const addBindingSql = (role) => `gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \\
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \\
+  --role="${role}"`;
+
+  const createUserSql = `gcloud sql users create "${cfg.createUserName}" \\
+  --instance=YOUR_INSTANCE \\
+  --type=cloud_iam_service_account`;
+
+  return (
+    <>
+      <p>
+        Instead of a password, ClickPipes can authenticate with the Google service account that belongs to your ClickHouse Cloud service (see <a href="/integrations/clickpipes/security/gcp-workload-identity">GCP workload identity for ClickPipes</a>), using <a href={`https://docs.cloud.google.com/sql/docs/${cfg.docsPath}/iam-authentication#auto-iam-auth`}>automatic IAM database authentication</a>. ClickPipes then connects to your Cloud SQL instance without storing any database credentials.
+      </p>
+
+      <Note>
+        IAM database authentication is in <strong>Beta</strong>.
+      </Note>
+
+      <h3 id="get-the-clickhouse-service-account">Get the ClickHouse service account</h3>
+
+      <p>
+        Follow <a href="/integrations/clickpipes/security/gcp-workload-identity#retrieve-service-account">Retrieve the ClickPipes service account</a> to get the service account of your ClickHouse service from the ClickPipes service context. The email is returned as <code>principal</code> and looks like <code>{'<name>@<project>.iam.gserviceaccount.com'}</code>. The steps below refer to it as <code>SERVICE_ACCOUNT_EMAIL</code>.
+      </p>
+
+      <h3 id="configure-cloud-sql-for-iam">Configure Cloud SQL</h3>
+
+      <ol>
+        <li>
+          <a href="https://console.cloud.google.com/apis/library/sqladmin.googleapis.com">Enable the Cloud SQL Admin API</a> in the project that hosts your instance. ClickPipes uses it to look up the instance and to get a short-lived client certificate.
+        </li>
+        <li>
+          Turn on the <code>{cfg.flag}</code> flag on your instance. Changing this flag restarts the instance.
+        </li>
+        <li>
+          <a href="/integrations/clickpipes/security/gcp-workload-identity#grant-source-access">Grant access to the source</a>: give the service account the <code>roles/cloudsql.client</code> and <code>roles/cloudsql.instanceUser</code> IAM roles on the project that hosts your instance. Create the grants before you create the ClickPipe.
+
+          <CodeBlock language="bash">{`${addBindingSql('roles/cloudsql.client')}
+
+${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
+        </li>
+        <li>
+          Create a database user for the service account. {cfg.userNameHint}
+
+          <CodeBlock language="bash">{createUserSql}</CodeBlock>
+        </li>
+        <li>{cfg.grantsStep}</li>
+      </ol>
+
+      <h3 id="create-the-clickpipe-with-iam">Create the ClickPipe</h3>
+
+      <p>
+        When you create the ClickPipe, select Google Cloud service account (IAM) authentication. You don't need to enter a username or a password.
+      </p>
+
+      <ul>
+        <li>Set <strong>Host</strong> to the instance connection name, in the form <code>PROJECT:REGION:INSTANCE</code>. An IP address is not accepted.</li>
+        <li>ClickPipes connects to the instance's server-side proxy port, <strong>3307</strong>, and not to port {cfg.port}. Make sure this port is reachable. For a public IP, <a href={cfg.firewallAnchor}>add the ClickPipes IPs to your authorized networks</a>.</li>
+        <li>ClickPipes uses Private Service Connect when your service has a <a href="/integrations/clickpipes/networking/gcp-psc">reverse private endpoint</a> that resolves the instance's PSC DNS name. Otherwise, it connects to the instance's public IP, or to its private IP if the instance has no public one.</li>
+        <li>TLS settings such as the root CA don't apply. The connection is encrypted and the server identity is verified automatically.{cfg.tlsSuffix}</li>
+      </ul>
+    </>
+  );
+};

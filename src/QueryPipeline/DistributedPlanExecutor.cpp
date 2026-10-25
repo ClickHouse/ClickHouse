@@ -10,6 +10,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -920,7 +921,8 @@ static void addTaskSpanAttributes(
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
+    bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback,
+    std::function<void()> on_failure)
 {
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
@@ -1087,6 +1089,18 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     catch (...)
     {
         logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
+        if (on_failure)
+        {
+            /// The task's own exception is rethrown below, so an error of the callback is only logged.
+            try
+            {
+                on_failure();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(logger, "Cannot report the task failure early");
+            }
+        }
         throw;
     }
 }
@@ -1136,6 +1150,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
         client_info.initial_query_id = logicalQueryId(client_info);
         client_info.current_query_id = toString(unique_query_id) + "::" + task.task.task_id;
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.distributed_depth += 1;
         task_context->setClientInfo(client_info);
     }
 
@@ -1176,7 +1191,7 @@ public:
         /// InMemoryExchange::getChunk never returns. The exchanges are not removed here: the result
         /// reader still drains final_result after the driver finishes; removal happens when the query
         /// pipeline is destroyed (see makeInMemoryExchangesCleaner).
-        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), cancellation->getFailure());
+        cancelDistributedQueryInMemoryExchanges(unique_query_id, cancellation->getFailure());
 
         joinAllThreads();
         stage_tasks.clear();
@@ -1229,22 +1244,21 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        VectorWithMemoryTracking<std::shared_future<void>> started_tasks;
-        VectorWithMemoryTracking<std::thread> started_threads;
-        started_tasks.reserve(stage.tasks.size());
-        started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+
+        /// Owned by the members before the first thread starts, so `cleanup` joins it if anything below throws.
+        auto & started_tasks = stage_tasks[stage_name];
+        auto & started_threads = stage_threads[stage_name];
+        started_tasks.reserve(stage.tasks.size());
+        started_threads.reserve(stage.tasks.size());
 
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
         }
-
-        stage_tasks[stage_name] = std::move(started_tasks);
-        stage_threads[stage_name] = std::move(started_threads);
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
@@ -1613,7 +1627,7 @@ protected:
                     /// Its failure can be the root cause of the teardown: the initiator often sees an
                     /// effect first, e.g. the result reader's socket closing.
                     if (terminal_status->status != "Finished" && terminal_status->status != "Unknown task")
-                        recordTaskFailure(task, *terminal_status);
+                        recordTaskFailureOnce(task, *terminal_status);
                     tryForgetTask(task);
                 }
                 else
@@ -1644,13 +1658,22 @@ protected:
 
     private:
         /// Record a task's failed status under the worker's error code, so the client sees it and the
-        /// record can rank it. A status other than `Failed` carries no code and gets the generic remote
-        /// error code, which ranks below a known root cause.
-        void recordTaskFailure(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
+        /// record can rank it. A status other than `Failed` or `Failing` carries no code and gets the
+        /// generic remote error code, which ranks below a known root cause. A failing task reports its
+        /// failure on every poll until it ends, but it is recorded once.
+        void recordTaskFailureOnce(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
         {
+            {
+                std::lock_guard g(lock);
+                if (tasks_with_recorded_failure.contains(task.task_id))
+                    return;
+            }
             const int code = task_status.error_code != 0 ? task_status.error_code : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
             recordFailure(std::make_exception_ptr(Exception(code, "Task {} did not finish successfully (status: {}): {}",
                 task.task_id, task_status.status, task_status.error_message)));
+            /// Mark only after the record, otherwise a concurrent poll could skip the task before its failure is recorded.
+            std::lock_guard g(lock);
+            tasks_with_recorded_failure.insert(task.task_id);
         }
 
         /// Log the exception, record it as the query's failure, and request cancellation. The status
@@ -1748,17 +1771,16 @@ protected:
             if (progress_callback)
                 progress_callback(task_status.progress);
 
-            if (task_status.status == "Running")
+            const bool finished = task_status.status == "Finished";
+            if (!finished && task_status.status != "Running")
+                recordTaskFailureOnce(task, task_status);
+
+            if (!isTerminalTaskStatus(task_status.status))
             {
                 /// Add the task back to the end of the queue
                 addTaskToCheckQueue(stage_name, task.task_id);
                 return;
             }
-
-            /// Task reached a terminal state on the worker.
-            const bool finished = task_status.status == "Finished";
-            if (!finished)
-                recordTaskFailure(task, task_status);
 
             /// Release worker-side bookkeeping for it (TaskState/progress/future). Best-effort. Only
             /// after recording the failure: a forgotten task answers the teardown's poll with
@@ -1781,7 +1803,13 @@ protected:
             }
         }
 
-        /// Polls the worker until the task leaves the "Running" state or a bounded time budget elapses.
+        /// The task has ended on the worker. A `Failing` task has not: it still frees its resources.
+        static bool isTerminalTaskStatus(const String & status)
+        {
+            return status != "Running" && status != "Failing";
+        }
+
+        /// Polls the worker until the task reaches a terminal state or a bounded time budget elapses.
         /// Returns the terminal status when the task is known to be terminal (or already gone from the
         /// worker), nothing on timeout or a status-request error.
         std::optional<DistributedQueryTaskStatus> waitForTaskTerminal(const RunningTaskInfo & task) noexcept
@@ -1798,8 +1826,11 @@ protected:
                     /// through the cleanup polls.
                     handleWorkerLogs(task, task_status);
 
-                    if (task_status.status != "Running")
+                    if (isTerminalTaskStatus(task_status.status))
                         return task_status;
+                    /// Freeing the resources of a failing task can take longer than this wait.
+                    if (task_status.status == "Failing")
+                        recordTaskFailureOnce(task, task_status);
                 }
                 catch (...)
                 {
@@ -1955,6 +1986,8 @@ protected:
         UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
         /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
         bool cancel_started TSA_GUARDED_BY(lock) = false;
+        /// Tasks whose failure is recorded, see `recordTaskFailureOnce`.
+        UnorderedSetWithMemoryTracking<String> tasks_with_recorded_failure TSA_GUARDED_BY(lock);
         std::atomic<Int64> in_flight_request_count = 0;
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
@@ -2311,6 +2344,8 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
 
 void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure)
 {
+    /// Must not fail on the memory limit: it unblocks the task threads that are joined next.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), failure);
 }
 

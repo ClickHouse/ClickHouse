@@ -116,7 +116,7 @@ run_for_engine() {
     run_selects_thread "$i" & pids+=("$!")
   done
 
-  while true; do
+  while clickhouse_test_time_left; do
     local rc=0
     wait -n || rc=$?
     (( rc == 127 )) && echo "OK for '$1'" && break

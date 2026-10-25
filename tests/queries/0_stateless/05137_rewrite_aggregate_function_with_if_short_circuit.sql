@@ -5,7 +5,7 @@
 -- expected value below requires short-circuit evaluation to be on.
 -- optimize_if_chain_to_multiif is pinned off: it flattens the nested `if` below into `multiIf` before
 -- this pass runs, and the pass matches only `if`, so the nested witness would stop exercising it.
-SET enable_analyzer = 1, optimize_rewrite_aggregate_function_with_if = 1,
+SET optimize_rewrite_aggregate_function_with_if = 1,
     optimize_rewrite_sum_if_to_count_if = 0, short_circuit_function_evaluation = 'enable',
     optimize_if_chain_to_multiif = 0;
 

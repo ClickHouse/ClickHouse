@@ -143,7 +143,6 @@ def cleanup_after_test():
         node.query("DROP TABLE IF EXISTS original SYNC")
         node.query("DROP TABLE IF EXISTS mytable SYNC")
         node.query("DROP TABLE IF EXISTS mysamples SYNC")
-        node.query("DROP TABLE IF EXISTS mydata SYNC")
         node.query("DROP TABLE IF EXISTS mytags SYNC")
         node.query("DROP TABLE IF EXISTS mymetrics SYNC")
 
@@ -194,7 +193,6 @@ def test_64bit_id():
 
 # Checks that a custom hash function can be used to generate time series identifiers.
 def test_custom_id_algorithm():
-    # Case 1: customize via `TAGS INNER COLUMNS (id ... DEFAULT ...)`.
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "TAGS INNER COLUMNS (id FixedString(16) DEFAULT murmurHash3_128(metric_name, tags))"
@@ -209,24 +207,6 @@ def test_custom_id_algorithm():
         f"SELECT type, default_expression FROM system.columns "
         f"WHERE database = currentDatabase() AND table = '{tags_table}' AND name = 'id'"
     ) == TSV([["FixedString(16)", "murmurHash3_128(metric_name, tags)"]])
-
-    drop_prometheus_table()
-
-    # Case 2: customize via the `id_generator` setting.
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SETTINGS id_generator = 'murmurHash3_128(metric_name, tags)' "
-        "TAGS INNER COLUMNS (id FixedString(16))"
-    )
-    check()
-    create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"\bid_generator\s*=.*murmurHash3_128\(metric_name, tags\)", create_query)
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`id` FixedString\(16\)", create_query)
-    tags_table = node.query("SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1").strip()
-    assert node.query(
-        f"SELECT type, default_expression FROM system.columns "
-        f"WHERE database = currentDatabase() AND table = '{tags_table}' AND name = 'id'"
-    ) == TSV([["FixedString(16)", ""]])
 
 
 # Checks that an identifier type which the tags collector has no typed map for works too:
@@ -245,23 +225,9 @@ def test_generic_id():
 
 # Checks that a multi-component identifier `Tuple(F, S)` can be used.
 def test_multi_component_id():
-    # Case 1: the identifier expression is specified as a DEFAULT expression of the `id` column.
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "TAGS INNER COLUMNS (id Tuple(UInt64, UInt64) DEFAULT tuple(xxHash64(metric_name), xxHash64(tags)))"
-    )
-    check()
-
-    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
-    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
-
-    drop_prometheus_table()
-
-    # Case 2: the identifier expression is specified in the `id_generator` setting.
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SETTINGS id_generator = 'tuple(xxHash64(metric_name), xxHash64(tags))' "
-        "TAGS INNER COLUMNS (id Tuple(UInt64, UInt64))"
     )
     check()
 
@@ -389,9 +355,9 @@ def test_index_granularity():
     )
 
 
-# Checks that a TimeSeries table can be used to access pre-existing external tables
-# instead of its own inner tables.
-def test_external_tables():
+# Checks that a TimeSeries table of version 9, the last version supporting external target tables,
+# can be used to access pre-existing external tables instead of its own inner tables.
+def test_external_tables_version_9():
     node.query(
         "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
@@ -413,14 +379,13 @@ def test_external_tables():
         "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS version = 9 "
         "SAMPLES mysamples TAGS mytags METRICS mymetrics"
     )
     check()
 
 
-# Checks that the `DATA` keyword works as an alias for `SAMPLES`
-# both with inline engine definitions and with external tables.
+# Checks that the `DATA` keyword works as an alias for `SAMPLES`.
 def test_data_keyword():
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
@@ -430,47 +395,21 @@ def test_data_keyword():
     )
     check()
 
-    drop_prometheus_table()
-
-    node.query(
-        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64) "
-        "ENGINE=MergeTree ORDER BY (id, timestamp)"
-    )
-    node.query(
-        "CREATE TABLE mytags ("
-        "id UUID, "
-        "metric_name LowCardinality(String), "
-        "tags Map(LowCardinality(String), String), "
-        "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "SETTINGS allow_dimensions_outside_sorting_key = 1"
-    )
-    node.query(
-        "CREATE TABLE mymetrics (metric_family String, type String, unit String, help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
-    )
-    node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "DATA mydata TAGS mytags METRICS mymetrics"
-    )
-    check()
-
     assert node.query("DESCRIBE timeSeriesData(prometheus)") == node.query("DESCRIBE timeSeriesSamples(prometheus)")
 
 
-# Checks that ALTER TABLE works and can modify the `id_generator` setting,
-# and rejects `filter_by_min_time_and_max_time`, which applies to tables of version 7 or earlier only.
+# Checks that ALTER TABLE works and can modify the settings of the deduplication caches,
+# and rejects the settings which apply to tables of earlier versions only.
 def test_alter_modify_settings():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
-    # `id_generator` only affects INSERT-time id computation, so it can be altered.
-    node.query("ALTER TABLE prometheus MODIFY SETTING id_generator = 'sipHash64(metric_name, tags)'")
+    # The settings of the deduplication caches don't affect the stored data, so they can be altered.
+    node.query("ALTER TABLE prometheus MODIFY SETTING tags_deduplication_cache_expiration_seconds = 600")
     assert re.search(
-        r"\bid_generator\s*=.*sipHash64\(metric_name, tags\)",
+        r"\btags_deduplication_cache_expiration_seconds\s*=\s*600\b",
         node.query("SHOW CREATE TABLE prometheus"),
     )
-    node.query("ALTER TABLE prometheus RESET SETTING id_generator")
+    node.query("ALTER TABLE prometheus RESET SETTING tags_deduplication_cache_expiration_seconds")
 
     # `filter_by_min_time_and_max_time` applies to tables of version 7 or earlier only.
     assert "INVALID_SETTING_VALUE" in node.query_and_get_error(

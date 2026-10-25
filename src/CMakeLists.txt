@@ -114,6 +114,12 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_GPU)
+    add_subdirectory (GPU)
+
+    add_headers_and_sources(dbms GPU)
+endif ()
+
 if (ENABLE_EXAMPLES)
     add_subdirectory (Examples)
 endif()
@@ -212,6 +218,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
 add_headers_and_sources(dbms Storages/BigQuery)
+add_headers_and_sources(dbms Storages/Elasticsearch)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -474,14 +481,6 @@ set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES 
 set_source_files_properties(Server/KeeperJemallocHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
 
-# Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
-# Add OBJECT_DEPENDS only if the submodule is checked out.
-set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
-if (EXISTS "${_nlp_charset}")
-    set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
-        "${_nlp_charset}")
-endif()
-
 set_source_files_properties(Storages/System/attachInformationSchemaTables.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schemata.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/tables.sql;\
@@ -492,7 +491,11 @@ ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_const
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
-${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/user_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schema_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/table_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/column_privileges.sql")
 
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
@@ -524,6 +527,7 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_streaming Processors/Streaming)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_fragments Processors/QueryPlan/Fragments)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 add_object_library(clickhouse_processors_queryplan_profiling_execution Processors/QueryPlan/Profiling/Execution)
 add_object_library(clickhouse_processors_queryplan_profiling_metrics Processors/QueryPlan/Profiling/Metrics)
@@ -591,6 +595,17 @@ endif()
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+
+if (ENABLE_GPU)
+    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf ch_gpu::cudart ch_contrib::nvcomp)
+
+    # The streams are named as `rmm::cuda_stream_view`, which holds a `cudaStream_t` and nothing
+    # of either standard library. Only the headers are taken: linking the island's targets would
+    # bring their libstdc++ build with them.
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE
+        "$<TARGET_PROPERTY:_cccl,INTERFACE_INCLUDE_DIRECTORIES>"
+        "$<TARGET_PROPERTY:_rmm,INTERFACE_INCLUDE_DIRECTORIES>")
+endif ()
 target_link_libraries (dbms PRIVATE ch_contrib::sql_console_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
@@ -1090,6 +1105,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::arrow_ipc_metadata)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::arrow_ipc_metadata)
     endif()
 
     if (TARGET ch_contrib::silk_fibers)

@@ -21,7 +21,7 @@ SELECT arraySort(extractAll(arrayFirst(line -> line LIKE 'SETTINGS %', splitByCh
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
 
 SELECT '-- `MODIFY SETTING` adds the altered setting and keeps the other ones';
-ALTER TABLE ts MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))';
+ALTER TABLE ts MODIFY SETTING tags_deduplication_cache_expiration_seconds = 600;
 SELECT arraySort(extractAll(arrayFirst(line -> line LIKE 'SETTINGS %', splitByChar('\n', formatQuery(create_table_query))), '([a-z_]+) = '))
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
 
