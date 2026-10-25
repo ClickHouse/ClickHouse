@@ -6,6 +6,7 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <GPU/DeviceKeySet.h>
 #include <GPU/GPUDeviceColumns.h>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUTypes.cuh>
@@ -13,7 +14,9 @@
 #include <Common/Logger.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace DB
@@ -51,10 +54,15 @@ class CudfHashJoin;
   * joins and the reads and aggregation around it keep their rows on the device, and only what the steps on the CPU take
   * comes back.
   */
-class GPUHashJoin final : public IJoin
+class GPUHashJoin final : public IJoin, public GPU::IDeviceKeySetProvider
 {
 public:
     static bool isSupported(const TableJoin & table_join, const Block & left_sample_block, const Block & right_sample_block);
+
+    /// Whether a supported join of these would keep its columns on the device, see above: `gpu_hash_join_on_device` is
+    /// set in the query, and every column of the left table and of the result's share of the right one is of a fixed
+    /// width the device holds.
+    static bool runsOnDevice(const TableJoin & table_join, const Block & left_sample_block, const Block & right_sample_block);
 
     GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_);
 
@@ -100,12 +108,21 @@ public:
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block &, const Block &, UInt64) const override { return nullptr; }
 
+    /// The key of the left table, by which a read of it may filter its rows with the right table's keys, see `DeviceKeySet`.
+    const String & leftKeyName() const { return key_name_left; }
+    GPU::GPUElementType keyElementType() const override { return key_type; }
+    /// The right table's keys, once the build ended: a read of the left table waits here for them.
+    std::shared_ptr<const GPU::DeviceKeySet> waitForKeySet(const std::function<bool()> & stop) const override;
+
 private:
     class Result;
     class DeviceResult;
 
     /// Builds the hash table over the keys sent so far, once.
     void finishBuild();
+
+    /// After the hash table: the set of the keys, and the build marked as ended for the probes and the waits on it.
+    void markBuilt(size_t rows);
 
     /// Of a join on the device: the keys and the columns of the result of the right table's chunks, put together on the
     /// device in the order of the chunks.
@@ -163,6 +180,10 @@ private:
 
     GPU::DeviceBuffer build_keys;
     std::unique_ptr<GPU::CudfHashJoin> hash_join;
+    /// The build keys as a set, made along with the hash table, for the reads of the left table that filter by them.
+    std::shared_ptr<const GPU::DeviceKeySet> key_set;
+    mutable std::mutex built_mutex;
+    mutable std::condition_variable built_changed;
 
     std::atomic<size_t> build_rows{0};
     std::atomic<size_t> build_bytes{0};

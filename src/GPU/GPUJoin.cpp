@@ -29,6 +29,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <chrono>
 #include <utility>
 
 namespace CurrentMetrics
@@ -131,6 +132,16 @@ bool GPUHashJoin::isSupported(const TableJoin & table_join, const Block & left_s
     return left_key_type->equals(*right_key_type) && integerKeyTypeOf(*left_key_type).has_value();
 }
 
+bool GPUHashJoin::runsOnDevice(const TableJoin & table_join, const Block & left_sample_block, const Block & right_sample_block)
+{
+    if (!joinOnDeviceRequested())
+        return false;
+    Block payload;
+    rightTableKeysOf(table_join, right_sample_block, payload);
+    JoinCommon::createMissedColumns(payload);
+    return allOnDevice(left_sample_block) && allOnDevice(payload);
+}
+
 GPUHashJoin::GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_)
     : table_join(std::move(table_join_))
     , left_sample_block(*left_sample_block_)
@@ -153,7 +164,7 @@ GPUHashJoin::GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader le
 
     JoinCommon::createMissedColumns(build_payload_header);
 
-    on_device = joinOnDeviceRequested() && allOnDevice(left_sample_block) && allOnDevice(build_payload_header);
+    on_device = runsOnDevice(*table_join, left_sample_block, right_sample_block);
     if (on_device)
     {
         for (const auto & column : build_payload_header)
@@ -353,7 +364,7 @@ void GPUHashJoin::finishBuild()
         const UInt64 moved_us = watch.elapsedMicroseconds();
         hash_join = std::make_unique<GPU::CudfHashJoin>(
             key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
-        built.store(true, std::memory_order_release);
+        markBuilt(rows);
         LOG_DEBUG(
             log,
             "Built the hash table of {} rows of the right table, {} bytes, on the GPU with its columns: {} us to put them "
@@ -418,7 +429,7 @@ void GPUHashJoin::finishBuild()
     const UInt64 moved_us = watch.elapsedMicroseconds();
     hash_join = std::make_unique<GPU::CudfHashJoin>(
         key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
-    built.store(true, std::memory_order_release);
+    markBuilt(rows);
     LOG_DEBUG(
         getLogger("GPUHashJoin"),
         "Built the hash table of {} rows of the right table, {} bytes, on the GPU: {} us to take the columns, {} us to build",
@@ -589,6 +600,32 @@ JoinResultPtr GPUHashJoin::joinDeviceChunk(const Chunk & chunk, const Block & he
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A chunk of the left table on the device for a GPU hash join of keys on the GPU alone");
     probe_rows_total.fetch_add(chunk.getNumRows(), std::memory_order_relaxed);
     return probeOnDevice(device.get(), {}, header, chunk.getNumRows());
+}
+
+void GPUHashJoin::markBuilt(size_t rows)
+{
+    auto set = std::make_shared<const GPU::DeviceKeySet>(
+        GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows}, GPU::GPUResources::get().compute);
+    {
+        std::lock_guard lock(built_mutex);
+        key_set = std::move(set);
+        built.store(true, std::memory_order_release);
+    }
+    built_changed.notify_all();
+}
+
+std::shared_ptr<const GPU::DeviceKeySet> GPUHashJoin::waitForKeySet(const std::function<bool()> & stop) const
+{
+    /// Woken by the build's end, and now and then to ask whether to go on waiting: whoever waits is stopped by its own
+    /// query's end or error, which knows nothing of this join.
+    std::unique_lock lock(built_mutex);
+    while (!built.load(std::memory_order_acquire))
+    {
+        if (stop())
+            return nullptr;
+        built_changed.wait_for(lock, std::chrono::milliseconds(100));
+    }
+    return key_set;
 }
 
 void GPUHashJoin::onBuildPhaseFinish()

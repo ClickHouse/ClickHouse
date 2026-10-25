@@ -7,6 +7,7 @@ add_library (clickhouse_gpu_cudf STATIC
     BitUnpack.cu
     CudfHashJoin.cu
     GPUGather.cu
+    DeviceKeySet.cu
 )
 
 gpu_island_target (clickhouse_gpu_cudf)
@@ -20,6 +21,7 @@ target_include_directories (clickhouse_gpu_cudf SYSTEM PRIVATE
 
 target_link_libraries (clickhouse_gpu_cudf PRIVATE
     ch_contrib::cudf
+    ch_contrib::cuco
     ch_contrib::rmm
     ch_gpu::cudart
 )

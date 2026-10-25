@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/DeviceKeySet.h>
 #include <GPU/GPUTypes.cuh>
 #include "config.h"
 
@@ -85,6 +86,14 @@ public:
         std::vector<NameAndTypePair> columns;
         /// The predicate as the plan names it.
         String description;
+        /// The runtime filters of the predicate, see `CompiledGPUFilter::Membership`: whether column `key_column` of
+        /// `columns` is among the keys that `keys` comes to have, which is the join the rows go to.
+        struct Membership
+        {
+            uint32_t key_column;
+            std::shared_ptr<const GPU::IDeviceKeySetProvider> keys;
+        };
+        std::vector<Membership> memberships;
     };
 
     ReadFromGPUCompressedColumns(

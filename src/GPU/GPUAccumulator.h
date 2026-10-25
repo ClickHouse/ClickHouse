@@ -9,6 +9,7 @@
 #include <GPU/GPUUploadPipe.h>
 #include <GPU/CudfGroupBy.cuh>
 #include <GPU/CudfReduction.cuh>
+#include <GPU/DeviceKeySet.h>
 #include <GPU/GPUDeviceColumns.h>
 
 #include <Columns/IColumn.h>
@@ -139,6 +140,15 @@ private:
     size_t bytes = 0;
 };
 
+/// A runtime filter of the `WHERE` of a `GroupByGPUAccumulator`, see `CompiledGPUFilter::Membership`: whether column
+/// `key_column` of the filter's columns is among the keys `keys` comes to have, as filter column
+/// `filter columns + i` of membership `i`, a `UInt8` the device computes before it evaluates the `WHERE`.
+struct MembershipTest
+{
+    uint32_t key_column;
+    std::shared_ptr<const IDeviceKeySetProvider> keys;
+};
+
 /// A `GROUP BY` on the device. Over compressed blocks, two threads of its own work for it: the device thread takes the
 /// pieces the readers send, expands them and puts the rows of each reader together column by column, and hands the rows
 /// that are there in every column over to the grouping thread, which groups them through the `CudfGroupBy`. So the
@@ -163,7 +173,8 @@ public:
         std::vector<GPUDerivedValue> derived_ = {},
         std::function<void(MutableColumns)> on_collected_ = {},
         std::vector<std::optional<uint32_t>> filter_aliases_ = {},
-        std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device_ = {});
+        std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device_ = {},
+        std::vector<MembershipTest> memberships_ = {});
 
     ~GroupByGPUAccumulator();
 
@@ -401,6 +412,11 @@ private:
     /// Of each column of the filter that is a key or a value as well: that column, among the keys and then the
     /// values, whose bytes it reads instead of bytes of its own.
     const std::vector<std::optional<uint32_t>> filter_aliases;
+    /// The runtime filters of `filter`, and their sets of keys once they are there, see `MembershipTest`.
+    const std::vector<MembershipTest> memberships;
+    std::vector<std::shared_ptr<const DeviceKeySet>> key_sets;
+    /// Set by an error or the end, so that the grouping thread stops waiting for a set of keys that is not coming.
+    std::atomic<bool> stop_waiting{false};
     const size_t batch_rows;
     /// The rows a reader gathers on the device before they are grouped: a share of `batch_rows`, so that all the readers
     /// together hold about one batch however many there are.

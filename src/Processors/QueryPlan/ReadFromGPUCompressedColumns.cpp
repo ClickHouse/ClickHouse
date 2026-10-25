@@ -176,6 +176,17 @@ const std::vector<NameAndTypePair> & filterColumnsOf(const SharedState & state)
     return state.filter ? state.filter->columns : none;
 }
 
+std::vector<GPU::MembershipTest> membershipsOf(const SharedState & state)
+{
+    std::vector<GPU::MembershipTest> tests;
+    if (state.filter)
+    {
+        for (const auto & membership : state.filter->memberships)
+            tests.push_back({.key_column = membership.key_column, .keys = membership.keys});
+    }
+    return tests;
+}
+
 DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
 {
     DataTypes types;
@@ -543,7 +554,8 @@ public:
               state->filter_aliases,
               state->collect ? std::function<void(std::shared_ptr<const GPU::GPUDeviceColumns>)>(
                   [this](std::shared_ptr<const GPU::GPUDeviceColumns> columns) { pushCollected(std::move(columns)); })
-                             : std::function<void(std::shared_ptr<const GPU::GPUDeviceColumns>)>{})
+                             : std::function<void(std::shared_ptr<const GPU::GPUDeviceColumns>)>{},
+              membershipsOf(*state))
     {
     }
 

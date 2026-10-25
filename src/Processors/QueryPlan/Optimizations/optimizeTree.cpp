@@ -611,7 +611,14 @@ void optimizeTreeSecondPass(
 
                 optimizeAggregationFromGPUCompressedColumns(*frame.node, nodes, optimization_settings);
                 /// A read the aggregation above did not take.
-                optimizeReadFilteredOnGPU(*frame.node, nodes, optimization_settings);
+                if (typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()))
+                {
+                    std::vector<const QueryPlan::Node *> parents;
+                    parents.reserve(stack.size());
+                    for (size_t i = stack.size() - 1; i-- > 0;)
+                        parents.push_back(stack[i].node);
+                    optimizeReadFilteredOnGPU(*frame.node, nodes, optimization_settings, parents);
+                }
 
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.

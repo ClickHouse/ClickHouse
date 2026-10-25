@@ -1,5 +1,7 @@
 #include <GPU/GPUFilterCompiler.h>
 
+#include <DataTypes/DataTypesNumber.h>
+
 #if USE_GPU
 
 #include <GPU/GPUTypeMapping.h>
@@ -78,6 +80,8 @@ struct Register
     DataTypePtr type;
     /// A `String` or a `Decimal` constant, loaded only once a comparison says what it is compared as.
     std::optional<Field> pending;
+    /// Of a column loaded as it is, which column of the program.
+    std::optional<uint32_t> column;
 };
 
 GPUFilterConstant constantOf(GPUFilterValueKind kind, const Field & value)
@@ -97,10 +101,21 @@ GPUFilterConstant constantOf(GPUFilterValueKind kind, const Field & value)
 class Compiler
 {
 public:
-    explicit Compiler(String & refusal_) : refusal(refusal_) { }
+    explicit Compiler(String & refusal_, bool with_memberships_ = false) : refusal(refusal_), with_memberships(with_memberships_) { }
 
     std::optional<CompiledGPUFilter> compile(const ExpressionActions & actions)
     {
+        /// The columns of a membership come after every column of the predicate, so these are all known first.
+        if (with_memberships)
+        {
+            for (const auto & column : actions.getRequiredColumnsWithTypes())
+            {
+                if (result.columns.size() >= max_filter_columns)
+                    return refuse("a predicate over more columns than the device takes");
+                result.columns.push_back(column);
+            }
+        }
+
         for (const auto & action : actions.getActions())
         {
             if (action.result_position >= max_filter_registers)
@@ -116,7 +131,7 @@ public:
 
         result.program.result = static_cast<uint32_t>(results.front());
         result.program.num_registers = registers_used;
-        result.program.num_columns = static_cast<uint32_t>(result.columns.size());
+        result.program.num_columns = static_cast<uint32_t>(result.columns.size() + result.memberships.size());
         return std::move(result);
     }
 
@@ -182,7 +197,8 @@ private:
             result.columns.push_back(*std::next(required.begin(), result.columns.size()));
         }
 
-        registers[action.result_position] = {.kind = kindOf(*element_type), .constant = {}, .type = action.node->result_type, .pending = {}};
+        registers[action.result_position]
+            = {.kind = kindOf(*element_type), .constant = {}, .type = action.node->result_type, .pending = {}, .column = static_cast<uint32_t>(required_index)};
         return emit(GPUFilterOp::LoadColumn, action.result_position, required_index);
     }
 
@@ -198,7 +214,7 @@ private:
         /// `Decimal`, which a comparison with a column of floats converts.
         if ((isString(node.result_type) && value.getType() == Field::Types::String) || (isDecimal(node.result_type) && Field::isDecimal(value.getType())))
         {
-            registers[action.result_position] = {.kind = GPUFilterValueKind::Unsigned, .constant = {}, .type = {}, .pending = value};
+            registers[action.result_position] = {.kind = GPUFilterValueKind::Unsigned, .constant = {}, .type = {}, .pending = value, .column = {}};
             return true;
         }
 
@@ -211,7 +227,7 @@ private:
         if (!index)
             return false;
 
-        registers[action.result_position] = {.kind = constant.kind, .constant = *index, .type = {}, .pending = {}};
+        registers[action.result_position] = {.kind = constant.kind, .constant = *index, .type = {}, .pending = {}, .column = {}};
         return emit(GPUFilterOp::LoadConstant, action.result_position, *index);
     }
 
@@ -256,6 +272,26 @@ private:
             return emit(*comparison, action.result_position, *left, *right);
         }
 
+        if (name == "__applyFilter")
+        {
+            if (!with_memberships)
+                return refused("a runtime filter, which there is no set of keys for here");
+            if (arguments.size() != 2)
+                return refused("a runtime filter of other than two arguments");
+            const Register & id = registers[arguments[0].pos];
+            const Register & key = registers[arguments[1].pos];
+            if (!id.pending || id.pending->getType() != Field::Types::String)
+                return refused("a runtime filter whose id is not a string constant");
+            if (!key.column)
+                return refused("a runtime filter over other than a column as it is");
+            const size_t column = result.columns.size() + result.memberships.size();
+            if (column >= max_filter_columns)
+                return refused("a predicate over more columns than the device takes");
+            result.memberships.push_back({.filter_id = id.pending->safeGet<String>(), .key_column = *key.column});
+            registers[action.result_position] = {.kind = GPUFilterValueKind::Unsigned, .constant = {}, .type = std::make_shared<DataTypeUInt8>(), .pending = {}, .column = {}};
+            return emit(GPUFilterOp::LoadColumn, action.result_position, column);
+        }
+
         for (const auto & argument : arguments)
         {
             if (registers[argument.pos].pending)
@@ -270,7 +306,7 @@ private:
             if (filterElementTypeOf(*node.result_type) != GPUElementType::Float64)
                 return refused("an arithmetic function of a result other than a `Float64`");
 
-            registers[action.result_position] = {.kind = GPUFilterValueKind::Float, .constant = {}, .type = {}, .pending = {}};
+            registers[action.result_position] = {.kind = GPUFilterValueKind::Float, .constant = {}, .type = {}, .pending = {}, .column = {}};
             return emit(*arithmetic, action.result_position, arguments[0].pos, arguments[1].pos);
         }
 
@@ -364,7 +400,7 @@ private:
         if (!index)
             return false;
 
-        mine = {.kind = constant.kind, .constant = *index, .type = {}, .pending = {}};
+        mine = {.kind = constant.kind, .constant = *index, .type = {}, .pending = {}, .column = {}};
         return emit(GPUFilterOp::LoadConstant, own, *index);
     }
 
@@ -403,13 +439,14 @@ private:
             return {};
         }
         const size_t spare = registers_used++;
-        registers[spare] = {.kind = GPUFilterValueKind::Float, .constant = *index, .type = {}, .pending = {}};
+        registers[spare] = {.kind = GPUFilterValueKind::Float, .constant = *index, .type = {}, .pending = {}, .column = {}};
         if (!emit(GPUFilterOp::LoadConstant, spare, *index))
             return {};
         return spare;
     }
 
     String & refusal;
+    const bool with_memberships;
     CompiledGPUFilter result;
     Register registers[max_filter_registers];
     uint32_t registers_used = 0;
@@ -444,7 +481,7 @@ std::optional<CompiledGPUFilter> compileGPUExpression(const ActionsDAG & dag, co
     return Compiler(refusal).compile(actions);
 }
 
-std::optional<CompiledGPUFilter> compileGPUFilter(const ActionsDAG & dag, const String & filter_column_name, String & refusal)
+std::optional<CompiledGPUFilter> compileGPUFilter(const ActionsDAG & dag, const String & filter_column_name, String & refusal, bool with_memberships)
 {
     const ActionsDAG::Node * root = dag.tryFindInOutputs(filter_column_name);
     if (!root)
@@ -454,7 +491,7 @@ std::optional<CompiledGPUFilter> compileGPUFilter(const ActionsDAG & dag, const 
     }
 
     const ExpressionActions actions(ActionsDAG::cloneSubDAG({root},  true));
-    return Compiler(refusal).compile(actions);
+    return Compiler(refusal, with_memberships).compile(actions);
 }
 
 }

@@ -1321,10 +1321,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     }
 
 #if USE_GPU
-    /// Listed with other algorithms, `gpu_hash` takes only the joins it is estimated to pay off for; listed alone, every
-    /// join it supports, as the setting asks.
-    if (algorithm == JoinAlgorithm::GPU_HASH && (table_join->getEnabledJoinAlgorithms().size() == 1 || gpuHashJoinPays(params))
-        && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header))
+    /// Listed with other algorithms, `gpu_hash` takes only the joins it is estimated to pay off for, unless the join keeps
+    /// its columns on the device, where the result costs the host nothing; listed alone, every join it supports, as the
+    /// setting asks.
+    if (algorithm == JoinAlgorithm::GPU_HASH
+        && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header)
+        && (table_join->getEnabledJoinAlgorithms().size() == 1
+            || GPUHashJoin::runsOnDevice(*table_join, *left_table_expression_header, *right_table_expression_header)
+            || gpuHashJoinPays(params)))
         return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
 #endif
 

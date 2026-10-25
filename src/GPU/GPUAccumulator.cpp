@@ -34,6 +34,7 @@ namespace ProfileEvents
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace DB::GPU
@@ -388,7 +389,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     std::vector<GPUDerivedValue> derived_,
     std::function<void(MutableColumns)> on_collected_,
     std::vector<std::optional<uint32_t>> filter_aliases_,
-    std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device_)
+    std::function<void(std::shared_ptr<const GPUDeviceColumns>)> on_collected_on_device_,
+    std::vector<MembershipTest> memberships_)
     : group_keys(groupByKeysOrThrow(key_types))
     , float_keys(floatKeysOf(key_types))
     , key_element_types(keyElementTypesOf(group_keys))
@@ -402,6 +404,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , filter_element_types(filterElementTypesOrThrow(filter_types))
     , filter(std::move(filter_))
     , filter_aliases(std::move(filter_aliases_))
+    , memberships(std::move(memberships_))
+    , key_sets(memberships.size())
     , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_types, values, filter_element_types), size_t{1}, max_batch_rows))
     , reader_batch_rows(std::min(batch_rows, std::max(batch_rows / std::max<size_t>(num_readers_, 1), min_reader_batch_rows)))
     , compressed(compressed_)
@@ -428,7 +432,16 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     if ((on_collected || on_collected_on_device) && !group_keys.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with keys that hands rows over as collected");
 
-    if (filter && filter->num_columns != filter_element_types.size())
+    for (const MembershipTest & membership : memberships)
+    {
+        if (!membership.keys || membership.key_column >= filter_element_types.size()
+            || !isInteger(filter_element_types[membership.key_column]) || membership.keys->keyElementType() != filter_element_types[membership.key_column])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A runtime filter of a GPU aggregation over other than an integer column of the keys' type");
+    }
+    if (!memberships.empty() && !compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A runtime filter of a GPU aggregation over plain columns");
+
+    if (filter && filter->num_columns != filter_element_types.size() + memberships.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "A GPU aggregation's `WHERE` reads {} columns and is given {}",
@@ -497,6 +510,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
 
 GroupByGPUAccumulator::~GroupByGPUAccumulator()
 {
+    stop_waiting.store(true, std::memory_order_relaxed);
     if (!device_thread.joinable() && !grouping_thread.joinable())
         return;
 
@@ -894,6 +908,7 @@ void GroupByGPUAccumulator::rethrowDeviceError()
 
 void GroupByGPUAccumulator::fail(std::exception_ptr error) noexcept
 {
+    stop_waiting.store(true, std::memory_order_relaxed);
     {
         std::lock_guard lock(device_error_mutex);
         if (!device_error)
@@ -1553,7 +1568,29 @@ void GroupByGPUAccumulator::groupOnDevice(GroupingBatch & batch)
 
     Stopwatch watch;
 
+    /// The runtime filters: a column of whether each row's key is among the keys of the join the rows go to, which the
+    /// first batch waits for.
+    std::vector<DeviceBuffer> membership_masks;
+    membership_masks.reserve(memberships.size());
+    for (size_t i = 0; i < memberships.size(); ++i)
+    {
+        if (!key_sets[i])
+        {
+            Stopwatch waited;
+            key_sets[i] = memberships[i].keys->waitForKeySet([this] { return stop_waiting.load(std::memory_order_relaxed); });
+            if (!key_sets[i])
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The keys of a runtime filter were waited for in vain");
+            ProfileEvents::increment(ProfileEvents::GPUDeviceWaitMicroseconds, waited.elapsedMicroseconds());
+        }
+        const DeviceFixedColumn & key_column = filter_columns[memberships[i].key_column];
+        membership_masks.emplace_back(grouping);
+        char * const mask = membership_masks.back().grow(batch.rows);
+        key_sets[i]->contains(key_column, reinterpret_cast<uint8_t *>(mask), grouping);
+        filter_columns.push_back(DeviceFixedColumn{.element_type = GPUElementType::UInt8, .data = mask, .rows = batch.rows});
+    }
+
     group_by->addBatch(keys, value_columns, filter_columns, filter ? &*filter : nullptr);
+    /// The masks are freed in the order of the grouping stream, after the batch is grouped.
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);

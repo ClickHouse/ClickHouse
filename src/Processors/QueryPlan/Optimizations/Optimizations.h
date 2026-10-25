@@ -425,7 +425,13 @@ bool optimizeAggregationFromGPUCompressedColumns(QueryPlan::Node & node, QueryPl
 /// Replaces a read of a `MergeTree` table with a `PREWHERE` by a read whose `PREWHERE` the device evaluates, as far as it
 /// can, sending back only the rows it keeps, under `allow_experimental_gpu_filtered_read`. The conjuncts of the `PREWHERE`
 /// the device does not evaluate are a `FilterStep` above it. Refuses everything in a build without GPU support.
-bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// `parents` are the steps above `node`, the nearest first: a read goes onto the device, with `gpu_read_to_device`, only
+/// where the step that takes its rows takes them on the device.
+bool optimizeReadFilteredOnGPU(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const std::vector<const QueryPlan::Node *> & parents);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

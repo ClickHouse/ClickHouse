@@ -78,6 +78,9 @@ compare_with_cpu "SELECT $FIXED, r.w, r.day2, r.f FROM gpu_dj_fact AS l INNER JO
 compare_with_cpu "SELECT r2.n, count(), sum(l.v * r.w) FROM gpu_dj_fact AS l INNER JOIN gpu_dj_dim AS r ON l.k = r.k INNER JOIN gpu_dj_dim2 AS r2 ON l.d = r2.d GROUP BY r2.n ORDER BY r2.n"
 # A `GROUP BY` of a date and an integer over the joined rows on the device.
 compare_with_cpu "SELECT l.day, r.w % 5 AS m, count(), sum(l.v), max(r.f) FROM gpu_dj_fact AS l INNER JOIN gpu_dj_dim AS r ON l.k = r.k GROUP BY l.day, m ORDER BY l.day, m LIMIT 7"
+# With runtime filters: the device filters the rows of the left table by the right table's keys as it reads them, and
+# waits for the right table to be read first.
+compare_with_cpu "SELECT count(), sum(l.v), sum(r.w) FROM gpu_dj_fact AS l INNER JOIN gpu_dj_dim AS r ON l.k = r.k WHERE r.w % 3 = 0 SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0"
 # Results larger than the blocks the join hands out.
 compare_with_cpu "SELECT sum(cityHash64($FIXED, r.w)), count() FROM gpu_dj_fact AS l INNER JOIN gpu_dj_dim AS r ON l.k = r.k SETTINGS max_joined_block_size_rows = 777, max_block_size = 5000"
 # An empty right table.
