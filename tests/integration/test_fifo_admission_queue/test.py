@@ -30,6 +30,7 @@ import requests
 import grpc
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
@@ -2276,3 +2277,109 @@ def test_client_disconnect_at_secondary_limit_wakeup(started_cluster):
         if waiter_sock is not None:
             waiter_sock.close()
         node_slow_liveness_poll.query(f"KILL QUERY WHERE query_id = '{victim_id}' SYNC SETTINGS kill_throw_if_noop = false")
+
+
+def test_limits_rechecked_after_secondary_limit_wait(started_cluster):
+    """
+    A query that waits at one concurrency limit releases the `ProcessList` mutex,
+    so a limit it checked before that wait may be exceeded by the time the wait
+    ends. All limits must be checked again before the query registers.
+
+    Scenario (runtime config: max_concurrent_queries = 4,
+    max_concurrent_select_queries = 1):
+    1. Two long `INSERT` queries run.
+    2. A `SELECT` A (`max_concurrent_queries_for_all_users = 2`,
+       `queue_max_wait_ms = 60000`) passes the select-kind check (no `SELECT` is
+       running) and waits at the full all-users limit.
+    3. A long `SELECT` B (no all-users limit) starts and fills the select-kind limit.
+    4. Both inserts are killed. A now satisfies the all-users limit, but it must be
+       rejected by the select-kind limit instead of running next to B.
+
+    If A reaches the select-kind check only after B has started, it is rejected by
+    the same limit, so the assertion holds for either order.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    insert_ids = [f"recheck_insert_{prefix}_{i}" for i in range(2)]
+    a_id = f"recheck_a_{prefix}"
+    b_id = f"recheck_b_{prefix}"
+    table = f"recheck_sink_{prefix}"
+
+    node.query(f"CREATE TABLE default.{table} (x UInt8) ENGINE = Null")
+    node.replace_in_config(
+        SERVER_CONFIG_PATH,
+        "<max_concurrent_queries>[0-9]*</max_concurrent_queries>",
+        "<max_concurrent_queries>4</max_concurrent_queries>"
+        "<max_concurrent_select_queries>1</max_concurrent_select_queries>",
+    )
+    pool = Pool(4)
+    try:
+        wait_for_max_concurrent_queries(node, 4)
+        # Every `SELECT` issued from here on counts toward the select-kind limit, so the
+        # rest of the scenario is observed through the Prometheus endpoint only.
+        assert_eq_with_retry(
+            node,
+            "SELECT value FROM system.server_settings WHERE name = 'max_concurrent_select_queries'",
+            "1",
+        )
+
+        for qid in insert_ids:
+            pool.apply_async(
+                node.query,
+                (f"INSERT INTO default.{table} SELECT sleep(30)",),
+                {
+                    "query_id": qid,
+                    "settings": {"function_sleep_max_microseconds_per_block": 0},
+                },
+            )
+        for qid in insert_ids:
+            wait_for_query_start(node, qid)
+
+        a_future = pool.apply_async(
+            node.query_and_get_error,
+            ("SELECT 1 FORMAT Null",),
+            {
+                "query_id": a_id,
+                "settings": {
+                    "max_concurrent_queries_for_all_users": 2,
+                    "queue_max_wait_ms": 60000,
+                },
+            },
+        )
+        # Let A reach the all-users limit (see the docstring: the result does not
+        # depend on whether it gets there first).
+        time.sleep(2)
+        assert not a_future.ready(), f"A finished before the inserts were killed: {a_future.get()}"
+
+        pool.apply_async(
+            node.query,
+            ("SELECT sleep(30) FORMAT Null",),
+            {
+                "query_id": b_id,
+                "settings": {"function_sleep_max_microseconds_per_block": 0},
+            },
+        )
+        # The two inserts and B are executing; A is not registered yet.
+        start = time.monotonic()
+        while get_prometheus_metric(node, "Query") != 3:
+            assert time.monotonic() - start < 30, "B did not start"
+            time.sleep(0.1)
+
+        for qid in insert_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
+
+        error = a_future.get(timeout=60)
+        assert "Too many simultaneous select queries" in error, error
+    finally:
+        for qid in insert_ids + [a_id, b_id]:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
+        pool.close()
+        pool.join()
+
+        node.replace_in_config(
+            SERVER_CONFIG_PATH,
+            "<max_concurrent_select_queries>1</max_concurrent_select_queries>",
+            "",
+        )
+        set_max_concurrent_queries(node, 2)
+        wait_for_max_concurrent_queries(node, 2)
+        node.query(f"DROP TABLE IF EXISTS default.{table}")

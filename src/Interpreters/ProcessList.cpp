@@ -492,6 +492,12 @@ ProcessList::EntryPtr ProcessList::insert(
         /// all-users limit on `non_internal_processes`. An unrelated teardown (a different kind/user)
         /// cannot decrement *this* counter, so it is excluded from `pending`. Without an admission slot
         /// (admission queue disabled) the checks keep their legacy behavior.
+        ///
+        /// Set whenever one of the concurrency-limit waits below may have released `mutex`. Another query can
+        /// register while we wait for one limit, invalidating a limit checked earlier, so after any such wait
+        /// all limits are checked again (see the loop below).
+        bool limits_waited = false;
+
         auto passes_secondary_limit = [&](auto && under_limit, auto && drain_can_clear)
         {
             if (!got_admission_slot)
@@ -517,6 +523,7 @@ ProcessList::EntryPtr ProcessList::insert(
                         std::chrono::milliseconds(alive_check_interval_ms),
                         std::chrono::duration_cast<std::chrono::milliseconds>(admission_deadline - now));
 
+                    limits_waited = true;
                     query_finished.wait_for(lock, chunk, should_stop);
 
                     if (!should_stop() && is_alive && !is_alive())
@@ -524,8 +531,11 @@ ProcessList::EntryPtr ProcessList::insert(
                                         "Query admission cancelled: client disconnected while waiting at a secondary limit");
                 }
             }
-            else
+            else if (!should_stop() && std::chrono::steady_clock::now() < admission_deadline)
+            {
+                limits_waited = true;
                 query_finished.wait_until(lock, admission_deadline, should_stop);
+            }
 
             /// Post-wakeup liveness recheck, mirroring the FIFO admission wait. The loop above exits as
             /// soon as `should_stop()` holds, so a client that hung up during the very interval in which
@@ -547,161 +557,182 @@ ProcessList::EntryPtr ProcessList::insert(
             return found != query_kind_pending_teardowns.end() ? found->second : 0;
         };
 
-        if (!is_unlimited_query && max_size && !admission_queue_enabled)
+        /// Without an admission slot (admission queue disabled, or a query it does not track) the limits keep
+        /// their legacy `queue_max_wait_ms`-bounded wait. All of them share one deadline, so that rechecking
+        /// the limits after a wait does not restart the wait for each of them.
+        const auto legacy_limits_deadline = std::chrono::steady_clock::now() + saturatedMilliseconds(queue_max_wait_ms);
+        auto passes_legacy_limit = [&](auto && under_limit)
         {
-            /// Legacy path: broadcast condvar (admission queue disabled).
-            if (non_internal_processes >= max_size)
-            {
-                if (queue_max_wait_ms)
-                    LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-                if (!queue_max_wait_ms || !query_finished.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                        [&]{ return non_internal_processes < max_size; }))
-                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                    "Too many simultaneous queries. Maximum: {}",
-                                    max_size);
-            }
-        }
+            if (under_limit())
+                return true;
+            if (!queue_max_wait_ms || std::chrono::steady_clock::now() >= legacy_limits_deadline)
+                return false;
+            limits_waited = true;
+            return query_finished.wait_until(lock, legacy_limits_deadline, under_limit);
+        };
 
-        if (!is_unlimited_query)
+        /// Every wait below releases `mutex`, and another query may register meanwhile, so a limit that
+        /// passed before a later wait may be exceeded after it. Check all limits again until a full pass
+        /// completes without waiting: only then do they all hold together under `mutex` up to the
+        /// registration below. Every wait is bounded by a deadline fixed before the loop, and a pass after
+        /// the deadlines does not wait, so the loop terminates.
+        do
         {
-            /// See the comment at `passes_secondary_limit` above: wait out in-flight early-release
-            /// teardowns (a finishing query that already freed its admission slot still counts toward
-            /// `query_kind_amounts` until its `ProcessListEntry` destructor runs), then reject if the
-            /// limit is genuinely full.
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
+            limits_waited = false;
+
+            if (!is_unlimited_query && max_size && !admission_queue_enabled)
             {
-                /// `max_insert_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
-                auto under_limit = [&] { return !max_insert_queries_amount || getQueryKindAmount(query_kind) < max_insert_queries_amount; };
-                auto drain_can_clear = [&]
+                /// Legacy path: broadcast condvar (admission queue disabled).
+                auto under_limit = [&] { return non_internal_processes < max_size; };
+                if (!under_limit())
                 {
-                    return !max_insert_queries_amount
-                        || getQueryKindAmount(query_kind) < max_insert_queries_amount + query_kind_pending_teardowns_count(query_kind);
-                };
-                if (!passes_secondary_limit(under_limit, drain_can_clear))
-                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                    "Too many simultaneous insert queries. Maximum: {}, current: {}",
-                                    max_insert_queries_amount, getQueryKindAmount(query_kind));
+                    if (queue_max_wait_ms)
+                        LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+                    if (!passes_legacy_limit(under_limit))
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous queries. Maximum: {}",
+                                        max_size);
+                }
             }
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
+
+            if (!is_unlimited_query)
             {
-                /// `max_select_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
-                auto under_limit = [&] { return !max_select_queries_amount || getQueryKindAmount(query_kind) < max_select_queries_amount; };
-                auto drain_can_clear = [&]
+                /// See the comment at `passes_secondary_limit` above: wait out in-flight early-release
+                /// teardowns (a finishing query that already freed its admission slot still counts toward
+                /// `query_kind_amounts` until its `ProcessListEntry` destructor runs), then reject if the
+                /// limit is genuinely full.
+                if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
                 {
-                    return !max_select_queries_amount
-                        || getQueryKindAmount(query_kind) < max_select_queries_amount + query_kind_pending_teardowns_count(query_kind);
-                };
-                if (!passes_secondary_limit(under_limit, drain_can_clear))
-                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                    "Too many simultaneous select queries. Maximum: {}, current: {}",
-                                    max_select_queries_amount, getQueryKindAmount(query_kind));
+                    /// `max_insert_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
+                    auto under_limit = [&] { return !max_insert_queries_amount || getQueryKindAmount(query_kind) < max_insert_queries_amount; };
+                    auto drain_can_clear = [&]
+                    {
+                        return !max_insert_queries_amount
+                            || getQueryKindAmount(query_kind) < max_insert_queries_amount + query_kind_pending_teardowns_count(query_kind);
+                    };
+                    if (!passes_secondary_limit(under_limit, drain_can_clear))
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                        max_insert_queries_amount, getQueryKindAmount(query_kind));
+                }
+                if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
+                {
+                    /// `max_select_queries_amount` may be reloaded while `passes_secondary_limit` waits; `0` means unlimited.
+                    auto under_limit = [&] { return !max_select_queries_amount || getQueryKindAmount(query_kind) < max_select_queries_amount; };
+                    auto drain_can_clear = [&]
+                    {
+                        return !max_select_queries_amount
+                            || getQueryKindAmount(query_kind) < max_select_queries_amount + query_kind_pending_teardowns_count(query_kind);
+                    };
+                    if (!passes_secondary_limit(under_limit, drain_can_clear))
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                        max_select_queries_amount, getQueryKindAmount(query_kind));
+                }
             }
-        }
 
-        {
-            /**
-             * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
-             * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
-             * hard limit is reached it is impossible to connect to the server to run queries for investigation.
-             *
-             * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
-             * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
-             * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
-             * the default profile (or 0 for unlimited).
-             *
-             * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
-             * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
-             * exporters).
-             *
-             * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
-             * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
-             * once is already processing 50+ concurrent queries (including analysts or any other users).
-             */
-
-            if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
-                && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
             {
-                const size_t limit = settings[Setting::max_concurrent_queries_for_all_users];
-                auto under_limit = [&] { return non_internal_processes < limit; };
+                /**
+                 * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
+                 * queries the server can process concurrently. It is configured at startup. When the server is overloaded with queries and the
+                 * hard limit is reached it is impossible to connect to the server to run queries for investigation.
+                 *
+                 * With `max_concurrent_queries_for_all_users` it is possible to configure an additional, runtime configurable, limit for query concurrency.
+                 * Usually it should be configured just once for `default_profile` which is inherited by all users. DBAs can override
+                 * this setting when connecting to ClickHouse, or it can be configured for a DBA profile to have a value greater than that of
+                 * the default profile (or 0 for unlimited).
+                 *
+                 * One example is to set `max_size=X`, `max_concurrent_queries_for_all_users=X-10` for default profile,
+                 * and `max_concurrent_queries_for_all_users=0` for DBAs or accounts that are vital for ClickHouse operations (like metrics
+                 * exporters).
+                 *
+                 * Another creative example is to configure `max_concurrent_queries_for_all_users=50` for "analyst" profiles running adhoc queries
+                 * and `max_concurrent_queries_for_all_users=100` for "customer facing" services. This way "analyst" queries will be rejected
+                 * once is already processing 50+ concurrent queries (including analysts or any other users).
+                 */
 
-                /// Unlike the per-user and per-kind limits, this one keeps its legacy contract even when we
-                /// hold an admission slot: with an explicit `queue_max_wait_ms` the query waits for the
-                /// running count to drop under the limit for the rest of the shared admission budget
-                /// (`admission_deadline`), not only for the in-flight early-release teardowns. The
-                /// slot-hoarding argument for fast-failing does not apply here: every query subject to
-                /// this limit is blocked until `non_internal_processes < limit` anyway, so the slot we
-                /// hold cannot be used by another such query. With `queue_max_wait_ms = 0` the legacy
-                /// path rejects immediately, so we only wait out in-flight early-release teardowns (a
-                /// finishing query that already freed its slot still counts toward
-                /// `non_internal_processes` until its destructor runs), while draining them can clear the
-                /// limit. This is the global limit, so any teardown is relevant — use
-                /// `admission_pending_teardowns`. Without a slot (admission queue disabled), keep the
-                /// legacy `queue_max_wait_ms`-bounded wait.
-                auto drain_can_clear = [&]
+                if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
+                    && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
                 {
-                    return queue_max_wait_ms != 0 || non_internal_processes < limit + admission_pending_teardowns;
-                };
-                if (got_admission_slot
-                    ? !passes_secondary_limit(under_limit, drain_can_clear)
-                    : (!queue_max_wait_ms
-                       || !query_finished.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                              under_limit)))
-                    throw Exception(
-                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                        "Too many simultaneous queries for all users. "
-                        "Current: {}, maximum: {}",
-                        non_internal_processes,
-                        settings[Setting::max_concurrent_queries_for_all_users].toString());
-            }
-        }
+                    const size_t limit = settings[Setting::max_concurrent_queries_for_all_users];
+                    auto under_limit = [&] { return non_internal_processes < limit; };
 
-        /** Why we use current user?
-          * Because initial one is passed by client and credentials for it is not verified,
-          *  and using initial_user for limits will be insecure.
-          *
-          * Why we use current_query_id?
-          * Because we want to allow distributed queries that will run multiple secondary queries on same server,
-          *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
-          *  so they must have different query_ids.
-          */
-
-        {
-            auto user_process_list_it = user_to_queries.find(client_info.current_user);
-
-            if (user_process_list_it != user_to_queries.end())
-            {
-                /// The waits below release `mutex`, and another user's first query may then rehash
-                /// `user_to_queries`, invalidating the iterator. References to its elements stay valid
-                /// (entries are never erased), so only the reference is used after this point.
-                ProcessListForUser & user_process_list = user_process_list_it->second;
-                if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && user_process_list.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
-                {
-                    const size_t limit = settings[Setting::max_concurrent_queries_for_user];
-                    auto & user_queries = user_process_list.non_internal_queries;
-                    auto under_limit = [&] { return user_queries < limit; };
-
-                    /// Same as `max_concurrent_queries_for_all_users` above, but scoped to this user:
-                    /// only this user's early-release teardowns can decrement `non_internal_queries`,
-                    /// so wait on the per-user counter while draining it can clear the limit, then reject.
-                    auto & user_pending_teardowns = user_process_list.admission_pending_teardowns;
-                    auto drain_can_clear = [&] { return user_queries < limit + user_pending_teardowns; };
+                    /// Unlike the per-user and per-kind limits, this one keeps its legacy contract even when we
+                    /// hold an admission slot: with an explicit `queue_max_wait_ms` the query waits for the
+                    /// running count to drop under the limit for the rest of the shared admission budget
+                    /// (`admission_deadline`), not only for the in-flight early-release teardowns. The
+                    /// slot-hoarding argument for fast-failing does not apply here: every query subject to
+                    /// this limit is blocked until `non_internal_processes < limit` anyway, so the slot we
+                    /// hold cannot be used by another such query. With `queue_max_wait_ms = 0` the legacy
+                    /// path rejects immediately, so we only wait out in-flight early-release teardowns (a
+                    /// finishing query that already freed its slot still counts toward
+                    /// `non_internal_processes` until its destructor runs), while draining them can clear the
+                    /// limit. This is the global limit, so any teardown is relevant — use
+                    /// `admission_pending_teardowns`. Without a slot (admission queue disabled), keep the
+                    /// legacy `queue_max_wait_ms`-bounded wait.
+                    auto drain_can_clear = [&]
+                    {
+                        return queue_max_wait_ms != 0 || non_internal_processes < limit + admission_pending_teardowns;
+                    };
                     if (got_admission_slot
                         ? !passes_secondary_limit(under_limit, drain_can_clear)
-                        : (!queue_max_wait_ms
-                           || !query_finished.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                                  under_limit)))
+                        : !passes_legacy_limit(under_limit))
                         throw Exception(
                             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                            "Too many simultaneous queries for user {}. "
+                            "Too many simultaneous queries for all users. "
                             "Current: {}, maximum: {}",
-                            client_info.current_user,
-                            user_queries,
-                            settings[Setting::max_concurrent_queries_for_user].toString());
+                            non_internal_processes,
+                            settings[Setting::max_concurrent_queries_for_all_users].toString());
                 }
+            }
 
+            /** Why we use current user?
+              * Because initial one is passed by client and credentials for it is not verified,
+              *  and using initial_user for limits will be insecure.
+              *
+              * Why we use current_query_id?
+              * Because we want to allow distributed queries that will run multiple secondary queries on same server,
+              *  like SELECT count() FROM remote('127.0.0.{1,2}', system.numbers)
+              *  so they must have different query_ids.
+              */
+
+            {
+                auto user_process_list_it = user_to_queries.find(client_info.current_user);
+
+                if (user_process_list_it != user_to_queries.end())
+                {
+                    /// The waits below release `mutex`, and another user's first query may then rehash
+                    /// `user_to_queries`, invalidating the iterator. References to its elements stay valid
+                    /// (entries are never erased), so only the reference is used after this point.
+                    ProcessListForUser & user_process_list = user_process_list_it->second;
+                    if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
+                        && user_process_list.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
+                    {
+                        const size_t limit = settings[Setting::max_concurrent_queries_for_user];
+                        auto & user_queries = user_process_list.non_internal_queries;
+                        auto under_limit = [&] { return user_queries < limit; };
+
+                        /// Same as `max_concurrent_queries_for_all_users` above, but scoped to this user:
+                        /// only this user's early-release teardowns can decrement `non_internal_queries`,
+                        /// so wait on the per-user counter while draining it can clear the limit, then reject.
+                        auto & user_pending_teardowns = user_process_list.admission_pending_teardowns;
+                        auto drain_can_clear = [&] { return user_queries < limit + user_pending_teardowns; };
+                        if (got_admission_slot
+                            ? !passes_secondary_limit(under_limit, drain_can_clear)
+                            : !passes_legacy_limit(under_limit))
+                            throw Exception(
+                                ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                "Too many simultaneous queries for user {}. "
+                                "Current: {}, maximum: {}",
+                                client_info.current_user,
+                                user_queries,
+                                settings[Setting::max_concurrent_queries_for_user].toString());
+                    }
+
+                }
             }
         }
+        while (limits_waited);
 
         /// Check other users running query with our query_id
         if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
