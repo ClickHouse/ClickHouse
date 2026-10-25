@@ -916,8 +916,10 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Received data block is immediately displayed to the user.
     output_format->flush();
 
-    /// Restore progress bar and progress table after data block.
-    if (need_render_progress && tty_buf)
+    /// Restore progress bar and progress table after data block - but not after a Ctrl+C, when a
+    /// stuck terminal must not delay the cancellation drain; see `onProfileEvents`.
+    const bool interrupted = cancelled || query_interrupt_handler.interruptedWhileRunning();
+    if (need_render_progress && tty_buf && !interrupted)
     {
         std::unique_lock lock(tty_mutex);
         /// Route the carriage return through tty_buf (the bounded, cancellable progress path) instead
@@ -929,7 +931,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
             writeChar('\r', *tty_buf);
         progress_indication.writeProgress(*tty_buf, lock);
     }
-    if (need_render_progress_table && tty_buf && !cancelled)
+    if (need_render_progress_table && tty_buf && !interrupted)
     {
         std::unique_lock lock(tty_mutex);
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
@@ -2583,7 +2585,9 @@ void ClientBase::onProgress(const Progress & value)
     else
         pending_progress.incrementPiecewiseAtomically(value);
 
-    if (need_render_progress && tty_buf)
+    /// After a Ctrl+C, do not let a stuck terminal delay the cancellation drain with progress
+    /// redraws; see `onProfileEvents`.
+    if (need_render_progress && tty_buf && !cancelled && !query_interrupt_handler.interruptedWhileRunning())
     {
         std::unique_lock lock(tty_mutex);
         progress_indication.writeProgress(*tty_buf, lock);
@@ -2768,12 +2772,18 @@ void ClientBase::onProfileEvents(Block & block)
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
 
-        if (need_render_progress && tty_buf)
+        /// After a Ctrl+C, keep updating the counters above but skip the periodic decorative writes
+        /// (here and for the deferred profile events below): the terminal may be exactly what is
+        /// stuck, and a write that waits for it can take as long as the period of these packets, so
+        /// `LocalConnection` would always have the next one due and never advance the cancelled query.
+        const bool interrupted = cancelled || query_interrupt_handler.interruptedWhileRunning();
+
+        if (need_render_progress && tty_buf && !interrupted)
         {
             std::unique_lock lock(tty_mutex);
             progress_indication.writeProgress(*tty_buf, lock);
         }
-        if (need_render_progress_table && tty_buf && !cancelled)
+        if (need_render_progress_table && tty_buf && !interrupted)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
             std::unique_lock lock(tty_mutex);
@@ -2791,11 +2801,8 @@ void ClientBase::onProfileEvents(Block & block)
             /// When the log sink is unavailable - its open was interrupted by a `Ctrl+C`, see
             /// `initLogsOutputStream` - keep accumulating the events instead of printing them, so
             /// nothing is lost if the sink becomes available again before the query ends.
-            /// After a Ctrl+C, defer them as well: the sink may be exactly what is stuck, and a flush
-            /// to it that waits for the sink can take as long as the period of these packets, so
-            /// `LocalConnection` would always have the next one due and never advance the cancelled
-            /// query. The deferred events are printed by the bounded flush after the query.
-            const bool interrupted = cancelled || query_interrupt_handler.interruptedWhileRunning();
+            /// After a Ctrl+C, defer them as well, for the same reason as the progress writes above.
+            /// The deferred events are printed by the bounded flush after the query.
             if (!interrupted && profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms && initLogsOutputStream())
             {
                 /// We need to restart the watch each time we flushed these events
