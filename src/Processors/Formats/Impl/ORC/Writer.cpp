@@ -386,7 +386,7 @@ public:
     {
         ColumnWriter::reset();
         for (auto & child : children)
-            child->reset();
+            (*child).reset();
     }
 
 protected:
@@ -1435,7 +1435,7 @@ void Writer::writeStripe()
     total_rows += stripe_rows;
     stripe_rows = 0;
     index_rows = 0;
-    column_writer->reset();
+    (*column_writer).reset();
 }
 
 void Writer::close()
