@@ -399,6 +399,13 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "SQL cluster `{}` does not exist", query.cluster_name);
     }
 
+    /// Apply the same namespace check as `CREATE CLUSTER` and the reload: the stored SQL cluster may have been
+    /// created on another replica, where it does not collide with a cluster of another source existing on this one.
+    auto context = Context::getGlobalContextInstance()->getGlobalContext();
+    if (auto existing = context->tryGetCluster(query.cluster_name); existing && existing->getSourceId() != Cluster::SourceId::SQL)
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cannot alter SQL cluster `{}`: a cluster with the same name already exists (source: {})",
+            query.cluster_name, Cluster::formatSourceIdForSystemTable(existing->getSourceId()));
+
     ASTCreateSQLClusterQuery create_query;
     create_query.cluster_name = query.cluster_name;
     create_query.definition = query.definition->clone();
@@ -408,8 +415,10 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
     auto create_statement = create_query.formatWithSecretsOneLine();
     metadata_storage->writeCreateQuery(query.cluster_name, create_statement, true);
 
-    auto context = Context::getGlobalContextInstance()->getGlobalContext();
     context->setCluster(query.cluster_name, materializeCluster(create_query, context, create_statement));
+    /// The cluster may have been created on another replica and not yet loaded here by the background reload.
+    /// Register it, so that a later reload or `DROP CLUSTER` removes it once it is gone from the metadata storage.
+    stored_cluster_names.insert(query.cluster_name);
 }
 
 void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
