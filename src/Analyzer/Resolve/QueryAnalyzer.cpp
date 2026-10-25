@@ -3857,8 +3857,6 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
     std::vector<size_t> arguments_order(arguments.size());
     std::iota(arguments_order.begin(), arguments_order.end(), 0);
     std::vector<bool> arguments_may_be_unreachable(arguments.size(), false);
-    /// Whether the conditions are constant, so that the arguments marked in `arguments_may_be_unreachable` are certainly unreachable.
-    bool unreachable_arguments_are_known = false;
 
     if (!is_lambda_call && (function_node->getFunctionName() == "if" || function_node->getFunctionName() == "multiIf"))
     {
@@ -3890,7 +3888,6 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
         {
             arguments_order = std::move(order->first);
             arguments_may_be_unreachable = std::move(order->second);
-            unreachable_arguments_are_known = true;
         }
     }
 
@@ -3946,10 +3943,13 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             /** An unreachable branch is valid only if `resolveFunction` can resolve it, and only then does it register
               * the `REPLACE` mappings of its matchers, as without `group_by_use_nulls`. So the expressions produced by
               * the transformers are resolved here, and an invalid branch throws before its mappings rewrite the other clauses.
+              * This is done also when the conditions are not known here (a condition given by an alias, or one that becomes
+              * constant only after GROUP BY): the mappings must not be published before the branch is known to be valid.
+              * A branch that is valid only for the Nullable GROUP BY keys fails here as well. It is kept as it is and resolved
+              * after GROUP BY, but its `REPLACE` mappings do not rewrite the other clauses then.
               */
             const auto * previous_query_with_deferred_transformer_expressions = query_with_deferred_transformer_expressions;
-            if (unreachable_arguments_are_known)
-                query_with_deferred_transformer_expressions = nullptr;
+            query_with_deferred_transformer_expressions = nullptr;
             SCOPE_EXIT({ query_with_deferred_transformer_expressions = previous_query_with_deferred_transformer_expressions; });
 
             try
@@ -8517,40 +8517,42 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         for (const auto & window_rewrite : window_rewrites)
             replaceIdentifiersWithTransformerMappings(query_node_typed.getWindowNode(), window_rewrite, {} /*nodes_to_skip*/);
-
-        /** The scope aliases hold copies of the projection expressions made before the first expansion, which resolve
-          * their named windows from the `WINDOW` clause as rewritten by the `REPLACE` transformers. Replace the copies
-          * of the expressions that carry snapshots of the named windows with copies of the restored projection items,
-          * so that an alias referred to from the following clauses (`QUALIFY`, `ORDER BY`, `LIMIT BY`) resolves to
-          * the same expression as the projection item. The other aliases are kept as they are.
-          */
-        std::unordered_set<std::string> visited_alias_names;
-        std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
-        {
-            if (node->hasAlias() && visited_alias_names.insert(node->getAlias()).second)
-            {
-                auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
-                if (it != scope.aliases.alias_name_to_expression_node.end())
-                {
-                    auto cloned_node = node->clone();
-                    if (copyNamedWindowSnapshots(node, cloned_node))
-                        it->second = std::move(cloned_node);
-                }
-            }
-
-            /// As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
-            auto node_type = node->getNodeType();
-            if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-                return;
-
-            for (const auto & child : node->getChildren())
-                if (child)
-                    rebind_projection_aliases(child);
-        };
-
-        if (!named_window_snapshots.empty())
-            rebind_projection_aliases(query_node_typed.getProjectionNode());
     }
+
+    /** The scope aliases hold copies of the projection expressions made before the first expansion, which resolve
+      * their named windows from the `WINDOW` clause as rewritten by the `REPLACE` transformers. Replace the copies
+      * of the expressions that carry snapshots of the named windows with copies of the projection items (restored
+      * and expanded for the second time, if they had matchers), so that an alias referred to from the following
+      * clauses (`QUALIFY`, `ORDER BY`, `LIMIT BY`) resolves to the same expression as the projection item.
+      * The snapshots are taken by the first expansion even if the projection has no matchers, when a matcher
+      * of another named window rewrites the referenced one. The other aliases are kept as they are.
+      */
+    std::unordered_set<std::string> visited_alias_names;
+    std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
+    {
+        if (node->hasAlias() && visited_alias_names.insert(node->getAlias()).second)
+        {
+            auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
+            if (it != scope.aliases.alias_name_to_expression_node.end())
+            {
+                auto cloned_node = node->clone();
+                if (copyNamedWindowSnapshots(node, cloned_node))
+                    it->second = std::move(cloned_node);
+            }
+        }
+
+        /// As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
+        auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            return;
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                rebind_projection_aliases(child);
+    };
+
+    if (scope.group_by_use_nulls && !named_window_snapshots.empty())
+        rebind_projection_aliases(query_node_typed.getProjectionNode());
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
