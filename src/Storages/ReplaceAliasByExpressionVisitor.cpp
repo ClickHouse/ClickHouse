@@ -49,6 +49,11 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
     if (data.private_aliases.contains(column_name))
         return;
 
+    /// A compound identifier rooted at a lambda parameter (e.g. `x.id` in `x -> x.id`) is a field access of
+    /// the parameter, not a dotted ALIAS column. A quoted single-part `` `x.id` `` is not compound and still refers to the column.
+    if (column.compound() && data.private_aliases.contains(column.name_parts.front()))
+        return;
+
     if (data.columns.hasAlias(column_name))
     {
         /// Alias expr is saved in default expr.

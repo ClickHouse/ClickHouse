@@ -90,6 +90,11 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     if (!IdentifierSemantic::getColumnName(node))
         return;
 
+    /// `x.id` inside `x -> x.id` accesses a field of the lambda parameter `x`. A quoted `` `x.id` `` is not
+    /// compound, so it still refers to an outer alias with this name.
+    if (node.compound() && data.lambda_parameters.contains(node.name_parts.front()))
+        return;
+
     if (data.settings.prefer_column_name_to_alias)
     {
         if (data.source_columns_set.contains(node.name()))
@@ -252,22 +257,8 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
                 }
             }
 
-            /// Also hide dotted aliases rooted at a lambda parameter: inside `x -> x.id` the identifier
-            /// `x.id` is a field access of the parameter `x`, not a reference to an outer alias `x.id`.
-            for (auto it = data.aliases.begin(); it != data.aliases.end();)
-            {
-                const auto & alias_name = it->first;
-                auto dot_pos = alias_name.find('.');
-                if (dot_pos != String::npos
-                    && std::find(lambda_aliases.begin(), lambda_aliases.end(), alias_name.substr(0, dot_pos)) != lambda_aliases.end())
-                {
-                    auto next = std::next(it);
-                    extracted_aliases.insert(data.aliases.extract(it));
-                    it = next;
-                }
-                else
-                    ++it;
-            }
+            for (const auto & name : lambda_aliases)
+                data.lambda_parameters.insert(name);
         }
 
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
@@ -296,6 +287,12 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         for (auto & it : extracted_aliases)
         {
             data.aliases.insert(it);
+        }
+
+        if (func_node->name == "lambda")
+        {
+            for (const auto & name : getASTLambdaArgumentNames(*func_node))
+                data.lambda_parameters.erase(data.lambda_parameters.find(name));
         }
     }
     else if (!node->as<ASTSelectQuery>())
