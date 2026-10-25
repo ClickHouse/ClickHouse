@@ -31,7 +31,7 @@ SELECT 'v_enclosing_setting', * FROM v_enclosing_setting ORDER BY n;
 SELECT 'v_body_setting', * FROM v_body_setting ORDER BY n;
 SELECT 'v_cte', * FROM v_cte ORDER BY n;
 
-SELECT name, dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'r';
+SELECT name, arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = 'r';
 
 DROP TABLE r SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
 
