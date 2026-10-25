@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- Reproduce LOGICAL_ERROR: "Reading from materialized CTE before it has been materialized"

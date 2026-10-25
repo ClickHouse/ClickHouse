@@ -2,7 +2,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 #include <Columns/ColumnString.h>
+#include <IO/DoubleConverter.h>
+#include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <locale>
 #include <string>
 #include <memory>
 
@@ -11,6 +15,19 @@ namespace DB
 
 namespace
 {
+
+/// `boost::geometry::wkt` writes coordinates with `operator<<`, which uses 6 significant digits by default.
+/// This facet writes them with the shortest representation that round-trips, as the text output of `Float64` does.
+class ShortestFloatNumPut : public std::num_put<char>
+{
+protected:
+    iter_type do_put(iter_type out, std::ios_base & /*str*/, char_type /*fill*/, double value) const override
+    {
+        DoubleConverter<false>::BufferType buffer;
+        size_t length = writeFloatTextFastPath(value, buffer, false);
+        return std::copy(buffer, buffer + length, out);
+    }
+};
 
 class FunctionWKT final : public IFunction
 {
@@ -49,6 +66,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
+        const std::locale locale(std::locale::classic(), new ShortestFloatNumPut);
 
         callOnGeometryDataType<CartesianPoint>(arguments[0].type, [&] (const auto & type)
         {
@@ -61,6 +79,7 @@ public:
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 str.exceptions(std::ios::failbit);
+                str.imbue(locale);
                 str << boost::geometry::wkt(figures[i]);
                 std::string serialized = str.str();
                 res_column->insertData(serialized.data(), serialized.size());
