@@ -6,7 +6,6 @@
 -- its top N from a subset of the rows, which can lie in exactly those granules, so it must not reuse such
 -- entries. It still returns what it returns with the cache off.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;

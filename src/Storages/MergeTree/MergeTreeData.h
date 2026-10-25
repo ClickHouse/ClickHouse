@@ -44,6 +44,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -597,6 +598,7 @@ public:
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumnCodecs() const override { return true; }
 
     bool supportsTTL() const override { return true; }
 
@@ -719,6 +721,9 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
+
+        /// Taken no later than `parts`. Null for a table without a unique key.
+        DeleteBitmapSnapshotPtr uk_read_snapshot;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -852,6 +857,10 @@ public:
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
+    bool checkPartCanBeRemoved(const MergeTreePartInfo & part_info);
+    bool checkPartCanBeRemoved(const String & part_name);
+    bool hasPartInAnyState(const String & part_name) const;
+
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
@@ -902,6 +911,8 @@ public:
         const Names & deduplicate_by_columns,
         bool cleanup,
         ContextPtr context);
+
+    virtual void removeTemporaryPart(const MutableDataPartPtr & part) const;
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
@@ -1002,6 +1013,7 @@ public:
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
+    void outdateRemovedPartsLocally(const DataPartsVector & parts, DataPartsLock & lock);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
@@ -1121,6 +1133,8 @@ public:
 
     size_t clearEmptyParts();
 
+    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(const ContextPtr & local_context) const;
+
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
     /// Whether `part` holds the only copy of some other part's kills, in which case no removal
@@ -1174,6 +1188,10 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
+    /// Only for a definition written now: an existing table with such a column must still load and replicate.
+    static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -1962,7 +1980,7 @@ protected:
     }
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot = nullptr) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -2043,7 +2061,7 @@ protected:
     void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;
 
     /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
-    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
+    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under a unique lock.
     void calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
@@ -2307,7 +2325,19 @@ protected:
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
+    void setFilenameRegexpForCachePrewarming(MergeTreeSettingsPtr settings);
+    std::shared_ptr<const re2::RE2> getFilenameRegexpForCachePrewarming() const;
+
+    StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
+    void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
 private:
+    DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
+
+    /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
+    void acquireTableDiskRoots();
+    void releaseTableDiskRoots();
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;
@@ -2432,12 +2462,14 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
@@ -2473,9 +2505,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    StorageSnapshotPtr
-    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
 
