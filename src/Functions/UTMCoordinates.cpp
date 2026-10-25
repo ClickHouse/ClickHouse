@@ -212,9 +212,14 @@ char utmLatitudeBand(Float64 latitude)
     {
         /// Divide by 8 before adding the 80-degree offset: the division is by a power of two and the
         /// offset is an integer, so both are exact. Adding 80 to the latitude first would round a tiny
-        /// negative value (down to the smallest subnormal) back to 80.0 and put it into band 'N'
-        /// instead of 'M', disagreeing with the southern false northing and with the MGRS row.
-        return BAND_LETTERS[static_cast<size_t>(std::floor(latitude / 8.0) + 10.0)];
+        /// negative value back to 80.0 and put it into band 'N' instead of 'M', disagreeing with the
+        /// southern false northing and with the MGRS row.
+        Float64 index = std::floor(latitude / 8.0);
+        /// Dividing the smallest negative subnormals by 8 underflows to negative zero. They are still
+        /// below the equator, so they belong to the band immediately below it.
+        if (latitude < 0.0 && index == 0.0)
+            index = -1.0;
+        return BAND_LETTERS[static_cast<size_t>(index + 10.0)];
     }
     return 0;
 }
