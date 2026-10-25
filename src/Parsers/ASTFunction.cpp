@@ -20,6 +20,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -159,6 +160,9 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeString("name", name);
     w.writeChild("arguments", arguments);
     w.writeChild("parameters", parameters);
+    w.writeChild("order_by_combinator_columns", order_by_combinator_columns);
+    if (auto limit = getOrderByCombinatorLimit())
+        w.writeUInt("order_by_combinator_limit", *limit);
     if (!window_name.empty())
         w.writeString("window_name", window_name);
     w.writeChild("window_definition", window_definition);
@@ -272,6 +276,26 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     parameters = r.readChildOfType<ASTExpressionList>("parameters");
     if (parameters)
         children.push_back(parameters);
+
+    /// The sort list of the `ORDER BY` aggregate function combinator, e.g. `groupArray(x ORDER BY y LIMIT 1)`.
+    /// The parser produces it as a non-empty list of `ASTOrderByElement`, and the LIMIT only together with it.
+    order_by_combinator_columns = r.readChildOfType<ASTExpressionList>("order_by_combinator_columns");
+    if (order_by_combinator_columns)
+    {
+        if (order_by_combinator_columns->children.empty()
+            || !std::ranges::all_of(order_by_combinator_columns->children, [](const ASTPtr & child) { return child->as<ASTOrderByElement>() != nullptr; }))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'order_by_combinator_columns' must be a non-empty list of order by elements during AST JSON deserialization");
+        children.push_back(order_by_combinator_columns);
+    }
+
+    if (r.has("order_by_combinator_limit"))
+    {
+        if (!order_by_combinator_columns)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'order_by_combinator_limit' requires 'order_by_combinator_columns' during AST JSON deserialization");
+        setOrderByCombinatorLimit(r.getUInt("order_by_combinator_limit"));
+    }
 
     window_name = r.getString("window_name");
 
