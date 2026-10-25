@@ -3,5 +3,7 @@ rows in the defining table	5
 rows in the cache table	6
 rows in the defining table with the last name	7
 rows in the cache table with the first name	8
-disks after attach	4
+rows in the defining table of the policy	9
+rows in the table on the implicit policy	10
+disks after attach	5
 disks after drop	0

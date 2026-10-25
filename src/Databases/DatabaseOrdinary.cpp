@@ -17,6 +17,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -154,15 +155,32 @@ struct TableWithNamedDiskReferences
     NameSet referenced_disks;
 };
 
-/// Fills `defined` and `referenced` from the inline `disk(...)` definition of the table, if any.
+/// Fills `defined` and `referenced` from the storage settings of the table: the inline `disk(...)` definition,
+/// a `disk` setting with the name of a disk, and the implicit storage policy of a disk (`storage_policy = '__<disk>'`),
+/// which may belong to a disk defined inline by another table.
 void collectCustomDiskNames(const ASTCreateQuery & create_query, NameSet & defined, NameSet & referenced)
 {
     if (!create_query.storage || !create_query.storage->settings)
         return;
 
-    const Field * disk_setting = create_query.storage->settings->changes.tryGet("disk");
+    const auto & changes = create_query.storage->settings->changes;
+
+    if (const Field * policy_setting = changes.tryGet("storage_policy"); policy_setting && policy_setting->getType() == Field::Types::String)
+    {
+        const auto & policy_name = policy_setting->safeGet<String>();
+        if (policy_name.starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))
+            referenced.insert(policy_name.substr(strlen(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)));
+    }
+
+    const Field * disk_setting = changes.tryGet("disk");
     if (!disk_setting)
         return;
+
+    if (disk_setting->getType() == Field::Types::String)
+    {
+        referenced.insert(disk_setting->safeGet<String>());
+        return;
+    }
 
     CustomType custom;
     if (!disk_setting->tryGet<CustomType>(custom) || 0 != strcmp(custom.getTypeName(), "AST"))
@@ -580,9 +598,20 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 /// The disks defined inline with `disk(...)` are created by `convertMergeTreeToReplicatedIfNeeded`, and the
                 /// metadata files are processed in parallel. A table may refer by name to a disk defined by another table
-                /// (as the disk wrapped by a `cache` disk), so such a table is processed after all others, see below.
+                /// (as the disk wrapped by a `cache` disk, with the `disk` setting, or with the implicit storage policy
+                /// of the disk), so such a table is processed after all others, see below.
                 TableWithNamedDiskReferences table_with_references{.ast = ast, .file_name = file_name, .defined_disks = {}, .referenced_disks = {}};
                 collectCustomDiskNames(*create_query, table_with_references.defined_disks, table_with_references.referenced_disks);
+                if (!table_with_references.referenced_disks.empty())
+                {
+                    /// The disks defined in the server configuration are always there, so only references to other disks are waited for.
+                    auto disks = local_context->getDisksMap();
+                    std::erase_if(table_with_references.referenced_disks, [&](const String & name)
+                    {
+                        auto it = disks.find(name);
+                        return it != disks.end() && !it->second->isCustomDisk();
+                    });
+                }
                 if (!table_with_references.referenced_disks.empty())
                 {
                     std::lock_guard lock(tables_with_named_disk_references_mutex);
