@@ -86,6 +86,9 @@
     M(ZooKeeperWatch, "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, "Number of INSERT queries that are throttled due to high number of active data parts for partition in a MergeTree table.") \
+    M(TransactionsRunning, "Number of running transactions started on this replica") \
+    M(TransactionWatermarkLag, "Latest transaction snapshot minus the global watermark; new transactions read this many CSNs behind") \
+    M(TransactionLogEntries, "Number of entries in the transaction log (`/log`) at its last listing") \
     M(ContextLockWait, "Number of threads waiting for lock in Context. This is global lock.") \
     M(StorageBufferRows, "Number of rows in buffers of Buffer tables") \
     M(StorageBufferBytes, "Number of bytes in buffers of Buffer tables") \
