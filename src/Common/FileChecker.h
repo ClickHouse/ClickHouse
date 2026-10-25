@@ -37,6 +37,8 @@ public:
 
     void save() const;
     void save(WriteBuffer & buffer) const;
+    /// Serializes the given file sizes in the same format without binding them to a path: no file is opened.
+    static void save(WriteBuffer & buffer, const std::map<String, size_t> & file_sizes);
     bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
@@ -93,7 +95,6 @@ private:
     void load();
 
     void save(const Map & map_to_save) const;
-    void save(WriteBuffer & buffer, const Map & map_to_save) const;
 
     bool fileReallyExists(const String & path_) const;
     size_t getRealFileSize(const String & path_) const;

@@ -1,11 +1,13 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <Core/Streaming/Settings.h>
-
 #include <Interpreters/Context_fwd.h>
 
 #include <Parsers/IAST_fwd.h>
+
+#include <Storages/StorageInMemoryMetadata.h>
+
+#include <Core/Names.h>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
@@ -13,6 +15,8 @@ namespace DB
 class ActionsDAG;
 class Block;
 class NamesAndTypesList;
+
+StorageMetadataPtr extendMetadataWithStream(const StorageMetadataPtr & metadata, const StreamSettings & stream_settings);
 
 /// Whether a partition stayed inactive longer than the watermark idle timeout (never expires when the timeout is unset).
 bool isIdleExpired(

@@ -15,7 +15,28 @@ class Job:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
         # set to true if any submodule affects the job
+        # (except submodules under exclude_paths)
+        # a submodule listed in include_paths affects the job regardless of this flag
         with_git_submodules: bool = False
+
+        def is_excluded(self, path: str) -> bool:
+            path = os.path.normpath(path)
+            for exclude in self.exclude_paths:
+                exclude_norm = os.path.normpath(exclude)
+                if path == exclude_norm or path.startswith(exclude_norm + os.sep):
+                    return True
+            return False
+
+        def is_affected_by_submodule(self, submodule_path: str) -> bool:
+            if self.is_excluded(submodule_path):
+                return False
+            if self.with_git_submodules:
+                return True
+            submodule_path = os.path.normpath(submodule_path)
+            return any(
+                os.path.normpath(include) == submodule_path
+                for include in self.include_paths
+            )
 
     @dataclass
     class ParamSet:
@@ -273,6 +294,11 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
+        def set_digest_config(self, digest_config):
+            res = copy.deepcopy(self)
+            res.digest_config = digest_config
+            return res
+
         def set_timeout(self, timeout):
             res = copy.deepcopy(self)
             res.timeout = timeout
@@ -323,6 +349,7 @@ class Job:
                         )
                     if any(
                         file in Job.Config._submodule_paths_cache
+                        and not self.digest_config.is_excluded(file)
                         for file in normalized_files
                     ):
                         return True

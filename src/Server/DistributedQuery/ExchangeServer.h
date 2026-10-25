@@ -32,6 +32,8 @@ public:
 
     void start();
     void stop();
+    /// The port the server listens on; tells the port chosen for a listen port of 0.
+    UInt16 port() const { return server_socket.address().port(); }
 
     void run() override;
 

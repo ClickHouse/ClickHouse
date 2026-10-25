@@ -50,7 +50,6 @@ control: GLOBAL IN over an unshared subquery
 control: tuple IN
 2
 3
-control: old analyzer rejects the shape
 control: Set engine on the right of IN
 2
 3

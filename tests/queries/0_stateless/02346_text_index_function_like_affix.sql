@@ -4,7 +4,6 @@
 -- so both spellings are covered here.
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
@@ -246,7 +245,7 @@ SELECT 'suffix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE '%Cloud');
 
 SELECT 'ilike prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION ilike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clickhouse%');
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clic%');
 
 DROP TABLE tab;
 

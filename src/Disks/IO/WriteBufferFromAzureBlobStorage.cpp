@@ -102,7 +102,7 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromAzureBlobStorage was canceled."
+                "WriteBufferFromAzureBlobStorage was canceled. "
                 "The file might not be written to AzureBlobStorage. "
                 "{}.",
                 blob_path);
@@ -215,7 +215,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -278,7 +278,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
-                error_code = static_cast<Int32>(e.StatusCode);
+                error_code = getAzureErrorCodeForLog(e);
                 error_message = e.Message;
                 if (blob_log)
                     blob_log->addEvent(
@@ -316,6 +316,8 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
+
+    WriteBufferFromFileBase::finalizeImpl();
 
     if (!is_prefinalized)
         preFinalize();
@@ -358,7 +360,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = static_cast<Int32>(e.StatusCode);
+            error_code = getAzureErrorCodeForLog(e);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(
@@ -554,7 +556,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            error_code = static_cast<Int32>(e.StatusCode);
+            error_code = getAzureErrorCodeForLog(e);
             error_message = e.Message;
             if (blob_log)
                 blob_log->addEvent(

@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- With `exact_rows_before_limit` the per-shard sorts of a two-stage top-N must feed the full
 -- row count into `rows_before_limit_at_least`, but the internal per-shard cap cuts the pipeline
 -- walk that collects those counters. The optimizer must not build the two-stage top-N then.
@@ -28,7 +25,7 @@ SELECT '-- 2. exact_rows_before_limit: one full sort instead';
 EXPLAIN SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS exact_rows_before_limit = 1;
 
 SELECT '-- 3. same results in both modes';
-SELECT v FROM t_topn_exact ORDER BY v LIMIT 3;
-SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS exact_rows_before_limit = 1;
+SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS exact_rows_before_limit = 1, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_topn_exact;

@@ -105,5 +105,5 @@ for FORMAT in Arrow ArrowStream; do
     done
 done > "$TMP_DIR/queries.sql"
 
-${CLICKHOUSE_LOCAL} --path "$TMP_DIR/local" --max_threads=1 --allow_experimental_nullable_tuple_type=0 \
+${CLICKHOUSE_LOCAL} --path "$TMP_DIR/local" --max_threads=1 --enable_nullable_tuple_type=0 \
     --multiquery --queries-file "$TMP_DIR/queries.sql"
