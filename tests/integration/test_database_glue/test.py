@@ -1240,6 +1240,36 @@ def test_native_create_decimal_precision_limit(started_cluster):
     assert str(table.schema().find_field("amount").field_type) == "decimal(38, 2)", table.schema()
 
 
+def test_native_create_geometry_rejected(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_geometry_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    settings = {
+        "allow_experimental_database_glue_catalog": 1,
+        "allow_database_glue_catalog": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for column_type in ["Geometry", "Array(Geometry)"]:
+        for allow_geo_types in [0, 1]:
+            error = node.query_and_get_error(
+                f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (geom {column_type})",
+                settings={**settings, "allow_geo_types_in_iceberg": allow_geo_types},
+            )
+            assert "the Iceberg `geometry` type requires format version 3" in error, error
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    assert root_namespace not in [db["Name"] for db in glue_client.get_databases()["DatabaseList"]]
+    assert not list(
+        started_cluster.minio_client.list_objects("warehouse-glue", prefix=f"{root_namespace}/", recursive=True)
+    )
+
+
 def test_native_create_transform_parameter_out_of_range_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 

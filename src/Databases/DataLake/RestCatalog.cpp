@@ -132,12 +132,18 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
-void checkTableNameIsCanonical(const String & table_name)
+/// The catalog identifies a table by its decoded name; only request paths carry the canonical encoded spelling.
+static String decodeTableName(const String & table_name)
 {
     String decoded;
     Poco::URI::decode(table_name, decoded);
+    return decoded;
+}
+
+void checkTableNameIsCanonical(const String & table_name)
+{
     String encoded;
-    Poco::URI::encode(decoded, "/?#", encoded);
+    Poco::URI::encode(decodeTableName(table_name), "/?#", encoded);
     if (encoded != table_name)
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
@@ -2004,13 +2010,15 @@ bool RestCatalog::createTable(
     DB::CompressionMethod /*metadata_compression_method*/,
     bool if_not_exists) const
 {
+    checkTableNameIsCanonical(table_name);
+
     const String location = metadata_content->getValue<String>("location");
 
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    request_body->set("name", table_name);
+    request_body->set("name", decodeTableName(table_name));
     if (!managesTableLocation())
         request_body->set("location", location);
     {
@@ -2103,7 +2111,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
+        identifier->set("name", decodeTableName(table_name));
         identifier->set("namespace", namespaceToJSONArray(namespace_name));
 
         request_body->set("identifier", identifier);
@@ -2185,7 +2193,7 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
+        identifier->set("name", decodeTableName(table_name));
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
         namespaces->add(namespace_name);
         identifier->set("namespace", namespaces);
@@ -2304,7 +2312,7 @@ bool RestCatalog::updateSchema(
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
+        identifier->set("name", decodeTableName(table_name));
         identifier->set("namespace", namespaceToJSONArray(namespace_name));
 
         request_body->set("identifier", identifier);

@@ -1981,6 +1981,37 @@ def test_table_with_slash(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
 
 
+def test_native_create_table_with_slash(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_slash_{uuid.uuid4().hex}"
+    table_encoded_name = f"{test_ref}_table%2Ffoo"
+    root_namespace = f"{test_ref}_namespace"
+    qualified = f"{CATALOG_NAME}.`{root_namespace}.{table_encoded_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {qualified} (x String)",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "default_table_engine": "None",
+        },
+    )
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '{root_namespace}.%'"
+    ) == f"{root_namespace}.{table_encoded_name}\n"
+
+    node.query(
+        f"INSERT INTO {qualified} VALUES ('AAPL')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {qualified}") == "AAPL\n"
+
+    node.query(f"DROP TABLE {qualified}")
+    assert node.query(f"SHOW TABLES FROM {CATALOG_NAME} LIKE '{root_namespace}.%'") == ""
+
+
 def test_cluster_select(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]

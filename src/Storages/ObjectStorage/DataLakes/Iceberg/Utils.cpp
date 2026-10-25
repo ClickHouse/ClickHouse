@@ -105,6 +105,7 @@ namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
 extern const SettingsBool datalake_ignore_unsupported_table_properties;
+extern const SettingsBool allow_geo_types_in_iceberg;
 }
 
 namespace ProfileEvents
@@ -1358,7 +1359,9 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Stri
 }
 
 /// Iceberg limits the precision of a decimal to 38: https://iceberg.apache.org/spec/#primitive-types
-static void checkIcebergDecimalPrecision(const DataTypePtr & type)
+/// `geometry` is a format version 3 type: https://iceberg.apache.org/spec/#version-3-extended-types-and-capabilities
+/// and it is read back as `Geometry` only with `allow_geo_types_in_iceberg`.
+static void checkIcebergColumnType(const DataTypePtr & type, UInt64 format_version, bool allow_geo_types)
 {
     if (isDecimal(type))
     {
@@ -1368,19 +1371,32 @@ static void checkIcebergDecimalPrecision(const DataTypePtr & type)
                 "Type {} cannot be stored in Iceberg: the maximum precision of an Iceberg decimal is 38",
                 type->getName());
     }
+    else if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+    {
+        if (format_version < 3)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Type {} cannot be stored in an Iceberg table of format version {}: the Iceberg `geometry` type requires format version 3",
+                type->getName(), format_version);
+        if (!allow_geo_types)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Type {} cannot be stored in Iceberg without enabled `allow_geo_types_in_iceberg`: the table could not be read back",
+                type->getName());
+    }
     else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        checkIcebergDecimalPrecision(nullable->getNestedType());
+        checkIcebergColumnType(nullable->getNestedType(), format_version, allow_geo_types);
     else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
-        checkIcebergDecimalPrecision(array->getNestedType());
+        checkIcebergColumnType(array->getNestedType(), format_version, allow_geo_types);
     else if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        checkIcebergDecimalPrecision(map->getKeyType());
-        checkIcebergDecimalPrecision(map->getValueType());
+        checkIcebergColumnType(map->getKeyType(), format_version, allow_geo_types);
+        checkIcebergColumnType(map->getValueType(), format_version, allow_geo_types);
     }
     else if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & element : tuple->getElements())
-            checkIcebergDecimalPrecision(element);
+            checkIcebergColumnType(element, format_version, allow_geo_types);
     }
 }
 
@@ -1464,8 +1480,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (is_catalog_table)
     {
+        const bool allow_geo_types = context->getSettingsRef()[Setting::allow_geo_types_in_iceberg];
         for (const auto & column : columns)
-            checkIcebergDecimalPrecision(column.type);
+            checkIcebergColumnType(column.type, format_version, allow_geo_types);
 
         const bool ignore_unsupported_properties = context->getSettingsRef()[Setting::datalake_ignore_unsupported_table_properties];
         auto validate_key = [&](ASTPtr & key, const char * clause, bool is_partition_key)
