@@ -1514,61 +1514,17 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         auto & before_interpolate_actions = sort_analysis_result.before_interpolate_actions;
         addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
 
-        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
-        auto & interpolate_list_nodes = interpolate_list_node.getNodes();
-        const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
-
-        NameSet target_column_name_set;
-        for (const auto & [_, target_column_name] : target_column_names)
-            target_column_name_set.insert(target_column_name);
-
-        /// The interpolated values are only in the target columns, the columns of the target expressions keep
-        /// their pre-fill values, so a target expression read by an INTERPOLATE expression reads the target.
-        NameToNameMap target_by_expression_name;
-        NameSet ambiguous_expression_names;
-        for (const auto & interpolate_node : interpolate_list_nodes)
-        {
-            const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            /// An alias named like a constant would also replace the literals of the same value.
-            if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
-                continue;
-
-            auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
-            /// The filling writes the ORDER BY columns and the targets itself.
-            if (order_by_column_names.contains(expression_name) || target_column_name_set.contains(expression_name))
-                continue;
-
-            /// Several targets backed by one expression: a read of it does not tell which target it means.
-            if (!target_by_expression_name.emplace(expression_name, target_column_names.at(interpolate_node_typed.getExpressionName())).second)
-                ambiguous_expression_names.insert(expression_name);
-        }
-
-        for (const auto & expression_name : ambiguous_expression_names)
-            target_by_expression_name.erase(expression_name);
-
         ActionsDAG interpolate_actions_dag;
-        std::unordered_map<String, const ActionsDAG::Node *> input_by_name;
         auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
-            if (target_by_expression_name.contains(query_plan_column.name))
-                continue;
-
             /// INTERPOLATE actions dag input columns must be non constant
             query_plan_column.column = nullptr;
-            const auto & input_node = interpolate_actions_dag.addInput(query_plan_column);
-            input_by_name.emplace(input_node.result_name, &input_node);
+            interpolate_actions_dag.addInput(query_plan_column);
         }
 
-        for (const auto & [expression_name, target_column_name] : target_by_expression_name)
-        {
-            auto it = input_by_name.find(target_column_name);
-            if (it == input_by_name.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE target column {} is not present in the block {}",
-                    target_column_name, query_plan.getCurrentHeader()->dumpNames());
-
-            interpolate_actions_dag.addAlias(*it->second, expression_name);
-        }
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+        auto & interpolate_list_nodes = interpolate_list_node.getNodes();
 
         if (interpolate_list_nodes.empty())
         {
@@ -1583,6 +1539,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         else
         {
             ActionsDAG rename_dag;
+            const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
 
             /// `FillingTransform` rejects an ORDER BY column as an INTERPOLATE output by name, which a renamed target column no longer has.
             for (const auto & description : query_analysis_result.sort_description)
@@ -1599,7 +1556,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
                 const auto & column_name = target_column_names.at(interpolate_node_typed.getExpressionName());
 
-                /// The expression reads the previous values of its own target and of the constant targets through columns named by the target names.
+                /// The expression reads the previous values of the targets through columns named by the target names.
                 QueryTreeNodePtr interpolate_expression_node = interpolate_node_typed.getInterpolateExpression();
                 bool is_expression_cloned = false;
                 for (const auto & target_node : interpolate_list_nodes)

@@ -129,3 +129,42 @@ SELECT g, c FROM
     ORDER BY g WITH FILL INTERPOLATE (a AS intDiv(a, a - a), c AS c + 1)
 )
 ORDER BY g;
+
+SELECT 'a shared expression is not rebound when one of its targets is dropped by the outer query';
+SELECT g, b, c FROM
+(
+    SELECT g, x AS a, x AS b, c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x, toUInt32(number) AS c FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (a AS 0, b AS b + 1, c AS c + a)
+);
+SELECT g, a, b, c FROM
+(
+    SELECT g, x AS a, x AS b, c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x, toUInt32(number) AS c FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (a AS 0, b AS b + 1, c AS c + a)
+);
+
+SELECT 'a read of a target expression keeps no target read inside it';
+SELECT g, c FROM
+(
+    SELECT g, x AS a, x + 1 AS b, c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x, toUInt32(number) AS c FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (a AS intDiv(a, a - a), b AS b + 1, c AS c + b)
+);
+
+SELECT 'a column computed before the fill is read as it is';
+SELECT g, x + 1 AS b, (x + 1) * 2 AS e, c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x, toUInt32(number) AS c FROM numbers(2))
+ORDER BY g WITH FILL INTERPOLATE (b AS b + 1, c AS c + e);
+
+SELECT 'an aggregate is read as it is';
+SELECT g, x + 1 AS b, count() AS c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x FROM numbers(2))
+GROUP BY g, x ORDER BY g WITH FILL INTERPOLATE (b AS b + 1, c AS c + sum(x + 1));
+
+SELECT 'a constant target inside an aggregate, a window function or another column is read as it is';
+SELECT toUInt16(number * 4) AS g, 5 AS d, count() AS c FROM numbers(2)
+GROUP BY g ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, c AS c + sum(d));
+SELECT toUInt16(number * 4) AS g, 5 AS d, toUInt32(number) AS c FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, c AS c + sum(d) OVER ());
+SELECT toUInt16(number * 4) AS g, 5 AS d, d * 2 AS e, toUInt32(number) AS c FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, c AS c + e);
+
+SELECT 'a target whose expression reads a constant target';
+SELECT g, 5 AS d, x + d AS b, c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x, toUInt32(number) AS c FROM numbers(2))
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, b AS b * 2, c AS c + b);

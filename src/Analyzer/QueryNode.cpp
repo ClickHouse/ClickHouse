@@ -28,7 +28,6 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
-#include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -41,42 +40,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
-}
-
-namespace
-{
-
-/// Whether the planner names both alike: equal structure, and the table columns come from the same table expressions.
-bool isSameExpression(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
-{
-    if (!lhs.isEqual(rhs, {.compare_aliases = false}))
-        return false;
-
-    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_compare{{&lhs, &rhs}};
-    while (!nodes_to_compare.empty())
-    {
-        auto [lhs_node, rhs_node] = nodes_to_compare.back();
-        nodes_to_compare.pop_back();
-
-        if (const auto * lhs_column_node = lhs_node->as<ColumnNode>())
-        {
-            auto lhs_source = lhs_column_node->getColumnSourceOrNull();
-            bool is_expression_argument = !lhs_source || lhs_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS
-                || lhs_source->getNodeType() == QueryTreeNodeType::INTERPOLATE;
-            if (!is_expression_argument && lhs_source != rhs_node->as<const ColumnNode &>().getColumnSourceOrNull())
-                return false;
-        }
-
-        const auto & lhs_children = lhs_node->getChildren();
-        const auto & rhs_children = rhs_node->getChildren();
-        for (size_t i = 0; i < lhs_children.size(); ++i)
-            if (lhs_children[i])
-                nodes_to_compare.emplace_back(lhs_children[i].get(), rhs_children[i].get());
-    }
-
-    return true;
-}
-
 }
 
 QueryNode::QueryNode(
@@ -147,24 +110,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
         auto & interpolate_node = getInterpolate();
         auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
 
-        /// The targets whose reads by expression `addWithFillStepIfNeeded` redirects to the target column.
-        std::vector<const InterpolateNode *> redirected_targets;
-        for (const auto & node : interpolate_list_nodes)
-        {
-            const auto & target = node->as<const InterpolateNode &>();
-            const auto & expression = *target.getExpression();
-            auto is_expression = [&](const QueryTreeNodePtr & other) { return isSameExpression(*other, expression); };
-
-            if (expression.getNodeType() == QueryTreeNodeType::CONSTANT
-                || (hasOrderBy() && std::ranges::any_of(getOrderBy().getNodes(),
-                    [&](const QueryTreeNodePtr & sort_node) { return is_expression(sort_node->as<const SortNode &>().getExpression()); }))
-                || std::ranges::count_if(interpolate_list_nodes,
-                    [&](const QueryTreeNodePtr & other) { return is_expression(other->as<const InterpolateNode &>().getExpression()); }) > 1)
-                continue;
-
-            redirected_targets.push_back(&target);
-        }
-
         std::unordered_set<const IQueryTreeNode *> used_interpolate_nodes;
         QueryTreeNodes nodes_to_visit;
         auto use_interpolate_node = [&](const IQueryTreeNode & interpolate)
@@ -177,24 +122,17 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
             if (used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()))
                 use_interpolate_node(*interpolate);
 
-        /// An INTERPOLATE expression reads the interpolated values of the redirected targets whose expressions it contains,
-        /// and of the constant targets through columns whose source is the target's node.
+        /// An INTERPOLATE expression reads the interpolated values of the targets through columns whose source is the target's node.
         while (!nodes_to_visit.empty())
         {
             auto node = std::move(nodes_to_visit.back());
             nodes_to_visit.pop_back();
-
-            for (const auto * target : redirected_targets)
-                if (isSameExpression(*node, *target->getExpression()))
-                    use_interpolate_node(*target);
 
             if (const auto * column_node = node->as<ColumnNode>())
             {
                 auto column_source = column_node->getColumnSourceOrNull();
                 if (column_source && column_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
                     use_interpolate_node(*column_source);
-
-                /// The planner reads a column with an expression as an input.
                 continue;
             }
 
