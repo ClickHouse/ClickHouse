@@ -926,7 +926,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
             continue;
         }
 
-        remote_layout[std::move(result.local_path)] = std::move(result.info);
+        /// The logical path in `prefix.path` ends with a slash, while the directories reused from the base above are keyed
+        /// by the normalized path. Key both the same way, so that two `prefix.path` objects claiming the same directory
+        /// (written by different servers sharing the disk) collapse into one entry instead of being recorded twice.
+        remote_layout[normalizePath(result.local_path).string()] = std::move(result.info);
     }
 
     /// Root folder is a special case. Files are stored as /__root/{file-name}, unless the root has switched to the explicit file list.
