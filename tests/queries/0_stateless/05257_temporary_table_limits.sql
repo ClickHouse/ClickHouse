@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(256, None)
 -- Tests for `max_temporary_tables`, `max_temporary_table_memory_usage`,
 -- `max_temporary_table_size_bytes_compressed` and `max_temporary_table_size_bytes_uncompressed`.
 
@@ -75,7 +76,8 @@ CREATE TEMPORARY TABLE tmp_mt (x UInt64) ENGINE = MergeTree ORDER BY tuple() SET
 INSERT INTO tmp_mt SELECT number FROM numbers(1000);
 -- Random data does not compress.
 INSERT INTO tmp_mt SELECT rand64() FROM numbers(100000) SETTINGS max_block_size = 1000000, max_insert_block_size = 1000000; -- { serverError TOO_MANY_BYTES }
--- A constant compresses well (not zeros, which may use the sparse serialization).
+-- A constant compresses well (not zeros, which may use the sparse serialization), but each granule adds a compressed block
+-- or a mark, hence the limit on `index_granularity` at the top.
 INSERT INTO tmp_mt SELECT 1 FROM numbers(100000) SETTINGS max_block_size = 1000000, max_insert_block_size = 1000000;
 SELECT count() FROM tmp_mt;
 DROP TEMPORARY TABLE tmp_mt;

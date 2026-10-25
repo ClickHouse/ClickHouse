@@ -1,0 +1,436 @@
+---
+slug: /cloud/managed-postgres/guides/fastapi
+sidebarTitle: 'FastAPI 和 SQLAlchemy'
+title: '在 ClickHouse Managed Postgres 中使用 FastAPI 和 SQLAlchemy'
+description: '使用异步 SQLAlchemy 和 asyncpg 将 FastAPI 应用连接到 ClickHouse Managed Postgres，运行 Alembic 迁移，并通过经过验证的 TLS 连接提供 CRUD 端点'
+keywords: ['managed postgres', 'fastapi', 'sqlalchemy', 'asyncpg', 'alembic', 'python', 'uvicorn', 'pgbouncer', 'migrations', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-fastapi-beta" />
+
+[FastAPI](https://fastapi.tiangolo.com/) 是一个异步 Python Web 框架，[SQLAlchemy](https://www.sqlalchemy.org/) 则是使用最广泛的 Python ORM。在本指南中，您将定义一个带类型注解的 SQLAlchemy 模型，通过 [Alembic](https://alembic.sqlalchemy.org/) 迁移创建对应的表，并使用 FastAPI 提供增、查、改、删 (CRUD) 端点。该应用使用 [asyncpg](https://magicstack.github.io/asyncpg/) 驱动程序，所有连接均启用 TLS，并执行完整的证书验证。
+
+## 前置条件 {#prerequisites}
+
+* [uv](https://docs.astral.sh/uv/) 以及 Python 3.11 或更高版本。本指南已在 Python 3.13、FastAPI 0.142、SQLAlchemy 2.1、asyncpg 0.31、Alembic 1.20 和 Uvicorn 0.54 环境下测试通过。
+* 一个 ClickHouse Cloud 账户
+* [`psql`](https://www.postgresql.org/download/)，用于创建数据库。也可以在 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console)中运行 `CREATE DATABASE` 语句。
+
+## 创建 ClickHouse Managed Postgres 服务 {#create-service}
+
+在 ClickHouse Cloud 控制台中，点击 **New service**，然后选择 **Postgres**。几分钟后实例即可就绪。详细操作步骤请参阅[快速入门](/zh/products/managed-postgres/quickstart)。
+
+## 获取连接详细信息 {#connection-details}
+
+在服务的左侧边栏中点击 **Connect**。弹出的对话框会显示您的用户名、密码、服务器和端口，并提供 **Directly** / **via PgBouncer** 切换开关。
+
+本指南会同时用到这两种连接：
+
+* **PgBouncer (端口 `6432`)&#x20;**：供应用使用。SQLAlchemy 会在每个 Uvicorn 工作线程中维护一个连接池，而内置的 [PgBouncer](/zh/products/managed-postgres/connection#pgbouncer) 可让众多工作线程和副本共享少量 Postgres 连接。它以事务池化模式运行。
+* **直连 (端口 `5432`)&#x20;**：供 Alembic 使用。迁移需要执行 DDL，可能耗时较长，还可能依赖会话状态，因此应直接连接 Postgres。
+
+开启 **Use SSL** 并点击 **Download CA certificate**。您也可以在 **Settings → CA Certificate** 中下载。该证书为您的实例所独有，因此驱动程序可以借助它验证所连接的确实是您的服务器。
+
+开启 **Use SSL** 后，对话框中的 URL 会以 `sslmode=verify-full&sslrootcert=...` 结尾。asyncpg 不会读取这些参数，因此只需从对话框中复制密码和主机即可。CA 证书则由应用在代码中传入 (参见[配置连接](#configure-connection)) 。
+
+## 设置项目 {#project-setup}
+
+创建一个项目，然后安装 FastAPI、Uvicorn、带有 asyncio extra 的 SQLAlchemy、asyncpg 和 Alembic：
+
+```bash
+uv init --bare fastapi-managed-postgres && cd fastapi-managed-postgres
+uv add fastapi uvicorn "sqlalchemy[asyncio]" asyncpg alembic
+mkdir app && touch app/__init__.py
+```
+
+<Tip>
+  **要集成到现有应用中？**
+
+  跳过 `uv init` 和 `mkdir` 命令。在项目中运行 `uv add "sqlalchemy[asyncio]" asyncpg alembic`，然后继续阅读[配置连接](#configure-connection)。如果您的应用通过异步 SQLAlchemy 使用 SQLite：
+
+  * 将 `create_async_engine` 调用修改为与 `app/db.py` 中的一致。在 `migrations/env.py` 中，从您自己的模块导入 `Base` 和模型。
+  * 从启动流程中移除 `Base.metadata.create_all`。Alembic 会在 Postgres 中创建您现有的表，但不会从 SQLite 迁移数据。
+</Tip>
+
+## 配置连接 {#configure-connection}
+
+将下载的 CA 证书移动到项目目录中，并重命名为 `ca-certificate.pem`。
+
+为应用创建一个数据库。将 `<PASSWORD>` 和主机地址替换为 **Connect** 弹窗中显示的值：
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_fastapi;"
+```
+
+```text
+CREATE DATABASE
+```
+
+在项目根目录中创建 `.env` 文件，或将这些变量添加到现有的 `.env` 文件中。这两个 URL 仅端口不同，均使用 `postgresql+asyncpg` 方案 (scheme) ，且不带任何 SSL 参数：
+
+```bash title=".env"
+# The app connects through PgBouncer (port 6432)
+DATABASE_URL="postgresql+asyncpg://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_fastapi"
+# Alembic migrations connect directly to Postgres (port 5432)
+DIRECT_DATABASE_URL="postgresql+asyncpg://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_fastapi"
+DATABASE_CA_CERT="ca-certificate.pem"
+```
+
+`DATABASE_CA_CERT` 的路径相对于执行命令时所在的目录进行解析。如果密码中包含 `@`、`/` 或 `#` 等特殊字符，请对其进行 URL 编码。请勿将 `.env` 纳入版本控制。
+
+创建 `app/db.py`。该文件负责构建 TLS 设置、引擎，以及供应用其他部分共用的会话工厂：
+
+```python title="app/db.py"
+import os
+import ssl
+
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
+
+def ssl_context() -> ssl.SSLContext:
+    # Verifies the certificate chain against your instance's CA and checks the hostname
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(os.environ["DATABASE_CA_CERT"])
+    return context
+
+
+# The app uses the PgBouncer connection (port 6432)
+engine = create_async_engine(
+    os.environ["DATABASE_URL"],
+    connect_args={"ssl": ssl_context()},
+)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+```
+
+使用 `PROTOCOL_TLS_CLIENT` 创建的 `ssl.SSLContext` 要求证书有效，并会校验主机名，效果等同于 `sslmode=verify-full`。SQLAlchemy 会通过 `connect_args` 将其传递给 asyncpg。
+
+<Warning>
+  **通过 `connect_args` 传递 CA 证书**
+
+  * 如果未提供 `ssl` 参数，asyncpg 会在服务器支持 TLS 时使用 TLS，但不会验证证书。
+  * 不要将 Connect 弹窗中的 `sslmode` 或 `sslrootcert` 复制到 URL 中。SQLAlchemy 会将 URL 参数作为关键字参数传递给 asyncpg，导致连接失败并报错 `TypeError: connect() got an unexpected keyword argument 'sslmode'`。
+  * 在 Python 3.13 及更高版本中，`ssl.create_default_context` 会启用严格的 X.509 检查，因此用它创建的上下文会导致连接失败并报错 `certificate verify failed: Missing Authority Key Identifier`。请按示例使用 `ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)` 创建上下文。
+  * 如果 CA 证书不正确，连接会失败并报错 `certificate verify failed: unable to get local issuer certificate`。如果主机名不匹配 (例如通过 IP 地址连接) ，则会报错 `certificate verify failed: IP address mismatch`。
+</Warning>
+
+<Note>
+  如果您希望将 TLS 设置保留在 URL 中，或者您的应用使用同步 SQLAlchemy 会话，请改用 [psycopg](https://www.psycopg.org/psycopg3/) 驱动程序来替代 asyncpg。它基于 libpq 构建，可直接使用 Connect 弹窗中的参数，例如 `postgresql+psycopg://...:5432/guide_fastapi?sslmode=verify-full&sslrootcert=ca-certificate.pem`，并且同时支持 `create_engine` 和 `create_async_engine`。
+</Note>
+
+## 定义模型 {#model}
+
+创建 `app/models.py`，并在其中定义一个带类型注解的 SQLAlchemy 模型：
+
+```python title="app/models.py"
+from datetime import datetime
+
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db import Base
+
+
+class Todo(Base):
+    __tablename__ = "todos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    done: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+```
+
+## 运行迁移 {#migrations}
+
+基于 async 模板创建 Alembic 环境：
+
+```bash
+uv run alembic init -t async migrations
+```
+
+替换自动生成的 `migrations/env.py` 文件内容。新版本会加载你的模型以供 autogenerate 使用，并使用与应用相同的 TLS 设置直接连接 Postgres：
+
+```python title="migrations/env.py"
+import asyncio
+import os
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import create_async_engine
+
+import app.models  # noqa: F401 (registers the models on Base.metadata)
+from app.db import Base, ssl_context
+
+config = context.config
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+
+def do_run_migrations(connection: Connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations() -> None:
+    # Migrations use the direct connection (port 5432)
+    engine = create_async_engine(
+        os.environ["DIRECT_DATABASE_URL"],
+        poolclass=pool.NullPool,
+        connect_args={"ssl": ssl_context()},
+    )
+    async with engine.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+    await engine.dispose()
+
+
+asyncio.run(run_migrations())
+```
+
+Alembic 会忽略 `alembic.ini` 中的占位值 `sqlalchemy.url`，因为 `env.py` 会自行创建引擎。
+
+根据模型生成迁移脚本，然后执行迁移：
+
+```bash
+uv run --env-file .env alembic revision --autogenerate -m "create todos"
+uv run --env-file .env alembic upgrade head
+```
+
+```text
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.schemas
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.tables
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.types
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.constraints
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.defaults
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments
+INFO  [alembic.autogenerate.compare.tables] Detected added table 'todos'
+Generating /path/to/fastapi-managed-postgres/migrations/versions/9b8d29f05361_create_todos.py ...  done
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 9b8d29f05361, create todos
+```
+
+检查 `migrations/versions` 目录中生成的文件，并将其与代码一同提交。Alembic 会在 `alembic_version` 表中记录已应用的修订版本。之后每次修改模型，都需要重新运行 `revision --autogenerate` 和 `upgrade head`。
+
+## 添加 API 端点 {#endpoints}
+
+创建 `app/main.py`。每个请求都会通过 FastAPI 依赖项获取独立的 `AsyncSession`，应用关闭时，引擎的连接池也会随之关闭：
+
+```python title="app/main.py"
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import SessionLocal, engine
+from app.models import Todo
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await engine.dispose()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with SessionLocal() as session:
+        yield session
+
+
+Session = Annotated[AsyncSession, Depends(get_session)]
+
+
+class TodoCreate(BaseModel):
+    title: str
+
+
+class TodoUpdate(BaseModel):
+    title: str | None = None
+    done: bool | None = None
+
+
+class TodoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    done: bool
+    created_at: datetime
+
+
+async def get_todo_or_404(session: AsyncSession, todo_id: int) -> Todo:
+    todo = await session.get(Todo, todo_id)
+    if todo is None:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    return todo
+
+
+@app.get("/todos", response_model=list[TodoOut])
+async def list_todos(session: Session):
+    result = await session.scalars(select(Todo).order_by(Todo.id))
+    return result.all()
+
+
+@app.post("/todos", response_model=TodoOut, status_code=201)
+async def create_todo(body: TodoCreate, session: Session):
+    todo = Todo(title=body.title)
+    session.add(todo)
+    await session.commit()
+    return todo
+
+
+@app.get("/todos/{todo_id}", response_model=TodoOut)
+async def read_todo(todo_id: int, session: Session):
+    return await get_todo_or_404(session, todo_id)
+
+
+@app.patch("/todos/{todo_id}", response_model=TodoOut)
+async def update_todo(todo_id: int, body: TodoUpdate, session: Session):
+    todo = await get_todo_or_404(session, todo_id)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(todo, field, value)
+    await session.commit()
+    return todo
+
+
+@app.delete("/todos/{todo_id}", status_code=204)
+async def delete_todo(todo_id: int, session: Session) -> None:
+    await session.delete(await get_todo_or_404(session, todo_id))
+    await session.commit()
+```
+
+SQLAlchemy 会将每个会话中的语句放在同一个事务中执行，该事务在调用 `session.commit` 时结束。会话关闭时，所有未提交的操作都会被回滚。执行 `INSERT` 时，SQLAlchemy 会通过 `RETURNING` 读回生成的 `id` 和 `created_at`，因此 `create_todo` 无需再额外执行一次查询。
+
+## 运行与验证 {#verify}
+
+启动应用：
+
+```bash
+uv run --env-file .env uvicorn app.main:app --port 3112
+```
+
+```text
+INFO:     Started server process [86235]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:3112 (Press CTRL+C to quit)
+```
+
+在另一个终端中，创建两个待办事项，将第一个标记为已完成，然后删除第二个：
+
+```bash
+curl -X POST localhost:3112/todos -H 'content-type: application/json' -d '{"title": "Try FastAPI"}'
+curl -X POST localhost:3112/todos -H 'content-type: application/json' -d '{"title": "Write a migration"}'
+curl -X PATCH localhost:3112/todos/1 -H 'content-type: application/json' -d '{"done": true}'
+curl -X DELETE localhost:3112/todos/2
+```
+
+```text
+{"id":1,"title":"Try FastAPI","done":false,"created_at":"2026-10-01T14:20:39.315984Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:20:39.520672Z"}
+{"id":1,"title":"Try FastAPI","done":true,"created_at":"2026-10-01T14:20:39.315984Z"}
+```
+
+`DELETE` 请求返回 `204 No Content`。如果请求的 todo 不存在，则返回 `404`：
+
+```bash
+curl -i localhost:3112/todos/2
+```
+
+```text
+HTTP/1.1 404 Not Found
+date: Thu, 01 Oct 2026 14:20:39 GMT
+server: uvicorn
+content-length: 27
+content-type: application/json
+
+{"detail":"Todo not found"}
+```
+
+在浏览器中打开 [http://localhost:3112/todos](http://localhost:3112/todos) 可列出剩余的待办事项；打开 [http://localhost:3112/docs](http://localhost:3112/docs) 则可在 FastAPI 的交互式 API 文档中试用各个端点。
+
+要确认直连使用的是经过验证的 TLS，请使用与应用相同的 TLS 设置查询 `pg_stat_ssl`：
+
+```bash
+uv run --env-file .env python -c "
+import asyncio, os
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+from app.db import ssl_context
+
+async def main():
+    engine = create_async_engine(os.environ['DIRECT_DATABASE_URL'], connect_args={'ssl': ssl_context()})
+    async with engine.connect() as conn:
+        result = await conn.execute(text('SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()'))
+        print(result.one())
+    await engine.dispose()
+
+asyncio.run(main())
+"
+```
+
+```text
+(True, 'TLSv1.3')
+```
+
+要在控制台中查看数据，请在服务的左侧边栏中打开 **SQL 控制台**，依次展开 `guide_fastapi` 和 `public`，然后点击 `todos` 表。旁边的 `alembic_version` 表保存着迁移历史记录。`todos` 表中只剩下一行数据：
+
+| id | title       | done | created&#95;at                |
+| -- | ----------- | ---- | ----------------------------- |
+| 1  | Try FastAPI | true | 2026-10-01 14:20:39.315984+00 |
+
+按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 停止应用。
+
+## 使用 PgBouncer {#pgbouncer}
+
+使用默认的 asyncpg 和 SQLAlchemy 设置时，应用可以通过 PgBouncer 正常运行：
+
+* asyncpg 会将每个查询作为协议层的命名预处理语句执行，SQLAlchemy 则为每个连接最多缓存 100 条此类语句。内置的 PgBouncer 在事务池化模式下支持这些语句，而且 asyncpg 通过协议层的 `Close` 消息 (而非 SQL `DEALLOCATE`) 释放它们。因此无需设置 `statement_cache_size=0`，也无需自定义 `prepared_statement_name_func`。如果您仍要关闭 asyncpg 的语句缓存，还需在 URL 中添加 `prepared_statement_cache_size=0`，以同时关闭 SQLAlchemy 的缓存。
+* 通过 `SET` 设置的会话设置 (例如 `search_path`) 不会延续到下一个事务，还可能泄漏给其他客户端。请改为在事务内使用 `SET LOCAL`。
+* `pg_stat_ssl` 反映的是 PgBouncer 与 Postgres 之间的连接，因此通过端口 `6432` 连接时，上文的 TLS 检查会返回 `(False, None)`。但应用到 PgBouncer 的连接仍会经过验证：使用错误的 CA 证书时，连接同样会失败。
+* Alembic 不使用 advisory 锁，且每次 `upgrade` 都在单个事务中执行，因此同样可以通过 PgBouncer 运行。不过对于耗时较长的迁移，直连仍是更好的选择。
+
+<Warning>
+  **更改列的类型**
+
+  PgBouncer 会在其到 Postgres 的连接上保留预处理语句。如果迁移更改了某个查询所返回列的类型 (例如从 `integer` 改为 `bigint`) ，该查询通过 PgBouncer 执行时就会报错 `InvalidCachedStatementError: cached statement plan is invalid due to a database schema or configuration change`，即使使用新连接也不例外，直到 PgBouncer 替换其到 Postgres 的连接为止。要解决此问题，请通过直连、以应用所用的同一用户身份，关闭 PgBouncer 到该数据库的 Postgres 连接。由于 PgBouncer 在本地连接 Postgres，其连接没有 `client_addr`，因此该查询不会影响直连。之后 PgBouncer 会建立新连接；在 SQLAlchemy 刷新缓存之前，每个池化的应用连接可能还会再失败一次：
+
+  ```sql
+  SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+  WHERE datname = 'guide_fastapi' AND usename = current_user
+    AND client_addr IS NULL AND backend_type = 'client backend'
+    AND pid <> pg_backend_pid();
+  ```
+
+  添加列不会引发此问题，因为 SQLAlchemy 会显式列出所查询的列。
+</Warning>
+
+## 后续步骤 {#next-steps}
+
+* [连接](/zh/products/managed-postgres/connection)：连接字符串、PgBouncer 和 TLS
+* [设置](/zh/products/managed-postgres/settings)：Postgres 和 PgBouncer 参数，例如 `max_connections`
+* [只读副本](/zh/products/managed-postgres/read-replicas)：通过第二个引擎将只读查询路由到副本
+* [安全](/zh/products/managed-postgres/security)：IP 访问列表和私网连接
