@@ -15462,6 +15462,13 @@ std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotP
             return {};
     }
 
+    /// The check above only sees the mutations pending right now. A mutation that is enqueued after the
+    /// pre-read hash, captured by the read's mutations snapshot (and applied on the fly), and cancelled
+    /// with `KILL MUTATION` before the post-read hash leaves the parts, the metadata and the pending
+    /// counters exactly as they were. Fold the loop-free version of the counters, so that such a round
+    /// trip changes the hash. Like `active_parts_set_version`, it is sampled live.
+    hash.update(getMutationCounters().version);
+
     /// Prefer the parts captured by the snapshot, so the result describes exactly the data that the
     /// snapshot refers to. Fall back to the current set of active parts for snapshots taken without data.
     if (snapshot_data && snapshot_data->parts)
@@ -15975,6 +15982,9 @@ static void updateMutationsCounters(MutationCounters & mutation_counters, const 
 
         mutation_counters.assertNotNegative();
     }
+
+    if (has_data_mutation || has_alter_mutation || has_metadata_mutation)
+        ++mutation_counters.version;
 }
 
 void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands)

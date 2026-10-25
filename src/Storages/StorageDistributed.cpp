@@ -2162,7 +2162,10 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     const IStorage * owner,
     ContextPtr context)
 {
-    if (shard_info.isLocal())
+    /// Follow the choice a read makes (`SelectStreamFactory::createForShard`): with
+    /// `prefer_localhost_replica = 0` a local shard is read over TCP as the configured user of the
+    /// cluster, under that user's profile, so it is probed the same way as a remote one below.
+    if (shard_info.isLocal() && context->getSettingsRef()[Setting::prefer_localhost_replica])
     {
         auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
         if (!storage)
@@ -2374,6 +2377,13 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
 
     /// Table functions have no stable identity on the shards, so we cannot ask system.tables about them.
     if (remote_table_function_ptr)
+        return {};
+
+    /// The sharding expression is fixed, but a non-deterministic one (e.g. `dictGet`) can route the same
+    /// key to another shard after a dictionary reload, and none of the hashes below sees that. It decides
+    /// what a read returns only when `optimize_skip_unused_shards` is allowed to use it, so fail closed then.
+    if (hasShardingKeyForReads() && !sharding_key_is_deterministic
+        && settings[Setting::optimize_skip_unused_shards] && settings[Setting::allow_nondeterministic_optimize_skip_unused_shards])
         return {};
 
     /// A row policy on the underlying table in this server's context filters what the current user reads

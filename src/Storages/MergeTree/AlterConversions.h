@@ -145,6 +145,11 @@ struct MutationCounters
     Int64 num_alter = 0;
     Int64 num_metadata = 0;
 
+    /// Advances on every change of the counters above and never goes back while the table is loaded, so
+    /// an enqueue/cancel round trip of a mutation is visible even though the counters return to their
+    /// previous values. Folded into `MergeTreeData::getModificationHash`.
+    UInt64 version = 0;
+
     void assertNotNegative() const;
 };
 

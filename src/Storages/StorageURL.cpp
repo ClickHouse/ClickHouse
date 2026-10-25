@@ -50,7 +50,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Common/SipHash.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>

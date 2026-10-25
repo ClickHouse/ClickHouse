@@ -7,7 +7,8 @@
 # An `ALTER TABLE ... MODIFY QUERY` that changes only an operational setting of the stored query, such as
 # `log_comment`, does not change what a refresh reads and produces. When it races with a running
 # `REFRESH ... IF CHANGED APPEND`, that refresh must keep its watermark: otherwise the next refresh sees
-# the unchanged source as changed and appends the same rows again.
+# the unchanged source as changed and appends the same rows again. The same holds for a `MODIFY DEFINER`
+# under `SQL SECURITY NONE`, where the definer is never used.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,8 +16,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FP="refresh_mv_pause_after_executor_published"
 
+USER="u_05445_${CLICKHOUSE_DATABASE}"
+
 trap '
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT '"$FP"'" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $USER" 2>/dev/null || true
 ' EXIT
 
 $CLICKHOUSE_CLIENT -q "
@@ -68,4 +72,35 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE mv_05445 SYNC;
     DROP TABLE dst_05445 SYNC;
     DROP TABLE src_05445 SYNC;
+"
+
+# The same interleaving with an `ALTER` that changes only the definer of a `SQL SECURITY NONE` view.
+$CLICKHOUSE_CLIENT -q "
+    DROP USER IF EXISTS $USER;
+    CREATE USER $USER;
+    CREATE TABLE src_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE dst_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO src_05445 VALUES (1);
+    CREATE MATERIALIZED VIEW mv_05445 REFRESH EVERY 1 SECOND IF CHANGED APPEND TO dst_05445
+        SQL SECURITY NONE AS SELECT x FROM src_05445;
+"
+
+echo "none initial: $(wait_for_dst '[1]')"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
+$CLICKHOUSE_CLIENT -q "INSERT INTO src_05445 VALUES (2)"
+timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $FP PAUSE" || echo "the refresh did not reach $FP"
+
+$CLICKHOUSE_CLIENT -q "ALTER TABLE mv_05445 MODIFY DEFINER = $USER SQL SECURITY NONE"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP"
+echo "none appended: $(wait_for_dst '[1,1,2]')"
+
+sleep 3
+echo "none after: $(dst)"
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE mv_05445 SYNC;
+    DROP TABLE dst_05445 SYNC;
+    DROP TABLE src_05445 SYNC;
+    DROP USER $USER;
 "

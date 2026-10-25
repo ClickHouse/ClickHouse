@@ -1019,12 +1019,9 @@ void StorageMaterializedView::alter(
         /// reads and produces the same rows.
         if (metadata.select.select_query)
             updateHashWithQueryIgnoringOperationalSettings(hash, *metadata.select.select_query);
-        hash.update(metadata.sql_security_type.has_value());
-        if (metadata.sql_security_type)
-            hash.update(static_cast<UInt8>(*metadata.sql_security_type));
-        hash.update(metadata.definer.has_value());
-        if (metadata.definer)
-            hash.update(*metadata.definer);
+        /// Only the effective security: the definer is ignored under `SQL SECURITY NONE`, so a
+        /// `MODIFY DEFINER` there must not discard the watermark of a racing refresh.
+        updateHashWithEffectiveSQLSecurity(hash, metadata);
         hash.update(metadata.getColumns().toString(/*include_comments=*/ false));
         return hash.get128();
     };
