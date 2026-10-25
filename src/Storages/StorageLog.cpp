@@ -8,7 +8,9 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Common/saturatedDuration.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -28,6 +30,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/TypeTree.h>
 
 #include <Interpreters/Context.h>
@@ -590,7 +593,7 @@ void LogSink::onFinish()
 
 ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndTypePair & name_and_type)
 {
-    return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
+    return [this, name_and_type] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
@@ -737,6 +740,23 @@ namespace
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
             };
             forEachInTypeTree(*column.type, callback);
+        }
+    }
+
+    /// Like the Variant prefix, the codebook of `Quantized('product')` is written per insert but read once per source.
+    /// A column inferred from `AS SELECT` keeps this serialization without the codec, so the serialization is checked.
+    void checkSupportedCodecs(const ColumnsDescription & columns, const String & storage_name)
+    {
+        for (const auto & column : columns)
+        {
+            const bool has_product_quantization = anyInTypeTree(*column.type, [](const IDataType & type)
+            {
+                const auto * serialization = typeid_cast<const SerializationQuantizedVector *>(type.getCustomSerialization());
+                return serialization && serialization->isProductQuantization();
+            });
+            if (has_product_quantization)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized('product') codec of column {}",
+                    storage_name, backQuote(column.name));
         }
     }
 }
@@ -1151,6 +1171,8 @@ void StorageLog::readImpl(
 
 SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    checkSupportedCodecs(metadata_snapshot->getColumns(), getName());
+
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -1455,6 +1477,8 @@ void registerStorageLog(StorageFactory & factory)
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
         checkStorageSettingNames(args);
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkSupportedCodecs(args.columns, args.engine_name);
 
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
