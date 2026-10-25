@@ -75,6 +75,15 @@ print_flags
 try_ddl "$DB_DEFAULT" t1
 try_ddl "$DB_AUX" t1
 
+# START removes the flag from the Keeper of a database that was detached after STOP.
+echo "detach"
+$CLICKHOUSE_CLIENT --user "$USER_GLOBAL" --query "SYSTEM STOP REPLICATED DDL QUERIES"
+$CLICKHOUSE_CLIENT --query "DETACH DATABASE $DB_AUX"
+$CLICKHOUSE_CLIENT --user "$USER_GLOBAL" --query "SYSTEM START REPLICATED DDL QUERIES"
+$CLICKHOUSE_CLIENT --query "ATTACH DATABASE $DB_AUX"
+print_flags
+try_ddl "$DB_AUX" t2
+
 $CLICKHOUSE_CLIENT --query "SELECT replaceOne(database, '$CLICKHOUSE_DATABASE', ''), name FROM system.tables WHERE database IN ('$DB_DEFAULT', '$DB_AUX') ORDER BY ALL"
 
 $CLICKHOUSE_CLIENT -m --query "

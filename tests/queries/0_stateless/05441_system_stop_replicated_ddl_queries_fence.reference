@@ -20,6 +20,10 @@ start
 --
 ok
 ok
+detach
+--
+ok
 _aux_keeper	t1
+_aux_keeper	t2
 _default_keeper	t0
 _default_keeper	t1
