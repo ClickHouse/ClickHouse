@@ -24,6 +24,7 @@
 
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/IdentifierNode.h>
@@ -146,7 +147,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
     const auto & settings = result_context->getSettingsRef();
     // If `automatic_parallel_replicas_mode` is not zero, the heuristic for automatic parallel replicas decides whether
-    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false while it is set, so
+    // `MergeTree` reads use parallel replicas: `canUseTaskBasedParallelReplicas` is false on the initiator while it is set, so
     // `enable_parallel_replicas` is not an enforcement for them. It is kept as is, because cluster engines are not
     // covered by the heuristic and still follow it (see `canReplaceClusterEngineWithClusterVariant`). Code that asks
     // whether parallel replicas are enabled uses `Context::isParallelReplicasEnabled`, which accounts for the automatic mode.
@@ -206,6 +207,10 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// The automatic mode decides with its own cost model, and the row estimate that
+    /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
+    /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
+    ctx->setIsAutomaticParallelReplicasProbe(true);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -407,16 +412,23 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+    addQueryTreePasses(
+        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+        /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
+        DisableParallelReplicasPass{}.run(query_tree, context);
+    }
     else
+    {
         query_tree_pass_manager.run(query_tree);
+    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
@@ -486,7 +498,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
-           select_options = select_query_options_,
+           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
            single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {

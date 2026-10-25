@@ -9,7 +9,6 @@
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100535&sha=0fb86507fb4817cb2418012cce69069f92e74972&name_0=PR&name_1=AST%20fuzzer%20%28arm_asan_ubsan%29
 
 SET enable_streaming_queries = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_stream_pipeline_teardown;
 
