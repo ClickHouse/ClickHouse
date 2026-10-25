@@ -4,6 +4,8 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Core/Block.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 #include <Common/Obfuscator/Models.h>
 
@@ -24,7 +26,18 @@ public:
         models.reserve(columns);
 
         for (const auto & elem : header)
-            models.emplace_back(factory.get(*elem.type, hash(seed, elem.name), markov_model_params));
+        {
+            try
+            {
+                models.emplace_back(factory.get(*elem.type, hash(seed, elem.name), markov_model_params));
+            }
+            catch (Exception & e)
+            {
+                /// The unsupported type may be nested deep inside the type of the column.
+                e.addMessage("while creating the obfuscation model for column {} of type {}", backQuoteIfNeed(elem.name), elem.type->getName());
+                throw;
+            }
+        }
     }
 
     void train(const Columns & columns)

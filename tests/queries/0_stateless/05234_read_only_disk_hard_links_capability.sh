@@ -6,8 +6,8 @@
 
 # A disk created with `read_only = true` is wrapped in `ReadOnlyDiskWrapper`, which has to report the
 # capabilities of the disk it wraps. `supportsHardLinks` decides whether the operations that need hard
-# links are offered at all, so a read-only attachment of a `plain_rewritable` disk without
-# `enable_hard_links` must refuse them for the same reason as the disk itself. `ALTER` and mutations are
+# links are offered at all, so a read-only attachment of a `plain_rewritable` disk with
+# `enable_hard_links = 0` must refuse them for the same reason as the disk itself. `ALTER` and mutations are
 # rejected earlier on a read-only table, so the check is reachable through `CREATE HYPOTHETICAL INDEX`,
 # which mirrors it because an index can only be added to a table whose parts can be hard-linked.
 
@@ -29,6 +29,8 @@ CREATE TABLE writer (key Int32, value String) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = 1, disk = disk(
     name = '05234_writer_${CLICKHOUSE_DATABASE}',
     type = object_storage, object_storage_type = local, metadata_type = plain_rewritable,
+    metadata_snapshot_write_delay_ms = 0, -- the reader sees the snapshot of the state right after every commit
+    enable_hard_links = 0,
     path = '${disk_path}');
 
 INSERT INTO writer VALUES (1, 'Hello');
@@ -38,13 +40,14 @@ SETTINGS table_disk = 1, disk = disk(
     read_only = true,
     name = '05234_reader_${CLICKHOUSE_DATABASE}',
     type = object_storage, object_storage_type = local, metadata_type = plain_rewritable,
+    enable_hard_links = 0,
     path = '${disk_path}');
 "
 
 echo '-- the read-only reader sees the data'
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM reader"
 
-echo '-- without enable_hard_links the read-only attachment reports the capability of the disk it wraps'
+echo '-- with enable_hard_links = 0 the read-only attachment reports the capability of the disk it wraps'
 ${CLICKHOUSE_CLIENT} --query "CREATE HYPOTHETICAL INDEX h ON reader value TYPE minmax GRANULARITY 1" 2>&1 |
     grep -o -m1 'Hypothetical indexes are not supported on immutable disk'
 
@@ -77,7 +80,7 @@ SETTINGS table_disk = 1, disk = disk(
     path = '${disk_path_with_hard_links}');
 "
 
-echo '-- with enable_hard_links the read-only attachment accepts it'
+echo '-- with enable_hard_links = 1 the read-only attachment accepts it'
 # Hypothetical indexes are session-scoped, so the definition and the readback share one invocation.
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE HYPOTHETICAL INDEX h ON reader_hard_links value TYPE minmax GRANULARITY 1;
