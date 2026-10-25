@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 -- The INTERSECT and EXCEPT cases below cover the extremes plumbing of `IntersectOrExceptStep`, which
 -- unites the extremes of its arms; as a join they would report the extremes of the result instead.

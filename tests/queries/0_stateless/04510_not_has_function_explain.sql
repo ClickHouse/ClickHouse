@@ -403,9 +403,8 @@ SELECT count() FROM test_mono_container_key WHERE t = tuple(['a']);
 
 DROP TABLE test_mono_container_key;
 
--- A String element does not equal an Enum key under `has`, even though the accurate cast maps it to
--- the label of the same name. Do not turn this into a primary-key set atom, or the granule holding
--- the row with that label would be pruned away under `notHas`.
+-- `has` compares a String element with an Enum key by its label, so it matches the row with that label.
+-- The key analysis does not build a set atom for this pair.
 DROP TABLE IF EXISTS test_not_has_enum;
 CREATE TABLE test_not_has_enum (x Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4, 'e' = 5, 'f' = 6, 'g' = 7, 'h' = 8))
 ENGINE = MergeTree

@@ -6,7 +6,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/TableJoin.h>
 #include <Processors/Port.h>
 #include <Processors/ISpillable.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
@@ -67,7 +66,7 @@ JoiningTransform::JoiningTransform(
         set_spillables.add(actions->getActionsDAG());
 
     if (!join->isFilled())
-        inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
+        build_finished_input = &inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
 }
 
 JoiningTransform::~JoiningTransform() = default;
@@ -78,15 +77,20 @@ OutputPort & JoiningTransform::getFinishedSignal()
     return outputs.back();
 }
 
+InputPort & JoiningTransform::addDelayedBlocksInput()
+{
+    if (delayed_blocks_input)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delayed blocks input was already added to JoiningTransform");
+
+    delayed_blocks_input = &inputs.emplace_back(outputs.front().getHeader(), this);
+    return *delayed_blocks_input;
+}
+
 IProcessor::Status JoiningTransform::prepare()
 {
     /// Check if we can fully skip reading left side when right side is empty
-    if (inputs.size() > 1)
-    {
-        auto & last_in = inputs.back();
-        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
-            stop_reading = true;
-    }
+    if (build_finished_input && build_finished_input->isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+        stop_reading = true;
 
     auto & output = outputs.front();
     auto & on_finish_output = outputs.back();
@@ -117,21 +121,24 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::PortFull;
     }
 
-    if (inputs.size() > 1)
+    if (build_finished_input && !build_finished_input->isFinished())
     {
-        auto & last_in = inputs.back();
-        if (!last_in.isFinished())
-        {
-            last_in.setNeeded();
-            if (last_in.hasData())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
+        build_finished_input->setNeeded();
+        if (build_finished_input->hasData())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
 
-            /// The left side starts to work before the right one is filled, up to what the ports in between hold.
-            if (join->getTableJoin().readsLeftWhileFillingRight())
-                inputs.front().setNeeded();
+        /// The left side starts to work before the right one is filled, up to what the ports in between hold.
+        if (join->getTableJoin().readsLeftWhileFillingRight())
+            inputs.front().setNeeded();
 
-            return Status::NeedData;
-        }
+        return Status::NeedData;
+    }
+
+    if (delayed_blocks_input && !delayed_blocks_checked)
+    {
+        delayed_blocks_checked = true;
+        if (!join->isDelayedBlocksProcessingEnabled())
+            delayed_blocks_input->close();
     }
 
     if (has_input)
@@ -157,6 +164,16 @@ IProcessor::Status JoiningTransform::prepare()
         /// safely skip processing non-joined blocks depending on `isParallelNonJoinedProcessingEnabled()`.
         if (process_non_joined && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
             return Status::Ready;
+
+        if (delayed_blocks_input && !delayed_blocks_input->isFinished())
+        {
+            delayed_blocks_input->setNeeded();
+            if (!delayed_blocks_input->hasData())
+                return Status::NeedData;
+
+            output.pushData(delayed_blocks_input->pullData(true));
+            return Status::PortFull;
+        }
 
         output.finish();
         on_finish_output.finish();

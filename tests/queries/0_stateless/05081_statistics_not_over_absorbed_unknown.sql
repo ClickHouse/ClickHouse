@@ -7,8 +7,6 @@
 -- whatever the default factors are, and every estimate is required to be non-null so that a failed
 -- extraction cannot satisfy the comparisons vacuously.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_not_absorbed;
 DROP TABLE IF EXISTS t_not_absorbed_dim;
 DROP TABLE IF EXISTS t_not_absorbed_estimates;

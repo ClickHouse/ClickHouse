@@ -32,6 +32,29 @@
 1
 2
 1
+-- a key scale that the constant does not fit
+0
+4
+0
+4
+2
+2
+0
+4
+2
+0
+4
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
 -- Decimal64, scale 0 vs 10
 1	1
 0	1
