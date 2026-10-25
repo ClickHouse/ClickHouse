@@ -247,8 +247,16 @@ MergeTreeReadTaskPtr MergeTreeReadPoolStatelessParts::getTask(size_t task_idx, M
         if (task_ranges.empty())
             continue;
 
+        auto task_info = getOrBuildTaskInfo(part_idx);
+
+        /// `createTask` reuses the readers of the previous task when the part names match, but the described
+        /// parts may come from different directories with the same part name (e.g. two `all_1_1_0`).
+        /// Reuse the readers only for the very same part.
+        if (previous_task && &previous_task->getInfo() != task_info.get())
+            previous_task = nullptr;
+
         return createTask(
-            getOrBuildTaskInfo(part_idx), std::move(task_ranges), /*patches_ranges=*/ {}, previous_task, /*updater=*/ nullptr);
+            std::move(task_info), std::move(task_ranges), /*patches_ranges=*/ {}, previous_task, /*updater=*/ nullptr);
     }
 }
 
