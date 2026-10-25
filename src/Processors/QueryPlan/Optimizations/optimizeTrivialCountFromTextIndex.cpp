@@ -273,15 +273,15 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     for (const auto & [index_name, task] : reading.getIndexReadTasks())
     {
         /// Only the task that produced this virtual column can resolve it.
-        bool owns_column = std::ranges::any_of(task.columns, [&column_name](const auto & column) { return column.name == column_name; });
-        if (!owns_column || !task.index.condition_template)
+        auto task_column_it = std::ranges::find(task.columns, column_name, &IndexReadTask::Column::name);
+        if (task_column_it == task.columns.end() || !task.index.condition_template)
             continue;
 
         auto condition = std::dynamic_pointer_cast<MergeTreeIndexConditionText>(task.index.condition_template->generateUnsubstituted());
         if (!condition)
             continue;
 
-        auto query = condition->getSearchQueryForVirtualColumn(column_name);
+        auto query = task_column_it->search_query;
 
         /// Hint mode keeps the original predicate, so only Exact is answerable from the index alone.
         if (query->getDirectReadMode() != TextIndexDirectReadMode::Exact)

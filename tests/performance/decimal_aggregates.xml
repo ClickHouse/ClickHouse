@@ -4,14 +4,18 @@
     </settings>
 
     <create_query>CREATE TABLE t (x UInt64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE t_shuffled (d32 Decimal32(3)) ENGINE = Memory</create_query>
     <!-- use less threads and several queries to save memory -->
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(100000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(100000000, 100000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(200000000, 100000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(300000000, 100000000) SETTINGS max_threads = 2</fill_query>
     <fill_query>INSERT INTO t SELECT number AS x, x % 1000000 AS d32, x AS d64, x d128 FROM numbers_mt(400000000, 100000000) SETTINGS max_threads = 2</fill_query>
+    <!-- d32 in hashed order, so the order statistics below do not depend on how the threads split the rows -->
+    <fill_query>INSERT INTO t_shuffled SELECT intHash64(number) % 1000000 AS d32 FROM numbers(10000000)</fill_query>
 
     <drop_query>DROP TABLE IF EXISTS t</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_shuffled</drop_query>
 
     <query>SELECT min(d32), max(d32), argMin(x, d32), argMax(x, d32) FROM t</query>
     <query>SELECT min(d64), max(d64), argMin(x, d64), argMax(x, d64) FROM t</query>
@@ -33,12 +37,12 @@
     <query>SELECT quantile(d64), quantileExact(d64), quantileExactWeighted(d64, 2) FROM    (SELECT * FROM t LIMIT 1000000)</query>
     <query>SELECT quantile(d128), quantileExact(d128), quantileExactWeighted(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>
 
-    <query>SELECT quantilesExactLow(0.5)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantilesExactHigh(0.5)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantilesExactLow(0.1, 0.5, 0.9)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT quantilesExactHigh(0.1, 0.5, 0.9)(d32) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExactLow(0.5)(d32) FROM t_shuffled</query>
+    <query>SELECT quantilesExactHigh(0.5)(d32) FROM t_shuffled</query>
+    <query>SELECT quantilesExactLow(0.1, 0.5, 0.9)(d32) FROM t_shuffled</query>
+    <query>SELECT quantilesExactHigh(0.1, 0.5, 0.9)(d32) FROM t_shuffled</query>
 
-    <query>SELECT quantilesExact(0.1, 0.9)(d32), quantilesExactWeighted(0.1, 0.9)(d32, 2) FROM   (SELECT * FROM t LIMIT 10000000)</query>
+    <query>SELECT quantilesExact(0.1, 0.9)(d32), quantilesExactWeighted(0.1, 0.9)(d32, 2) FROM t_shuffled</query>
     <query>SELECT quantilesExact(0.1, 0.9)(d64), quantilesExactWeighted(0.1, 0.9)(d64, 2) FROM   (SELECT * FROM t LIMIT 1000000)</query>
     <query>SELECT quantilesExact(0.1, 0.9)(d128), quantilesExactWeighted(0.1, 0.9)(d128, 2) FROM (SELECT * FROM t LIMIT 1000000)</query>
 

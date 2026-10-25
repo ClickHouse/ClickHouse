@@ -224,8 +224,7 @@ SELECT {lone:Int64}; -- { serverError CANNOT_PARSE_NUMBER }
 SELECT {lone:Float64}; -- { serverError CANNOT_PARSE_NUMBER }
 -- Two carriers wrap the reader's error in a code of their own, unchanged here: `Values` re-reads the
 -- value with the SQL parser, and a `Map` subcolumn fails name resolution when its key does not read as
--- a number. The map lives in a table because `enable_analyzer = 0` resolves a subcolumn against a
--- storage only, and this file runs in the `old analyzer` lane too.
+-- a number.
 SELECT 'group 15: two carriers that wrap the reader code in their own';
 SELECT * FROM format(Values, 'a Int64', '(+)'); -- { serverError SYNTAX_ERROR }
 CREATE TABLE map_04812 (m Map(Int64, String)) ENGINE = Memory;

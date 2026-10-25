@@ -10,53 +10,49 @@ integration:
   - category: 'clickpipes'
 ---
 
-<div id="faq">
-  ## Kafka ClickPipes FAQ
-</div>
+## Kafka ClickPipes FAQ {#faq}
 
-<div id="general">
-  ### Général
-</div>
+### Général {#general}
 
-<Accordion title="Comment fonctionne ClickPipes for Kafka ?">
+<Accordion title="Comment fonctionne ClickPipes for Kafka ?">
   ClickPipes utilise une architecture dédiée s’appuyant sur la Kafka Consumer API pour lire les données d’un topic donné, puis les insérer dans une table ClickHouse d’un service ClickHouse Cloud spécifique.
 </Accordion>
 
-<Accordion title="Quelle est la différence entre ClickPipes et le moteur de table Kafka de ClickHouse ?">
-  Le moteur de table Kafka est une fonctionnalité native de ClickHouse qui implémente un « modèle pull », dans lequel le serveur ClickHouse lui-même se connecte à Kafka, récupère les événements, puis les écrit localement.
+<Accordion title="Quelle est la différence entre ClickPipes et le moteur de table Kafka de ClickHouse ?">
+  Le moteur de table Kafka est une fonctionnalité native de ClickHouse qui implémente un « modèle pull », dans lequel le serveur ClickHouse lui-même se connecte à Kafka, récupère les événements, puis les écrit localement.
 
   ClickPipes est un service cloud distinct qui fonctionne indépendamment du service ClickHouse. Il se connecte à Kafka (ou à d’autres sources de données) et envoie les événements vers un service ClickHouse Cloud associé. Cette architecture découplée offre une plus grande flexibilité opérationnelle, une séparation claire des responsabilités, une ingestion évolutive, une gestion fluide des défaillances, une meilleure extensibilité, etc.
 </Accordion>
 
-<Accordion title="Quelles sont les conditions requises pour utiliser ClickPipes for Kafka ?">
+<Accordion title="Quelles sont les conditions requises pour utiliser ClickPipes for Kafka ?">
   Pour utiliser ClickPipes for Kafka, vous devez disposer d’un broker Kafka en cours d’exécution et d’un service ClickHouse Cloud avec ClickPipes activé. Vous devez également vous assurer que ClickHouse Cloud peut accéder à votre broker Kafka. Pour cela, vous pouvez autoriser les connexions distantes côté Kafka et placer sur liste blanche les [adresses IP de sortie de ClickHouse Cloud](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) dans votre configuration Kafka. Vous pouvez également utiliser [AWS PrivateLink](/fr/integrations/clickpipes/networking/aws-privatelink) pour connecter ClickPipes for Kafka à vos brokers Kafka.
 </Accordion>
 
-<Accordion title="ClickPipes for Kafka prend-il en charge AWS PrivateLink ?">
+<Accordion title="ClickPipes for Kafka prend-il en charge AWS PrivateLink ?">
   Oui, AWS PrivateLink est pris en charge. Consultez [la documentation](/fr/integrations/clickpipes/networking/aws-privatelink) pour savoir comment le configurer.
 </Accordion>
 
-<Accordion title="Puis-je utiliser ClickPipes for Kafka pour écrire des données dans un topic Kafka ?">
+<Accordion title="Puis-je utiliser ClickPipes for Kafka pour écrire des données dans un topic Kafka ?">
   Non, ClickPipes for Kafka est conçu pour lire des données à partir de topics Kafka, et non pour y écrire des données. Pour écrire des données dans un topic Kafka, vous devez utiliser un producteur Kafka dédié.
 </Accordion>
 
-<Accordion title="ClickPipes prend-il en charge plusieurs brokers ?">
+<Accordion title="ClickPipes prend-il en charge plusieurs brokers ?">
   Oui, si les brokers font partie du même quorum, ils peuvent être configurés ensemble en les séparant par `,`.
 </Accordion>
 
-<Accordion title="Les répliques ClickPipes peuvent-elles être mises à l’échelle ?">
+<Accordion title="Les répliques ClickPipes peuvent-elles être mises à l’échelle ?">
   Oui, ClickPipes for streaming peut être mis à l’échelle à la fois horizontalement et verticalement.
   La mise à l’échelle horizontale ajoute davantage de répliques pour augmenter le débit, tandis que la mise à l’échelle verticale augmente les ressources (CPU et RAM) allouées à chaque réplique afin de gérer des workloads plus intensifs.
   Cela peut être configuré lors de la création du ClickPipe, ou à tout moment sous **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+
+  Si le ClickPipe utilise un reverse private endpoint AWS PrivateLink, le nombre total de répliques sur l’ensemble des ClickPipes partageant cet endpoint est limité. Consultez [la limite de répliques par reverse private endpoint](/fr/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit).
 </Accordion>
 
-<Accordion title="Je ne trouve pas certains de mes topics Kafka dans l’UI de configuration de ClickPipes. Pourquoi ?">
-  L’UI de découverte des topics de ClickPipes répertorie jusqu’à 1 500 topics par défaut. Si votre cluster Kafka compte plus de 1 500 topics, certains peuvent ne pas apparaître dans la liste déroulante. Pour vérifier que votre topic existe, contrôlez-le directement à l’aide d’un client Kafka avec les mêmes identifiants. Si c’est bien le cas et que vous devez augmenter la limite d’affichage au-delà de 1 500, contactez ClickHouse Support.
+<Accordion title="Je ne trouve pas certains de mes topics Kafka dans l’UI de configuration de ClickPipes. Pourquoi ?">
+  L’UI de découverte des topics de ClickPipes répertorie jusqu’à 1 500 topics par défaut. Si votre cluster Kafka compte plus de 1 500 topics, certains peuvent ne pas apparaître dans la liste déroulante. Pour vérifier que votre topic existe, contrôlez-le directement à l’aide d’un client Kafka avec les mêmes identifiants. Si c’est bien le cas et que vous devez augmenter la limite d’affichage au-delà de 1 500, contactez ClickHouse Support.
 </Accordion>
 
-<div id="azure-eventhubs">
-  ### Azure Event Hubs
-</div>
+### Azure Event Hubs {#azure-eventhubs}
 
 <Accordion title="Le ClickPipe Azure Event Hubs fonctionne-t-il sans l’interface Kafka ?">
   Non. ClickPipes exige que l’espace de noms Event Hubs ait l’interface Kafka activée. Cette fonctionnalité n’est disponible que dans les tiers supérieurs à **Basic**. Consultez la [documentation Azure Event Hubs](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace) pour en savoir plus.

@@ -13,6 +13,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/MatcherNode.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -46,6 +47,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -69,6 +71,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -172,6 +175,20 @@ void checkMaterializedCTESubqueryIsNotCorrelated(
             "Materialized CTE '{}' cannot be correlated. In scope {}",
             cte_name,
             scope_node->formatASTForErrorMessage());
+}
+
+/// Whether `resolveQuery` disabled `parallel_replicas_for_cluster_engines` for the query of `scope` or an enclosing query.
+bool isClusterVariantDisabledForQuery(const IdentifierResolveScope & scope)
+{
+    const IdentifierResolveScope * scope_to_check = scope.getNearestQueryScope();
+    while (scope_to_check)
+    {
+        const auto & query_context = scope_to_check->scope_node->as<QueryNode &>().getMutableContext();
+        if (!query_context->getSettingsRef()[Setting::parallel_replicas_for_cluster_engines])
+            return true;
+        scope_to_check = scope_to_check->parent_scope ? scope_to_check->parent_scope->getNearestQueryScope() : nullptr;
+    }
+    return false;
 }
 
 /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
@@ -403,9 +420,10 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
+    , positional_arguments_already_resolved(positional_arguments_already_resolved_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -496,6 +514,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
     }
 
+    restoreReplacedTableStoragesIfNeeded(node);
     validateCorrelatedSubqueries(node, scope.context);
     inlineMaterializedCTEIfNeeded(node, context);
 }
@@ -542,6 +561,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
+    restoreReplacedTableStoragesIfNeeded(node);
     validateCorrelatedSubqueries(node, scope.context);
 }
 
@@ -915,22 +935,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    const bool is_view_inner = scope.context->isViewInnerQuery();
-    if (!is_view_inner)
-    {
-        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
-        /// already resolved positional arguments in the outer query. View-inner contexts are
-        /// exempt because views are expanded on the local node and were never resolved by the
-        /// initiator.
-        if (scope.context->isPositionalArgumentsAlreadyResolved())
-            return;
-        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
-        /// resolved positional arguments. Do not skip for contexts that never set the kind
-        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
-        /// which must resolve positional arguments itself.
-        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-            return;
-    }
+    if (positional_arguments_already_resolved)
+        return;
 
     auto & node_list_typed = node_list->as<ListNode &>();
 
@@ -4436,6 +4442,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                     break;
                 }
+
+                if (is_correlated_column_node && scope_ptr->nullable_collapsed_group_by_key_columns.contains(node))
+                {
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// For local references stop at the first surrounding QUERY scope.
@@ -4804,6 +4816,32 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
     }
 }
 
+/// The columns `IfConstantConditionPass` may collapse `node` to: the branches of nested `if`/`multiIf`, whatever their conditions.
+void registerConstantConditionBranchColumns(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
+        return;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (arguments.size() != 3)
+        return;
+
+    for (size_t i = 1; i < 3; ++i)
+    {
+        if (arguments[i]->getNodeType() == QueryTreeNodeType::COLUMN)
+            scope.nullable_collapsed_group_by_key_columns.insert(arguments[i]->clone());
+        else
+            registerConstantConditionBranchColumns(arguments[i], scope);
+    }
+}
+
+void registerCollapsedGroupByKeyColumns(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+{
+    for (const auto & key : group_by_keys)
+        registerConstantConditionBranchColumns(key, scope);
+}
+
 }
 
 /** Resolve GROUP BY clause.
@@ -4861,7 +4899,12 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
 
     if (!nullable_group_by_keys.empty())
+    {
         registerNullableGroupByKeys(nullable_group_by_keys, scope);
+        /// Only if `IfConstantConditionPass` folds the keys of this query, so that the collapsed columns exist after aggregation.
+        if (!ifConstantConditionFoldingMergesGroupingKeys(query_node_typed, scope.context))
+            registerCollapsedGroupByKeyColumns(nullable_group_by_keys, scope);
+    }
 
     /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY
     /// so that expressions equal to a key become Nullable via the scope.nullable_group_by_keys
@@ -4893,11 +4936,21 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
         ready_columns.push_back(sort_node->as<SortNode &>().getExpression());
 
+    /// `FillingTransform` pairs each executed `INTERPOLATE` output with one destination column of its
+    /// input header, by position, so a column may be an `INTERPOLATE` output at most once.
+    NameSet interpolate_column_names;
+
     for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
+
+        if (!interpolate_column_names.emplace(column_to_interpolate_name).second)
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Column '{}' can't be an INTERPOLATE output more than once. In scope {}",
+                column_to_interpolate_name,
+                scope.scope_node->formatASTForErrorMessage());
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -4947,6 +5000,88 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
     return projection_columns;
 }
 
+void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const TableNodePtr & table_node, IdentifierResolveScope & scope)
+{
+    if (table_node->isTemporaryTable() || !scope.context->canReplaceClusterEngineWithClusterVariant())
+        return;
+
+    /// The cluster read does not support `PREWHERE`.
+    const auto * query_node = scope.scope_node->as<QueryNode>();
+    if (!query_node || query_node->hasPrewhere() || isClusterVariantDisabledForQuery(scope))
+        return;
+
+    /// As in a distributed query, a subquery of a query with a replaced table reads its tables itself.
+    for (const auto * current_scope = scope.parent_scope; current_scope; current_scope = current_scope->parent_scope)
+        if (std::ranges::any_of(replaced_table_storages, [&](const auto & replaced) { return replaced.query_node == current_scope->scope_node; }))
+            return;
+
+    StoragePtr storage = table_node->getStorage();
+    StorageSnapshotPtr storage_snapshot = table_node->getStorageSnapshot();
+    if (auto nested = resolveStorageProxy(storage); nested != storage)
+    {
+        /// A lazy stand-in forwards neither the metadata refresh nor, before loading, the metadata of the table.
+        if (!nested->isObjectStorage())
+            return;
+        storage = nested;
+        storage->updateExternalDynamicMetadataIfExists(scope.context);
+        auto metadata = storage->getInMemoryMetadataPtr(scope.context, false);
+        storage_snapshot = storage->getStorageSnapshot(metadata, scope.context);
+    }
+
+    if (!storage->isObjectStorage())
+        return;
+
+    auto cluster_storage = storage->getStorageForParallelReplicasRead(storage_snapshot, scope.context);
+    if (!cluster_storage)
+        return;
+
+    replaced_table_storages.push_back({cluster_storage, storage, storage_snapshot, scope.scope_node});
+    table_node->replaceStorage(cluster_storage, cluster_storage->getStorageSnapshot(storage_snapshot->metadata, scope.context));
+}
+
+const QueryAnalyzer::ReplacedTableStorage * QueryAnalyzer::findReplacedTableStorage(const StoragePtr & replacement) const
+{
+    auto it = std::ranges::find_if(replaced_table_storages, [&](const auto & replaced) { return replaced.replacement == replacement; });
+    return it == replaced_table_storages.end() ? nullptr : &*it;
+}
+
+void QueryAnalyzer::restoreReplacedTableStoragesIfNeeded(const QueryTreeNodePtr & node)
+{
+    if (replaced_table_storages.empty())
+        return;
+
+    /// A remote read does not support correlated subqueries, and on a replica any other source of the query may take this
+    /// table's read tasks, so such a query reads the tables itself.
+    bool is_correlated = false;
+    bool reads_other_source = false;
+    std::vector<TableNode *> table_nodes;
+    traverseQueryTree(
+        node,
+        [](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; },
+        [&](const QueryTreeNodePtr & current_node)
+        {
+            if (const auto * subquery = current_node->as<QueryNode>(); subquery && subquery->isCorrelated())
+                is_correlated = true;
+            else if (const auto * union_node = current_node->as<UnionNode>(); union_node && union_node->isCorrelated())
+                is_correlated = true;
+            else if (auto * table_node = current_node->as<TableNode>())
+            {
+                table_nodes.push_back(table_node);
+                if (!findReplacedTableStorage(table_node->getStorage()))
+                    reads_other_source = true;
+            }
+            else if (current_node->as<TableFunctionNode>())
+                reads_other_source = true;
+        });
+
+    if (!is_correlated && !reads_other_source)
+        return;
+
+    for (auto * table_node : table_nodes)
+        if (const auto * replaced = findReplacedTableStorage(table_node->getStorage()))
+            table_node->replaceStorage(replaced->storage, replaced->storage_snapshot);
+}
+
 /** Initialize query join tree node.
   *
   * 1. Resolve identifiers.
@@ -4954,12 +5089,18 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
   */
 void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope)
 {
-    std::deque<QueryTreeNodePtr *> join_tree_node_ptrs_to_process_queue;
-    join_tree_node_ptrs_to_process_queue.push_back(&join_tree_node);
+    struct JoinTreeNodeToProcess
+    {
+        QueryTreeNodePtr * node_ptr;
+        bool is_single_table_expression;
+    };
+
+    std::deque<JoinTreeNodeToProcess> join_tree_node_ptrs_to_process_queue;
+    join_tree_node_ptrs_to_process_queue.push_back({&join_tree_node, true});
 
     while (!join_tree_node_ptrs_to_process_queue.empty())
     {
-        auto * current_join_tree_node_ptr = join_tree_node_ptrs_to_process_queue.front();
+        auto [current_join_tree_node_ptr, is_single_table_expression] = join_tree_node_ptrs_to_process_queue.front();
         join_tree_node_ptrs_to_process_queue.pop_front();
 
         auto & current_join_tree_node = *current_join_tree_node_ptr;
@@ -5064,6 +5205,10 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 resolved_identifier->setAlias(current_join_tree_node_alias);
                 current_join_tree_node = resolved_identifier;
 
+                if (is_single_table_expression && !table_expression_modifiers.has_value())
+                    if (auto table_node = std::dynamic_pointer_cast<TableNode>(resolved_identifier))
+                        replaceTableStorageForParallelReplicasReadIfNeeded(table_node, scope);
+
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 break;
             }
@@ -5090,7 +5235,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & array_join = current_join_tree_node->as<ArrayJoinNode &>();
-                join_tree_node_ptrs_to_process_queue.push_back(&array_join.getTableExpressionNode());
+                join_tree_node_ptrs_to_process_queue.push_back({&array_join.getTableExpressionNode(), is_single_table_expression});
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 break;
             }
@@ -5098,7 +5243,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             {
                 auto & join = current_join_tree_node->as<CrossJoinNode &>();
                 for (auto & expr : join.getTableExpressions())
-                    join_tree_node_ptrs_to_process_queue.push_back(&expr);
+                    join_tree_node_ptrs_to_process_queue.push_back({&expr, false});
 
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 scope.joins_count += join.getTableExpressions().size() - 1;
@@ -5107,8 +5252,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             case QueryTreeNodeType::JOIN:
             {
                 auto & join = current_join_tree_node->as<JoinNode &>();
-                join_tree_node_ptrs_to_process_queue.push_back(&join.getLeftTableExpressionNode());
-                join_tree_node_ptrs_to_process_queue.push_back(&join.getRightTableExpressionNode());
+                join_tree_node_ptrs_to_process_queue.push_back({&join.getLeftTableExpressionNode(), false});
+                join_tree_node_ptrs_to_process_queue.push_back({&join.getRightTableExpressionNode(), false});
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 ++scope.joins_count;
                 if (join.isUsingJoinExpression())
@@ -5737,13 +5882,27 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     /// the query context, and switching to the QueryNode's own context copy could change
     /// non-settings state (e.g. isDistributed) and break table function execution
     /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
+    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
+    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
+    /// built from the union's context, so the nearest query scope below it already carries the settings.
+    auto subquery_customizes_settings = [](const IQueryTreeNode & node) -> bool
+    {
+        if (const auto * query_node = node.as<QueryNode>())
+            return query_node->isSubquery() && query_node->hasSettingsChanges();
+        if (const auto * union_node = node.as<UnionNode>())
+            return union_node->isSubquery() && union_node->hasSettingsChanges();
+        return false;
+    };
+
     ContextPtr execution_context = scope_context->getQueryContext();
     {
         const IdentifierResolveScope * scope_to_check = &scope;
         while (scope_to_check != nullptr)
         {
-            if (auto * query_node = scope_to_check->scope_node->as<QueryNode>();
-                query_node && query_node->hasSettingsChanges() && query_node->isSubquery())
+            if (subquery_customizes_settings(*scope_to_check->scope_node))
             {
                 auto * nearest_query_scope = scope.getNearestQueryScope();
                 if (nearest_query_scope)
@@ -5761,21 +5920,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     /// when multiple views are processed in parallel from the same INSERT.
     /// Walk up all ancestor query scopes because the decision may have been made by
     /// an outer query (e.g. when a table function is inside a subquery in a JOIN).
-    if (execution_context->getSettingsRef()[Setting::parallel_replicas_for_cluster_engines])
+    if (execution_context->getSettingsRef()[Setting::parallel_replicas_for_cluster_engines] && isClusterVariantDisabledForQuery(scope))
     {
-        const IdentifierResolveScope * scope_to_check = scope.getNearestQueryScope();
-        while (scope_to_check)
-        {
-            const auto & qn_context = scope_to_check->scope_node->as<QueryNode &>().getMutableContext();
-            if (!qn_context->getSettingsRef()[Setting::parallel_replicas_for_cluster_engines])
-            {
-                auto overridden_context = Context::createCopy(execution_context);
-                overridden_context->setSetting("parallel_replicas_for_cluster_engines", false);
-                execution_context = overridden_context;
-                break;
-            }
-            scope_to_check = scope_to_check->parent_scope ? scope_to_check->parent_scope->getNearestQueryScope() : nullptr;
-        }
+        auto overridden_context = Context::createCopy(execution_context);
+        overridden_context->setSetting("parallel_replicas_for_cluster_engines", false);
+        execution_context = overridden_context;
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
@@ -7032,8 +7181,9 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             bool is_distributed = false;
 
+            /// A replaced table is read like the table itself, so the other sources of the query keep their own cluster read.
             if (auto * table_node = join_tree_node->as<TableNode>())
-                is_distributed = table_node->getStorage()->isRemote();
+                is_distributed = table_node->getStorage()->isRemote() && !findReplacedTableStorage(table_node->getStorage());
             else if (auto * table_function_node = join_tree_node->as<TableFunctionNode>())
                 is_distributed = table_function_node->getStorage()->isRemote();
 
@@ -7643,8 +7793,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         }
     }
 
-    expandLimitByAll(query_node_typed);
-
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7658,11 +7806,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.hasLimitBy())
-    {
         replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
+    /// After the positional arguments: the projection expressions `ALL` expands to are not positions.
+    expandLimitByAll(query_node_typed);
+
+    if (query_node_typed.hasLimitBy())
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-    }
 
     if (query_node_typed.hasLimit())
     {

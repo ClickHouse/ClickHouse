@@ -49,7 +49,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace Setting
@@ -368,11 +367,12 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
-    /// One token per pair: `m['key'] = 'value'` is one posting list, `mapContainsKeyValue` the union of
-    /// the first-occurrence and repeated-occurrence lists. Nothing else is supported yet.
+    /// One token per pair, so each of these is a union of posting lists: one per set element for `IN`,
+    /// two for `mapContainsKeyValue`. Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
-        const bool is_exact = function_name == "equals" || function_name == "mapContainsKeyValue";
+        const bool is_exact = function_name == "equals" || function_name == "in" || function_name == "globalIn"
+            || function_name == "mapContainsKeyValue";
         return is_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
     }
 
@@ -451,31 +451,17 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
-std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
+std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash);
-
-    if (it == all_search_queries.end())
+    if (!all_search_queries.contains(query_hash))
         return std::nullopt;
 
     auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
-
-    virtual_column_to_search_query[virtual_column_name] = it->second;
-    return virtual_column_name;
-}
-
-TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(const String & column_name) const
-{
-    auto it = virtual_column_to_search_query.find(column_name);
-    if (it == virtual_column_to_search_query.end())
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Virtual column {} not found in MergeTreeIndexConditionText", column_name);
-
-    return it->second;
+    return fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
 }
 
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
@@ -819,11 +805,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
+        /// The helper sets `out.function` itself: not every set becomes a per-element disjunction.
         if ((function_name == "in" || function_name == "globalIn"
              || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
-            out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
             return true;
         }
         else if (isSupportedFunction(function_name))
@@ -997,10 +983,8 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
-    /// The scan matches tokens bytewise, ASCII case-insensitively, while ILIKE folds per code point and also
-    /// equates U+212A with 'k'. The token keeps the raw bytes, so the scan cannot see such an occurrence and
-    /// would prune a granule holding a matching row. Checked for the whole pattern, before any shape-specific
-    /// branch below, because every shape is matched the same way.
+    /// The scan compares token bytes ASCII case-insensitively, so it must not answer a needle that ILIKE could
+    /// match through a non-ASCII code point. Checked before the shape-specific branches below.
     if (case_insensitive && std::any_of(value.begin(), value.end(), UTF8::isASCIIReachableByCaseFolding))
         return {};
 
@@ -2138,6 +2122,68 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     return true;
 }
 
+bool MergeTreeIndexConditionText::traverseMapElementKeyValueSetNode(
+    const RPNBuilderTreeNode & lhs,
+    const RPNBuilderTreeNode & rhs,
+    const String & function_name,
+    RPNElement & out) const
+{
+    /// Also rejects a tuple left-hand side: a token union cannot bind its other components.
+    auto key = tryGetMapElementKeyForIndexColumn(lhs);
+    if (!key)
+        return false;
+
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        return false;
+
+    Columns columns = prepared_set->getSetElements();
+    /// A single-column set may arrive packed into a tuple.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+
+    if (columns.size() != 1)
+        return false;
+
+    auto set_column_ptr = recursiveRemoveLowCardinality(columns.front());
+    const auto & set_column = *set_column_ptr;
+
+    /// `FixedString` needs the padding normalization of the generic path, `Nullable` carries NULL elements.
+    if (!WhichDataType(set_column.getDataType()).isString())
+        return false;
+
+    VectorWithMemoryTracking<String> tokens;
+    tokens.reserve(set_column.size());
+
+    for (size_t row = 0; row < set_column.size(); ++row)
+    {
+        std::string_view value = set_column.getDataAt(row);
+
+        /// `m['key'] = ''` also holds for the rows that do not have the key and therefore have no token.
+        if (value.empty())
+            return false;
+
+        /// `m['key']` is the key's first occurrence.
+        tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_duplicate=*/ false));
+    }
+
+    /// A token-less query becomes an always-true virtual column; an empty set matches no row.
+    if (tokens.empty())
+    {
+        out.function = RPNElement::ALWAYS_FALSE;
+        return true;
+    }
+
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, getDirectReadMode(function_name), std::move(tokens)));
+    return true;
+}
+
 bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
@@ -2263,6 +2309,15 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const String & function_name,
     RPNElement & out) const
 {
+    /// Tokens frozen here are never revisited, so a set that keeps changing under the query cannot be
+    /// used. See `FutureSet::isMutableDuringQuery` and `prepareSetsForDefaultValueEvaluation`.
+    if (auto future_set = rhs.tryGetPreparedSet(); future_set && future_set->isMutableDuringQuery())
+        return false;
+
+    /// The generic path below tokenizes elements as strings, which never yields a pair token.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return traverseMapElementKeyValueSetNode(lhs, rhs, function_name, out);
+
     std::optional<size_t> set_key_position;
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
@@ -2392,6 +2447,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 
+    out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
     return true;
 }
 
