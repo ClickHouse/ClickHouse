@@ -1280,11 +1280,16 @@ class Graph:
             match = re.search(r'CMakeFiles/([^/]+)\.dir/', src['path'])
             if match and match[1] in self.compiled:
                 object_refs.add(match[1])
-        object_refs.update(self.link_object_owners[name])
         if generated_objects:
             groups.append({'srcs': generated_objects, 'language': 'OBJECT'})
-        deps = [':' + d for d in sorted((dependencies | object_refs) & self.compiled)
+        deps = [':' + d for d in sorted((dependencies | object_refs | self.link_object_owners[name]) & self.compiled)
                 if self.targets[d]['type'] != 'EXECUTABLE']
+        if name == '_zxc':
+            # zxc-cmake passes $<TARGET_OBJECTS:...> to add_library(_zxc).
+            group, = groups
+            variants = [d for d in deps if d[1:] in object_refs and self.targets[d[1:]]['type'] == 'OBJECT_LIBRARY']
+            group.setdefault('implementation_deps', []).extend(variants)
+            deps = [d for d in deps if d not in variants]
         linkopts = []
         if target['type'] == 'EXECUTABLE':
             # Link-only flags are retained separately from the archive closure.

@@ -60,7 +60,7 @@ def overlay(targets):
         attrs = [
             f'name = "{name}"', 'srcs = ' + sources,
             'hdrs = ' + json.dumps(BER_HEADERS if name == "_lber" else LDAP_HEADERS), 'copts = ["-w", "-std=gnu11"]',
-            'language = "C"', 'libcxx_headers = False', 'local_defines = ' + json.dumps(defines),
+            'language = "C"', 'local_defines = ' + json.dumps(defines),
             'local_includes = ["libraries/lib' + name[1:] + '"]', 'visibility = ["//visibility:public"]',
         ]
         if name == "_lber":

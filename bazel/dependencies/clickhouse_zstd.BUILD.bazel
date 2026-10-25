@@ -47,7 +47,6 @@ ch_cc_library(
         "lib",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "lib/legacy",
@@ -65,7 +64,6 @@ ch_cc_library(
         "-fno-sanitize=undefined",
     ],
     language = "ASM",
-    libcxx_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "lib",

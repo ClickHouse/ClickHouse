@@ -362,7 +362,6 @@ poco_cc_library(
         "-Wno-disabled-macro-expansion",
     ],
     language = "C",
-    libcxx_headers = False,
     llvm_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
     deps = [],

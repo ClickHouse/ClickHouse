@@ -12,7 +12,6 @@ ch_cc_library(
         "icudt78l_dat.S",
     ],
     language = "ASM",
-    libcxx_headers = False,
     local_defines = [
         "'DEFAULT_ICU_PLUGINS=\"/dev/null\"'",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

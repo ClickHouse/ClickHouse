@@ -32,7 +32,6 @@ ch_cc_library(
         "-std=gnu11",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
         "'VERSION=\"v0.8.2\"'",

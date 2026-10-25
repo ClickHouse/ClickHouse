@@ -276,7 +276,6 @@ ch_cc_library(
     ],
     includes = ["src/third_party/http-parser"],
     language = "C",
-    libcxx_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
     alwayslink = True,
 )

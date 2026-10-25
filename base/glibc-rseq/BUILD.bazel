@@ -12,6 +12,5 @@ ch_cc_library(
         "-Wno-declaration-after-statement",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
 )

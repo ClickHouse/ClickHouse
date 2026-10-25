@@ -613,6 +613,13 @@ class BuildFile:
         for old_field, directories in original.items():
             for directory in directories:
                 owner = repository(directory)
+                if old_field == 'hdrs' and directory == self.owner == 'contrib/minizip-ng' and name == '_minizip':
+                    # Minizip installs each stream header with its selected compression backend.
+                    headers = {Path(source_path(src)).stem + '.h' for src in fields['srcs']
+                               if isinstance(src, str) and src.endswith('.c')}
+                    public = (headers & package_source_files(self.owner)) | {'mz.h', 'mz_config.h', 'mz_strm_os.h'}
+                    fields['hdrs'].extend([Glob(['compat/*.h']), *sorted(public)])
+                    continue
                 if (old_field == 'hdrs' and owner == self.owner == 'contrib/icu' and name == '_icuuc'
                         and directory == 'contrib/icu/icu4c/source/common'):
                     # ICU installs unicode/*.h. Its genbrk tool also includes rbbidata.h.
@@ -935,10 +942,12 @@ class BuildFile:
                 attrs['arches'] = arches
             expected_includes = [] if language == 'CXX' else [['-I', 'generated', 'libcxx/include/c++/v1']]
             includes = [group['includes'] for group in copts.groups.values()]
-            if all(value == [] for value in includes) and expected_includes:
-                attrs['libcxx_headers'] = False
-            elif not all(value == expected_includes for value in includes):
-                raise ValueError(f'{name}: unsupported native libc++ includes: {includes}')
+            if any(includes):
+                if not all(value == expected_includes for value in includes):
+                    raise ValueError(f'{name}: unsupported native libc++ includes: {includes}')
+                # CMake adds this directory to many C targets. Only libprotoc's C group retains it in Bazel.
+                if (self.owner, name) == ('contrib/google-protobuf', '_libprotoc__compile_1'):
+                    attrs['libcxx_headers'] = True
             flags = copts.flags
             if isinstance(flags, CMakeCopts) and set(flags.arches) == set(arches):
                 flags = flags.flags

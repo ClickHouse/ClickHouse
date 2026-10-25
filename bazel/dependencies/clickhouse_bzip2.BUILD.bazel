@@ -42,6 +42,5 @@ ch_cc_library(
         "config/contrib/bzip2",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
 )

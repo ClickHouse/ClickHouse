@@ -137,7 +137,6 @@ ch_cc_library(
         "@clickhouse_openssl//:ssl",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = RDKAFKA_LOCAL_DEFINES,
     local_includes = [
         "config/contrib/librdkafka-cmake",

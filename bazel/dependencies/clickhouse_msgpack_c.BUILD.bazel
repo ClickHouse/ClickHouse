@@ -78,7 +78,6 @@ ch_cc_library(
     srcs = ["include/msgpack/unpack_template.h"] + glob(["src/*.c"]),
     hdrs = _C_API_HDRS,
     language = "C",
-    libcxx_headers = False,
     textual_hdrs = ["include/msgpack/pack_template.h"],
     deps = [":msgpack_c"],
 )

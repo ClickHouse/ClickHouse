@@ -46,7 +46,6 @@ poco_cc_library(
         "-Wno-implicit-int-conversion",
     ],
     language = "C",
-    libcxx_headers = False,
     llvm_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
     deps = [],

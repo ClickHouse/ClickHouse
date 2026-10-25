@@ -25,7 +25,6 @@ ch_cc_library(
         "-std=gnu11",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "LZ4_FAST_DEC_LOOP=1",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

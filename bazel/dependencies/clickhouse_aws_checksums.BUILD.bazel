@@ -24,7 +24,6 @@ ch_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    libcxx_headers = False,
     llvm_headers = False,
     local_defines = AWS_CRT_DEFINES,
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
@@ -56,7 +55,6 @@ ch_cc_library(
         ],
     }),
     language = "C",
-    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

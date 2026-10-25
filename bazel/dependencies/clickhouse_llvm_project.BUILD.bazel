@@ -4224,7 +4224,6 @@ ch_cc_library(
         ":llvm_headers",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
 )
 
@@ -4265,7 +4264,6 @@ ch_cc_library(
         "x86_64",
     ],
     language = "ASM",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
 )
 
@@ -4293,7 +4291,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     language = "ASM",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
 )
 

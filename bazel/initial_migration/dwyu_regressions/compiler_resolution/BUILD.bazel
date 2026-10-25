@@ -8,7 +8,6 @@ ch_cc_library(
     testonly = True,
     srcs = ["libc_angle_quote.c"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -17,7 +16,6 @@ ch_cc_library(
     testonly = True,
     srcs = ["libc_quote_angle.c"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -25,7 +23,6 @@ ch_cc_library(
     name = "libc_angle_quote_cxx",
     testonly = True,
     srcs = ["libc_angle_quote.cc"],
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -33,7 +30,6 @@ ch_cc_library(
     name = "libc_quote_angle_cxx",
     testonly = True,
     srcs = ["libc_quote_angle.cc"],
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -41,7 +37,6 @@ ch_cc_library(
     name = "fstream_quote",
     testonly = True,
     srcs = ["fstream_quote.cc"],
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -77,7 +72,6 @@ ch_cc_library(
     srcs = ["guarded/consumer.c"],
     implementation_deps = [":guarded_bridge"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
     textual_hdrs = ["guarded/api.inc"],
     deps = [":guarded_unistd"],
@@ -89,7 +83,6 @@ ch_cc_library(
     srcs = ["guarded/consumer.c"],
     implementation_deps = [":guarded_bridge"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
     tags = ["manual"],
     textual_hdrs = ["guarded/api.inc"],
@@ -101,7 +94,6 @@ ch_cc_library(
     srcs = ["once/consumer.c"],
     implementation_deps = [":once_bridge"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
     textual_hdrs = ["once/api.inc"],
     deps = [":once_unistd"],
@@ -113,7 +105,6 @@ ch_cc_library(
     srcs = ["once/consumer.c"],
     implementation_deps = [":once_bridge"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
     tags = ["manual"],
     textual_hdrs = ["once/api.inc"],
@@ -131,7 +122,6 @@ ch_cc_library(
         ":guarded_unistd",
     ],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -144,7 +134,6 @@ ch_cc_library(
     ],
     implementation_deps = [":guarded_bridge"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
     tags = ["manual"],
 )
@@ -175,7 +164,6 @@ ch_cc_library(
         ":quoted_detail",
     ],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
 )
 
@@ -195,7 +183,6 @@ ch_cc_library(
     ],
     implementation_deps = [":late_unistd"],
     language = "C",
-    libcxx_headers = False,
     map_source_files = False,
     tags = ["manual"],
 )

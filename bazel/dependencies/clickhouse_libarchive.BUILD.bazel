@@ -137,7 +137,6 @@ ch_cc_library(
     ],
     includes = ["libarchive"],
     language = "C",
-    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

@@ -221,7 +221,6 @@ ch_cc_library(
         "config/contrib/mariadb-connector-c-cmake/include-public",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

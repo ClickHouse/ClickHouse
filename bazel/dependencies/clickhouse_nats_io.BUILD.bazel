@@ -83,7 +83,6 @@ ch_cc_library(
         "src/include",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "NATS_HAS_TLS",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

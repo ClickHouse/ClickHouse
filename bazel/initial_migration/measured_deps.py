@@ -31,7 +31,8 @@ DEPENDENCIES = {
         '@clickhouse_aws_c_io//:aws_c_io',
         '@clickhouse_aws_c_http//:aws_c_http',
     ], [], []),
-    ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
+    ('@clickhouse_azure', '_azure_sdk'): (
+        ['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], ['@clickhouse_libxml2//:_libxml2'], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_grpc', 'grpc_cpp_plugin'): ([
         '@clickhouse_abseil_cpp//:absl_examine_stack',
@@ -47,6 +48,7 @@ DEPENDENCIES = {
     ], [], []),
     ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_libhdfs3', '_hdfs3__compile_0'): ([], ['@clickhouse_google_protobuf//:_libprotobuf'], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     ('src', 'clickhouse_source_headers'): ([
         '//base:common', '//src/Common', '//src/Parsers:headers', '@clickhouse_mongo_cxx_driver//:_bsoncxx',
@@ -309,10 +311,22 @@ def apply(root):
     for pkg in ('contrib/libxml2-cmake', 'contrib/lz4-cmake'):
         path = root / pkg / 'BUILD.bazel'
         if path.is_file():
-            for _, rule in Build(root, path, (), ()).source.rules():
+            source = Build(root, path, (), ()).source
+            edits = []
+            for statement, rule in source.rules():
                 attrs = attributes(rule)
-                if call_name(rule) == 'alias' and isinstance(attrs['actual'], ast.Constant):
-                    aliases[canonical_dependency(attrs['name'].value, pkg, '@clickhouse')] = attrs['actual'].value
+                name = getattr(attrs.get('name'), 'value', None)
+                if pkg == 'contrib/libxml2-cmake' and name == 'libxml2_config_headers':
+                    # _libxml2 publishes xmlversion.h and owns its private config.h.
+                    kind = call_name(rule)
+                    if not ((kind == 'alias' and attrs['actual'].value == '@clickhouse_libxml2//:_libxml2') or
+                            (kind == 'cc_library' and set(attrs) == {'name', 'hdrs', 'includes'})):
+                        raise ValueError('Unexpected libxml2 configuration-header target')
+                    edits.append((*source.span(statement), ''))
+                elif call_name(rule) == 'alias' and isinstance(attrs['actual'], ast.Constant):
+                    aliases[canonical_dependency(name, pkg, '@clickhouse')] = attrs['actual'].value
+            if edits:
+                path.write_text(source.rewrite(edits).rstrip() + '\n')
     for package in sorted({package for package, _ in DEPENDENCIES}):
         repository = package if package.startswith('@') else '@clickhouse'
         local_package = '' if package.startswith('@') else package
@@ -336,10 +350,6 @@ def apply(root):
                 continue
             found.add(name)
             unused, private, public = spec
-            if (package, name) == ('@clickhouse_isa_l', '_isal__compile_0') and 'libcxx_headers' not in attrs:
-                # ISA-L's C sources do not include either generated libc++ configuration header.
-                end = source.span(rule)[1] - 1
-                edits.append((end, end, '\n    libcxx_headers = False,\n'))
             llvm_headers = attrs.get('llvm_headers')
             if (call_name(rule) == 'ch_cc_library' and isinstance(llvm_headers, ast.Constant)
                     and llvm_headers.value is True and set(LLVM_RUNTIME_HEADERS).issubset(unused)):
@@ -382,8 +392,6 @@ def apply(root):
                 node = Field().visit(node)
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
                 omit = {canonical(v) for v in discard}
-                if (package, name) == ('@clickhouse_azure', '_azure_sdk'):
-                    omit = {alias for alias in omit if all(aliases.get(alias) in existing for existing in values)}
                 missing = [v for v in add if not all(canonical(v) in existing for existing in values)]
                 if (package, name, field) == ('src', 'unit_tests_dbms', 'deps'):
                     # These owners are already reachable through clickhouse_functions_obj.

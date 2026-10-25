@@ -439,7 +439,6 @@ ch_cc_library(
         "config/contrib/krb5-cmake/include",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "'BINDIR=\"/usr/local/bin\"'",
         "CRYPTO_OPENSSL",

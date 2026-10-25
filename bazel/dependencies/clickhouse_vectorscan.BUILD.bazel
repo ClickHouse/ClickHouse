@@ -196,7 +196,6 @@ ch_cc_library(
         "src",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
     deps = ["@clickhouse//contrib/vectorscan-cmake:headers"],

@@ -24,7 +24,6 @@ ch_cc_library(
     name = "clickhouse_libc",
     srcs = ["libc.c"],
     language = "C",
-    libcxx_headers = False,
 )
 
 cc_library(

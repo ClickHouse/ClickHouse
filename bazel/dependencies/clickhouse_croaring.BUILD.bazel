@@ -98,7 +98,6 @@ ch_cc_library(
         "include",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _ROARING_LOCAL_DEFINES,
     local_includes = [
         "include/roaring",
@@ -119,7 +118,6 @@ ch_cc_library(
     ],
     implementation_deps = [":_roaring__compile_0"],
     language = "C",
-    libcxx_headers = False,
     local_defines = _ROARING_LOCAL_DEFINES,
     local_includes = [
         "include/roaring",

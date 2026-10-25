@@ -98,7 +98,6 @@ ch_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "LBER_LIBRARY",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -219,7 +218,6 @@ ch_cc_library(
         "@clickhouse_openssl//:ssl",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "LDAP_LIBRARY",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

@@ -642,7 +642,6 @@ ch_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _CRYPTO_LOCAL_INCLUDES,
     private_hdrs = [
@@ -725,7 +724,6 @@ ch_cc_library(
         "-Wno-unused-command-line-argument",
     ],
     language = "ASM",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",
@@ -865,7 +863,6 @@ ch_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         ".",

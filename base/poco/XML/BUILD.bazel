@@ -131,7 +131,6 @@ poco_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    libcxx_headers = False,
     llvm_headers = False,
     local_defines = [
         "PRIVATE",

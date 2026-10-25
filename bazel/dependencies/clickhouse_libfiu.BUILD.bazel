@@ -23,7 +23,6 @@ ch_cc_library(
     ],
     includes = ["libfiu"],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "DUMMY_BACKTRACE",
         "FIU_ENABLE",

@@ -91,7 +91,6 @@ ch_cc_library(
         "configured_public",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

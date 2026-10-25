@@ -88,7 +88,6 @@ ch_cc_library(
         "-Wno-error",
     ],
     language = "C",
-    libcxx_headers = False,
     local_includes = ["."],
 )
 

@@ -153,7 +153,8 @@ def normalize(text, package):
             "deps": (labels, ()),
             "local_includes": ((), include_values),
         }
-        if language == "C" and literal(attrs.get("libcxx_headers"), True):
+        if language in ("C", "ASM"):
+            # A C or assembly library can depend on libcxx_config_headers without taking the entire runtime source tree.
             filters["additional_compiler_inputs"] = (CXX_INPUTS, ())
         for field, (remove_labels, remove_directories) in filters.items():
             replacement = strip_items(attrs.get(field, empty), remove_labels, remove_directories)

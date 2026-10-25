@@ -156,7 +156,6 @@ ch_cc_library(
         "config/contrib/mongo-c-driver/src/libbson/src",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "BSON_COMPILATION",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",
@@ -222,7 +221,6 @@ ch_cc_library(
         "config/contrib/mongo-c-driver/src/libmongoc/src",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "MONGOC_COMPILATION",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

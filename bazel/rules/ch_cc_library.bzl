@@ -36,7 +36,7 @@ def ch_cc_library(
         source_headers = False,
         language = "CXX",
         arches = ["x86_64", "aarch64"],
-        libcxx_headers = True,
+        libcxx_headers = False,
         llvm_headers = False,
         link_runtime = False,
         map_source_files = True,
@@ -45,9 +45,9 @@ def ch_cc_library(
     """Compile a CMake library, with CPU defaults before source overrides.
 
     llvm_headers supplies LLVM compiler-rt, libc and libunwind headers for
-    libraries which request them. libcxx_headers supplies the pinned libc++
-    headers to C/ASM. link_runtime privately supplies libc++; its dependencies
-    provide libc++abi and libunwind.
+    libraries which request them. For C and ASM, libcxx_headers adds
+    libcxx_config_headers privately. link_runtime adds libc++ privately;
+    libc++ supplies libc++abi and libunwind.
     source_headers adds //src:clickhouse_source_headers privately when True.
     """
     cpu_flags = select({

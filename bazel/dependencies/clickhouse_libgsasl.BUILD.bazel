@@ -75,7 +75,6 @@ ch_cc_library(
         "src",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "HAVE_CONFIG_H=1",
         "HAVE_GSSAPI_H=1",

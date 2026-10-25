@@ -520,7 +520,6 @@ ch_cc_library(
     hdrs = ["third_party/address_sorting/include/address_sorting/address_sorting.h"],
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -1656,7 +1655,6 @@ ch_cc_library(
         "-std=gnu11",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -2561,7 +2559,6 @@ ch_cc_library(
     hdrs = _GRPC_GENERATED_PUBLIC_HEADERS,
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = [
         "include",
@@ -2625,7 +2622,6 @@ ch_cc_library(
         ":upb_wire_lib",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2661,7 +2657,6 @@ ch_cc_library(
         ":upb",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2709,7 +2704,6 @@ ch_cc_library(
     ],
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2748,7 +2742,6 @@ ch_cc_library(
         ":upb_message_lib",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2802,7 +2795,6 @@ ch_cc_library(
     ]),
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2884,7 +2876,6 @@ ch_cc_library(
     ],
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2924,7 +2915,6 @@ ch_cc_library(
         ":upb",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2965,7 +2955,6 @@ ch_cc_library(
     ] + glob(["third_party/upb/upb/wire/internal/*.h"]),
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",
@@ -2998,7 +2987,6 @@ ch_cc_library(
     hdrs = ["third_party/utf8_range/utf8_range.h"],
     copts = _GRPC_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = [
         "include",

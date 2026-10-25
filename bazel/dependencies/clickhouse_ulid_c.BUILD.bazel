@@ -16,6 +16,5 @@ ch_cc_library(
         "include",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
 )

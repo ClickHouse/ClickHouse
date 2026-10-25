@@ -78,7 +78,6 @@ ch_cc_library(
     ],
     implementation_deps = ["//base/glibc-rseq"],
     language = "C",
-    libcxx_headers = False,
     local_includes = select({
         "@platforms//cpu:x86_64": [
             "musl/x86_64",
@@ -107,7 +106,6 @@ ch_cc_library(
         "-Wno-builtin-requires-header",
     ],
     language = "ASM",
-    libcxx_headers = False,
     local_includes = select({
         "@platforms//cpu:x86_64": [
             "musl/x86_64",

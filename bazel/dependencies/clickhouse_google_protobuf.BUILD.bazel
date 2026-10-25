@@ -828,6 +828,7 @@ ch_cc_library(
         "upb/reflection/cmake",
     ],
     language = "C",
+    libcxx_headers = True,
     llvm_headers = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     deps = [
@@ -962,7 +963,6 @@ ch_cc_library(
     ],
     copts = _UTF8_COPTS,
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
 )
 
@@ -978,7 +978,6 @@ ch_cc_library(
     copts = _UTF8_COPTS,
     includes = ["third_party/utf8_range"],
     language = "C",
-    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
 )
 

@@ -53,7 +53,6 @@ ch_cc_library(
     implementation_deps = ["@clickhouse_aws_c_cal//:aws_c_cal"],
     includes = ["include"],
     language = "C",
-    libcxx_headers = False,
     local_defines = AWS_CRT_DEFINES,
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )
@@ -78,7 +77,6 @@ ch_cc_library(
         "@clickhouse_aws_c_common//:aws_c_common",
     ],
     language = "C",
-    libcxx_headers = False,
     local_defines = [
         "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
         "AWS_ENABLE_EPOLL",
