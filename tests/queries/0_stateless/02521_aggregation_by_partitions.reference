@@ -1,9 +1,9 @@
 -- { echoOn }
 explain pipeline select a from t1 group by a;
 (Expression)
-ExpressionTransform × 4
+ExpressionTransform × 16
   (Aggregating)
-  Resize 4 → 4
+  Resize 4 → 16
     AggregatingTransform × 4
       (Expression)
       ExpressionTransform × 4
@@ -20,9 +20,9 @@ ExpressionTransform × 4
 -- { echoOn }
 explain pipeline select a from t2 group by a;
 (Expression)
-ExpressionTransform × 8
+ExpressionTransform × 16
   (Aggregating)
-  Resize 8 → 8
+  Resize 8 → 16
     AggregatingTransform × 8
       (Expression)
       ExpressionTransform × 8
@@ -219,7 +219,7 @@ Skip merging: 1
 Skip merging: 0
 Skip merging: 0
 Skip merging: 0
-Skip merging: 0
+Skip merging: 1
 Skip merging: 0
 Skip merging: 0
 Skip merging: 0

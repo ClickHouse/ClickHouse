@@ -2,7 +2,10 @@
 
 -- { echoOn }
 
-SET enable_nullable_tuple_type = 0;
+SET allow_experimental_nullable_tuple_type = 0;
+
+{% for analyzer in [1, 0] -%}
+SET enable_analyzer = {{ analyzer }};
 
 {% for transform_null in [1, 0] -%}
 SET transform_null_in = {{ transform_null }};
@@ -242,5 +245,7 @@ SELECT ('x', 1) IN tuple((CAST('x', 'LowCardinality(String)'), 1)) ORDER BY ALL;
 
 SELECT 1 IN tuple(1, 2, 3, 4, 5);
 SELECT 1 IN tuple(1, 2, 3, 4, 5) ORDER BY ALL;
+
+{% endfor -%}
 
 {% endfor -%}

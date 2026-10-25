@@ -10,12 +10,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
-    QueryPlanPtr query_plan_, ContextPtr subquery_context_, LeftOutConjuncts left_out_conjuncts_)
+ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_)
     : ISourceStep(query_plan_->getCurrentHeader())
     , query_plan(std::move(query_plan_))
-    , context(std::move(subquery_context_))
-    , left_out_conjuncts(std::move(left_out_conjuncts_))
 {
 }
 
@@ -41,13 +38,6 @@ void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
     auto filter_step = std::make_unique<FilterStep>(
         query_plan->getCurrentHeader(), std::move(filter.actions), std::move(filter.column_name), filter.do_remove_column);
     query_plan->addStep(std::move(filter_step));
-}
-
-ActionsDAG::NodeRawConstPtrs ReadFromLocalParallelReplicaStep::conjunctsTheReplicasMiss(const ActionsDAG::Node & condition) const
-{
-    if (left_out_conjuncts)
-        return left_out_conjuncts(condition);
-    return ActionsDAG::extractConjunctionAtoms(&condition);
 }
 
 }

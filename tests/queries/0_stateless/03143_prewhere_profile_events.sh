@@ -11,13 +11,9 @@ ${CLICKHOUSE_CLIENT} -q "
 
   CREATE TABLE t(a UInt32, b UInt32, c UInt32, d UInt32) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0, add_minmax_index_for_numeric_columns=0;
 
-  -- The reference counters are those of a single part whose granules are 8192-aligned in b, so squash
-  -- the whole input into one block: the insert then writes exactly that part.
-  INSERT INTO t SELECT number, number, number, number FROM numbers(1e7)
-    SETTINGS min_insert_block_size_rows = 10000001, min_insert_block_size_bytes = 0;
+  INSERT INTO t SELECT number, number, number, number FROM numbers_mt(1e7);
 
-  SELECT throwIf(count() != 1, 'the insert must produce exactly one part') FROM system.parts
-   WHERE active AND database = currentDatabase() AND table = 't' FORMAT Null;
+  OPTIMIZE TABLE t FINAL;
 "
 
 query_id_1=$RANDOM$RANDOM

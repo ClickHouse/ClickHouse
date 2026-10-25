@@ -1,5 +1,3 @@
-#include <Examples/clickhouse_examples.h>
-
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #if defined (OS_LINUX)
@@ -14,7 +12,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Core/Defines.h>
-#include <bit>
 
 
 static void setAffinity()
@@ -56,11 +53,11 @@ static inline size_t identity(UInt64 x)
 static inline size_t intHash32(UInt64 x)
 {
     x = (~x) + (x << 18);
-    x = x ^ std::rotr(x, 31);
+    x = x ^ ((x >> 31) | (x << 33));
     x = x * 21;
-    x = x ^ std::rotr(x, 11);
+    x = x ^ ((x >> 11) | (x << 53));
     x = x + (x << 6);
-    x = x ^ std::rotr(x, 22);
+    x = x ^ ((x >> 22) | (x << 42));
 
     return x;
 }
@@ -196,15 +193,12 @@ static inline size_t tabulation(UInt64 x)
 }
 
 
-namespace
-{
-
 const size_t BUF_SIZE = 1024;
 
 using Source = std::vector<UInt64>;
 
 
-void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
+static void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
 {
     std::cerr << name << std::endl
               << "Done in " << elapsed << " (" << static_cast<double>(n) / elapsed << " elem/sec."
@@ -217,7 +211,7 @@ void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t
 
 
 template <size_t Func(UInt64)>
-inline void test(size_t n, const UInt64 * data, const char * name)
+static inline void test(size_t n, const UInt64 * data, const char * name)
 {
     /// throughput. Calculations of hash functions from different values may overlap.
     {
@@ -260,9 +254,8 @@ inline void test(size_t n, const UInt64 * data, const char * name)
     }
 }
 
-}
 
-int mainEntryExampleIntHashesPerf(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     size_t n = (std::stol(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
     size_t method = argc <= 2 ? 0 : std::stol(argv[2]);

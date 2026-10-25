@@ -12,17 +12,24 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
 /// Implements the function isNull which returns true if a value
 /// is null, false otherwise.
-class FunctionIsNull final : public IFunction
+class FunctionIsNull : public IFunction
 {
 public:
     static constexpr auto name = "isNull";
 
     static FunctionPtr create(ContextPtr context);
 
+    explicit FunctionIsNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
+
     std::string getName() const override { return name; }
-    String getSignatureString() const override { return "(Any) -> UInt8"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -40,6 +47,8 @@ public:
     llvm::Value *
     compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override;
 #endif
+
+    private : bool use_analyzer;
 };
 
 }

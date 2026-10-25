@@ -4,7 +4,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
 
-#include <algorithm>
 #include <chrono>
 #include <shared_mutex>
 
@@ -21,10 +20,6 @@ namespace ProfileEvents
 using namespace std::chrono_literals;
 
 constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
-
-/// `wait_for` adds its duration to `steady_clock::now` in nanoseconds, which cannot represent a
-/// far-future deadline, so a wait longer than one slice is taken in slices and re-armed.
-constexpr std::chrono::microseconds MAX_WAIT_SLICE = std::chrono::hours(24);
 
 OvercommitTracker::OvercommitTracker(DB::ProcessList * process_list_)
     : picked_tracker(nullptr)
@@ -62,7 +57,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         return OvercommitResult::DISABLED;
 
     pickQueryToExclude();
-    chassert(cancellation_state != QueryCancellationState::NONE);
+    assert(cancellation_state != QueryCancellationState::NONE);
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
@@ -71,7 +66,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     {
         // Here state can not be RUNNING, because it requires
         // picked_tracker to be not null pointer.
-        chassert(cancellation_state == QueryCancellationState::SELECTED);
+        assert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
         return OvercommitResult::DISABLED;
     }
@@ -87,24 +82,12 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     allow_release = true;
 
     required_memory += amount;
-    auto wait_start_time = std::chrono::steady_clock::now();
-    auto released = [this, id]()
+    auto wait_start_time = std::chrono::system_clock::now();
+    bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
     {
         return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
-    };
-    bool satisfied = false;
-    for (auto remaining = max_wait_time; remaining > ZERO_MICROSEC;)
-    {
-        const auto slice = std::min(remaining, MAX_WAIT_SLICE);
-        if (cv.wait_for(lk, slice, released))
-        {
-            satisfied = true;
-            break;
-        }
-        remaining -= slice;
-    }
-    bool timeout = !satisfied;
-    auto wait_end_time = std::chrono::steady_clock::now();
+    });
+    auto wait_end_time = std::chrono::system_clock::now();
     ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
 
     required_memory -= amount;

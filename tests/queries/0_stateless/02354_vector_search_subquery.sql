@@ -1,8 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
-SET explain_query_plan_default = 'legacy';
 
-SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_lazy_materialization = 1;
+SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)
 

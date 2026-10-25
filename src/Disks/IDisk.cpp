@@ -1,8 +1,7 @@
 #include <Disks/IDisk.h>
-#include <Core/UUID.h>
+#include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -32,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -74,16 +74,6 @@ void IDisk::copyFile( /// NOLINT
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
-{
-    ReadPipeline pipeline;
-    prepareRead(path, settings, read_hint, pipeline);
-    return pipeline.build();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
@@ -139,7 +129,7 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-static void asyncCopy(
+void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,
@@ -207,11 +197,6 @@ void IDisk::truncateFile(const String &, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate operation is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-void ISyncGuard::sync()
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Explicit synchronization is not implemented for this guard");
-}
-
 SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
 {
     return nullptr;
@@ -245,7 +230,12 @@ void IDisk::startup(bool skip_access_check)
 
 void IDisk::checkAccess()
 {
-    checkAccessImpl(fmt::format("clickhouse_access_check_{}", toString(UUIDHelpers::generateV4())));
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid == DB::UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
+    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
+
+    checkAccessImpl(path);
 }
 
 /// NOTE: should we mark the disk readonly if the write/unlink fails instead of throws?
@@ -262,7 +252,6 @@ try
         auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
         file->write(payload.data(), payload.size());
         file->finalize();
-        file->sync();
     }
 
     /// read

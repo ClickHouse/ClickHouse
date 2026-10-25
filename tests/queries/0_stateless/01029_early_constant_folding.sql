@@ -1,4 +1,3 @@
-
 -- constant folding
 
 EXPLAIN SYNTAX SELECT 1 WHERE 1 = 0;

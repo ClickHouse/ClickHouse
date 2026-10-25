@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Tags: no-parallel-replicas
 # no-parallel-replicas: The EXPLAIN output is completely different
 # add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
@@ -7,11 +7,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"
 
 wait_for_mutations() {
-    while clickhouse_test_time_left ;
+    while : ;
     do
         count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'test_table' and is_done = 0")
         [[ $count != 0 ]] || break
@@ -20,9 +20,9 @@ wait_for_mutations() {
 }
 
 client() {
+    # SET enable_analyzer=1; -- Different EXPLAIN output
     # SET use_query_condition_cache = 0; -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
-    # SET use_statistics_for_part_pruning = 0; -- Disable statistics-based part pruning to keep EXPLAIN output stable
-    $CLICKHOUSE_CLIENT --echo --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 --use_statistics_for_part_pruning=0 -q "$1"
+    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 -q "$1"
 }
 
 declare -a table_settings=("min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0" "min_bytes_for_full_part_storage ='1G'")

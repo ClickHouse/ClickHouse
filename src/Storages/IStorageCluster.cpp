@@ -1,45 +1,36 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
-#include <Client/ConnectionPoolWithFailover.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Planner/Utils.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
-
-#include <Common/ProfileEvents.h>
 
 #include <algorithm>
 #include <memory>
 #include <string>
 
 
-namespace ProfileEvents
-{
-    extern const Event Shards;
-}
-
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
@@ -63,14 +54,58 @@ IStorageCluster::IStorageCluster(
 {
 }
 
+class ReadFromCluster : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromCluster"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+
+    ReadFromCluster(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        SharedHeader sample_block,
+        std::shared_ptr<IStorageCluster> storage_,
+        ASTPtr query_to_send_,
+        QueryProcessingStage::Enum processed_stage_,
+        ClusterPtr cluster_,
+        LoggerPtr log_)
+        : SourceStepWithFilter(
+            std::move(sample_block),
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
+        , storage(std::move(storage_))
+        , query_to_send(std::move(query_to_send_))
+        , processed_stage(processed_stage_)
+        , cluster(std::move(cluster_))
+        , log(log_)
+    {
+    }
+
+private:
+    std::shared_ptr<IStorageCluster> storage;
+    ASTPtr query_to_send;
+    QueryProcessingStage::Enum processed_stage;
+    ClusterPtr cluster;
+    LoggerPtr log;
+
+    std::optional<RemoteQueryExecutor::Extension> extension;
+
+    void createExtension(const ActionsDAG::Node * predicate);
+    ContextPtr updateSettings(const Settings & settings);
+};
+
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     const ActionsDAG::Node * predicate = nullptr;
-    const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
-    if (filter)
-        predicate = filter->getOutputs().at(0);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
 
     createExtension(predicate);
 }
@@ -109,16 +144,20 @@ void IStorageCluster::read(
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
-    /// The replicas re-analyze this query, so it must not name CTEs or `grouping` specializations of the initiator's query tree.
-    auto query_tree_to_send = query_info.query_tree->clone();
-    removeGroupingFunctionSpecializations(query_tree_to_send);
-    ASTPtr query_to_send = queryNodeToDistributedSelectQuery(query_tree_to_send);
+    ASTPtr query_to_send = query_info.query;
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
-        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        sample_block = interpreter.getSampleBlock();
+        query_to_send = interpreter.getQueryInfo().query->clone();
+    }
 
-    /// The nodes that will run the query are the nodes of this storage's own cluster.
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -129,12 +168,6 @@ void IStorageCluster::read(
                                       /* only_replace_current_database_function_= */false,
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
-
-    /// Strip initiator-only settings from the forwarded query text as well: the inter-server settings
-    /// packet is stripped in `ReadFromCluster::updateSettings`, but `query_to_send` is also serialized via
-    /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
-    /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
@@ -170,10 +203,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     createExtension(nullptr);
 
-    ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
-
-    const auto table_read_on_replicas = storage->getTableReadOnReplicas();
-
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         if (pipes.size() >= max_replicas_to_use)
@@ -181,43 +210,20 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
         /// We're taking all replicas as shards,
         /// so each shard will have only one address to connect to.
-        IConnectionPool::Entry connection;
-        if (table_read_on_replicas)
-        {
-            /// A replica without the table is not used, and neither is an older one, which would read all of its files.
-            auto try_results = shard_info.pool->getManyChecked(
-                timeouts,
-                current_settings,
-                PoolMode::GET_ONE,
-                *table_read_on_replicas,
-                /*async_callback=*/ {},
-                /*skip_unavailable_endpoints=*/ true);
+        auto try_results = shard_info.pool->getMany(
+            timeouts,
+            current_settings,
+            PoolMode::GET_ONE,
+            {},
+            /*skip_unavailable_endpoints=*/true);
 
-            if (try_results.empty()
-                || try_results.front().entry->getWorkerClusterFunctionProtocolVersion() < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS)
-                continue;
-
-            connection = std::move(try_results.front().entry);
-        }
-        else
-        {
-            auto try_results = shard_info.pool->getMany(
-                timeouts,
-                current_settings,
-                PoolMode::GET_ONE,
-                {},
-                /*skip_unavailable_endpoints=*/true);
-
-            if (try_results.empty())
-                continue;
-
-            connection = std::move(try_results.front());
-        }
+        if (try_results.empty())
+            continue;
 
         IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{std::move(connection)},
+            std::vector<IConnectionPool::Entry>{try_results.front()},
             query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
@@ -230,9 +236,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             shard_info.pool);
 
         remote_query_executor->setLogger(log);
-        /// The cluster of a *Cluster function uses every replica as a shard, so `shard_num`
-        /// identifies the fan-out entry rather than a shard of the original cluster definition.
-        remote_query_executor->setShardScope({storage->getClusterName(), shard_info.shard_num});
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,
@@ -241,13 +244,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
         pipes.emplace_back(std::move(pipe));
     }
-
-    if (pipes.empty() && table_read_on_replicas)
-        throw Exception(
-            ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-            "Cannot read table {} with parallel replicas: no replica of cluster {} is available, has the table and supports reading it",
-            table_read_on_replicas->getFullName(),
-            storage->getClusterName());
 
     if (pipes.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
@@ -262,10 +258,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
-    /// Only a follower reached by another node's cluster function (SECONDARY_QUERY) just fetches
-    /// raw data. Everything else is the initiator of the distributed read, including internal
-    /// contexts that never set the kind (NO_QUERY), e.g. a Replicated database DDL worker.
-    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    /// Initiator executes query on remote node.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
             return QueryProcessingStage::Enum::WithMergeableState;
 
@@ -280,16 +274,8 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
 
-    /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
-    /// settings, and `database`): they are materialized on the initiator and must not be forwarded
-    /// to the remote servers, where they would re-shape the per-shard subquery a second time or
-    /// break it (e.g. `format = 'Null'`). This mirrors the `Distributed` fan-out.
-    ClusterProxy::stripInitiatorOnlySettings(new_settings);
-
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
-    /// The workers are leaves of a distributed read, like the shards of the `Distributed` fan-out.
-    new_context->increaseDistributedDepth();
     return new_context;
 }
 

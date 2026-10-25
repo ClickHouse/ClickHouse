@@ -1,3 +1,4 @@
+set enable_analyzer=1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (i UInt64) Engine = MergeTree() order by i;

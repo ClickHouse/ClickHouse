@@ -2,10 +2,11 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -19,30 +20,21 @@
 #include <memory>
 #include <mutex>
 
-#include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 struct IPartitionStrategy;
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 /**
  * A general class containing implementation for external table engines
  * such as StorageS3, StorageAzure, StorageHDFS.
  * Works with an object of IObjectStorage class.
  */
-class StorageObjectStorage : public IStorage, public IBackgroundOperation
+class StorageObjectStorage : public IStorage
 {
 public:
     StorageObjectStorage(
@@ -66,10 +58,6 @@ public:
 
     String getName() const override;
 
-    /// The concrete data format resolved for this table (after schema/format inference).
-    /// Used by the unified `URL` engine to persist the delegate's inferred format.
-    String getFormatName() const { return configuration->format; }
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -80,25 +68,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    /// Requires `updateExternalDynamicMetadataIfExists` to have run for `context` before `storage_snapshot` was taken.
-    StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override;
-
-    void setHasClusterVariant() { has_cluster_variant = true; }
-
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         bool async_insert) override;
-
-    static SinkToStoragePtr createSink(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const ObjectStoragePtr & object_storage,
-        const StorageID & storage_id,
-        const std::optional<FormatSettings> & format_settings,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context);
 
     void truncate(
         const ASTPtr & query,
@@ -108,20 +82,9 @@ public:
 
     void drop() override;
 
-    void checkTableCanBeDropped(ContextPtr query_context) const override;
-
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
-
-    /// Reading a `.null`/`.size0`/... subcolumn does not skip reading the parent column from
-    /// these file formats, and the native readers (e.g. Parquet V3 `PREWHERE`) cannot supply such
-    /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
-    /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
-    bool supportsOptimizationToSubcolumns() const override { return false; }
-    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
-    /// `t.x` on its own and prune on it.
-    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -130,8 +93,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
-
-    bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
 
     bool isObjectStorage() const override { return true; }
 
@@ -146,8 +107,6 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
-
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
@@ -178,21 +137,7 @@ public:
 
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
-
-    /// The body of `drop`, shared with `StorageObjectStorageCluster`.
-    static void dropTable(
-        const StorageObjectStorageConfigurationPtr & configuration,
-        const std::shared_ptr<DataLake::ICatalog> & catalog,
-        const StorageID & storage_id);
-
-    /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
-    /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
-    bool isTransactionalRefreshTarget();
-    CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
-
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     bool optimize(
@@ -205,60 +150,20 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override;
+    bool supportsDelete() const override { return configuration->supportsDelete(); }
 
-    bool supportsParallelInsert() const override;
+    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
-
-    Pipe alterPartition(
-        const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
-    void checkAlterPartitionIsPossible(
-        const PartitionCommands & commands,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Settings & settings,
-        ContextPtr context) const override;
-
-    ObjectStoragePtr getObjectStorage() const
-    {
-        return object_storage;
-    }
-
-    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const
-    {
-        return configuration;
-    }
-
-    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
-
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & /*assignee*/) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "scheduleDataMovingJob is not implemented for object storage");
-    }
-
-    void startup() override;
-    void shutdown(bool is_drop) override;
-
-    Int32 getBiasBackoffSeconds() const override
-    {
-        return configuration->getBiasBackoffSeconds();
-    }
 
 protected:
-    /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
-    void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
-
-    /// Whether this table is the whole FROM of a query that a replica runs for the initiator's cluster read,
-    /// so the replica reads only the files the initiator gives it. Only `IStorageCluster` sends such a query.
-    bool isReadOnReplicaForInitiator(const ContextPtr & context, const SelectQueryInfo & query_info) const;
-
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
@@ -288,20 +193,13 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
-    bool has_cluster_variant = false;
 
-    struct HivePartitioningColumns
-    {
-        NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-        NamesAndTypesList file_columns;
-    };
-    /// Replaced as a whole by a deferred resolution while other queries read it.
-    MultiVersion<HivePartitioningColumns> hive_partitioning_columns;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;
     std::mutex hive_partitioning_resolution_mutex;
-    std::mutex settings_changes_mutex;
     /// Stays false on a failed resolution, so the next query retries it.
     bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
 
@@ -309,7 +207,6 @@ protected:
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
-    BackgroundJobsAssignee background_operations_assignee;
 };
 
 }

@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -23,25 +24,31 @@ void BackupCoordinationFileInfos::addFileInfos(BackupFileInfos && file_infos_, c
     file_infos.emplace(host_id_, std::move(file_infos_));
 }
 
-const BackupFileInfos & BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
+BackupFileInfos BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
 {
     prepare();
     auto it = file_infos.find(host_id_);
     if (it == file_infos.end())
-    {
-        static const BackupFileInfos empty;
-        return empty;
-    }
-    /// Safe to return by reference: after prepare() the per-host vectors are never mutated (addFileInfos() throws
-    /// once prepared), and file_infos_for_all_hosts already holds raw pointers into them.
+        return {};
     return it->second;
 }
 
-void BackupCoordinationFileInfos::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
+BackupFileInfos BackupCoordinationFileInfos::getFileInfosForAllHosts() const
 {
     prepare();
+    BackupFileInfos res;
+    res.reserve(file_infos_for_all_hosts.size());
     for (const auto * file_info : file_infos_for_all_hosts)
-        callback(*file_info);
+        res.emplace_back(*file_info);
+    return res;
+}
+
+BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t data_file_index) const
+{
+    prepare();
+    if (data_file_index >= file_infos_for_all_hosts.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid data file index: {}", data_file_index);
+    return *(file_infos_for_all_hosts[data_file_index]);
 }
 
 namespace
@@ -88,18 +95,7 @@ void BackupCoordinationFileInfos::prepare() const
     total_size_of_files = 0;
 
     std::vector<BackupFileInfo *> unresolved_references;
-
-    /// A reference is resolved through the info of the file it points at, so only those files have to be looked up by
-    /// name. Collected first, because a reference can point at a file that comes later. Most backups have no references
-    /// at all, and then the map below stays empty instead of holding an entry per file of the backup.
-    std::unordered_set<std::string_view> reference_targets;
-    for (const auto * info : file_infos_for_all_hosts)
-    {
-        if (!info->reference_target.empty())
-            reference_targets.emplace(info->reference_target);
-    }
     std::unordered_map<std::string_view, BackupFileInfo *> file_name_to_info;
-    file_name_to_info.reserve(reference_targets.size());
 
     const auto handle_unresolved_references = [&](const auto & try_resolve_reference)
     {
@@ -141,8 +137,7 @@ void BackupCoordinationFileInfos::prepare() const
 
             if (info.reference_target.empty())
             {
-                if (reference_targets.contains(info.file_name))
-                    file_name_to_info.emplace(info.file_name, &info);
+                file_name_to_info.emplace(info.file_name, &info);
                 total_size_of_files += info.size;
             }
             else if (!try_resolve_reference(info))
@@ -213,8 +208,7 @@ void BackupCoordinationFileInfos::prepare() const
                 }
             }
 
-            if (reference_targets.contains(info.file_name))
-                file_name_to_info.emplace(info.file_name, &info);
+            file_name_to_info.emplace(info.file_name, &info);
         }
 
         handle_unresolved_references(try_resolve_reference);
