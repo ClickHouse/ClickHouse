@@ -1,0 +1,4 @@
+fuzz	TableProxy
+mt	TableProxy
+mt	MergeTree
+a

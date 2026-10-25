@@ -127,11 +127,10 @@ public:
 
     /// `DatabaseWithOwnTablesBase::getTablesForBackup` calls it on the catalog object before the data is
     /// collected, e.g. `ReplicatedMergeTree` puts the current metadata from ZooKeeper into the backed up
-    /// `CREATE TABLE` query here.
-    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
-    {
-        getNested()->applyMetadataChangesToCreateQueryForBackup(create_query);
-    }
+    /// `CREATE TABLE` query here. Only the `Replicated*MergeTree` engines adjust the query, so an untouched table of
+    /// any other engine is not materialized for it: a backup with `structure_only` collects no data, so it must not
+    /// load every selected table, nor fail for a table that cannot be initialized at the moment.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
     {

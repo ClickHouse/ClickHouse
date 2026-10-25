@@ -42,6 +42,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -452,11 +453,18 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 /// the table through a downcast, which a lazy-load stand-in defeats, and `mutate` below
                 /// materializes the stand-in in any case.
                 StoragePtr engine_table = resolveStorageProxyLoading(table);
-                /// The same holds for the target of a materialized view, which `mutate` executes on: the view
-                /// forwards the refresh below only to a target that is already materialized.
+                /// The same holds for the target of a materialized view or an `Alias`, which `mutate` executes on:
+                /// they forward the refresh below only to a target that is already materialized.
                 if (const auto * view = typeid_cast<const StorageMaterializedView *>(engine_table.get()))
+                {
                     if (auto target = view->tryGetTargetTable())
                         resolveStorageProxyLoading(target);
+                }
+                else if (const auto * alias = typeid_cast<const StorageAlias *>(engine_table.get()))
+                {
+                    if (auto target = alias->tryGetTargetTable())
+                        resolveStorageProxyLoading(target);
+                }
                 /// Pin the current state of an external table (e.g. Iceberg) before validating, as
                 /// `InterpreterDeleteQuery` does: `mutate` executes the mutation against this same state
                 /// and does not refresh it again.

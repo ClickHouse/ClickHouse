@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A materialized view forwards the refresh of external metadata to its target, which `DESCRIBE` asks for.
+# A materialized view (and an `Alias`) forwards the refresh of external metadata to its target, which `DESCRIBE` asks for.
 # `DESCRIBE` of the view must not materialize a lazy-load target: it neither loads an untouched table,
 # nor fails when the target cannot be initialized (here: a removed named collection).
 
@@ -21,6 +21,8 @@ CREATE TABLE $DB.mt (x String) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE $DB.fuzz (x String) ENGINE = FuzzJSON($NC);
 CREATE MATERIALIZED VIEW $DB.mv_mt TO $DB.mt AS SELECT x FROM $DB.src;
 CREATE MATERIALIZED VIEW $DB.mv_fuzz TO $DB.fuzz AS SELECT x FROM $DB.src;
+CREATE TABLE $DB.alias_fuzz ENGINE = Alias($DB, fuzz);
+CREATE MATERIALIZED VIEW $DB.mv_alias_fuzz TO $DB.alias_fuzz AS SELECT x FROM $DB.src;
 "
 
 # Reloading the database installs the stand-ins, as a server restart does.
@@ -29,6 +31,8 @@ $CLICKHOUSE_CLIENT --query "DETACH DATABASE $DB; DROP NAMED COLLECTION $NC; ATTA
 $CLICKHOUSE_CLIENT --query "
 DESCRIBE $DB.mv_mt;
 DESCRIBE $DB.mv_fuzz;
+DESCRIBE $DB.alias_fuzz;
+DESCRIBE $DB.mv_alias_fuzz;
 SELECT name, engine FROM system.tables WHERE database = '$DB' AND name IN ('mt', 'fuzz') ORDER BY name;
 "
 

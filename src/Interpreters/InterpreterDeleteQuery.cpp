@@ -26,6 +26,8 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageAlias.h>
+#include <Common/typeid_cast.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageTableProxy.h>
@@ -131,6 +133,13 @@ BlockIO InterpreterDeleteQuery::execute()
     /// engine that the stand-in does not forward, so it has to be asked of the real storage - and so does
     /// everything below that reasons about the snapshot, or the validation and the execution of the
     /// mutation would look at two different states of an external table.
+    /// An `Alias` forwards the refresh only to a target that is already materialized, and the mutation is executed
+    /// on the target, so materialize it as well.
+    if (const auto * alias = typeid_cast<const StorageAlias *>(engine_table.get()))
+    {
+        if (auto target = alias->tryGetTargetTable())
+            resolveStorageProxyLoading(target);
+    }
     engine_table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(getContext(), false);
 
