@@ -14,8 +14,6 @@ INSERT INTO nr VALUES (2, NULL);
 
 SET join_use_nulls = 0;
 
-SET enable_analyzer = 1;
-
 -- x is supertupe for `t.x` and `nr.x` from left and right since `x` is inside `USING`.
 SELECT x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l LEFT JOIN nr AS r USING (x) ORDER BY t.x;
 SELECT x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l RIGHT JOIN nr AS r USING (x) ORDER BY t.x;

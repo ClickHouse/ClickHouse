@@ -203,9 +203,46 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     setInMemoryMetadata(metadata);
 }
 
+StorageObjectStorageCluster::StorageObjectStorageCluster(
+    const String & cluster_name_,
+    StorageObjectStorageConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    const StorageID & table_id_,
+    const StorageMetadataPtr & metadata_,
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path_,
+    std::optional<FormatSettings> format_settings_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    ConstStoragePtr table_)
+    : IStorageCluster(
+        cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    , configuration{configuration_}
+    , object_storage(object_storage_)
+    , format_settings(std::move(format_settings_))
+    , catalog(std::move(catalog_))
+    , hive_partition_columns_to_read_from_file_path(std::move(hive_partition_columns_to_read_from_file_path_))
+    , table(std::move(table_))
+{
+    setInMemoryMetadata(*metadata_);
+}
+
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+std::optional<QualifiedTableName> StorageObjectStorageCluster::getTableReadOnReplicas() const
+{
+    if (!table)
+        return {};
+    const auto table_id = getStorageID();
+    return QualifiedTableName{table_id.database_name, table_id.table_name};
+}
+
+void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context)
+{
+    /// The same per-query update as `StorageObjectStorage::read` does for the table.
+    if (table && !configuration->isDataLakeConfiguration())
+        configuration->update(object_storage, context);
 }
 
 SinkToStoragePtr StorageObjectStorageCluster::write(
@@ -301,6 +338,9 @@ void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr
 
 void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    if (std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY SETTING and RESET SETTING are not supported by storage {}", getName());
+
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
@@ -339,10 +379,20 @@ void StorageObjectStorageCluster::drop()
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
+    return totalRowsInSnapshot(nullptr, query_context);
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
-    return configuration->totalRows(query_context);
+
+    std::optional<DataLakeTableStateSnapshot> state;
+    if (storage_snapshot && storage_snapshot->metadata)
+        state = storage_snapshot->metadata->datalake_table_state;
+
+    return configuration->totalRows(query_context, state);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
@@ -426,6 +476,27 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));
     }
+
+    /// Make the replicas read the table state this query iterates.
+    const auto & table_state = storage_snapshot->metadata->datalake_table_state;
+    if (configuration->isDataLakeConfiguration() && table_state.has_value())
+    {
+        if (auto metadata = configuration->getExternalMetadata())
+        {
+            if (auto changes = metadata->getSettingsToResolveState(*table_state); !changes.empty())
+            {
+                if (!settings_temporary_storage)
+                {
+                    auto settings_ast = make_intrusive<ASTSetQuery>();
+                    settings_ast->is_standalone = false;
+                    settings_temporary_storage = std::move(settings_ast);
+                }
+                for (const auto & change : changes)
+                    settings_temporary_storage->as<ASTSetQuery &>().changes.setSetting(change.name, change.value);
+            }
+        }
+    }
+
     if (settings_temporary_storage)
     {
         args.insert(args.end(), std::move(settings_temporary_storage));

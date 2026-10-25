@@ -1,5 +1,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Core/ProtocolDefines.h>
+#include <Interpreters/ClientInfo.h>
+#include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -42,6 +45,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AsyncInsertQueueTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageValues.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
@@ -491,7 +495,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
+    /// Not only on the initiator: a follower or a `*Cluster` worker executing a forwarded INSERT would otherwise
+    /// start a coordinated read in a materialized view, and nothing coordinates it.
+    if (context->canUseTaskBasedParallelReplicas())
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
@@ -538,6 +544,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
         context);
+    returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
 
@@ -652,7 +659,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             });
     }
 
-    VectorWithMemoryTracking<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    VectorWithMemoryTracking<Chain> sink_chains
+        = insert_dependencies->createChainWithDependenciesForAllStreams(query.returning ? &returning_output : nullptr);
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 
@@ -929,6 +937,23 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 }
 
 
+/// For INSERT ... RETURNING with the data sent by the client separately, the client receives the result while sending the data.
+static void checkClientSupportsReturningWithDataSentSeparately(const ContextPtr & context)
+{
+    auto query_context = context->getQueryContext();
+    const auto & client_info = query_context->getClientInfo();
+
+    bool supported = query_context->getInputBlocksReaderCallback()
+        && (client_info.interface == ClientInfo::Interface::LOCAL
+            || (client_info.interface == ClientInfo::Interface::TCP
+                && client_info.client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INSERT_RETURNING));
+
+    if (!supported)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RETURNING is not supported for INSERT with the data sent separately by this client or interface. "
+            "Put the data into the query, or use INSERT SELECT");
+}
+
 QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     auto context = getContext();
@@ -936,7 +961,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
+    /// Not only on the initiator: a follower or a `*Cluster` worker executing a forwarded INSERT would otherwise
+    /// start a coordinated read in a materialized view, and nothing coordinates it.
+    if (context->canUseTaskBasedParallelReplicas())
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
@@ -1083,9 +1110,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         /*skip_destination_table*/ no_destination,
         insert_threads,
         context);
+    returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     QueryPipeline pipeline
-        = buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert);
+        = buildPushPipelineFromDependencies(
+            insert_dependencies, context, table, max_threads, no_squash, async_insert, query.returning ? &returning_output : nullptr);
 
     if (query.hasInlinedData() && !async_insert)
     {
@@ -1097,6 +1126,16 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
     }
+    else if (query.returning)
+    {
+        /// The data is sent by the client separately. Read it inside the pipeline, the same way as for the `input` table function,
+        /// so the result of RETURNING is sent to the client while it is sending the data.
+        auto query_context = context->getQueryContext();
+        checkClientSupportsReturningWithDataSentSeparately(query_context);
+
+        query_context->initializeInput(metadata_snapshot->getColumns(), *query_sample_block);
+        pipeline.complete(StorageInput::createInputFromClient(query_context, query_sample_block));
+    }
 
     return pipeline;
 }
@@ -1107,11 +1146,12 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     const StoragePtr & table,
     size_t max_threads_,
     bool no_squash_,
-    bool async_insert_)
+    bool async_insert_,
+    ProcessorPtr * returning_output)
 {
     const Settings & settings = context_->getSettingsRef();
 
-    auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams(returning_output);
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
     chassert(sink_chains.size() == sink_stream_size);
     chassert(sink_stream_size >= 1);
@@ -1480,6 +1520,20 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
+    if (query.returning)
+    {
+        if (no_destination || async_insert)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
+
+        if (query.select)
+        {
+            ASTPtr input_function;
+            query.tryFindInputFunction(input_function);
+            if (input_function && context->getQueryContext()->getInputBlocksReaderCallback())
+                checkClientSupportsReturningWithDataSentSeparately(context);
+        }
+    }
+
     /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
     /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
     /// that is why the queue route is refused below for a SELECT that may read the destination.
@@ -1503,6 +1557,14 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         table->checkInsertIsAllowed(context);
 
+    /// The RETURNING query reads the inserted data instead of the table, so the access checks and the row policies
+    /// of the tables that a table like `Alias`, `Distributed` or a materialized view reads from would not be applied.
+    /// Checked after the access check of the insert, so the engine is not reported to a user without access to the table.
+    if (query.returning && (table->readsFromOtherTables() || dynamic_cast<const StorageMaterializedView *>(table.get())))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RETURNING is not supported for INSERT into a table with the engine {}, which reads from other tables",
+            table->getName());
+
     if (!allow_materialized)
     {
         for (const auto & column : metadata_snapshot->getColumns())
@@ -1513,7 +1575,7 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
     if (query.select && !query.async_insert_flush)
     {
-        if (settings[Setting::parallel_distributed_insert_select])
+        if (settings[Setting::parallel_distributed_insert_select] && !query.returning)
         {
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();
@@ -1545,7 +1607,9 @@ BlockIO InterpreterInsertQuery::execute()
             /// Internal inserts (refresh, POPULATE, CTAS) swap or publish their destination as soon as
             /// execute() returns, so the async route with wait_for_async_insert = 0 would race the flush
             /// and lose data. Kept before the transaction guard, which throws rather than downgrades.
-            if (!is_initial_insert)
+            if (query.returning)
+                reason = "the query has RETURNING";
+            else if (!is_initial_insert)
                 reason = "insert is not user-initiated";
             else if (!settings[Setting::async_insert_select_as_async_insert])
                 reason = "async_insert_select_as_async_insert is disabled";
@@ -1611,7 +1675,80 @@ BlockIO InterpreterInsertQuery::execute()
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
 
+    if (query.returning)
+        addReturning(query, table, res);
+
     return res;
+}
+
+
+void InterpreterInsertQuery::addReturning(ASTInsertQuery & query, const StoragePtr & table, BlockIO & res)
+{
+    if (!returning_output)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The pipeline of INSERT ... RETURNING has no output for the inserted data");
+
+    if (!res.pipeline.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The pipeline of INSERT ... RETURNING is not completed");
+
+    auto context = getContext();
+    size_t insert_num_threads = res.pipeline.getNumThreads();
+
+    /// The pipe contains the whole INSERT pipeline, and its output is the copy of the data written into the table.
+    QueryPlanResourceHolder insert_resources;
+    Pipe inserted_data = QueryPipeline::toPipeWithOutputProcessor(std::move(res.pipeline), std::move(returning_output), insert_resources);
+
+    /// The RETURNING query reads the inserted data instead of the table,
+    /// the same way as a materialized view reads the inserted blocks instead of its source table.
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    std::shared_ptr<StorageValues> inserted_data_storage;
+
+    /// `EXPLAIN PIPELINE` only prints the pipeline, which is not executed. Building the RETURNING query must not run the insert
+    /// (e.g. to build a set for the index analysis), so the query reads an empty block, and the insert is added as a separate pipeline.
+    std::optional<Pipe> insert_for_explain;
+    if (explain_only)
+    {
+        auto empty_block = inserted_data.getHeader().cloneEmpty();
+        insert_for_explain = std::move(inserted_data);
+        inserted_data_storage = std::make_shared<StorageValues>(table->getStorageID(), metadata_snapshot->getColumns(), std::move(empty_block));
+    }
+    else
+    {
+        inserted_data_storage = std::make_shared<StorageValues>(table->getStorageID(), metadata_snapshot->getColumns(), std::move(inserted_data));
+    }
+
+    auto select_context = Context::createCopy(context);
+    select_context->addViewSource(inserted_data_storage);
+
+    /// The RETURNING query without FROM reads the inserted data. This is the only way to refer to the data inserted into a table function.
+    const auto & inserted_data_storage_id = inserted_data_storage->getStorageID();
+    select_context->setSetting("implicit_table_at_top_level",
+        backQuote(inserted_data_storage_id.getDatabaseName()) + "." + backQuote(inserted_data_storage_id.getTableName()));
+
+    /// A scalar subquery is executed during the analysis. If it read the inserted data, the insert would run
+    /// before the rest of the query is built, and a later error would fail the query after the data is written.
+    inserted_data_storage->setPreparedPipeReadAllowed(false);
+    InterpreterSelectQueryAnalyzer interpreter(query.returning->clone(), select_context, SelectQueryOptions(), inserted_data_storage);
+    inserted_data_storage->setPreparedPipeReadAllowed(true);
+    res.pipeline = QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
+
+    /// If the RETURNING query does not read the table, the data still has to be inserted.
+    auto unread_data = inserted_data_storage->extractPreparedPipe();
+    if (insert_for_explain)
+        unread_data = std::move(insert_for_explain);
+
+    if (unread_data)
+    {
+        QueryPipeline insert_pipeline(std::move(*unread_data));
+        insert_pipeline.complete(std::make_shared<EmptySink>(insert_pipeline.getSharedHeader()));
+        res.pipeline.addCompletedPipeline(std::move(insert_pipeline));
+    }
+
+    res.pipeline.addResources(std::move(insert_resources));
+    /// The pipeline of the insert also pushes to the dependent materialized views, so keep it sequential if it was.
+    if (returning_insert_views_serial)
+        res.pipeline.setNumThreads(insert_num_threads);
+    else
+        res.pipeline.setNumThreads(std::max(res.pipeline.getNumThreads(), insert_num_threads));
 }
 
 
