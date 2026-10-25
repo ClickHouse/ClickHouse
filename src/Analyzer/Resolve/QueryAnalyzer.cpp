@@ -547,6 +547,47 @@ void bindInterpolateTargetReads(
     }
 }
 
+/// Replaces the identifiers of `target_columns` in the unresolved `node` with the columns. Subqueries, aggregate, window
+/// and `arrayJoin` functions are computed before the fill, and the sets and the arguments a function needs constant stay constants.
+void bindConstantTargetIdentifiers(QueryTreeNodePtr & node, const std::unordered_map<std::string, QueryTreeNodePtr> & target_columns, const ContextPtr & context)
+{
+    if (const auto * identifier_node = node->as<IdentifierNode>())
+    {
+        auto it = target_columns.find(identifier_node->getIdentifier().getFullName());
+        /// The other reads of an alias resolve the original identifier, so an aliased one stays as it is.
+        if (it != target_columns.end() && !node->hasAlias())
+            node = it->second->clone();
+    }
+    else if (auto * lambda_node = node->as<LambdaNode>())
+    {
+        auto lambda_target_columns = target_columns;
+        for (const auto & argument_name : lambda_node->getArguments().getNames())
+            lambda_target_columns.erase(argument_name);
+
+        bindConstantTargetIdentifiers(lambda_node->getExpression(), lambda_target_columns, context);
+    }
+    else if (auto * function_node = node->as<FunctionNode>())
+    {
+        auto function = FunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
+        if (!function || function->getName() == "arrayJoin")
+            return;
+
+        auto constant_arguments = function->getArgumentsThatAreAlwaysConstant();
+        if (isNameOfInFunction(function->getName()))
+            constant_arguments.push_back(1);
+
+        auto & arguments = function_node->getArguments().getNodes();
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (!std::ranges::contains(constant_arguments, i))
+                bindConstantTargetIdentifiers(arguments[i], target_columns, context);
+    }
+    else if (node->getNodeType() == QueryTreeNodeType::LIST)
+    {
+        for (auto & child : node->getChildren())
+            bindConstantTargetIdentifiers(child, target_columns, context);
+    }
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_)
@@ -5111,23 +5152,28 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
 
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
-        IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
-        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), static_pointer_cast<ITableExpressionNode>(interpolate_node));
-        interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
-
-        /// A read of a constant target would resolve to the constant itself, so it is bound to the target here.
+        /// A read of another constant target would resolve to the constant itself, so it is bound to the target here.
+        std::unordered_map<std::string, QueryTreeNodePtr> constant_target_columns;
         for (const auto & target_node : interpolate_nodes)
         {
             const auto & target = target_node->as<const InterpolateNode &>();
-            if (target.getExpression()->getNodeType() != QueryTreeNodeType::CONSTANT)
+            if (target_node == interpolate_node || target.getExpression()->getNodeType() != QueryTreeNodeType::CONSTANT)
                 continue;
 
             auto target_column_node = std::make_shared<ColumnNode>(
                 NameAndTypePair(target.getExpressionName(), target.getExpression()->getResultType()),
                 static_pointer_cast<ITableExpressionNode>(target_node));
-            interpolate_scope.expression_argument_name_to_node.emplace(target.getExpressionName(), std::move(target_column_node));
+            constant_target_columns.emplace(target.getExpressionName(), std::move(target_column_node));
         }
+
+        if (!constant_target_columns.empty())
+            bindConstantTargetIdentifiers(interpolation_to_resolve, constant_target_columns, scope.context);
+
+        IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
+
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), static_pointer_cast<ITableExpressionNode>(interpolate_node));
+        interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 

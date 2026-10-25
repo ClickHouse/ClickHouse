@@ -168,3 +168,15 @@ ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, c AS c + e);
 SELECT 'a target whose expression reads a constant target';
 SELECT g, 5 AS d, x + d AS b, c FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x, toUInt32(number) AS c FROM numbers(2))
 ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, b AS b * 2, c AS c + b);
+
+SELECT 'a constant target is read as the constant where it is computed before the fill or must be constant';
+SELECT toUInt16(number * 4) AS g, 5 AS d, toUInt32(number) AS x FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + d + sum(number) OVER (ORDER BY number ROWS BETWEEN d PRECEDING AND CURRENT ROW));
+SELECT toUInt16(number * 4) AS g, 5 AS d, count() AS c FROM numbers(2)
+GROUP BY g ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, c AS c + d + toUInt64(quantile(d / 10)(number)));
+SELECT toUInt16(number * 4) AS g, 5 AS d, toUInt32(number) AS x FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + d + (SELECT d) + (5 IN (SELECT d)) + (5 IN d) * 10);
+SELECT toUInt16(number * 4) AS g, 5 AS d, unnest([d]) AS e, toUInt32(number) AS x FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + d + e + unnest([d]) + arraySum(arrayMap(d -> d, [toUInt8(100)])));
+SELECT toUInt16(number * 4) AS g, 5 AS d, toFixedString('a', 5) AS y FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, y AS toFixedString(toString(d), d));

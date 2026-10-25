@@ -203,3 +203,29 @@ a target whose expression reads a constant target
 2	7	24	18
 3	8	48	42
 4	5	7	1
+a constant target is read as the constant where it is computed before the fill or must be constant
+0	5	0
+1	6	5
+2	7	11
+3	8	18
+4	5	1
+0	5	1
+1	6	6
+2	7	12
+3	8	19
+4	5	1
+0	5	0
+1	6	21
+2	7	43
+3	8	66
+4	5	1
+0	5	5	0
+1	6	0	115
+2	7	0	221
+3	8	0	328
+4	5	5	1
+0	5	a\0\0\0\0
+1	6	5\0\0\0\0
+2	7	6\0\0\0\0
+3	8	7\0\0\0\0
+4	5	a\0\0\0\0
