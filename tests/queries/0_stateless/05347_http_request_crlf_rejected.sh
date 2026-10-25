@@ -20,12 +20,17 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS s3_validate_request_settings = 0, s3_truncate_on_insert = 1
     SELECT 1" 2>&1 | grep -o -m1 "Setting storage_class has invalid value: it contains CR or LF"
 
+# The backup first checks that it does not exist yet. The HTTP interface verifies the AWS signature of this request
+# with the access key as the user name, so the user must exist to get 404 rather than 403 for an unknown access key.
+USER_NAME="u_crlf_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS t_storage_class;
     CREATE TABLE t_storage_class (x UInt8) ENGINE = MergeTree ORDER BY x;
     INSERT INTO t_storage_class SELECT 1;
+    DROP USER IF EXISTS ${USER_NAME};
+    CREATE USER ${USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret';
 "
 $CLICKHOUSE_CLIENT -q "
-    BACKUP TABLE t_storage_class TO S3('http://localhost:${CLICKHOUSE_PORT_HTTP}/bucket/${CLICKHOUSE_DATABASE}_backup', 'key', 'secret')
+    BACKUP TABLE t_storage_class TO S3('http://localhost:${CLICKHOUSE_PORT_HTTP}/bucket/${CLICKHOUSE_DATABASE}_backup', '${USER_NAME}', 'secret')
     SETTINGS s3_storage_class = 'STANDARD\r\nX-Injected: 1'" 2>&1 | grep -o -m1 "Setting storage_class has invalid value: it contains CR or LF"
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_storage_class"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_storage_class; DROP USER ${USER_NAME}" -m
