@@ -37,7 +37,11 @@ FROM
 )
 SETTINGS max_threads = 1;
 
-SELECT isNull(finalizeAggregation(state)), isNull(productDistinctMerge(state))
+-- Ensure both state finalization and state merging survive persistence.
+SELECT isNull(finalizeAggregation(state))
+FROM product_distinct_state_order
+ORDER BY id;
+SELECT isNull(productDistinctMerge(state))
 FROM product_distinct_state_order;
 DROP TABLE product_distinct_state_order;
 
