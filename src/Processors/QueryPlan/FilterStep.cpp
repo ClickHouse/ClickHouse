@@ -627,21 +627,26 @@ void FilterStep::addFilterTransforms(
 
 void FilterStep::addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    /// The conjuncts that do not depend on the joins are pushed down below them, as `filterPushDown` would do.
-    if (remove_filter_column)
+    while (actions_dag.hasArrayJoin())
     {
-        auto pushed = actions_dag.splitActionsForFilterPushDown(
-            filter_column_name, remove_filter_column, pipeline.getHeader().getNames(), pipeline.getHeader().getColumnsWithTypeAndName(),
-            /*allow_non_deterministic_functions=*/ false);
-        if (pushed)
+        /// The conjuncts that do not depend on the remaining joins are pushed down below them, as `filterPushDown`
+        /// would do, so a conjunct that becomes available after a join filters the rows before the next one.
+        if (remove_filter_column)
         {
-            String pushed_filter_name = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
-            addFilterTransforms(pipeline, std::move(pushed->dag), pushed_filter_name, pushed->remove_filter, std::nullopt, settings);
+            auto pushed = actions_dag.splitActionsForFilterPushDown(
+                filter_column_name, remove_filter_column, pipeline.getHeader().getNames(), pipeline.getHeader().getColumnsWithTypeAndName(),
+                /*allow_non_deterministic_functions=*/ false);
+            if (pushed)
+            {
+                String pushed_filter_name = pushed->dag.getOutputs()[pushed->filter_pos]->result_name;
+                addFilterTransforms(pipeline, std::move(pushed->dag), pushed_filter_name, pushed->remove_filter, std::nullopt, settings);
+            }
         }
-    }
 
-    while (auto extracted = actions_dag.extractFirstArrayJoin(array_join_lowering->nondeterministic_before_expansion))
-    {
+        auto extracted = actions_dag.extractFirstArrayJoin(array_join_lowering->nondeterministic_before_expansion);
+        if (!extracted)
+            break;
+
         bool is_left = ArrayJoinStep::unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
 
         auto before = std::make_shared<ExpressionActions>(std::move(extracted->before), settings.getActionsSettings());
