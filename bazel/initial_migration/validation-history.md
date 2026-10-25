@@ -1914,3 +1914,17 @@ The strict DWYU invocations on [x86-64](https://app.buildbuddy.io/invocation/2ca
 | **Total declared production targets** | **784** | **784** |
 
 On both CPUs, standalone headers from `//src/TableFunctions:headers` reached `PositionDeleteTransform.h`, which could not include `AggregateFunctions/AggregateFunctionGroupBitmapData.h`. On ARM64, preprocessing two usearch headers also failed because Clang treated usearch’s half-precision configuration warning as an error.
+
+Across the six native, ordinary, and strict invocations for bff36d83f, BuildBuddy recorded 4,433 remote commands. The strict DWYU checks accounted for 4,356 commands and 1,335.88 of 1,576.33 executor CPU seconds. The native compile counts above exclude DWYU.
+
+## e37e17269
+
+[e37e17269](https://github.com/dzbarsky/clickhouse/commit/e37e172697a5f50542804214d582cbf693384e2e) assigns 19 Parser headers to the compiled Parser library, removes four redundant dependencies on the source-header target, and makes Dictionaries an implementation dependency of Keeper. Of 784 production targets, 102 are header-only on both architectures: 40 in the workspace and 62 in external repositories.
+
+The native builds on [x86-64](https://app.buildbuddy.io/invocation/b9ca2c0f-2b53-4d03-b08f-cc5bec48b175) and [ARM64](https://app.buildbuddy.io/invocation/5d2c9c15-32d1-4542-80b6-474ac5f2beb7) completed all 14 targets and reproduced the six SHA-256 and sizes in the [build guide](../../README.bazel.md#binary-comparison). The normalized ClickHouse executables matched native CMake. Both architectures passed 38 GoogleTests, six SQL cases, and 16 Decimal assertions. The builds verified the Parser and PostgreSQL consumers and Keeper’s private Dictionary headers. The Redis SDK ran on both architectures. BuildBuddy reported the Redis provider file’s SHA-256 and size; an independent reconstruction of that small JSON file matched both on each architecture.
+
+BuildBuddy executed 84 remote commands per native build, including 79 C++ compiles on each CPU. Of those compiles, 76 belonged to consumers of the Parser headers and three to SDK validation. BuildBuddy reported 51,132 remote cache hits on x86-64 and 51,653 on ARM64. No executed remote action failed. The counts exclude hosted-runner time.
+
+An earlier attempt at this revision on [x86-64](https://app.buildbuddy.io/invocation/e2493a3f-d93b-48bc-bbc4-b7ff1371fab3) and [ARM64](https://app.buildbuddy.io/invocation/a83e8ff5-4634-430f-a2a8-1323c18316e8) stopped before building the binaries: a validation rule looked for headers in the mandatory inputs of a C++ compile action. A separate audit expected a Bazel action to produce a prebuilt sysroot object. That attempt produced no binary or DWYU results.
+
+In the repaired run, the DWYU audits on [x86-64](https://app.buildbuddy.io/invocation/d61d7b25-6655-4b81-b5b6-db6f9bbed4b5) and [ARM64](https://app.buildbuddy.io/invocation/1f89c109-b3b1-49d4-96db-123c77ba2709) made five planning queries per CPU, covering 108 production targets and five fixtures. The queries found multiple apparent producers for LLVM’s `_virtual_includes/X86CommonTableGen/X86GenRegisterBank.inc`. The audit stopped before submitting either the ordinary or strict build. None of the 784 production targets earned a DWYU grade on either architecture.

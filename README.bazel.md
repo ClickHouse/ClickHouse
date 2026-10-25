@@ -47,18 +47,18 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-At [bff36d83f](https://github.com/dzbarsky/clickhouse/commit/bff36d83f36bcba42cb85497dc3d2b8ec3e97558), the normalized ClickHouse executables matched the native CMake builds on both CPUs. Each raw ClickHouse executable and unit-test executable matched its recorded Bazel reference. The comparisons used SHA-256 and size from the Build Event Protocol; no ELF was downloaded.
+At [e37e17269](https://github.com/dzbarsky/clickhouse/commit/e37e172697a5f50542804214d582cbf693384e2e), the stripped and normalized ClickHouse executable matched the native CMake executable on each architecture. The raw ClickHouse and unit-test executables matched their recorded Bazel references. SHA-256 and sizes come from the Build Event Protocol; no ELF was downloaded for the comparison.
 
 | Native Bazel build | ELF | SHA-256 | Bytes |
 | --- | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/36bb927d-a0e6-4a4f-a548-af451198293b) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [x86-64](https://app.buildbuddy.io/invocation/36bb927d-a0e6-4a4f-a548-af451198293b) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
-| [x86-64](https://app.buildbuddy.io/invocation/36bb927d-a0e6-4a4f-a548-af451198293b) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
-| [ARM64](https://app.buildbuddy.io/invocation/4129084d-509d-4ba4-8e39-cd914535f263) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
-| [ARM64](https://app.buildbuddy.io/invocation/4129084d-509d-4ba4-8e39-cd914535f263) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
-| [ARM64](https://app.buildbuddy.io/invocation/4129084d-509d-4ba4-8e39-cd914535f263) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+| [x86-64](https://app.buildbuddy.io/invocation/b9ca2c0f-2b53-4d03-b08f-cc5bec48b175) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/b9ca2c0f-2b53-4d03-b08f-cc5bec48b175) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/b9ca2c0f-2b53-4d03-b08f-cc5bec48b175) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/5d2c9c15-32d1-4542-80b6-474ac5f2beb7) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/5d2c9c15-32d1-4542-80b6-474ac5f2beb7) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/5d2c9c15-32d1-4542-80b6-474ac5f2beb7) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
 
-Both native builds passed 38 GoogleTests, six SQL cases, and 16 Decimal assertions. Both Redis SDK clients linked and ran. Two validation targets failed: the gRPC client used angle brackets for a header exported through a quote include directory, and a CcInfo check referenced a private Redis target from another package. See the [validation history](bazel/initial_migration/validation-history.md#bff36d83f) for the target and DWYU results.
+Both native builds completed all 14 requested targets. On each architecture, 38 GoogleTests, six SQL cases, and 16 Decimal assertions passed. See the [validation history](bazel/initial_migration/validation-history.md#e37e17269) for the SDK checks.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-[bff36d83f](https://github.com/dzbarsky/clickhouse/commit/bff36d83f36bcba42cb85497dc3d2b8ec3e97558): strict DWYU checked 53 of 784 production targets on [x86-64](https://app.buildbuddy.io/invocation/2cac9d7b-5e37-4325-a35c-c25623352f7f) and 52 on [ARM64](https://app.buildbuddy.io/invocation/b25ecf0d-07a9-489d-98be-9f5f3ec17b46). Six and five, respectively, passed all selected checks. The remaining targets either had findings, lacked complete evidence, failed, or were not checked. [Per-CPU counts and compiler diagnostics](bazel/initial_migration/validation-history.md#bff36d83f).
+[e37e17269](https://github.com/dzbarsky/clickhouse/commit/e37e172697a5f50542804214d582cbf693384e2e): strict DWYU graded **0 of 784** production targets on each architecture. The audits on [x86-64](https://app.buildbuddy.io/invocation/d61d7b25-6655-4b81-b5b6-db6f9bbed4b5) and [ARM64](https://app.buildbuddy.io/invocation/1f89c109-b3b1-49d4-96db-123c77ba2709) stopped while identifying the producer of LLVM’s `X86GenRegisterBank.inc`, before ordinary or strict compilation. The previous revision’s grades do not apply to this revision. [Audit details](bazel/initial_migration/validation-history.md#e37e17269).
