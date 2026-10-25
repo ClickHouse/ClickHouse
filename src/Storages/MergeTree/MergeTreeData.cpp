@@ -7527,10 +7527,13 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     /// part does not have cannot go stale unless the same task builds it: otherwise it is only built
     /// by a later `MATERIALIZE PROJECTION` / `MATERIALIZE INDEX` or by a merge, both of which read the
     /// post-recompression values, so a dependent added to the metadata after the `ALTER` was accepted
-    /// must not wedge a recompression queued for the older parts.
+    /// must not wedge a recompression queued for the older parts. A projection listed in the part's
+    /// checksums but not loaded (the part was fetched before the replica applied `ADD PROJECTION`) is
+    /// kept by the mutation, so it counts as present.
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (source_part && !task_may_build_any_dependent && !source_part->hasProjection(projection.name)
+            && !source_part->hasUnloadedProjection(projection.name)
             && !projections_built_by_task.contains(projection.name)
             && !reads_column_updated_by_task(projection.getRequiredColumns()))
             continue;
