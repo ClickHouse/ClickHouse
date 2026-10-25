@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/41964
-SET enable_analyzer=1;
 
 DROP TABLE IF EXISTS ab_12_aaa;
 DROP TABLE IF EXISTS ab_12_bbb;

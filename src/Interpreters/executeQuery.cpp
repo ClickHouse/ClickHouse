@@ -3066,9 +3066,10 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else
+        else if (!insert_query || !insert_query->returning)
         {
-            /// reset Input callbacks if query is not INSERT SELECT
+            /// reset Input callbacks if query is not INSERT SELECT,
+            /// and not INSERT ... RETURNING, which reads the data sent by the client with these callbacks.
             context->resetInputCallbacks();
         }
 
@@ -3086,6 +3087,8 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
+            else if (insert_query->returning)
+                reason = "the query has RETURNING";
             /// `INSERT ... SELECT` (including `FROM input()`) is routed through
             /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
             else if (!insert_query->select && insert_query->hasInlinedData())
@@ -3287,7 +3290,10 @@ static BlockIO executeQueryImpl(
                     interpreter = InterpreterFactory::instance().get(
                         out_ast,
                         context,
-                        SelectQueryOptions(stage).setInternal(internal).positionalArgumentsAlreadyResolved(!internal && is_secondary_query));
+                        SelectQueryOptions(stage)
+                            .setInternal(internal)
+                            .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
+                            .secondaryQueryRoot(!internal && is_secondary_query));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])

@@ -12,6 +12,7 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 struct FormatFilterInfo;
 using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
 class ColumnsCache;
+struct ColumnsCacheEntry;
 struct ColumnsCacheWriteBudget;
 }
 
