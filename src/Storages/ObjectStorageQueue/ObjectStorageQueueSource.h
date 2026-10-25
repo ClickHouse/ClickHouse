@@ -150,6 +150,14 @@ public:
             bool is_replay = false;
         };
         std::deque<PendingRecheck> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
+        /// The rechecks of foreign-held files (not replays, which are capped by `max_blocked_files_to_replay`)
+        /// only save a relisting, so their number is capped: otherwise the retained objects would grow
+        /// with the number of distinct contended files observed during `processing_state_cache_ttl_seconds`,
+        /// regardless of the size of the file status cache. Beyond the cap the file is not retained and the
+        /// next listing pass lists it again; in Ordered mode it stays foreign-held for the rest of this pass,
+        /// so it keeps blocking the later files of its ordering domain, and the domain is not inherited.
+        static constexpr size_t max_foreign_processing_rechecks = 1000;
+        bool foreign_processing_rechecks_capped TSA_GUARDED_BY(next_mutex) = false;
 
         /// The object-storage listing of this iterator is over: only the pending rechecks remain.
         bool listing_exhausted TSA_GUARDED_BY(next_mutex) = false;

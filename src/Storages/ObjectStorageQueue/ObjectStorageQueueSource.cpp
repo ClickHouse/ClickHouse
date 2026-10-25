@@ -749,6 +749,18 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
 void ObjectStorageQueueSource::FileIterator::queueForeignProcessingRecheck(
     ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status)
 {
+    chassert(foreign_processing_files_to_recheck.size() >= pending_replays_count);
+    if (foreign_processing_files_to_recheck.size() - pending_replays_count >= max_foreign_processing_rechecks)
+    {
+        if (!std::exchange(foreign_processing_rechecks_capped, true))
+            LOG_TRACE(
+                log,
+                "Not retaining more than {} rechecks of files processed by another processor, "
+                "the rest of them is rechecked when the next listing pass lists them again",
+                max_foreign_processing_rechecks);
+        return;
+    }
+
     const time_t observed_time = status ? status->processing_observed_in_keeper_time.load() : 0;
     foreign_processing_files_to_recheck.push_back({std::move(object), observed_time});
 }
@@ -850,7 +862,12 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
     std::vector<PendingRecheck> result;
     if (mode != ObjectStorageQueueMode::ORDERED)
     {
-        std::move(foreign_processing_files_to_recheck.begin(), foreign_processing_files_to_recheck.end(), std::back_inserter(result));
+        /// The files beyond the cap are listed again by the next pass.
+        const size_t inherited_count = std::min(foreign_processing_files_to_recheck.size(), max_foreign_processing_rechecks);
+        std::move(
+            foreign_processing_files_to_recheck.begin(),
+            foreign_processing_files_to_recheck.begin() + inherited_count,
+            std::back_inserter(result));
         foreign_processing_files_to_recheck.clear();
         inherited_foreign_processing_rechecks.clear();
         clearPendingReplays();
@@ -887,26 +904,46 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
     ///   thread has an unknown set-processing outcome (`unresolved_set_processing_per_domain`,
     ///   normally empty here, see `isFinished`), for the same reason.
     /// The files of other domains are not inherited: the next listing pass rechecks them in order.
+    /// The inherited replays become foreign-processing rechecks in the next iterator, so the
+    /// domains are inherited whole only while they fit into `max_foreign_processing_rechecks`.
     std::unordered_set<std::string> pending_paths;
     for (const auto & pending : foreign_processing_files_to_recheck)
         pending_paths.insert(pending.object->getPath());
 
-    std::map<OrderingDomain, bool> can_inherit_per_domain;
-    for (auto & pending : foreign_processing_files_to_recheck)
+    std::map<OrderingDomain, std::optional<size_t>> inheritable_count_per_domain;
+    for (const auto & pending : foreign_processing_files_to_recheck)
     {
         const auto domain = getOrderingDomain(pending.object->getPath());
-        auto [it, inserted] = can_inherit_per_domain.try_emplace(domain, true);
+        auto [it, inserted] = inheritable_count_per_domain.try_emplace(domain, 0);
         if (inserted)
         {
             const auto held = foreign_held_files_per_domain.find(domain);
-            if (held != foreign_held_files_per_domain.end())
-                it->second = std::ranges::all_of(held->second, [&](const std::string & path) { return pending_paths.contains(path); });
+            if (held != foreign_held_files_per_domain.end()
+                && !std::ranges::all_of(held->second, [&](const std::string & path) { return pending_paths.contains(path); }))
+                it->second.reset();
             if (blocked_files_per_domain.contains(domain) || dropped_blocked_files_per_domain.contains(domain)
                 || in_flight_replays_per_domain.contains(domain) || unresolved_set_processing_per_domain.contains(domain))
-                it->second = false;
+                it->second.reset();
         }
 
         if (it->second)
+            ++*it->second;
+    }
+
+    size_t inherited_count = 0;
+    for (auto & [domain, count] : inheritable_count_per_domain)
+    {
+        if (!count)
+            continue;
+        if (inherited_count + *count > max_foreign_processing_rechecks)
+            count.reset();
+        else
+            inherited_count += *count;
+    }
+
+    for (auto & pending : foreign_processing_files_to_recheck)
+    {
+        if (inheritable_count_per_domain.at(getOrderingDomain(pending.object->getPath())))
             result.push_back(std::move(pending));
     }
     foreign_processing_files_to_recheck.clear();

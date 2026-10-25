@@ -1182,3 +1182,86 @@ def test_evicted_statuses_do_not_starve_the_listing(started_cluster):
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_foreign_processing_rechecks_are_capped(started_cluster):
+    """The rechecks of foreign-held files are retained only up to a cap.
+
+    A file skipped because of a foreign `processing` node is kept for a recheck when the
+    observation expires. Without a cap the retained objects grow with the number of distinct
+    contended files, regardless of the size of the file status cache (here: one element), and
+    they are carried over to every following iterator. Beyond `max_foreign_processing_rechecks`
+    (1000) the files are not retained and the next listing pass lists them again: every file is
+    still ingested once the foreign holds are released.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_rechecks_cap_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    held_files = 1050
+    files_to_generate = held_files + 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_list_objects_batch_size": 100,
+            "s3queue_metadata_cache_size_elements": 1,
+            "s3queue_polling_min_timeout_ms": 1000,
+            "s3queue_polling_max_timeout_ms": 1000,
+            # The foreign observations stay trusted until the holds are released.
+            "s3queue_processing_state_cache_ttl_seconds": 300,
+        },
+    )
+
+    conflict_nodes = node.query(
+        f"SELECT sipHash64(concat('{files_path}/test_', toString(number), '.csv')) FROM numbers({held_files})"
+    ).split()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+
+    def for_each_conflict_node(apply):
+        for begin in range(0, len(conflict_nodes), 100):
+            transaction = zk.transaction()
+            for conflict_node in conflict_nodes[begin : begin + 100]:
+                apply(transaction, f"{keeper_path}/processing/{conflict_node}")
+            assert all(not isinstance(r, Exception) for r in transaction.commit())
+
+    for_each_conflict_node(lambda t, path: t.create(path, b"another processor"))
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The available files are processed while the foreign holds remain.
+        run_with_retry(lambda x: x == files_to_generate - held_files, get_count, retries=120)
+        assert node.contains_in_log(
+            "Not retaining more than 1000 rechecks of files processed by another processor"
+        )
+
+        # The foreign owners release the files without committing them: both the retained
+        # rechecks and the files beyond the cap are retried.
+        for_each_conflict_node(lambda t, path: t.delete(path))
+        node.query(
+            f"ALTER TABLE {table_name} MODIFY SETTING s3queue_processing_state_cache_ttl_seconds = 0"
+        )
+        run_with_retry(lambda x: x == files_to_generate, get_count, retries=120)
+        assert get_count() == files_to_generate
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
