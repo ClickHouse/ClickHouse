@@ -2,7 +2,6 @@
 -- A CommonSubplanReferenceStep holds a raw pointer to the node that must still hold the
 -- CommonSubplanStep when the second pass resolves it; the two arms cover the two consumers that do.
 
-SET enable_analyzer = 1;                             -- correlated subqueries need the analyzer
 SET allow_correlated_subqueries = 1;    -- gates decorrelation
 SET query_plan_convert_join_to_in = 1;               -- the trigger, default 0
 SET query_plan_convert_outer_join_to_inner_join = 1; -- supplies the INNER kind the rewrite requires, and the test runner randomizes it off in 5% of runs
