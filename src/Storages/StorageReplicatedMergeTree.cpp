@@ -8962,10 +8962,12 @@ void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutatio
         mutation_initial_bytes_dropped[mutation_id] = mutation_initial_bytes_next_reader;
 }
 
-void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(std::vector<MergeTreeMutationStatus> & statuses) const
+void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(
+    std::vector<MergeTreeMutationStatus> & statuses,
+    const CommittingBlocks & committing_blocks,
+    bool committing_blocks_loaded) const
 {
     std::vector<MergeTreeMutationStatus *> to_check;
-    PartitionIdsHint partition_ids;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
         for (auto & status : statuses)
@@ -8973,33 +8975,13 @@ void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(std::vecto
             if (status.is_done || !status.progress || mutations_without_older_inserts.contains(status.id))
                 continue;
             to_check.push_back(&status);
-            for (const auto & [partition_id, _] : status.block_numbers)
-                partition_ids.insert(partition_id);
         }
     }
     if (to_check.empty())
         return;
 
-    CommittingBlocks committing_blocks;
-    try
+    if (!committing_blocks_loaded)
     {
-        /// A Keeper request without a component fails in `pushRequest`, and that failure finalizes
-        /// the shared session, which turns every replicated table on this server readonly.
-        auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit");
-        auto zookeeper = tryGetZooKeeper();
-        if (!zookeeper || zookeeper->expired())
-        {
-            for (auto * status : to_check)
-                status->progress.reset();
-            return;
-        }
-        std::optional<PartitionIdsHint> hint(std::move(partition_ids));
-        committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, hint, /*with_data=*/ false);
-    }
-    catch (...)
-    {
-        /// Without Keeper the remaining work is not known.
-        tryLogCurrentException(log, "Cannot read committing blocks for system.mutations", LogsLevel::debug);
         for (auto * status : to_check)
             status->progress.reset();
         return;
@@ -9048,6 +9030,55 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         for (auto & status : statuses)
             status.progress = 1.0;
         return statuses;
+    }
+
+    /// Check if any active mutation needs its older INSERT status synchronized.
+    PartitionIdsHint partition_ids;
+    bool needs_older_inserts_check = false;
+    {
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        for (const auto & status : statuses)
+        {
+            if (status.is_done || mutations_without_older_inserts.contains(status.id))
+                continue;
+            needs_older_inserts_check = true;
+            for (const auto & [partition_id, _] : status.block_numbers)
+                partition_ids.insert(partition_id);
+        }
+    }
+
+    CommittingBlocks committing_blocks;
+    bool committing_blocks_loaded = false;
+    if (needs_older_inserts_check)
+    {
+        try
+        {
+            auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::getMutationsStatus");
+            auto zookeeper = tryGetZooKeeper();
+            if (zookeeper && !zookeeper->expired() && !is_readonly)
+            {
+                std::optional<PartitionIdsHint> hint(std::move(partition_ids));
+                /// Load committing blocks before pulling fresh logs, matching ReplicatedMergeTreeZooKeeperMergePredicate.
+                committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, hint, /*with_data=*/ false);
+                /// Flush the local queue so it includes any commits whose block locks were removed before or during getCommittingBlocks.
+                queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
+                committing_blocks_loaded = true;
+                /// Refresh statuses so newly pulled log entries are reflected in parts_to_do.
+                statuses = queue.getMutationsStatus();
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot synchronize committing blocks and queue for system.mutations", LogsLevel::debug);
+            committing_blocks_loaded = false;
+        }
+
+        if (std::ranges::all_of(statuses, [](const auto & status) { return status.is_done; }))
+        {
+            for (auto & status : statuses)
+                status.progress = 1.0;
+            return statuses;
+        }
     }
 
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
@@ -9136,7 +9167,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     }
 
     /// An older INSERT that has not published its part yet is work of unknown size, even with known parts left.
-    resetProgressWhileOlderInsertsCommit(statuses);
+    resetProgressWhileOlderInsertsCommit(statuses, committing_blocks, committing_blocks_loaded);
 
     /// Denominators are dropped by `dropMutationInitialBytes` on the queue transitions that remove
     /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot

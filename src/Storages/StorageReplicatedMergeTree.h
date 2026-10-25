@@ -487,7 +487,10 @@ private:
     /// whatever the denominator was, so the bookkeeping goes at the transition, not on the next read.
     void dropMutationInitialBytes(const String & mutation_id);
     /// Unsets `progress` of mutations that still wait for an older INSERT to publish its part.
-    void resetProgressWhileOlderInsertsCommit(std::vector<MergeTreeMutationStatus> & statuses) const;
+    void resetProgressWhileOlderInsertsCommit(
+        std::vector<MergeTreeMutationStatus> & statuses,
+        const CommittingBlocks & committing_blocks,
+        bool committing_blocks_loaded) const;
 
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;

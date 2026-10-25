@@ -36,6 +36,29 @@ for case in control held; do
     done
     echo "$case ${state:-FAIL: the mutation never reached one failing part}"
 
+    if [ "$case" = "held" ]; then
+        # Transition from an older committing insert to an unpulled log entry:
+        # The block lock is deleted in Keeper while log pulling is stopped on this replica.
+        # Progress must remain NULL until the replica can pull fresh logs.
+        $CLICKHOUSE_CLIENT -q "SYSTEM STOP PULLING REPLICATION LOG t_older_insert"
+        $CLICKHOUSE_CLIENT -q "DELETE FROM system.zookeeper WHERE path = '$zk_path/block_numbers/0' AND name = 'block-0000000000'"
+
+        state_unpulled=$($CLICKHOUSE_CLIENT -q "SELECT parts_to_do, progress IS NULL, progress BETWEEN 0.3 AND 0.7 FROM system.mutations
+            WHERE database = currentDatabase() AND table = 't_older_insert' AND parts_to_do = 1 AND latest_fail_reason != ''")
+        echo "unpulled ${state_unpulled:-FAIL: unpulled state missing}"
+
+        $CLICKHOUSE_CLIENT -q "SYSTEM START PULLING REPLICATION LOG t_older_insert"
+
+        state_resumed=""
+        for _ in {1..300}; do
+            state_resumed=$($CLICKHOUSE_CLIENT -q "SELECT parts_to_do, progress IS NULL, progress BETWEEN 0.3 AND 0.7 FROM system.mutations
+                WHERE database = currentDatabase() AND table = 't_older_insert' AND parts_to_do = 1 AND latest_fail_reason != ''")
+            [ "$state_resumed" = "1	0	1" ] && break
+            sleep 0.2
+        done
+        echo "resumed ${state_resumed:-FAIL: resumed state missing}"
+    fi
+
     $CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = currentDatabase() AND table = 't_older_insert' SYNC FORMAT Null"
     $CLICKHOUSE_CLIENT -q "DROP TABLE t_older_insert SYNC"
 done
