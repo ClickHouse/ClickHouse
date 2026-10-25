@@ -42,6 +42,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/ProjectionsDescription.h>
 
 #include <algorithm>
@@ -1049,10 +1050,12 @@ static Block makeBlockWithMinMaxFromStatistics(
             /// The statistics describe the values as they are stored in the part. When the part stores
             /// the column with a different type, a read converts the values to the current type, even
             /// without a pending mutation in the snapshot (e.g. with `apply_mutations_on_fly = 0` or
-            /// after `KILL MUTATION`).
+            /// after `KILL MUTATION`). A conversion that keeps the representation (e.g. an extended
+            /// `Enum`) leaves the values, and so the statistics, valid.
             auto part_column = part->tryGetColumn(stats_aggregate.column_name);
             const auto * metadata_column = metadata->getColumns().tryGet(stats_aggregate.column_name);
-            if (!part_column || !metadata_column || !part_column->type->equals(*metadata_column->type))
+            if (!part_column || !metadata_column
+                || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
                 return false;
 
             const auto & estimate = it->second;

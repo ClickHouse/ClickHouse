@@ -911,6 +911,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     size_t total_parts_before = parts.size();
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
+    /// The current types of the required columns, resolved once for all parts (`nullptr` if absent).
+    std::vector<std::pair<String, DataTypePtr>> required_column_types;
+    required_column_types.reserve(required_columns.size());
+    const auto & metadata_columns = metadata_snapshot->getColumns();
+    for (const auto & column_name : required_columns)
+    {
+        auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
+    }
+
     for (const auto & part : parts)
     {
         if (MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot))
@@ -924,16 +934,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         /// The statistics describe the values as they are stored in the part. When the part stores a
         /// column with a type different from the current metadata, a read converts the values to the
         /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
-        /// describe what the query sees. This happens independently of the mutations snapshot: e.g.
-        /// with `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and
-        /// after `KILL MUTATION` it is gone, while the conversion on read still happens.
-        const auto & metadata_columns = metadata_snapshot->getColumns();
-        std::erase_if(estimates, [&](const auto & estimate)
+        /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+        /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+        /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+        /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+        /// Only the required columns are checked: the estimates may hold every column of the part.
+        for (const auto & [column_name, metadata_type] : required_column_types)
         {
-            auto part_column = part.data_part->tryGetColumn(estimate.first);
-            auto metadata_column = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, estimate.first);
-            return !part_column || !metadata_column || !part_column->type->equals(*metadata_column->type);
-        });
+            auto it = estimates.find(column_name);
+            if (it == estimates.end())
+                continue;
+
+            auto part_column = part.data_part->tryGetColumn(column_name);
+            if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+                estimates.erase(it);
+        }
 
         try
         {
