@@ -105,7 +105,8 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
-                /// The parser fails the same check the same way and falls back to `JSONEachRow`.
+                /// Ok: the parser itself fails on such input, so the diagnostic is irrelevant there,
+                /// and the plain schema inference must keep returning the metadata as before.
             }
             read_metadata_from_input = true;
             metadata_ignored_by_parser = !data_follows_metadata;
