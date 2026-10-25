@@ -62,6 +62,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -260,7 +261,8 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    ContextPtr context)
+    ContextPtr context,
+    bool allow_reading_tables = true)
 {
     if (!expr_list)
         return {};
@@ -282,6 +284,15 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     /// filled here. This must come after the actions are built: planning a set subquery renames the
     /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
     /// look the set up by, so building first would make the lookup miss.
+    /// Without a query on whose behalf to read, as for the background merges and mutations, there is no
+    /// user to check the access to the tables of the sets for, nor whose row policies to apply. Do not
+    /// read them with the full access of the storage: that would store their contents in the new part.
+    if (!allow_reading_tables && !planner_context->getPreparedSets().getSubqueries().empty())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot evaluate the default expression of a column missing in the part without a reading query, "
+            "because it reads a table (as in `x IN table`). Background merges and mutations are not authorized "
+            "to read other tables on behalf of any user");
+
     buildPreparedSetsInplace(planner_context, execution_context);
 
     NamesWithAliases result_columns;
@@ -349,13 +360,14 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     const ColumnsDescription & columns,
     ContextPtr context,
     bool save_unneeded_columns,
-    bool null_as_default)
+    bool null_as_default,
+    bool allow_reading_tables)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context, allow_reading_tables);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class

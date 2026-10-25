@@ -51,10 +51,23 @@ $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT p, f FROM t_reader ORDER BY p"
 echo 'owner is not affected by the policy'
 $CLICKHOUSE_CLIENT -q "SELECT p, f FROM t_reader ORDER BY p"
 
+# A merge has no reading query, so there is nobody to read the right-hand side on behalf of. It must not
+# read it with the full access of the storage and store the result in the merged part, where the stored
+# column would disclose the membership to a user with no access to the right-hand side.
+echo 'merge does not materialize the default'
+$CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_reader FINAL" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT --user "${user}" -q "SELECT p, f FROM t_reader ORDER BY p"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.secret_keys FROM ${user}"
+$CLICKHOUSE_CLIENT --user "${user}" -q "SELECT p, f FROM t_reader ORDER BY p" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+
+# The set is limited by the settings of the reading query.
+echo 'set size limit of the read'
+$CLICKHOUSE_CLIENT -q "SELECT p, f FROM t_reader ORDER BY p SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw'" 2>&1 | grep -o -m1 'SET_SIZE_LIMIT_EXCEEDED'
+
 # The set is built under the query status of the read, so a limit of the read stops building it,
-# instead of scanning the whole right-hand side. The set is built with the settings of the storage,
-# where the test profile limits `max_rows_to_read`, so the right-hand side reads `system.numbers`,
-# which has no estimate of the rows, and spends enough time on every row to stay below the limit.
+# instead of scanning the whole right-hand side. The right-hand side reads `system.numbers`, which
+# has no estimate of the rows, and spends enough time on every row; the limits of the read on the
+# number of rows are disabled, so that only the time limit can stop it.
 echo 'limit of the read stops building the set'
 $CLICKHOUSE_CLIENT -m -q "
     CREATE VIEW slow_keys AS SELECT toUInt8(number) AS p FROM system.numbers WHERE sipHash64(repeat(toString(number), 1000)) = 0;
@@ -62,7 +75,7 @@ $CLICKHOUSE_CLIENT -m -q "
     INSERT INTO t_slow VALUES (1);
     ALTER TABLE t_slow ADD COLUMN f UInt8 DEFAULT p IN slow_keys;
 "
-$CLICKHOUSE_CLIENT -q "SELECT f FROM t_slow SETTINGS max_execution_time = 1" 2>&1 | grep -o -m1 'TIMEOUT_EXCEEDED'
+$CLICKHOUSE_CLIENT -q "SELECT f FROM t_slow SETTINGS max_execution_time = 1, max_rows_to_read = 0, max_bytes_to_read = 0" 2>&1 | grep -o -m1 'TIMEOUT_EXCEEDED'
 
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE t_slow;
