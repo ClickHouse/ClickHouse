@@ -466,7 +466,6 @@ def declare_from_references(root, references):
             for a in references
         }),
     })
-    builtins_group_counts = {}
     for name, variants in targets.items():
         compiled = {}
         for arch, value in variants.items():
@@ -570,17 +569,13 @@ def declare_from_references(root, references):
         if name == 'clang_rt_builtins':
             for arch, target in compiled.items():
                 groups = target['groups']
-                if not groups or any(not group['srcs'] for group in groups):
-                    raise ValueError(f'{arch} {name}: Rust localization requires nonempty native compile groups')
-                builtins_group_counts[arch] = len(groups)
+                outline = len(outline_generated) if arch == 'aarch64' else 0
+                if len(groups) != 2 + outline or any(not g['srcs'] for g in groups):
+                    raise ValueError(f'{arch}: expected two builtins groups followed by the outline atomics')
     if len(outline_generated) != 125 or outline_generated.keys() != outline_commands.keys():
         raise ValueError(f'CMake AArch64 reference outline sources do not match recorded Ninja: '
                          f'{len(outline_generated)} sources, {len(outline_commands)} generators')
 
-    if set(builtins_group_counts) != set(references):
-        raise ValueError('Rust localization requires LLVM builtins groups for every architecture')
-    (root / 'bazel/rules/rust_localization_data.bzl').write_text(
-        'CLANG_RT_BUILTINS_GROUP_COUNTS = ' + json.dumps(builtins_group_counts, indent=4) + '\n')
     print('Embedded LLVM:', len(targets), 'CMake libraries;',
           ', '.join(a + ' ' + str(len(o)) + ' generated headers' for a, o in generated.items()))
     return build, targets, templates | RUNTIME_ROOT_INPUTS
@@ -611,7 +606,7 @@ def fold_outline_atomics(path):
         edits.append((*source.span(statement), replacement))
 
     arguments = dict(common, headers=headers, local_defines=render_list(source, fields['local_defines'].elts[3:], 4))
-    macro = 'llvm_outline_atomics(\n' + ''.join(f'    {k} = {v},\n' for k, v in sorted(arguments.items())) + ')'
+    macro = 'llvm_outline_atomics(\n    name = "clang_rt_builtins_outline_objects",\n' + ''.join(f'    {k} = {v},\n' for k, v in sorted(arguments.items())) + ')'
     group = 2
     for operation in ('cas', 'swp', 'ldadd', 'ldclr', 'ldeor', 'ldset'):
         for size in ((1, 2, 4, 8, 16) if operation == 'cas' else (1, 2, 4, 8)):
@@ -625,8 +620,6 @@ def fold_outline_atomics(path):
                 replace('llvm_runtime_objects', objects,
                         dict(language=repr('ASM'), srcs=f'{[":" + assembly]!r} + {headers}',
                              local_defines=repr(defines), **common), macro if group == 2 else '')
-                replace('cc_library', f'clang_rt_builtins__compile_{group}',
-                        dict(srcs=repr([':' + objects]), alwayslink='True'))
                 group += 1
     load = 'load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")\n'
     path.write_text(load + source.rewrite(edits))

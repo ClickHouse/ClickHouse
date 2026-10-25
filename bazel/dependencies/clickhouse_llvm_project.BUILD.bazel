@@ -5342,9 +5342,10 @@ llvm_runtime_objects(
 
 cc_library(
     name = "clang_rt_builtins__compile_1",
-    srcs = [
-        ":clang_rt_builtins__runtime_objects_1",
-    ],
+    srcs = [":clang_rt_builtins__runtime_objects_1"] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [":clang_rt_builtins_outline_objects"],
+    }),
     alwayslink = True,
 )
 
@@ -5379,6 +5380,7 @@ _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES = select({
 })
 
 llvm_outline_atomics(
+    name = "clang_rt_builtins_outline_objects",
     arch = _RUNTIME_ARCH,
     copts = _CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS,
     headers = _BUILTINS_HEADERS,
@@ -5400,13 +5402,7 @@ cc_library(
         ":clang_rt_xray",
         ":clang_rt_builtins__compile_0",
         ":clang_rt_builtins__compile_1",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            ":clang_rt_builtins__compile_{}".format(i)
-            for i in range(2, 127)
-        ],
-    }),
+    ],
 )
 
 _GENERATED_LOCAL_DEFINES_3 = [

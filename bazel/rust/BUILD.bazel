@@ -7,7 +7,6 @@ load("//bazel/rules:openssl_headers.bzl", "openssl_headers")
 load("//bazel/rules:rust_archive.bzl", "rust_archive")
 load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
-load("//bazel/rules:rust_localization_data.bzl", "CLANG_RT_BUILTINS_GROUP_COUNTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -152,13 +151,9 @@ rust_static_library(
     for name, spec in RUST_ARCHIVES.items()
 ]
 
-RUST_LOCALIZATION_REFERENCES = select({
-    "@platforms//cpu:" + arch: [
-        "@clickhouse_llvm_project//:clang_rt_builtins__compile_" + str(index)
-        for index in range(count)
-    ]
-    for arch, count in CLANG_RT_BUILTINS_GROUP_COUNTS.items()
-}) + [
+RUST_LOCALIZATION_REFERENCES = [
+    "@clickhouse_llvm_project//:clang_rt_builtins__compile_0",
+    "@clickhouse_llvm_project//:clang_rt_builtins__compile_1",
     "@clickhouse_llvm_project//:libllvmlibc",
 ]
 

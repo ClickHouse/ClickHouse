@@ -1487,35 +1487,35 @@
         "to": "@build/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/RpcHeader.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/Security.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/Security.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/Security.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/datatransfer.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/datatransfer.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/libhdfs3-cmake/hdfs.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_libhdfs3/config/contrib/libhdfs3-cmake/hdfs.pb.cc",
         "to": "@build/contrib/libhdfs3-cmake/hdfs.pb.cc"
       },
       {

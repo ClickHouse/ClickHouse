@@ -967,6 +967,8 @@ class BuildFile:
             attrs['includes'] = attrs.get('includes', []) + [NATIVE_PUBLIC_INCLUDES[self.owner, name]]
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
+        elif kind == 'rust_vendor_licenses':
+            self.loads.setdefault('@clickhouse//bazel/rules:codegen_actions.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
             self.loads.setdefault('@clickhouse//bazel/rules:nasm.bzl', set()).add(kind)
         elif kind == 'cmake_link':
@@ -1090,8 +1092,16 @@ class BuildFile:
                     **attrs,
                     'target_compatible_with': group_compatible,
                 })
+                archive_objects = [':' + object_name]
+                if name == 'clang_rt_builtins' and index > 0:
+                    if index > 1:
+                        continue
+                    archive_objects = Concat([archive_objects, select({
+                        '@platforms//cpu:x86_64': [],
+                        '@platforms//cpu:aarch64': [':clang_rt_builtins_outline_objects'],
+                    })])
                 self.rule('cc_library', name if math_archive else name + '__compile_' + str(index), {
-                    'srcs': [':' + object_name],
+                    'srcs': archive_objects,
                     'deps': select({
                         '@platforms//cpu:' + arch: (
                             ([self.label(d) for d in variants[arch]['deps']] if math_archive else []) +
@@ -1119,6 +1129,8 @@ class BuildFile:
             implementation_deps = {'@platforms//cpu:' + arch: list(group['implementation_deps'])
                                    for arch, group in groups.items() if group.get('implementation_deps')}
             for arch, group in groups.items():
+                if self.owner == 'contrib/libhdfs3' and name == '_hdfs3' and group['language'] == 'CXX':
+                    implementation_deps.setdefault('@platforms//cpu:' + arch, []).append(':hdfs3_proto_headers')
                 if group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime'):
                     native_includes[arch] = []
                     system_includes[arch] = []
@@ -1198,6 +1210,12 @@ class BuildFile:
                                 end = start + len(CLICKHOUSE_WARNINGS)
                                 if value[start:end] == CLICKHOUSE_WARNINGS:
                                     value = CMakeWarnings(value[:start], value[end:])
+                    if self.owner == 'contrib/libhdfs3' and name == '_hdfs3' and field in {
+                        'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs',
+                    }:
+                        prefix = '//bazel:gen/' + arch + '/contrib/libhdfs3-cmake/'
+                        value = [v for v in value if not (isinstance(v, str) and v.startswith(prefix)
+                                                          and v.endswith('.pb.h'))]
                     if (field == 'hdrs' and name == 'clickhouse_aggregate_functions' and arch == 'x86_64'
                             and group.get('srcs') == ['//:src/AggregateFunctions/AggregateFunctionUniq.cpp']):
                         # The -mno-bmi group consumes the package headers privately.
@@ -1379,7 +1397,7 @@ class BuildFile:
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [
                 ':' + group_names[i]
                 for i in range(1 if kind == 'EXECUTABLE' else 0, group_count)
-                if not llvm_runtime or i < len(v['groups'])
+                if (not llvm_runtime or i < len(v['groups'])) and (name != 'clang_rt_builtins' or i < 2)
             ]
             for arch, v in variants.items()
         })
@@ -1429,6 +1447,22 @@ class BuildFile:
         return compact(text)
 
 
+def rust_license_filenames(root):
+    """Read the filename precedence from process_rust_crate in list-licenses.sh."""
+    script = (root / 'utils/list-licenses/list-licenses.sh').read_text()
+    body = script.split('process_rust_crate() {', 1)[1].split('declare -a arr=(', 1)[1].split(')', 1)[0]
+    names = []
+    for line in body.splitlines():
+        if line.strip():
+            match = re.fullmatch(r'"([a-zA-Z0-9_./-]+)"', line.strip())
+            if not match or match[1] in names:
+                raise ValueError(f'Unexpected Rust license filename: {line}')
+            names.append(match[1])
+    if not names:
+        raise ValueError('Empty Rust license filename list')
+    return names
+
+
 def dependency_inputs(builds, owners):
     """Declare the non-CMake inputs and host tools beside their pinned sources."""
     def build(owner):
@@ -1441,6 +1475,9 @@ def dependency_inputs(builds, owners):
         build(owner).rule('filegroup', name, {
             'srcs': Glob(['**'], ('**/BUILD', '**/BUILD.bazel')),
         })
+    build('contrib/rust_vendor').rule('rust_vendor_licenses', 'licenses', {
+        'filenames': rust_license_filenames(ROOT),
+    })
     for owner in ('contrib/pcodec', 'contrib/wasmtime', 'contrib/chdig'):
         build(owner).rule('filegroup', 'cmake_cargo_sources', {
             'srcs': Glob(['**'], ('**/BUILD', '**/BUILD.bazel', 'target/**')),

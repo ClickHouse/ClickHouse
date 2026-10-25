@@ -67,6 +67,10 @@ DEPENDENCIES = {
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
+    ], ['//src:headers'], []),
+    ('src/Functions/URL', 'clickhouse_functions_url'): ([
+        '@clickhouse_mongo_c_driver//:_libbson',
+        '@clickhouse_arrow//:_orc',
     ], [], []),
     ('src/Functions/URL', 'clickhouse_functions_url__compile_1'): ([
         '@clickhouse_llvm_project//:LLVMBitReader', '@clickhouse_llvm_project//:LLVMBitstreamReader',

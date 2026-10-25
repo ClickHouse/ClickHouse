@@ -111,6 +111,19 @@ def googleapis_source_map(sources):
     return result
 
 
+def non_vendor_license_paths(manifest, substitutions):
+    """Return the inputs not supplied by @clickhouse_rust_vendor//:licenses."""
+    paths = {row[2].lstrip('/') for row in manifest}
+    for replacement in substitutions.values():
+        if replacement is None:
+            continue
+        path = replacement[1].lstrip('/')
+        if path.startswith('contrib/rust_vendor/') and path not in paths:
+            raise ValueError(f'CMake selected a different Rust license: {path}')
+        paths.add(path)
+    return sorted(path for path in paths if not path.startswith('contrib/rust_vendor/'))
+
+
 def render_license(attrs, license_inputs):
     """Reuse the recorded license-to-file mapping where the reference agrees."""
     fields = []
@@ -415,7 +428,7 @@ class Codegen:
 
     def licenses(self, output):
         manifest = json.loads((self.root / 'bazel/rules/license_manifest.json').read_text())
-        sources = {row[2].lstrip('/') for row in manifest}
+        substitutions = {}
         metadata_name = read_metadata(self.root)[self.graph.arch].get(
             'license_substitutions', 'license_substitutions_' + self.graph.arch + '.json',
         )
@@ -423,10 +436,9 @@ class Codegen:
         attrs = {'kind': 'licenses', 'outs': ['gen/' + self.graph.arch + '/' + output]}
         if metadata_file.is_file():
             substitutions = json.loads(metadata_file.read_text())
-            sources.update(row[1].lstrip('/') for row in substitutions.values() if row is not None)
             attrs['cmake_metadata'] = '//bazel/initial_migration:' + metadata_name
             attrs['cmake_condition'] = '//bazel:use_cmake_metadata_' + self.graph.arch
-        attrs['source_paths'] = sorted(sources)
+        attrs['source_paths'] = non_vendor_license_paths(manifest, substitutions)
         # The reference inventory reads the toolchain LLVM license, including
         # when ClickHouse LLVM objects are compiled in @clickhouse_llvm_project.
         attrs['srcs'] = [

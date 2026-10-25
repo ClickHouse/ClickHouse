@@ -1,20 +1,36 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:codegen_actions.bzl", "cpp_proto_sources")
+load("@clickhouse//bazel/rules:codegen_rules.bzl", "HDFS3_PROTO_IMPORTS")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+cpp_proto_sources(
+    imports = HDFS3_PROTO_IMPORTS,
+    out_dir = "config/contrib/libhdfs3-cmake",
+    src_dir = "src/proto",
+)
+
+cc_library(
+    name = "hdfs3_proto_headers",
+    hdrs = [
+        "config/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.h",
+        "config/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.h",
+        "config/contrib/libhdfs3-cmake/IpcConnectionContext.pb.h",
+        "config/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.h",
+        "config/contrib/libhdfs3-cmake/RpcHeader.pb.h",
+        "config/contrib/libhdfs3-cmake/Security.pb.h",
+        "config/contrib/libhdfs3-cmake/datatransfer.pb.h",
+        "config/contrib/libhdfs3-cmake/hdfs.pb.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
+)
+
 exports_files([
     "LICENSE.txt",
     "src/common/crc_iscsi_v_pcl.asm",
-    "src/proto/ClientDatanodeProtocol.proto",
-    "src/proto/ClientNamenodeProtocol.proto",
-    "src/proto/IpcConnectionContext.proto",
-    "src/proto/ProtobufRpcEngine.proto",
-    "src/proto/RpcHeader.proto",
-    "src/proto/Security.proto",
-    "src/proto/datatransfer.proto",
-    "src/proto/hdfs.proto",
 ])
 
 _HDFS3_API_HDRS = [
@@ -186,14 +202,14 @@ ch_cc_library(
         "src/common/SWCrc32c.cpp",
         "src/common/Thread.cpp",
         "src/common/IntelAsmCrc32c.cpp",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/hdfs.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/Security.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
-        "@clickhouse//bazel:gen/contrib/libhdfs3-cmake/datatransfer.pb.cc",
+        "config/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
+        "config/contrib/libhdfs3-cmake/hdfs.pb.cc",
+        "config/contrib/libhdfs3-cmake/Security.pb.cc",
+        "config/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
+        "config/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
+        "config/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
+        "config/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
+        "config/contrib/libhdfs3-cmake/datatransfer.pb.cc",
     ] + glob(
         ["src/**/*.h"],
         exclude = _HDFS3_API_HDRS + [
@@ -225,7 +241,7 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_libgsasl//:_gsasl",
         "@clickhouse_libxml2//:_libxml2",
-        "@clickhouse//bazel:hdfs3_proto_headers",
+        ":hdfs3_proto_headers",
         "@clickhouse_krb5//:_krb5",
     ] + select({
         "@platforms//cpu:x86_64": ["@clickhouse_isa_l//:_isal"],
@@ -298,7 +314,7 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_libgsasl//:_gsasl",
-        "@clickhouse//bazel:hdfs3_proto_headers",
+        ":hdfs3_proto_headers",
     ],
     local_defines = _HDFS3_LOCAL_DEFINES,
     local_includes = [

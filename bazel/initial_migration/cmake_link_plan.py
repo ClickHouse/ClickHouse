@@ -154,6 +154,13 @@ class Plan:
                         # Register only references reachable from the final link.
                         self.slots[key] = (group_label, index, size)
                 actual_group += 1
+            if name == "clang_rt_builtins":
+                # __compile_1 archives the nonzero CMake groups in File API order.
+                owner = target_label(name, self.owners)
+                secondary = [key for key, (label, _, _) in self.slots.items()
+                             if key[0] == name and label != owner + "__compile_0"]
+                for index, key in enumerate(secondary):
+                    self.slots[key] = (owner + "__compile_1", index, len(secondary))
             generated = []
             for source in t.get("sources", []):
                 if source.get("isGenerated") and source["path"].endswith(".o"):

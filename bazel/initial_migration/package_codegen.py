@@ -1,4 +1,4 @@
-"""Emit the Arrow Flight and Kerberos generators in the packages that compile their outputs."""
+"""Emit the Arrow Flight, Kerberos and HDFS generators in their consuming packages."""
 
 import ast
 import json
@@ -14,6 +14,7 @@ from initial_migration.configured_external_outputs import collapse_equal_cpu_sel
 PACKAGES = {
     'contrib/arrow-cmake/cpp/src/arrow/flight/': ('clickhouse_arrow', 'ARROW_FLIGHT_CODEGEN_RULES'),
     'contrib/krb5-cmake/include_private/': ('clickhouse_krb5', 'KRB5_PRIVATE_CODEGEN_RULES'),
+    'contrib/libhdfs3-cmake/': ('clickhouse_libhdfs3', 'HDFS3_PROTO_IMPORTS'),
 }
 
 
@@ -27,6 +28,10 @@ def partition(rules):
             remaining[name] = attrs
             continue
         repo, symbol = PACKAGES[owner]
+        # The x86 CRC assembler has no ARM counterpart and stays in //bazel.
+        if symbol == 'HDFS3_PROTO_IMPORTS' and not first[2].endswith('.pb.h'):
+            remaining[name] = attrs
+            continue
         arch, output = first[1:]
         prefix = 'gen/' + arch + '/'
         if arch not in ARCHES or not all(p.startswith(prefix + owner) for p in attrs['outs']):
@@ -67,7 +72,28 @@ def partition(rules):
         if name in remaining or name in groups[symbol] or seen.intersection(attrs['outs']):
             raise ValueError('Duplicate package code generator: ' + output)
         seen.update(attrs['outs'])
-        groups[symbol][name] = attrs
+        if symbol == 'HDFS3_PROTO_IMPORTS':
+            stem = output.rsplit('/', 1)[-1].removesuffix('.pb.h')
+            proto = '@clickhouse_libhdfs3//:src/proto/'
+            if (attrs['outs'] != ['config/' + output, 'config/' + output.removesuffix('h') + 'cc']
+                    or attrs['tools'] != ['@clickhouse_google_protobuf//:protoc']
+                    or proto + stem + '.proto' not in attrs['srcs']
+                    or not all(re.fullmatch(re.escape(proto) + r'\w+\.proto', s) for s in attrs['srcs'])):
+                raise ValueError('Unexpected HDFS protoc inputs, outputs or tools: ' + output)
+            # cpp_proto_sources implements exactly these CMake protoc arguments.
+            includes = '$$execroot/contrib/libhdfs3/src/proto'
+            dest = '$$execroot/$(RULEDIR)/config/contrib/libhdfs3-cmake'
+            tool = '$$execroot/$(execpath @clickhouse_google_protobuf//:protoc)'
+            command = ('execroot=$$PWD\nmkdir -p $(RULEDIR)/config/contrib/libhdfs3-cmake'
+                       f'\nmkdir -p "{dest}" && cd "{dest}" && "{tool}" --cpp_out "{dest}" '
+                       f'-I "{includes}" "{includes}/{stem}.proto"')
+            if attrs['cmd'] != command:
+                raise ValueError('Unrecognized HDFS protoc command: ' + output)
+            groups[symbol][stem] = sorted(s[len(proto):-len('.proto')] for s in attrs['srcs']
+                                          if s != proto + stem + '.proto')
+        else:
+            groups[symbol][name] = attrs
+    groups['HDFS3_PROTO_IMPORTS'] = dict(sorted(groups['HDFS3_PROTO_IMPORTS'].items()))
     if not all(groups.values()):
         raise ValueError('No CMake code generators found for ' + ', '.join(k for k, v in groups.items() if not v))
     return remaining, groups
@@ -103,7 +129,11 @@ def publish_package_codegen(root, read_only=()):
     outputs = {}
     for repo, symbol in PACKAGES.values():
         for name, rule in dictionary(decl[symbol]).items():
-            for out in ast.literal_eval(dictionary(rule)['outs']):
+            if symbol == 'HDFS3_PROTO_IMPORTS':
+                outs = ['config/contrib/libhdfs3-cmake/' + name + ext for ext in ('.pb.h', '.pb.cc')]
+            else:
+                outs = ast.literal_eval(dictionary(rule)['outs'])
+            for out in outs:
                 if not out.startswith('config/') or out.removeprefix('config/') in outputs:
                     raise ValueError('Duplicate or invalid package output: ' + out)
                 outputs[out.removeprefix('config/')] = repo
@@ -123,6 +153,8 @@ def publish_package_codegen(root, read_only=()):
             repo = outputs[match['file']]
             if not match['label']:
                 raise ValueError('Unqualified former //bazel output in ' + str(p) + ': ' + match[0])
+            if repo == owner == 'clickhouse_libhdfs3':
+                return 'config/' + match['file']
             return (':' if owner == repo else '@' + repo + '//:') + 'config/' + match['file']
         updated = pattern.sub(reference, text)
         for repo, symbol in PACKAGES.values():
@@ -133,6 +165,20 @@ def publish_package_codegen(root, read_only=()):
                         and isinstance(x.value, ast.Call) and getattr(x.value.func, 'id', '') == 'package']
                 source = Source(updated)
                 end = source.span(pkg)[1]
+                if symbol == 'HDFS3_PROTO_IMPORTS':
+                    headers = ''.join(
+                        '        "config/contrib/libhdfs3-cmake/' + stem + '.pb.h",\n'
+                        for stem in sorted(dictionary(decl[symbol])))
+                    updated = source.rewrite([
+                        (0, 0, 'load("@clickhouse//bazel/rules:codegen_actions.bzl", "cpp_proto_sources")\n'
+                         'load("@clickhouse//bazel/rules:codegen_rules.bzl", "HDFS3_PROTO_IMPORTS")\n'),
+                        (end, end, '\n\ncpp_proto_sources(\n    imports = HDFS3_PROTO_IMPORTS,\n'
+                         '    out_dir = "config/contrib/libhdfs3-cmake",\n    src_dir = "src/proto",\n)\n\n'
+                         'cc_library(\n    name = "hdfs3_proto_headers",\n    hdrs = [\n' + headers +
+                         '    ],\n    visibility = ["//visibility:private"],\n'
+                         '    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],\n)\n'),
+                    ])
+                    continue
                 updated = source.rewrite([
                     (0, 0, 'load("@clickhouse//bazel/rules:codegen_actions.bzl", "declare_codegen")\n'
                      'load("@clickhouse//bazel/rules:codegen_rules.bzl", "' + symbol + '")\n'),

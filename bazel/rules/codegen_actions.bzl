@@ -1,15 +1,42 @@
 """Declared license rendering and copies of source files read by Clang #embed."""
 
+def rust_vendor_licenses(name, filenames):
+    """Select the first license filename used by process_rust_crate for each crate."""
+    selected = {}
+    for filename in filenames:
+        # A wildcard makes glob return the original spelling of LICENSE.txt and LICENSE.TXT on macOS.
+        for path in native.glob(["*/" + filename + "*"], allow_empty = True):
+            crate, found = path.split("/", 1)
+            if found == filename:
+                selected.setdefault(crate, path)
+    native.filegroup(name = name, srcs = sorted(selected.values()))
+
+def _add_license(files, original, source):
+    if original in files or not source.is_source:
+        fail("Expected one source file for license %s" % original)
+    files[original] = source
+
 def _licenses_impl(ctx):
     if len(ctx.files.srcs) != len(ctx.attr.source_paths):
         fail("Each source_paths entry must have exactly one input file in srcs")
-    inputs = ctx.files.srcs + [ctx.file.manifest]
+    files = {}
+    for original, source in zip(ctx.attr.source_paths, ctx.files.srcs):
+        _add_license(files, original, source)
+    vendor = ctx.attr._rust_vendor_licenses.label
+    for source in ctx.files._rust_vendor_licenses:
+        if not source.owner or source.owner.repo_name != vendor.repo_name or source.owner.package:
+            fail("Expected a source from the root package of %s: %s" % (vendor, source))
+        _add_license(files, "contrib/rust_vendor/" + source.owner.name, source)
+    if len(depset(files.values()).to_list()) != len(files):
+        fail("A license file has more than one source path")
+    originals = sorted(files)
+    inputs = [files[original] for original in originals] + [ctx.file.manifest]
     args = ctx.actions.args()
     args.add(ctx.file.manifest)
     args.add(ctx.outputs.out)
-    for original, source in zip(ctx.attr.source_paths, ctx.files.srcs):
+    for original in originals:
         args.add(original)
-        args.add(source)
+        args.add(files[original])
     if ctx.file.cmake_metadata:
         inputs.append(ctx.file.cmake_metadata)
         args.add("--cmake-metadata")
@@ -36,6 +63,7 @@ _licenses = rule(
             allow_single_file = True,
         ),
         "cmake_metadata": attr.label(allow_single_file = True),
+        "_rust_vendor_licenses": attr.label(default = Label("@clickhouse_rust_vendor//:licenses")),
         "_generator": attr.label(
             default = Label("//bazel/rules:generate_licenses"),
             executable = True,
@@ -92,3 +120,22 @@ def declare_codegen(name, attrs):
         )
     else:
         fail("Unknown codegen kind for %s: %s" % (name, kind))
+
+def cpp_proto_sources(src_dir, out_dir, imports):
+    """Generate a .pb.h/.pb.cc pair for each schema and its transitive imports."""
+    protoc = "@clickhouse_google_protobuf//:protoc"
+    for stem, imported in imports.items():
+        src = src_dir + "/" + stem + ".proto"
+        native.genrule(
+            name = stem + "_cpp_sources",
+            srcs = sorted([src] + [src_dir + "/" + dep + ".proto" for dep in imported]),
+            outs = [out_dir + "/" + stem + ext for ext in [".pb.h", ".pb.cc"]],
+            tools = [protoc],
+            cmd = ('mkdir -p "$(RULEDIR)/{out}" && ' +
+                   '"$(execpath {protoc})" --cpp_out="$(RULEDIR)/{out}" ' +
+                   '-I "$$(dirname "$(execpath :{src})")" "$(execpath :{src})"').format(
+                out = out_dir,
+                protoc = protoc,
+                src = src,
+            ),
+        )

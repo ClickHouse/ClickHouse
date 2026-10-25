@@ -15,7 +15,7 @@ import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration.build_file import starlark
-from initial_migration.codegen import render_license
+from initial_migration.codegen import non_vendor_license_paths, render_license
 from initial_migration.cmake_metadata import read_metadata, write_metadata
 from initial_migration.compact_build import Source
 from initial_migration.configured_external_outputs import ChooseCpu
@@ -204,12 +204,10 @@ def _full_reference(root, build, arch, metadata, check):
     licenses = 'generate_native_licenses'
     license_inputs = _license_inputs(codegen)
     before = _license_fields(records[licenses], license_inputs, arch)
-    inputs = dict(zip(before['source_paths'], before['srcs'], strict=True))
-    for replacement in substitutions.values():
-        if replacement is not None:
-            source = replacement[1].lstrip('/')
-            if source not in inputs:
-                inputs[source] = source_label(source)
+    current = dict(zip(before['source_paths'], before['srcs'], strict=True))
+    manifest = json.loads((root / 'bazel/rules/license_manifest.json').read_text())
+    inputs = {source: current.get(source) or source_label(source)
+              for source in non_vendor_license_paths(manifest, substitutions)}
     license_name = 'license_substitutions_' + arch + '.json'
     shared_license_name = 'license_substitutions_x86_64.json'
     shared_license_file = root / 'bazel/initial_migration' / shared_license_name
