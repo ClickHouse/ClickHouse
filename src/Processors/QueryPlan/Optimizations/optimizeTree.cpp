@@ -88,6 +88,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
         optimization_settings.top_k_optimization_shared_boundary,
+        optimization_settings.max_rows_to_group_by,
         optimization_settings.enable_group_by_top_k_dynamic_filtering,
         optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
@@ -997,13 +998,14 @@ void optimizeTreeSecondPass(
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
-    considerEnablingParallelReplicas(optimization_settings, root, query_plan);
-
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
     /// admission check: no later optimization needs to retract the heap or its synthetic sort.
+    /// Automatic parallel replicas runs later, but replaces the whole plan by one optimized on its own.
     if (optimization_settings.enable_group_by_top_k_optimization)
     {
+        if (optimization_settings.distributed_group_by_top_k)
+            applyGroupByTopKOfInitiator(root, nodes, optimization_settings.distributed_group_by_top_k, extra_settings);
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
 
@@ -1013,6 +1015,9 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Last, so that the plan it measures and switches is the settled one.
+    considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }
 
 void addStepsToBuildSets(

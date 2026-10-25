@@ -3,13 +3,19 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -23,7 +29,7 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Returns the AggregatingStep if it is eligible for the top-K heap optimization.
-static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
+static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node, bool final = true)
 {
     auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
     if (!aggregating_step)
@@ -35,13 +41,13 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (aggregating_step->inOrder())
         return nullptr;
 
-    /// Partial aggregation is annotated only by the shard-side Planner hook
-    /// (`applyTopKPushdownToPartialAggregation`), which requires a real `ORDER BY` prefix.
-    /// This pass must not match it: a deserialized shipped plan is re-optimized on the
-    /// follower, and synthesizing a sort + limit over *partial* states would truncate each
-    /// follower's group set independently, with no initiator-side sort to discard the
-    /// resulting incomplete groups.
-    if (!aggregating_step->isFinal())
+    /// A partial aggregation gets the heap only where its merged groups are known to be sorted and limited above:
+    /// from the shard-side Planner hook (`applyTopKPushdownToPartialAggregation`) for a real `ORDER BY` prefix, and from
+    /// `tryOptimizeGroupByTopKOverRemoteMerge` and `applyGroupByTopKOfInitiator` without `ORDER BY`. A deserialized
+    /// shipped plan is re-optimized on the follower, and synthesizing a sort + limit over *partial* states there would
+    /// truncate each follower's group set independently, with no initiator-side sort to discard the resulting
+    /// incomplete groups.
+    if (aggregating_step->isFinal() != final)
         return nullptr;
 
     const auto & params = aggregating_step->getParams();
@@ -193,10 +199,14 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     }
 
     /// FINAL deduplicates rows by the sorting key while reading; dropping a row before that can change which
-    /// version of another row survives. Parallel replicas run the query text remotely, where nothing knows the tracker.
-    if (read_step->isQueryWithFinal() || read_step->isParallelReadingFromReplicas())
+    /// version of another row survives.
+    ///
+    /// A read from parallel replicas is fine: the heap it feeds is the partial aggregation of this replica, which ranks
+    /// only the rows this replica reads. Its boundary is never tighter than the one over all rows, so a row beyond it
+    /// cannot be in any group the query returns.
+    if (read_step->isQueryWithFinal())
     {
-        LOG_TRACE(log, "No dynamic filter: the read is FINAL or from parallel replicas");
+        LOG_TRACE(log, "No dynamic filter: the read is FINAL");
         return nullptr;
     }
 
@@ -323,6 +333,126 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     return threshold_tracker;
 }
 
+/// Puts the heap over all grouping keys ascending, the order of the sort synthesized for `GROUP BY ... LIMIT` without
+/// `ORDER BY`. That sort only pays off while the heap bounds the hash table, so the heap never freezes.
+static void applyTopKByAllKeys(
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & aggregating_step,
+    size_t limit,
+    const Optimization::ExtraSettings & settings,
+    QueryPlan::Nodes & nodes)
+{
+    const size_t num_key_columns = aggregating_step.getParams().keys.size();
+    Aggregator::Params::TopKParams top_k_params{
+        .k = limit,
+        .directions = std::vector<int>(num_key_columns, 1),
+        .nulls_directions = std::vector<int>(num_key_columns, 1),
+        .key_columns = num_key_columns,
+        .observation_rows = 0,
+        .shared_boundary = settings.top_k_optimization_shared_boundary,
+        .threshold_tracker = nullptr,
+    };
+
+    top_k_params.threshold_tracker = tryAttachDynamicFilter(
+        aggregating_node,
+        aggregating_step,
+        limit,
+        num_key_columns,
+        top_k_params.directions,
+        top_k_params.nulls_directions,
+        settings,
+        nodes);
+
+    aggregating_step.applyTopKOptimization(std::move(top_k_params));
+}
+
+/// `GROUP BY ... LIMIT n` without `ORDER BY` that merges the partial states of parallel replicas:
+///
+///   Limit - [Expression] - MergingAggregated - Union - Aggregating (the local replica, partial)
+///                                                    - ReadFromRemoteParallelReplicas / ReadFromParallelReplicas
+///
+/// or without the `Union` when nothing is read locally. Any `n` groups answer the query, so it may return the smallest
+/// `n` by the keys, which a sort above the merge selects. Then each replica may keep only its smallest `n` groups: a
+/// group beyond them on one of them is beyond the smallest `n` overall. The local aggregation gets the heap here, the
+/// remote ones through `distributed_group_by_top_k`.
+///
+/// Not over the shards of a `Distributed` table: they group by the types of their own tables, which the initiator
+/// converts to its own only after the merge, and cannot always see.
+static void tryOptimizeGroupByTopKOverRemoteMerge(
+    QueryPlan::Node * node_above_merging,
+    QueryPlan::Node * merging_node,
+    size_t limit,
+    const Optimization::ExtraSettings & settings,
+    QueryPlan::Nodes & nodes)
+{
+    const auto & merging_step = typeid_cast<const MergingAggregatedStep &>(*merging_node->step);
+    const auto & params = merging_step.getParams();
+    /// Under `max_rows_to_group_by` no replica would take the heap, and the sort would only cost.
+    if (!merging_step.isFinal() || merging_step.isGroupingSets() || params.overflow_row || settings.max_rows_to_group_by > 0
+        || params.keys.empty() || merging_node->children.size() != 1)
+        return;
+
+    /// The merge streams in the order of the keys and lets `LIMIT` stop it early, and the replicas aggregate in order,
+    /// which takes no heap.
+    if (merging_step.memoryBoundMergingWillBeUsed())
+        return;
+
+    QueryPlan::Node * input_node = merging_node->children.front();
+    std::vector<QueryPlan::Node *> sources;
+    if (typeid_cast<const UnionStep *>(input_node->step.get()))
+        sources = input_node->children;
+    else
+        sources = {input_node};
+
+    std::vector<ReadFromParallelRemoteReplicasStep *> parallel_replicas_reads;
+    std::vector<ReadFromParallelReplicasStep *> plan_fragment_reads;
+    std::vector<QueryPlan::Node *> local_aggregating_nodes;
+    /// Any other source keeps all its groups, which the sort handles as well.
+    for (auto * source : sources)
+    {
+        if (typeid_cast<const ReadFromRemote *>(source->step.get()))
+            return;
+        if (auto * parallel_replicas_read = typeid_cast<ReadFromParallelRemoteReplicasStep *>(source->step.get()))
+            parallel_replicas_reads.push_back(parallel_replicas_read);
+        else if (auto * plan_fragment_read = typeid_cast<ReadFromParallelReplicasStep *>(source->step.get()))
+            plan_fragment_reads.push_back(plan_fragment_read);
+        else if (validateAggregatingStep(source, /*final=*/ false))
+            local_aggregating_nodes.push_back(source);
+        else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(source->step.get()); aggregating_step && aggregating_step->inOrder())
+            /// The other replicas read the same table, so they aggregate in order as well, without the heap.
+            return;
+    }
+
+    if (parallel_replicas_reads.empty() && plan_fragment_reads.empty())
+        return;
+
+    SortDescription sort_description;
+    sort_description.reserve(params.keys.size());
+    for (const auto & key : params.keys)
+        sort_description.emplace_back(key, /*direction=*/ 1, /*nulls_direction=*/ 1);
+
+    auto synthesized_sort = std::make_unique<SortingStep>(
+        merging_node->step->getOutputHeader(),
+        std::move(sort_description),
+        limit,
+        SortingStep::Settings(settings.max_block_size));
+    synthesized_sort->setStepDescription("Sorting for GROUP BY top-K", settings.max_step_description_length);
+
+    auto & sort_node = nodes.emplace_back();
+    sort_node.step = std::move(synthesized_sort);
+    sort_node.children = {merging_node};
+    chassert(node_above_merging->children.front() == merging_node);
+    node_above_merging->children.front() = &sort_node;
+
+    for (auto * parallel_replicas_read : parallel_replicas_reads)
+        parallel_replicas_read->enableGroupByTopK(limit);
+    for (auto * plan_fragment_read : plan_fragment_reads)
+        plan_fragment_read->enableGroupByTopK(limit);
+
+    for (auto * aggregating_node : local_aggregating_nodes)
+        applyTopKByAllKeys(aggregating_node, typeid_cast<AggregatingStep &>(*aggregating_node->step), limit, settings, nodes);
+}
+
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
@@ -415,6 +545,12 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
         node_above_aggregation = next_node;
         next_node = next_node->children.front();
+    }
+
+    if (!sorting_step && typeid_cast<const MergingAggregatedStep *>(next_node->step.get()))
+    {
+        tryOptimizeGroupByTopKOverRemoteMerge(node_above_aggregation, next_node, limit, settings, nodes);
+        return 0;
     }
 
     auto * aggregating_step = validateAggregatingStep(next_node);
@@ -518,4 +654,22 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
     return 0;
 }
+
+void applyGroupByTopKOfInitiator(
+    QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings)
+{
+    if (settings.make_distributed_plan)
+        return;
+
+    /// A replica runs the query up to the partial aggregation, so it is the root, maybe below the sets it builds
+    /// and the marshalling of its output.
+    QueryPlan::Node * node = &root;
+    while ((typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const BlocksMarshallingStep *>(node->step.get()))
+           && !node->children.empty())
+        node = node->children.front();
+
+    if (auto * aggregating_step = validateAggregatingStep(node, /*final=*/ false))
+        applyTopKByAllKeys(node, *aggregating_step, limit, settings, nodes);
+}
+
 }

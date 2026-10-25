@@ -147,6 +147,18 @@ static void enableMemoryBoundMerging(QueryProcessingStage::Enum stage, const Clu
     }
 }
 
+/// The remote servers read the setting in `QueryPlanOptimizationSettings`, also for a serialized plan.
+static void enableGroupByTopK(QueryProcessingStage::Enum stage, size_t top_k_limit, Context & context)
+{
+    if (stage != QueryProcessingStage::WithMergeableState)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot enable GROUP BY top-K for remote reading up to stage {}",
+            QueryProcessingStage::toString(stage));
+
+    context.setSetting("distributed_group_by_top_k", top_k_limit);
+}
+
 static void enforceAggregationInOrder(
     QueryProcessingStage::Enum stage,
     const ClusterProxy::SelectStreamFactory::Shards * shards,
@@ -1208,6 +1220,11 @@ void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
 void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDescription & sort_description)
 {
     DB::enforceAggregationInOrder(stage, nullptr, sort_description, *context);
+}
+
+void ReadFromParallelRemoteReplicasStep::enableGroupByTopK(size_t top_k_limit)
+{
+    DB::enableGroupByTopK(stage, top_k_limit, *context);
 }
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
