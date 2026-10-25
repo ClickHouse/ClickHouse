@@ -264,6 +264,18 @@ SELECT count() FROM t_bf_map_tuple_cast WHERE m['d'] IN (SELECT tuple(toDate('20
 SELECT count() FROM t_bf_map_tuple_cast WHERE m['d'] IN (SELECT tuple(toDate('2020-01-01'))) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_bf_map_tuple_cast;
+
+-- The default of `Nullable(Tuple(UInt8))` is `NULL`, which does not convert to the non-`Nullable` `Tuple(UInt8)`.
+DROP TABLE IF EXISTS t_bf_map_nullable_tuple_cast;
+CREATE TABLE t_bf_map_nullable_tuple_cast (m Map(String, Nullable(Tuple(UInt8))), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_nullable_tuple_cast VALUES (map('k', tuple(1)));
+
+SELECT count() FROM t_bf_map_nullable_tuple_cast WHERE m['k'] IN (SELECT tuple(toUInt8(1)));
+SELECT count() FROM t_bf_map_nullable_tuple_cast WHERE m['k'] IN (SELECT tuple(toUInt8(1))) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_bf_map_nullable_tuple_cast WHERE m['k'] IN (SELECT tuple(toUInt8(1))) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_nullable_tuple_cast;
 DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;
