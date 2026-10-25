@@ -1017,7 +1017,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         /// unconditionally, independently of `get_profile_events` / `log_profile_events`: the per-query
         /// snapshot below is optional, but the thread group's counters also feed the global
         /// `system.events['MemoryCredits']`, which must still account the held tail even when profile-event
-        /// logging is disabled for the query. The atomic exchange inside `takeMemoryCreditsDelta` charges
+        /// logging is disabled for the query. The monotonic timestamp update inside `takeMemoryCreditsDelta` charges
         /// each elapsed interval exactly once, so this never double-counts with the alloc/free updates.
         thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
 
@@ -1152,7 +1152,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 
     /// Charge the interval during which the running queries held memory without any allocation or free,
     /// so that `MemoryCredits` in the per-user counters is as up to date as in `system.processes`.
-    /// The query-level counters propagate to the user-level ones. The atomic exchange inside
+    /// The query-level counters propagate to the user-level ones. The monotonic timestamp update inside
     /// `takeMemoryCreditsDelta` charges every elapsed interval exactly once, so this never double-counts.
     for (const auto & thread_group : running_thread_groups)
         thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);

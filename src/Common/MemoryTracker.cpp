@@ -395,10 +395,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     if (level == VariableContext::Global)
         will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
 
-    /// Accumulate the time integral of memory usage (the MemoryCredits profile event).
-    /// `will_be - size` is the amount that was held during the interval that just elapsed.
-    updateMemoryCredits(will_be - size);
-
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     bool memory_limit_exceeded_ignored = false;
 
@@ -592,6 +588,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
     }
 
+    /// Accumulate the time integral of memory usage (the MemoryCredits profile event) only now, when the allocation has
+    /// passed every check: until then the bytes are in flight and may be rolled back, so they are not held.
+    if (size && tracksMemoryCredits())
+        updateMemoryCredits(memory_credits_held_amount.fetch_add(size, std::memory_order_relaxed));
+
     commitAllocation(size, will_be, memory_limit_exceeded_ignored, enforce_memory_limit);
     return allocation_trace;
 }
@@ -620,10 +621,16 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size, bool rollback_of_failed_all
         }
         while (!amount.compare_exchange_weak(current, current - accounted_size, std::memory_order_relaxed));
 
-        /// `current` is the amount held during the interval that just elapsed. When rolling back a failed
-        /// allocation, the rolled back bytes were never obtained (`allocImpl` raises `amount` before the limit
-        /// checks and before the real allocation), so only the amount without them was held.
-        updateMemoryCredits(rollback_of_failed_allocation ? current - accounted_size : current);
+        /// Keep `memory_credits_held_amount` equal to `amount` without the in-flight bytes. A free takes off what was
+        /// taken off `amount`. A rolled back allocation was never added there, so normally nothing changes; only when
+        /// `amount` could not give back all of it (a concurrent free of memory never held took it already) does the
+        /// difference have to be added back, as that free has already taken it off.
+        if (tracksMemoryCredits())
+        {
+            const Int64 held_change = rollback_of_failed_allocation ? size - accounted_size : -accounted_size;
+            if (held_change)
+                updateMemoryCredits(memory_credits_held_amount.fetch_add(held_change, std::memory_order_relaxed));
+        }
     }
 
     return accounted_size;
@@ -963,27 +970,49 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
     /// delta; attribution still uses a single ProfileEvents increment, started at the outermost
     /// Process `Counters` found via the current thread's counter parent chain (see
     /// `updateMemoryCredits`), not a MemoryTracker-to-Counters back-reference.
-    if (level != VariableContext::Process)
-        return 0;
-    if (const auto * loaded_parent = parent.load(std::memory_order_acquire); loaded_parent && loaded_parent->level == VariableContext::Process)
+    if (!tracksMemoryCredits())
         return 0;
 
     /// Advance the timestamp on every allocation and free so the next interval is always measured from
-    /// this point. This is done before the checks below so that the very first allocation (which finds
+    /// this point. This is done before the check below so that the very first allocation (which finds
     /// nothing held during the interval that just elapsed) seeds the timestamp instead of being skipped;
     /// otherwise the first interval a query holds memory would be lost entirely.
-    const UInt64 now = clock_gettime_ns() / 1000;
-    const UInt64 prev = memory_credits_last_update_us.exchange(now, std::memory_order_relaxed);
+    const UInt64 elapsed = advanceMemoryCreditsTimestamp(memory_credits_last_update_us, clock_gettime_ns() / 1000);
 
-    /// Attribute the just-elapsed interval only when memory was actually held during it:
-    ///   * `prev == 0` is the first update for this tracker, so there is no interval to attribute yet;
-    ///   * `current_amount <= 0` means no memory was held (or a rare negative accounting artifact);
-    ///   * `now > prev` guards against a rare reordering where the clock is read before the winner stored.
-    /// The atomic exchange makes each elapsed interval be counted exactly once, with no gaps or overlaps,
-    /// even when several threads of the same query allocate or free memory concurrently.
-    if (prev != 0 && current_amount > 0 && now > prev)
-        return convertMemoryCreditsToByteSeconds(static_cast<UInt64>(current_amount), now - prev, memory_credits_remainder);
+    /// Attribute the just-elapsed interval only when memory was actually held during it: `current_amount <= 0`
+    /// means no memory was held (or a rare negative accounting artifact).
+    if (elapsed && current_amount > 0)
+        return convertMemoryCreditsToByteSeconds(static_cast<UInt64>(current_amount), elapsed, memory_credits_remainder);
     return 0;
+}
+
+
+bool MemoryTracker::tracksMemoryCredits() const
+{
+    if (level != VariableContext::Process)
+        return false;
+    const auto * loaded_parent = parent.load(std::memory_order_acquire);
+    return !loaded_parent || loaded_parent->level != VariableContext::Process;
+}
+
+
+UInt64 MemoryTracker::advanceMemoryCreditsTimestamp(std::atomic<UInt64> & last_update_us, UInt64 now_us)
+{
+    /// The clock is read before the update, so a caller may be descheduled in between while other threads advance the
+    /// timestamp further. Such a caller must neither move the timestamp backward (the interval from its stale reading
+    /// to the newer timestamp would be charged again by the next update) nor charge anything: the interval up to its
+    /// reading has already been charged by the thread that moved the timestamp past it. So every elapsed interval is
+    /// counted exactly once, with no gaps or overlaps, even when several threads of the same query update it concurrently.
+    UInt64 prev = last_update_us.load(std::memory_order_relaxed);
+    do
+    {
+        if (now_us <= prev)
+            return 0;
+    }
+    while (!last_update_us.compare_exchange_weak(prev, now_us, std::memory_order_relaxed));
+
+    /// `prev == 0` is the first update for this tracker, so there is no interval to attribute yet.
+    return prev ? now_us - prev : 0;
 }
 
 
@@ -1035,11 +1064,12 @@ void MemoryTracker::flushMemoryCredits(ProfileEvents::Counters & counters)
     /// Called right before the query-finish snapshot of the thread group's counters. Allocations and frees
     /// only advance the integral on transitions, so a query that still holds memory at finish would otherwise
     /// lose the final segment (from the last alloc/free until now). Charge it here using the currently held
-    /// `amount`. The snapshot may be taken on a foreign thread (e.g. SHOW PROCESSLIST, query metric log), so
+    /// amount, without the allocations still in flight: a snapshot may be taken while an allocation waits in the
+    /// overcommit tracker and then fails, and the bytes it never obtained must not be charged. The snapshot may be taken on a foreign thread (e.g. SHOW PROCESSLIST, query metric log), so
     /// charge the passed-in thread-group counters directly instead of the current thread's counters. For the same
     /// reason it does not trace: a `ProfileEvent` row in `system.trace_log` would carry the identity of the
     /// current thread, which may belong to another query or to no query at all.
-    if (const UInt64 delta = takeMemoryCreditsDelta(amount.load(std::memory_order_relaxed)))
+    if (const UInt64 delta = takeMemoryCreditsDelta(getMemoryCreditsHeldAmount()))
         counters.incrementNoTrace(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
@@ -1071,6 +1101,7 @@ void MemoryTracker::setOvercommitWaitingTime(UInt64 wait_time)
 void MemoryTracker::resetCounters()
 {
     amount.store(0, std::memory_order_relaxed);
+    memory_credits_held_amount.store(0, std::memory_order_relaxed);
     peak.store(0, std::memory_order_relaxed);
     soft_limit.store(0, std::memory_order_relaxed);
     hard_limit.store(0, std::memory_order_relaxed);

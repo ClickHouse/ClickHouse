@@ -148,6 +148,10 @@ private:
     /// that has failed (memory limit, fault injection, overcommit, or a parent tracker throwing): those bytes
     /// were never obtained, so they must not be counted as held in `MemoryCredits`.
     Int64 decrementLocalUsage(Int64 size, bool rollback_of_failed_allocation) noexcept;
+
+    /// Whether this tracker accumulates `MemoryCredits`: only the outermost Process-level tracker of a query or
+    /// merge does (see `takeMemoryCreditsDelta`).
+    bool tracksMemoryCredits() const;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
     void traceLargeAllocation(Int64 size) noexcept;
 
@@ -206,6 +210,11 @@ private:
     /// the elapsed interval. Atomic because several threads of the same query update it concurrently;
     /// only the outermost Process-level tracker ever touches it, so it is kept out of the hot cache line above.
     std::atomic<UInt64> memory_credits_last_update_us {0};
+    /// The amount integrated into `MemoryCredits`: `amount` without the allocations that are in flight. `allocImpl` adds
+    /// to `amount` before the limit checks and the parent trackers, which may still reject the allocation (possibly after
+    /// waiting in the overcommit tracker), so the bytes are added here only once the allocation has passed all of them.
+    /// It is always equal to `amount` minus the in-flight bytes. Maintained only when `tracksMemoryCredits`.
+    std::atomic<Int64> memory_credits_held_amount {0};
     /// Sum of the sub-second parts (in byte-microseconds) of the `MemoryCredits` intervals, see `convertMemoryCreditsToByteSeconds`.
     std::atomic<UInt64> memory_credits_remainder {0};
 
@@ -273,6 +282,15 @@ public:
     /// Convert an interval of `bytes` held for `microseconds` into the `MemoryCredits` increment in byte-seconds without
     /// overflowing, carrying the sub-second part across calls in `remainder` (which must start at zero).
     static UInt64 convertMemoryCreditsToByteSeconds(UInt64 bytes, UInt64 microseconds, std::atomic<UInt64> & remainder);
+
+    /// Advance `last_update_us` to `now_us` if it is newer and return the elapsed interval in microseconds. Returns 0 when
+    /// there is nothing to charge: on the first update (which only seeds the timestamp), or when another thread has
+    /// already advanced the timestamp to `now_us` or past it (the timestamp never moves backward, so a caller that read
+    /// the clock and was descheduled before the update cannot make an interval be charged twice).
+    static UInt64 advanceMemoryCreditsTimestamp(std::atomic<UInt64> & last_update_us, UInt64 now_us);
+
+    /// The amount integrated into `MemoryCredits`: `amount` without the allocations still in flight, which may fail.
+    Int64 getMemoryCreditsHeldAmount() const { return memory_credits_held_amount.load(std::memory_order_relaxed); }
 
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);
