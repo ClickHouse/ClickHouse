@@ -114,51 +114,51 @@ data/single_nan.parquet	mycol Nullable(Float64)	1	3058753631431002148
 data/sort_columns.parquet	a Nullable(Int64), b Nullable(String)	6	16433448672583504430
 data/uniform_encryption.parquet.encrypted	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
 data/unknown-logical-type.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-001.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-002.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-004.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-005.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-006.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-007.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-008.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-009.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-010.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-011.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-012.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-013.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-014.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-015.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-016.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-017.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-018.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-019.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-020.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-021.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-022.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-023.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-024.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-025.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-026.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-027.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-028.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-029.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-030.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-031.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-032.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-033.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-034.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-035.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-036.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-037.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-038.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-039.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-040.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+shredded_variant/case-001.parquet	id Int32, var Dynamic	1	10490925391598327931
+shredded_variant/case-002.parquet	id Int32, var Dynamic	1	5044493750985273215
+shredded_variant/case-004.parquet	id Int32, var Dynamic	1	12722868161760566042
+shredded_variant/case-005.parquet	id Int32, var Dynamic	1	6357037711875391337
+shredded_variant/case-006.parquet	id Int32, var Dynamic	1	1373979113318603907
+shredded_variant/case-007.parquet	id Int32, var Dynamic	1	3224681182483629760
+shredded_variant/case-008.parquet	id Int32, var Dynamic	1	12095305350657734314
+shredded_variant/case-009.parquet	id Int32, var Dynamic	1	11571811425328039660
+shredded_variant/case-010.parquet	id Int32, var Dynamic	1	12019790617272354102
+shredded_variant/case-011.parquet	id Int32, var Dynamic	1	3054581779106085964
+shredded_variant/case-012.parquet	id Int32, var Dynamic	1	2400660848914710515
+shredded_variant/case-013.parquet	id Int32, var Dynamic	1	8177352835672061135
+shredded_variant/case-014.parquet	id Int32, var Dynamic	1	6559687052857607400
+shredded_variant/case-015.parquet	id Int32, var Dynamic	1	15217537502895740206
+shredded_variant/case-016.parquet	id Int32, var Dynamic	1	2177567122105907667
+shredded_variant/case-017.parquet	id Int32, var Dynamic	1	6326906648057887793
+shredded_variant/case-018.parquet	id Int32, var Dynamic	1	1734949045164248184
+shredded_variant/case-019.parquet	id Int32, var Dynamic	1	17319359498082480981
+shredded_variant/case-020.parquet	id Int32, var Dynamic	1	3862652003739728087
+shredded_variant/case-021.parquet	id Int32, var Dynamic	1	7853851637179419839
+shredded_variant/case-022.parquet	id Int32, var Dynamic	1	3862652003739728087
+shredded_variant/case-023.parquet	id Int32, var Dynamic	1	7853851637179419839
+shredded_variant/case-024.parquet	id Int32, var Dynamic	1	2700467050259140571
+shredded_variant/case-025.parquet	id Int32, var Dynamic	1	7324621414711242260
+shredded_variant/case-026.parquet	id Int32, var Dynamic	1	10314242486843045469
+shredded_variant/case-027.parquet	id Int32, var Dynamic	1	7593718921897029344
+shredded_variant/case-028.parquet	id Int32, var Dynamic	1	5853824030920949348
+shredded_variant/case-029.parquet	id Int32, var Dynamic	1	6997616788810430591
+shredded_variant/case-030.parquet	id Int32, var Dynamic	1	9675294027844614788
+shredded_variant/case-031.parquet	id Int32, var Dynamic	1	12226319755541068287
+shredded_variant/case-032.parquet	id Int32, var Dynamic	1	14037518347327937442
+shredded_variant/case-033.parquet	id Int32, var Dynamic	1	4971866724631435874
+shredded_variant/case-034.parquet	id Int32, var Dynamic	1	6323893578895442440
+shredded_variant/case-035.parquet	id Int32, var Dynamic	1	4971866724631435874
+shredded_variant/case-036.parquet	id Int32, var Dynamic	1	6323893578895442440
+shredded_variant/case-037.parquet	id Int32, var Dynamic	1	1887446554545743217
+shredded_variant/case-038.parquet	id Int32, var Dynamic	1	12161860611425763959
+shredded_variant/case-039.parquet	id Int32, var Dynamic	1	1373979113318603907
+shredded_variant/case-040.parquet	id Int32, var Dynamic	Error: INCORRECT_DATA
 shredded_variant/case-041-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-042.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-043-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-044.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-045.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-046.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+shredded_variant/case-042.parquet	id Int32, var Dynamic	Error: INCORRECT_DATA
+shredded_variant/case-043-INVALID.parquet	id Int32, var Dynamic	1	17838511058510726780
+shredded_variant/case-044.parquet	id Int32, var Dynamic	1	71353252903266053
+shredded_variant/case-045.parquet	id Int32, var Dynamic	4	13189477918112642185
+shredded_variant/case-046.parquet	id Int32, var Dynamic	1	8781562109038033434
 shredded_variant/case-047.parquet	id Int32, var Dynamic	1	17424250062511192161
 shredded_variant/case-048.parquet	id Int32, var Dynamic	1	12722868161760566042
 shredded_variant/case-049.parquet	id Int32, var Dynamic	1	6357037711875391337
@@ -186,7 +186,7 @@ shredded_variant/case-070.parquet	id Int32, var Dynamic	1	10314242486843045469
 shredded_variant/case-071.parquet	id Int32, var Dynamic	1	7593718921897029344
 shredded_variant/case-072.parquet	id Int32, var Dynamic	1	5853824030920949348
 shredded_variant/case-073.parquet	id Int32, var Dynamic	1	6997616788810430591
-shredded_variant/case-074.parquet	id Int32, var Dynamic	1	9675294027844614788
+shredded_variant/case-074.parquet	id Int32, var Dynamic	1	9942395362049162150
 shredded_variant/case-075.parquet	id Int32, var Dynamic	1	12226319755541068287
 shredded_variant/case-076.parquet	id Int32, var Dynamic	1	14037518347327937442
 shredded_variant/case-077.parquet	id Int32, var Dynamic	1	4971866724631435874
@@ -195,61 +195,61 @@ shredded_variant/case-079.parquet	id Int32, var Dynamic	1	4971866724631435874
 shredded_variant/case-080.parquet	id Int32, var Dynamic	1	6323893578895442440
 shredded_variant/case-081.parquet	id Int32, var Dynamic	1	1887446554545743217
 shredded_variant/case-082.parquet	id Int32, var Dynamic	1	2463365245024795443
-shredded_variant/case-083.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-084-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-085.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-086.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-087.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-088.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-089.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-090.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-091.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-092.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-093.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-094.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-095.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-096.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-097.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-098.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-099.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-100.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-101.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-102.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-103.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-104.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-105.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-106.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-107.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-108.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-109.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-110.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-111.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-112.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-113.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-114.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-115.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-116.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-117.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-118.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-119.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-120.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-121.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-122.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-123.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-124.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-125-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-126.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-127.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-128.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-129.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-130.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+shredded_variant/case-083.parquet	id Int32, var Dynamic	4	7878943645535891237
+shredded_variant/case-084-INVALID.parquet	id Int32, var Dynamic	1	10582989402728702910
+shredded_variant/case-085.parquet	id Int32, var Dynamic	1	14543564418504227926
+shredded_variant/case-086.parquet	id Int32, var Dynamic	1	7702781324454343122
+shredded_variant/case-087.parquet	id Int32, var Dynamic	Error: INCORRECT_DATA
+shredded_variant/case-088.parquet	id Int32, var Dynamic	1	10490925391598327931
+shredded_variant/case-089.parquet	id Int32, var Dynamic	1	17424250062511192161
+shredded_variant/case-090.parquet	id Int32, var Dynamic	1	12722868161760566042
+shredded_variant/case-091.parquet	id Int32, var Dynamic	1	6357037711875391337
+shredded_variant/case-092.parquet	id Int32, var Dynamic	1	1373979113318603907
+shredded_variant/case-093.parquet	id Int32, var Dynamic	1	3224681182483629760
+shredded_variant/case-094.parquet	id Int32, var Dynamic	1	12095305350657734314
+shredded_variant/case-095.parquet	id Int32, var Dynamic	1	11571811425328039660
+shredded_variant/case-096.parquet	id Int32, var Dynamic	1	12019790617272354102
+shredded_variant/case-097.parquet	id Int32, var Dynamic	1	3054581779106085964
+shredded_variant/case-098.parquet	id Int32, var Dynamic	1	2400660848914710515
+shredded_variant/case-099.parquet	id Int32, var Dynamic	1	8177352835672061135
+shredded_variant/case-100.parquet	id Int32, var Dynamic	1	6559687052857607400
+shredded_variant/case-101.parquet	id Int32, var Dynamic	1	15217537502895740206
+shredded_variant/case-102.parquet	id Int32, var Dynamic	1	2177567122105907667
+shredded_variant/case-103.parquet	id Int32, var Dynamic	1	6326906648057887793
+shredded_variant/case-104.parquet	id Int32, var Dynamic	1	1734949045164248184
+shredded_variant/case-105.parquet	id Int32, var Dynamic	1	17319359498082480981
+shredded_variant/case-106.parquet	id Int32, var Dynamic	1	3862652003739728087
+shredded_variant/case-107.parquet	id Int32, var Dynamic	1	7853851637179419839
+shredded_variant/case-108.parquet	id Int32, var Dynamic	1	3862652003739728087
+shredded_variant/case-109.parquet	id Int32, var Dynamic	1	7853851637179419839
+shredded_variant/case-110.parquet	id Int32, var Dynamic	1	2700467050259140571
+shredded_variant/case-111.parquet	id Int32, var Dynamic	1	7324621414711242260
+shredded_variant/case-112.parquet	id Int32, var Dynamic	1	10314242486843045469
+shredded_variant/case-113.parquet	id Int32, var Dynamic	1	7593718921897029344
+shredded_variant/case-114.parquet	id Int32, var Dynamic	1	5853824030920949348
+shredded_variant/case-115.parquet	id Int32, var Dynamic	1	6997616788810430591
+shredded_variant/case-116.parquet	id Int32, var Dynamic	1	9942395362049162150
+shredded_variant/case-117.parquet	id Int32, var Dynamic	1	12226319755541068287
+shredded_variant/case-118.parquet	id Int32, var Dynamic	1	14037518347327937442
+shredded_variant/case-119.parquet	id Int32, var Dynamic	1	4971866724631435874
+shredded_variant/case-120.parquet	id Int32, var Dynamic	1	6323893578895442440
+shredded_variant/case-121.parquet	id Int32, var Dynamic	1	4971866724631435874
+shredded_variant/case-122.parquet	id Int32, var Dynamic	1	6323893578895442440
+shredded_variant/case-123.parquet	id Int32, var Dynamic	1	1887446554545743217
+shredded_variant/case-124.parquet	id Int32, var Dynamic	1	2463365245024795443
+shredded_variant/case-125-INVALID.parquet	id Int32, var Dynamic	Error: INCORRECT_DATA
+shredded_variant/case-126.parquet	id Int32, var Dynamic	2	16070151630377666555
+shredded_variant/case-127.parquet	id Int32, var Dynamic	1	17424250062511192161
+shredded_variant/case-128.parquet	id Int32, var Dynamic	1	17424250062511192161
+shredded_variant/case-129.parquet	id Int32, var Dynamic	1	17424250062511192161
+shredded_variant/case-130.parquet	id Int32, var Dynamic	1	17424250062511192161
 shredded_variant/case-131-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-132-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-133.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-134.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-135.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-136.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
-shredded_variant/case-137.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
+shredded_variant/case-132-INVALID.parquet	id Int32, var Dynamic	1	12161860611425763959
+shredded_variant/case-133.parquet	id Int32, var Dynamic	1	7480430510510775086
+shredded_variant/case-134.parquet	id Int32, var Dynamic	1	9955309718285741081
+shredded_variant/case-135.parquet	id Int32, var Dynamic	1	17424250062511192161
+shredded_variant/case-136.parquet	id Int32, var Dynamic	1	318111945073699515
+shredded_variant/case-137.parquet	id Int32, var Dynamic	1	17424250062511192161
 shredded_variant/case-138-INVALID.parquet	Error: CANNOT_EXTRACT_TABLE_STRUCTURE
 
 Comparison with the expected contents:
