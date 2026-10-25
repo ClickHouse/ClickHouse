@@ -5,6 +5,7 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
 
 #include <Functions/FunctionsMiscellaneous.h>
@@ -14,6 +15,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -506,6 +508,45 @@ static bool canMergeFilterIntoJoinGraph(const T & filter_step)
         && !isSensitiveToEvaluationCount(dag) && !hasOutputShadowingInputName(dag);
 }
 
+/// Whether the filter contains an equality, anywhere (also inside a disjunction), that must not become a
+/// join key. A merged filter condition is indistinguishable from an `ON` condition, so the physical join
+/// can turn an equality into a hash join key and drop the comparison itself. That is wrong for a key type
+/// whose matching admits pairs `equals` rejects (`NULL` inside a `Variant` matches another `NULL`), and a
+/// `Dynamic` key is rejected by the join unless `allow_dynamic_type_in_join_keys` is set (declined here
+/// regardless of it), while the same comparison is valid in `WHERE`. Such a filter keeps its step, see
+/// `extractActionsForJoinCondition`.
+static bool hasEqualityUnsafeAsJoinKey(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals")
+            continue;
+        for (const auto * argument : node.children)
+        {
+            if (JoinCommon::keyMatchesValuesEqualsRejects(argument->result_type) || hasDynamicType(argument->result_type))
+                return true;
+        }
+    }
+    return false;
+}
+
+/// Whether the subplan contains a join with a prepared storage (a `Join` engine table). Such a table has a
+/// prebuilt hash table with fixed keys and cannot take an extra key from a merged `WHERE` equality, which
+/// is why `tryMergeFilterIntoJoinCondition` skips it too.
+static bool hasPreparedStorageJoin(const QueryPlan::Node * node)
+{
+    std::vector<const QueryPlan::Node *> stack{node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        if (typeid_cast<const JoinStepLogicalLookup *>(current->step.get()))
+            return true;
+        stack.insert(stack.end(), current->children.begin(), current->children.end());
+    }
+    return false;
+}
+
 /// Whether every output of the expression is one of its inputs, possibly renamed: the projection of a
 /// subquery that only selects columns.
 static bool onlyRenamesColumns(const ActionsDAG & dag)
@@ -546,7 +587,8 @@ static bool isMergeableStepAboveJoin(
     }
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
-        return merge_filters_into_join && !below_null_supplying && canMergeFilterIntoJoinGraph(*filter_step);
+        return merge_filters_into_join && !below_null_supplying && canMergeFilterIntoJoinGraph(*filter_step)
+            && !hasEqualityUnsafeAsJoinKey(filter_step->getExpression()) && !hasPreparedStorageJoin(node->children[0]);
     }
     return false;
 }
