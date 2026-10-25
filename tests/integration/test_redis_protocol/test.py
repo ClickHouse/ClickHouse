@@ -477,8 +477,40 @@ def test_error_does_not_desynchronize_connection(started_cluster):
 
         sock.sendall(b"*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n")
         assert sock.recv(4096) == b"$5\r\nhello\r\n"
+
+        # An error message containing line breaks (here from the binary-safe command name) must still
+        # be a single reply: otherwise the client would read its tail as the reply to the next command.
+        sock.sendall(b"*1\r\n$6\r\nX\r\n+OK\r\n" + b"*1\r\n$4\r\nPING\r\n")
+        response = b""
+        while response.count(b"\r\n") < 2:
+            chunk = sock.recv(4096)
+            assert chunk
+            response += chunk
+        error, pong = response.split(b"\r\n", 1)
+        assert error.startswith(b"-ERR ")
+        assert pong == b"+PONG\r\n"
     finally:
         sock.close()
+
+
+def test_memory_limit_applies_to_lookups(started_cluster):
+    # A small request repeating a key with a large value must not bypass the memory limits of the user.
+    node.query("INSERT INTO name_surname_map (name, surname) VALUES ('BigValue', repeat('x', 1000000))")
+    node.query("DROP USER IF EXISTS memory_user")
+    node.query("CREATE USER memory_user IDENTIFIED WITH plaintext_password BY 'secret' SETTINGS max_memory_usage = 20000000")
+    node.query("GRANT SELECT ON default.name_surname_map TO memory_user")
+
+    client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="memory_user", password="secret")
+    try:
+        assert client.select(1)
+        with pytest.raises(exceptions.ResponseError, match="memory limit exceeded"):
+            client.mget(["BigValue"] * 64)
+
+        # A request within the limit still works on the same connection.
+        assert client.get("BigValue") == b"x" * 1000000
+    finally:
+        client.close()
+        node.query("DROP USER IF EXISTS memory_user")
 
 
 def test_connection_stops_working_after_credentials_expire(started_cluster):

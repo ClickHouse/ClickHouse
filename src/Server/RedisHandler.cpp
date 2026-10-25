@@ -21,6 +21,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <Server/RedisHandler.h>
 #include <Server/RedisProtocolMapping.h>
@@ -30,6 +31,7 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
@@ -39,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSeconds receive_timeout;
 }
 
 namespace ErrorCodes
@@ -83,9 +86,21 @@ void RedisHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::REDIS);
     SCOPE_EXIT({ session.reset(); });
 
+    /// The listener has an infinite receive timeout. Waiting for the next command is done by polling
+    /// below, so this timeout only applies to a command that has been started but not sent completely.
+    socket().setReceiveTimeout(server.context()->getSettingsRef()[Setting::receive_timeout]);
+
     while (tcp_server.isOpen())
     {
-        /// Blocks until the next request arrives (or the peer closes the connection).
+        /// Wait for the next request in short slices, so that an idle connection notices that the
+        /// listener has been stopped (the accepted sockets are not closed on stop).
+        bool has_data = false;
+        while (!has_data && tcp_server.isOpen())
+            has_data = in->poll(1000000);
+        if (!has_data)
+            break;
+
+        /// The socket is readable, so this does not block: it only detects that the peer has closed the connection.
         if (in->eof())
             break;
 
@@ -150,7 +165,7 @@ void RedisHandler::authenticate(const String & user_name, const String & passwor
     }
 }
 
-void RedisHandler::prepareQueryContext()
+RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & command_name)
 {
     if (!authenticated)
     {
@@ -172,6 +187,17 @@ void RedisHandler::prepareQueryContext()
     /// authenticated connection stops working once they expire.
     query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
+
+    /// Attach the command to a query, as `executeQuery` does: otherwise the memory limits of the user
+    /// (`max_memory_usage`, `max_memory_usage_for_user`) would not apply to the lookup results, and a
+    /// small request repeating a key with a large value could exhaust the memory of the server.
+    CommandScope scope;
+    scope.query_scope = QueryScope::create(query_context);
+    scope.process_list_entry = query_context->getProcessList().insert(
+        "Redis " + command_name, /*normalized_query_hash=*/ 0, /*ast=*/ nullptr, query_context,
+        clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ false);
+    query_context->setProcessListElement(scope.process_list_entry->getQueryStatus());
+    return scope;
 }
 
 bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
@@ -245,7 +271,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::SelectRequest select_request(req);
             select_request.parse();
 
-            prepareQueryContext();
+            auto command_scope = prepareQueryContext("SELECT");
 
             auto selected_db = select_request.getDB();
             auto mapping = RedisProtocol::parseDBDescription(server.config(), selected_db);
@@ -279,7 +305,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::GetRequest get_request(req);
             get_request.parse();
 
-            prepareQueryContext();
+            auto command_scope = prepareQueryContext("GET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -300,7 +326,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::MGetRequest mget_request(req);
             mget_request.parse();
 
-            prepareQueryContext();
+            auto command_scope = prepareQueryContext("MGET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -333,7 +359,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::HGetRequest hget_request(req);
             hget_request.parse();
 
-            prepareQueryContext();
+            auto command_scope = prepareQueryContext("HGET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);
@@ -355,7 +381,7 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             RedisProtocol::HMGetRequest hmget_request(req);
             hmget_request.parse();
 
-            prepareQueryContext();
+            auto command_scope = prepareQueryContext("HMGET");
             checkDBSet();
 
             auto mapping = getMapDescription(db);

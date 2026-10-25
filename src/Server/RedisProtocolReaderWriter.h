@@ -111,7 +111,11 @@ public:
     {
         writeDataType(DataType::ERROR);
         writeString("ERR ", buf);
-        writeString(s, buf);
+        /// An error reply must occupy a single line, but the message may contain line breaks, e.g. from
+        /// the binary-safe arguments of the request. Otherwise the client would read the rest of the
+        /// message as another reply, and attribute the following replies to the wrong requests.
+        for (char c : s)
+            buf.write(c == '\r' || c == '\n' ? ' ' : c);
         writeCRLF();
     }
 

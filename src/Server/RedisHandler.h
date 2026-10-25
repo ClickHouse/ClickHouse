@@ -17,10 +17,12 @@
 #include <Storages/TableLockHolder.h>
 #include <base/types.h>
 #include <Common/Logger.h>
+#include <Common/QueryScope.h>
 
 namespace DB
 {
 
+class ProcessListEntry;
 class Session;
 class TCPServer;
 
@@ -39,11 +41,20 @@ private:
     /// Authenticates the session with the given credentials. Throws on failure.
     void authenticate(const String & user_name, const String & password);
 
+    /// Keeps a data command attached to a query: its thread group and its entry in the process list,
+    /// which install the memory limits of the user and make the command visible in `system.processes`.
+    /// Keep it alive for the whole command, and declare it before everything the command allocates.
+    struct CommandScope
+    {
+        QueryScope query_scope;
+        std::shared_ptr<ProcessListEntry> process_list_entry;
+    };
+
     /// Data commands require an authenticated session. If the client has not sent AUTH,
     /// try to authenticate as the `default` user with an empty password; if that fails,
     /// the client has to authenticate explicitly.
-    /// Then creates a fresh query context for the command.
-    void prepareQueryContext();
+    /// Then creates a fresh query context for the command and attaches the command to it.
+    [[nodiscard]] CommandScope prepareQueryContext(const String & command_name);
 
     void checkDBSet() const;
 
