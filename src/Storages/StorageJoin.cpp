@@ -1154,6 +1154,13 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Key columns have different numbers of rows ({} and {})", num_keys, key.column->size());
 
+    /// A single read lock for the whole request: every key and every column of one request has to
+    /// observe the same state of the table, and `joinGet` would take and release the lock on each call.
+    /// It is taken before the return types are checked, because the check reads `join`, which a concurrent
+    /// mutation replaces under the write lock. This also applies to a request without keys, which only
+    /// validates the return types.
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto cur_sample_block = metadata_snapshot->getSampleBlock();
 
@@ -1205,8 +1212,6 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
         result_columns.back()->reserve(num_keys);
     }
 
-    /// A single read lock for the whole request: every key and every column of one request has to
-    /// observe the same state of the table, and `joinGet` would take and release the lock on each call.
     if (num_keys != 0)
     {
         /// Converting a column to the type it already has does not copy it.
@@ -1214,8 +1219,6 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
         key_columns.reserve(keys.size());
         for (size_t i = 0; i < keys.size(); ++i)
             key_columns.push_back(castColumn(keys[i], key_types[i]));
-
-        TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
 
         /// `joinGet` returns at most `max_joined_block_rows` rows at once, so look the keys up in batches.
         for (size_t begin = 0; begin < num_keys; begin += DEFAULT_BLOCK_SIZE)
@@ -1227,7 +1230,7 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
             {
                 /// Cut a batch out of the key column only if there is more than one batch.
                 ColumnPtr column = (begin == 0 && end == num_keys) ? key_columns[i] : key_columns[i]->cut(begin, end - begin);
-                key_block.insert({std::move(column), key_types[i], key_names[i]});
+                key_block.insert({column, key_types[i], key_names[i]});
             }
 
             /// `joinGet` returns a single column, so request the columns one by one.
