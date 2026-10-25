@@ -291,7 +291,7 @@ ASTPtr parseLiteralValue(const rapidjson::Value & value)
     if (auto constant = tryParseMongoConstant(value))
         return constant;
     if (value.IsObject())
-        return makeMongoJSONValue(value);
+        return makeMongoJSONValue(value, {}, /* keep_operator_documents */ true);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot translate the argument of '$literal' into a value");
 }
 

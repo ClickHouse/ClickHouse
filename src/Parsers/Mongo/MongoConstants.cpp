@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include <Parsers/Mongo/MongoConstants.h>
 
 #include <limits>
@@ -330,7 +331,7 @@ std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::st
             case 's': dot_matches_newline = true; [[fallthrough]];
             case 'i': [[fallthrough]];
             case 'm':
-                if (flags.find(option) == std::string::npos)
+                if (!flags.contains(option))
                     flags.push_back(option);
                 break;
             case 'x': extended = true; break;
@@ -425,10 +426,45 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         ErrorCodes::NOT_IMPLEMENTED, "The BSON type '{}'{} is not supported by an insert", name, describeMongoField(field_name));
 }
 
-rapidjson::Value convertMongoExtendedJSONWrappersDeep(
-    const rapidjson::Value & value, std::string_view field_name, rapidjson::Document::AllocatorType & allocator)
+namespace
 {
-    if (isMongoExtendedJSONWrapper(value))
+
+/// Whether the first field of a document is a keyword of Extended JSON that names a BSON type, as
+/// opposed to any other `$`-named field such as an operator.
+bool isMongoExtendedJSONTypeWrapper(const rapidjson::Value & value)
+{
+    static const std::unordered_set<std::string_view> type_keywords
+        = {"$oid",
+           "$symbol",
+           "$numberInt",
+           "$numberLong",
+           "$numberDouble",
+           "$numberDecimal",
+           "$binary",
+           "$uuid",
+           "$code",
+           "$scope",
+           "$timestamp",
+           "$regularExpression",
+           "$regex",
+           "$options",
+           "$dbPointer",
+           "$date",
+           "$minKey",
+           "$maxKey",
+           "$undefined"};
+    return isMongoExtendedJSONWrapper(value) && type_keywords.contains(stringView(value.MemberBegin()->name));
+}
+
+}
+
+rapidjson::Value convertMongoExtendedJSONWrappersDeep(
+    const rapidjson::Value & value,
+    std::string_view field_name,
+    rapidjson::Document::AllocatorType & allocator,
+    bool keep_operator_documents)
+{
+    if (keep_operator_documents ? isMongoExtendedJSONTypeWrapper(value) : isMongoExtendedJSONWrapper(value))
         return convertMongoExtendedJSONWrapper(value, field_name, allocator).second;
 
     if (value.IsObject())
@@ -438,7 +474,7 @@ rapidjson::Value convertMongoExtendedJSONWrappersDeep(
         {
             rapidjson::Value key;
             key.CopyFrom(it->name, allocator);
-            rapidjson::Value converted = convertMongoExtendedJSONWrappersDeep(it->value, field_name, allocator);
+            rapidjson::Value converted = convertMongoExtendedJSONWrappersDeep(it->value, field_name, allocator, keep_operator_documents);
             out.AddMember(key, converted, allocator);
         }
         return out;
@@ -449,7 +485,7 @@ rapidjson::Value convertMongoExtendedJSONWrappersDeep(
         rapidjson::Value out(rapidjson::kArrayType);
         for (const auto & element : value.GetArray())
         {
-            rapidjson::Value converted = convertMongoExtendedJSONWrappersDeep(element, field_name, allocator);
+            rapidjson::Value converted = convertMongoExtendedJSONWrappersDeep(element, field_name, allocator, keep_operator_documents);
             out.PushBack(converted, allocator);
         }
         return out;
@@ -460,13 +496,13 @@ rapidjson::Value convertMongoExtendedJSONWrappersDeep(
     return out;
 }
 
-ASTPtr makeMongoJSONValue(const rapidjson::Value & value, std::string_view field_name)
+ASTPtr makeMongoJSONValue(const rapidjson::Value & value, std::string_view field_name, bool keep_operator_documents)
 {
     /// The wrappers are converted before the document is serialized, so that a `{"$date": ...}` of
     /// an embedded document becomes the same stored value the wire insert path writes rather than
     /// a `JSON` object with a `$`-named field.
     rapidjson::Document converted_document;
-    auto converted = convertMongoExtendedJSONWrappersDeep(value, field_name, converted_document.GetAllocator());
+    auto converted = convertMongoExtendedJSONWrappersDeep(value, field_name, converted_document.GetAllocator(), keep_operator_documents);
 
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);

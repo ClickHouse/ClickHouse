@@ -58,9 +58,15 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
   * never reaches a stored document as a field whose name starts with `$`. The type the wrapper
   * named is dropped: a value this deep lands in a `JSON` or a `Dynamic` column, which keeps the
   * serialized form.
+  * With `keep_operator_documents`, only a document whose first field is an Extended JSON keyword of
+  * a BSON type is treated as a wrapper, and any other `$`-named field is kept as a field: this is
+  * for the argument of `$literal`, where `{"$add": [2, 3]}` is a document rather than an operator.
   */
 rapidjson::Value convertMongoExtendedJSONWrappersDeep(
-    const rapidjson::Value & value, std::string_view field_name, rapidjson::Document::AllocatorType & allocator);
+    const rapidjson::Value & value,
+    std::string_view field_name,
+    rapidjson::Document::AllocatorType & allocator,
+    bool keep_operator_documents = false);
 
 /** An embedded document as a value of the `JSON` type: `CAST('{...}', 'JSON')`. This is how an
   * embedded document that is a value rather than a set of paths - an element of an array, or the
@@ -68,7 +74,7 @@ rapidjson::Value convertMongoExtendedJSONWrappersDeep(
   * infers for the same shape. The nested Extended JSON wrappers are converted the way the wire
   * path converts them, so that both surfaces store one and the same document.
   */
-ASTPtr makeMongoJSONValue(const rapidjson::Value & value, std::string_view field_name = {});
+ASTPtr makeMongoJSONValue(const rapidjson::Value & value, std::string_view field_name = {}, bool keep_operator_documents = false);
 
 }
 
