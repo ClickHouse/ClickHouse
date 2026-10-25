@@ -20,7 +20,7 @@ constexpr std::array<std::string_view, 21> codec_family_names
 {
     "Default", "NONE", "Multiple",
     "LZ4", "LZ4HC", "ZSTD", "ZSTD_QAT", "DEFLATE_QPL", "ZXC",
-    "Delta", "DoubleDelta", "Gorilla", "FPC", "T64", "GCD", "ALP", "PCO", "SZ3", "Quantized",
+    "Delta", "DoubleDelta", "Gorilla", "FPC", "T64", "GCD", "ALP", "PCO", "SZ3", "Quantized", "Wallaby",
     "AES_128_GCM_SIV", "AES_256_GCM_SIV",
 };
 
