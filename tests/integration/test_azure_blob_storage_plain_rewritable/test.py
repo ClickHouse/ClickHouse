@@ -14,9 +14,12 @@ OTHER_NODE = "other_node"
 
 
 def generate_cluster_def(port, node_name):
+    # One file per xdist worker: each worker's cluster has its own azurite port.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/disk_storage_conf.xml",
+        f"./_gen/disk_storage_conf{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
