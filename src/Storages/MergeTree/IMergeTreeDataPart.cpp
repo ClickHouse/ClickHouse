@@ -3679,9 +3679,12 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
+    /// The total is summed aside: a calculation that throws part way must not leave a partial sum to be added to again.
     auto new_column_sizes_ptr = std::make_unique<ColumnSizeByName>();
-    calculateEachColumnSizes(*new_column_sizes_ptr, total_columns_size);
+    ColumnSize new_total_columns_size;
+    calculateEachColumnSizes(*new_column_sizes_ptr, new_total_columns_size);
     columns_sizes = std::move(new_column_sizes_ptr);
+    total_columns_size = new_total_columns_size;
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
