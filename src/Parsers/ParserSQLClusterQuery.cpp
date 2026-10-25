@@ -260,4 +260,210 @@ bool ParserDropSQLClusterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
+std::map<String, Documentation> ParserCreateSQLClusterQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE CLUSTER"] =
+    {
+        .description = R"DOCS_MD(
+Creates a SQL-managed cluster and stores its definition in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters#storing-sql-cluster-metadata).
+
+## Syntax {#syntax}
+
+```sql
+CREATE CLUSTER [IF NOT EXISTS] name [ON CLUSTER cluster] (
+    cluster_property = value,
+    SHARD (
+        shard_property = value,
+        REPLICA (replica_property = value, ...),
+        ...
+    ),
+    SHARD (
+        host = 'host', port = 9000, ...
+    ),
+    ...
+)
+```
+
+## Description {#description}
+
+`CREATE CLUSTER` defines a new cluster topology and materializes it in server memory. The full statement is persisted as metadata and reloaded on server startup.
+
+Cluster names must not contain dots.
+
+### Cluster properties {#cluster-properties}
+
+| Property | Description |
+|----------|-------------|
+| `user` | Default user for replicas. Can be overridden at the shard or replica level. If omitted everywhere, defaults to `'default'`. See [inheritance rules](/concepts/features/configuration/server-config/sql-clusters#user-and-password-inheritance). |
+| `password` | Default password for replicas. Can be overridden at the shard or replica level. If omitted everywhere, defaults to an empty string. See [inheritance rules](/concepts/features/configuration/server-config/sql-clusters#user-and-password-inheritance). |
+| `secret` | Inter-server secret for authenticated distributed queries |
+| `allow_distributed_ddl_queries` | Whether `ON CLUSTER` DDL is allowed for this cluster. Default: `true` |
+
+### Shard properties {#shard-properties}
+
+In a `SHARD` with `REPLICA` blocks, `user` and `password` set shard-level defaults that override cluster defaults for all replicas in that shard.
+
+| Property | Description |
+|----------|-------------|
+| `weight` | Relative weight of the shard when writing through a `Distributed` table. Default: `1` |
+| `internal_replication` | Whether the shard replicates data internally. Default: `false` |
+| `user`, `password` | Default credentials for replicas in this shard when the shard contains `REPLICA` blocks |
+| `host`, `port`, ... | When the shard has no `REPLICA` blocks, these define a single-replica shard |
+
+### Replica properties {#replica-properties}
+
+Replica-level `user` and `password` override shard- and cluster-level defaults for that replica.
+
+| Property | Description |
+|----------|-------------|
+| `host` | Host name or IP address |
+| `port` | TCP port |
+| `user` | User name |
+| `password` | Password |
+| `secure` | Use TLS |
+| `compression` | Enable compression |
+| `priority` | Replica priority |
+| `bind_host` | Local address to bind outgoing connections |
+| `default_database` | Default database for connections to this replica |
+
+## Access control {#access-control}
+
+Requires the global `CREATE CLUSTER` grant (`GRANT CREATE CLUSTER ON *.*`).
+
+## ON CLUSTER {#on-cluster}
+
+An optional `ON CLUSTER` clause runs the statement through the [distributed DDL](/reference/statements/distributed-ddl) mechanism on all nodes of the specified ClickHouse cluster.
+
+With [local metadata storage](/concepts/features/configuration/server-config/sql-clusters#local-storage-example), `ON CLUSTER` is required to create the metadata file on every node.
+
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), metadata is shared centrally and a single-node `CREATE CLUSTER` is sufficient.
+
+## Example {#example}
+
+```sql
+CREATE CLUSTER my_cluster (
+    user = 'default',
+    SHARD (
+        REPLICA (host = '127.0.0.1', port = 9000),
+        REPLICA (host = '127.0.0.2', port = 9000)
+    ),
+    SHARD (
+        host = '127.0.0.3', port = 9000
+    )
+);
+```
+
+Distributed DDL example for local storage:
+
+```sql
+CREATE CLUSTER my_cluster ON CLUSTER 'main' (
+    user = 'default',
+    SHARD (
+        REPLICA (host = 'host1', port = 9000),
+        REPLICA (host = 'host2', port = 9000)
+    )
+);
+```
+
+## Related statements {#related-statements}
+
+- [ALTER CLUSTER](/reference/statements/alter/cluster)
+- [DROP CLUSTER](/reference/statements/drop#drop-cluster)
+
+## See also {#see-also}
+
+- [SQL-managed clusters guide](/concepts/features/configuration/server-config/sql-clusters)
+- [`system.clusters`](/reference/system-tables/clusters)
+)DOCS_MD",
+        .syntax = R"(
+CREATE CLUSTER [IF NOT EXISTS] name [ON CLUSTER cluster] (cluster_property = value, ..., SHARD (shard_property = value, ..., REPLICA (replica_property = value, ...), ...), ...)
+)",
+        .parent = "CREATE",
+        .related = {"ALTER CLUSTER", "DROP"},
+    };
+
+    return documentation;
+}
+
+std::map<String, Documentation> ParserAlterSQLClusterQuery::getDocumentation() const
+{
+    std::map<String, Documentation> documentation;
+
+    documentation["ALTER CLUSTER"] =
+    {
+        .description = R"DOCS_MD(
+Replaces the definition of an existing SQL-managed cluster.
+
+## Syntax {#syntax}
+
+```sql
+ALTER CLUSTER [IF EXISTS] name [ON CLUSTER cluster] (
+    cluster_property = value,
+    SHARD (
+        shard_property = value,
+        REPLICA (replica_property = value, ...),
+        ...
+    ),
+    ...
+)
+```
+
+## Description {#description}
+
+`ALTER CLUSTER` replaces the entire cluster topology. Incremental updates are not supported: you cannot add or remove individual shards or replicas, or change only part of the definition. Provide the full target topology in every `ALTER CLUSTER` statement. The new definition is stored as a `CREATE CLUSTER` statement in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters#storing-sql-cluster-metadata) and applied immediately.
+
+Property names and semantics are the same as in [`CREATE CLUSTER`](/reference/statements/create/cluster).
+
+## Access control {#access-control}
+
+Requires the global `ALTER CLUSTER` grant (`GRANT ALTER CLUSTER ON *.*`).
+
+## ON CLUSTER {#on-cluster}
+
+An optional `ON CLUSTER` clause runs the statement through the [distributed DDL](/reference/statements/distributed-ddl) mechanism.
+
+With [local metadata storage](/concepts/features/configuration/server-config/sql-clusters#local-storage-example), use `ON CLUSTER` to update metadata on every node.
+
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), a single-node `ALTER CLUSTER` is sufficient.
+
+## Example {#example}
+
+```sql
+CREATE CLUSTER my_cluster (
+    user = 'default',
+    SHARD (
+        REPLICA (host = '127.0.0.1', port = 9000)
+    )
+);
+
+ALTER CLUSTER my_cluster (
+    user = 'default',
+    SHARD (
+        REPLICA (host = '127.0.0.1', port = 9000),
+        REPLICA (host = '127.0.0.2', port = 9000)
+    )
+);
+```
+
+## Related statements {#related-statements}
+
+- [CREATE CLUSTER](/reference/statements/create/cluster)
+- [DROP CLUSTER](/reference/statements/drop#drop-cluster)
+
+## See also {#see-also}
+
+- [SQL-managed clusters guide](/concepts/features/configuration/server-config/sql-clusters)
+)DOCS_MD",
+        .syntax = R"(
+ALTER CLUSTER [IF EXISTS] name [ON CLUSTER cluster] (cluster_property = value, ..., SHARD (shard_property = value, ..., REPLICA (replica_property = value, ...), ...), ...)
+)",
+        .parent = "ALTER",
+        .related = {"CREATE CLUSTER", "DROP"},
+    };
+
+    return documentation;
+}
+
 }
