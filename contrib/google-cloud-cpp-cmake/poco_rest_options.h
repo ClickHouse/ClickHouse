@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 
+#include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -48,6 +49,20 @@ struct PocoRestAuthorizedUserOption
 struct PocoRestConnectTimeoutOption
 {
     using Type = std::chrono::milliseconds;
+};
+
+/// Provides the TLS context of the HTTPS sessions the transport opens. ClickHouse supplies the client
+/// context configured in `openSSL.client` (`Poco::Net::SSLManager::defaultClientContext`: the CA
+/// configuration, `loadDefaultCAFile`, the client certificate and key, the verification mode), which is
+/// what the S3 transport uses too. Unset, or a provider returning null, means the transport builds its own
+/// context from `CARootsFilePathOption`, or from the default trust store without it. The provider is called
+/// for every request, so a context replaced at runtime applies to the sessions opened afterwards, and the
+/// context is part of the session pool key (by identity): a pooled session is reused only by a request that
+/// would have opened it with the same context. The provider runs on the thread issuing the request; it may
+/// throw, and the request then fails without connecting.
+struct PocoRestSslContextProviderOption
+{
+    using Type = std::function<Poco::Net::Context::Ptr()>;
 };
 
 /// Proxy of a single REST request, in the form the Poco session takes it. Upstream's `ProxyOption`

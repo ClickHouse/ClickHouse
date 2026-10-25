@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <string_view>
+#include <Poco/Net/SSLManager.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -615,7 +616,7 @@ std::shared_ptr<gc::Credentials> makeGCSCredentials(
         case GCSCredentialSource::ApplicationDefault:
             /// Application Default Credentials: GOOGLE_APPLICATION_CREDENTIALS, the GCE/GKE metadata
             /// server, or the gcloud SDK configuration.
-            return gc::MakeGoogleDefaultCredentials();
+            return gc::MakeGoogleDefaultCredentials(std::move(token_request_options));
     }
     UNREACHABLE();
 }
@@ -659,8 +660,16 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     const auto request_timeout = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::milliseconds(settings.request_timeout_ms) + std::chrono::milliseconds(999));
 
+    /// HTTPS requests use the client TLS context configured in `openSSL.client`, as the S3 transport does, so
+    /// that its CA configuration (a private CA, `loadDefaultCAFile`), client certificate and key apply to the
+    /// storage endpoint and to the token endpoints alike. It is looked up for every request, so a context
+    /// replaced at runtime applies to the connections opened afterwards.
+    const auto ssl_context_provider = [] { return Poco::Net::SSLManager::instance().defaultClientContext(); };
+    options.set<::ClickHouse::PocoRestSslContextProviderOption>(ssl_context_provider);
+
     const auto credential_source = chooseGCSCredentialSource(settings);
     gc::Options token_request_options;
+    token_request_options.set<::ClickHouse::PocoRestSslContextProviderOption>(ssl_context_provider);
     /// The key file is read once: the `token_uri` checks below and the credentials have to see the same
     /// contents, even if the file is rewritten in between.
     String service_account_key;

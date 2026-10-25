@@ -51,6 +51,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -547,7 +548,8 @@ class SessionPool {
 // opened under one CA bundle must not be handed to a request that configured
 // another one. The key uses the same `ca_location` and trust store fingerprint
 // that `SslContextFor` keys on, so a session opened before a CA bundle rotation
-// is not reused afterwards.
+// is not reused afterwards. A session opened with a context ClickHouse supplied
+// (`PocoRestSslContextProviderOption`) is keyed on that context instead.
 //
 // So does the ClickHouse connection group a session is registered in
 // (`PocoRestSessionAccountingOption`): the registration stays with the session
@@ -659,14 +661,33 @@ AccountedSession MakeSession(
     keep_alive = options.get<::ClickHouse::PocoRestKeepAliveOption>();
   }
 
+  // A TLS context supplied by ClickHouse (`PocoRestSslContextProviderOption`)
+  // replaces the one the transport would build from `CARootsFilePathOption`.
+  // Only HTTPS sessions verify a peer, so only they depend on it.
+  Poco::Net::Context::Ptr ssl_context;
+  if (secure && options.has<::ClickHouse::PocoRestSslContextProviderOption>()) {
+    auto const& provider =
+        options.get<::ClickHouse::PocoRestSslContextProviderOption>();
+    if (provider) ssl_context = provider();
+  }
+
   std::string ca_location;
   if (options.has<CARootsFilePathOption>()) {
     ca_location = options.get<CARootsFilePathOption>();
   }
 
-  // Only HTTPS sessions verify a peer, so only they depend on the trust store.
-  std::string const trust_store_fingerprint =
-      secure ? TrustStoreFingerprint(ca_location) : "";
+  // The trust store fingerprint discriminates the sessions of a context the
+  // transport builds itself. A supplied context is identified by its address
+  // instead: a pooled session holds a reference to its context, so the address
+  // cannot be reused by another context while such a session exists.
+  std::string trust_store_fingerprint;
+  if (ssl_context) {
+    std::ostringstream identity;
+    identity << "context@" << static_cast<void const*>(ssl_context.get());
+    trust_store_fingerprint = identity.str();
+  } else if (secure) {
+    trust_store_fingerprint = TrustStoreFingerprint(ca_location);
+  }
   ::ClickHouse::PocoRestSessionAccountingOption::Type accounting;
   if (options.has<::ClickHouse::PocoRestSessionAccountingOption>()) {
     accounting = options.get<::ClickHouse::PocoRestSessionAccountingOption>();
@@ -696,7 +717,9 @@ AccountedSession MakeSession(
   if (!session) {
     if (secure) {
       session = std::make_unique<Poco::Net::HTTPSClientSession>(
-          uri.getHost(), uri.getPort(), SslContextFor(ca_location, trust_store_fingerprint));
+          uri.getHost(), uri.getPort(),
+          ssl_context ? ssl_context
+                      : SslContextFor(ca_location, trust_store_fingerprint));
     } else {
       session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
                                                                uri.getPort());
