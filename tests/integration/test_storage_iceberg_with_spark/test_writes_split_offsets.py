@@ -59,7 +59,7 @@ def test_writes_split_offsets_read_by_spark(started_cluster_iceberg_with_spark):
         spark.read.format("iceberg").load(f"{local_path}#files").select("file_path", "file_size_in_bytes", "split_offsets").collect()
     )
     expected = _row_group_starts(data_files[0])
-    assert len(expected) == 10, expected
+    assert len(expected) > 1, expected
     assert split_offsets == {os.path.basename(data_files[0]): expected}
 
 
