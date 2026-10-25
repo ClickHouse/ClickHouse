@@ -1210,7 +1210,28 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
 
     for (auto & [table_name, storage_info_and_position] : tables_after_snapshot_position)
-        consumer->addNested(table_name, std::move(storage_info_and_position.first), storage_info_and_position.second);
+    {
+        try
+        {
+            consumer->addNested(table_name, std::move(storage_info_and_position.first), storage_info_and_position.second);
+        }
+        catch (const Exception & e)
+        {
+            /// The same as in the constructor of the consumer: the structure of a table restored from a saved snapshot
+            /// position might have changed in PostgreSQL while the server was down. Skip only this table, otherwise
+            /// every startup retry fails, the replication slot never passes the snapshot position, and the other
+            /// tables stop replicating.
+            if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                throw;
+
+            tryLogCurrentException(
+                log,
+                fmt::format("Table {} is skipped from replication because its structure does not match "
+                            "the structure of the nested ClickHouse table. "
+                            "Please perform manual DETACH and ATTACH of the table to bring it back",
+                            table_name));
+        }
+    }
 
     replication_handler_initialized = true;
 
