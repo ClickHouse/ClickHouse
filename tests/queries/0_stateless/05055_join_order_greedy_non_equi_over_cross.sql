@@ -11,9 +11,9 @@ SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_analyzer = 1;
 
-CREATE TABLE ta (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE tb (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE tc (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE ta (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = ''; -- Pinned: column statistics change the estimates the join order depends on
+CREATE TABLE tb (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+CREATE TABLE tc (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 INSERT INTO ta SELECT number FROM numbers(100);
 INSERT INTO tb SELECT number FROM numbers(100);
 INSERT INTO tc SELECT number FROM numbers(10);
@@ -30,8 +30,8 @@ FROM ta CROSS JOIN tb INNER JOIN tc ON ta.k < tc.k AND tb.k < tc.k;
 -- A `WHERE` predicate merged into the join graph refers to one relation only, so it must not
 -- make a pair look connected: ta and tb are linked only through tc, and the filter on tb must
 -- not turn the cheap-looking ta x tb cross product into the first join.
-CREATE TABLE tf (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE tg (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE tf (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+CREATE TABLE tg (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 INSERT INTO tf SELECT number, number % 3 FROM numbers(3);
 INSERT INTO tg SELECT number FROM numbers(1000);
 
