@@ -47,7 +47,9 @@ run "ALTER TABLE t MODIFY ORDER BY (id, _part_indez)"
 echo
 echo '=== a subcolumn is legal in a key, so it is suggested too'
 run "ALTER TABLE t ADD COLUMN tp2 Tuple(a UInt32, b String), MODIFY ORDER BY (id, tp2.c)"
-run "CREATE TABLE t2 (id UInt32, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY (id, tp.c)"
+# The Analyzer collects its candidates in a hash set and keeps the first of equally close ones, so the
+# typo is closer to one field than to the other.
+run "CREATE TABLE t2 (id UInt32, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY (id, tp.bx)"
 
 echo
 echo '=== the same expressions, spelled correctly'

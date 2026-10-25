@@ -21,8 +21,8 @@ Code: 47. Unknown expression identifier `_part_indez`. In scope id, _part_indez.
 === a subcolumn is legal in a key, so it is suggested too
 --- ALTER TABLE t ADD COLUMN tp2 Tuple(a UInt32, b String), MODIFY ORDER BY (id, tp2.c)
 Code: 47. Unknown expression identifier `tp2.c`. Maybe you meant: ['tp2.b','tp2.a']. In scope id, tp2.c. (UNKNOWN_IDENTIFIER)
---- CREATE TABLE t2 (id UInt32, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY (id, tp.c)
-Code: 47. Unknown expression identifier `tp.c`. Maybe you meant: ['tp.b']. In scope id, tp.c. (UNKNOWN_IDENTIFIER)
+--- CREATE TABLE t2 (id UInt32, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY (id, tp.bx)
+Code: 47. Unknown expression identifier `tp.bx`. Maybe you meant: ['tp.b']. In scope id, tp.bx. (UNKNOWN_IDENTIFIER)
 
 === the same expressions, spelled correctly
 id, idx, tp2.a
