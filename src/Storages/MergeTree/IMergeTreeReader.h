@@ -152,7 +152,7 @@ protected:
     ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
 
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
+    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const NameAndTypePair & required_column) const;
 
     /// Returns the string value filter to apply during deserialization of the column, or nullptr.
     /// Takes the column as it is named in the part (an element of `columns_to_read`).

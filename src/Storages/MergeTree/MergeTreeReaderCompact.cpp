@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 #include <ranges>
@@ -179,7 +180,7 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     auto & column = columns_to_read[pos];
 
     bool is_array = isArray(column.type);
-    bool is_offsets_subcolumn = isArray(column.getTypeInStorage()) && column.getSubcolumnName() == "size0";
+    bool is_offsets_subcolumn = isArray(column.getTypeInStorage()) && SerializationArray::isTopLevelArraySizesSubcolumn(column);
 
     if (!is_array && !is_offsets_subcolumn)
         return;
