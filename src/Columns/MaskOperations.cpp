@@ -5,6 +5,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
 
@@ -275,6 +278,80 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
+/// Whether the default value of a column of this type (the zero value, as inserted by `IColumn::insertDefault`
+/// and `IColumn::expand`) can be different from the default value of the type and not a valid value of the type.
+/// It is the case for `Enum`, where 0 does not have to be an element of the enum. Arrays and maps are not
+/// checked, because their default value is empty in both cases.
+static bool hasInvalidColumnDefault(const IDataType & type)
+{
+    if (isEnum(type))
+        return true;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return hasInvalidColumnDefault(*nullable_type->getNestedType());
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return hasInvalidColumnDefault(*low_cardinality_type->getDictionaryType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple_type->getElements(), [](const auto & element) { return hasInvalidColumnDefault(*element); });
+    return false;
+}
+
+/// A valid value of the type to fill the unused rows. For `Nullable` it is not `NULL`, but a valid value
+/// of the nested type, because a `NULL` keeps the default value of the column in the nested column,
+/// and the conversion of `Nullable` converts the nested column entirely.
+static Field getValidFillValue(const IDataType & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return getValidFillValue(*nullable_type->getNestedType());
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return getValidFillValue(*low_cardinality_type->getDictionaryType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        Tuple tuple;
+        tuple.reserve(tuple_type->getElements().size());
+        for (const auto & element : tuple_type->getElements())
+            tuple.push_back(getValidFillValue(*element));
+        return tuple;
+    }
+    return type.getDefault();
+}
+
+/// Expand `column` by `mask` as `IColumn::expand` does, but fill the rows outside of the mask
+/// with a valid value of `type` instead of the default value of the column.
+static ColumnPtr expandColumnWithTypeDefault(const ColumnPtr & column, const DataTypePtr & type, const PaddedPODArray<UInt8> & mask)
+{
+    auto full_column = column->convertToFullColumnIfConst();
+    auto default_column = full_column->cloneEmpty();
+    default_column->insert(getValidFillValue(*type));
+
+    auto result = full_column->cloneEmpty();
+    result->reserve(mask.size());
+    size_t from = 0;
+    size_t row = 0;
+    while (row < mask.size())
+    {
+        size_t run_end = row;
+        while (run_end < mask.size() && !!mask[run_end] == !!mask[row])
+            ++run_end;
+
+        if (mask[row])
+        {
+            if (from + run_end - row > full_column->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many ones in mask");
+            result->insertRangeFrom(*full_column, from, run_end - row);
+            from += run_end - row;
+        }
+        else
+            result->insertManyFrom(*default_column, 0, run_end - row);
+
+        row = run_end;
+    }
+
+    if (from != full_column->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough ones in mask");
+
+    return result;
+}
+
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
@@ -296,12 +373,20 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// If it contains both zeros and ones, we need to execute the function only on the mask values
         /// First we filter the column, which creates a new column, then we apply the column, and finally we expand it
         /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
-        /// since the values won't be used by `if`
+        /// since the values won't be used by `if`. But they are still converted together with the used values,
+        /// e.g. when `if` converts its branches to the common type, so they must be valid values of the type.
         auto filtered = column_function->filter(mask, -1);
         auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
-        auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
-        mut_column->expand(mask, false);
-        column.column = std::move(mut_column);
+        if (hasInvalidColumnDefault(*filter_after_execution.type))
+        {
+            column.column = expandColumnWithTypeDefault(filter_after_execution.column, filter_after_execution.type, mask);
+        }
+        else
+        {
+            auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
+            mut_column->expand(mask, false);
+            column.column = std::move(mut_column);
+        }
     }
     else
         column = column_function->reduce();
