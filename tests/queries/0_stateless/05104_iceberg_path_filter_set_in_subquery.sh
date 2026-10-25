@@ -40,7 +40,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), arraySort(groupArray(v))
     FROM icebergLocalCluster('test_shard_localhost', '${TABLE_PATH}', 'Parquet')
     WHERE _path IN (SELECT _path FROM ${CLICKHOUSE_DATABASE}.${TABLE} WHERE part IN (2, 3))
-    SETTINGS enable_analyzer = 1
 "
 
 echo "global in, path filter:"
