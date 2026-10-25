@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT ${FUNCTION_NAME}_col() AS c0); -
 
 # Using UDF normally should work (but it didn't with the old analyzer).
 # Feel free to delete it in the future if this changes
-$CLICKHOUSE_CLIENT --enable-analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
   SELECT COLUMNS('t*') APPLY $FUNCTION_NAME FROM t;
   SELECT $FUNCTION_NAME(COLUMNS('t1')) FROM t;
 "
