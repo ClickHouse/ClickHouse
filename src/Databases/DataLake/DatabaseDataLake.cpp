@@ -278,6 +278,25 @@ void DatabaseDataLake::initialize() const
     {
         case DB::DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
+            std::shared_ptr<DataLake::GoogleCatalogAuth> google_auth;
+            const bool has_explicit_rest_auth = !settings[DatabaseDataLakeSetting::catalog_credential].value.empty()
+                || !settings[DatabaseDataLakeSetting::auth_header].value.empty();
+            const bool has_google_auth = !settings[DatabaseDataLakeSetting::google_metadata_service].value.empty()
+                || !settings[DatabaseDataLakeSetting::google_service_account].value.empty()
+                || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
+                || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
+                || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
+            if (!has_explicit_rest_auth && has_google_auth)
+                google_auth = std::make_shared<DataLake::GoogleCatalogAuth>(
+                    settings[DatabaseDataLakeSetting::google_project_id].value,
+                    settings[DatabaseDataLakeSetting::google_service_account].value,
+                    settings[DatabaseDataLakeSetting::google_metadata_service].value,
+                    settings[DatabaseDataLakeSetting::google_adc_client_id].value,
+                    settings[DatabaseDataLakeSetting::google_adc_client_secret].value,
+                    settings[DatabaseDataLakeSetting::google_adc_refresh_token].value,
+                    settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value,
+                    Context::getGlobalContextInstance(), allow_server_credentials_in_user_queries);
+
             catalog_impl = std::make_shared<DataLake::RestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
@@ -287,7 +306,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(), std::move(google_auth));
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
@@ -2146,6 +2165,10 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+
+For `catalog_type = 'rest'`, set `google_metadata_service` or `google_service_account` to authenticate catalog requests through a Google metadata service, including GKE Workload Identity Federation. Omitted values default to `metadata.google.internal` and `default`, respectively. The metadata host must be allowed in the server configuration under `iceberg_biglake_metadata_service_hosts`, and `s3_allow_server_credentials_in_user_queries` must be enabled when the database is created. Users accessing the catalog share the server's cloud identity.
+
+Explicit authentication takes precedence: `catalog_credential`, then `auth_header`, then a complete Google ADC triple (`google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token`), then metadata authentication. An authentication failure is reported without trying a lower-priority mechanism. These Google settings authenticate the REST catalog only; they do not configure GCS file reads or change vended credentials. A database using metadata authentication is subject to the credential restriction again when loaded after a restart.
 
 ## Examples {#examples}
 
