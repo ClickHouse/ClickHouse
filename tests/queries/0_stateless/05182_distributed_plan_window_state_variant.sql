@@ -206,4 +206,28 @@ SELECT round(contingencyMerge(CAST(arrayJoin([s]) AS AggregateFunction(contingen
 FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0, query_plan_lower_array_join_function = 0;
 
+-- A Cascades plan keeps a window query on one node, so the state reaches the aggregation inside one deserialized stage.
+SELECT '-- Cascades plan of a window query is distributed';
+SELECT 'cascades shape distributes'
+FROM (EXPLAIN PIPELINE SELECT round(contingencyMerge(s), 6) FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather LIMIT 1)
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 1)
+WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1
+SETTINGS make_distributed_plan = 0, distributed_plan_workers_num = 1;
+
+SELECT '-- window state merged in the same Cascades stage after LIMIT BY: distributed then local';
+SELECT round(contingencyMerge(s), 6)
+FROM (SELECT p, s FROM (SELECT p, v, contingencyState(b, c) OVER (PARTITION BY p ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS s FROM t_window_state_variant_gather) ORDER BY p, v LIMIT 1 BY p)
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 1;
+SELECT round(contingencyMerge(s), 6)
+FROM (SELECT p, s FROM (SELECT p, v, contingencyState(b, c) OVER (PARTITION BY p ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS s FROM t_window_state_variant_gather) ORDER BY p, v LIMIT 1 BY p)
+SETTINGS make_distributed_plan = 0;
+
+SELECT '-- array of window states merged by -MergeArray in the same Cascades stage: distributed then local';
+SELECT round(contingencyMergeArray(a), 6)
+FROM (SELECT [contingencyState(b, c) OVER ()] AS a FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 1;
+SELECT round(contingencyMergeArray(a), 6)
+FROM (SELECT [contingencyState(b, c) OVER ()] AS a FROM t_window_state_variant_gather LIMIT 1)
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE t_window_state_variant_gather;

@@ -54,3 +54,11 @@ Variant shape distributes
 -- arrayJoin over the window state, not lowered: distributed then local
 0.075652
 0.075652
+-- Cascades plan of a window query is distributed
+cascades shape distributes
+-- window state merged in the same Cascades stage after LIMIT BY: distributed then local
+0.075652
+0.075652
+-- array of window states merged by -MergeArray in the same Cascades stage: distributed then local
+0.075652
+0.075652
