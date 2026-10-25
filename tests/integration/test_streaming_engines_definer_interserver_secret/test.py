@@ -190,9 +190,11 @@ def check_delivery(user, finished_before, denied_before):
         assert shard_denied_inserts(TENANT) > denied_before
 
 
-@users
-def test_direct_insert(user):
-    """The control case: a direct `INSERT` carries the user's name to the shard, where it is checked."""
+def check_direct_insert(user):
+    """The control case: a direct `INSERT` carries the user's name to the shard, where it is checked.
+
+    It passes without the fix as well, so it is not a separate test: bugfix validation requires every
+    new test to fail on the unfixed binary. It runs before a streaming pipeline instead."""
     db = database(user)
     if user == WRITER:
         query_as(WRITER, f"INSERT INTO {db}.dist VALUES (1)")
@@ -203,6 +205,7 @@ def test_direct_insert(user):
         )
         assert "ACCESS_DENIED" in error
         assert remote_rows() == 0
+    node2.query("TRUNCATE TABLE default.secret_data")
 
 
 @users
@@ -250,6 +253,7 @@ def test_kafka(user, foreground):
 
 @users
 def test_rabbitmq(user):
+    check_direct_insert(user)
     db = database(user)
     exchange = f"definer_interserver_{user}"
 
