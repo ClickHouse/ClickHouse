@@ -1993,3 +1993,14 @@ Both builds produced the same 510-byte DWYU report (SHA-256 `00220fb6f73ae8b6823
 | --- | ---: | ---: | ---: | ---: |
 | x86-64 | 51,321 | 0 | 1 | 1,450,311 |
 | ARM64 | 51,842 | 0 | 1 | 1,491,819 |
+
+## 8feca5524
+
+[8feca5524](https://github.com/dzbarsky/clickhouse/commit/8feca5524fe2c6ecea2e49b0723d8e3a72fb326b) moves the HDFS protobuf generators to the HDFS package, removes 125 ARM outline archive wrappers, groups the Rust license inputs, and narrows the public header dependencies of the URL and aggregate function libraries.
+
+The [x86-64](https://app.buildbuddy.io/invocation/abf891b5-90aa-4eb0-a521-4e4431d88889) and [ARM64](https://app.buildbuddy.io/invocation/61bc9e2b-d704-4bba-9883-971bce5dd181) builds completed all 12 native targets using `--config=cmake_match` and `--config=cmake_match_aarch64`, respectively. Three binary sizes and SHA-256 digests per CPU came from BuildBuddy. Only stripped, normalized ClickHouse is compared with native CMake; the other two outputs are compared with their prior Bazel builds. [All six digests and byte counts](../../README.bazel.md#binary-comparison).
+
+- [x86-64](https://app.buildbuddy.io/invocation/abf891b5-90aa-4eb0-a521-4e4431d88889): the HDFS action query did not establish a scheduling result.
+- [ARM64](https://app.buildbuddy.io/invocation/61bc9e2b-d704-4bba-9883-971bce5dd181): the HDFS action query did not establish a scheduling result.
+
+The strict DWYU aspect was not requested. No production DWYU grades are attributed to these builds.
