@@ -237,7 +237,12 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
         auto timeout = calculate_timeout(channel);
 
 #if defined(OS_WINDOWS)
-        int number_of_fds_ready = WSAPoll(dns_state.poll_fds, static_cast<ULONG>(dns_state.poll_nfds), static_cast<int>(timeout));
+        /// Unlike `poll`, `WSAPoll` fails on an empty set. The set is empty once the query has
+        /// completed: a hosts-file hit calls back synchronously, and c-ares closes the last idle
+        /// socket after the answer. That is the same as a `poll` that returns no ready descriptors.
+        int number_of_fds_ready = dns_state.poll_nfds == 0
+            ? 0
+            : WSAPoll(dns_state.poll_fds, static_cast<ULONG>(dns_state.poll_nfds), static_cast<int>(timeout));
 #else
         int number_of_fds_ready = poll(dns_state.poll_fds, static_cast<nfds_t>(dns_state.poll_nfds), static_cast<int>(timeout));
 #endif
