@@ -42,6 +42,8 @@ ch_cc_library(
     name = "_orc",
     srcs = ([
         "c++/include/orc_proto.pb.cc",
+        "c++/include/orc_proto.pb.h",
+        ":config/contrib/orc/c++/include/Adaptor.hh",
         "c++/src/Adaptor.cc",
         "c++/src/BlockBuffer.cc",
         "c++/src/BloomFilter.cc",
@@ -89,10 +91,7 @@ ch_cc_library(
             "c++/src/wrap/gtest-wrapper.h",
         ],
     ),
-    hdrs = [
-        "c++/include/orc_proto.pb.h",
-        ":config/contrib/orc/c++/include/Adaptor.hh",
-    ] + glob(["c++/include/orc/**/*.hh"]),
+    hdrs = glob(["c++/include/orc/**/*.hh"]),
     copts = [
         "-w",
         "-std=c++23",

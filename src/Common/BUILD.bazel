@@ -86,7 +86,6 @@ exports_files([
     "IO.cpp",
     "IPv6ToBinary.cpp",
     "IntervalKind.cpp",
-    "IntervalTree.cpp",
     "JSONBuilder.cpp",
     "JSONParsers/DummyJSONParser.cpp",
     "JSONParsers/RapidJSONMemoryTrackerAllocator.cpp",
@@ -479,6 +478,22 @@ ch_cc_library(
         ":Common",
         "@clickhouse_c_ares//:_c-ares",
     ],
+)
+
+ch_cc_library(
+    name = "interval_tree",
+    srcs = ["IntervalTree.cpp"],
+    clickhouse_code = True,
+    copts = [
+        "-U_LIBCPP_HARDENING_MODE",
+        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
+    ],
+    implementation_deps = [
+        "//src:core_types",
+        "//base:common",
+        ":Common",
+    ],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
 )
 
 exports_files(

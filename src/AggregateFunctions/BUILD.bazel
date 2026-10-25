@@ -176,15 +176,6 @@ ch_cc_library(
         ["Combinators/*.cpp"],
         exclude = ["Combinators/AggregateFunctionCombinatorFactory.cpp"],
     ) + glob(["TimeSeries/*.cpp"]) + _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS,
-    hdrs = glob(
-        [
-            "**/*.h",
-        ],
-        exclude = _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS + [
-            "IAggregateFunction.h",
-            "IAggregateFunction_fwd.h",
-        ],
-    ),
     clickhouse_code = True,
     implementation_deps = [
         "@clickhouse_llvm_project//:llvm_headers",
@@ -200,6 +191,7 @@ ch_cc_library(
     local_defines = DBMS_CONSUMER_DEFINES,
     source_headers = True,
     deps = [
+        ":headers",
         "//src/Common:memory_tracking_api",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMBitReader",

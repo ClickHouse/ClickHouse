@@ -4,6 +4,13 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_OBJECT_STORAGE_HEADERS = [
+    "ITableFunctionCluster.h",
+    "TableFunctionFileCluster.h",
+    "TableFunctionObjectStorage.h",
+    "TableFunctionURLCluster.h",
+]
+
 exports_files([
     "ITableFunction.cpp",
     "TableFunctionFactory.cpp",
@@ -82,6 +89,8 @@ ch_cc_library(
     ] + _PRIVATE_TABLE_FUNCTIONS_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
+        "//src:object_storage_configuration",
+        ":object_storage",
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
         "@clickhouse_arrow//:_arrow",
@@ -154,12 +163,24 @@ cc_library(
         [
             "**/*.h",
         ],
-        exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS + ["TableFunctionView.h"],
+        exclude = _PRIVATE_TABLE_FUNCTIONS_HEADERS + ["TableFunctionView.h"] + _OBJECT_STORAGE_HEADERS,
     ),
     deps = [
         "//src/Common/ZooKeeper:headers",
         "//src:headers",
         "//base:common",
         "//src/Parsers:clickhouse_parsers",
+    ],
+)
+
+cc_library(
+    name = "object_storage",
+    hdrs = _OBJECT_STORAGE_HEADERS,
+    deps = [
+        ":headers",
+        "//bazel:clickhouse_config_headers",
+        "//src:headers",
+        "//src:object_storage_configuration",
+        "//src/Parsers:headers",
     ],
 )

@@ -39,21 +39,15 @@ def _own_library(target):
         ))
     return candidates[0]
 
-def _object(operand, libraries):
-    if operand[0] != "object":
-        fail("Expected object reference, got {}".format(operand))
-    library = libraries[operand[1]]
-    objects = library.pic_objects or library.objects
-    if objects == None or operand[2] >= len(objects):
-        fail("Missing Bazel object {} in {}".format(operand[2], _archive(library)))
-    return objects[operand[2]]
-
 def _objects(ranges, libraries):
-    return [
-        _object(["object", ref, index], libraries)
-        for ref, start, end in ranges
-        for index in range(start, end)
-    ]
+    files = []
+    for ref, start, end in ranges:
+        library = libraries[ref]
+        objects = library.pic_objects or library.objects
+        if objects == None or start < 0 or start >= end or end > len(objects):
+            fail("Missing Bazel object range [{}, {}) in {}".format(start, end, _archive(library)))
+        files.extend(objects[start:end])
+    return files
 
 def _cmake_link_impl(ctx):
     plan = _CMAKE_LINKS[ctx.attr.arch]
@@ -147,10 +141,10 @@ def _cmake_link_impl(ctx):
             artifact = archives[operand[1]]
             inputs.append(artifact)
             args.add(artifact)
-        elif kind == "object":
-            artifact = _object(operand, libraries)
-            inputs.append(artifact)
-            args.add(artifact)
+        elif kind == "objects":
+            for artifact in _objects(operand[1], libraries):
+                inputs.append(artifact)
+                args.add(artifact)
         elif kind == "arg":
             args.add(operand[1])
         elif kind == "gcc":

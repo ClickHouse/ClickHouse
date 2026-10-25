@@ -194,12 +194,20 @@ def render(revision, path, arch, before, after, facts):
             edits.append((*doc.span(node), "{\n" + ",\n".join(lines) + "\n" + indent + "}"))
             intended["archives"][position] = mapped
     for position, (node, operand) in enumerate(zip(fields["sequence"].elts, plan["sequence"], strict=True)):
-        if operand[0] == "object":
+        if operand[0] == "objects":
+            ranges = operand[1]
+            mapped = ["objects", remap_ranges(ranges, maps)]
+            counts["direct_objects"] += sum(
+                maps[ref][index] != index for ref, start, end in ranges if ref in maps
+                for index in range(start, end))
+        elif operand[0] == "object":  # Older --metadata-rev plans store one object per entry.
             mapped = remap_object(operand, maps)
-            if mapped != operand:
-                counts["direct_objects"] += 1
-                edits.append((*doc.span(node), json.dumps(mapped)))
-                intended["sequence"][position] = mapped
+            counts["direct_objects"] += mapped != operand
+        else:
+            continue
+        if mapped != operand:
+            edits.append((*doc.span(node), json.dumps(mapped)))
+            intended["sequence"][position] = mapped
     updated = doc.rewrite(edits)
     newdef = next(stmt for stmt in ast.parse(updated).body
                   if isinstance(stmt, ast.Assign) and any(

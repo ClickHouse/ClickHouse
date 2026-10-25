@@ -10,6 +10,7 @@ recorded --target chooses cmake_link_data.bzl or cmake_link_data_aarch64.bzl.
 import argparse
 import ast
 import gzip
+from itertools import groupby
 import json
 import os
 from pathlib import Path
@@ -21,7 +22,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from initial_migration.build_file import EMBEDDED_SOURCES, embedded_indices, native_source_owner, source_compile_label, target_label, target_owner
+from initial_migration.build_file import EMBEDDED_SOURCES, compile_group_name, embedded_indices, native_source_owner, source_compile_label, target_label, target_owner
 from initial_migration import llvm_targets
 from initial_migration.reference_readers import read_file_api, ninja_edges, ninja_words as words
 from initial_migration.repository_inputs import REPOSITORIES, ROOT
@@ -39,6 +40,17 @@ def object_ranges(objects):
         else:
             ranges.append([ref, index, index + 1])
     return ranges
+
+
+def group_link_objects(operands):
+    """Encode consecutive object arguments without moving an archive or linker option."""
+    sequence = []
+    for objects, group in groupby(operands, key=lambda operand: operand[0] == "object"):
+        if objects:
+            sequence.append(["objects", object_ranges(group)])
+        else:
+            sequence.extend(group)
+    return sequence
 
 
 class Plan:
@@ -114,7 +126,8 @@ class Plan:
                 srcs = [s for s in srcs if s not in omitted]
                 if not srcs:
                     continue
-                label = target_label(name, self.owners) + "__compile_" + str(actual_group)
+                group = compile_group_name(name, actual_group, (s.removeprefix(self.source + "/") for s in srcs))
+                label = target_label(name, self.owners).removesuffix(name) + group
                 owner = self.owners[name]
                 partitions = {}
                 for source in srcs:
@@ -319,7 +332,7 @@ class Plan:
         self.split_int_exp()
         self.archives.clear()
         self.archive_index.clear()
-        sequence = operands()
+        sequence = group_link_objects(operands())
         return {
             "refs": self.refs,
             "expected_objects": self.expected,
@@ -430,7 +443,7 @@ def main():
         "CMAKE_LINK = " + json.dumps(data, indent=2) + "\n"
     )
     kinds = {k: sum(k in a for a in data["archives"]) for k in ("file", "objects", "append")}
-    print(f"{arch}: {len(data['sequence'])} link operands, {len(data['refs'])} Bazel refs; "
+    print(f"{arch}: {len(data['sequence'])} link entries, {len(data['refs'])} Bazel refs; "
           f"{len(data['archives'])} unique archives {kinds}")
 
 

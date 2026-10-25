@@ -1773,6 +1773,8 @@ def main():
     from initial_migration.mongo_c import declare_mongo_c_headers
     declare_mongo_c_headers(ROOT / 'bazel/dependencies/clickhouse_mongo_c_driver.BUILD.bazel')
     declare_first_party_header_deps(ROOT)
+    from initial_migration.object_storage_headers import apply as declare_object_storage_headers
+    declare_object_storage_headers(ROOT)
     declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import share_local_defines
     share_local_defines(ROOT, selection_builds)

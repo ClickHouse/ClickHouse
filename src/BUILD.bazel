@@ -5,6 +5,15 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_OBJECT_STORAGE_CONFIGURATION_HEADERS = [
+    "Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h",
+    "Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h",
+    "Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h",
+    "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h",
+    "Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h",
+    "Storages/ObjectStorage/S3/Configuration.h",
+]
+
 exports_files([
     "Server/IndexRequestHandler.cpp",
     "Server/KeeperDashboardRequestHandler.cpp",
@@ -1347,6 +1356,7 @@ _IO_COMPILED_API_HEADERS = glob([
     "IO/ReadBufferFromEmptyFile.h",
     "IO/ReadBufferFromFileDecorator.h",
     "IO/ReadBufferFromFileView.h",
+    "IO/ReadBufferFromS3.h",
     "IO/ReadPipeline.h",
     "IO/S3/AWSLogger.h",
     "IO/S3/ChecksumAlgorithm.h",
@@ -1359,6 +1369,9 @@ _IO_COMPILED_API_HEADERS = glob([
     "IO/S3/copyS3File.h",
     "IO/S3/deleteFileFromS3.h",
     "IO/S3/getObjectInfo.h",
+    "IO/S3AuthSettings.h",
+    "IO/S3Common.h",
+    "IO/S3Settings.h",
     "IO/SilkFiberStreamSocketImpl.h",
     "IO/SilkSecureFiberStreamSocketImpl.h",
     "IO/SnappyBasicWriteBuffer.h",
@@ -1862,22 +1875,6 @@ ch_cc_library(
 )
 
 ch_cc_library(
-    name = "clickhouse_common_io__compile_2",
-    srcs = ["//src/Common:IntervalTree.cpp"],
-    clickhouse_code = True,
-    copts = [
-        "-U_LIBCPP_HARDENING_MODE",
-        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE",
-    ],
-    implementation_deps = [
-        ":core_types",
-        "//base:common",
-        "//src/Common",
-    ],
-    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
-)
-
-ch_cc_library(
     name = "clickhouse_common_io__compile_3",
     srcs = ["//src/Common:ThreadFuzzer.cpp"],
     clickhouse_code = True,
@@ -1972,7 +1969,7 @@ cc_library(
         "//base/widechar_width",
         ":clickhouse_common_io__compile_0",
         "//src/Common:cares_ptr_resolver",
-        ":clickhouse_common_io__compile_2",
+        "//src/Common:interval_tree",
         ":clickhouse_common_io__compile_3",
     ],
 )
@@ -2940,6 +2937,8 @@ ch_cc_library(
     }) + ["//src/Functions/array:has.h"],
     clickhouse_code = _DBMS_0_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = [
+        ":object_storage_configuration",
+        "//src/TableFunctions:object_storage",
         "@lz4//:lz4",
         "//bazel:arrow_flatbuffer_headers",
         "//contrib/librdkafka-cmake:rdhttp_poco_transport",
@@ -4034,6 +4033,7 @@ ch_cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":object_storage_configuration",
         "@clickhouse_cctz//:tzdata",
         "//src/Common",
         "//src/Common:exception_api",
@@ -4272,7 +4272,7 @@ ch_cc_test(
         "//base/poco/Foundation:thread_pool",
         "//base/poco/NetSSL_OpenSSL:secure_socket",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_1",
-        ":clickhouse_common_io__compile_2",
+        "//src/Common:interval_tree",
         ":clickhouse_common_io__compile_3",
         "@clickhouse_sz3//:sz3",
         "//src/Common:assert_cast",
@@ -4399,7 +4399,7 @@ ch_cc_library(
         ] + _IO_STRING_BUFFER_HEADERS + _COLUMN_TYPE_HEADERS + _UNIT_TEST_HEADERS + _SERVER_FACTORY_HEADERS + _DBMS_EMBEDDED_PRIVATE_HEADERS + [
             "Storages/StorageGenerateRandom.h",
             "Client/ClientApplicationBaseParser.h",
-        ],
+        ] + _OBJECT_STORAGE_CONFIGURATION_HEADERS,
     ) + select({
         "@platforms//cpu:x86_64": ["Storages/StorageGenerateRandom.h"],
         "@platforms//cpu:aarch64": [],
@@ -4462,5 +4462,25 @@ ch_cc_library(
         "//src/Common:exception_api",
         "//src/Common:memory_tracking_api",
         "//src/Common:parser_support_api",
+    ],
+)
+
+cc_library(
+    name = "object_storage_configuration",
+    hdrs = _OBJECT_STORAGE_CONFIGURATION_HEADERS,
+    deps = [
+        "//base:common",
+        "//base/poco/JSON:_poco_json",
+        "//bazel:clickhouse_config_headers",
+        ":clickhouse_common_io__compile_0",
+        ":core_types",
+        ":headers",
+        ":io_string_buffers",
+        ":with_context",
+        "//src/AggregateFunctions:headers",
+        "//src/Common",
+        "//src/Common:parser_support_api",
+        "//src/Parsers:parser_api",
+        "@clickhouse_fmtlib//:_fmt",
     ],
 )

@@ -316,7 +316,10 @@ ch_cc_library(
     ] + _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
     hdrs = ["attachSystemTables.h"],
     clickhouse_code = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["clickhouse_code"],
-    implementation_deps = [":headers"] + _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [
+    implementation_deps = [
+        "//src:object_storage_configuration",
+        ":headers",
+    ] + _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [
         ":clickhouse_storages_system_information_schema",
         "//src/Common:current_metrics",
         "//src/Common:exception_api",

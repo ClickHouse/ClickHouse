@@ -388,6 +388,24 @@ def apply(root):
                             # Preserve the first LZ4 dependency for the ordered direct module maps.
                             ordered = list(dict.fromkeys(
                                 lz4_frame if dep == '//contrib/lz4-cmake:_lz4' else dep for dep in ordered))
+                        # gtest_interval_tree.cpp links IntervalTree.cpp's explicit instantiations.
+                        interval_tree = '//src/Common:interval_tree'
+                        ordered = [interval_tree if dep == ':clickhouse_common_io__compile_2' else dep
+                                   for dep in ordered]
+                        if (interval_tree not in ordered and
+                                '//src/Common:tests/gtest_interval_tree.cpp' in build.values(attrs.get('srcs'), cpu)):
+                            # 9cd6b1b placed IntervalTree between the Poco objects and ThreadFuzzer.
+                            following = ':clickhouse_common_io__compile_3'
+                            predecessors = (
+                                '//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_1',
+                                '//base/poco/NetSSL_OpenSSL:secure_socket',
+                                '//base/poco/Foundation:thread_pool',
+                                '@clickhouse_heks//:heks',
+                            )
+                            i = (ordered.index(following) if following in ordered else
+                                 max((i + 1 for i, dep in enumerate(ordered) if dep in predecessors),
+                                     default=len(ordered)))
+                            ordered.insert(i, interval_tree)
                         i = ordered.index('//src/Functions:clickhouse_functions_obj')
                         ordered[i:i] = UNIT_TEST_FUNCTION_DEPS
                         branches['@platforms//cpu:' + cpu] = ordered

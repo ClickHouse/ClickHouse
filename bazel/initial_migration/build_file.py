@@ -347,6 +347,13 @@ def target_owner(target):
     return None
 
 
+def compile_group_name(name, index, sources):
+    # Keep the one-file libc++ hardening group in src/Common on both CPUs.
+    if name == 'clickhouse_common_io' and list(sources) == ['src/Common/IntervalTree.cpp']:
+        return 'interval_tree'
+    return f'{name}__compile_{index}'
+
+
 def target_label(name, owners):
     owner = owners.get(name)
     return ('@' + REPOSITORIES[owner]['name'] + '//:' if owner else '//:') + name
@@ -687,6 +694,14 @@ class BuildFile:
         if not custom and self.external_headers is not None:
             self.external_headers.use(fields, self.owner)
         if not custom and not binary:
+            if self.owner == 'contrib/orc' and name == '_orc':
+                # ORC installs c++/include/orc/. Its generated Protobuf and
+                # Adaptor headers are implementation inputs in c++/src/CMakeLists.txt.
+                private = [item for item in fields['hdrs'] if isinstance(item, str)
+                           and item.endswith(('/contrib/arrow-cmake/orc_proto.pb.h',
+                                              '/contrib/orc/c++/include/Adaptor.hh'))]
+                fields['srcs'].extend(private)
+                fields['hdrs'] = [item for item in fields['hdrs'] if item not in private]
             if self.owner == 'contrib/cassandra' and name == '_cassandra':
                 # CMake's binary directory contains the private driver configuration.
                 config = [item for item in fields['hdrs']
@@ -1001,8 +1016,12 @@ class BuildFile:
             for variant in variants.values() for group in variant['groups']
         )
         binary_attrs = {}
+        group_names = []
         for index in range(group_count):
             groups = {arch: v['groups'][index] for arch, v in variants.items() if index < len(v['groups'])}
+            group_name, = {compile_group_name(name, index, (source_path(src) for src in g['srcs']))
+                           for g in groups.values()}
+            group_names.append(group_name)
             sve = fastops and index == 1
             attribute_arches = tuple(groups) if sve else ARCHES
             if all(not g.get('srcs') and g.get('foreign_deps') for g in groups.values()):
@@ -1306,7 +1325,7 @@ class BuildFile:
                     'target_compatible_with': compatible,
                 })
                 attrs = {'srcs': [':' + nasm_name]}
-            rule_name = name if collapse_single else name + '__compile_' + str(index)
+            rule_name = name if collapse_single else group_name
             rule_compatible = compatible
             if fastops:
                 rule_name = '_fastops_sve' if sve else '_fastops'
@@ -1344,7 +1363,7 @@ class BuildFile:
             return
         deps = select({
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [
-                ':' + name + '__compile_' + str(i)
+                ':' + group_names[i]
                 for i in range(1 if kind == 'EXECUTABLE' else 0, group_count)
                 if not llvm_runtime or i < len(v['groups'])
             ]
