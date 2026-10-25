@@ -68,5 +68,8 @@ SELECT
     lengthSpheroid([[(0., 0.), (1., 0.)], [(0., 0.), (0., nan)]]::MultiLineString),
     lengthSpheroid([(0., 0.), (1., 0.), (1., inf), (0., 0.)]::Ring);
 
+-- Even a line without segments, and a line whose other points are finite.
+SELECT lengthSpheroid([(nan, 0.)]::LineString), lengthSpheroid([(0., 0.), (1., 0.), (2., 0.), (3., nan)]::LineString);
+
 SELECT lengthCartesian(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT lengthSpheroid('LINESTRING (0 0, 1 1)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

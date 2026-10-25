@@ -27,12 +27,12 @@ Float64 linearLength(const Geometry & geometry)
     /// for which Vincenty's formulae may not converge.
     if constexpr (std::is_same_v<Point, GeographicPoint>)
     {
-        /// A NaN or infinite coordinate has no position on the spheroid, and Karney's algorithm asserts that it gets
-        /// finite coordinates, so the length is NaN, as it would be on a plane or on a sphere.
+        /// A NaN or infinite coordinate has no position on the spheroid, so the length is NaN.
+        /// Karney's algorithm must not get such a coordinate: it asserts that the coordinates are finite.
         bool all_finite = true;
         boost::geometry::for_each_point(geometry, [&](const GeographicPoint & point)
         {
-            all_finite = all_finite && std::isfinite(point.template get<0>()) && std::isfinite(point.template get<1>());
+            all_finite = all_finite && std::isfinite(boost::geometry::get<0>(point)) && std::isfinite(boost::geometry::get<1>(point));
         });
         if (!all_finite)
             return std::numeric_limits<Float64>::quiet_NaN();
