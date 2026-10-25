@@ -187,7 +187,7 @@ namespace
             std::shared_ptr<std::atomic<size_t>> merged_groups_,
             size_t first_bucket,
             size_t step_)
-            : ISource(std::move(header))
+            : ISource(std::move(header), false)
             , params(std::move(params_))
             , session(std::move(session_))
             , destination(std::move(destination_))
