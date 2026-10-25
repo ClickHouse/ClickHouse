@@ -197,7 +197,7 @@ See [IN operators](/reference/statements/in) and [`EXISTS`](/reference/statement
 `a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
 ### in subquery function {#in-subquery-function-1}
-`a = ALL (subquery)` – True if the subquery returns no rows, or if all rows it returns are equal to `a`. The subquery is evaluated once, as a scalar subquery: `tupleElement(SQ, 1) = 0 OR a IN tupleElement(SQ, 2)`, where `SQ` is `(SELECT (count(*), singleValueOrNull(*)) FROM subquery)`. If the subquery returns a `NULL` or several distinct values, the result is false (as for `a IN (NULL)`), not `NULL`. In a distributed query the subquery is evaluated on the initiator, regardless of `distributed_product_mode`.
+`a = ALL (subquery)` – True if the subquery returns no rows, or if all rows it returns are equal to `a`. The subquery is evaluated once, as a scalar subquery `SQ` = `(SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)`, and the result is `ifNull(tupleElement(SQ, 1), 1) OR a IN tupleElement(SQ, 2)`. If the subquery returns a `NULL` or several distinct values, the result is false (as for `a IN (NULL)`), not `NULL`. In a distributed query the subquery is evaluated on the initiator, regardless of `distributed_product_mode`.
 
 ### notIn subquery function {#notin-subquery-function-1}
 `a != ALL (subquery)` – The `notIn(a, subquery)` function.
