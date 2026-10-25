@@ -316,8 +316,11 @@ ColumnPtr canonicalizeNegativeZeroThroughLowCardinality(const IColumn & column)
     if (!canonicalizeNegativeZero(*column_low_cardinality->getDictionary().getNestedColumn()))
         return nullptr;
 
+    /// The dictionary may keep entries that no row references anymore (`filter` and `cut` keep the dictionary
+    /// and only filter the indexes), so the negative zero found in it may be absent from the rows.
     ColumnPtr canonical_full = canonicalizeNegativeZero(*column_low_cardinality->convertToFullColumn());
-    chassert(canonical_full);
+    if (!canonical_full)
+        return nullptr;
 
     auto res = column_low_cardinality->cloneEmpty();
     assert_cast<ColumnLowCardinality &>(*res).insertRangeFromFullColumn(*canonical_full, 0, canonical_full->size());
