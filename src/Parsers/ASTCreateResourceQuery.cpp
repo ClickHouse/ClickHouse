@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -29,7 +30,7 @@ void ASTCreateResourceQuery::updateTreeHashImpl(SipHash & hash_state, bool ignor
     /// the format -> parse round-trip that the debug-build AST consistency check requires.
     hash_state.update(or_replace);
     hash_state.update(if_not_exists);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
 
     hash_state.update(operations.size());
     for (const auto & operation : operations)
@@ -39,7 +40,7 @@ void ASTCreateResourceQuery::updateTreeHashImpl(SipHash & hash_state, bool ignor
         /// `update(operation.disk)` would hash the object representation.
         hash_state.update(operation.disk.has_value());
         if (operation.disk)
-            hash_state.update(*operation.disk);
+            updateTreeHashField(hash_state, *operation.disk);
     }
 }
 

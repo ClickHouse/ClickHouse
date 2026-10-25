@@ -1,4 +1,5 @@
 #include <Parsers/ASTShowFunctionsQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
@@ -22,7 +23,7 @@ void ASTShowFunctionsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore
     /// a tree hash — see the header comment.
     hash_state.update(has_like);
     hash_state.update(case_insensitive_like);
-    hash_state.update(like);
+    updateTreeHashField(hash_state, like);
 }
 
 void ASTShowFunctionsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const

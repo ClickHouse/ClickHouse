@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCheckGrantQuery.h>
+#include <Parsers/updateTreeHashField.h>
 
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
@@ -31,7 +32,7 @@ void ASTCheckGrantQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     /// round-trip that the debug-build AST consistency check requires.
     WriteBufferFromOwnString buf;
     access_rights_elements.formatElementsWithoutOptions(buf);
-    hash_state.update(buf.str());
+    updateTreeHashField(hash_state, buf.str());
 }
 
 

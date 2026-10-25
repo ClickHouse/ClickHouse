@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
@@ -83,13 +84,13 @@ void ASTCreateSettingsProfileQuery::updateTreeHashImpl(SipHash & hash_state, boo
     hash_state.update(if_exists);
     hash_state.update(if_not_exists);
     hash_state.update(or_replace);
-    hash_state.update(cluster);
-    hash_state.update(storage_name);
-    hash_state.update(new_name);
+    updateTreeHashField(hash_state, cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, new_name);
 
     hash_state.update(names.size());
     for (const auto & name : names)
-        hash_state.update(name);
+        updateTreeHashField(hash_state, name);
 
     /// `settings` / `alter_settings` are `ASTSettingsProfileElements` members kept outside
     /// `children`; they fold their own contents. The parser sets at most one of them.

@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
@@ -170,13 +171,13 @@ void ASTCreateQuotaQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     hash_state.update(if_exists);
     hash_state.update(if_not_exists);
     hash_state.update(or_replace);
-    hash_state.update(cluster);
-    hash_state.update(storage_name);
-    hash_state.update(new_name);
+    updateTreeHashField(hash_state, cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, new_name);
 
     hash_state.update(names.size());
     for (const auto & name : names)
-        hash_state.update(name);
+        updateTreeHashField(hash_state, name);
 
     /// `key_type`, the prefix bits and `all_limits` are non-AST members emitted through several
     /// conditional branches (e.g. the prefix bits appear only for an IP key type). Fold exactly
@@ -190,7 +191,7 @@ void ASTCreateQuotaQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
         else if (ipv4_prefix_bits || ipv6_prefix_bits)
             formatIpPrefixBits(ipv4_prefix_bits, ipv6_prefix_bits, buf);
         formatIntervalsWithLimits(all_limits, buf, format_settings);
-        hash_state.update(buf.str());
+        updateTreeHashField(hash_state, buf.str());
     }
 
     /// The formatter emits `roles` only when it is non-empty or this is an `ALTER` (an empty `TO`

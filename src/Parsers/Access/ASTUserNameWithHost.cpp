@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Parsers/updateTreeHashField.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTIdentifier.h>
@@ -67,7 +68,7 @@ void ASTUserNameWithHost::updateTreeHashOfFormattedName(SipHash & hash_state, bo
 
     const String name = toString();
     hash_state.update(name.size());
-    hash_state.update(name);
+    updateTreeHashField(hash_state, name);
 }
 
 bool ASTUserNameWithHost::usernameIsQueryParameter() const

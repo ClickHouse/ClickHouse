@@ -1,4 +1,5 @@
 #include <Parsers/ASTShowSettingQuery.h>
+#include <Parsers/updateTreeHashField.h>
 
 #include <iomanip>
 #include <IO/Operators.h>
@@ -23,7 +24,7 @@ void ASTShowSettingQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     /// Fold in the selected setting name, which is not part of `children` (the base implementation
     /// only hashes `getID`), so `SHOW SETTING a` and `SHOW SETTING b` do not share a tree hash —
     /// see the header comment.
-    hash_state.update(setting_name);
+    updateTreeHashField(hash_state, setting_name);
 }
 
 void ASTShowSettingQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const

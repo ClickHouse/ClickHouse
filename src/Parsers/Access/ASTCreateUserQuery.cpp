@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -381,8 +382,8 @@ void ASTCreateUserQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     /// `replace_authentication_methods` is intentionally not folded: it is not emitted by the
     /// formatter, so folding it would break the format -> parse round-trip.
 
-    hash_state.update(storage_name);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, cluster);
 
     /// Fold `new_name` the way `formatRenameTo` emits it: a plain name is written as a string
     /// literal, so `RENAME TO u` (an identifier) is parsed back as `RENAME TO 'u'` (a literal), and

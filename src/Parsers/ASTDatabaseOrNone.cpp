@@ -1,4 +1,5 @@
 #include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/CommonParsers.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
@@ -32,7 +33,7 @@ void ASTDatabaseOrNone::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     /// Both fields are produced by the formatter (`NONE` / the quoted database name), so they
     /// survive the format -> parse round-trip that the debug-build AST consistency check requires.
     hash_state.update(none);
-    hash_state.update(database_name);
+    updateTreeHashField(hash_state, database_name);
 }
 
 }

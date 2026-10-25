@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Common/quoteString.h>
@@ -97,8 +98,8 @@ void ASTCreateRoleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     hash_state.update(if_exists);
     hash_state.update(if_not_exists);
     hash_state.update(or_replace);
-    hash_state.update(cluster);
-    hash_state.update(storage_name);
+    updateTreeHashField(hash_state, cluster);
+    updateTreeHashField(hash_state, storage_name);
     hash_state.update(static_cast<bool>(new_name));
     if (new_name)
         new_name->updateTreeHash(hash_state, ignore_aliases);

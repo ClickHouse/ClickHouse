@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -65,7 +66,7 @@ void ASTGrantQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
     hash_state.update(is_revoke);
     hash_state.update(admin_option);
     hash_state.update(current_grants);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
     /// The formatter emits the two `replace_*` flags only through their combined
     /// `WITH REPLACE OPTION`, so fold the same combined bit.
     hash_state.update(replace_access || replace_granted_roles);
@@ -79,7 +80,7 @@ void ASTGrantQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
     {
         WriteBufferFromOwnString buf;
         access_rights_elements.formatElementsWithoutOptions(buf);
-        hash_state.update(buf.str());
+        updateTreeHashField(hash_state, buf.str());
     }
 
     /// `roles` / `grantees` are `ASTRolesOrUsersSet` members kept outside `children`; fold a

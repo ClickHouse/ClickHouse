@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Core/SettingsSecrets.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorHash.h>
@@ -135,8 +136,8 @@ void ASTSettingsProfileElement::updateTreeHashImpl(SipHash & hash_state, bool ig
     /// Fold the formatter-emitted state. Each folded field is produced by the formatter, so it
     /// survives the format -> parse round-trip that the debug-build AST consistency check requires.
     /// `disallowed_values` is intentionally not folded because the formatter does not emit it.
-    hash_state.update(parent_profile);
-    hash_state.update(setting_name);
+    updateTreeHashField(hash_state, parent_profile);
+    updateTreeHashField(hash_state, setting_name);
 
     hash_state.update(value.has_value());
     if (value)

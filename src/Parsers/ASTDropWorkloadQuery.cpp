@@ -1,4 +1,5 @@
 #include <Parsers/ASTDropWorkloadQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -17,9 +18,9 @@ void ASTDropWorkloadQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_
     /// Fold the semantic fields kept outside `children`. See the header comment for why the
     /// rewrite-rule matcher needs this. Each field is produced by the formatter, so it survives the
     /// format -> parse round-trip that the debug-build AST consistency check requires.
-    hash_state.update(workload_name);
+    updateTreeHashField(hash_state, workload_name);
     hash_state.update(if_exists);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
 }
 
 void ASTDropWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
@@ -156,9 +157,9 @@ void ASTCreateRowPolicyQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
     hash_state.update(if_exists);
     hash_state.update(if_not_exists);
     hash_state.update(or_replace);
-    hash_state.update(cluster);
-    hash_state.update(storage_name);
-    hash_state.update(new_short_name);
+    updateTreeHashField(hash_state, cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, new_short_name);
 
     hash_state.update(is_restrictive.has_value());
     if (is_restrictive)
@@ -177,7 +178,7 @@ void ASTCreateRowPolicyQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
         const IAST::FormatSettings format_settings(/*one_line=*/ true);
         WriteBufferFromOwnString buf;
         formatForClauses(filters, alter, buf, format_settings);
-        hash_state.update(buf.str());
+        updateTreeHashField(hash_state, buf.str());
     }
 
     /// The formatter emits `roles` only when it is non-empty or this is an `ALTER`, so collapse

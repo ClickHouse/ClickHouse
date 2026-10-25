@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/parseAccessEntityName.h>
 #include <Common/SipHash.h>
@@ -46,16 +47,16 @@ void ASTShowCreateAccessEntityQuery::updateTreeHashImpl(SipHash & hash_state, bo
     /// format -> parse round-trip that the debug-build AST consistency check requires.
     hash_state.update(names.size());
     for (const auto & name : names)
-        hash_state.update(name);
+        updateTreeHashField(hash_state, name);
     hash_state.update(row_policy_names != nullptr);
     if (row_policy_names)
         row_policy_names->updateTreeHash(hash_state, ignore_aliases);
-    hash_state.update(short_name);
+    updateTreeHashField(hash_state, short_name);
     hash_state.update(database_and_table_name.has_value());
     if (database_and_table_name)
     {
-        hash_state.update(database_and_table_name->first);
-        hash_state.update(database_and_table_name->second);
+        updateTreeHashField(hash_state, database_and_table_name->first);
+        updateTreeHashField(hash_state, database_and_table_name->second);
     }
 }
 

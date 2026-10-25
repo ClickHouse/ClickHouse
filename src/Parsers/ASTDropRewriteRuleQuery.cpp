@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTDropRewriteRuleQuery.h>
@@ -19,7 +20,7 @@ ASTPtr ASTDropRewriteRuleQuery::clone() const
 void ASTDropRewriteRuleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
-    hash_state.update(rule_name);
+    updateTreeHashField(hash_state, rule_name);
     hash_state.update(if_exists);
 }
 

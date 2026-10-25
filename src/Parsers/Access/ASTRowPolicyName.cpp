@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -46,11 +47,11 @@ void ASTRowPolicyNames::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     hash_state.update(full_names.size());
     for (const auto & full_name : full_names)
     {
-        hash_state.update(full_name.short_name);
-        hash_state.update(full_name.database);
-        hash_state.update(full_name.table_name);
+        updateTreeHashField(hash_state, full_name.short_name);
+        updateTreeHashField(hash_state, full_name.database);
+        updateTreeHashField(hash_state, full_name.table_name);
     }
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
 }
 
 

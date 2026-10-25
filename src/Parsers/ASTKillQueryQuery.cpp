@@ -1,4 +1,5 @@
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/SipHash.h>
@@ -27,7 +28,7 @@ void ASTKillQueryQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     hash_state.update(type);
     hash_state.update(sync);
     hash_state.update(test);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
 }
 
 void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

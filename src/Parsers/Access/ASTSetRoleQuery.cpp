@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -53,7 +54,7 @@ void ASTSetRoleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_alias
 
     /// `formatOnCluster` emits `ON CLUSTER` for `SET DEFAULT ROLE` only.
     hash_state.update(cluster.size());
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
 }
 
 

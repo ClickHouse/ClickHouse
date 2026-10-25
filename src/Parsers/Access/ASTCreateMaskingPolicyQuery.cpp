@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -122,12 +123,12 @@ void ASTCreateMaskingPolicyQuery::updateTreeHashImpl(SipHash & hash_state, bool 
     hash_state.update(if_not_exists);
     hash_state.update(or_replace);
 
-    hash_state.update(name);
-    hash_state.update(database);
-    hash_state.update(table_name);
-    hash_state.update(cluster);
-    hash_state.update(storage_name);
-    hash_state.update(new_name);
+    updateTreeHashField(hash_state, name);
+    updateTreeHashField(hash_state, database);
+    updateTreeHashField(hash_state, table_name);
+    updateTreeHashField(hash_state, cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, new_name);
 
     hash_state.update(static_cast<bool>(update_assignments));
     if (update_assignments)

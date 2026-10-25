@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
@@ -24,9 +25,9 @@ ASTPtr ASTCreateRewriteRuleQuery::clone() const
 void ASTCreateRewriteRuleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
-    hash_state.update(rule_name);
+    updateTreeHashField(hash_state, rule_name);
     hash_state.update(is_reject);
-    hash_state.update(reject_message);
+    updateTreeHashField(hash_state, reject_message);
     hash_state.update(source_query != nullptr);
     if (source_query)
         source_query->updateTreeHash(hash_state, ignore_aliases);

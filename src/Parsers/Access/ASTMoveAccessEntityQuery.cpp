@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -55,11 +56,11 @@ void ASTMoveAccessEntityQuery::updateTreeHashImpl(SipHash & hash_state, bool ign
     {
         hash_state.update(names.size());
         for (const auto & name : names)
-            hash_state.update(name);
+            updateTreeHashField(hash_state, name);
     }
 
-    hash_state.update(storage_name);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, cluster);
 }
 
 void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const

@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/MaskingPolicy.h>
@@ -79,7 +80,7 @@ void ASTDropAccessEntityQuery::updateTreeHashImpl(SipHash & hash_state, bool ign
     {
         hash_state.update(static_cast<bool>(masking_policy_name));
         if (masking_policy_name)
-            hash_state.update(masking_policy_name->toString());
+            updateTreeHashField(hash_state, masking_policy_name->toString());
     }
     else
     {
@@ -88,8 +89,8 @@ void ASTDropAccessEntityQuery::updateTreeHashImpl(SipHash & hash_state, bool ign
             names->updateTreeHash(hash_state, ignore_aliases);
     }
 
-    hash_state.update(storage_name);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, storage_name);
+    updateTreeHashField(hash_state, cluster);
 }
 
 

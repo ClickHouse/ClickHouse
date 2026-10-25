@@ -1,4 +1,5 @@
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/updateTreeHashField.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -45,7 +46,7 @@ void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
 void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(pattern.size());
-    hash_state.update(pattern);
+    updateTreeHashField(hash_state, pattern);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -179,7 +180,7 @@ const String & ASTQualifiedColumnsRegexpMatcher::getPattern() const
 void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(pattern.size());
-    hash_state.update(pattern);
+    updateTreeHashField(hash_state, pattern);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

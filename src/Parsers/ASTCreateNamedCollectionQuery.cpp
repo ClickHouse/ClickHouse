@@ -1,4 +1,5 @@
 #include <Common/quoteString.h>
+#include <Parsers/updateTreeHashField.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/formatSettingName.h>
@@ -23,19 +24,19 @@ void ASTCreateNamedCollectionQuery::updateTreeHashImpl(SipHash & hash_state, boo
     /// for semantic equality, so fold every semantic field the formatter emits.
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 
-    hash_state.update(collection_name);
+    updateTreeHashField(hash_state, collection_name);
     hash_state.update(or_replace);
     hash_state.update(if_not_exists);
-    hash_state.update(cluster);
+    updateTreeHashField(hash_state, cluster);
 
     hash_state.update(changes.size());
     for (const auto & change : changes)
     {
-        hash_state.update(change.name);
+        updateTreeHashField(hash_state, change.name);
         /// Fold exactly what the formatter emits for the value with secrets shown (the debug-build
         /// consistency check formats with `show_secrets = true`), so different values do not
         /// collide and the hash stays stable across the format -> parse round-trip.
-        hash_state.update(applyVisitor(FieldVisitorToString(), change.value));
+        updateTreeHashField(hash_state, applyVisitor(FieldVisitorToString(), change.value));
         /// `overridability` is emitted per change (`[NOT ]OVERRIDABLE`), keyed by name.
         auto it = overridability.find(change.name);
         hash_state.update(it != overridability.end());
