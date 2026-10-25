@@ -28,6 +28,8 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
@@ -54,6 +56,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsFloat max_memory_ratio_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
@@ -115,6 +118,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
+    , max_memory_ratio_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
 {
@@ -138,6 +142,8 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
+    result.use_query_condition_cache_for_time_conditions = settings[Setting::use_query_condition_cache_for_time_conditions];
+    result.query_condition_cache_time_condition_grid_factor = static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]);
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.enable_columns_cache_reads = settings[Setting::enable_reads_from_columns_cache];
     result.enable_columns_cache_writes = settings[Setting::enable_writes_to_columns_cache];

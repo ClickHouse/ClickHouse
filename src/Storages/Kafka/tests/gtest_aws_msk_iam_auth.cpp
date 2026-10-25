@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <config.h>
 
-#if USE_AWS_S3
+#if USE_AWS_S3 && USE_RDKAFKA
 
 #include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <IO/S3/Credentials.h>
@@ -407,4 +407,4 @@ TEST(AWSMSKIAMAuth, SetupAutoDetectsRegionFromBrokerList)
     }
 }
 
-#endif // USE_AWS_S3
+#endif // USE_AWS_S3 && USE_RDKAFKA
