@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <limits>
 #include <string_view>
 
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -131,17 +130,24 @@ private:
             }
             else
             {
-                /// The overflow of v * (BAR_LEVELS - 1) is checked by comparison rather than by
-                /// `common::mulOverflow`, because the latter does not detect overflow for wide
-                /// integers (`Int128`, `Int256`, ...) and would return a wrapped negative product.
-                const V levels_num = V{BAR_LEVELS - 1};
-                V level{};
-                if (v > std::numeric_limits<V>::max() / levels_num)
-                    /// v * (BAR_LEVELS - 1) would overflow, which implies y_max >= v is at least
-                    /// max<V> / (BAR_LEVELS - 1), so y_max / levels_num is never zero here.
-                    level = v / (y_max / levels_num) + V{1};
-                else
-                    level = v * levels_num / y_max + V{1};
+                /// Compute floor(v * (BAR_LEVELS - 1) / y_max) exactly without forming the product,
+                /// which can overflow the result type: add v to a running remainder modulo y_max
+                /// BAR_LEVELS - 1 times and count the wraps. Since 0 < v <= y_max and the remainder
+                /// stays in [0, y_max), neither the comparison nor the subtraction can overflow.
+                /// Dividing by a truncated y_max / (BAR_LEVELS - 1) instead would overestimate levels.
+                V level{1};
+                V remainder{};
+                for (size_t step = 0; step < BAR_LEVELS - 1; ++step)
+                {
+                    const V room = static_cast<V>(y_max - remainder);
+                    if (v >= room)
+                    {
+                        remainder = static_cast<V>(v - room);
+                        level = static_cast<V>(level + V{1});
+                    }
+                    else
+                        remainder = static_cast<V>(remainder + v);
+                }
                 levels[i] = level > V{BAR_LEVELS} ? UInt8{BAR_LEVELS} : static_cast<UInt8>(level);
             }
         }
@@ -209,6 +215,10 @@ public:
     }
 
     bool isState() const override { return nested_function->isState(); }
+
+    /// Keep the explicit state version of the nested function (e.g. `uniq`, `quantileDeterministic`),
+    /// otherwise fresh states would be serialized with the unversioned (old) layout.
+    DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
 
     bool isVersioned() const override { return nested_function->isVersioned(); }
 
