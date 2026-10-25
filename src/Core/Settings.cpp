@@ -11342,6 +11342,10 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_maxminddb_table_engine, false, R"(
+Allow creating tables with the experimental `MaxMindDB` engine.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting for the experimental `MaxMindDB` table engine."}) \
     \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
