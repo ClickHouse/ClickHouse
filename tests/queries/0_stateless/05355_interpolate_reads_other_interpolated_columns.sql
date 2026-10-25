@@ -100,3 +100,32 @@ GROUP BY n ORDER BY n WITH FILL STEP 1 INTERPOLATE (`count()` AS `count()` + 1, 
 SELECT 'a constant target named like another column';
 SELECT n, count() AS c, 5 AS `count()` FROM (SELECT number * 3 AS n FROM numbers(3))
 GROUP BY n ORDER BY n WITH FILL STEP 1 INTERPOLATE (`count()` AS `count()` + 1, c AS c + `count()`);
+
+SELECT 'a chain through a constant target dropped by the outer query';
+SELECT g, x FROM
+(
+    SELECT g, v, 5 AS d, x FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS v, toUInt32(number) AS x FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (v AS v * 2, d AS d + v, x AS x + d)
+);
+
+SELECT 'an alias column read keeps no target';
+DROP TABLE IF EXISTS t_interpolate_alias;
+CREATE TABLE t_interpolate_alias (g UInt16, x UInt32, c UInt32, z UInt32 ALIAS x + 1) ENGINE = Memory;
+INSERT INTO t_interpolate_alias VALUES (0, 0, 0), (3, 1, 1);
+SELECT g, c FROM
+(
+    SELECT g, x + 1 AS a, c FROM t_interpolate_alias
+    ORDER BY g WITH FILL INTERPOLATE (a AS intDiv(a, a - a), c AS c + z)
+);
+DROP TABLE t_interpolate_alias;
+
+SELECT 'a UNION ALL branch keeps no target for another branch';
+SELECT g, c FROM
+(
+    SELECT g, a, c FROM (SELECT toUInt16(number * 3) AS g, toInt32(number + 1) AS a, toInt32(number) AS c FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (a AS a * 2, c AS c + a)
+    UNION ALL
+    SELECT g, a, c FROM (SELECT toUInt16(number * 3 + 10) AS g, toInt32(number + 1) AS a, toInt32(number) AS c FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (a AS intDiv(a, a - a), c AS c + 1)
+)
+ORDER BY g;

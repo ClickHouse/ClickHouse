@@ -5,8 +5,6 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InterpolateNode.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
@@ -38,108 +36,6 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     }
 
     return result;
-}
-
-/// Whether the planner names both alike: equal structure, and the table columns come from the same table expressions.
-bool isSameExpression(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
-{
-    if (!lhs.isEqual(rhs, {.compare_aliases = false}))
-        return false;
-
-    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_compare{{&lhs, &rhs}};
-    while (!nodes_to_compare.empty())
-    {
-        auto [lhs_node, rhs_node] = nodes_to_compare.back();
-        nodes_to_compare.pop_back();
-
-        if (const auto * lhs_column_node = lhs_node->as<ColumnNode>())
-        {
-            auto lhs_source = lhs_column_node->getColumnSourceOrNull();
-            bool is_expression_argument = !lhs_source || lhs_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS
-                || lhs_source->getNodeType() == QueryTreeNodeType::INTERPOLATE;
-            if (!is_expression_argument && lhs_source != rhs_node->as<const ColumnNode &>().getColumnSourceOrNull())
-                return false;
-        }
-
-        const auto & lhs_children = lhs_node->getChildren();
-        const auto & rhs_children = rhs_node->getChildren();
-        for (size_t i = 0; i < lhs_children.size(); ++i)
-            if (lhs_children[i])
-                nodes_to_compare.emplace_back(lhs_children[i].get(), rhs_children[i].get());
-    }
-
-    return true;
-}
-
-bool containsExpression(const QueryTreeNodePtr & node, const IQueryTreeNode & expression)
-{
-    if (isSameExpression(*node, expression))
-        return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && containsExpression(child, expression))
-            return true;
-
-    return false;
-}
-
-/// An INTERPOLATE expression reads the interpolated values of the targets whose expressions it contains.
-void addInterpolateTargetsReadByUsedTargets(const QueryNode & query_node, std::unordered_set<size_t> & used_projection_columns_indexes)
-{
-    const auto & projection_columns = query_node.getProjectionColumns();
-    std::unordered_map<std::string, size_t> projection_index_by_name;
-    std::unordered_set<std::string> used_names;
-    for (size_t i = 0; i < projection_columns.size(); ++i)
-    {
-        projection_index_by_name.emplace(projection_columns[i].name, i);
-        if (used_projection_columns_indexes.contains(i))
-            used_names.insert(projection_columns[i].name);
-    }
-
-    const auto & interpolate_nodes = query_node.getInterpolate()->as<const ListNode &>().getNodes();
-    std::vector<const InterpolateNode *> readers;
-    for (const auto & node : interpolate_nodes)
-    {
-        const auto & interpolate_node = node->as<const InterpolateNode &>();
-        if (used_names.contains(interpolate_node.getExpressionName()))
-            readers.push_back(&interpolate_node);
-    }
-
-    /// The targets whose reads `addWithFillStepIfNeeded` redirects, keeping another target would only run its expression.
-    std::vector<const InterpolateNode *> redirected_targets;
-    for (const auto & node : interpolate_nodes)
-    {
-        const auto & target = node->as<const InterpolateNode &>();
-        const auto & expression = *target.getExpression();
-        auto is_expression = [&](const QueryTreeNodePtr & other) { return isSameExpression(*other, expression); };
-
-        if (expression.getNodeType() == QueryTreeNodeType::CONSTANT
-            || (query_node.hasOrderBy() && std::ranges::any_of(query_node.getOrderBy().getNodes(),
-                [&](const QueryTreeNodePtr & sort_node) { return is_expression(sort_node->as<const SortNode &>().getExpression()); }))
-            || std::ranges::count_if(interpolate_nodes,
-                [&](const QueryTreeNodePtr & other) { return is_expression(other->as<const InterpolateNode &>().getExpression()); }) > 1)
-            continue;
-
-        redirected_targets.push_back(&target);
-    }
-
-    while (!readers.empty())
-    {
-        const auto * reader = readers.back();
-        readers.pop_back();
-
-        for (const auto * target : redirected_targets)
-        {
-            auto it = projection_index_by_name.find(target->getExpressionName());
-            if (it == projection_index_by_name.end() || used_names.contains(target->getExpressionName())
-                || !containsExpression(reader->getInterpolateExpression(), *target->getExpression()))
-                continue;
-
-            used_projection_columns_indexes.insert(it->second);
-            used_names.insert(target->getExpressionName());
-            readers.push_back(target);
-        }
-    }
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -192,9 +88,6 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
         if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
     }
-
-    if (query_node.hasInterpolate())
-        addInterpolateTargetsReadByUsedTargets(query_node, used_projection_columns_indexes);
 }
 
 }
