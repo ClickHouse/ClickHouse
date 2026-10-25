@@ -52,6 +52,22 @@ class GlobFiles:
     def result(self, patterns, excluded):
         return tuple(sorted(self.union(patterns) - self.union(excluded)))
 
+    def strings(self, node, constants, seen=()):
+        """Resolve a glob argument made from lists, constants and other globs."""
+        if isinstance(node, ast.Name) and node.id in constants and node.id not in seen:
+            return self.strings(constants[node.id], constants, (*seen, node.id))
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            sides = [self.strings(side, constants, seen) for side in (node.left, node.right)]
+            return None if None in sides else [*sides[0], *sides[1]]
+        if _function(node, 'glob') and len(node.args) == 1:
+            opts = {kw.arg: kw.value for kw in node.keywords}
+            if set(opts) <= {'exclude', 'allow_empty', 'exclude_directories'}:
+                patterns = self.strings(node.args[0], constants, seen)
+                excluded = self.strings(opts['exclude'], constants, seen) if 'exclude' in opts else []
+                if patterns is not None and excluded is not None:
+                    return list(self.result(patterns, excluded))
+        return _literal_strings(node)
+
 
 def _literal_strings(node):
     try:

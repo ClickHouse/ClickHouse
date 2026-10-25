@@ -694,12 +694,18 @@ class Build:
                 return name
         return Expand().visit(deepcopy(node))
 
-    def glob_values(self, node):
+    def glob_arguments(self, node):
         opts = attributes(node)
         if not node.args or set(opts) - {'exclude', 'allow_empty', 'exclude_directories'}:
             raise ValueError('Unsupported glob: ' + render(node))
-        patterns = ast.literal_eval(node.args[0])
-        excludes = ast.literal_eval(opts['exclude']) if 'exclude' in opts else []
+        patterns = self.globs.strings(node.args[0], self.constants)
+        excludes = self.globs.strings(opts['exclude'], self.constants) if 'exclude' in opts else []
+        if patterns is None or excludes is None:
+            raise ValueError('Unsupported glob: ' + render(node))
+        return patterns, excludes
+
+    def glob_values(self, node):
+        patterns, excludes = self.glob_arguments(node)
         return tuple(physical(self.package, item) for item in self.globs.result(patterns, excludes))
 
     def values(self, node, cpu):
@@ -1062,9 +1068,7 @@ class Migration:
         if (values and len(selected) == len(values) and
                 all(self.file_package(file) == current for file in values)):
             prefix = posixpath.relpath(build.package or '.', current or '.')
-            opts = attributes(node)
-            patterns = ast.literal_eval(node.args[0])
-            excluded = ast.literal_eval(opts['exclude']) if 'exclude' in opts else []
+            patterns, excluded = build.glob_arguments(node)
             combined = [posixpath.normpath(posixpath.join(prefix, p)) for p in (*patterns, *excluded)]
             if all(not p.startswith('../') and p != '..' for p in combined):
                 args = list_expr(combined[:len(patterns)])
@@ -1222,9 +1226,7 @@ class Migration:
             for node in ast.walk(build.source.module):
                 if call_name(node) != 'glob':
                     continue
-                opts = attributes(node)
-                patterns = ast.literal_eval(node.args[0])
-                excluded = ast.literal_eval(opts['exclude']) if 'exclude' in opts else []
+                patterns, excluded = build.glob_arguments(node)
                 for pattern in patterns:
                     if not build.globs.matching(pattern):
                         raise ValueError(f'{build.path}:{node.lineno}: empty glob pattern {pattern}')

@@ -63,6 +63,15 @@ class BoundConstants(ast.NodeTransformer):
         self.definitions = definitions
         self.visiting = set()
 
+    @classmethod
+    def from_source(cls, source):
+        return cls({
+            statement.targets[0].id: statement.value
+            for statement in source.module.body
+            if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name))
+        })
+
     def visit_Name(self, node):
         if node.id not in self.definitions or node.id in self.visiting:
             return node
@@ -114,6 +123,18 @@ class Migration:
                     raise ValueError("More than one LLVM producer for " + out)
                 self.outputs[out] = "gen/" + match[2]
                 self.directories.update(parent.as_posix() for parent in Path(match[2]).parents)
+        # llvm_tablegen already declares gen/llvm outputs. The CMake inventory
+        # still names each header by CPU, including the four RegisterInfo siblings.
+        for _, call in source.rules():
+            fields = attributes(call)
+            if text_constant(fields["name"]) == "llvm_generated_headers":
+                values = BoundConstants.from_source(source).visit(copy.deepcopy(fields["srcs"]))
+                for node in ast.walk(values):
+                    old = (text_constant(node) or "").removeprefix(":")
+                    match = GENERATED.fullmatch(old)
+                    if match and match[2]:
+                        self.outputs[old] = "gen/" + match[2]
+                        self.directories.update(parent.as_posix() for parent in Path(match[2]).parents)
         new_names = set()
         for relative, family in self.families.items():
             kinds = {row[1].func.id for row in family.values()}
@@ -270,22 +291,11 @@ class Migration:
         return result
 
     def verify_single_cpu_inputs(self, path, target, compiled):
-        definitions = {
-            statement.targets[0].id: statement.value
-            for statement in target.module.body
-            if (isinstance(statement, ast.Assign) and len(statement.targets) == 1
-                and isinstance(statement.targets[0], ast.Name))
-        }
-        single = {
-            "gen/" + relative: next(iter(family))
-            for relative, family in self.families.items() if len(family) == 1
-        }
-        # Target-specific TableGen has multi-output rules. All outputs belong to
-        # the same target CPU, not just each rule's first output.
-        for family in self.families.values():
-            if len(family) == 1:
-                cpu = next(iter(family))
-                single.update((self.outputs[old], cpu) for old in family[cpu][2])
+        constants = BoundConstants.from_source(target)
+        cpus = defaultdict(set)
+        for old, new in self.outputs.items():
+            cpus[new].add(GENERATED.fullmatch(old)[1])
+        single = {out: next(iter(arches)) for out, arches in cpus.items() if len(arches) == 1}
         for name, call in compiled.items():
             if not isinstance(call.func, ast.Name) or call.func.id not in {
                     "cc_library", "ch_cc_library", "llvm_runtime_objects", "filegroup", "nasm_objects"}:
@@ -293,7 +303,7 @@ class Migration:
             for field, node in attributes(call).items():
                 if field not in {"srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "data"}:
                     continue
-                expanded = BoundConstants(definitions).visit(copy.deepcopy(node))
+                expanded = constants.visit(copy.deepcopy(node))
                 for cpu in CPUS:
                     active = ChooseCpu(cpu).visit(copy.deepcopy(expanded))
                     for child in ast.walk(active):
@@ -332,7 +342,7 @@ class Migration:
 
     def run(self, write=False, *, read_only=()):
         self.collect(Source(self.path.read_text()))
-        if not self.families:
+        if not self.outputs:
             print("No duplicated LLVM gen/<cpu> output paths.")
             return
         changed = {}

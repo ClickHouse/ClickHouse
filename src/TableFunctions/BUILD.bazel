@@ -4,18 +4,24 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_DBMS_COMPILE_0_SOURCES = [
+    "ITableFunction.cpp",
+    "TableFunctionView.cpp",
+    "TableFunctionFactory.cpp",
+]
+
+filegroup(
+    name = "dbms_compile_0_sources",
+    srcs = _DBMS_COMPILE_0_SOURCES,
+    visibility = ["//src:__pkg__"],
+)
+
 _OBJECT_STORAGE_HEADERS = [
     "ITableFunctionCluster.h",
     "TableFunctionFileCluster.h",
     "TableFunctionObjectStorage.h",
     "TableFunctionURLCluster.h",
 ]
-
-exports_files([
-    "ITableFunction.cpp",
-    "TableFunctionFactory.cpp",
-    "TableFunctionView.cpp",
-])
 
 exports_files(
     ["TableFunctionView.h"],
@@ -40,53 +46,10 @@ _PRIVATE_TABLE_FUNCTIONS_HEADERS = [
 
 ch_cc_library(
     name = "clickhouse_table_functions",
-    srcs = [
-        "ITableFunctionFileLike.cpp",
-        "ITableFunctionXDBC.cpp",
-        "TableFunctionArrowFlight.cpp",
-        "TableFunctionBigQuery.cpp",
-        "TableFunctionDictionary.cpp",
-        "TableFunctionEval.cpp",
-        "TableFunctionExecutable.cpp",
-        "TableFunctionExplain.cpp",
-        "TableFunctionFile.cpp",
-        "TableFunctionFileCluster.cpp",
-        "TableFunctionFilesystem.cpp",
-        "TableFunctionFormat.cpp",
-        "TableFunctionFuzzJSON.cpp",
-        "TableFunctionFuzzQuery.cpp",
-        "TableFunctionGenerateRandom.cpp",
-        "TableFunctionGenerateSeries.cpp",
-        "TableFunctionInput.cpp",
-        "TableFunctionLoop.cpp",
-        "TableFunctionMerge.cpp",
-    ] + glob(["TableFunctionMergeTree*.cpp"]) + [
-        "TableFunctionMongoDB.cpp",
-        "TableFunctionMySQL.cpp",
-        "TableFunctionNull.cpp",
-        "TableFunctionNumbers.cpp",
-        "TableFunctionObfuscate.cpp",
-        "TableFunctionObjectStorage.cpp",
-        "TableFunctionObjectStorageCluster.cpp",
-        "TableFunctionPostgreSQL.cpp",
-        "TableFunctionPrimes.cpp",
-        "TableFunctionProjection.cpp",
-        "TableFunctionPrometheusQuery.cpp",
-        "TableFunctionRedis.cpp",
-        "TableFunctionRemote.cpp",
-        "TableFunctionSQLite.cpp",
-        "TableFunctionTimeSeries.cpp",
-        "TableFunctionTimeSeriesSelector.cpp",
-        "TableFunctionTraceView.cpp",
-        "TableFunctionURL.cpp",
-        "TableFunctionURLCluster.cpp",
-        "TableFunctionValues.cpp",
-        "TableFunctionViewIfPermitted.cpp",
-        "TableFunctionYtsaurus.cpp",
-        "TableFunctionZeros.cpp",
-        "registerTableFunctions.cpp",
-        "Hive/TableFunctionHive.cpp",
-    ] + _PRIVATE_TABLE_FUNCTIONS_HEADERS,
+    srcs = glob(
+        ["*.cpp"],
+        exclude = _DBMS_COMPILE_0_SOURCES,
+    ) + ["Hive/TableFunctionHive.cpp"] + _PRIVATE_TABLE_FUNCTIONS_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
         "//src:object_storage_configuration",
@@ -168,7 +131,6 @@ cc_library(
     deps = [
         "//src/Common/ZooKeeper:headers",
         "//src:headers",
-        "//base:common",
         "//src/Parsers:clickhouse_parsers",
     ],
 )

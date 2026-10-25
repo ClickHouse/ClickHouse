@@ -25,7 +25,6 @@ from initial_migration.native_public_includes import directory, list_elements
 from initial_migration.native_textual_inputs import expanded, string_values
 from initial_migration.prune_inherited_headers import ARCHES, CC_COMPILERS, Document, label
 from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, TEXTUAL_SOURCE_SUFFIXES, ROOT
-from initial_migration.simplify_globs import _literal_strings
 
 LOCATION = re.compile(r"\$\((?:location|locations|execpath|execpaths|rootpath|rootpaths)\s+([^\s)]+)\)")
 REMOVABLE = {
@@ -85,9 +84,9 @@ def known_expression(doc, node, field, constants=()):
         kind = getattr(node.func, "id", "")
         if kind == "glob" and field == "srcs" and len(node.args) == 1:
             opts = {kw.arg: kw.value for kw in node.keywords}
-            return (_literal_strings(node.args[0]) is not None and
+            return (doc.glob_strings(node.args[0]) is not None and
                     not (set(opts) - {"exclude", "allow_empty"}) and
-                    ("exclude" not in opts or _literal_strings(opts["exclude"]) is not None))
+                    ("exclude" not in opts or doc.glob_strings(opts["exclude"]) is not None))
         if kind == "select" and len(node.args) == 1 and isinstance(node.args[0], ast.Dict):
             choices = node.args[0]
             allowed = {"@platforms//cpu:" + cpu for cpu in ARCHES} | {"//conditions:default"}

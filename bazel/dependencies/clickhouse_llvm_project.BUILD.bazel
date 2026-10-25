@@ -4,6 +4,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")
 load("@clickhouse//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
+load("@clickhouse//bazel/rules:llvm_tablegen.bzl", "llvm_tablegen")
 load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_CODEGEN_COPTS", "native_release_copts")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -222,703 +223,152 @@ write_file(
     ],
 )
 
-genrule(
-    name = "tablegen_llvm_include_llvm_CodeGen_GenVT_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
+llvm_tablegen(
+    outputs = {
+        "GenVT.inc": "-gen-vt",
+    },
+    td = "llvm/include/llvm/CodeGen/ValueTypes.td",
+    tool = "llvm-min-tblgen",
+)
+
+llvm_tablegen(
+    outputs = {
+        "TargetLibraryInfo.inc": "-gen-target-library-info",
+    },
+    td = "llvm/include/llvm/Analysis/TargetLibraryInfo.td",
+)
+
+llvm_tablegen(
+    outputs = {
+        "OMP.h.inc": "-gen-directive-decl",
+        "OMP.inc": "-gen-directive-impl",
+    },
+    td = "llvm/include/llvm/Frontend/OpenMP/OMP.td",
+)
+
+llvm_tablegen(
+    outputs = {
+        "Attributes.inc": "-gen-attrs",
+    },
+    td = "llvm/include/llvm/IR/Attributes.td",
+)
+
+llvm_tablegen(
+    outputs = {
+        "IntrinsicEnums.inc": "-gen-intrinsic-enums",
+        "IntrinsicImpl.inc": "-gen-intrinsic-impl",
+        "IntrinsicsAArch64.h": "-gen-intrinsic-enums -intrinsic-prefix=aarch64",
+        "IntrinsicsAMDGPU.h": "-gen-intrinsic-enums -intrinsic-prefix=amdgcn",
+        "IntrinsicsARM.h": "-gen-intrinsic-enums -intrinsic-prefix=arm",
+        "IntrinsicsBPF.h": "-gen-intrinsic-enums -intrinsic-prefix=bpf",
+        "IntrinsicsDirectX.h": "-gen-intrinsic-enums -intrinsic-prefix=dx",
+        "IntrinsicsHexagon.h": "-gen-intrinsic-enums -intrinsic-prefix=hexagon",
+        "IntrinsicsLoongArch.h": "-gen-intrinsic-enums -intrinsic-prefix=loongarch",
+        "IntrinsicsMips.h": "-gen-intrinsic-enums -intrinsic-prefix=mips",
+        "IntrinsicsNVPTX.h": "-gen-intrinsic-enums -intrinsic-prefix=nvvm",
+        "IntrinsicsPowerPC.h": "-gen-intrinsic-enums -intrinsic-prefix=ppc",
+        "IntrinsicsR600.h": "-gen-intrinsic-enums -intrinsic-prefix=r600",
+        "IntrinsicsRISCV.h": "-gen-intrinsic-enums -intrinsic-prefix=riscv",
+        "IntrinsicsS390.h": "-gen-intrinsic-enums -intrinsic-prefix=s390",
+        "IntrinsicsSPIRV.h": "-gen-intrinsic-enums -intrinsic-prefix=spv",
+        "IntrinsicsVE.h": "-gen-intrinsic-enums -intrinsic-prefix=ve",
+        "IntrinsicsWebAssembly.h": "-gen-intrinsic-enums -intrinsic-prefix=wasm",
+        "IntrinsicsX86.h": "-gen-intrinsic-enums -intrinsic-prefix=x86",
+        "IntrinsicsXCore.h": "-gen-intrinsic-enums -intrinsic-prefix=xcore",
+    },
+    td = "llvm/include/llvm/IR/Intrinsics.td",
+)
+
+llvm_tablegen(
+    outputs = {
+        "RuntimeLibcalls.inc": "-gen-runtime-libcalls",
+    },
+    td = "llvm/include/llvm/IR/RuntimeLibcalls.td",
+)
+
+llvm_tablegen(
+    out_dir = "llvm/include/llvm/TargetParser",
+    outputs = {
+        "AArch64TargetParserDef.inc": "-gen-arm-target-def",
+    },
+    td = "llvm/lib/Target/AArch64/AArch64.td",
+)
+
+llvm_tablegen(
+    out_dir = "llvm/include/llvm/TargetParser",
+    outputs = {
+        "ARMTargetParserDef.inc": "-gen-arm-target-def",
+    },
+    td = "llvm/lib/Target/ARM/ARM.td",
+)
+
+llvm_tablegen(
+    out_dir = "llvm/include/llvm/TargetParser",
+    outputs = {
+        "PPCGenTargetFeatures.inc": "-gen-target-features",
+    },
+    td = "llvm/lib/Target/PowerPC/PPC.td",
+)
+
+llvm_tablegen(
+    out_dir = "llvm/include/llvm/TargetParser",
+    outputs = {
+        "RISCVTargetParserDef.inc": "-gen-riscv-target-def",
+    },
+    td = "llvm/lib/Target/RISCV/RISCV.td",
+)
+
+llvm_tablegen(
+    outputs = {
+        "X86GenAsmMatcher.inc": "-gen-asm-matcher",
+        "X86GenAsmWriter.inc": "-gen-asm-writer",
+        "X86GenAsmWriter1.inc": "-gen-asm-writer -asmwriternum=1",
+        "X86GenCallingConv.inc": "-gen-callingconv",
+        "X86GenDAGISel.inc": "-gen-dag-isel",
+        "X86GenFastISel.inc": "-gen-fast-isel",
+        "X86GenFoldTables.inc": "-gen-x86-fold-tables",
+        "X86GenGlobalISel.inc": "-gen-global-isel",
+        "X86GenInstrInfo.inc": "-gen-instr-info",
+        "X86GenInstrMapping.inc": "-gen-x86-instr-mapping",
+        "X86GenMnemonicTables.inc": "-gen-x86-mnemonic-tables -asmwriternum=1",
+        "X86GenPreLegalizeGICombiner.inc": "-gen-global-isel-combiner -combiners=X86PreLegalizerCombiner",
+        "X86GenRegisterBank.inc": "-gen-register-bank",
+        "X86GenRegisterInfo.inc": "-gen-register-info",
+        "X86GenSubtargetInfo.inc": "-gen-subtarget",
+    },
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
     ],
-    outs = ["gen/llvm/include/llvm/CodeGen/GenVT.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-min-tblgen) -gen-vt -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td) -o $(location :gen/llvm/include/llvm/CodeGen/GenVT.inc)",
-    tools = [
-        "@llvm-project//llvm:llvm-min-tblgen",
+    td = "llvm/lib/Target/X86/X86.td",
+)
+
+llvm_tablegen(
+    outputs = {
+        "AArch64GenAsmMatcher.inc": "-gen-asm-matcher",
+        "AArch64GenAsmWriter.inc": "-gen-asm-writer",
+        "AArch64GenAsmWriter1.inc": "-gen-asm-writer -asmwriternum=1",
+        "AArch64GenCallingConv.inc": "-gen-callingconv",
+        "AArch64GenDAGISel.inc": "-gen-dag-isel",
+        "AArch64GenExegesis.inc": "-gen-exegesis",
+        "AArch64GenFastISel.inc": "-gen-fast-isel",
+        "AArch64GenGlobalISel.inc": "-gen-global-isel",
+        "AArch64GenInstrInfo.inc": "-gen-instr-info",
+        "AArch64GenMCCodeEmitter.inc": "-gen-emitter",
+        "AArch64GenMCPseudoLowering.inc": "-gen-pseudo-lowering",
+        "AArch64GenO0PreLegalizeGICombiner.inc": "-gen-global-isel-combiner -combiners=AArch64O0PreLegalizerCombiner",
+        "AArch64GenPostLegalizeGICombiner.inc": "-gen-global-isel-combiner -combiners=AArch64PostLegalizerCombiner",
+        "AArch64GenPostLegalizeGILowering.inc": "-gen-global-isel-combiner -combiners=AArch64PostLegalizerLowering",
+        "AArch64GenPreLegalizeGICombiner.inc": "-gen-global-isel-combiner -combiners=AArch64PreLegalizerCombiner",
+        "AArch64GenRegisterBank.inc": "-gen-register-bank",
+        "AArch64GenRegisterInfo.inc": "-gen-register-info",
+        "AArch64GenSDNodeInfo.inc": "-gen-sd-node-info",
+        "AArch64GenSubtargetInfo.inc": "-gen-subtarget",
+        "AArch64GenSystemOperands.inc": "-gen-searchable-tables",
+    },
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
     ],
-)
-
-_GENERATED_TOOLS_0 = [
-    "@llvm-project//llvm:llvm-tblgen",
-]
-
-genrule(
-    name = "tablegen_llvm_include_llvm_Analysis_TargetLibraryInfo_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        ":llvm/include/llvm/Analysis/TargetLibraryInfo.td",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
-    ],
-    outs = ["gen/llvm/include/llvm/Analysis/TargetLibraryInfo.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-target-library-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/Analysis/TargetLibraryInfo.td) -o $(location :gen/llvm/include/llvm/Analysis/TargetLibraryInfo.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-target-library-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/Analysis/TargetLibraryInfo.td) -o $(location :gen/llvm/include/llvm/Analysis/TargetLibraryInfo.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-_GENERATED_SRCS_1 = [
-    ":llvm_tablegen_inputs",
-    ":llvm/include/llvm/Frontend/OpenMP/OMP.td",
-    "llvm/include/llvm/CodeGen/ValueTypes.td",
-]
-
-genrule(
-    name = "tablegen_llvm_include_llvm_Frontend_OpenMP_OMP_h_inc",
-    srcs = _GENERATED_SRCS_1,
-    outs = ["gen/llvm/include/llvm/Frontend/OpenMP/OMP.h.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-directive-decl -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/Frontend/OpenMP/OMP.td) -o $(location :gen/llvm/include/llvm/Frontend/OpenMP/OMP.h.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-directive-decl -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/Frontend/OpenMP/OMP.td) -o $(location :gen/llvm/include/llvm/Frontend/OpenMP/OMP.h.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_Frontend_OpenMP_OMP_inc",
-    srcs = _GENERATED_SRCS_1,
-    outs = ["gen/llvm/include/llvm/Frontend/OpenMP/OMP.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-directive-impl -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/Frontend/OpenMP/OMP.td) -o $(location :gen/llvm/include/llvm/Frontend/OpenMP/OMP.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-directive-impl -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/Frontend/OpenMP/OMP.td) -o $(location :gen/llvm/include/llvm/Frontend/OpenMP/OMP.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_Attributes_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        "llvm/include/llvm/IR/Attributes.td",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
-    ],
-    outs = ["gen/llvm/include/llvm/IR/Attributes.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-attrs -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Attributes.td) -o $(location :gen/llvm/include/llvm/IR/Attributes.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-attrs -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Attributes.td) -o $(location :gen/llvm/include/llvm/IR/Attributes.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-_GENERATED_SRCS_2 = [
-    ":llvm_tablegen_inputs",
-    ":llvm/include/llvm/IR/Intrinsics.td",
-    "llvm/include/llvm/CodeGen/ValueTypes.td",
-]
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicEnums_inc",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicEnums.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicEnums.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicEnums.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicImpl_inc",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicImpl.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-impl -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicImpl.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-impl -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicImpl.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsAArch64_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsAArch64.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=aarch64 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsAArch64.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=aarch64 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsAArch64.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsAMDGPU_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsAMDGPU.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=amdgcn -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsAMDGPU.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=amdgcn -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsAMDGPU.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsARM_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsARM.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=arm -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsARM.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=arm -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsARM.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsBPF_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsBPF.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=bpf -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsBPF.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=bpf -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsBPF.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsDirectX_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsDirectX.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=dx -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsDirectX.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=dx -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsDirectX.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsHexagon_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsHexagon.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=hexagon -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsHexagon.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=hexagon -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsHexagon.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsLoongArch_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsLoongArch.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=loongarch -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsLoongArch.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=loongarch -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsLoongArch.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsMips_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsMips.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=mips -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsMips.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=mips -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsMips.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsNVPTX_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsNVPTX.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=nvvm -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsNVPTX.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=nvvm -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsNVPTX.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsPowerPC_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsPowerPC.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=ppc -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsPowerPC.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=ppc -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsPowerPC.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsR600_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsR600.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=r600 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsR600.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=r600 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsR600.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsRISCV_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsRISCV.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=riscv -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsRISCV.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=riscv -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsRISCV.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsS390_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsS390.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=s390 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsS390.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=s390 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsS390.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsSPIRV_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsSPIRV.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=spv -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsSPIRV.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=spv -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsSPIRV.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsVE_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsVE.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=ve -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsVE.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=ve -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsVE.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsWebAssembly_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsWebAssembly.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=wasm -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsWebAssembly.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=wasm -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsWebAssembly.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsX86_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsX86.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=x86 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsX86.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=x86 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsX86.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_IntrinsicsXCore_h",
-    srcs = _GENERATED_SRCS_2,
-    outs = ["gen/llvm/include/llvm/IR/IntrinsicsXCore.h"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=xcore -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsXCore.h)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-intrinsic-enums -intrinsic-prefix=xcore -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/Intrinsics.td) -o $(location :gen/llvm/include/llvm/IR/IntrinsicsXCore.h)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_IR_RuntimeLibcalls_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        "llvm/include/llvm/IR/RuntimeLibcalls.td",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
-    ],
-    outs = ["gen/llvm/include/llvm/IR/RuntimeLibcalls.inc"],
-    cmd = select({
-        "@platforms//cpu:x86_64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-runtime-libcalls -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/include/llvm/IR/RuntimeLibcalls.td) -o $(location :gen/llvm/include/llvm/IR/RuntimeLibcalls.inc)",
-        "@platforms//cpu:aarch64": "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-runtime-libcalls -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/include/llvm/IR/RuntimeLibcalls.td) -o $(location :gen/llvm/include/llvm/IR/RuntimeLibcalls.inc)",
-    }),
-    tools = _GENERATED_TOOLS_0,
-)
-
-_GENERATED_SRCS_3 = [
-    ":llvm_tablegen_inputs",
-    ":llvm/lib/Target/AArch64/AArch64.td",
-    "llvm/include/llvm/CodeGen/ValueTypes.td",
-]
-
-genrule(
-    name = "tablegen_llvm_include_llvm_TargetParser_AArch64TargetParserDef_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/include/llvm/TargetParser/AArch64TargetParserDef.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-arm-target-def -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/include/llvm/TargetParser/AArch64TargetParserDef.inc)",
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_TargetParser_ARMTargetParserDef_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        "llvm/lib/Target/ARM/ARM.td",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
-    ],
-    outs = ["gen/llvm/include/llvm/TargetParser/ARMTargetParserDef.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-arm-target-def -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/ARM $(execpath :llvm/lib/Target/ARM/ARM.td) -o $(location :gen/llvm/include/llvm/TargetParser/ARMTargetParserDef.inc)",
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_TargetParser_PPCGenTargetFeatures_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        "llvm/lib/Target/PowerPC/PPC.td",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
-    ],
-    outs = ["gen/llvm/include/llvm/TargetParser/PPCGenTargetFeatures.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-target-features -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/PowerPC $(execpath :llvm/lib/Target/PowerPC/PPC.td) -o $(location :gen/llvm/include/llvm/TargetParser/PPCGenTargetFeatures.inc)",
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_include_llvm_TargetParser_RISCVTargetParserDef_inc",
-    srcs = [
-        ":llvm_tablegen_inputs",
-        "llvm/lib/Target/RISCV/RISCV.td",
-        "llvm/include/llvm/CodeGen/ValueTypes.td",
-    ],
-    outs = ["gen/llvm/include/llvm/TargetParser/RISCVTargetParserDef.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-riscv-target-def -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/RISCV $(execpath :llvm/lib/Target/RISCV/RISCV.td) -o $(location :gen/llvm/include/llvm/TargetParser/RISCVTargetParserDef.inc)",
-    tools = _GENERATED_TOOLS_0,
-)
-
-_GENERATED_SRCS_4 = [
-    ":llvm_tablegen_inputs",
-    ":llvm/lib/Target/X86/X86.td",
-    "llvm/include/llvm/CodeGen/ValueTypes.td",
-]
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenAsmMatcher_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenAsmMatcher.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-asm-matcher -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenAsmMatcher.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenAsmWriter_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenAsmWriter.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-asm-writer -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenAsmWriter.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenAsmWriter1_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenAsmWriter1.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-asm-writer -asmwriternum=1 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenAsmWriter1.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenCallingConv_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenCallingConv.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-callingconv -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenCallingConv.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenDAGISel_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenDAGISel.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-dag-isel -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenDAGISel.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenFastISel_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenFastISel.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-fast-isel -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenFastISel.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenFoldTables_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenFoldTables.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-x86-fold-tables -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenFoldTables.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenGlobalISel_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenGlobalISel.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenGlobalISel.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenInstrInfo_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenInstrInfo.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-instr-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenInstrInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenInstrMapping_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenInstrMapping.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-x86-instr-mapping -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenInstrMapping.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenMnemonicTables_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenMnemonicTables.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-x86-mnemonic-tables -asmwriternum=1 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenMnemonicTables.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenPreLegalizeGICombiner_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenPreLegalizeGICombiner.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel-combiner -combiners=X86PreLegalizerCombiner -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenPreLegalizeGICombiner.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenRegisterBank_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenRegisterBank.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-register-bank -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenRegisterBank.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenRegisterInfo_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = [
-        "gen/llvm/lib/Target/X86/X86GenRegisterInfo.inc",
-        "gen/llvm/lib/Target/X86/X86GenRegisterInfoEnums.inc",
-        "gen/llvm/lib/Target/X86/X86GenRegisterInfoMCDesc.inc",
-        "gen/llvm/lib/Target/X86/X86GenRegisterInfoHeader.inc",
-        "gen/llvm/lib/Target/X86/X86GenRegisterInfoTargetDesc.inc",
-    ],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-register-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenRegisterInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_X86_X86GenSubtargetInfo_inc",
-    srcs = _GENERATED_SRCS_4,
-    outs = ["gen/llvm/lib/Target/X86/X86GenSubtargetInfo.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-subtarget -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/X86 $(execpath :llvm/lib/Target/X86/X86.td) -o $(location :gen/llvm/lib/Target/X86/X86GenSubtargetInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:x86_64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenAsmMatcher_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenAsmMatcher.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-asm-matcher -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenAsmMatcher.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenAsmWriter_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenAsmWriter.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-asm-writer -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenAsmWriter.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenAsmWriter1_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenAsmWriter1.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-asm-writer -asmwriternum=1 -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenAsmWriter1.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenCallingConv_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenCallingConv.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-callingconv -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenCallingConv.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenDAGISel_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenDAGISel.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-dag-isel -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenDAGISel.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenExegesis_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenExegesis.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-exegesis -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenExegesis.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenFastISel_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenFastISel.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-fast-isel -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenFastISel.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenGlobalISel_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenGlobalISel.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenGlobalISel.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenInstrInfo_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenInstrInfo.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-instr-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenInstrInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenMCCodeEmitter_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenMCCodeEmitter.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-emitter -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenMCCodeEmitter.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenMCPseudoLowering_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenMCPseudoLowering.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-pseudo-lowering -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenMCPseudoLowering.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenO0PreLegalizeGICombiner_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel-combiner -combiners=AArch64O0PreLegalizerCombiner -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenO0PreLegalizeGICombiner.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenPostLegalizeGICombiner_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel-combiner -combiners=AArch64PostLegalizerCombiner -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenPostLegalizeGICombiner.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenPostLegalizeGILowering_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenPostLegalizeGILowering.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel-combiner -combiners=AArch64PostLegalizerLowering -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenPostLegalizeGILowering.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenPreLegalizeGICombiner_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-global-isel-combiner -combiners=AArch64PreLegalizerCombiner -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenPreLegalizeGICombiner.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenRegisterBank_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenRegisterBank.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-register-bank -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenRegisterBank.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenRegisterInfo_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = [
-        "gen/llvm/lib/Target/AArch64/AArch64GenRegisterInfo.inc",
-        "gen/llvm/lib/Target/AArch64/AArch64GenRegisterInfoEnums.inc",
-        "gen/llvm/lib/Target/AArch64/AArch64GenRegisterInfoMCDesc.inc",
-        "gen/llvm/lib/Target/AArch64/AArch64GenRegisterInfoHeader.inc",
-        "gen/llvm/lib/Target/AArch64/AArch64GenRegisterInfoTargetDesc.inc",
-    ],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-register-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenRegisterInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenSDNodeInfo_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenSDNodeInfo.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-sd-node-info -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenSDNodeInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenSubtargetInfo_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenSubtargetInfo.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-subtarget -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenSubtargetInfo.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
-)
-
-genrule(
-    name = "tablegen_llvm_lib_Target_AArch64_AArch64GenSystemOperands_inc",
-    srcs = _GENERATED_SRCS_3,
-    outs = ["gen/llvm/lib/Target/AArch64/AArch64GenSystemOperands.inc"],
-    cmd = "$(execpath @llvm-project//llvm:llvm-tblgen) -gen-searchable-tables -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../.. -I $$(dirname $(execpath :llvm/include/llvm/CodeGen/ValueTypes.td))/../../../lib/Target/AArch64 $(execpath :llvm/lib/Target/AArch64/AArch64.td) -o $(location :gen/llvm/lib/Target/AArch64/AArch64GenSystemOperands.inc)",
-    target_compatible_with = ["@platforms//cpu:aarch64"],
-    tools = _GENERATED_TOOLS_0,
+    td = "llvm/lib/Target/AArch64/AArch64.td",
 )
 
 filegroup(

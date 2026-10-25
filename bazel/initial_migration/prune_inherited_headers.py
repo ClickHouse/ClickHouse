@@ -46,7 +46,8 @@ def label(value, repo):
 
 
 class Document:
-    glob_strings = staticmethod(_literal_strings)
+    def glob_strings(self, node):
+        return self.globs.strings(node, self.constants) if self.globs is not None else _literal_strings(node)
 
     def __init__(self, path, inventories=None, text=None, package='', files=None):
         self.path = path
@@ -457,16 +458,7 @@ class PublishedRewrite(Rewrite):
 
 class SourceDocument(Document):
     def glob_strings(self, node):
-        if isinstance(node, ast.Name) and node.id in self.constants:
-            return self.glob_strings(self.constants[node.id])
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            return self.glob_strings(node.left) + self.glob_strings(node.right)
-        if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'glob' and len(node.args) == 1:
-            opts = {k.arg: k.value for k in node.keywords}
-            if set(opts) <= {'exclude', 'allow_empty'}:
-                excludes = self.glob_strings(opts['exclude']) if 'exclude' in opts else []
-                return list(self.globs.result(self.glob_strings(node.args[0]), excludes))
-        values = _literal_strings(node)
+        values = super().glob_strings(node)
         if values is None:
             raise ValueError('Unsupported source header glob: ' + ast.unparse(node))
         return values

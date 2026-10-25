@@ -315,7 +315,6 @@ ch_cc_library(
     clickhouse_code = True,
     deps = [
         ":parser_api",
-        "//base/poco/JSON:_poco_json",
         "//src:headers",
         "//src:core_types",
         "//base:common",

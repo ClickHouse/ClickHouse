@@ -1,7 +1,6 @@
 """Build ClickHouse's LLVM libraries from its CMake graph and pinned sources."""
 
 import gzip
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -239,6 +238,54 @@ def component_headers(name, attrs):
         }))
 
 
+def read_tablegen(words, node, source_root, build_root, arch):
+    """Read an LLVM Ninja command; reject options the Bazel macro cannot represent."""
+    source = Path(source_root, PREFIX)
+    td = Path(words[-3]).relative_to(source).as_posix()
+    tool = Path(words[0]).name
+    includes = ['-I', str(source / 'llvm/include')]
+    if tool == 'llvm-tblgen':
+        backend = td.split('/')[3] if td.startswith('llvm/lib/Target/') else {
+            'x86_64': 'X86', 'aarch64': 'AArch64',
+        }[arch]
+        includes.extend(['-I', str(source / 'llvm/lib/Target' / backend)])
+    elif tool != 'llvm-min-tblgen':
+        raise ValueError(f'{arch} {node}: unsupported LLVM tool {tool}')
+    first_include = words.index('-I')
+    if words[first_include:] != [*includes, str(source / td), '-o', str(Path(build_root, node))]:
+        raise ValueError(f'{arch} {node}: unsupported TableGen arguments: {words}')
+    flags = shlex.join(words[1:first_include])
+    out = node.removeprefix(PREFIX + '/')
+    outs = [out]
+    if '-gen-register-info' in words[1:first_include]:
+        outs += [out.removesuffix('.inc') + suffix + '.inc'
+                 for suffix in ('Enums', 'MCDesc', 'Header', 'TargetDesc')]
+    return (td, tool, flags), outs
+
+
+def tablegen_rules(actions):
+    """Group outputs that use the same .td file, tool, output directory and CPUs."""
+    from initial_migration.build_file import starlark
+
+    groups = {}
+    for out, variants in actions.items():
+        if len(set(variants.values())) != 1:
+            raise ValueError('TableGen input, tool or flags differ between CPUs: ' + out)
+        td, tool, flags = next(iter(variants.values()))
+        directory, filename = out.rsplit('/', 1)
+        groups.setdefault((td, tool, directory, tuple(sorted(variants))), {})[filename] = flags
+    for (td, tool, directory, cpus), outputs in groups.items():
+        fields = {'td': td, 'outputs': outputs}
+        if directory != td.rsplit('/', 1)[0]:
+            fields['out_dir'] = directory
+        if tool != 'llvm-tblgen':
+            fields['tool'] = tool
+        if len(cpus) == 1:
+            fields['target_compatible_with'] = ['@platforms//cpu:' + cpus[0]]
+        yield 'llvm_tablegen(\n' + ''.join(
+            f'    {key} = {starlark(value, 4, step=4)},\n' for key, value in fields.items()) + ')\n'
+
+
 def declare_from_references(root, references):
     """Declare embedded LLVM targets before BUILD files are serialized.
 
@@ -310,6 +357,7 @@ def declare_from_references(root, references):
     runtime_generated = {}
     outline_generated = {}
     outline_commands = {}
+    tablegen = {}
     generated = {}
     for arch, reference in references.items():
         reference = Path(reference)
@@ -410,48 +458,18 @@ def declare_from_references(root, references):
                     raise ValueError(f'{arch}: duplicate CMake outline generator {node}')
                 outline_commands[identity] = source.removeprefix(source_root + '/')
                 continue
-            if tool_name not in {'llvm-tblgen', 'llvm-min-tblgen'}:
-                raise ValueError(f'{arch} {node}: unsupported LLVM generator {command}')
-            tool = '@llvm-project//llvm:' + tool_name
-            inputs = [':llvm_tablegen_inputs']
-            anchor = ':llvm/include/llvm/CodeGen/ValueTypes.td'
-            output = 'gen/' + arch + '/' + node.removeprefix(PREFIX + '/')
-            action_outputs = [output]
-            if '-gen-register-info' in words:
-                # LLVM RegisterInfoEmitter::run returns four additional
-                # files; Ninja tracks only the main .inc. RBE must
-                # upload every file that the main .inc includes.
-                action_outputs.extend(output.removesuffix('.inc') + suffix for suffix in (
-                    'Enums.inc', 'MCDesc.inc', 'Header.inc', 'TargetDesc.inc'))
-            translated = ['$(execpath ' + tool + ')']
-            for word in words[1:]:
-                if word == build_root + '/' + node:
-                    translated.append('$(location :' + output + ')')
-                elif word.startswith(source_root + '/' + PREFIX + '/'):
-                    path = word.removeprefix(source_root + '/' + PREFIX + '/')
-                    if path.endswith('.td'):
-                        label = ':' + path
-                        inputs.append(label)
-                        translated.append('$(execpath ' + label + ')')
-                    else:
-                        relative = os.path.relpath(path, os.path.dirname(anchor[1:]))
-                        translated.append('$$(dirname $(execpath ' + anchor + '))/' + relative)
-                elif os.path.isabs(word):
-                    raise ValueError(f'{arch} {node}: undeclared TableGen input {word}')
-                else:
-                    translated.append(shlex.quote(word))
-            if anchor not in inputs:
-                inputs.append(anchor)
-            rule = 'tablegen_' + arch + '_' + hashlib.sha256(node.encode()).hexdigest()[:16]
-            build.rule('genrule', rule, {
-                'srcs': inputs, 'outs': action_outputs, 'tools': [tool],
-                'cmd': ' '.join(translated),
-            })
-            outputs.extend(':' + filename for filename in action_outputs)
+            action, outs = read_tablegen(words, node, source_root, build_root, arch)
+            variants = tablegen.setdefault(outs[0], {})
+            if arch in variants:
+                raise ValueError(f'{arch}: duplicate LLVM TableGen output {node}')
+            variants[arch] = action
+            outputs.extend(':gen/' + arch + '/' + out for out in outs)
         generated[arch] = outputs
         if len(outputs) < 45:
             raise ValueError(f'{arch}: incomplete LLVM TableGen graph ({len(outputs)} outputs)')
 
+    build.loads['@clickhouse//bazel/rules:llvm_tablegen.bzl'] = {'llvm_tablegen'}
+    build.rules.extend(tablegen_rules(tablegen))
     build.rule('filegroup', 'llvm_generated_headers', {
         'srcs': select({'@platforms//cpu:' + a: out for a, out in generated.items()}),
     })

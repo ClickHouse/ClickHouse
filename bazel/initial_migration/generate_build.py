@@ -1458,12 +1458,14 @@ class Graph:
 
 
 def main():
-    # CMake does not declare the Arrow/Parquet header libraries, msgpack_c_api,
-    # or the Google Cloud C++ libraries' native protobuf dependencies.
+    # These overlays own Bazel declarations that CMake does not describe:
+    # Abseil's public and private headers, Arrow/Parquet's header libraries,
+    # msgpack_c_api, and Google Cloud C++'s protobuf dependencies.
+    abseil = ROOT / 'bazel/dependencies/clickhouse_abseil_cpp.BUILD.bazel'
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
     google_cloud = ROOT / 'bazel/dependencies/clickhouse_google_cloud_cpp.BUILD.bazel'
-    read_only = {arrow, msgpack, google_cloud}
+    read_only = {abseil, arrow, msgpack, google_cloud}
     maintained = {path: path.read_bytes() for path in read_only}
     from initial_migration.compact_build import Source
     arrow_targets = {kw.value.value for _, rule in Source(maintained[arrow].decode()).rules()
@@ -1813,8 +1815,14 @@ def main():
     llvm_targets.fold_outline_atomics(ROOT / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel')
     from initial_migration.native_compile_options import shared_native_compile_options
     shared_native_compile_options(ROOT, selection_builds)
+    from initial_migration.prune_redundant_deps import prune_aggregate_deps
+    prune_aggregate_deps(ROOT, build_paths | selection_builds | read_only)
     from initial_migration.first_party_packages import group_package_sources
     group_package_sources(ROOT)
+    from initial_migration.package_source_groups import group_owned_sources
+    from initial_migration.package_source_globs import compact_owned_source_globs
+    group_owned_sources(ROOT, build_paths, header_inventory, final_packages)
+    compact_owned_source_globs(ROOT, build_paths)
     # Consumers and source owners are final after the BUILD rule rewrites.
     prune_native_exports(ROOT, write=True)
     format_build_files(read_only=read_only)

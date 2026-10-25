@@ -4,6 +4,18 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "dbms_sources",
+    srcs = glob([
+        "NamedCollections/*.cpp",
+        "SQLDefinedHandlers/*.cpp",
+    ]) + glob([
+        "OOMCanary/*.cpp",
+        "Scheduler/Workload/*.cpp",
+    ]),
+    visibility = ["//src:__pkg__"],
+)
+
 exports_files(
     ["AsynchronousMetricDocumentation.inc"],
     visibility = ["//src/Storages/System:__pkg__"],
@@ -14,20 +26,6 @@ exports_files([
     "ExceptionExt.cpp",
     "FrequencyHolder.cpp",
     "Hex.cpp",
-    "NamedCollections/NamedCollectionConfiguration.cpp",
-    "NamedCollections/NamedCollections.cpp",
-    "NamedCollections/NamedCollectionsFactory.cpp",
-    "NamedCollections/NamedCollectionsMetadataStorage.cpp",
-    "OOMCanary/OOMCanary.cpp",
-    "SQLDefinedHandlers/SQLDefinedHandler.cpp",
-    "SQLDefinedHandlers/SQLDefinedHandlerFromAST.cpp",
-    "SQLDefinedHandlers/SQLDefinedHandlersFactory.cpp",
-    "SQLDefinedHandlers/SQLDefinedHandlersMetadataStorage.cpp",
-    "Scheduler/Workload/WorkloadEntityConfigStorage.cpp",
-    "Scheduler/Workload/WorkloadEntityDiskStorage.cpp",
-    "Scheduler/Workload/WorkloadEntityKeeperStorage.cpp",
-    "Scheduler/Workload/WorkloadEntityStorageBase.cpp",
-    "Scheduler/Workload/createWorkloadEntityStorage.cpp",
     "ThreadFuzzer.cpp",
 ])
 

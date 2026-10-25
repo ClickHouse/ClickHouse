@@ -98,10 +98,10 @@ ch_cc_library(
     srcs = [
         "absl/strings/cord.cc",
         "absl/strings/cord_analysis.cc",
+        "absl/strings/cord_analysis.h",
     ],
     hdrs = [
         "absl/strings/cord.h",
-        "absl/strings/cord_analysis.h",
         "absl/strings/cord_buffer.h",
     ],
     copts = _ABSL_COPTS,
@@ -255,11 +255,10 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ["absl/crc/internal/non_temporal_arm_intrinsics.h"],
     }) + [
         "absl/crc/internal/non_temporal_memcpy.h",
-    ],
+    ] + ["absl/crc/internal/crc32c_inline.h"],
     hdrs = [
         "absl/crc/crc32c.h",
         "absl/crc/internal/crc32c.h",
-        "absl/crc/internal/crc32c_inline.h",
         "absl/crc/internal/crc_memcpy.h",
     ],
     copts = _ABSL_COPTS,
@@ -714,11 +713,9 @@ ch_cc_library(
     name = "absl_hash",
     srcs = [
         "absl/hash/internal/hash.cc",
-    ],
-    hdrs = [
-        "absl/hash/hash.h",
         "absl/hash/internal/hash.h",
     ],
+    hdrs = ["absl/hash/hash.h"],
     copts = _ABSL_COPTS,
     deps = [
         ":absl_city",
@@ -1398,6 +1395,8 @@ ch_cc_library(
     srcs = [
         "absl/container/internal/raw_hash_set.cc",
         "absl/container/internal/raw_hash_set_resize_impl.h",
+        "absl/container/internal/btree.h",
+        "absl/container/internal/btree_container.h",
     ],
     hdrs = [
         "absl/container/btree_map.h",
@@ -1405,8 +1404,6 @@ ch_cc_library(
         "absl/container/flat_hash_map.h",
         "absl/container/flat_hash_set.h",
         "absl/container/hash_container_defaults.h",
-        "absl/container/internal/btree.h",
-        "absl/container/internal/btree_container.h",
         "absl/container/internal/common.h",
         "absl/container/internal/common_policy_traits.h",
         "absl/container/internal/hash_function_defaults.h",
@@ -1508,11 +1505,8 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [
             "absl/debugging/internal/stacktrace_aarch64-inl.inc",
         ],
-    }),
-    hdrs = [
-        "absl/debugging/internal/stacktrace_config.h",
-        "absl/debugging/stacktrace.h",
-    ],
+    }) + ["absl/debugging/internal/stacktrace_config.h"],
+    hdrs = ["absl/debugging/stacktrace.h"],
     copts = _ABSL_COPTS,
     implementation_deps = [
         ":absl_debugging_internal",
@@ -1529,9 +1523,9 @@ ch_cc_library(
         "absl/status/status.cc",
         "absl/status/status_payload_printer.cc",
         "absl/status/status_payload_printer.h",
+        "absl/status/internal/status_internal.h",
     ],
     hdrs = [
-        "absl/status/internal/status_internal.h",
         "absl/status/status.h",
         "absl/types/optional_ref.h",
     ],
@@ -1562,11 +1556,9 @@ ch_cc_library(
     name = "absl_statusor",
     srcs = [
         "absl/status/statusor.cc",
-    ],
-    hdrs = [
         "absl/status/internal/statusor_internal.h",
-        "absl/status/statusor.h",
     ],
+    hdrs = ["absl/status/statusor.h"],
     copts = _ABSL_COPTS,
     implementation_deps = [
         ":absl_raw_logging_internal",
@@ -1650,6 +1642,9 @@ ch_cc_library(
         "absl/strings/internal/charconv_bigint.h",
         "absl/strings/internal/charconv_parse.h",
         "absl/strings/internal/memutil.h",
+        "absl/strings/internal/str_join_internal.h",
+        "absl/strings/internal/str_split_internal.h",
+        "absl/strings/internal/stringify_sink.h",
     ],
     hdrs = [
         "absl/strings/ascii.h",
@@ -1659,10 +1654,7 @@ ch_cc_library(
         "absl/strings/has_absl_stringify.h",
         "absl/strings/internal/append_and_overwrite.h",
         "absl/strings/internal/damerau_levenshtein_distance.h",
-        "absl/strings/internal/str_join_internal.h",
-        "absl/strings/internal/str_split_internal.h",
         "absl/strings/internal/string_constant.h",
-        "absl/strings/internal/stringify_sink.h",
         "absl/strings/match.h",
         "absl/strings/numbers.h",
         "absl/strings/str_cat.h",
@@ -1918,13 +1910,13 @@ cc_library(
 
 cc_library(
     name = "absl_base_config",
+    srcs = ["absl/base/internal/dynamic_annotations.h"],
     hdrs = [
         "absl/base/attributes.h",
         "absl/base/config.h",
         "absl/base/const_init.h",
         "absl/base/dynamic_annotations.h",
         "absl/base/fast_type_id.h",
-        "absl/base/internal/dynamic_annotations.h",
         "absl/base/internal/errno_saver.h",
         "absl/base/internal/nullability_traits.h",
         "absl/base/internal/tracing.h",
@@ -1943,10 +1935,8 @@ cc_library(
 
 cc_library(
     name = "absl_bind_front",
-    hdrs = [
-        "absl/functional/bind_front.h",
-        "absl/functional/internal/front_binder.h",
-    ],
+    srcs = ["absl/functional/internal/front_binder.h"],
+    hdrs = ["absl/functional/bind_front.h"],
     includes = ["."],
     deps = [
         ":absl_inlined_vector_internal",
@@ -2011,11 +2001,13 @@ cc_library(
 
 cc_library(
     name = "absl_function_ref",
+    srcs = [
+        "absl/functional/internal/any_invocable.h",
+        "absl/functional/internal/function_ref.h",
+    ],
     hdrs = [
         "absl/functional/any_invocable.h",
         "absl/functional/function_ref.h",
-        "absl/functional/internal/any_invocable.h",
-        "absl/functional/internal/function_ref.h",
     ],
     includes = ["."],
     deps = [
@@ -2183,10 +2175,8 @@ cc_library(
 
 cc_library(
     name = "absl_span",
-    hdrs = [
-        "absl/types/internal/span.h",
-        "absl/types/span.h",
-    ],
+    srcs = ["absl/types/internal/span.h"],
+    hdrs = ["absl/types/span.h"],
     includes = ["."],
     deps = [
         ":absl_algorithm",

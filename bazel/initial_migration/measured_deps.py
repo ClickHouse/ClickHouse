@@ -74,7 +74,11 @@ DEPENDENCIES = {
     ('contrib/murmurhash', '_murmurhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('programs/keeper', 'clickhouse-keeper-lib'): ([], ['//src/Dictionaries:clickhouse_dictionaries'], []),
-    ('src/Dictionaries', 'headers'): ([SPARSEHASH, '//src/Functions:cast_api', '//src:core_defines'], [], []),
+    ('src/Daemon', 'headers'): (['//base/poco/XML:_poco_xml'], [], []),
+    ('src/Dictionaries', 'headers'): (
+        [SPARSEHASH, '//src/Functions:cast_api', '//src:core_defines', '//src/Common:shared_mutex'], [], []),
+    ('src/Parsers', 'headers'): (['//base/poco/JSON:_poco_json'], [], []),
+    ('src/TableFunctions', 'headers'): (['//base:common'], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',

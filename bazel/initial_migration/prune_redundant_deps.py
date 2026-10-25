@@ -3,7 +3,7 @@
 
 A removed label must still be reachable, unchanged, from a remaining direct
 dep through cc_library, ch_cc_library, cc_import, or alias public deps, on
-both supported CPUs. Never traverse implementation_deps, source rules, or
+both supported CPUs. Public-header witnesses never traverse implementation_deps, source rules, or
 unknown macros. External endpoints absent from the overlay graph may be
 matched by exact label: the existing native cc_library deps require CcInfo,
 but no property of an absent target's own dependencies is assumed.
@@ -104,7 +104,7 @@ class PublicDeps:
         return True
 
     @cache
-    def reachable(self, target, cpu, proof):
+    def reachable(self, target, cpu, proof, *, linking=False):
         result, pending = set(), [target]
         while pending:
             current = pending.pop()
@@ -117,6 +117,9 @@ class PublicDeps:
             result.add(current)
             if current in self.edges:
                 pending.extend(self.edges[current][cpu])
+                if linking:
+                    doc, _, attrs = self.graph.rules[current]
+                    pending.extend(doc.labels(attrs.get("implementation_deps"), cpu))
         return frozenset(result)
 
     def public(self, target, cpu):
@@ -133,6 +136,46 @@ class PublicDeps:
             witnesses[cpu] = next((other for other in sorted(self.edges[target][cpu] - {dep})
                                    if dep in self.reachable(other, cpu, True)), None)
         return witnesses if all(witnesses.values()) else None
+
+
+def prune_aggregate_deps(root, paths):
+    """Preserve header and linker input order when pruning source-free ClickHouse compile groups."""
+    from initial_migration.measured_deps import editable_dependency_lists
+    from initial_migration.native_include_deps import explicit_list, rejects_cpu
+
+    docs = [Document(p, package=p.parent.relative_to(root).as_posix().removeprefix('.'))
+            if p.name == 'BUILD.bazel' else Document(p) for p in sorted(paths)]
+    public = PublicDeps(docs)
+
+    def repeated(deps, cpu, linking=False):
+        seen, result = set(), set()
+        for dep in deps:
+            if dep in seen:
+                result.add(dep)
+            seen.update(public.reachable(dep, cpu, True, linking=linking))
+        return result
+
+    edits = {}
+    for target, (doc, kind, attrs) in public.graph.rules.items():
+        if doc.repo != '@clickhouse' or kind != 'cc_library' or set(attrs) != {'name', 'deps'}:
+            continue
+        deps = attrs['deps']
+        if not explicit_list(deps, doc) or not rejects_cpu(deps, doc, 'default'):
+            continue
+        redundant = []
+        for cpu in ARCHES:
+            direct = [doc.reference(d) for d in doc.values(deps, cpu)]
+            if not any(d.startswith(target + '__compile_') for d in direct):
+                break
+            # Headers follow the first public dependency; the linker visits the
+            # last dependency first. Require the same provider on both sides.
+            redundant.append(repeated(direct, cpu) & repeated(reversed(direct), cpu, linking=True))
+        else:
+            drop = set.intersection(*redundant)
+            if drop and (changes := editable_dependency_lists(doc, deps, drop, doc.reference)):
+                edits.setdefault(doc, []).extend(changes)
+    for doc, changes in edits.items():
+        doc.path.write_text(doc.source.rewrite(changes))
 
 
 class Reduction:

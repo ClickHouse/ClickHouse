@@ -104,7 +104,6 @@ cc_library(
         "//base:common",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
-        "//base/poco/XML:_poco_xml",
         "//src/Common",
         "//base/poco/Util:_poco_util",
         "//src/Loggers:headers",
