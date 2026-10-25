@@ -4195,6 +4195,9 @@ private:
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
             {
+                /// Types without values are not converted, so they cannot fail the conversion.
+                if (args[0].column->empty())
+                    return nullptr;
                 return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 

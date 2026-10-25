@@ -16,5 +16,5 @@ SET enable_named_columns_in_function_tuple = 1;
 -- Tuple elements are named only from explicit aliases, so the aliases below are required
 -- for the tuple to be `Tuple(a UInt8, b Date)`. Do not remove them.
 
-SELECT 36 AS n, toDate('2000-01-01') + n AS d, (n AS a, d AS b) AS tuple FROM system.numbers LIMIT 1 FORMAT RowBinaryWithNamesAndTypes SETTINGS enable_analyzer=1;
-SELECT number * 246 + 10 AS n, toDate('2000-01-01') + n AS d, (n AS a, d AS b) AS tuple FROM system.numbers LIMIT 1 FORMAT TabSeparatedWithNamesAndTypes SETTINGS enable_analyzer=1;
+SELECT 36 AS n, toDate('2000-01-01') + n AS d, (n AS a, d AS b) AS tuple FROM system.numbers LIMIT 1 FORMAT RowBinaryWithNamesAndTypes;
+SELECT number * 246 + 10 AS n, toDate('2000-01-01') + n AS d, (n AS a, d AS b) AS tuple FROM system.numbers LIMIT 1 FORMAT TabSeparatedWithNamesAndTypes;
