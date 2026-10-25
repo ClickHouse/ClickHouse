@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/pushDownLabelMatchers.h>
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorCountValues.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorOr.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorUnless.h>
@@ -9,7 +8,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
 #include <algorithm>
 
 
@@ -134,28 +132,44 @@ namespace
         return argument && hasSingleMetricName(argument);
     }
 
-    /// Whether filtering this side of the operator can't hide an error Prometheus gives for duplicate series.
-    /// Prometheus checks the "one" side for duplicates in every match group, so it's filtered only if it can't have any.
+    /// Whether the series of the argument stay different in the result of the node. Functions and operators drop the metric name,
+    /// except a comparison without `bool`, and Prometheus fails if two series become the same then.
+    bool keepsSeriesDifferent(const Node * node, const Node * argument)
+    {
+        bool can_drop_metric_name = (node->node_type == NodeType::Function);
+        if (node->node_type == NodeType::BinaryOperator)
+        {
+            const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
+            can_drop_metric_name = !isComparisonOperator(binary_operator.operator_name) || binary_operator.bool_modifier;
+        }
+        return !can_drop_metric_name || hasSingleMetricName(argument);
+    }
+
+    /// Whether the node can't fail on duplicate series, either in a match group of an operator or after dropping the metric name.
+    /// Nodes which aren't known to be safe are assumed to fail.
+    bool cannotFail(const Node * node)
+    {
+        bool can_fail = false;
+        if (isVectorMatching(node))
+        {
+            const auto & operator_name = static_cast<const BinaryOperatorNode &>(*node).operator_name;
+            can_fail = !isBinaryOperatorAnd(operator_name) && !isBinaryOperatorUnless(operator_name);
+        }
+        else if (node->node_type != NodeType::Scalar && node->node_type != NodeType::StringLiteral
+                 && node->node_type != NodeType::InstantSelector && node->node_type != NodeType::AggregationOperator)
+        {
+            const auto * argument = getLabelPreservingArgument(node);
+            can_fail = !argument || !keepsSeriesDifferent(node, argument);
+        }
+        return !can_fail && std::ranges::all_of(node->children, cannotFail);
+    }
+
+    /// Whether filtering this side of the operator can't hide an error of the other side.
+    /// If the filtered side becomes empty, the JOIN can skip reading the other side.
     bool canFilterSide(const Node * side, const BinaryOperatorNode & binary_operator)
     {
-        const auto & operator_name = binary_operator.operator_name;
-        if (isBinaryOperatorAnd(operator_name) || isBinaryOperatorUnless(operator_name))
-            return true;
-        const auto * one_side = binary_operator.group_right ? binary_operator.getLeftArgument() : binary_operator.getRightArgument();
-        if (side != one_side)
-            return true;
-
-        /// An aggregation by labels which are all matched on has one series in each match group.
-        if (side->node_type != NodeType::AggregationOperator)
-            return false;
-        const auto & aggregation = static_cast<const AggregationOperatorNode &>(*side);
-        if (!aggregation.by
-            || !(isOneArgumentAggregationOperator(aggregation.operator_name) || isAggregationOperatorQuantile(aggregation.operator_name)))
-            return false;
-        return std::ranges::all_of(aggregation.labels, [&](const String & label)
-        {
-            return label != kMetricName && contains(binary_operator.labels, label) == binary_operator.on;
-        });
+        bool is_left = (side == binary_operator.getLeftArgument());
+        return cannotFail(is_left ? binary_operator.getRightArgument() : binary_operator.getLeftArgument());
     }
 
     /// The pass runs before the converter checks the arguments, so an aggregation may have none.
@@ -229,21 +243,16 @@ namespace
                 return;
             MatcherList matching = keepMatchingLabels(matchers, binary_operator);
             for (const auto * side : binary_operator.children)
-                addMatchers(side, matching);
+            {
+                if (canFilterSide(side, binary_operator))
+                    addMatchers(side, matching);
+            }
             return;
         }
 
         if (const auto * argument = getLabelPreservingArgument(node))
         {
-            /// Functions and operators drop the metric name, except a comparison without `bool`,
-            /// and Prometheus fails if two series become the same then.
-            bool can_drop_metric_name = (node->node_type == NodeType::Function);
-            if (node->node_type == NodeType::BinaryOperator)
-            {
-                const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
-                can_drop_metric_name = !isComparisonOperator(binary_operator.operator_name) || binary_operator.bool_modifier;
-            }
-            if (!can_drop_metric_name || hasSingleMetricName(argument))
+            if (keepsSeriesDifferent(node, argument))
                 addMatchers(argument, matchers);
         }
     }
@@ -265,6 +274,7 @@ namespace
             return;
 
         /// A series without a match on the other side is dropped, except the left series of `unless`, which are kept.
+        /// The operator checks duplicate series only in matched groups, so dropping the other groups doesn't change its errors.
         const auto & binary_operator = static_cast<const BinaryOperatorNode &>(*node);
         MatcherList left_matchers = keepMatchingLabels(getCommonMatchers(binary_operator.getLeftArgument()), binary_operator);
         MatcherList right_matchers = keepMatchingLabels(getCommonMatchers(binary_operator.getRightArgument()), binary_operator);
