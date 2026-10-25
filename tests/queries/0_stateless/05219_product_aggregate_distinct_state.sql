@@ -89,6 +89,95 @@ SELECT isNull(productOrNullDistinctMerge(null_state)), isNull(productOrDefaultDi
 FROM product_wrapped_distinct_state_order;
 DROP TABLE product_wrapped_distinct_state_order;
 
+-- Distinct must keep the order of combined keys, not just unary values.
+SELECT 'If ordered state';
+SELECT
+    isNull(productIfDistinct(x, keep)),
+    isNull(finalizeAggregation(productIfDistinctState(x, keep)))
+FROM
+(
+    SELECT x, keep
+    FROM VALUES('k UInt8, x Float64, keep UInt8',
+        (1, 1e300, 1), (2, 0, 1), (3, 2e300, 1))
+    ORDER BY k
+)
+SETTINGS max_threads = 1;
+
+-- Tuple has multiple nested aggregate functions, not getNestedFunction().
+SELECT 'Tuple ordered state';
+SELECT
+    isNull(tupleElement(productTupleDistinct(tuple(x)), 1)),
+    isNull(tupleElement(finalizeAggregation(productTupleDistinctState(tuple(x))), 1))
+FROM
+(
+    SELECT x
+    FROM VALUES('k UInt8, x Float64', (1, 1e300), (2, 2e300), (3, 0))
+    ORDER BY k
+)
+SETTINGS max_threads = 1;
+
+-- Both resampling and ArgMax add an argument to the nested aggregate.
+SELECT 'ArgMax ordered state';
+SELECT
+    isNull(productArgMaxDistinct(x, k)),
+    isNull(finalizeAggregation(productArgMaxDistinctState(x, k)))
+FROM
+(
+    SELECT x, k
+    FROM VALUES('seq UInt8, x Float64, k UInt8',
+        (1, 1e300, 1), (2, 0, 1), (3, 2e300, 1))
+    ORDER BY seq
+)
+SETTINGS max_threads = 1;
+
+SELECT 'Resample ordered state';
+SELECT
+    toString(productResampleDistinct(0, 1, 1)(x, k))
+        = toString(finalizeAggregation(productResampleDistinctState(0, 1, 1)(x, k)))
+FROM
+(
+    SELECT x, k
+    FROM VALUES('seq UInt8, x Float64, k UInt8',
+        (1, 1e300, 0), (2, 0, 0), (3, 2e300, 0))
+    ORDER BY seq
+)
+SETTINGS max_threads = 1;
+
+SELECT 'If and Tuple persisted states';
+DROP TABLE IF EXISTS product_composed_distinct_states;
+CREATE TABLE product_composed_distinct_states
+(
+    id UInt8,
+    if_state AggregateFunction(productIfDistinct, Float64, UInt8),
+    tuple_state AggregateFunction(productTupleDistinct, Tuple(Float64))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO product_composed_distinct_states
+SELECT 1, productIfDistinctState(x, keep), productTupleDistinctState(tuple(tuple_x))
+FROM
+(
+    SELECT
+        if(number = 0, 1e300, if(number = 1, 0., 2e300)) AS x,
+        toUInt8(1) AS keep,
+        if(number = 0, 1e300, if(number = 1, 2e300, 0.)) AS tuple_x
+    FROM numbers(3)
+    ORDER BY number
+)
+SETTINGS max_threads = 1;
+
+SELECT
+    isNull(finalizeAggregation(if_state)),
+    isNull(tupleElement(finalizeAggregation(tuple_state), 1))
+FROM product_composed_distinct_states
+ORDER BY id;
+SELECT
+    isNull(productIfDistinctMerge(if_state)),
+    isNull(tupleElement(productTupleDistinctMerge(tuple_state), 1))
+FROM product_composed_distinct_states;
+DROP TABLE product_composed_distinct_states;
+
 -- Decimal256 takes the generic Distinct path. Six different 70-digit values
 -- overflow Float64 before the zero, so the ordered result is NULL.
 SELECT 'Decimal256 state copy';

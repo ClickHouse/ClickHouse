@@ -36,19 +36,15 @@ public:
         const Array & params) const override
     {
         AggregateFunctionPtr res;
+        /// Combinator names retain the aggregate's base name. In particular,
+        /// Tuple has multiple nested functions and no getNestedFunction().
+        /// Only product needs an ordered distinct history here, because its
+        /// Float64 multiplication may change when unique keys are replayed.
+        const bool ordered_product = properties.is_order_dependent && nested_function->getName().starts_with("product");
+
         if (arguments.size() == 1)
         {
-            /// Preserve the multiplication order for product even when wrapped
-            /// in OrNull or OrDefault. Do not change other Distinct functions'
-            /// in-memory or serialized state representation.
-            auto base_function = nested_function;
-            if (properties.is_order_dependent)
-            {
-                while (auto nested = base_function->getNestedFunction())
-                    base_function = nested;
-            }
-
-            if (properties.is_order_dependent && base_function->getName() == "product")
+            if (ordered_product)
             {
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinct,
@@ -80,6 +76,10 @@ public:
             return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericData<false>>>(
                 nested_function, arguments, params, properties.is_order_dependent);
         }
+
+        if (ordered_product)
+            return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericOrderedData>>(
+                nested_function, arguments, params, true);
 
         return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(
             nested_function, arguments, params, properties.is_order_dependent);

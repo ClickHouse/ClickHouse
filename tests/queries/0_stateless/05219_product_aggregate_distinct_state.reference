@@ -10,5 +10,16 @@ wrapped numeric state copy
 wrapped MergeTree state round trip
 1	1
 1	1
+If ordered state
+0	0
+Tuple ordered state
+1	1
+ArgMax ordered state
+0	0
+Resample ordered state
+1
+If and Tuple persisted states
+0	1
+0	1
 Decimal256 state copy
 1	1
