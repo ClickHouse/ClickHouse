@@ -36,6 +36,7 @@ public:
         time_t min_age,
         size_t size_prev_at_left,
         double min_partition_age,
+        const IMergeSelector::RangeFilter & range_filter,
         const SimpleMergeSelector::Settings & settings)
     {
         /// Mirror the precedence from `allow`: a range that qualifies for force merge, by the age
@@ -54,6 +55,7 @@ public:
                 || std::cmp_less(min_age, settings.merge_selector_min_age_to_disable_right_tail_heuristic));
         if (should_remove_small_parts_at_right)
         {
+            const auto untrimmed_end = end;
             size_t size_delta = 0;
             size_t rows_delta = 0;
             while (end >= begin + 3 && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
@@ -65,6 +67,13 @@ public:
 
             sum_size -= size_delta;
             sum_rows -= rows_delta;
+
+            /// `allow` checked the range filter before trimming, but the filter is not monotonic: a shorter
+            /// range may be rejected where the longer one was accepted (the memory-derived cap prices a range
+            /// that drops below `vertical_merge_algorithm_min_rows_to_activate` as a horizontal merge, see
+            /// `capRangesByAffordableMemory`). So check the range that is actually going to be merged.
+            if (end != untrimmed_end && range_filter && !range_filter({begin, end}))
+                return;
         }
 
         const size_t range_size = end - begin;
@@ -452,6 +461,7 @@ void selectWithinPartsRange(
                     min_age,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     min_partition_age,
+                    range_filter,
                     settings);
         }
     }
