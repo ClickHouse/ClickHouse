@@ -30,6 +30,7 @@
 #include <Interpreters/SetSerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Core/Settings.h>
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -52,6 +53,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
 
 namespace ErrorCodes
 {
@@ -5447,6 +5453,19 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         if (function_capture)
             column_flags |= 4;
 
+        /// A cast can remove the trailing zero bytes of a `FixedString` converted to `String` regardless of the
+        /// setting `cast_fixed_string_to_string_strip_trailing_zeros` (the `JOIN` keys do it), so the receiver
+        /// cannot rebuild it from its own settings. Older receivers ignore these bits.
+        if (node.type == ActionType::FUNCTION)
+        {
+            if (auto strip_trailing_zeros = getCastFixedStringToStringStripTrailingZeros(*node.function_base))
+            {
+                column_flags |= 8;
+                if (*strip_trailing_zeros)
+                    column_flags |= 16;
+            }
+        }
+
         writeIntBinary(column_flags, out);
 
         /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
@@ -5528,6 +5547,10 @@ ActionsDAG ActionsDAG::deserialize(
     std::unordered_map<size_t, Node *> id_to_node;
     for (size_t i = 0; i < nodes_size; ++i)
         id_to_node.emplace(i, &nodes.emplace_back(Node{}));
+
+    /// Copies of `context` with the other value of `cast_fixed_string_to_string_strip_trailing_zeros`, see below.
+    ContextPtr context_with_stripping_cast;
+    ContextPtr context_with_preserving_cast;
 
     for (size_t i = 0; i < nodes_size; ++i)
     {
@@ -5617,7 +5640,25 @@ ActionsDAG ActionsDAG::deserialize(
             }
             else
             {
-                auto function = FunctionFactory::instance().get(function_name, context);
+                ContextPtr function_context = context;
+                if (column_flags & 8)
+                {
+                    /// A cast, which keeps the mode of the conversion of `FixedString` to `String` it was built with.
+                    const bool strip_trailing_zeros = (column_flags & 16) != 0;
+                    if (!context || context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros] != strip_trailing_zeros)
+                    {
+                        auto & context_with_cast_mode = strip_trailing_zeros ? context_with_stripping_cast : context_with_preserving_cast;
+                        if (!context_with_cast_mode)
+                        {
+                            auto context_copy = Context::createCopy(context ? context : Context::getGlobalContextInstance());
+                            context_copy->setSetting("cast_fixed_string_to_string_strip_trailing_zeros", Field(strip_trailing_zeros));
+                            context_with_cast_mode = std::move(context_copy);
+                        }
+                        function_context = context_with_cast_mode;
+                    }
+                }
+
+                auto function = FunctionFactory::instance().get(function_name, function_context);
 
                 node.function_base = function->build(arguments);
                 node.function = node.function_base->prepare(arguments);
