@@ -7,6 +7,10 @@
 # Tag no-shared-merge-tree: the oracle counts ReplicatedMergeTreePartCheckThread log lines, so under
 #   --replace-replicated-with-shared it would read 0 whether or not the guard works. Same tag as the
 #   other part-check tests (04603, 04604).
+# Random settings limits: use_columns_cache=(0, 0)
+# use_columns_cache is clamped off: the Compact reader serves a cached granule without reading its
+#   structure prefix, so once the calibration scan has filled the cache no cancellation can land
+#   inside that read.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
