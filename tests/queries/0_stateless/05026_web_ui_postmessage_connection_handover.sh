@@ -260,7 +260,7 @@ processors_profile=$(handover_body processors-profile | grep -qxF "            +
     && handover_body processors-profile | grep -qxF "            ++profileGeneration;" \
     && handover_body processors-profile | grep -qxF "            connectionAbortController.abort();" \
     && handover_body processors-profile | grep -qxF "            loadQueries();" \
-    && fetch_page processors-profile | grep -qxF "                signal: connectionAbortController.signal," \
+    && echo "$(fetch_page processors-profile)" | grep -qxF "                signal: connectionAbortController.signal," \
     && echo invalidated || echo kept)
 echo "handover dashboard=${dashboard} schema=${schema} jemalloc=${jemalloc} processors_profile=${processors_profile}"
 
