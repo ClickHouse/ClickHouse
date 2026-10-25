@@ -430,6 +430,28 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ZooKeeperMulti` ([UInt64](/reference/data-types/int-uint)) — Number of 'multi' requests to ZooKeeper (compound transactions).
 - `ProfileEvent_ZooKeeperMultiRead` ([UInt64](/reference/data-types/int-uint)) — Number of read 'multi' requests to ZooKeeper (compound transactions).
 - `ProfileEvent_ZooKeeperMultiWrite` ([UInt64](/reference/data-types/int-uint)) — Number of write 'multi' requests to ZooKeeper (compound transactions).
+- `ProfileEvent_TransactionBeginMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in `BEGIN TRANSACTION`, explicit or implicit
+- `ProfileEvent_TransactionBeginSnapshotBehindLatest` ([UInt64](/reference/data-types/int-uint)) — Number of transactions that began with a snapshot below the latest CSN, because the global watermark lags
+- `ProfileEvent_TransactionCommitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent committing transactions, without waiting for the CSN to be loaded
+- `ProfileEvent_TransactionCommitAllocateCSNMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time from the start of a transaction commit until Keeper allocated its CSN
+- `ProfileEvent_TransactionCommitAfterCSNMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent finalizing committed transactions after their CSN was allocated
+- `ProfileEvent_TransactionCommitUnknownStatus` ([UInt64](/reference/data-types/int-uint)) — Number of transaction commits whose outcome is unknown because of a Keeper hardware error
+- `ProfileEvent_TransactionCommitUnknownStatusWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting for the outcome of commits with unknown status
+- `ProfileEvent_TransactionWaitCSNLoaded` ([UInt64](/reference/data-types/int-uint)) — Number of waits until a CSN is loaded into the latest snapshot, by a synchronous `COMMIT` or `SYSTEM SYNC TRANSACTION LOG`
+- `ProfileEvent_TransactionWaitCSNLoadedMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting until a CSN is loaded into the latest snapshot
+- `ProfileEvent_TransactionWaitWatermark` ([UInt64](/reference/data-types/int-uint)) — Number of waits until the watermark reaches a CSN, so a new transaction on this replica sees it, by `COMMIT` with `wait_visible` or `SYSTEM SYNC TRANSACTION LOG`
+- `ProfileEvent_TransactionWaitWatermarkMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting until the watermark reaches a CSN
+- `ProfileEvent_TransactionsCommitted` ([UInt64](/reference/data-types/int-uint)) — Number of committed transactions, including read-only ones
+- `ProfileEvent_TransactionsRolledBack` ([UInt64](/reference/data-types/int-uint)) — Number of rolled back transactions
+- `ProfileEvent_TransactionCommitConflicts` ([UInt64](/reference/data-types/int-uint)) — Number of transaction commits that failed with `SERIALIZATION_ERROR` because a concurrent operation changed a part
+- `ProfileEvent_TransactionTIDsInvalidated` ([UInt64](/reference/data-types/int-uint)) — Number of transaction IDs this replica invalidated
+- `ProfileEvent_TransactionDeadReplicasMarked` ([UInt64](/reference/data-types/int-uint)) — Number of replicas this replica marked dead for transactions
+- `ProfileEvent_TransactionLogLoadMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent loading the transaction log (`/log`) from Keeper: listing it, reading the new entries and applying them
+- `ProfileEvent_TransactionLogLoadedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of transaction log (`/log`) entries read from Keeper
+- `ProfileEvent_TransactionLogLoads` ([UInt64](/reference/data-types/int-uint)) — Number of loads of the transaction log (`/log`) from Keeper
+- `ProfileEvent_TransactionBegins` ([UInt64](/reference/data-types/int-uint)) — Number of `BEGIN TRANSACTION`, explicit or implicit
+- `ProfileEvent_TransactionCommits` ([UInt64](/reference/data-types/int-uint)) — Number of transaction commits started, including read-only and unsuccessful ones
+- `ProfileEvent_TransactionCommitsWithCSN` ([UInt64](/reference/data-types/int-uint)) — Number of transaction commits for which Keeper allocated a CSN
 - `ProfileEvent_ZooKeeperCheck` ([UInt64](/reference/data-types/int-uint)) — Number of 'check' requests to ZooKeeper. Usually they don't make sense in isolation, only as part of a complex transaction.
 - `ProfileEvent_ZooKeeperSync` ([UInt64](/reference/data-types/int-uint)) — Number of 'sync' requests to ZooKeeper. These requests are rarely needed or usable.
 - `ProfileEvent_ZooKeeperReconfig` ([UInt64](/reference/data-types/int-uint)) — Number of 'reconfig' requests to ZooKeeper.
@@ -865,6 +887,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/reference/data-types/int-uint)) — Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 - `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/reference/data-types/int-uint)) — Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 - `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/reference/data-types/int-uint)) — Number of the 'plain_rewritable' disks with legacy layout.
+- `ProfileEvent_DiskPlainRewritableSnapshotRead` ([UInt64](/reference/data-types/int-uint)) — Number of times a read-only 'plain_rewritable' disk loaded its state from the snapshot file instead of listing the object storage (a refresh that finds the snapshot unchanged does not read it and is not counted).
+- `ProfileEvent_DiskPlainRewritableSnapshotWritten` ([UInt64](/reference/data-types/int-uint)) — Number of snapshot files written by 'plain_rewritable' disks.
+- `ProfileEvent_DiskPlainRewritableSnapshotWriteFailed` ([UInt64](/reference/data-types/int-uint)) — Number of failed attempts to write the snapshot file of a 'plain_rewritable' disk (the write is retried).
 - `ProfileEvent_DiskPlainRewritableOrphanedObjectsRemoved` ([UInt64](/reference/data-types/int-uint)) — Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).
 - `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/reference/data-types/int-uint)) — Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.
 - `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/reference/data-types/int-uint)) — Number of metadata transactions that failed to commit and were rolled back.
@@ -1076,9 +1101,13 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MetadataFromKeeperBackgroundCleanupErrors` ([UInt64](/reference/data-types/int-uint)) — Number of times an error was encountered in background cleanup task
 - `ProfileEvent_BlobKillerThreadRuns` ([UInt64](/reference/data-types/int-uint)) — Number of BlobKiller thread executes
 - `ProfileEvent_BlobKillerThreadLockedBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs returned from metadata storage
+- `ProfileEvent_BlobKillerThreadLockedSingleBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs returned from metadata storage one by one
+- `ProfileEvent_BlobKillerThreadLockedBatchedBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs returned from metadata storage as part of a batch
 - `ProfileEvent_BlobKillerThreadRemoveTasks` ([UInt64](/reference/data-types/int-uint)) — Number of remove tasks created by BlobKiller
 - `ProfileEvent_BlobKillerThreadRemovedBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs removed by BlobKiller
 - `ProfileEvent_BlobKillerThreadRecordedBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs which removal by BlobKiller was recorded in metadata storage
+- `ProfileEvent_BlobKillerThreadRecordedSingleBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs removed one by one whose removal by BlobKiller was recorded in metadata storage
+- `ProfileEvent_BlobKillerThreadRecordedBatchedBlobs` ([UInt64](/reference/data-types/int-uint)) — Number of blobs removed as part of a batch whose removal by BlobKiller was recorded in metadata storage
 - `ProfileEvent_BlobKillerThreadLockBlobsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of blobs lock errors occurred during BlobKiller execution
 - `ProfileEvent_BlobKillerThreadRemoveBlobsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of blobs removal errors occurred during BlobKiller execution
 - `ProfileEvent_BlobKillerThreadRecordBlobsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of blobs recording errors occurred during BlobKiller execution
@@ -1325,6 +1354,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_DistrCacheSeekBufferedBytesShortfall` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of bytes the locally buffered data fell short of the gap when a skip was declined
 - `ProfileEvent_DistrCacheSeekReRequestFirstPacketMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Time between requesting a new read range on the open stream because of a seek and receiving its first packet
 - `ProfileEvent_DistrCacheEstimatedInflightBytesOnSeek` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)
+- `ProfileEvent_DistrCacheKeptConnectionsWithInflightData` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The number of times a connection was kept in the pool when a read request was cancelled while data could still arrive, because the estimated in-flight bytes did not exceed `distributed_cache_min_inflight_bytes_to_discard_connection`
+- `ProfileEvent_DistrCacheKeptConnectionsInflightBytes` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. The estimated in-flight bytes of the connections counted in DistrCacheKeptConnectionsWithInflightData (compare with DistrCacheUnusedDataPacketsBytesUnknownRequest)
 - `ProfileEvent_DistrCacheReadBytesUnconsumedOnEndRequest` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache read buffer event. Bytes of the requested read range left unconsumed when the request was ended early
 - `ProfileEvent_DistrCacheOpenedConnections` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache connection event. The number of open connections to distributed cache
 - `ProfileEvent_DistrCacheReusedConnections` ([UInt64](/reference/data-types/int-uint)) — Distributed Cache connection event. The number of reused connections to distributed cache
@@ -1638,11 +1669,13 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ParquetDecompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.
 - `ProfileEvent_ParquetPagesDecompressedToSkipRows` ([UInt64](/reference/data-types/int-uint)) — Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).
 - `ProfileEvent_ParquetTopKSkippedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
+- `ProfileEvent_ParquetFilesSkippedByCachedStatistics` ([UInt64](/reference/data-types/int-uint)) — The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group
 - `ProfileEvent_ParquetReadMinMaxFromStatistics` ([UInt64](/reference/data-types/int-uint)) — The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)
 - `ProfileEvent_ParquetReadPages` ([UInt64](/reference/data-types/int-uint)) — The total number of Parquet data pages read
 - `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
 - `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/reference/data-types/int-uint)) — Task groups sent to a thread pool by parquet reader
+- `ProfileEvent_ParquetColumnDataReadAheadRowGroups` ([UInt64](/reference/data-types/int-uint)) — Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
 - `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/reference/data-types/int-uint)) — The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher
 - `ProfileEvent_ParquetPrefetcherReadSeekAndRead` ([UInt64](/reference/data-types/int-uint)) — The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher
 - `ProfileEvent_ParquetPrefetcherReadEntireFile` ([UInt64](/reference/data-types/int-uint)) — The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher
@@ -1728,6 +1761,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.
 - `ProfileEvent_AIOutputTokens` ([UInt64](/reference/data-types/int-uint)) — Total completion tokens consumed across all AI function calls in the query.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
+- `ProfileEvent_AIAPICallsRetried` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests retried after a transient failure.
+- `ProfileEvent_AIAPICallsFailed` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests that failed after all retries.
+- `ProfileEvent_AIAPICallsThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests rejected with HTTP 429 (Too Many Requests).
 - `ProfileEvent_AIRowsProcessed` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received an AI result.
 - `ProfileEvent_AIRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received a default value due to quota or error.
 - `ProfileEvent_YTsaurusLookupThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of lookup requests to YTsaurus that were throttled
