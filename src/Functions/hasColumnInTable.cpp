@@ -108,7 +108,10 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     /// is checked for the table it resolves to, which is the table that is read below (the lookup is exact).
     /// The access is checked before the table is got, so that denial does not depend on the table existing.
     /// SHOW_COLUMNS is the same grant required by DESCRIBE and SHOW CREATE TABLE.
-    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({database_name, table_name}, getContext());
+    /// The database is given explicitly, so the name is not resolved relative to the current database
+    /// (and an empty database name stays empty, which is reported as UNKNOWN_DATABASE, as before).
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName(
+        {database_name, table_name}, /*current_database=*/ "", getContext());
     getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
 
     // FIXME this (probably) needs a non-constant access to query context,
