@@ -94,7 +94,6 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_std_throw_before_body[];
     extern const char iceberg_catalog_commit_conflict[];
     extern const char iceberg_catalog_commit_predispatch_fail[];
-    extern const char iceberg_catalog_commit_std_throw[];
 }
 
 namespace ProfileEvents
@@ -1900,9 +1899,8 @@ String RestCatalog::sendRequest(
 
             DB::writeString(body_str, out);
 
-            /// The stream buffers, so these bytes need not be on the socket yet. The transport writes a
-            /// buffered request out on any usable socket, including while it unwinds, so the attempt can
-            /// take effect from here on.
+            /// The transport sends this body when it finalizes the buffer after the callback returns, so
+            /// from here on a failure may follow a request the catalog received and applied.
             if (request_body_written)
                 *request_body_written = true;
 
@@ -1923,13 +1921,6 @@ String RestCatalog::sendRequest(
             fiu_do_on(DB::FailPoints::iceberg_catalog_commit_transport_net_fail,
             {
                 throw Poco::Net::NetException("Injected net failure");
-            });
-
-            /// Same site, but outside the Poco hierarchy: an allocation failure while the response
-            /// body is read arrives this way, and the transport's retry handlers do not cover it.
-            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_std_throw,
-            {
-                throw std::runtime_error("Injected std failure");
             });
         };
     }

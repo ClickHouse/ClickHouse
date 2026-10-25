@@ -3277,8 +3277,9 @@ def test_catalog_commit_readback_failure_keeps_files(started_cluster):
 
 
 def test_catalog_commit_refused_is_not_reported_as_committed(started_cluster):
-    # The catalog refuses the commit, but the connection drops before the refusal is read. The
-    # read-back does not find the new snapshot, so the outcome is unknown and the table is unchanged.
+    # The connection drops once the commit body is written, and the commit asserts a parent `main` is
+    # not at, so the catalog cannot apply it even if it receives the body. The read-back does not find
+    # the new snapshot, so the outcome is unknown and the table is unchanged.
     node = started_cluster.instances["node1"]
     catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
         started_cluster, node, f"test_commit_refused_{uuid.uuid4()}"
@@ -3336,18 +3337,18 @@ def test_catalog_commit_transport_failure_unknown_keeps_files(started_cluster):
     )
 
     try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_transport_net_fail")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost_net")
         node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
         error = node.query_and_get_error(
             f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings
         )
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_transport_net_fail")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost_net")
         node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
 
     assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
     # The transport error must still be readable, so the user keeps the actionable detail.
-    assert "Injected net failure" in error, error
+    assert "Injected lost response" in error, error
 
     snapshot = _current_snapshot(catalog, root_namespace, table_name)
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
@@ -3391,18 +3392,18 @@ def test_catalog_commit_std_exception_unknown_keeps_files(started_cluster):
     )
 
     try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost_std")
         node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
         error = node.query_and_get_error(
             f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings
         )
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost_std")
         node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
 
     assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
     # The original error must still be readable, so the user keeps the actionable detail.
-    assert "Injected std failure" in error, error
+    assert "Injected lost response" in error, error
 
     snapshot = _current_snapshot(catalog, root_namespace, table_name)
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (

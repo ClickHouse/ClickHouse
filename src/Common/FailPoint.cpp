@@ -316,7 +316,6 @@ static struct InitFiu
     REGULAR(iceberg_catalog_commit_predispatch_fail) \
     REGULAR(iceberg_catalog_commit_update_throw) \
     REGULAR(iceberg_catalog_commit_update_throw_post_dispatch) \
-    REGULAR(iceberg_catalog_commit_std_throw) \
     PAUSEABLE_ONCE(hudi_pause_before_iterate) \
     PAUSEABLE_ONCE(hudi_pause_in_listing_data_files) \
     REGULAR(storage_cluster_read_sleep) \
