@@ -5,7 +5,6 @@
 -- query-token edge so the token's posting list is NOT read, and the query is failed. Without this,
 -- analyzePostings would still read the single-block postings the optimization is meant to avoid.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 SET query_plan_optimize_count_from_text_index = 0;

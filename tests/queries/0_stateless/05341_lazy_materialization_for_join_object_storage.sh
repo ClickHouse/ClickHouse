@@ -54,7 +54,6 @@ FROM (EXPLAIN SELECT mt.k, mt.heavy, o.s FROM mt LEFT JOIN ${TABLE_FN} AS o ON m
 # `s3_validate_etag_on_read` is pinned because a plain object storage read is reread lazily only with the
 # ETag-pinned GET. The joins are pinned so that each side is read directly and keeps the order it is written in.
 SETTINGS=(
-    --enable_analyzer=1
     --s3_validate_etag_on_read=1
     --query_plan_optimize_lazy_materialization=1
     --query_plan_optimize_lazy_materialization_for_object_storage=1

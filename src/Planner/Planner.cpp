@@ -3568,7 +3568,9 @@ void Planner::buildPlanForQueryNode()
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const
 {
-    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
+    auto select_query_info = ::DB::buildSelectQueryInfo(query_tree, planner_context);
+    select_query_info.is_secondary_query_root = select_query_options.is_secondary_query_root;
+    return select_query_info;
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)
