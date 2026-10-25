@@ -719,15 +719,19 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             redefined_alias_columns.insert(column.name);
 
         /// Implicit indices are not stored in Keeper, so every replicated ALTER regenerates them. An
-        /// earlier ALTER may have deliberately dropped the implicit index of an expression alias
-        /// because the files of the existing parts were built for its previous definition. Keep it
-        /// absent while the alias stays as it is: re-creating it on an unrelated ALTER would reuse
-        /// those stale files and prune wrong. The local ALTER path keeps the absence by editing the
-        /// metadata in place. An expression alias without any `minmax` index in the old metadata is
-        /// only possible after such a drop, after `DROP INDEX` of an explicit `minmax` index (which
-        /// the local path does not replace with an implicit one either), or when the policy does not
-        /// cover the column - and then it is not re-created anyway.
-        if (!redefined && is_expression_alias(column) && !hasMinMaxIndexOnColumn(old_metadata, column.name))
+        /// earlier ALTER may have deliberately dropped the implicit index of a column because the files
+        /// of the existing parts were built for its previous definition - for example, over the
+        /// expression of an alias. Keep it absent while the column stays as it is: re-creating it on an
+        /// unrelated ALTER would reuse those stale files and prune wrong. This holds after the column
+        /// becomes physical too (`MODIFY COLUMN b ... DEFAULT 0` of `b ALIAS a + 1`): materializing it
+        /// rewrites only the indices of the current metadata and carries the files of the absent index
+        /// over unchanged. The local ALTER path keeps the absence by editing the metadata in place. A
+        /// column without any `minmax` index in the old metadata is only possible after such a drop,
+        /// after `MergeTreeData::setProperties` refused to create the index over files of a previous
+        /// column with the same name, or when the policy does not cover the column - and then it is not
+        /// re-created anyway. `DROP INDEX` of an explicit `minmax` index sees that index in the old
+        /// metadata, so the implicit one still replaces it.
+        if (!redefined && !hasMinMaxIndexOnColumn(old_metadata, column.name))
             stale_implicit_index_columns.insert(column.name);
     }
 

@@ -1,0 +1,11 @@
+alias made physical
+t_05448_r1	auto_minmax_index_a
+t_05448_r2	auto_minmax_index_a
+unrelated alter
+t_05448_r1	auto_minmax_index_a
+t_05448_r1	auto_minmax_index_x
+t_05448_r2	auto_minmax_index_a
+t_05448_r2	auto_minmax_index_x
+issuer	100000
+follower	100000
+without skip indices	100000
