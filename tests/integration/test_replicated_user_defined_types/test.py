@@ -63,6 +63,14 @@ def test_replication():
     assert node1.query("SHOW TYPES") == "ReplId\nReplPair\n"
     assert node1.query("SELECT toTypeName(CAST('x', 'ReplId'))") == "String\n"
 
+    # A server re-reads the definitions from ZooKeeper before checking the dependencies, so a type that was just
+    # used in a definition on another server can not be dropped, even before the change has reached it otherwise.
+    node1.query("CREATE TYPE ReplBase AS UInt8")
+    node1.query("CREATE TYPE ReplDependent AS Array(ReplBase)")
+    assert "BAD_ARGUMENTS" in node2.query_and_get_error("DROP TYPE ReplBase")
+    node2.query("DROP TYPE ReplDependent")
+    node2.query("DROP TYPE ReplBase")
+
     node2.query("DROP TYPE ReplPair")
     node2.query("DROP TYPE ReplId")
     assert_eq_with_retry(node1, "SHOW TYPES", "")

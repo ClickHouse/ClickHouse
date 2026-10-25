@@ -238,48 +238,6 @@ DataTypePtr DataTypeFactory::tryGet(const String & family_name_param, const ASTP
     return getImpl<true>(family_name_param, parameters);
 }
 
-class ASTIdentifierSubstituter
-{
-public:
-    static ASTPtr substitute(const ASTPtr & ast_node, const std::unordered_map<String, ASTPtr> & substitutions)
-    {
-        if (!ast_node)
-            return nullptr;
-
-        if (const auto * identifier_node = ast_node->as<ASTIdentifier>())
-        {
-            auto it = substitutions.find(identifier_node->name());
-            if (it != substitutions.end())
-            {
-                return it->second->clone();
-            }
-        }
-        else if (const auto * data_type_node = ast_node->as<ASTDataType>())
-        {
-            const auto arguments = data_type_node->getArguments();
-            if (!data_type_node->name.empty() && (!arguments || arguments->children.empty()))
-            {
-                auto it = substitutions.find(data_type_node->name);
-                if (it != substitutions.end())
-                {
-                    return it->second->clone();
-                }
-            }
-        }
-
-        ASTPtr new_node = ast_node->clone();
-        for (auto & child : new_node->children)
-        {
-            child = substitute(child, substitutions);
-        }
-
-        /// For ASTDataType the arguments are stored as the first (and only) child, so
-        /// substituting the children above already keeps getArguments() in sync.
-
-        return new_node;
-    }
-};
-
 namespace
 {
 
@@ -357,7 +315,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
                 substitutions[formal_param_ident_node->name()] = actual_args_list_node->children[i];
             }
 
-            ASTPtr substituted_ast = ASTIdentifierSubstituter::substitute(udt_base_type_definition_ast, substitutions);
+            ASTPtr substituted_ast = substituteTypeParameters(udt_base_type_definition_ast, substitutions);
 
             return getImpl<nullptr_on_error>(substituted_ast);
         }

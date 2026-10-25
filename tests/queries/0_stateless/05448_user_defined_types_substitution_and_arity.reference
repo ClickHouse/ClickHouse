@@ -1,0 +1,5 @@
+Nested(x UInt16, y String)
+Nested(x String)
+JSON(`a.b` UInt32, SKIP c)
+Decimal(10, 2)
+Tuple(UInt8, UInt16, UInt32, UInt64, Map(String, Int8))

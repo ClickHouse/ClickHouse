@@ -18,9 +18,10 @@ data types instead of expressions.
 CREATE TYPE [IF NOT EXISTS | OR REPLACE] name [(parameter0, ...)] AS base_type
 ```
 
-- `name` — the name of the new type. It must be unique among user-defined types and
-  may be quoted with backticks to use otherwise reserved characters, e.g. `` `My-Type` ``.
-  Type names are case-sensitive.
+- `name` — the name of the new type. It must be unique among user-defined types and,
+  like the names of the parameters, may only contain ASCII letters, digits, `_` and `$`,
+  and must not start with a digit, so that it can be used wherever a data type is
+  expected. Type names are case-sensitive.
 - `(parameter0, ...)` — an optional list of formal parameters. When the type is used,
   each parameter is substituted by the corresponding argument.
 - `base_type` — the definition the type expands to. It can be any data type expression,
@@ -38,7 +39,10 @@ There are a few restrictions:
 - The `base_type` must resolve to a valid data type. Referencing an unknown type
   (including a recursive reference to the type being defined) raises the `UNKNOWN_TYPE`
   exception, and naming a known type family or a parameterized user-defined type with a
-  wrong number of arguments (for example `Map(String)`) is rejected as well.
+  wrong number of arguments (for example `Map(String)`, or `Map(T)` in a definition with
+  the parameter `T`) is rejected as well. Other errors that depend on the values of the
+  actual arguments, like `Decimal(P, 2)` used with `P` less than `2`, are reported when
+  the type is used.
 - All parameters used in `base_type` must be listed in the parameter list, and a
   parameter name may not be repeated.
 - The `name` must not be the name of a built-in data type, of one of its aliases, or of
@@ -64,7 +68,8 @@ path. They survive server restarts.
 `BACKUP TABLE system.user_defined_types` saves the definitions of all user-defined types,
 and `RESTORE TABLE system.user_defined_types` recreates them; the `create_function` restore
 setting decides whether the types that already exist are kept (the default), replaced, or
-cause an error. Restoring requires the `CREATE TYPE` privilege, and also `DROP TYPE` with
+cause an error. All restored definitions are validated before any of them is stored, and
+if storing one of them fails, the types already stored by the restore are reverted. Restoring requires the `CREATE TYPE` privilege, and also `DROP TYPE` with
 `create_function = 'replace'`.
 
 **Example: a simple alias**

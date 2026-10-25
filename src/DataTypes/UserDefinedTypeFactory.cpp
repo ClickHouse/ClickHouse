@@ -4,6 +4,7 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -17,11 +18,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Poco/String.h>
 
 #include <algorithm>
-#include <optional>
+#include <exception>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -427,68 +429,63 @@ void checkDependentsAfterReplacement(const IUserDefinedSQLObjectsStorage & stora
     }
 }
 
-/// Throws if no actual arguments make the parameterized definition `create` a valid data type. The family name alone
-/// does not tell whether it is used with a valid number of arguments: `CREATE TYPE Broken(T) AS Map(T)` and
-/// `CREATE TYPE Broken(T) AS Map(String)` must be rejected. A parameter can stand for a type (`Array(T)`) or a value
-/// (`FixedString(N)`, `DateTime64(3, TZ)`), so the definition is instantiated with every combination of a few probe
-/// arguments, and is accepted if any of them gives a valid type. `normalized_query` is the definition to instantiate, it is used in place of a stored one.
-void checkInstantiableWithSomeArguments(const ASTCreateTypeQuery & create, const ASTPtr & normalized_query)
+/// Throws if a parameterized definition `create` uses a built-in type family with a number of arguments that the family
+/// never accepts, whatever the actual arguments are: `CREATE TYPE Broken(T) AS Map(T)` and
+/// `CREATE TYPE Broken(T) AS Map(String)` must be rejected, but the family name alone does not tell that.
+///
+/// Each use of a family in the definition is instantiated on its own, with all parameters replaced by one of a few
+/// probe arguments. A parameter can stand for a type (`Array(T)`) or a value (`FixedString(N)`, `DateTime64(3, TZ)`),
+/// and the probes can not cover every valid argument (`Decimal(P, 2)` is valid for `P = 10`, but not for `P = 1`), so
+/// only a wrong number of arguments, which does not depend on the values of the arguments, is an error here. Other
+/// errors depend on the actual arguments and are reported when the type is used.
+void checkNumbersOfArguments(const ASTCreateTypeQuery & create, const std::unordered_set<String> & parameter_names)
 {
-    /// The number of combinations grows exponentially; definitions with more parameters are checked only by
-    /// `validateDefinition` and are instantiated exactly when they are used.
-    static constexpr size_t max_probed_parameters = 4;
-
-    size_t num_parameters = getNumberOfParameters(create);
-    if (num_parameters == 0 || num_parameters > max_probed_parameters)
-        return;
-
     const ASTs probes{
         make_intrusive<ASTIdentifier>("UInt8"),
         make_intrusive<ASTLiteral>(Field(UInt64(1))),
         make_intrusive<ASTIdentifier>("String"),
         make_intrusive<ASTLiteral>(Field(String("UTC"))),
-        make_intrusive<ASTIdentifier>("Float32"),
     };
 
     const auto & data_type_factory = DataTypeFactory::instance();
-    PendingDefinitionsGuard guard(normalized_query);
+    const auto & udt_factory = UserDefinedTypeFactory::instance();
 
-    std::vector<size_t> probe_indices(num_parameters, 0);
-    std::optional<Exception> first_error;
-    while (true)
+    forEachTypeReference(create.base_type, [&](const TypeReference & ref) -> bool
     {
-        auto arguments = make_intrusive<ASTExpressionList>();
-        for (size_t probe_index : probe_indices)
-            arguments->children.push_back(probes[probe_index]->clone());
+        /// Parameters and complete types without arguments are checked by `validateDefinition`, and so is the number
+        /// of arguments of a user-defined type.
+        if (ref.num_arguments == 0)
+            return false;
+        if (udt_factory.has(ref.name))
+            return true;
 
-        auto probe_type = makeASTDataType(create.name);
-        probe_type->children.push_back(arguments);
-
-        try
+        std::exception_ptr wrong_number_of_arguments;
+        for (const auto & probe : probes)
         {
-            data_type_factory.get(probe_type);
-            return;
-        }
-        catch (Exception & exception)
-        {
-            if (!first_error)
-                first_error.emplace(exception);
-        }
+            std::unordered_map<String, ASTPtr> substitutions;
+            for (const auto & parameter_name : parameter_names)
+                substitutions.emplace(parameter_name, probe);
 
-        /// The next combination, as in counting with `probes.size()` as the base.
-        size_t position = 0;
-        while (position < num_parameters && ++probe_indices[position] == probes.size())
-        {
-            probe_indices[position] = 0;
-            ++position;
+            try
+            {
+                data_type_factory.get(substituteTypeParameters(ref.node, substitutions));
+                return true;
+            }
+            catch (Exception & exception)
+            {
+                if (exception.code() != ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
+                    return true;
+                if (!wrong_number_of_arguments)
+                {
+                    exception.addMessage(fmt::format(
+                        "in the definition of user-defined type {}: {} is not a valid data type for any actual arguments",
+                        backQuote(create.name), ref.node->formatForErrorMessage()));
+                    wrong_number_of_arguments = std::current_exception();
+                }
+            }
         }
-        if (position == num_parameters)
-            break;
-    }
-
-    first_error->addMessage(fmt::format(
-        "the definition of user-defined type {} is not a valid data type for any actual arguments", backQuote(create.name)));
-    throw *first_error;
+        std::rethrow_exception(wrong_number_of_arguments);
+    });
 }
 
 /// Orders `objects` (pairs of a name and a `CREATE TYPE` query) so that every type comes after the types of
@@ -567,6 +564,70 @@ ASTPtr normalizeCreateTypeQuery(const IAST & create_type_query)
 }
 
 
+ASTPtr substituteTypeParameters(const ASTPtr & ast, const std::unordered_map<String, ASTPtr> & substitutions)
+{
+    if (!ast)
+        return nullptr;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (auto it = substitutions.find(identifier->name()); it != substitutions.end())
+            return it->second->clone();
+    }
+    else if (const auto * data_type = ast->as<ASTDataType>())
+    {
+        auto arguments = data_type->getArguments();
+        if (!arguments || arguments->children.empty())
+        {
+            if (auto it = substitutions.find(data_type->name); it != substitutions.end())
+                return it->second->clone();
+        }
+    }
+    else if (const auto * object_argument = ast->as<ASTObjectTypeArgument>())
+    {
+        /// The skipped paths of `JSON(SKIP a.b, SKIP REGEXP '...')` are not types.
+        if (object_argument->skip_path || object_argument->skip_path_regexp)
+            return ast->clone();
+    }
+
+    auto result = ast->clone();
+    for (auto & child : result->children)
+    {
+        auto old_child = child;
+        child = substituteTypeParameters(old_child, substitutions);
+
+        /// Some nodes also keep their children in named fields, and the data type constructors read these fields:
+        /// e.g. `Nested(x T)` is built from the `type` of each `ASTNameTypePair`. They must point to the substituted
+        /// children, not to the children of the clone.
+        auto update = [&](ASTPtr & field)
+        {
+            if (field.get() == old_child.get())
+                field = child;
+        };
+        if (auto * name_type_pair = result->as<ASTNameTypePair>())
+        {
+            update(name_type_pair->type);
+        }
+        else if (auto * typed_path = result->as<ASTObjectTypedPathArgument>())
+        {
+            update(typed_path->type);
+        }
+        else if (auto * object_argument = result->as<ASTObjectTypeArgument>())
+        {
+            update(object_argument->path_with_type);
+            update(object_argument->parameter);
+        }
+        else if (auto * function = result->as<ASTFunction>())
+        {
+            update(function->arguments);
+            update(function->parameters);
+            update(function->window_definition);
+        }
+    }
+    return result;
+}
+
+
 UserDefinedTypeFactory & UserDefinedTypeFactory::instance()
 {
     static UserDefinedTypeFactory result;
@@ -589,11 +650,35 @@ bool UserDefinedTypeFactory::registerType(
     bool replace_if_exists) const
 {
     auto & storage = current_context->getUserDefinedTypesStorage();
+    std::lock_guard lock(ddl_mutex);
+    syncWithStorage(storage);
 
+    auto normalized_query = prepareType(storage, type_name, create_type_query, throw_if_exists, replace_if_exists);
+    if (!normalized_query)
+        return false;
+    return storeType(current_context, storage, type_name, normalized_query, throw_if_exists, replace_if_exists);
+}
+
+void UserDefinedTypeFactory::syncWithStorage(IUserDefinedSQLObjectsStorage & storage)
+{
+    /// With a replicated storage, other servers change the types too, and the local copy of the definitions catches
+    /// up with their changes asynchronously. Re-read the definitions, so the dependencies are checked against the
+    /// latest state the coordination service has, not against a lagging local copy.
+    if (storage.isReplicated())
+        storage.reloadObjects();
+}
+
+ASTPtr UserDefinedTypeFactory::prepareType(
+    const IUserDefinedSQLObjectsStorage & storage,
+    const String & type_name,
+    const ASTPtr & create_type_query,
+    bool throw_if_exists,
+    bool replace_if_exists) const
+{
     /// `IF NOT EXISTS` for an existing type is a no-op: the new definition is not even validated, like for
     /// `CREATE TABLE IF NOT EXISTS`. The storage re-checks the existence under its lock.
     if (!throw_if_exists && !replace_if_exists && storage.has(type_name))
-        return false;
+        return nullptr;
 
     const auto & create = getCreateTypeQuery(*create_type_query);
     if (create.name != type_name)
@@ -626,7 +711,7 @@ bool UserDefinedTypeFactory::registerType(
     if (parameter_names.empty())
         data_type_factory.get(create.base_type);
     else
-        checkInstantiableWithSomeArguments(create, normalized_query);
+        checkNumbersOfArguments(create, parameter_names);
 
     /// Other types keep using the replaced type with the number of arguments they were defined with, and the new
     /// definition must stay valid for the actual arguments they use it with.
@@ -645,6 +730,17 @@ bool UserDefinedTypeFactory::registerType(
         checkDependentsAfterReplacement(storage, type_name, normalized_query);
     }
 
+    return normalized_query;
+}
+
+bool UserDefinedTypeFactory::storeType(
+    const ContextMutablePtr & current_context,
+    IUserDefinedSQLObjectsStorage & storage,
+    const String & type_name,
+    const ASTPtr & normalized_query,
+    bool throw_if_exists,
+    bool replace_if_exists)
+{
     try
     {
         return storage.storeObject(
@@ -666,6 +762,8 @@ bool UserDefinedTypeFactory::registerType(
 bool UserDefinedTypeFactory::unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists) const
 {
     auto & storage = current_context->getUserDefinedTypesStorage();
+    std::lock_guard lock(ddl_mutex);
+    syncWithStorage(storage);
 
     /// Dropping a type another type is defined through would leave that type registered but unusable.
     auto dependent_uses = findDependentUses(storage, type_name);
@@ -745,21 +843,69 @@ void UserDefinedTypeFactory::restore(RestorerFromBackup & restorer, const String
     bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
     auto restore_context = restorer.getContext();
+    auto & storage = restore_context->getUserDefinedTypesStorage();
 
-    /// When replacing, the backup is validated as the set of types it will become, not against the types it replaces
-    /// one definition at a time: if the server has `A(T) AS Array(T)` and `B AS A(UInt8)`, and the backup has
-    /// `A(K, V) AS Map(K, V)` and `B AS A(String, UInt8)`, replacing `A` must be checked against the restored `B`.
-    std::optional<PendingDefinitionsGuard> guard;
-    if (replace_if_exists)
+    std::lock_guard lock(ddl_mutex);
+    syncWithStorage(storage);
+
+    /// The backup is validated as the set of types it will become, not one definition at a time against the types it
+    /// replaces: if the server has `A(T) AS Array(T)` and `B AS A(UInt8)`, and the backup has `A(K, V) AS Map(K, V)`
+    /// and `B AS A(String, UInt8)`, replacing `A` must be checked against the restored `B`. The types that are kept
+    /// (they exist and are not replaced) keep their current definitions.
+    struct PreparedType
+    {
+        String name;
+        ASTPtr normalized_query;
+        ASTPtr previous_query;
+    };
+    std::vector<PreparedType> prepared_types;
     {
         PendingDefinitions definitions;
         for (const auto & [type_name, create_type_query] : restored_types)
-            definitions.emplace(type_name, normalizeCreateTypeQuery(getCreateTypeQuery(*create_type_query)));
-        guard.emplace(std::move(definitions));
+        {
+            if (replace_if_exists || !storage.has(type_name))
+                definitions.emplace(type_name, normalizeCreateTypeQuery(getCreateTypeQuery(*create_type_query)));
+        }
+        PendingDefinitionsGuard guard(std::move(definitions));
+
+        for (const auto & [type_name, create_type_query] : restored_types)
+        {
+            if (auto normalized_query = prepareType(storage, type_name, create_type_query, throw_if_exists, replace_if_exists))
+                prepared_types.push_back({type_name, std::move(normalized_query), storage.tryGet(type_name)});
+        }
     }
 
-    for (const auto & [type_name, create_type_query] : restored_types)
-        registerType(restore_context, type_name, create_type_query, throw_if_exists, replace_if_exists);
+    /// The storage stores the types one by one. If storing one of them fails, the already stored ones are reverted,
+    /// so the server is not left with a part of the backup that may be inconsistent with the types it replaced.
+    size_t num_stored = 0;
+    try
+    {
+        for (const auto & type : prepared_types)
+        {
+            storeType(restore_context, storage, type.name, type.normalized_query, throw_if_exists, replace_if_exists);
+            ++num_stored;
+        }
+    }
+    catch (...)
+    {
+        for (size_t i = num_stored; i > 0; --i)
+        {
+            const auto & type = prepared_types[i - 1];
+            try
+            {
+                if (type.previous_query)
+                    storeType(restore_context, storage, type.name, type.previous_query, /* throw_if_exists = */ false, /* replace_if_exists = */ true);
+                else
+                    storage.removeObject(restore_context, UserDefinedSQLObjectType::Type, type.name, /* throw_if_not_exists = */ false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("UserDefinedTypeFactory"),
+                    fmt::format("Failed to revert user-defined type {} after a failed restore", backQuote(type.name)));
+            }
+        }
+        throw;
+    }
 }
-
 }
