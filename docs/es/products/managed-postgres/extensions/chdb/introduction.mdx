@@ -54,7 +54,7 @@ LOAD 'chdb_hook';
 COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
 ```
 
-Tras lo cual, la tabla `times` contiene los registros de cada archivo que cargó:
+Tras lo cual, la table `times` contiene los registros de cada archivo que cargó:
 
 ```pgsql
 # SELECT * FROM times;
@@ -82,10 +82,11 @@ Tras lo cual, la tabla `times` contiene los registros de cada archivo que cargó
 ```
 
 Un [CREATE TABLE] también puede derivar sus columnas y cargar sus filas desde
-una URL de este tipo:
+una URL de este tipo (atención: este archivo de datos público contiene 41 millones de filas):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -158,7 +159,14 @@ más sencilla de instalarla es mediante el script de shell [lib.chdb.io]:
 curl -sL https://lib.chdb.io | bash
 ```
 
-Para compilar estáticamente [chDB] en la aplicación auxiliar, define las siguientes variables antes de ejecutar los comandos `make` de la [Instalación](#compile-from-source).
+En macOS, es posible que tenga que firmar la biblioteca antes de compilar la extensión:
+
+```sh
+sudo install_name_tool -id /usr/local/lib/libchdb.so /usr/local/lib/libchdb.so
+sudo codesign -f -s - /usr/local/lib/libchdb.so
+```
+
+Para compilar estáticamente [chDB] en la aplicación helper, define las siguientes variables antes de ejecutar los comandos `make` de la [Instalación](#compile-from-source).
 
 ```sh
 export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
@@ -196,7 +204,7 @@ gmake install
 gmake installcheck
 ```
 
-Si encuentra un error como el siguiente:
+Si aparece un error como el siguiente:
 
 ```
 make: pg_config: Command not found
@@ -226,7 +234,7 @@ make CFLAGS=-I/usr/local/include \
      LDFLAGS=-L/usr/local/lib
 ```
 
-Si encuentra un error como el siguiente:
+Si aparece un error como el siguiente:
 
 ```
 ERROR:  must be owner of database regression
@@ -237,6 +245,12 @@ Debe ejecutar la suite de pruebas con un super user, como el super user
 
 ```sh
 make installcheck PGUSER=postgres
+```
+
+Para deshabilitar el esquema `file://` en el hook de `COPY`, defina `NO_FILE_SCHEME`:
+
+```sh
+make NO_FILE_SCHEME=1
 ```
 
 Para instalar la extensión en un `prefix` personalizado en PostgreSQL 18 o versiones posteriores, pase el argumento `prefix` a `install` (pero no a ningún otro objetivo de `make`):

@@ -12,7 +12,6 @@
 -- happened) must complete without a logical error. The NULL-valued constant cannot be used as a
 -- bound, so the operand is kept as-is; the `and` node with both comparisons therefore survives.
 
-SET enable_analyzer = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SET allow_suspicious_variant_types = 1;
 
