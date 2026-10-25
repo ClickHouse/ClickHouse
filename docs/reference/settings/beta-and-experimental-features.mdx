@@ -82,7 +82,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [session_timezone](/reference/settings/session-settings/other#session_timezone) | `` |
 | [low_priority_query_wait_time_ms](/reference/settings/session-settings/other#low_priority_query_wait_time_ms) | `1000` |
 | [ai_function_request_timeout_sec](/reference/settings/session-settings/ai-function#ai_function_request_timeout_sec) | `60` |
-| [ai_function_max_retries](/reference/settings/session-settings/ai-function#ai_function_max_retries) | `1` |
+| [ai_function_max_retries](/reference/settings/session-settings/ai-function#ai_function_max_retries) | `3` |
 | [ai_function_retry_initial_delay_ms](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms) | `1000` |
 | [ai_function_throw_on_error](/reference/settings/session-settings/ai-function#ai_function_throw_on_error) | `1` |
 | [ai_function_max_input_tokens_per_query](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) | `0` |
@@ -90,6 +90,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [ai_function_max_api_calls_per_query](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) | `0` |
 | [ai_function_throw_on_quota_exceeded](/reference/settings/session-settings/ai-function#ai_function_throw_on_quota_exceeded) | `1` |
 | [ai_function_embedding_max_batch_size](/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size) | `100` |
+| [ai_function_max_concurrent_requests_per_thread](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) | `8` |
 | [ai_function_text_default_credentials](/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) | `` |
 | [ai_function_embedding_default_credentials](/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) | `` |
 | [ai_function_allow_insecure_endpoint](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) | `0` |
@@ -168,6 +169,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [enable_zxc_codec](/reference/settings/session-settings/enable#enable_zxc_codec) | `0` |
 | [throw_on_unsupported_query_inside_transaction](/reference/settings/session-settings/throw-on#throw_on_unsupported_query_inside_transaction) | `1` |
 | [wait_changes_become_visible_after_commit_mode](/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode) | `wait_unknown` |
+| [wait_changes_become_visible_timeout_ms](/reference/settings/session-settings/other#wait_changes_become_visible_timeout_ms) | `10000` |
 | [implicit_transaction](/reference/settings/session-settings/implicit#implicit_transaction) | `0` |
 | [grace_hash_join_initial_buckets](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) | `1` |
 | [grace_hash_join_max_buckets](/reference/settings/session-settings/grace-hash#grace_hash_join_max_buckets) | `1024` |
@@ -234,10 +236,10 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [enable_time_series_table](/reference/settings/session-settings/enable#enable_time_series_table) | `0` |
 | [time_series_prefer_recent_samples_table](/reference/settings/session-settings/other#time_series_prefer_recent_samples_table) | `1` |
 | [make_distributed_plan](/reference/settings/session-settings/other#make_distributed_plan) | `0` |
-| [distributed_plan_worker_cluster](/reference/settings/session-settings/distributed-plan#distributed_plan_worker_cluster) | `` |
 | [distributed_plan_workers_num](/reference/settings/session-settings/distributed-plan#distributed_plan_workers_num) | `0` |
 | [distributed_plan_workers_provisioning_timeout_ms](/reference/settings/session-settings/distributed-plan#distributed_plan_workers_provisioning_timeout_ms) | `10000` |
 | [distributed_plan_prefer_replicas_over_workers](/reference/settings/session-settings/distributed-plan#distributed_plan_prefer_replicas_over_workers) | `0` |
+| [distributed_plan_worker_cluster](/reference/settings/session-settings/distributed-plan#distributed_plan_worker_cluster) | `` |
 | [enable_time_series_aggregate_functions](/reference/settings/session-settings/enable#enable_time_series_aggregate_functions) | `0` |
 | [promql_database](/reference/settings/session-settings/promql#promql_database) | `` |
 | [promql_table](/reference/settings/session-settings/promql#promql_table) | `` |

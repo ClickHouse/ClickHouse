@@ -30,7 +30,7 @@ from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
-    iceberg_database_ddl_commands,
+    iceberg_database_queries,
 )
 from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
@@ -2514,8 +2514,7 @@ def rebuild_table(port, source, destination):
     # is what recomputes serialization from the data; a bare OPTIMIZE would
     # inherit the source parts' serialization, so it cannot replace the insert.
     # For an in-place rebuild the fresh copy is built under a temporary name and
-    # swapped in with RENAME (the datasets live in Ordinary databases, so
-    # EXCHANGE TABLES is not available).
+    # swapped in with RENAME.
     client = _perf_client(port)
     if Shell.get_output(f'{client} --query "EXISTS TABLE {source}"').strip() != "1":
         # A missing source is only expected for the cross-name rebuild
@@ -2555,6 +2554,94 @@ def rebuild_table(port, source, destination):
 
 POPULATE_DONE_MARKER = "test._populate_done"
 
+# The MergeTree datasets are attached to `Atomic` databases (the default engine), so that their
+# tables have UUIDs like the tables of a real server, which the columns cache, for one, needs.
+# The tarballs hold them in the `Ordinary` layout: data/<db>/<table>/ and metadata/<db>/<table>.sql.
+# Configure moves both into this directory under user_files (see stage_datasets), where nothing
+# loads them at startup, and attach_datasets attaches every table with `ATTACH TABLE ... FROM`,
+# which moves its data directory into the store of the database. All of it is renames within the
+# hardlinked copy of db0 of one server: nothing is copied, and db0 is not modified.
+DATASETS_STAGING_DIR = "perf_datasets"
+
+
+def stage_datasets(server_db):
+    """Move the extracted datasets of one server (`server_db` is its `db` directory) to the staging directory."""
+    data = Path(server_db) / "data"
+    metadata = Path(server_db) / "metadata"
+    staging = Path(server_db) / "user_files" / DATASETS_STAGING_DIR
+    if not data.is_dir():
+        return
+    for database_dir in sorted(data.iterdir()):
+        database = database_dir.name
+        if database == "system" or not database_dir.is_dir():
+            continue
+        (staging / database).mkdir(parents=True, exist_ok=True)
+        for table_dir in sorted(database_dir.iterdir()):
+            table_metadata = metadata / database / f"{table_dir.name}.sql"
+            # A data directory without metadata cannot be attached: fail rather than test without the table.
+            if not table_metadata.is_file():
+                raise RuntimeError(f"stage_datasets: no metadata {table_metadata} for {table_dir}")
+            table_dir.rename(staging / database / table_dir.name)
+            table_metadata.rename(staging / database / f"{table_dir.name}.sql")
+        database_dir.rmdir()
+        # The database is created by attach_datasets, with the default engine.
+        (metadata / f"{database}.sql").unlink(missing_ok=True)
+        if (metadata / database).is_dir():
+            shutil.rmtree(metadata / database)
+
+
+def create_iceberg_databases(port, server_path, with_s3_read_dataset):
+    """Create the Iceberg datasets as databases on one server, so tests read tpch_ice10.<table> with no create_query of their own."""
+    client = _perf_client(port)
+    queries = iceberg_database_queries(server_path)
+    if with_s3_read_dataset:
+        queries += s3_service.iceberg_s3_database_queries()
+    for query in queries:
+        Shell.check(f"{client} --query {quote(query)}", strict=True, verbose=True)
+
+
+def attach_datasets(port, server_db):
+    """Attach the staged datasets of one server, see DATASETS_STAGING_DIR. Re-entrant: an attached table is skipped.
+
+    The staged definition of a table is removed once it is attached, so a retry never attaches it again:
+    populate_data may have consumed the table since (datasets.hits_v1 is rebuilt into test.hits and dropped),
+    and attaching its definition again would create an empty table, as its data directory is gone.
+    """
+    client = _perf_client(port)
+    staging = Path(server_db) / "user_files" / DATASETS_STAGING_DIR
+    if not staging.is_dir():
+        return
+    for database_dir in sorted(p for p in staging.iterdir() if p.is_dir()):
+        database = database_dir.name
+        Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS {database}"', strict=True, verbose=True)
+        for table_metadata in sorted(database_dir.glob("*.sql")):
+            table = table_metadata.stem
+            attach_query_file = table_metadata.with_suffix(".attach")
+            if Shell.get_output(f'{client} --query "EXISTS TABLE {database}.{table}"').strip() == "1":
+                # Attached by a previous run that was interrupted before it removed the staged definition.
+                print(f"attach_datasets: {database}.{table} is already attached, skipping")
+                table_metadata.unlink()
+                attach_query_file.unlink(missing_ok=True)
+                continue
+            # `ATTACH TABLE ... FROM` creates a missing data directory instead of failing: fail rather than
+            # test with an empty table.
+            if not (database_dir / table).is_dir():
+                raise RuntimeError(f"attach_datasets: no data directory {database_dir / table} for {table_metadata}")
+            # `ATTACH TABLE <table>` with the definition, as written by an `Ordinary` database, becomes
+            # `ATTACH TABLE <database>.<table> FROM '<data directory>'` with the same definition.
+            query, count = re.subn(
+                r"^ATTACH TABLE\s+(`[^`]+`|\w+)",
+                lambda m: f"ATTACH TABLE {database}.{m.group(1)} FROM '{DATASETS_STAGING_DIR}/{database}/{table}/'",
+                table_metadata.read_text(),
+                count=1,
+            )
+            if count != 1:
+                raise RuntimeError(f"attach_datasets: unexpected table definition in {table_metadata}")
+            attach_query_file.write_text(query)
+            Shell.check(f"{client} --queries-file {quote(str(attach_query_file))}", strict=True, verbose=True)
+            table_metadata.unlink()
+            attach_query_file.unlink()
+
 
 def populate_data(port):
     # Rebuild the hits datasets on one server, sequentially. The three inserts
@@ -2579,19 +2666,21 @@ def populate_data(port):
     Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
 
 
-def populate_data_both(left_port, right_port):
+def populate_data_both(left_port, right_port, with_s3_read_dataset):
     # Populate both servers in parallel. Each writes its own parts, so a PR that
     # changes a write-time default is reflected only on the right (patched) side.
     errors = []
 
-    def run(port):
+    def run(port, server_path):
         try:
+            attach_datasets(port, f"{server_path}/db")
+            create_iceberg_databases(port, server_path, with_s3_read_dataset)
             populate_data(port)
         except Exception as e:  # noqa: BLE001
             print(f"populate_data failed on port {port}: {e}")
             errors.append(e)
 
-    threads = [Thread(target=run, args=(p,)) for p in (left_port, right_port)]
+    threads = [Thread(target=run, args=args) for args in ((left_port, perf_left), (right_port, perf_right))]
     for t in threads:
         t.start()
     for t in threads:
@@ -2960,8 +3049,6 @@ def main():
         print("Configure")
 
         commands = [
-            f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
-            f'echo "ATTACH DATABASE datasets ENGINE=Ordinary" > {db_path}/metadata/datasets.sql',
             f"ls {db_path}/metadata",
             # Not to disable `text_log` - it is enabled (see
             # tests/performance/scripts/config/config.d/zzz-perf-comparison-tweaks-config.xml)
@@ -2987,6 +3074,9 @@ def main():
             f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
             f"cp -al {db_path} {perf_left}/db ||:",
             f"cp -al {db_path} {perf_right}/db ||:",
+            # The datasets are attached to `Atomic` databases after the servers start, see DATASETS_STAGING_DIR.
+            lambda: stage_datasets(f"{perf_left}/db"),
+            lambda: stage_datasets(f"{perf_right}/db"),
             # Each server bootstraps its own (embedded, non-replicated) keeper, so
             # an empty storage dir is enough.
             f"mkdir -p {perf_left}/coordination {perf_right}/coordination",
@@ -2998,12 +3088,6 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
-        # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
-        commands += iceberg_database_ddl_commands(perf_left)
-        commands += iceberg_database_ddl_commands(perf_right)
-        if needs_s3_read_dataset:
-            commands += s3_service.iceberg_s3_database_ddl_commands(perf_left)
-            commands += s3_service.iceberg_s3_database_ddl_commands(perf_right)
 
         if needs_s3:
             commands.append(prepare_s3)
@@ -3091,7 +3175,7 @@ def main():
 
         def populate():
             return populate_data_both(
-                CHServer.LEFT_SERVER_PORT, CHServer.RIGHT_SERVER_PORT
+                CHServer.LEFT_SERVER_PORT, CHServer.RIGHT_SERVER_PORT, needs_s3_read_dataset
             )
 
         results.append(Result.from_commands_run(name="Populate", command=[populate]))

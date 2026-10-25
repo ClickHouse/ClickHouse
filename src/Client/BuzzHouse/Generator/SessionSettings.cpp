@@ -641,6 +641,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
+       {"use_top_k_dynamic_filtering_for_single_string_sort_column", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -1667,6 +1668,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"parallel_replicas_filter_pushdown", trueOrFalseSetting},
     {"parallel_replicas_for_cluster_engines", trueOrFalseSetting},
     {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalseSetting},
+    {"parallel_replicas_for_object_storage_tables", trueOrFalseSetting},
     {"parallel_replicas_for_queries_with_multiple_tables", trueOrFalseSetting},
     {"parallel_replicas_index_analysis_only_on_coordinator", trueOrFalseSetting},
     {"parallel_replicas_local_plan", trueOrFalseSetting},
