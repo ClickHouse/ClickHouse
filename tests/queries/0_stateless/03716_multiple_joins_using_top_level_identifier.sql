@@ -12,8 +12,6 @@ INSERT INTO t1 VALUES ('a', 'v'), ('b', 'w');
 INSERT INTO t2 VALUES ('b', 'c');
 INSERT INTO t3 VALUES ('a_1', 'c'), ('b_1', 'd');
 
-SET enable_analyzer = 1;
-
 SELECT t1.id || '_1' AS id, t1.val
 FROM t1
 LEFT JOIN t2 ON t1.id = t2.id
