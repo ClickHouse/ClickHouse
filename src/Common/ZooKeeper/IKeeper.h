@@ -569,6 +569,7 @@ enum class ListRequestType : uint8_t
 enum class ListOptionsVersion : int32_t
 {
     V1 = 1,
+    V2 = 2,
 };
 
 struct ListOptions
@@ -579,6 +580,9 @@ struct ListOptions
     bool recursive = false;
     uint32_t max_results = 0;
     bool shuffle = false;
+    /// When non-empty, return only direct child names strictly greater than this value, in lexicographic
+    /// order. Requires ListOptionsVersion::V2 on the wire.
+    String start_after;
 
     void validate() const;
 };

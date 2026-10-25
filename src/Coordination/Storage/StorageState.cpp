@@ -5,6 +5,7 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <base/getMemoryAmount.h>
+#include <base/scope_guard.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <cmath>
 #include <mutex>
+#include <queue>
 #include <shared_mutex>
 #include <thread>
 
@@ -66,6 +68,9 @@ namespace ProfileEvents
     extern const Event KeeperLSMTNodeCacheEntriesUpdated;
     extern const Event KeeperLSMTListNamesFromMemtables;
     extern const Event KeeperLSMTListNamesFromFiles;
+    extern const Event KeeperLSMTListScannedBlocks;
+    extern const Event KeeperLSMTListScannedEntries;
+    extern const Event KeeperLSMTListFilterSkipped;
 }
 
 namespace Coordination::Storage
@@ -429,6 +434,268 @@ void StorageState::listCommittedChildrenNames(
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperLSMTListNamesFromFiles, out.set.size() - names_before_files);
+}
+
+namespace
+{
+
+/// One sorted run, positioned on the next direct child in (range_start, range_end).
+struct RunChildCursor
+{
+    const SortedRun * run = nullptr;
+    BlockCache * block_cache = nullptr;
+    NodePath range_start;
+    NodePath range_end;
+    UInt128 parent_hash{};
+
+    size_t file_idx = 0;
+    size_t block_idx = 0;
+    bool block_positioned = false;
+    BlockPtr block;
+    uint32_t offset = 0;
+    std::string path_buf;
+
+    std::string name;
+    NodeAction action = NodeAction::Remove;
+    bool has_value = false;
+
+    void advance()
+    {
+        has_value = false;
+        if (!run)
+            return;
+
+        size_t scanned_blocks = 0;
+        size_t scanned_entries = 0;
+        SCOPE_EXIT({
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTListScannedBlocks, scanned_blocks);
+            ProfileEvents::increment(ProfileEvents::KeeperLSMTListScannedEntries, scanned_entries);
+        });
+
+        while (file_idx < run->files.size())
+        {
+            const SortedFile & file = *run->files[file_idx];
+            if (file.parent_paths_filter && !file.parent_paths_filter->findHashPair(
+                    DB::BloomFilterHashPair{parent_hash.items[0], parent_hash.items[1]}))
+            {
+                ProfileEvents::increment(ProfileEvents::KeeperLSMTListFilterSkipped);
+                ++file_idx;
+                block_positioned = false;
+                block.reset();
+                continue;
+            }
+
+            if (!block_positioned)
+            {
+                if (!file.blocks.empty() && file.blocks.front().min_path.compare(range_end) >= 0)
+                    return;
+                const auto block_it = std::ranges::partition_point(
+                    file.blocks, [&](const SortedFile::BlockInfo & info) { return info.max_path.compare(range_start) <= 0; });
+                block_idx = static_cast<size_t>(block_it - file.blocks.begin());
+                block_positioned = true;
+                block.reset();
+            }
+
+            while (block_idx < file.blocks.size())
+            {
+                if (file.blocks[block_idx].min_path.compare(range_end) >= 0)
+                    return;
+
+                if (!block)
+                {
+                    block = file.getOrLoadBlock(static_cast<uint32_t>(block_idx), block_cache);
+                    offset = block->entries_start;
+                    scanned_blocks += 1;
+                }
+
+                NodeRef ref{.block = block};
+                NodePath node_path;
+                uint32_t serialized_size = 0;
+                NodeAction node_action = NodeAction::Remove;
+                while (offset < block->size)
+                {
+                    ref.offset = offset;
+                    ref.readPath(node_path, path_buf, serialized_size, node_action);
+                    offset += serialized_size;
+                    scanned_entries += 1;
+
+                    if (node_path.compare(range_start) <= 0)
+                        continue;
+                    if (node_path.compare(range_end) >= 0)
+                    {
+                        has_value = false;
+                        file_idx = run->files.size();
+                        return;
+                    }
+
+                    name = std::string(node_path.baseName());
+                    action = node_action;
+                    has_value = true;
+                    return;
+                }
+
+                ++block_idx;
+                block.reset();
+            }
+
+            ++file_idx;
+            block_positioned = false;
+            block.reset();
+        }
+    }
+};
+
+}
+
+void StorageState::listDirectChildrenPage(
+    const NodePathWithHash & path,
+    std::string_view start_after,
+    uint32_t max_results,
+    std::vector<std::string> & out,
+    bool & truncated) const
+{
+    out.clear();
+    truncated = false;
+
+    /// Newest memtable wins. Children sets are unordered, so this parent’s memtable names are read in full.
+    ChildrenSet2 mem_set;
+    DB::Arena arena;
+    if (mutable_memtable)
+        mutable_memtable->listChildrenNames(path, mem_set, arena);
+    for (auto it = immutable_memtables.rbegin(); it != immutable_memtables.rend(); ++it)
+        (*it)->listChildrenNames(path, mem_set, arena);
+
+    std::vector<std::pair<std::string, NodeAction>> mem_names;
+    mem_names.reserve(mem_set.set.size());
+    for (const auto & entry : mem_set.set)
+    {
+        if (entry.str() > start_after)
+            mem_names.emplace_back(entry.str(), entry.action);
+    }
+    std::ranges::sort(mem_names, [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    std::string range_prefix(path.path.str());
+    if (!range_prefix.ends_with('/'))
+        range_prefix += '/';
+    std::string range_start_str = range_prefix;
+    range_start_str.append(start_after);
+    std::string range_end_str = range_prefix;
+    ++range_end_str.back();
+    NodePath range_start(range_start_str, path.path.depth + 1);
+    const NodePath range_end(range_end_str, path.path.depth + 1);
+
+    std::vector<RunChildCursor> runs;
+    runs.reserve(sorted_runs.size());
+    for (auto it = sorted_runs.rbegin(); it != sorted_runs.rend(); ++it)
+    {
+        const SortedRun & run = **it;
+        RunChildCursor cursor;
+        cursor.run = &run;
+        cursor.block_cache = block_cache.get();
+        cursor.range_end = range_end;
+        cursor.parent_hash = path.hash;
+        cursor.range_start = range_start;
+        if (run.min_path_cutoff && run.min_path_cutoff->compare(cursor.range_start) > 0)
+            cursor.range_start = *run.min_path_cutoff;
+        if (cursor.range_start.compare(range_end) >= 0)
+            continue;
+
+        cursor.file_idx = static_cast<size_t>(std::partition_point(
+            run.files.begin(), run.files.end(),
+            [&](const SortedFilePtr & file) { return file->blocks.back().max_path.compare(cursor.range_start) <= 0; })
+            - run.files.begin());
+        cursor.advance();
+        if (cursor.has_value)
+            runs.push_back(std::move(cursor));
+    }
+
+    struct Head
+    {
+        std::string name;
+        NodeAction action = NodeAction::Remove;
+        bool valid = false;
+    };
+    /// Source 0 is the memtable vector. Sources 1.. are sorted runs, newest first.
+    std::vector<Head> heads(runs.size() + 1);
+    size_t mem_idx = 0;
+    const auto pull = [&](size_t source)
+    {
+        Head & head = heads[source];
+        if (source == 0)
+        {
+            if (mem_idx >= mem_names.size())
+            {
+                head.valid = false;
+                return;
+            }
+            head.name = mem_names[mem_idx].first;
+            head.action = mem_names[mem_idx].second;
+            head.valid = true;
+            ++mem_idx;
+            return;
+        }
+
+        RunChildCursor & cursor = runs[source - 1];
+        if (!cursor.has_value)
+        {
+            head.valid = false;
+            return;
+        }
+        head.name = cursor.name;
+        head.action = cursor.action;
+        head.valid = true;
+        cursor.advance();
+    };
+
+    struct HeapItem
+    {
+        std::string_view name;
+        size_t source = 0;
+        bool operator>(const HeapItem & rhs) const
+        {
+            if (name != rhs.name)
+                return name > rhs.name;
+            return source > rhs.source;
+        }
+    };
+    std::priority_queue<HeapItem, std::vector<HeapItem>, std::greater<>> heap;
+    for (size_t source = 0; source < heads.size(); ++source)
+    {
+        pull(source);
+        if (heads[source].valid)
+            heap.push(HeapItem{.name = heads[source].name, .source = source});
+    }
+
+    while (!heap.empty())
+    {
+        const HeapItem top = heap.top();
+        heap.pop();
+        /// Copy before `pull`: it overwrites `heads[source].name`, which `top.name` views.
+        const std::string name(top.name);
+        const NodeAction action = heads[top.source].action;
+        pull(top.source);
+        if (heads[top.source].valid)
+            heap.push(HeapItem{.name = heads[top.source].name, .source = top.source});
+
+        while (!heap.empty() && heap.top().name == name)
+        {
+            const size_t source = heap.top().source;
+            heap.pop();
+            pull(source);
+            if (heads[source].valid)
+                heap.push(HeapItem{.name = heads[source].name, .source = source});
+        }
+
+        if (action == NodeAction::Remove)
+            continue;
+
+        if (max_results != 0 && out.size() == max_results)
+        {
+            truncated = true;
+            return;
+        }
+        out.emplace_back(name);
+    }
 }
 
 void StorageState::getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t & out_data_size) const

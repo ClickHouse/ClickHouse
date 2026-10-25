@@ -162,14 +162,26 @@ void ListOptions::validate() const
         case ListRequestType::ALL:
         case ListRequestType::PERSISTENT_ONLY:
         case ListRequestType::EPHEMERAL_ONLY:
+        {
+            if (!start_after.empty())
+            {
+                if (shuffle)
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support shuffle with start_after");
+                if (recursive)
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive listing with start_after");
+            }
             return;
+        }
     }
+
     throw Exception::fromMessage(Error::ZBADARGUMENTS, "Unknown ListWithOptions filter");
 }
 
 ListOptionsVersion requiredListOptionsVersion(const ListOptions & options)
 {
     options.validate();
+    if (!options.start_after.empty())
+        return ListOptionsVersion::V2;
     return ListOptionsVersion::V1;
 }
 

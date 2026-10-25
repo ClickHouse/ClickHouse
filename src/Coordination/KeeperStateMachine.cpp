@@ -391,7 +391,9 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             if (request.getOpNum() == OpNum::ListWithOptions)
             {
                 const auto & lwo = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest &>(request);
-                if (lwo.options_version != Coordination::ListOptionsVersion::V1 || (lwo.options.recursive && lwo.has_watch))
+                if ((lwo.options_version != Coordination::ListOptionsVersion::V1
+                        && lwo.options_version != Coordination::ListOptionsVersion::V2)
+                    || (lwo.options.recursive && lwo.has_watch))
                     return true;
             }
 

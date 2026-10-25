@@ -100,6 +100,15 @@ struct KeeperNodesStorage
     /// (Implementation should not rely on getNumChildren() stat because it may be inaccurate for system nodes.)
     virtual std::vector<std::string> listCommittedChildrenNames(std::string_view path) const = 0;
 
+    /// Paginated direct children. When `start_after` is non-empty, names are lexicographically ordered and
+    /// only names strictly greater than `start_after` are returned. When `max_results` is zero, no limit.
+    virtual void listCommittedDirectChildrenPaginated(
+        std::string_view path,
+        std::string_view start_after,
+        uint32_t max_results,
+        std::vector<std::string> & out,
+        bool & truncated) const = 0;
+
     /// Directly create or mutate a committed node. Used to set up system nodes and by tests.
     virtual bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) = 0;
     virtual void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest) = 0;

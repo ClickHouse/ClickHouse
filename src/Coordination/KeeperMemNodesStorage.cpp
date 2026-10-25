@@ -245,6 +245,29 @@ std::vector<std::string> KeeperMemNodesStorage::listCommittedChildrenNames(std::
     return res;
 }
 
+void KeeperMemNodesStorage::listCommittedDirectChildrenPaginated(
+    std::string_view path,
+    std::string_view start_after,
+    uint32_t max_results,
+    std::vector<std::string> & out,
+    bool & truncated) const
+{
+    out = listCommittedChildrenNames(path);
+    truncated = false;
+    std::ranges::sort(out);
+    if (!start_after.empty())
+    {
+        auto it = std::upper_bound(out.begin(), out.end(), start_after);
+        out.erase(out.begin(), it);
+    }
+
+    if (max_results != 0 && out.size() > max_results)
+    {
+        truncated = true;
+        out.resize(max_results);
+    }
+}
+
 bool KeeperMemNodesStorage::addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest)
 {
     auto it = container.find(path);

@@ -558,9 +558,19 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
     response.expected_with_stat = options.with_stat;
     response.expected_with_data = options.with_data;
 
-    if (options_version != ListOptionsVersion::V1 || path.empty() || path[0] != '/')
+    if ((options_version != ListOptionsVersion::V1 && options_version != ListOptionsVersion::V2) || path.empty() || path[0] != '/')
     {
         response.error = Error::ZMARSHALLINGERROR;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+
+    try
+    {
+        options.validate();
+    }
+    catch (const Exception &)
+    {
+        response.error = Error::ZBADARGUMENTS;
         return { std::make_shared<ListWithOptionsResponse>(response), {} };
     }
     const auto root = container.find(path);
@@ -573,6 +583,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
     response.stat = root->second.stat;
     const String prefix = descendantsPrefix(path);
     std::vector<TestKeeper::Container::const_iterator> candidates;
+    const bool paginate_after_collect = !options.start_after.empty() || options.filter != ListRequestType::ALL;
     bool limit_reached = false;
     for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
     {
@@ -584,7 +595,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
             || (options.filter == ListRequestType::EPHEMERAL_ONLY && !is_ephemeral))
             continue;
 
-        if (!options.shuffle)
+        if (!options.shuffle && !paginate_after_collect)
         {
             /// One additional matching candidate is enough to determine truncation.
             if (options.max_results != 0 && candidates.size() >= options.max_results)
@@ -607,20 +618,42 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
             return std::pair{lhs_rank, lhs_relative} < std::pair{rhs_rank, rhs_relative};
         });
     }
+    else if (!options.start_after.empty())
+    {
+        std::ranges::sort(candidates, [&](const auto & lhs, const auto & rhs)
+        {
+            return lhs->first.substr(prefix.size()) < rhs->first.substr(prefix.size());
+        });
+    }
 
     for (const auto & it : candidates)
     {
-        if (options.max_results != 0 && response.names.size() >= options.max_results)
+        const String relative = it->first.substr(prefix.size());
+        if (!options.start_after.empty() && relative <= options.start_after)
+            continue;
+
+        if (!paginate_after_collect && options.max_results != 0 && response.names.size() >= options.max_results)
         {
             response.truncated = true;
             break;
         }
 
-        response.names.emplace_back(it->first.substr(prefix.size()));
+        response.names.emplace_back(relative);
         if (options.with_stat)
             response.stats.emplace_back(it->second.stat);
         if (options.with_data)
             response.data.emplace_back(it->second.data);
+
+        if (paginate_after_collect && options.max_results != 0 && response.names.size() > options.max_results)
+        {
+            response.truncated = true;
+            response.names.pop_back();
+            if (!response.stats.empty())
+                response.stats.pop_back();
+            if (!response.data.empty())
+                response.data.pop_back();
+            break;
+        }
     }
 
     response.truncated = response.truncated || limit_reached;
