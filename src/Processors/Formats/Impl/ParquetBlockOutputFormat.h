@@ -22,6 +22,7 @@ public:
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
     std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+    std::vector<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
 
 private:
     struct MemoryToken
@@ -130,6 +131,7 @@ private:
     std::optional<std::unordered_map<String, Int64>> column_field_ids;
     Parquet::FileWriteState file_state;
     std::unordered_map<String, size_t> column_sizes_on_disk;
+    std::vector<UInt64> row_group_offsets;
     size_t base_offset = 0; // initial out.count(), just for assert
     bool needs_file_level_variant_analysis = false;
     bool replaying_buffered_input = false;

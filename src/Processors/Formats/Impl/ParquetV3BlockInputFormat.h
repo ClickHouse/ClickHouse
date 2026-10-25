@@ -51,7 +51,8 @@ public:
         FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek,
         ParquetMetadataCachePtr metadata_cache_ = nullptr,
-        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
+        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt,
+        bool is_remote_fs_ = false);
 
     void resetParser() override;
 
