@@ -616,8 +616,12 @@ It is experimental and disabled by default; enable it with the
 The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
 subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
 added to its `GROUP BY` keys if it aggregates, its `LIMIT` (if any) becomes `LIMIT ... BY` these columns, and its
-result is joined to the left rows on them. With the default settings, the left rows are shared with the subquery
-through an in-memory buffer and this join is always a hash join. When the buffer is disabled
+result is joined to the left rows on them. When the correlation is a simple equality, such as `orders.user_id = u.id`,
+the left-side column can be replaced by the equal column of the subquery
+(`correlated_subqueries_substitute_equivalent_expressions`, enabled by default), and then the subquery does not read
+the left rows at all. Otherwise the distinct left values are passed to the subquery; with the default settings this
+goes through an in-memory buffer, and only when such a buffer is actually used the join is always a hash join.
+In all other cases, including the equality substitution and a disabled buffer
 (`correlated_subqueries_use_in_memory_buffer = 0` or `correlated_subqueries_default_join_kind = 'left'`), the
 algorithm is chosen by the `join_algorithm` setting. For example, `EXPLAIN` of a lateral subquery with `LIMIT`
 shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subquery)` step; a subquery without
@@ -644,9 +648,8 @@ Only the following subset is supported so far; anything else is rejected with an
   not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
 - The result of the decorrelated subquery is matched to the left rows by a single join. As for any hash join,
   `max_rows_in_join` and `max_bytes_in_join` limit the side of this join that is kept in memory, and the
-  planner chooses that side: with the default settings (`correlated_subqueries_use_in_memory_buffer = 1`)
-  it is the left side of `JOIN LATERAL`, because the left rows must be fully read before the lateral
-  subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
+  planner chooses that side: when the in-memory buffer described above is actually used, it is the left side
+  of `JOIN LATERAL`, because the left rows must be fully read before the lateral subquery is evaluated; otherwise it can be the result of the decorrelated subquery. The limits are always
   enforced as if `join_overflow_mode` were `throw`: with `break`, the join would silently drop unrelated left rows.
 
 **Example**
