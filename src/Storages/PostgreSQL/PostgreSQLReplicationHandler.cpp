@@ -60,6 +60,7 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_schema_list;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_snapshot;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_unmaterialized_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
@@ -290,6 +291,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list])
     , has_configured_tables_list(!tables_list.empty())
+    , unmaterialized_tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_unmaterialized_tables_list])
     , schema_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list])
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
     , use_extended_date_and_time_types(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types])
@@ -1788,9 +1790,22 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 }
 
 
-/// Used by MaterializedPostgreSQL database engine.
-std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
+void PostgreSQLReplicationHandler::logPublishedButNotMaterialized(const std::set<String> & published_but_not_materialized) const
 {
+    if (published_but_not_materialized.empty())
+        return;
+
+    LOG_WARNING(log,
+        "Publication {} contains tables that are not replicated, because they were never materialized "
+        "(for example, their initial snapshot has failed): {}. To replicate them, run `ATTACH TABLE {}.<table>`",
+        doubleQuoteString(publication_name), boost::algorithm::join(published_but_not_materialized, ", "), backQuoteIfNeed(current_database_name));
+}
+
+
+/// Used by MaterializedPostgreSQL database engine.
+std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(const std::set<String> & nested_tables_on_disk, std::set<String> & published_but_not_materialized)
+{
+    published_but_not_materialized.clear();
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
     bool publication_exists_before_startup = false;
@@ -1931,6 +1946,34 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     pqxx::nontransaction tx(connection.getRef());
                     result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
                 }
+
+                /// The tables of the PostgreSQL schema that do not have nested tables are not replicated:
+                /// they were created in PostgreSQL after this database (and are not in the publication),
+                /// or their initial snapshot has failed. Materializing them would fail on every attach
+                /// because the nested table does not exist, and the replication of the whole database would never resume.
+                /// The new tables are added to replication only by an explicit `ATTACH TABLE`.
+                /// If no nested table exists, the initial synchronization has not created anything yet, and all tables are used.
+                if (!nested_tables_on_disk.empty())
+                {
+                    std::set<String> published_tables;
+                    {
+                        pqxx::work tx(connection.getRef());
+                        published_tables = fetchTablesFromPublication(tx);
+                    }
+
+                    for (auto it = result_tables.begin(); it != result_tables.end();)
+                    {
+                        if (nested_tables_on_disk.contains(*it))
+                        {
+                            ++it;
+                            continue;
+                        }
+
+                        if (published_tables.contains(*it))
+                            published_but_not_materialized.insert(*it);
+                        it = result_tables.erase(it);
+                    }
+                }
             }
             /// Check tables list from publication is the same as expected tables list.
             /// If not - drop publication and return expected tables list.
@@ -1939,6 +1982,34 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 {
                     pqxx::work tx(connection.getRef());
                     result_tables = fetchTablesFromPublication(tx);
+                }
+
+                /// `ATTACH TABLE` and `DETACH TABLE PERMANENTLY` of a whole-schema database persist the list of
+                /// the materialized tables, so a published table that was never materialized (for example, its
+                /// initial snapshot has failed) is not in the list. Such tables are persisted separately, in
+                /// `materialized_postgresql_unmaterialized_tables_list`. Remember the ones that are still published
+                /// and still not materialized, so that they are not silently omitted by `BACKUP`.
+                /// Other tables of the publication are not taken into account: the publication can be shared with
+                /// other consumers (see `materialized_postgresql_use_unique_replication_consumer_identifier`),
+                /// which can add their own tables to it.
+                if (!unmaterialized_tables_list.empty())
+                {
+                    /// A comma-separated list of back-quoted names (see `DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange`),
+                    /// which preserves the names exactly, even if they contain commas or leading or trailing whitespace.
+                    const std::set<String> expected_tables_set(expected_tables.begin(), expected_tables.end());
+                    ReadBufferFromString in(unmaterialized_tables_list);
+                    while (true)
+                    {
+                        String table_name;
+                        readBackQuotedString(table_name, in);
+                        if (result_tables.contains(table_name)
+                            && !expected_tables_set.contains(table_name) && !nested_tables_on_disk.contains(table_name))
+                            published_but_not_materialized.insert(table_name);
+
+                        if (in.eof())
+                            break;
+                        assertChar(',', in);
+                    }
                 }
 
                 NameSet diff;
@@ -1970,6 +2041,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                         listed_tables += table_name;
                     }
 
+                    logPublishedButNotMaterialized(published_but_not_materialized);
+
                     LOG_ERROR(log,
                               "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
                               "Will use tables list from setting. "
@@ -1983,6 +2056,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             }
         }
     }
+
+    logPublishedButNotMaterialized(published_but_not_materialized);
 
     if (result_tables.empty())
     {

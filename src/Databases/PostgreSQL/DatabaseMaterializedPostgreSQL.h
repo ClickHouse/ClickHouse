@@ -91,12 +91,16 @@ private:
     void tryStartSynchronization();
     void startSynchronization();
 
-    ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
+    ASTPtr createAlterSettingsQuery(const SettingsChanges & new_settings);
 
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
 
     /// Throws if `table_name` is not replicated, or if detaching it permanently would leave no replicated tables.
     void checkCanDetachTablePermanently(const String & table_name) const TSA_REQUIRES(tables_mutex);
+
+    /// Adds the change of `materialized_postgresql_unmaterialized_tables_list` to persist `unmaterialized_published_tables`
+    /// (except `except`) together with `materialized_postgresql_tables_list`, if there is anything to persist or to clear.
+    void addUnmaterializedTablesListChange(SettingsChanges & changes, const String & except) const TSA_REQUIRES(tables_mutex);
 
     bool is_attach;
     String remote_database_name;
@@ -130,6 +134,11 @@ private:
     /// An entry is removed by `detachTablePermanently`. If the detach fails before reaching it, the entry stays until
     /// the next detach of this table, and only makes the check stricter.
     std::set<String> tables_detaching_permanently TSA_GUARDED_BY(tables_mutex);
+
+    /// The tables of a whole-schema database that are in the publication but are not replicated, because they
+    /// do not have nested tables (for example, their initial snapshot has failed). They are not in
+    /// `materialized_tables`, but `getTablesForBackup` must not silently omit them.
+    std::set<String> unmaterialized_published_tables TSA_GUARDED_BY(tables_mutex);
 
     mutable std::mutex handler_mutex;
 
