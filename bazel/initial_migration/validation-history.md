@@ -1964,3 +1964,21 @@ The [x86-64](https://app.buildbuddy.io/invocation/a4615c7f-9d89-4127-964d-66e06c
 | --- | ---: | ---: | ---: | ---: |
 | x86-64 | 48,409 | 2,802 | 168 | 10,553,874,245 |
 | ARM64 | 48,931 | 2,801 | 209 | 15,438,674,577 |
+
+## 9e1fab76a
+
+[9e1fab76a](https://github.com/dzbarsky/clickhouse/commit/9e1fab76a696c47b8e558c427923bf1ac70ceafc) removes the unused LLVM testing library from the Bazel build, simplifies 17 source lists, shares ClickHouse C compiler options, reuses the existing ClickHouse unit-test flag lists, and removes six redundant AWS dependencies. On [x86-64](https://app.buildbuddy.io/invocation/a8fdc69f-17ea-4d54-9f4e-e73c0e0a369b) and [ARM64](https://app.buildbuddy.io/invocation/1c0e05eb-8d59-4272-9398-831de6a3acf2), all 12 native targets passed. The stripped and normalized ClickHouse SHA-256 and size matched native CMake on each CPU; the raw ClickHouse and unit-test executables matched their Bazel references. [All six SHA-256 values and sizes](../../README.bazel.md#binary-comparison).
+
+The [x86-64](https://app.buildbuddy.io/invocation/c4d29c9a-f3ae-43d8-97f1-9e995eadf57a) and [ARM64](https://app.buildbuddy.io/invocation/b3b0844d-07ac-4202-b1ca-587af5ddf6ad) hosted builds each considered 19 of the 785 production targets for strict DWYU. A public header set counts only when its specified headers pass the preprocessor checks; it does not count as a compiled target.
+
+| CPU | Targets selected | Original DWYU reports | Compiled targets verified clean | Public header sets verified |
+| --- | ---: | ---: | ---: | ---: |
+| x86-64 | 0 | 0 | 0 | 0 |
+| ARM64 | 0 | 0 | 0 | 0 |
+
+All five Bazel planning commands succeeded on both CPUs. The DWYU planner could not establish a producer for an action input, so it did not run any of the 19 targets on either CPU. The available records do not identify the input.
+
+| CPU | Bazel remote cache hits | C++ compilations executed on workers | DWYU commands executed on workers | Peak concurrent worker commands | Worker input bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| x86-64 | 51,213 | 0 | 0 | 5 | 117,727,417 |
+| ARM64 | 51,734 | 0 | 0 | 5 | 5,327,520,462 |
