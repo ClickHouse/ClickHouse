@@ -161,8 +161,12 @@ namespace
         std::unordered_map<String, std::vector<WithDeclaration>> with_declarations;
         /// The value of `enable_global_with_statement` in the current select query.
         bool enable_global_with_statement;
-        /// The table names which refer to a common table expression rather than to a table.
-        std::unordered_set<const IAST *> cte_references;
+        /// The aliases of the expressions of the `WITH` clauses of the enclosing select queries, visible in the nested select queries.
+        std::unordered_set<String> with_expression_aliases;
+        /// The aliases of the expressions of the current select query.
+        std::unordered_set<String> expression_aliases;
+        /// The table names which refer to a common table expression or to an alias of an expression rather than to a table.
+        std::unordered_set<const IAST *> non_table_references;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
@@ -311,7 +315,7 @@ namespace
                 return;
 
             const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(expr.database_and_table_name.get());
-            if (!identifier || cte_references.contains(identifier))
+            if (!identifier || non_table_references.contains(identifier))
                 return;
 
             auto table_identifier = identifier->createTable();
@@ -336,16 +340,24 @@ namespace
         /// in its `WITH RECURSIVE` list and in the copies of its body `ApplyWithSubqueryVisitor` substitutes for it.
         /// Collects them with the scoping `AddDefaultDatabaseVisitor` leaves them unqualified with. Like the analyzer,
         /// a select query in which `enable_global_with_statement` is disabled sees only its own common table expressions.
+        /// Also collects the right arguments of `IN` which are aliases of expressions, which `AddDefaultDatabaseVisitor`
+        /// leaves unqualified with the same scoping.
         /// Runs on the whole query before it is visited, so that the `SETTINGS` clauses of the enclosing select queries are known.
-        void collectCteReferences(const ASTPtr & ast)
+        void collectNonTableReferences(const ASTPtr & ast)
         {
             if (const auto * select = ast->as<ASTSelectQuery>())
             {
                 auto enclosing_with_declarations = with_declarations;
+                auto enclosing_with_expression_aliases = with_expression_aliases;
+                auto enclosing_expression_aliases = std::move(expression_aliases);
                 const bool enclosing_enable_global_with_statement = enable_global_with_statement;
                 enable_global_with_statement = applyEnableGlobalWithStatement(select->settings(), enable_global_with_statement);
                 if (!enable_global_with_statement)
                     with_declarations.clear();
+
+                expression_aliases.clear();
+                for (const auto & child : select->children)
+                    AddDefaultDatabaseVisitor::collectAliases(child, expression_aliases);
 
                 if (select->with())
                 {
@@ -357,6 +369,8 @@ namespace
                                 .hides_table = select->recursive_with,
                                 .is_recursive = select->recursive_with && AddDefaultDatabaseVisitor::getRecursiveBodyBranches(with_element->subquery),
                             });
+                        else
+                            AddDefaultDatabaseVisitor::collectWithExpressionAliases(*child, with_expression_aliases);
                     }
                 }
 
@@ -364,33 +378,35 @@ namespace
                 {
                     if (child.get() != select->with().get())
                     {
-                        collectCteReferences(child);
+                        collectNonTableReferences(child);
                         continue;
                     }
 
                     for (const auto & element : child->children)
                     {
                         if (const auto * with_element = element->as<ASTWithElement>())
-                            collectCteReferencesInBody(with_element->name, with_element->subquery, element);
+                            collectNonTableReferencesInBody(with_element->name, with_element->subquery, element);
                         else
-                            collectCteReferences(element);
+                            collectNonTableReferences(element);
                     }
                 }
 
                 with_declarations = std::move(enclosing_with_declarations);
+                with_expression_aliases = std::move(enclosing_with_expression_aliases);
+                expression_aliases = std::move(enclosing_expression_aliases);
                 enable_global_with_statement = enclosing_enable_global_with_statement;
                 return;
             }
 
             if (const auto * union_query = ast->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
             {
-                collectCteReferencesInOperands(union_query->list_of_selects->children, union_query->settings_ast);
+                collectNonTableReferencesInOperands(union_query->list_of_selects->children, union_query->settings_ast);
                 return;
             }
 
             if (const auto * intersect_except = ast->as<ASTSelectIntersectExceptQuery>())
             {
-                collectCteReferencesInOperands(intersect_except->getListOfSelects(), nullptr);
+                collectNonTableReferencesInOperands(intersect_except->getListOfSelects(), nullptr);
                 return;
             }
 
@@ -400,7 +416,7 @@ namespace
                 if (it != with_declarations.end() && !it->second.empty())
                 {
                     for (const auto & child : subquery->children)
-                        collectCteReferencesInBody(subquery->cte_name, ast, child);
+                        collectNonTableReferencesInBody(subquery->cte_name, ast, child);
                     return;
                 }
             }
@@ -410,16 +426,19 @@ namespace
 
             if (const auto * function = ast->as<ASTFunction>();
                 function && functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() > 1)
+            {
                 addCteReference(*function->arguments->children[1]);
+                addExpressionAliasReference(*function->arguments->children[1]);
+            }
 
             for (const auto & child : ast->children)
-                collectCteReferences(child);
+                collectNonTableReferences(child);
         }
 
     private:
         /// Only the recursive members of a recursive common table expression reference it. Inside the body of an ordinary one,
         /// and inside the seed of a recursive one, its name is a table, unless an enclosing select query declares the same name.
-        void collectCteReferencesInBody(const String & name, const ASTPtr & subquery, const ASTPtr & node)
+        void collectNonTableReferencesInBody(const String & name, const ASTPtr & subquery, const ASTPtr & node)
         {
             auto & declarations = with_declarations[name];
             const WithDeclaration declaration = declarations.back();
@@ -431,25 +450,25 @@ namespace
                 enable_global_with_statement = applySetOperationEnableGlobalWithStatement(*branches, nullptr, enable_global_with_statement);
 
             declarations.pop_back();
-            collectCteReferences(branches ? branches->front() : node);
+            collectNonTableReferences(branches ? branches->front() : node);
             with_declarations[name].push_back(declaration);
 
             if (branches)
             {
                 for (size_t i = 1; i < branches->size(); ++i)
-                    collectCteReferences((*branches)[i]);
+                    collectNonTableReferences((*branches)[i]);
             }
 
             enable_global_with_statement = enclosing_enable_global_with_statement;
         }
 
-        void collectCteReferencesInOperands(const ASTs & operands, const ASTPtr & settings_ast)
+        void collectNonTableReferencesInOperands(const ASTs & operands, const ASTPtr & settings_ast)
         {
             const bool enclosing_enable_global_with_statement = enable_global_with_statement;
             enable_global_with_statement = applySetOperationEnableGlobalWithStatement(operands, settings_ast, enable_global_with_statement);
 
             for (const auto & operand : operands)
-                collectCteReferences(operand);
+                collectNonTableReferences(operand);
 
             enable_global_with_statement = enclosing_enable_global_with_statement;
         }
@@ -462,7 +481,17 @@ namespace
 
             auto it = with_declarations.find(identifier->name());
             if (it != with_declarations.end() && !it->second.empty() && it->second.back().hides_table)
-                cte_references.insert(identifier);
+                non_table_references.insert(identifier);
+        }
+
+        void addExpressionAliasReference(const IAST & table_name_ast)
+        {
+            const auto * identifier = dynamic_cast<const ASTIdentifier *>(&table_name_ast);
+            if (!identifier || identifier->compound())
+                return;
+
+            if (expression_aliases.contains(identifier->name()) || with_expression_aliases.contains(identifier->name()))
+                non_table_references.insert(identifier);
         }
 
         /// Finds dependencies of a table engine.
@@ -529,7 +558,7 @@ namespace
                 /// x IN table_name. A literal, as in x IN ('db.table'), is a set of values, not a table name.
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
                 if (function.arguments && function.arguments->children.size() > 1 && !function.arguments->children[1]->as<ASTLiteral>()
-                    && !cte_references.contains(function.arguments->children[1].get()))
+                    && !non_table_references.contains(function.arguments->children[1].get()))
                     addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
             else if (function.name == "dictionary")
@@ -799,7 +828,7 @@ namespace
             ASTPtr select = parseQuery(
                 parser, fixed_query, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-            data.collectCteReferences(select);
+            data.collectNonTableReferences(select);
             DDLDependencyVisitor::Visitor visitor{data};
             visitor.visit(select);
         }
@@ -817,7 +846,7 @@ namespace
 CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw, bool validate_current_database, size_t max_expanded_ast_elements, const std::optional<String> & engine_arguments_database)
 {
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw, validate_current_database, max_expanded_ast_elements, engine_arguments_database.value_or(current_database)};
-    data.collectCteReferences(ast);
+    data.collectNonTableReferences(ast);
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency(), data.getPlainViewDependencies()};
