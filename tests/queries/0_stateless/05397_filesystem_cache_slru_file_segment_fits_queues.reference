@@ -1,0 +1,3 @@
+cache_05397_lru	524288
+cache_05397_slru_fits	262144
+cache_05397_split_fits	32768
