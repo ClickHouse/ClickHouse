@@ -784,7 +784,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             max_block_size,
             context,
             commit_once_processed,
-            /*is_direct_select=*/true));
+            /*is_direct_select=*/true,
+            storage->replayAfterAbortIsSafe(context)));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -846,6 +847,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
+    bool replay_after_abort_is_safe,
     size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
@@ -868,7 +870,6 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     /// `ETag` - fail reads that are perfectly safe.
     const bool add_deduplication_info = is_deduplication_v2 && !is_direct_select
         && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, local_context->getSettingsRef());
-    const bool replay_after_abort_is_safe = replayAfterAbortIsSafe(local_context);
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -1062,7 +1063,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         min_insert_block_size_bytes = min_insert_block_size_bytes_for_materialized_views;
     }
     const bool is_deduplication_v2 = dependentViewsDeduplicateBlocks(queue_context);
-    const bool replay_after_abort_is_safe = replayAfterAbortIsSafe(queue_context);
     if (min_insert_block_size_rows)
         queue_context->setSetting("min_insert_block_size_rows_for_materialized_views", min_insert_block_size_rows);
     if (min_insert_block_size_bytes)
@@ -1106,7 +1106,15 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             /*no_squash_=*/ false,
             /*no_destination=*/ true,
             /*async_insert*/ is_deduplication_v2);
+        /// Every iteration builds a new insert pipeline from the current graph of dependent views, so
+        /// whether this batch may be aborted and replayed is decided for this pipeline, not once per
+        /// cycle: a view added between batches may feed a target that does not deduplicate. The graph
+        /// is probed both before and after the pipeline is built, so that a view created or dropped
+        /// meanwhile still counts if it may be in the pipeline. The sources and the cancel callback
+        /// below share this one answer.
+        const bool replay_safe_before_pipeline = replayAfterAbortIsSafe(queue_context);
         auto block_io = interpreter.execute();
+        const bool replay_after_abort_is_safe = replay_safe_before_pipeline && replayAfterAbortIsSafe(queue_context);
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),
             storage_snapshot,
@@ -1141,6 +1149,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
+                replay_after_abort_is_safe,
                 effective_max_files);
 
             pipes.emplace_back(source);
