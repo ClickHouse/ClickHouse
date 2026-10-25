@@ -1,0 +1,27 @@
+-- comparisons with null
+{"id":1,"eq":1,"ne":0,"lt":1,"lte":1,"gt":0,"gte":1,"cmp":0,"null_eq":1}
+{"id":2,"eq":0,"ne":1,"lt":0,"lte":0,"gt":1,"gte":0,"cmp":1,"null_eq":1}
+{"id":1}
+{"id":2}
+1	7
+2	2
+-- dates in UTC
+{"trunc":"2024-01-01T00:00:00.000Z","year":2024,"day":1,"hour":0,"minute":0,"week":0,"dow":2,"iso_dow":1,"kolkata_hour":5,"kolkata_minute":30}
+(BAD_ARGUMENTS)
+-- $toLong of a decimal
+{"constant":9007199254740991,"column":9007199254740991,"negative":-9223372036854775808}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- bounded growth of $toDate
+{"v":"2024-01-01T00:00:00.000Z"}
+-- arithmetic operands that are not expressions
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+{"x":4}
+-- constants assigned through a subdocument, a wrapper or a nested array
+(CANNOT_CONVERT_TYPE)
+(DECIMAL_OVERFLOW)
+(CANNOT_CONVERT_TYPE)
+1	7	[[1]]
+2	3	[[3,4]]
+0

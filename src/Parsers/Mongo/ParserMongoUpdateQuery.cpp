@@ -139,21 +139,32 @@ std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::str
   * as it is: a conversion that fails while the mutation runs would leave a failed mutation behind,
   * retried with every merge and blocking the later ones.
   */
+bool isCheckableConstant(const ASTPtr & ast)
+{
+    if (ast->as<ASTLiteral>())
+        return true;
+    /// The Extended JSON wrappers lower into functions of literals - a `CAST` for `$numberDecimal`,
+    /// `fromUnixTimestamp64Milli` for `$date` - and arrays nest. An embedded document becomes a
+    /// `JSON` value, which has no range to check.
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+    if (function->name == "CAST")
+    {
+        const auto & arguments = function->arguments->children;
+        const auto * type = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
+        if (!type || (type->value.getType() == Field::Types::String && type->value.safeGet<String>() == "JSON"))
+            return false;
+    }
+    for (const auto & argument : function->arguments->children)
+        if (!isCheckableConstant(argument))
+            return false;
+    return true;
+}
+
 ASTPtr checkedConstant(ASTPtr value, const std::string & column)
 {
-    const auto is_constant = [](const ASTPtr & ast)
-    {
-        if (ast->as<ASTLiteral>())
-            return true;
-        const auto * function = ast->as<ASTFunction>();
-        if (!function || function->name != "array" || !function->arguments)
-            return false;
-        for (const auto & element : function->arguments->children)
-            if (!element->as<ASTLiteral>())
-                return false;
-        return true;
-    };
-    if (!is_constant(value))
+    if (!isCheckableConstant(value))
         return value;
     return makeASTFunction("accurateCast", std::move(value), makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(column)));
 }
@@ -353,7 +364,8 @@ void flattenAssignedDocument(const std::string & prefix, const rapidjson::Value 
         if (it->value.IsObject() && !tryParseMongoConstant(it->value))
             flattenAssignedDocument(path, it->value, assignments);
         else
-            assignments.push_back(makeAssignment(path, parseUpdateValue(it->value, "$set", /* documents_are_values = */ true)));
+            assignments.push_back(
+                makeAssignment(path, checkedConstant(parseUpdateValue(it->value, "$set", /* documents_are_values = */ true), path)));
     }
 }
 

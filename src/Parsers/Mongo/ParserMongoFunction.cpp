@@ -441,6 +441,9 @@ bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
         {
             return false;
         }
+        if (!child_node)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The operand at the position {} of '{}' holds no expression", i, getFunctionName());
         children.push_back(std::move(child_node));
     }
 
@@ -496,6 +499,10 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
     }
     if (data.IsObject())
     {
+        /// An object operand is an operator expression such as `{"$add" : [...]}`; anything else,
+        /// for example an empty object or a filter, is not an arithmetic operand.
+        if (data.MemberCount() != 1 || data.MemberBegin()->name.GetStringLength() == 0 || data.MemberBegin()->name.GetString()[0] != '$')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An object operand of an arithmetic operator must be a single operator expression");
         auto parser = createParser(std::move(data), metadata, "");
         if (!parser->parseImpl(node))
         {

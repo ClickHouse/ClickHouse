@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <limits>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -26,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -102,30 +105,43 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$setIntersection", "arrayIntersect"},
     {"$range", "range"},
     {"$not", "not"},
-    {"$year", "toYear"},
-    {"$month", "toMonth"},
-    {"$dayOfMonth", "toDayOfMonth"},
-    {"$dayOfYear", "toDayOfYear"},
-    {"$week", "toWeek"},
-    {"$isoWeek", "toISOWeek"},
-    {"$isoWeekYear", "toISOYear"},
-    {"$hour", "toHour"},
-    {"$minute", "toMinute"},
-    {"$second", "toSecond"},
-    {"$millisecond", "toMillisecond"},
     {"$concat", "concat"},
     {"$and", "and"},
     {"$or", "or"},
-    {"$eq", "equals"},
-    {"$ne", "notEquals"},
-    {"$lt", "less"},
-    {"$lte", "lessOrEquals"},
-    {"$gt", "greater"},
-    {"$gte", "greaterOrEquals"},
     {"$divide", "divide"},
     {"$mod", "modulo"},
     {"$pow", "pow"},
     {"$ifNull", "coalesce"},
+};
+
+struct DatePartFunction
+{
+    std::string function;
+    /// The `mode` argument of the function, when it takes one.
+    std::optional<UInt64> mode;
+};
+
+/** Operators that read a part of a date. Mongo reads it in UTC unless the `timezone` of the
+  * operator says otherwise, while the ClickHouse functions read it in the time zone of the type
+  * of the date, so the time zone is always passed. `$week` counts the weeks from Sunday, from
+  * zero for the days before the first Sunday of the year, which is the mode 0 of `toWeek`.
+  * `$dayOfWeek` numbers the days from Sunday as 1, `$isoDayOfWeek` from Monday as 1; those are
+  * the modes 3 and 0 of `toDayOfWeek`.
+  */
+const std::unordered_map<std::string_view, DatePartFunction> date_part_functions = {
+    {"$year", {"toYear", {}}},
+    {"$month", {"toMonth", {}}},
+    {"$dayOfMonth", {"toDayOfMonth", {}}},
+    {"$dayOfYear", {"toDayOfYear", {}}},
+    {"$week", {"toWeek", 0}},
+    {"$isoWeek", {"toISOWeek", {}}},
+    {"$isoWeekYear", {"toISOYear", {}}},
+    {"$hour", {"toHour", {}}},
+    {"$minute", {"toMinute", {}}},
+    {"$second", {"toSecond", {}}},
+    {"$millisecond", {"toMillisecond", {}}},
+    {"$dayOfWeek", {"toDayOfWeek", 3}},
+    {"$isoDayOfWeek", {"toDayOfWeek", 0}},
 };
 
 /// Operators that fold their arguments into a tree of binary applications.
@@ -353,6 +369,57 @@ ASTPtr makeToDecimal(ASTPtr argument)
     return makeASTFunction("plus", makeASTFunction("toDecimal128", argument->clone(), makeLiteral(Field(UInt64(0)))), std::move(guard));
 }
 
+/** A comparison of Mongo, which is always a boolean: `null` equals `null` and is less than any
+  * other value, as in the BSON order, while a SQL comparison is `NULL` when an operand is. `$eq`
+  * and `$ne` are the null-safe `isNotDistinctFrom` and `isDistinctFrom`. An ordering comparison
+  * is `NULL` exactly when an operand is, and then its result depends only on which of them is:
+  * `a < b` holds when `b` is not null (then `a` is), `a <= b` when `a` is null, and so on.
+  */
+ASTPtr makeComparison(std::string_view name, ASTPtr left, ASTPtr right)
+{
+    if (name == "$eq")
+        return makeASTFunction("isNotDistinctFrom", std::move(left), std::move(right));
+    if (name == "$ne")
+        return makeASTFunction("isDistinctFrom", std::move(left), std::move(right));
+
+    /// The comparison, and which operand decides the result when one of them is null and whether
+    /// that result is that the operand is null or is not.
+    std::string function;
+    bool decided_by_left = false;
+    bool decided_by_null = false;
+    if (name == "$lt")
+    {
+        function = "less";
+    }
+    else if (name == "$lte")
+    {
+        function = "lessOrEquals";
+        decided_by_left = true;
+        decided_by_null = true;
+    }
+    else if (name == "$gt")
+    {
+        function = "greater";
+        decided_by_left = true;
+    }
+    else if (name == "$gte")
+    {
+        function = "greaterOrEquals";
+        decided_by_null = true;
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected comparison '{}'", name);
+
+    /// The deciding operand is used twice, so it is bound once (see `withValue`).
+    ASTPtr & deciding = decided_by_left ? left : right;
+    ASTPtr other = decided_by_left ? std::move(right) : std::move(left);
+    return withValue(std::move(deciding), [&](const ASTPtr & value)
+    {
+        auto comparison = decided_by_left ? makeASTFunction(function, value->clone(), other) : makeASTFunction(function, other, value->clone());
+        return makeASTFunction("ifNull", std::move(comparison), makeASTFunction(decided_by_null ? "isNull" : "isNotNull", value->clone()));
+    });
+}
+
 /** The lowering of `$toDate`. Mongo reads a numeric argument as Unix *milliseconds*, while
   * `toDateTime64` reads a number as seconds - `{"$toDate": 1546300800000}` is 2019 in Mongo,
   * not the year 2282 - so a numeric argument goes through `fromUnixTimestamp64Milli` instead.
@@ -381,23 +448,27 @@ ASTPtr makeToDate(ASTPtr argument)
         }
     }
 
-    /// Neither branch may throw for the type of the other: the losing branch is dropped by the
-    /// analyzer and skipped by short-circuit evaluation, but with the old analyzer and
-    /// `short_circuit_function_evaluation = 'disable'` it still runs. `toFloat64OrZero` over
-    /// `toString` reads any type without throwing; the string it produces for a number is the
-    /// number itself, and the branch taken for a string never uses it.
-    auto milliseconds = makeASTFunction(
-        "fromUnixTimestamp64Milli",
-        makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", argument->clone()))),
-        makeLiteral(Field(String("UTC"))));
-    /// `Nullable` and `LowCardinality` wrappers of a numeric type are numeric as well - the type
-    /// name of an ordinary column such as `Nullable(Int64)` must not fall through to the branch
-    /// that reads a number as seconds.
-    auto is_a_number = makeASTFunction(
-        "match",
-        makeASTFunction("toTypeName", argument->clone()),
-        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal))"))));
-    return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
+    /// The argument is used by every branch, so it is bound once (see `withValue`).
+    return withValue(std::move(argument), [&parsed](const ASTPtr & value)
+    {
+        /// Neither branch may throw for the type of the other: the losing branch is dropped by the
+        /// analyzer and skipped by short-circuit evaluation, but with the old analyzer and
+        /// `short_circuit_function_evaluation = 'disable'` it still runs. `toFloat64OrZero` over
+        /// `toString` reads any type without throwing; the string it produces for a number is the
+        /// number itself, and the branch taken for a string never uses it.
+        auto milliseconds = makeASTFunction(
+            "fromUnixTimestamp64Milli",
+            makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", value->clone()))),
+            makeLiteral(Field(String("UTC"))));
+        /// `Nullable` and `LowCardinality` wrappers of a numeric type are numeric as well - the type
+        /// name of an ordinary column such as `Nullable(Int64)` must not fall through to the branch
+        /// that reads a number as seconds.
+        auto is_a_number = makeASTFunction(
+            "match",
+            makeASTFunction("toTypeName", value->clone()),
+            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal))"))));
+        return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(value->clone()));
+    });
 }
 
 /** The lowering of `$toInt`. `toInt32` wraps a value outside the range of a 32-bit integer around,
@@ -430,21 +501,26 @@ ASTPtr makeToInt(ASTPtr argument)
 
 /** The lowering of `$toLong`. A date converts to its milliseconds since the epoch. Any other value
   * converts as `toInt64` does, which wraps a value outside the range of a 64-bit integer around,
-  * while Mongo rejects it: the conversion is checked by converting it back, since a value in the
-  * range differs from its truncation by less than one. The check reads both as a `Float64`, which
-  * is enough for a difference that is either below one or at least `2^63`.
+  * while Mongo rejects it, so the truncated value is checked first. The truncation is done exactly
+  * by `toInt128`: a check through `Float64` would round a decimal such as `9007199254740991.9`
+  * independently of its truncation. `toInt128` rejects a `NaN` and wraps a value far out of its
+  * own range, so a rough check through `Float64` comes first and bounds the magnitude.
   */
 ASTPtr makeToLong(ASTPtr argument)
 {
     const bool is_literal = argument->as<ASTLiteral>() != nullptr;
     return withValue(std::move(argument), [is_literal](const ASTPtr & value)
     {
-        auto converted = makeASTFunction("toInt64", value->clone());
-        auto difference = makeASTFunction(
-            "abs", makeASTFunction("minus", makeASTFunction("toFloat64", value->clone()), makeASTFunction("toFloat64", converted)));
+        auto bounded = makeASTFunction(
+            "less", makeASTFunction("abs", makeASTFunction("toFloat64", value->clone())), makeLiteral(Field(Float64(1e19))));
+        auto truncated = makeASTFunction("toInt128", value->clone());
+        auto in_range = makeASTFunction(
+            "and",
+            makeASTFunction("greaterOrEquals", truncated, makeLiteral(Field(std::numeric_limits<Int64>::min()))),
+            makeASTFunction("lessOrEquals", truncated->clone(), makeLiteral(Field(std::numeric_limits<Int64>::max()))));
         auto guard = makeASTFunction(
             "throwIf",
-            makeASTFunction("not", makeASTFunction("less", std::move(difference), makeLiteral(Field(UInt64(1))))),
+            makeASTFunction("not", makeASTFunction("if", std::move(bounded), std::move(in_range), makeLiteral(Field(UInt64(0))))),
             makeLiteral(Field(String("The value of '$toLong' is out of the range of a 64-bit integer"))));
         /// The condition is never true: it throws instead.
         auto checked = makeASTFunction(
@@ -693,7 +769,8 @@ ASTPtr makeDateTrunc(const rapidjson::Value & argument)
             ErrorCodes::NOT_IMPLEMENTED,
             "The unit 'week' of '$dateTrunc' is only supported with a 'startOfWeek' of Monday: Mongo starts a week on Sunday by default");
 
-    return makeASTFunction("dateTrunc", makeLiteral(Field(String(stringView(unit)))), std::move(date));
+    /// Mongo truncates in UTC, `dateTrunc` in the time zone of the type of the date.
+    return makeASTFunction("dateTrunc", makeLiteral(Field(String(stringView(unit)))), std::move(date), makeLiteral(Field(String("UTC"))));
 }
 
 /// The `timezone` of a date operator, UTC by default. Members other than `allowed` and `timezone`
@@ -764,6 +841,35 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
         return makeFunction(it->second, parseArguments(argument));
+
+    if (name == "$eq" || name == "$ne" || name == "$lt" || name == "$lte" || name == "$gt" || name == "$gte")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        return makeComparison(name, arguments[0], arguments[1]);
+    }
+
+    if (auto it = date_part_functions.find(name); it != date_part_functions.end())
+    {
+        /// Either the date itself, or the document `{"date" : ..., "timezone" : ...}`.
+        std::vector<ASTPtr> arguments;
+        ASTPtr timezone;
+        if (argument.IsObject() && argument.HasMember("date"))
+        {
+            arguments.push_back(parseMongoAggregateExpression(argument["date"]));
+            timezone = parseDateTimezone(argument, name, {"date"});
+        }
+        else
+        {
+            arguments = parseArguments(argument);
+            requireArgumentCount(name, arguments, 1);
+            timezone = makeLiteral(Field(String("UTC")));
+        }
+        if (it->second.mode)
+            arguments.push_back(makeLiteral(Field(*it->second.mode)));
+        arguments.push_back(std::move(timezone));
+        return makeFunction(it->second.function, std::move(arguments));
+    }
 
     if (auto it = folded_functions.find(name); it != folded_functions.end())
     {
@@ -959,15 +1065,6 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (name == "$rand")
         return makeASTFunction("randCanonical");
 
-    if (name == "$dayOfWeek" || name == "$isoDayOfWeek")
-    {
-        auto arguments = parseArguments(argument);
-        requireArgumentCount(name, arguments, 1);
-        /// `$dayOfWeek` numbers the days from Sunday as 1, `$isoDayOfWeek` from Monday as 1; those
-        /// are the modes 3 and 0 of `toDayOfWeek`.
-        return makeASTFunction("toDayOfWeek", arguments[0], makeLiteral(Field(UInt64(name == "$dayOfWeek" ? 3 : 0))));
-    }
-
     if (name == "$log")
     {
         auto arguments = parseArguments(argument);
@@ -979,13 +1076,20 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 2);
-        return makeASTFunction(
-            "multiIf",
-            makeASTFunction("less", arguments[0], arguments[1]),
-            makeLiteral(Field(Int64(-1))),
-            makeASTFunction("greater", arguments[0]->clone(), arguments[1]->clone()),
-            makeLiteral(Field(Int64(1))),
-            makeLiteral(Field(Int64(0))));
+        /// Both operands are compared twice, so they are bound once (see `withValue`).
+        return withValue(arguments[0], [&](const ASTPtr & left)
+        {
+            return withValue(arguments[1], [&](const ASTPtr & right)
+            {
+                return makeASTFunction(
+                    "multiIf",
+                    makeComparison("$lt", left->clone(), right->clone()),
+                    makeLiteral(Field(Int64(-1))),
+                    makeComparison("$gt", left->clone(), right->clone()),
+                    makeLiteral(Field(Int64(1))),
+                    makeLiteral(Field(Int64(0))));
+            });
+        });
     }
 
     if (name == "$indexOfBytes" || name == "$indexOfCP" || name == "$indexOfArray")
