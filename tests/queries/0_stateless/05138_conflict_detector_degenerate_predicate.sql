@@ -18,7 +18,7 @@ INSERT INTO t1 VALUES (1), (2), (3);
 INSERT INTO t2 VALUES (1, 5), (2, 7);
 INSERT INTO t3 VALUES (0), (1), (2), (3);
 
-SET enable_analyzer = 1, query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_limit = 10;
 
 -- Degenerate predicate on the null-supplying side (t2.a = 5). All four configurations must agree.
 SELECT 'noopt', t1.k, t2.k, t3.k FROM t1 LEFT JOIN t2 ON t2.a = 5 JOIN t3 ON t1.k = t3.k AND t2.k = t3.k ORDER BY ALL

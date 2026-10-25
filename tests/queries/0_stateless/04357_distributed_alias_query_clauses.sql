@@ -30,11 +30,11 @@ SELECT a, b, count() AS c FROM t_local_04357_wg WHERE a = 1 GROUP BY a, b ORDER 
 
 SELECT 'dist';
 SELECT a, b, count() AS c FROM t_dist_04357_wg WHERE a = 1 GROUP BY a, b ORDER BY a, b
-SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1;
+SETTINGS prefer_localhost_replica = 1;
 
 SELECT 'dist_plan';
 SELECT a, b, count() AS c FROM t_dist_04357_wg WHERE a = 1 GROUP BY a, b ORDER BY a, b
-SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, serialize_query_plan = 1;
+SETTINGS prefer_localhost_replica = 1, serialize_query_plan = 1;
 
 DROP TABLE t_dist_04357_wg;
 DROP TABLE t_local_04357_wg;
@@ -84,7 +84,7 @@ SELECT 'dist';
 SELECT DISTINCT l.id, l.a, r.id FROM dist_left_04357 AS l
 GLOBAL INNER JOIN dist_right_04357 AS r ON l.a = r.a
 ORDER BY l.id
-SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1;
+SETTINGS prefer_localhost_replica = 1;
 
 DROP TABLE dist_left_04357;
 DROP TABLE dist_right_04357;
@@ -122,11 +122,11 @@ SELECT id FROM t_local_04357_agg GROUP BY id ORDER BY sum(alias_col), id;
 
 SELECT 'dist';
 SELECT id FROM t_dist_04357_agg GROUP BY id ORDER BY sum(alias_col), id LIMIT 10
-SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1;
+SETTINGS prefer_localhost_replica = 1;
 
 SELECT 'dist_plan';
 SELECT id FROM t_dist_04357_agg GROUP BY id ORDER BY sum(alias_col), id LIMIT 10
-SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, serialize_query_plan = 1;
+SETTINGS prefer_localhost_replica = 1, serialize_query_plan = 1;
 
 DROP TABLE t_dist_04357_agg;
 DROP TABLE t_local_04357_agg;

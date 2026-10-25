@@ -2680,9 +2680,10 @@ Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/fu
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
         {"25.1", false, false, "Cloud sync"}) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 16, R"(
 How many partition discoveries should be packed into batch
 )", 0, \
+        {"26.11", 1, 16, "Increase the default", CompatibilitySetting::Ignore}, \
         {"25.8", 1, 1, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
