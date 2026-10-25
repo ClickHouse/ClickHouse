@@ -2,9 +2,13 @@
 #include <Functions/geometryConverters.h>
 #include <Functions/geometry.h>
 
+#include <boost/geometry/algorithms/for_each.hpp>
 #include <boost/geometry/algorithms/length.hpp>
 #include <boost/geometry/strategies/geographic/parameters.hpp>
 #include <boost/geometry/strategies/length/geographic.hpp>
+
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
@@ -22,8 +26,20 @@ Float64 linearLength(const Geometry & geometry)
     /// Karney's algorithm for geodesics, as in GeographicLib: accurate for any pair of points, including nearly antipodal ones,
     /// for which Vincenty's formulae may not converge.
     if constexpr (std::is_same_v<Point, GeographicPoint>)
+    {
+        /// A NaN or infinite coordinate has no position on the spheroid, and Karney's algorithm asserts that it gets
+        /// finite coordinates, so the length is NaN, as it would be on a plane or on a sphere.
+        bool all_finite = true;
+        boost::geometry::for_each_point(geometry, [&](const GeographicPoint & point)
+        {
+            all_finite = all_finite && std::isfinite(point.template get<0>()) && std::isfinite(point.template get<1>());
+        });
+        if (!all_finite)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         return static_cast<Float64>(boost::geometry::length(
             geometry, boost::geometry::strategies::length::geographic<boost::geometry::strategy::karney>()));
+    }
     else
         return static_cast<Float64>(boost::geometry::length(geometry));
 }
@@ -137,6 +153,7 @@ Returns the length of a line in meters on the WGS84 spheroid, the model of the E
 Each segment is the shortest path between its points on the spheroid (a geodesic), calculated with Karney's algorithm, as in GeographicLib.
 For coordinates stored as (latitude, longitude), such as the input of `ST_Length_Spheroid` in DuckDB, swap them first with `flipCoordinates`:
 without it, the result is the length of a different line.
+If a coordinate is NaN or infinite, the result is NaN.
 )" + what_is_measured;
         FunctionDocumentation::Syntax syntax = "lengthSpheroid(geometry)";
         FunctionDocumentation::ReturnedValue returned_value = {"The length of the lines, in meters.", {"Float64"}};

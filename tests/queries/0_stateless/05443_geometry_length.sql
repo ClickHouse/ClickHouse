@@ -54,5 +54,19 @@ SELECT
     round(lengthSpheroid(readWKTLineString('LINESTRING (-0.1276 51.5072, 2.3522 48.8566, 13.405 52.52)')), 3),
     round(lengthSpheroid(flipCoordinates(readWKT('LINESTRING (51.5072 -0.1276, 48.8566 2.3522, 52.52 13.405)'))), 3);
 
+-- Latitudes below -45 degrees (Ushuaia - Santiago, and a line at 60 to 75 degrees south).
+SELECT
+    round(lengthSpheroid([(-68.3, -54.8), (-70.65, -33.45)]::LineString), 3),
+    round(lengthSpheroid([(0., -60.), (10., -60.), (20., -75.)]::LineString), 3);
+
+-- A NaN or infinite coordinate has no position on the spheroid.
+SELECT
+    lengthSpheroid([(0., nan), (1., 0.)]::LineString),
+    lengthSpheroid([(nan, 0.), (1., 0.)]::LineString),
+    lengthSpheroid([(inf, 0.), (1., 0.)]::LineString),
+    lengthSpheroid([(0., -inf), (1., 0.)]::LineString),
+    lengthSpheroid([[(0., 0.), (1., 0.)], [(0., 0.), (0., nan)]]::MultiLineString),
+    lengthSpheroid([(0., 0.), (1., 0.), (1., inf), (0., 0.)]::Ring);
+
 SELECT lengthCartesian(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT lengthSpheroid('LINESTRING (0 0, 1 1)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
