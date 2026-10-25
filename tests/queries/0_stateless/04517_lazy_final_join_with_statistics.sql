@@ -4,7 +4,6 @@
 -- must only skip for projection reads, not for any non-null analysis result.
 -- Regression test for PR fixing issue #110281.
 
-SET enable_analyzer = 1;
 SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS rmt_04517;

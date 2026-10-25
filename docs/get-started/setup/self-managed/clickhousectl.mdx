@@ -15,17 +15,54 @@ ClickHouse runs natively on Linux and macOS. On Windows, run these steps inside
 the [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about).
 </Info>
 
-The ClickHouse CLI (`clickhousectl`) helps you install and manage local ClickHouse
-versions, launch servers, and run queries.
+The ClickHouse CLI (`clickhousectl`, alias `chctl`) installs and manages local
+ClickHouse versions, runs local ClickHouse and Postgres servers, runs queries,
+and manages ClickHouse Cloud. This page walks you through installing the CLI,
+starting a local ClickHouse server, and connecting to it.
+
+If you used the [quick install](/get-started/setup/self-managed/quick-install)
+script, `clickhousectl` is already installed. Skip to
+[Install ClickHouse](#cli-install-clickhouse).
 
 <Steps>
 <Step title="Install the ClickHouse CLI" id="install-the-cli">
 
+The install script supports macOS and Linux on x86\_64 and ARM64:
+
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-A `chctl` alias is also created automatically for convenience.
+The script installs `clickhousectl` to `~/.local/bin` and creates a `chctl`
+alias next to it. If the script says `~/.local/bin` is not on your `PATH`, add it,
+and add the same line to your shell profile (`~/.bashrc`, `~/.zshrc`) for future
+sessions:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+<Accordion title="Other installation methods">
+
+| Tool | Command |
+| --- | --- |
+| npm | `npm install -g clickhousectl` |
+| uv | `uv tool install clickhousectl` |
+| pipx | `pipx install clickhousectl` |
+| pip | `pip install clickhousectl` |
+| cargo-binstall | `cargo binstall clickhousectl` |
+| Cargo, from source (Rust 1.94+) | `cargo install clickhousectl` |
+
+Only the install script and npm create the `chctl` alias.
+
+</Accordion>
+
+To check for a newer CLI release, and to install it:
+
+```bash
+clickhousectl update --check
+clickhousectl update
+```
 </Step>
 <Step title="Install ClickHouse" id="cli-install-clickhouse">
 
@@ -36,58 +73,143 @@ clickhousectl local use latest
 ```
 
 `local use` installs the version if it isn't already present, sets it as your
-default, and creates a `clickhouse` symlink in `~/.local/bin` (on your `PATH`)
-so you can invoke the `clickhouse` binary directly. Any later step in these docs
-that runs a `clickhouse` command then works as-is.
+default, and creates a `clickhouse` symlink in `~/.local/bin`, so you can run the
+`clickhouse` binary directly. Any later step in these docs that runs a
+`clickhouse` command then works as-is, provided `~/.local/bin` is on your `PATH`.
 
-You can also select a specific version:
+You can also select the latest long-term support release, or a specific
+version:
 
 ```bash
-clickhousectl local use 26.5            # Latest 26.5.x.x
-clickhousectl local use 26.5.2.39       # Exact version
+clickhousectl local use lts             # Latest LTS release
+clickhousectl local use 26.8            # Latest 26.8.x.x release
+clickhousectl local use 26.8.1.1760     # Exact version
+```
+
+To see which minor versions are available to download, and which versions you
+have installed:
+
+```bash
+clickhousectl local list --remote
+clickhousectl local list
 ```
 
 <Info>
 **Use vs install**
 
 `clickhousectl local use <version>` installs a version *and* makes it your
-default, updating the `clickhouse` symlink on your `PATH`. To download a version
-without changing your default or updating the symlink, use
-`clickhousectl local install <version>` instead.
+default, updating the `clickhouse` symlink. `clickhousectl local install <version>`
+only downloads a version; it becomes your default only if you have no default
+yet, and it doesn't update the symlink. To set the default without creating or
+updating the symlink, use `clickhousectl local use <version> --no-global`.
 </Info>
 </Step>
 <Step title="Start clickhouse-server" id="cli-start-clickhouse-server">
 
+`clickhousectl` scopes local servers to the directory you run it from. Create a
+project directory and start a server there:
+
 ```bash
+mkdir my-project && cd my-project
 clickhousectl local server start
 ```
 
-The server runs in the background. To verify it's running:
+```response
+Server 'default' started in background (PID: 14705)
+  HTTP port: 8123
+  TCP port:  9000
+  Version:   26.9.1.1312
+```
+
+The server runs in the background and is named `default`. Its data lives in
+`./.clickhouse/`, so run later `clickhousectl local` commands from the same
+directory; `clickhousectl` doesn't search parent directories. The server listens
+on HTTP port `8123` and TCP port `9000`, or on free ports when those are taken.
+To choose the ports, pass `--http-port` and `--tcp-port`. To run more than one
+server, give each a name, such as `clickhousectl local server start dev`.
+
+To verify it's running:
 
 ```bash
 clickhousectl local server list
 ```
+
+```response
+| Name    | Status  | PID   | Version     | HTTP Port | TCP Port |
+|---------|---------|-------|-------------|-----------|----------|
+| default | running | 14705 | 26.9.1.1312 | 8123      | 9000     |
+
+1 server, 1 running
+```
 </Step>
 <Step title="Start clickhouse-client" id="cli-start-clickhouse-client">
+
+Connect to the server with `clickhouse-client`, from the same directory:
 
 ```bash
 clickhousectl local client
 ```
 
-You will see something like this:
+`local client` connects to the server named `default` and uses the same
+ClickHouse version as the server. Pass a name to connect to another server,
+such as `clickhousectl local client dev`. You will see something like this:
 
 ```response
-ClickHouse client version 24.5.1.117 (official build).
+ClickHouse client version 26.9.1.1312 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 24.5.1.
+Connected to ClickHouse server version 26.9.1.
 
 local-host :)
 ```
 
-You're now ready to start sending SQL commands to ClickHouse!
+You're now ready to start sending SQL commands to ClickHouse! Type `exit` to
+leave the client.
+
+To run a single query without opening an interactive session, pass `-q`:
+
+```bash
+clickhousectl local client -q "SELECT version()"
+```
 
 <Tip>
-The [Quick Start](/get-started/setup/install) walks you through the steps for creating tables and inserting data.
+[Creating tables in ClickHouse](/get-started/quickstarts/creating-tables) walks you through creating tables and inserting data.
 </Tip>
 </Step>
+<Step title="Stop the server" id="cli-stop-clickhouse-server">
+
+The server keeps running in the background until you stop it. Stop it from the
+same directory:
+
+```bash
+clickhousectl local server stop
+```
+
+Stopping preserves the server's data for the next `clickhousectl local server start`.
+
+<Warning>
+`clickhousectl local server remove` permanently deletes a stopped server's data.
+</Warning>
+</Step>
 </Steps>
+
+## Next steps {#next-steps}
+
+- **Run Postgres locally.** With Docker running, start a local Postgres server
+  and connect to it with `psql`:
+
+  ```bash
+  clickhousectl local postgres start
+  clickhousectl local postgres client
+  ```
+
+- **Connect to ClickHouse Cloud.** Create an account, or log in to an existing
+  one. Browser login is read-only; creating or changing Cloud resources needs an
+  API key, which `clickhousectl cloud auth login --interactive` prompts for.
+
+  ```bash
+  clickhousectl cloud auth signup
+  clickhousectl cloud auth login
+  ```
+
+- **Learn the rest of the CLI.** See the [clickhousectl reference](/concepts/features/interfaces/cli),
+  or run `clickhousectl --help`.
