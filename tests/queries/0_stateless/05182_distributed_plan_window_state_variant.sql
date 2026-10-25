@@ -230,4 +230,20 @@ SELECT round(contingencyMergeArray(a), 6)
 FROM (SELECT [contingencyState(b, c) OVER ()] AS a FROM t_window_state_variant_gather LIMIT 1)
 SETTINGS make_distributed_plan = 0;
 
+-- The scalar subquery returns the state itself, so the state, not its finalized value, crosses the gather.
+SELECT '-- window state inside another aggregate state: through an exchange, distributed then local; through an external sort, spilled then not spilled';
+SELECT arrayMap(x -> round(finalizeAggregation(x), 6) + 0, finalizeAggregation((SELECT g FROM (SELECT p, v, groupArrayState(s) OVER (PARTITION BY p ORDER BY v) AS g
+    FROM (SELECT p, v, contingencyState(b, c) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather)) ORDER BY p, v LIMIT 1 OFFSET 3)));
+SELECT arrayMap(x -> round(finalizeAggregation(x), 6) + 0, finalizeAggregation((SELECT g FROM (SELECT p, v, groupArrayState(s) OVER (PARTITION BY p ORDER BY v) AS g
+    FROM (SELECT p, v, contingencyState(b, c) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather)) ORDER BY p, v LIMIT 1 OFFSET 3)))
+SETTINGS make_distributed_plan = 0;
+SELECT sum(cityHash64(v, arrayMap(x -> round(finalizeAggregation(x), 6) + 0, finalizeAggregation(g))))
+FROM (SELECT v, groupArrayState(s) OVER () AS g FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 1000,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+SELECT sum(cityHash64(v, arrayMap(x -> round(finalizeAggregation(x), 6) + 0, finalizeAggregation(g))))
+FROM (SELECT v, groupArrayState(s) OVER () AS g FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+
 DROP TABLE t_window_state_variant_gather;

@@ -62,3 +62,8 @@ cascades shape distributes
 -- array of window states merged by -MergeArray in the same Cascades stage: distributed then local
 0.075652
 0.075652
+-- window state inside another aggregate state: through an exchange, distributed then local; through an external sort, spilled then not spilled
+[nan,0.707107,0.816497,0.816497]
+[nan,0.707107,0.816497,0.816497]
+14278703978749469126
+14278703978749469126
