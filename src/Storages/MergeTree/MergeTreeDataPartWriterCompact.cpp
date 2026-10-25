@@ -6,6 +6,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 
@@ -76,9 +77,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -88,7 +88,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
+        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
@@ -358,6 +358,8 @@ void MergeTreeDataPartWriterCompact::writeStripe(const Block & block, const Gran
     {
         for (size_t granule_index = 0; granule_index < granules.size(); ++granule_index)
         {
+            CurrentThread::checkIfNotCancelled();
+
             const auto & granule = granules[granule_index];
 
             /// Position of the next mark of this granule to fill: marks of a column's substreams

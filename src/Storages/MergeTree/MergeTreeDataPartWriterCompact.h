@@ -58,7 +58,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 

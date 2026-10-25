@@ -54,6 +54,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <base/itoa.h>
 
 #include <algorithm>
 #include <ranges>
@@ -118,6 +119,34 @@ auto expandAtomGroups(Elements && elements)
         return std::span<Element>(&element, 1);
     };
     return std::views::all(std::forward<Elements>(elements)) | std::views::transform(atoms_of) | std::views::join;
+}
+
+/// Calls `apply(atom, positive)` for every atom of `rpn`; `positive` is false for an atom under an odd number of `NOT`s.
+template <typename Elements, typename Apply>
+void forEachAtomWithPolarity(Elements & rpn, Apply && apply)
+{
+    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
+    std::vector<bool> positive_stack = {true};
+    for (auto it = rpn.rbegin(); it != rpn.rend(); ++it)
+    {
+        auto & element = *it;
+        chassert(!positive_stack.empty());
+        bool positive = positive_stack.back();
+        positive_stack.pop_back();
+
+        if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+            positive_stack.push_back(!positive);
+        else if (element.function == KeyCondition::RPNElement::FUNCTION_AND || element.function == KeyCondition::RPNElement::FUNCTION_OR)
+            positive_stack.insert(positive_stack.end(), {positive, positive});
+        else
+        {
+            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
+            for (auto & atom : expandAtomGroups(std::span(&element, 1)))
+                apply(atom, positive);
+        }
+    }
+
+    chassert(positive_stack.empty());
 }
 
 }
@@ -1680,6 +1709,18 @@ KeyCondition::KeyCondition(
         rpn[i].position_in_filter_rpn = i;
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
+    size_t next_function_number = 0;
+    for (auto & element : expandAtomGroups(rpn))
+    {
+        /// A set atom applies only the chains of its set index (see `tryPrepareSetAtom`).
+        chassert(element.monotonic_functions_chain.empty() || !element.set_index);
+        element.first_function_number = next_function_number;
+        next_function_number += element.monotonic_functions_chain.size();
+        if (element.set_index)
+            for (const auto & mapping : element.set_index->getIndexesMapping())
+                next_function_number += mapping.functions.size();
+    }
 }
 
 KeyCondition::KeyCondition(
@@ -1857,30 +1898,11 @@ bool KeyCondition::hasUnknownAtoms() const
 KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
 {
     KeyCondition result = *this;
-
-    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
-    std::vector<bool> positive_stack = {true};
-    for (auto it = result.rpn.rbegin(); it != result.rpn.rend(); ++it)
+    forEachAtomWithPolarity(result.rpn, [](RPNElement & atom, bool positive)
     {
-        RPNElement & element = *it;
-        chassert(!positive_stack.empty());
-        bool positive = positive_stack.back();
-        positive_stack.pop_back();
-
-        if (element.function == RPNElement::FUNCTION_NOT)
-            positive_stack.push_back(!positive);
-        else if (element.function == RPNElement::FUNCTION_AND || element.function == RPNElement::FUNCTION_OR)
-            positive_stack.insert(positive_stack.end(), {positive, positive});
-        else
-        {
-            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
-            for (auto & atom : expandAtomGroups(std::span<RPNElement>(&element, 1)))
-                if (atom.function == RPNElement::FUNCTION_UNKNOWN)
-                    atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
-        }
-    }
-
-    chassert(positive_stack.empty());
+        if (atom.function == RPNElement::FUNCTION_UNKNOWN)
+            atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+    });
     return result;
 }
 
@@ -1911,7 +1933,7 @@ static Field applyFunctionForField(
 /// Returns `std::nullopt` when an earlier call already failed to evaluate the same (function, column)
 /// pair: the cache remembers the failure, so the caller can answer "unknown" for the range at once
 /// instead of re-running the throwing expression over the whole column.
-static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, size_t function_number, const DataTypePtr & current_type, const FieldRef & field)
 {
     chassert(func != nullptr);
     /// Fallback for fields without block reference.
@@ -1920,12 +1942,15 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
 
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
-    /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
-    WriteBufferFromOwnString buf;
-    writeText("_", buf);
-    writePointerHex(func.get(), buf);
-    writeText("_" + toString(field.column_idx), buf);
-    String result_name = buf.str();
+    /// The cache key is `_[function_number]_[param_column_id]`. It is unique because the block serves one condition
+    /// (and its copies), and the columns the caller put into the block are unnamed.
+    char key_buf[2 * (1 + std::numeric_limits<size_t>::digits10 + 1)];
+    char * key_end = key_buf;
+    *key_end++ = '_';
+    key_end = itoa(function_number, key_end);
+    *key_end++ = '_';
+    key_end = itoa(field.column_idx, key_end);
+    const std::string_view result_name(key_buf, key_end - key_buf);
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
 
@@ -1971,10 +1996,10 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
         }
         catch (...)
         {
-            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), String(result_name)});
             throw;
         }
-        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), String(result_name)});
     }
 
     return FieldRef(field.columns, field.row_idx, result_idx);
@@ -5824,6 +5849,17 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
         && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
+    /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+    /// a scale-0 decimal compares the same and is not stepped.
+    if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
+        && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
+    {
+        if (const_value.getType() == Field::Types::Int64)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
+        else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<UInt64>()), 0);
+    }
+
     if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
     {
         if (const_value.getType() == Field::Types::String)
@@ -7136,6 +7172,7 @@ size_t KeyCondition::getNumUnevaluableChainApplications()
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
+    size_t first_function_number,
     DataTypePtr current_type,
     bool single_point)
 {
@@ -7159,8 +7196,11 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     /// exception, or makes it depend on whether another index happened to prune the range first.
     try
     {
-        for (const auto & func : functions)
+        for (size_t i = 0; i < functions.size(); ++i)
         {
+            const auto & func = functions[i];
+            const size_t function_number = first_function_number + i;
+
             /// We check the monotonicity of each function on a specific range.
             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
             IFunction::Monotonicity monotonicity = single_point
@@ -7193,7 +7233,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
                 if (!key_range.left.isNull())
                 {
-                    auto transformed = applyFunction(func, current_type, key_range.left);
+                    auto transformed = applyFunction(func, function_number, current_type, key_range.left);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7205,7 +7245,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
                 if (!key_range.right.isNull())
                 {
-                    auto transformed = applyFunction(func, current_type, key_range.right);
+                    auto transformed = applyFunction(func, function_number, current_type, key_range.right);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
@@ -7899,6 +7939,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_ptr,
                     element.monotonic_functions_chain,
+                    element.first_function_number,
                     data_types[key_column],
                     single_point
                 );
@@ -8235,7 +8276,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, element.first_function_number, single_point));
 
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
             {
@@ -8385,6 +8426,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     std::move(sparse_key_range),
                     element.monotonic_functions_chain,
+                    element.first_function_number,
                     sparse_data_types[sparse_pos],
                     single_point);
 
@@ -8739,7 +8781,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(
+                key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, element.first_function_number, single_point));
 
             /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
             /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
@@ -8810,13 +8853,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                           std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
-    for (auto & rpn_element : expandAtomGroups(rpn))
+    forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
+        /// A lookup can only rule out the positive form of an atom (`x = c` of `x != c`), and a row group is skipped
+        /// only when the whole condition cannot be true, so it is useless for an atom whose positive form ends up inverted.
+        const bool negated = rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET;
+        if (negated == positive)
+            return;
+
         if (!rpn_element.monotonic_functions_chain.empty())
         {
             /// We could apply the inverse functions to get the key value when possible.
             /// This is currently not implemented.
-            continue;
+            return;
         }
 
         KeyCondition::BloomFilterData::HashesForColumns hashes;
@@ -8827,14 +8877,14 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
             // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
             if (rpn_element.range.left != rpn_element.range.right)
             {
-                continue;
+                return;
             }
 
             auto hashed_value = hash_one(rpn_element.getKeyColumn(), rpn_element.range.left);
 
             if (!hashed_value)
             {
-                continue;
+                return;
             }
 
             hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
@@ -8892,12 +8942,12 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
             if (hashes.empty())
             {
-                continue;
+                return;
             }
 
             rpn_element.bloom_filter_data = {std::move(hashes), std::move(key_columns_for_element)};
         }
-    }
+    });
 }
 
 bool KeyCondition::mayBeTrueInRange(

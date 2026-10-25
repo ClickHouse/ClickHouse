@@ -5,7 +5,6 @@
 -- and (b) raised `BAD_ARGUMENTS` for any multi-column SELECT because a single
 -- alias was applied to N projection columns.
 SET inject_random_order_for_select_without_order_by = 1;
-SET enable_analyzer = 1;
 
 -- Single-column CTAS: column name must be `number`, not the internal UUID alias.
 DROP TABLE IF EXISTS t_ctas_single;
