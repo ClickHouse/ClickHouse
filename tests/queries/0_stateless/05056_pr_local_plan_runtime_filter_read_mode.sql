@@ -19,7 +19,6 @@ CREATE TABLE b_rf_read_mode (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO b_rf_read_mode SELECT number FROM numbers(10);
 
 -- For runs with the old analyzer
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 3;

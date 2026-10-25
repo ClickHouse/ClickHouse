@@ -7,7 +7,8 @@
         <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
         <async_insert>0</async_insert>
     </settings>
-    <create_query>CREATE TABLE t (x UInt64) ENGINE = MergeTree() ORDER BY tuple()</create_query>
+    <!-- Remove the merged parts every second, so that they do not pile up over the runs and every run inserts into the same table state -->
+    <create_query>CREATE TABLE t (x UInt64) ENGINE = MergeTree() ORDER BY tuple() SETTINGS old_parts_lifetime = 0, cleanup_delay_period = 1, max_cleanup_delay_period = 1, cleanup_delay_period_random_add = 0</create_query>
     <query>INSERT INTO t SELECT * FROM numbers(3000)</query>
     <drop_query>DROP TABLE IF EXISTS t</drop_query>
 </test>

@@ -4,8 +4,6 @@
 -- A huge neighbor count caused ceil2() overflow in usearch reserve(), leading to
 -- heap-buffer-overflow in sorted_buffer_gt::insert(). With the fix, an error is returned.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
