@@ -83,7 +83,9 @@ struct Dictionary
     void appendRepeated(size_t idx, size_t n, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
     /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.
-    void buildStringValueFilterMask(const StringValueFilter & filter);
+    /// `num_rows` is the number of rows expected to consult the mask, or 0 to credit every entry with a single row.
+    /// Does not build the mask if the filter disables itself meanwhile.
+    void buildStringValueFilterMask(const StringValueFilter & filter, size_t num_rows);
 
     /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
     /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
@@ -206,6 +208,9 @@ struct PageDecoderInfo
     /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
 
+    /// True if we can use the bloom filter and the dictionary page to skip row groups.
+    bool allow_hash_filters = false;
+
     /// If true, we need to call tryConvertFieldToType on the output of
     /// FixedSizeConverter/StringConverter's convertField.
     /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the
@@ -252,6 +257,9 @@ struct IntConverter : public FixedSizeConverter
     /// Only allowed if input_size is 4.
     std::optional<size_t> output_size;
 
+    /// The output type is `Bool`: a nonzero value is read as 1, and so is a nonzero statistic.
+    bool output_bool = false;
+
     /// These determine the type of Field produced by convertField (when parsing min/max stats).
     /// No effect on convertColumn - it just copies bytes and doesn't care what they mean.
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
@@ -259,7 +267,6 @@ struct IntConverter : public FixedSizeConverter
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_datetime = false; // DateTime; the cast saturates values above UINT32_MAX
     bool field_signed = true; // Int64, otherwise UInt64
-    bool field_bool = false; // Bool; an endpoint above 1 bounds nothing, as a nonzero value may be read as 1
     /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
     /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather

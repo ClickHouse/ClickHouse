@@ -36,6 +36,8 @@ public:
     bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Wrapping a value in `Nullable` cannot fail.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Disable the default LowCardinality handling to preserve nested LowCardinality in compound types
@@ -44,9 +46,9 @@ public:
     /// the type in Nullable without modifying inner types.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        return makeNullableOrLowCardinalityNullable(arguments[0]);
+        return "(T) -> Nullable(T)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override

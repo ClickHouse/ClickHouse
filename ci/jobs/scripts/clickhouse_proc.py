@@ -113,7 +113,6 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -160,52 +159,11 @@ class ClickHouseProc:
 """)
 
     def start_seaweedfs(self, test_type):
-        os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
-        command = [
-            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-            test_type,
-            "./tests",
-        ]
-        with open(self.SEAWEEDFS_LOG, "w") as log_file:
-            self.seaweedfs_proc = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
-        print(
-            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        from ci.jobs.scripts import seaweedfs_service
+
+        return seaweedfs_service.start(
+            test_type, self.SEAWEEDFS_LOG, f"{Utils.cwd()}/ci/tmp"
         )
-
-        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
-        # be listable: the server's S3 disks authenticate at startup and need
-        # the whole identity/bucket setup in place. The seaweedfs server is
-        # nohup'd and outlives the script, so waiting on the script is safe.
-        # Its internal waits are bounded (60s each), so pad the timeout.
-        try:
-            returncode = self.seaweedfs_proc.wait(timeout=240)
-        except subprocess.TimeoutExpired:
-            print(
-                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
-            )
-            self.seaweedfs_proc.kill()
-            return False
-        if returncode != 0:
-            print(f"setup_seaweedfs.sh exited with code {returncode}")
-            return False
-
-        # pass the credentials explicitly: the setup script no longer writes
-        # ~/.aws, and without them the aws cli would sign with the runner's
-        # instance-role credentials, which SeaweedFS does not know
-        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
-        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
-        if not Shell.check(
-            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
-            "AWS_DEFAULT_REGION=us-east-1 "
-            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
-            verbose=False,
-            retries=3,
-        ):
-            print("Failed to start seaweedfs: bucket test not reachable")
-            return False
-        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
@@ -630,6 +588,7 @@ class ClickHouseProc:
         self,
         with_s3_storage,
         is_db_replicated,
+        no_stateful=False,
         build_type=None,
         step_timeout=None,
         stop_thread_fuzzer=False,
@@ -671,16 +630,18 @@ if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
 fi
 
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
-$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
-$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
 $PREP_TIMEOUT bash ./tests/docker_scripts/create_tpcds.sh
 $PREP_TIMEOUT bash ./tests/docker_scripts/create_tpch.sh
-$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpcds"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpch"
 
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE test"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
+# Only `stateful`-tagged tests read `datasets` and the `test` tables below.
+if [[ "$NO_STATEFUL" != "1" ]]; then
+$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
+$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16, EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32, UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String, RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8, MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16, ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32, SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8, FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32, HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String, HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32, FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32, LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String, OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String, UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64, URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String, ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64), IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
         ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
@@ -707,6 +668,7 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+fi
 
 if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
     $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
@@ -716,6 +678,7 @@ fi
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
             f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
+            f"NO_STATEFUL={1 if no_stateful else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
@@ -978,11 +941,15 @@ fi
             except Exception as ex:
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
-    def prepare_logs(self, info, all=False):
+    def prepare_logs(self, info, all=False, job_failed=None):
+        # `all` attaches the full debug bundle; `job_failed` decides whether the jemalloc
+        # profiles are rendered. Callers that attach the bundle exactly on failure can omit it.
+        if job_failed is None:
+            job_failed = all
         res = []
         try:
             res = self._get_logs_archives_server()
-            res += self._get_jemalloc_profiles()
+            res += self._get_jemalloc_profiles(job_failed=job_failed)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
@@ -1085,7 +1052,15 @@ fi
             print("WARNING: Coordination logs not found")
             return []
 
-    def _get_jemalloc_profiles(self):
+    def _total_memory_limit_exceeded(self):
+        # Written by `MemoryTracker` when the server-wide limit is hit: it flushes a jemalloc
+        # profile and logs this line, or the query fails with the `(total)` exception text.
+        return Shell.check(
+            f"cd {self.log_dir} && grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' clickhouse-server*.log",
+            verbose=True,
+        )
+
+    def _get_jemalloc_profiles(self, job_failed):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
         if not profiles:
             return []
@@ -1113,11 +1088,18 @@ fi
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
+        # Rendering is skipped, not the archiving below, so the raw .heap profiles still ship
+        # and can be rendered offline with `jeprof` and the build's binary. Symbolizing costs
+        # about two minutes per job on a debug build even when nobody looks at the result, so
+        # it is done only when the profiles are likely to be needed: the job failed, or the
+        # server hit its total memory limit (the reason the profiles are collected at all).
         if self.is_llvm_coverage:
-            # Rendering is skipped, not the archiving below, so the raw .heap
-            # profiles still ship and can be rendered offline.
             print(
                 f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s) on an LLVM-coverage build"
+            )
+        elif not job_failed and not self._total_memory_limit_exceeded():
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s): the job did not fail and the server did not exceed its total memory limit"
             )
         else:
             # Symbolizing a heap profile is unbounded work: it scales with the number of distinct

@@ -4,11 +4,10 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 
 namespace DB
 {
-
-class ColumnsCache;
 
 using VirtualFields = std::unordered_map<String, Field>;
 using ValueSizeMap = std::map<std::string, double>;
@@ -41,9 +40,12 @@ public:
     /// (<= the last mark of the current read task; equal to it when the task is one
     /// contiguous range). It bounds caching of deserialized columns, which must not
     /// span the gaps between ranges of a multi-range task. 0 means unknown.
+    /// `res_columns` are the columns the reader fills. `shared_columns`, of the same size, are the
+    /// columns it shares with the columns cache instead, which must not be modified: for every
+    /// position at most one of the two is set.
     virtual size_t readRows(size_t from_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
-                            MutableColumns & res_columns) = 0;
+                            MutableColumns & res_columns, Columns & shared_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -52,6 +54,14 @@ public:
     virtual bool mustApplyFilter() const { return false; }
 
     virtual size_t getResultColumnCount() const { return getColumns().size(); }
+
+    /// The number of granules in a stripe of the columns cache for this part, 0 if the reader does
+    /// not use the cache. See `ColumnsCacheStripes`.
+    virtual size_t getColumnsCacheStripeMarks() const { return 0; }
+
+    /// Whether a block of the whole stripe of `mark` takes no memory beyond what the columns cache
+    /// holds anyway: the stripe is served from the cache, or is going to be written to it.
+    virtual bool canReadWholeColumnsCacheStripe(size_t /*mark*/) { return false; }
 
     virtual bool producesFilterOnly() const { return false; }
 
@@ -108,6 +118,11 @@ public:
     /// the reader chain may filter marks before the PREWHERE step runs — for example, to decide
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
+
+    /// Like `canSkipAnyMark`, but leaving out the marks skipped only because every row of the mark lies beyond a
+    /// running top-K threshold (by the primary key). The `__topKFilter` in PREWHERE drops the rows of such a mark
+    /// anyway, so the mark can still be attributed to a PREWHERE that holds this filter.
+    virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
@@ -215,6 +230,74 @@ protected:
     /// building a serialization of it when the part already holds one.
     bool hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const;
 
+    /// The columns cache, see `ColumnsCacheKey`. The state below is common to the readers of wide
+    /// and compact parts; how a read is served from the cache and written to it is up to each of them.
+
+    /// Decide whether this reader can use the cache: the cache is on, and the part is of a table
+    /// with a UUID (the key of the cache). `can_read` is false for a reader that cannot serve a granule from the cache, but can still write to it.
+    /// Must be called from the constructor of the derived reader, before anything is read.
+    void initColumnsCache(bool can_read);
+
+    /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
+    bool canWriteToColumnsCache() const;
+
+    /// Whether the cache admits the stripe, see `ColumnsCache::shouldAdmit`: decided once per stripe, when the
+    /// block that reads it is sized (see `canReadWholeColumnsCacheStripe`), and the same decision when it is written.
+    bool admitStripeToColumnsCache(size_t stripe);
+
+    /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
+    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column);
+
+    /// Write the pending entries to the cache.
+    void flushPendingColumnsCacheWrites();
+
+    /// Append the `rows` rows starting at row `row_begin` of the part, which `entry` holds, to the
+    /// result column at `pos`. Rows that are the whole entry, for an empty result column, are not
+    /// copied: the entry's column goes to `shared_columns`.
+    void serveRowsFromColumnsCacheEntry(
+        const ColumnsCacheEntry & entry, size_t pos, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns) const;
+
+    /// Rows are about to be appended to the result column at `pos`. A column shared with the columns
+    /// cache is not modified: the rows go to a copy of it.
+    static IColumn::MutablePtr & takeColumnForAppending(MutableColumns & res_columns, Columns & shared_columns, size_t pos);
+
+    /// Whether the rows of the column are not a function of the row range they are read for, so an
+    /// entry written by one read would be wrong for another: the distinct-paths subcolumn of a `JSON`
+    /// column (`ObjectDistinctPaths`) emits the path names of the part once per reader and the shared
+    /// data paths per call, rather than a value per row. It is recognized by its name: a typed path
+    /// spelled the same way is a regular column, and not caching it costs nothing but the caching.
+    static bool isColumnNotCacheable(const NameAndTypePair & column);
+
+    bool columns_cache_reads_possible = false;
+    bool columns_cache_writes_possible = false;
+
+    /// How the marks of the part are cut into stripes, and the identity of every result column
+    /// for the cache. See `ColumnsCacheKey`.
+    ColumnsCacheStripes stripes;
+    std::vector<UInt128> column_identities;
+
+    /// The name of the part in the cache, see `getColumnsCachePartName`.
+    String columns_cache_part_name;
+
+    /// Names of the result columns as the query requests them, position by position with
+    /// `columns_to_read`, which holds the names in the part: for a column renamed after the part
+    /// was written, the part still knows it by its old name. Cache entries are identified by the
+    /// requested name, so `system.columns_cache` and its access checks see the column as the
+    /// current schema names it. The renames themselves invalidate the table's entries, so a
+    /// name never refers to two columns within one schema identity.
+    Names requested_column_names;
+
+    /// Invalidation generation captured once when the reader was created, not per mark range.
+    /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
+    /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
+    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
+    UInt64 cache_table_generation = 0;
+
+    std::optional<std::pair<size_t, bool>> stripe_admission;
+
+    /// Entries ready to be written, written together by `flushPendingColumnsCacheWrites`.
+    std::vector<ColumnsCache::MappedPtr> pending_entries;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
@@ -280,11 +363,11 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
-struct MergeTreeIndexWithCondition;
+struct IndexReadTask;
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules);
 }

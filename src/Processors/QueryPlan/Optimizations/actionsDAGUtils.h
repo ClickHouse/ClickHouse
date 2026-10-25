@@ -1,11 +1,21 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 #include <limits>
 
 namespace DB
 {
+
+/// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter
+/// among the top-level AND conjuncts of the given filter predicate. One descriptor per
+/// bare-column conjunct (aliases and CASTs on the key are looked through); an `__applyFilter`
+/// outside the conjunction — under an OR or a NOT, or in an unrelated expression of the same
+/// DAG — is not applied to every row and is not reported. The overload takes the filter
+/// column of a FilterStep by name.
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
 
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
@@ -138,6 +148,11 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
+/// The arguments of a function node in the shape `IFunctionBase` methods expect: the result type of
+/// every child, and its constant column where the child has one. Whether a function is injective or
+/// monotonic can depend on them, so a caller that has a node has no reason to pass nothing.
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node);
 
 /// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
 /// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it

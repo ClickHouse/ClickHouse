@@ -1,0 +1,34 @@
+rows	1000
+rows	1000
+rows	1000
+rows	1000
+projection rows	t_materialize	500
+projection rows	t_offsets	500
+projection rows	t_select_k	500
+projection rows	t_tuple	500
+projection columns	t_materialize	_parent_part_offset, k, v
+projection columns	t_offsets	_parent_part_offset, k, v
+projection columns	t_select_k	k, v
+projection columns	t_tuple	_parent_part_offset, k, v
+parent rows	500
+parent rows	500
+parent rows	500
+unsorted parts	0
+projection columns	t_all	k, s, v
+projection columns	t_intdiv	k, s, v
+merged projection columns	t_all	k, s, v
+merged projection columns	t_intdiv	k, s, v
+projection	1000	999000	478947
+no projection	1000	999000	478947
+projection	1000	999000	478947
+no projection	1000	999000	478947
+projection columns	t_alias	_parent_part_offset, k, minus(100, v), v
+projection columns	t_replace	k, minus(100, v), s, v
+projection columns	t_with	_parent_part_offset, k, v
+unsorted parts	t_alias	0
+unsorted parts	t_replace	0
+unsorted parts	t_with	0
+alias in where	1	90
+alias in where, no projection	1	90
+alias in where, aggregate	1
+alias in where, aggregate, no projection	1
