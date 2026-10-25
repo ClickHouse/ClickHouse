@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database, no-parallel
+-- no-parallel: the check reads the server-wide `OpenFileForWrite` metric, which concurrent tests disturb.
 
 -- The objects of a `borrow_from_cache` disk are `Ephemeral` file segments, which stay held for as
 -- long as the object exists. Writing an object must not leave the file of the segment open for
@@ -31,15 +32,15 @@ SYSTEM STOP MERGES borrowed;
 DROP TABLE IF EXISTS open_files_before;
 CREATE TABLE open_files_before ENGINE = Memory AS SELECT value FROM system.metrics WHERE metric = 'OpenFileForWrite';
 
--- 300 parts of several files each.
-INSERT INTO borrowed SELECT number FROM numbers(300)
+-- 100 parts of several files each.
+INSERT INTO borrowed SELECT number FROM numbers(100)
 SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'borrowed' AND active;
 SELECT count(), sum(k) FROM borrowed;
 
--- Leaked descriptors would be thousands; leave a margin for files that concurrent queries write.
-SELECT (SELECT value FROM system.metrics WHERE metric = 'OpenFileForWrite') - (SELECT value FROM open_files_before) < 1000;
+-- Leaked descriptors would be about a thousand; leave a margin for files that background tasks write.
+SELECT (SELECT value FROM system.metrics WHERE metric = 'OpenFileForWrite') - (SELECT value FROM open_files_before) < 300;
 
 DROP TABLE open_files_before;
 DROP TABLE borrowed SYNC;
