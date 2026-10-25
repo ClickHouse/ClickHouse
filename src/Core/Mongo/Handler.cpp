@@ -475,6 +475,9 @@ struct FieldTree
     }
 };
 
+/// The maximum nesting depth of a document in MongoDB.
+constexpr size_t max_result_nesting_depth = 100;
+
 /// Returns false when the path cannot be added because it conflicts with an existing entry,
 /// e.g. the columns `a` and `a.b` in one result.
 bool insertColumnPath(FieldTree & tree, std::string_view remaining_path, size_t column)
@@ -617,6 +620,13 @@ std::vector<Document> executeSelectIntoCursor(
         FieldTree tree;
         for (size_t i = 0; i < columns.size(); ++i)
         {
+            /// Every dot of a column name is a level of nested documents, built and serialized
+            /// recursively. The depth is bounded as MongoDB bounds the nesting of a document.
+            if (static_cast<size_t>(std::count(columns[i].first.begin(), columns[i].first.end(), '.')) >= max_result_nesting_depth)
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "The column '{}' of the result names a document nested deeper than {} levels",
+                    columns[i].first.substr(0, 100), max_result_nesting_depth);
             /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
             /// the literal key it always was, rather than dropping the column.
             if (!insertColumnPath(tree, columns[i].first, i))

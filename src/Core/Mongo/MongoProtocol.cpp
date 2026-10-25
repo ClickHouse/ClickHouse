@@ -17,6 +17,7 @@ extern const SettingsSeconds max_execution_time;
 
 namespace DB::ErrorCodes
 {
+extern const int ACCESS_DENIED;
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
 }
@@ -154,7 +155,7 @@ QueryExecutor::QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Ne
 
 String QueryExecutor::execute(const String & query, const SettingsChanges & extra_settings, const SettingsChanges & client_settings)
 {
-    auto query_context = session->makeQueryContext();
+    auto query_context = makeQueryContext();
     auto secret_key = dis(gen);
 
     query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
@@ -226,14 +227,48 @@ String QueryExecutor::execute(const String & query, const SettingsChanges & extr
     return std::move(out.str());
 }
 
+ContextMutablePtr QueryExecutor::makeQueryContext() const
+{
+    if (!session->sessionContext())
+        throw Exception(ErrorCodes::ACCESS_DENIED, "The command requires authentication");
+    return session->makeQueryContext();
+}
+
 ContextPtr QueryExecutor::getQueryContext() const
 {
-    return session->makeQueryContext();
+    return makeQueryContext();
 }
 
 void QueryExecutor::authenticate(const String & username, const String & password)
 {
+    /// A `Session` is authenticated and gets its session context once, while a Mongo client may
+    /// authenticate again on the same connection. So every authentication starts a new session,
+    /// which replaces the previous one before anything is checked: a failed authentication leaves
+    /// the connection unauthenticated rather than authenticated as the previous user.
+    auto make_session = [global_context = session->sessionOrGlobalContext()->getGlobalContext(),
+                         is_secure = session->getClientInfo().is_secure,
+                         connection_id = session->getClientInfo().connection_id]
+    {
+        auto new_session = std::make_unique<Session>(global_context, ClientInfo::Interface::MONGO, is_secure);
+        new_session->setClientConnectionId(static_cast<uint32_t>(connection_id));
+        return new_session;
+    };
+
+    session = make_session();
     session->authenticate(username, password, address);
+
+    /// The session context applies the settings returned by an external authenticator, checking
+    /// them against the constraints of the user, and enforces `max_sessions_for_user`. When that
+    /// fails, the session may hold a context without them, so it is dropped as a whole.
+    try
+    {
+        session->makeSessionContext();
+    }
+    catch (...)
+    {
+        session = make_session();
+        throw;
+    }
 }
 
 String QueryExecutor::getAuthenticatedUserName() const

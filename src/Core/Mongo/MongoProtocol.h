@@ -190,13 +190,14 @@ public:
     String getAuthenticatedUserName() const;
 
     /** A fresh query context of this session, whose settings are the ones of the authenticated
-      * user and its profile. The session itself has no context of its own (a Mongo client may
-      * authenticate again on the same connection, which a session context would forbid), so its
-      * `sessionOrGlobalContext` would carry the settings of the server rather than of the user.
+      * user and its profile. Every authentication starts a new session (see `authenticate`), and a
+      * connection that has not authenticated has no query context at all.
       */
     ContextPtr getQueryContext() const;
 
 private:
+    ContextMutablePtr makeQueryContext() const;
+
     std::unique_ptr<Session> & session;
     Poco::Net::SocketAddress address;
     pcg64_fast gen;

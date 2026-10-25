@@ -2901,3 +2901,76 @@ def test_generated_queries_ignore_the_dialect_of_the_profile(started_cluster):
 
     node.query("DROP USER mongo_dialect_user", password="123")
     collection.drop()
+
+
+def test_authentication_initializes_the_session(started_cluster):
+    """A connection gets a session of its own once it authenticates, which enforces the
+    `max_sessions_for_user` of the user. A connection whose authentication failed runs no
+    command, and authenticating again on the same connection replaces its session."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_single_session", password="123")
+    node.query("DROP SETTINGS PROFILE IF EXISTS mongo_single_session_profile", password="123")
+    # `max_sessions_for_user` can only be set by a settings profile.
+    node.query(
+        "CREATE SETTINGS PROFILE mongo_single_session_profile SETTINGS max_sessions_for_user = 1",
+        password="123",
+    )
+    node.query(
+        "CREATE USER mongo_single_session IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS PROFILE 'mongo_single_session_profile'",
+        password="123",
+    )
+    node.query("GRANT SELECT ON *.* TO mongo_single_session", password="123")
+
+    find = {"find": "single_session", "filter": {}, "$db": "db"}
+    first = connect_raw()
+    second = connect_raw()
+    try:
+        authenticate_raw(first, user="mongo_single_session", password="mongo_pass")
+        authenticate_raw(first, user="mongo_single_session", password="mongo_pass")
+
+        second.sendall(
+            encode_op_msg(
+                {
+                    "saslStart": 1,
+                    "mechanism": "PLAIN",
+                    "payload": bson.Binary(b"\x00mongo_single_session\x00mongo_pass"),
+                    "$db": "admin",
+                }
+            )
+        )
+        reply = read_op_msg(second)
+        assert reply["ok"] == 0, reply
+        assert "overflown session count" in reply["errmsg"], reply
+
+        second.sendall(encode_op_msg(find, request_id=2))
+        reply = read_op_msg(second)
+        assert reply["ok"] == 0, reply
+        assert "requires authentication" in reply["errmsg"], reply
+
+        first.sendall(encode_op_msg(find, request_id=3))
+        assert read_op_msg(first)["ok"] == 1
+    finally:
+        first.close()
+        second.close()
+        node.query("DROP USER mongo_single_session", password="123")
+        node.query("DROP SETTINGS PROFILE mongo_single_session_profile", password="123")
+
+
+def test_deeply_dotted_column_is_rejected(started_cluster):
+    """Every dot of a column name is a level of the nested reply document, so a name with more
+    dots than the nesting MongoDB allows is rejected instead of being built recursively."""
+    node = cluster.instances["node"]
+    column = "a." * 150 + "b"
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        f"CREATE OR REPLACE TABLE db.deeply_dotted (`{column}` Int32) ENGINE = Memory", password="123"
+    )
+    node.query("INSERT INTO db.deeply_dotted VALUES (1)", password="123")
+
+    client = make_client(database="db")
+    with pytest.raises(pymongo.errors.OperationFailure, match="nested deeper than"):
+        list(client["db"]["deeply_dotted"].find({}))
+    assert client["admin"].command("ping")["ok"] == 1.0
+
+    node.query("DROP TABLE db.deeply_dotted", password="123")
