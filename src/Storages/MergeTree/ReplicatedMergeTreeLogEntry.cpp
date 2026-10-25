@@ -501,15 +501,34 @@ String ReplicatedMergeTreeLogEntryData::toString() const
     return out.str();
 }
 
+namespace
+{
+
+/// `create_time` is written as wall-clock time of the server time zone, so it cannot tell the two occurrences of the hour
+/// repeated at the end of DST apart.
+bool isInRepeatedHour(time_t create_time)
+{
+    const auto & time_zone = DateLUT::serverTimezoneInstance();
+    const Int32 offset_change = time_zone.getValues(create_time).amount_of_offset_change();
+    if (offset_change >= 0)
+        return false;
+    const LocalDateTime wall_clock(create_time, time_zone);
+    return LocalDateTime(create_time - offset_change, time_zone) == wall_clock
+        || LocalDateTime(create_time + offset_change, time_zone) == wall_clock;
+}
+
+}
+
 ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const Coordination::Stat & stat,
-                                                                    MergeTreeDataFormatVersion format_version)
+                                                                    MergeTreeDataFormatVersion format_version,
+                                                                    bool znode_created_with_entry)
 {
     ReadBufferFromString in(s);
     Ptr res = std::make_shared<ReplicatedMergeTreeLogEntry>();
     res->readText(in, format_version);
     assertEOF(in);
 
-    if (!res->create_time)
+    if (!res->create_time || (znode_created_with_entry && stat.ctime && isInRepeatedHour(res->create_time)))
         res->create_time = stat.ctime / 1000;
 
     return res;

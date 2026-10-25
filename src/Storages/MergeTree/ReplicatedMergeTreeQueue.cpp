@@ -216,7 +216,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         for (size_t i = 0; i < children_num; ++i)
         {
             auto res = results[i];
-            LogEntryPtr entry = LogEntry::parse(res.data, res.stat, format_version);
+            LogEntryPtr entry = LogEntry::parse(res.data, res.stat, format_version, /* znode_created_with_entry = */ false);
             entry->znode_name = children[i];
 
             std::lock_guard lock(state_mutex);

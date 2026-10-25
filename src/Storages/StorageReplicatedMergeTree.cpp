@@ -3735,7 +3735,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             info.stat = std::move(res.stat);
             try
             {
-                info.parsed_entry = LogEntry::parse(info.data, info.stat, format_version);
+                info.parsed_entry = LogEntry::parse(info.data, info.stat, format_version, /* znode_created_with_entry = */ false);
             }
             catch (...)
             {
@@ -8311,8 +8311,8 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             /// Check if the id matches rather than just contents. This entry
             /// might have been written by different ClickHouse versions and
             /// it is hard to guarantee same text representation.
-            ReplicatedMergeTreeLogEntryData queue_entry
-                = *ReplicatedMergeTreeLogEntry::parse(queue_entry_str, queue_entry_stat, format_version);
+            ReplicatedMergeTreeLogEntryData queue_entry = *ReplicatedMergeTreeLogEntry::parse(
+                queue_entry_str, queue_entry_stat, format_version, /* znode_created_with_entry = */ false);
             if (entry.log_entry_id == queue_entry.log_entry_id)
             {
                 queue_entry_to_wait_for = entry_name;

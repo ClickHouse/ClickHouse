@@ -175,7 +175,10 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 
     std::condition_variable_any execution_complete; /// Awake when currently_executing becomes false.
 
-    static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
+    /// `stat` is of the znode the entry was read from; pass `znode_created_with_entry = false` for a copy (a `queue` znode),
+    /// whose creation time is not the creation time of the entry.
+    static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version,
+                     bool znode_created_with_entry = true);
 };
 
 using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
