@@ -77,7 +77,8 @@ static void addAliasTargetDatabases(StoragePtr table, std::vector<String> & targ
 void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases, const ContextPtr & context)
 {
     /// `RENAME` / `EXCHANGE TABLE` is `ASTRenameQuery`, which does not derive from `ASTQueryWithTableAndOutput`;
-    /// queries with no target table (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
+    /// `DROP` / `DETACH` / `TRUNCATE DATABASE` contribute their database; other queries with no target table
+    /// (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
     std::vector<String> target_databases;
     const auto add_target_database = [&](String name)
     {
@@ -103,6 +104,10 @@ void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Stri
                 addAliasTargetDatabases(
                     DatabaseCatalog::instance().tryGetTable(StorageID(database_name, with_table->getTable()), context), target_databases, context);
         }
+    }
+    else if (const auto * drop = query_ptr->as<ASTDropQuery>(); drop && drop->database)
+    {
+        target_databases.push_back(drop->getDatabase());
     }
     else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()); rename && !rename->database)
     {

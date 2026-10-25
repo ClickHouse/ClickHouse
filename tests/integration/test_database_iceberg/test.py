@@ -2073,6 +2073,21 @@ def test_on_cluster_ddl_rejected_for_datalake_catalog(started_cluster):
     finally:
         create_clickhouse_iceberg_database(started_cluster, node2, CATALOG_NAME)
 
+    # The initiator has no local catalog database, so only the worker on node2 can reject the drop.
+    create_clickhouse_iceberg_table(started_cluster, node2, namespace, table_name, "(x String)")
+    node1.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+    try:
+        err = node1.query_and_get_error(
+            f"DROP DATABASE IF EXISTS {CATALOG_NAME} ON CLUSTER cluster_simple",
+            settings={"distributed_ddl_output_mode": "throw"},
+        )
+        assert "ON CLUSTER is not supported for DataLakeCatalog" in err, err
+        assert node2.query(f"EXISTS DATABASE {CATALOG_NAME}") == "1\n"
+        tables = {ident[-1] for ident in load_catalog_impl(started_cluster).list_tables(namespace)}
+        assert table_name in tables, f"table must stay in the shared catalog: {tables}"
+    finally:
+        create_clickhouse_iceberg_database(started_cluster, node1, CATALOG_NAME)
+
 
 def test_on_cluster_ddl_rejected_through_alias_to_datalake_catalog(started_cluster):
     node1 = started_cluster.instances["node1"]
