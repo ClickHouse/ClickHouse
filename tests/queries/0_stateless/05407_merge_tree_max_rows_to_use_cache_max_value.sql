@@ -13,9 +13,15 @@ SETTINGS use_uncompressed_cache = 1, use_columns_cache = 0, merge_tree_max_rows_
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT log_comment, ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses'] > 0
+-- With parallel replicas the reads can run on other replicas, whose events are in their own rows of the same initial query.
+SELECT log_comment, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses']) > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05407_max_value', '05407_large_value')
+WHERE type = 'QueryFinish' AND initial_query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('05407_max_value', '05407_large_value')
+)
+GROUP BY log_comment
 ORDER BY log_comment;
 
 DROP TABLE t_max_rows_to_use_cache;

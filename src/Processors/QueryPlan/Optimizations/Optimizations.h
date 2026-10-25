@@ -61,6 +61,7 @@ struct Optimization
         bool use_skip_indexes_for_top_k{};
         bool use_top_k_dynamic_filtering{};
         bool use_top_k_dynamic_filtering_for_variable_length_types{};
+        bool use_top_k_dynamic_filtering_for_single_string_sort_column{};
         size_t max_limit_for_top_k_optimization{};
         bool use_skip_indexes_on_data_read{};
         bool read_in_order{};

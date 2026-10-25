@@ -1,4 +1,3 @@
-set enable_analyzer = 1;
 -- { echo }
 explain syntax select null is null;
 explain syntax select null is not null;

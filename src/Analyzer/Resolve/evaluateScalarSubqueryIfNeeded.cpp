@@ -98,6 +98,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
 
+    /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
+    restoreReplacedTableStoragesIfNeeded(node);
+
     auto & context = scope.context;
 
     /// Scalar subqueries in table function or parameterized view arguments are executed even in
@@ -145,7 +148,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasComputedScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);

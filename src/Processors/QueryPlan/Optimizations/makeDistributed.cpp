@@ -1514,7 +1514,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     DistributedQueryTask main_task;
 
     QueryPlan plan_fragment;
-    std::unordered_map<String, String> main_stage_depends_on;
+    StageDependencies main_stage_depends_on;
 
     {
         struct Frame
@@ -1523,7 +1523,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             size_t next_child = 0;
             std::vector<std::unique_ptr<QueryPlan>> child_plans{};
             std::unordered_map<String, DistributedQueryTask> list_of_shards{};
-            std::unordered_map<String, String> depends_on_stages{};
+            StageDependencies depends_on_stages{};
             /// True if the tasks in list_of_shards produce copies of the same data (the case right
             /// after a BroadcastExchange) rather than a partition of it.
             bool shards_are_copies = false;
@@ -1534,7 +1534,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
         std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
         std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
-        std::unordered_map<String, String> current_stage_depends_on;
+        StageDependencies current_stage_depends_on;
         bool current_shards_are_copies = false;
 
         while (!stack.empty())
@@ -1634,7 +1634,13 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 }
 
                 frame.child_plans.emplace_back(std::move(current_plan));
-                frame.depends_on_stages.insert(current_stage_depends_on.begin(), current_stage_depends_on.end());
+                /// A join reads no probe rows until its build side is complete, so the stages that feed the
+                /// build side start before those that feed the probe side.
+                const size_t child_index = frame.next_child - 1;
+                const bool build_side = typeid_cast<const JoinStepLogical *>(frame.node->step.get())
+                    && child_index == JoinStepLogical::getInputIndex(JoinStepLogical::getBuildSide());
+                frame.depends_on_stages.insert(build_side ? frame.depends_on_stages.begin() : frame.depends_on_stages.end(),
+                    current_stage_depends_on.begin(), current_stage_depends_on.end());
                 current_stage_depends_on.clear();
             }
 
@@ -1745,7 +1751,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     }
 
                     /// Add previous stage to the current list of dependencies
-                    frame.depends_on_stages.insert({stage_name, exchange_description.name});
+                    frame.depends_on_stages.push_back({stage_name, exchange_description.name});
 
                     /// And start a new plan fragment with exchange source
                     current_plan = std::make_unique<QueryPlan>();
