@@ -307,7 +307,7 @@ DBMS_PUBLIC_HEADERS = {
     ),
     "Processors/Transforms": (
         "AddingDefaultsTransform.h", "AggregatingTransform.h", "BlockNestedLoopJoin*.h",
-        "ChunkRowRange.h", "ColumnGathererTransform.h", "Distinct*.h", "JoiningTransform.h",
+        "BuildRuntimeFilterTransform.h", "ChunkRowRange.h", "ColumnGathererTransform.h", "Distinct*.h", "JoiningTransform.h",
         "SortingTransform.h", "getSourceFromASTInsertQuery.h",
     ),
     "QueryPipeline": ("DistributedPlanExecutor.h",),
@@ -316,7 +316,7 @@ DBMS_PUBLIC_HEADERS = {
         "HTTPRequestHandlerFactoryMain.h", "KeeperHTTPHandlerFactory.h",
         "KeeperHTTPStorageHandler.h", "KeeperTCPHandler*.h", "MySQLHandlerFactory.h",
         "PostgreSQLHandlerFactory.h", "PrometheusRequestHandlerFactory.h", "ProtocolServerAdapter.h",
-        "StartupWarnings.h", "TCPHandler*.h", "TLSHandler*.h", "createServer.h",
+        "StartupWarnings.h", "TCPHandler*.h", "TCPServer.h", "TLSHandler*.h", "createServer.h",
         "socketBindListen.h", "stopServers.h", "waitServersToFinish.h",
     ),
     "Server/ACME": ("API.h", "Client.h"),

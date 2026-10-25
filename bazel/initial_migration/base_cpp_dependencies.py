@@ -172,6 +172,10 @@ cc_library(
             stats["files relabelled"] += 1
 
 
+def poco_header_target(part):
+    return "_poco_redis" if part == "Redis" else "poco_" + POCO[part] + "_headers"
+
+
 def publish_poco(root, paths, stats):
     # A fresh CMake capture does not contain the Poco header targets introduced
     # during migration. Recreate those targets from Poco's public includes.
@@ -189,14 +193,16 @@ def publish_poco(root, paths, stats):
         path = root / "base/poco" / part / "BUILD.bazel"
         text = path.read_text()
         names = {ast.literal_eval(attrs(rule)["name"]) for _, rule in Source(text).rules()}
-        name = "poco_" + suffix + "_headers"
+        name = poco_header_target(part)
+        if part == "Redis" and name not in names:
+            raise ValueError("Poco Redis compiled library is missing")
         if name not in names:
             deps = set()
             for file in public_files[part]:
                 for _, _, _, operand in source_includes(file.read_bytes(), str(file)):
                     owner = spelling_owner.get(operand)
                     if owner and owner != part:
-                        deps.add("//base/poco/" + owner + ":poco_" + POCO[owner] + "_headers")
+                        deps.add("//base/poco/" + owner + ":" + poco_header_target(owner))
                     if operand.startswith("openssl/"):
                         deps.add("//contrib/openssl-cmake:openssl_cmake_headers")
             text += (
@@ -289,17 +295,20 @@ cc_library(
     for part, suffix in POCO.items():
         path = root / "base/poco" / part / "BUILD.bazel"
         source = Source(path.read_text())
-        name = "poco_" + suffix + "_headers"
+        name = poco_header_target(part)
         provider = next(call for _, call in source.rules()
                         if ast.literal_eval(attrs(call)["name"]) == name)
         data = attrs(provider)
-        if isinstance(data["hdrs"], ast.List):
+        if part != "Redis" and isinstance(data["hdrs"], ast.List):
             current = set(ast.literal_eval(data["hdrs"]))
             expected = {p.relative_to(path.parent).as_posix() for p in (path.parent / "include").rglob("*.h")}
             if current != expected:
                 raise ValueError(name + ": public header glob changed membership")
             stats["Poco public headers converted to glob"] += len(current)
         changes = {name: {"hdrs": 'glob(["include/**/*.h"])', "includes": '["include"]'}}
+        if part == "Redis":
+            # Poco::Redis builds src/*.cpp and publishes the entire include directory.
+            changes[name]["srcs"] = 'glob(["src/*.cpp"])'
         if part == "Net":
             changes["_poco_net"] = {"local_includes": None}
         after = replace_attrs(source.bytes.decode(), changes)

@@ -729,6 +729,7 @@ def declare_unit_test_private_hdrs(path):
         'Storages/MergeTree/MergeTreeDataPartWriterWide.h',
         'Storages/MergeTree/MergeTreeReaderIndex.h',
         'Storages/MergeTree/ParallelSyncFiles.h',
+        'Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h',
     ]
     if 'private_hdrs' in attrs:
         value = attrs['private_hdrs'].value
@@ -1785,6 +1786,7 @@ def main():
         after = remove_unused_constants(Source(after))
         if after != before:
             path.write_text(after)
+    llvm_targets.fold_outline_atomics(ROOT / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel')
     format_build_files(read_only=read_only)
     if arrow.read_bytes() != original_arrow:
         raise ValueError(f'The CMake importer modified {arrow}')

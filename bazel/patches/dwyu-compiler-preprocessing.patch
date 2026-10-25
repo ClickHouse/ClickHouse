@@ -547,7 +547,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,9 +907,172 @@
+@@ -440,9 +907,196 @@
  
          preprocessor_results.append(pp_output)
  
@@ -621,7 +621,21 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    )
 +    return struct(archive = archive, symbols = symbols, status = status, magic = magic, tool = ctx.attr._tool_nm)
 +
-+def _owned_symbols(ctx, target, deps, implementation_deps, producer = None, archive_scans = None):
++def _executable_objects(target, sources):
++    # rules_cc cc_binary and cc_test put their own objects in compilation_outputs,
++    # not CcInfo.linking_context. Check the selected PIC/non-PIC Files against CppLink.
++    executable = target[DefaultInfo].files_to_run.executable
++    links = [a for a in target.actions if a.mnemonic == "CppLink" and executable in a.outputs.to_list()]
++    group = getattr(target[OutputGroupInfo], "compilation_outputs", None)
++    if len(links) != 1 or group == None:
++        return None
++    linked = {f: True for f in links[0].inputs.to_list() if f.owner == target.label and f.extension in ["o", "obj"]}
++    compiled = [f for f in group.to_list() if not f.is_directory and f.owner == target.label and f.extension in ["o", "obj"]]
++    if len(compiled) != len(sources) or len(linked) != len(compiled) or not all([f in linked for f in compiled]):
++        return None
++    return compiled
++
++def _owned_symbols(ctx, target, deps, implementation_deps, sources, producer = None, archive_scans = None):
 +    inventory = []
 +    interned = {}
 +    objects = {}
@@ -650,6 +664,14 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        ))
 +        interned[json.encode(inventory[0])] = 0
 +        owner = dict(target = str(target.label), records = [0])
++    executable_objects = None
++    incomplete_executable_objects = False
++    if producer == None and ctx.rule.kind in ["cc_binary", "cc_test"]:
++        executable_objects = _executable_objects(target, sources)
++        incomplete_executable_objects = executable_objects == None
++        for file in executable_objects or []:
++            objects[file.path] = file
++
 +    public = [_symbol_route(dep, inventory, interned, objects, archives) for dep in deps]
 +    private = [_symbol_route(dep, inventory, interned, objects, archives) for dep in implementation_deps]
 +    nm = ctx.actions.declare_file("{}.dwyu_nm.txt".format(ctx.label.name))
@@ -688,6 +710,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        implementation_deps = private,
 +        inventory = inventory,
 +        objects = objects.keys(),
++        executable_objects = [f.path for f in executable_objects or []],
++        incomplete_executable_objects = incomplete_executable_objects,
 +        symbols = nm.path,
 +        archives = archive_manifest,
 +    )))
@@ -723,7 +747,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      """
      Implementation for the "Depend on What You Use" (DWYU) aspect.
  
-@@ -458,9 +1088,47 @@
+@@ -458,9 +1112,47 @@
      # Check whether DWYU should run on this target
      #
  
@@ -772,7 +796,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Skip targets which the user explicitly excluded from the analysis.
      # In contrast to the other skipping mechanisms we still propagate the reports of the dependencies.
-@@ -510,17 +1178,37 @@
+@@ -510,17 +1202,37 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -816,7 +840,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # TODO Investigate if we can prevent running this multiple times for the same dep if multiple
      #      target_under_inspection have the same dependency
-@@ -529,26 +1217,43 @@
+@@ -529,26 +1241,43 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -859,12 +883,12 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    if header_manifest != None:
 +        args.add("--owned_headers", header_manifest)
 +        if getattr(ctx.attr, "_tool_nm", None):
-+            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps, producer = producer, archive_scans = archive_scans)
++            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps, private_files, producer = producer, archive_scans = archive_scans)
 +            args.add("--owned_symbols", symbols[0])
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,18 +1265,30 @@
+@@ -560,18 +1289,30 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -899,7 +923,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -582,5 +1299,313 @@
+@@ -582,5 +1323,313 @@
          arguments = [args],
      )
  
@@ -1706,7 +1730,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,358 @@
+@@ -71,6 +82,361 @@
      return options;
  }
  
@@ -1842,7 +1866,8 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +    const auto& inventory = data.at("inventory");
 +    const auto& owner = data.at("owner");
 +    const auto owner_name = owner.at("target").get<std::string>();
-+    std::set<std::string> own_files;
++    auto own_files = data.value("executable_objects", std::set<std::string>{});
++    const bool incomplete_executable = data.value("incomplete_executable_objects", false);
 +    bool owner_forwards = false;
 +    for (const auto index : owner.at("records").get<std::vector<size_t>>()) {
 +        const auto& entry = inventory.at(index);
@@ -2043,7 +2068,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +            }
 +            const bool source_free_forwarder = own_files.empty() && owner_forwards && linking_deps.count(dep->name);
 +            if (!proven.count(dep->name) && !forwarded.count(dep->name) &&
-+                ((opaque && linking_deps.count(dep->name)) || source_free_forwarder ||
++                (((opaque || incomplete_executable) && linking_deps.count(dep->name)) || source_free_forwarder ||
 +                 forwarded_deps.count(dep->name) || retained_deps.count(dep->name) || ambiguous.count(dep->name))) {
 +                result.unverified.push_back(dep->name);
 +                result.hold_reasons[dep->name] = {
@@ -2054,6 +2079,8 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +                    {"ambiguous_symbols", ambiguous_symbols.contains(dep->name)
 +                        ? ambiguous_symbols.at(dep->name) : nlohmann::json::object()},
 +                };
++                if (incomplete_executable && linking_deps.count(dep->name))
++                    result.hold_reasons[dep->name]["incomplete_executable_objects"] = true;
 +            }
 +        }
 +    };
@@ -2065,7 +2092,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +454,89 @@
+@@ -91,21 +457,89 @@
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =

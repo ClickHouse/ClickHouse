@@ -493,16 +493,29 @@ ch_cc_library(
     ],
 )
 
+_URIPARSER_PUBLIC_HEADERS = [
+    "cpp/src/arrow/vendored/uriparser/Uri.h",
+    "cpp/src/arrow/vendored/uriparser/UriBase.h",
+    "cpp/src/arrow/vendored/uriparser/UriDefsAnsi.h",
+    "cpp/src/arrow/vendored/uriparser/UriDefsConfig.h",
+    "cpp/src/arrow/vendored/uriparser/UriDefsUnicode.h",
+]
+
 ch_cc_library(
     name = "_arrow__compile_1",
     srcs = [
         "cpp/src/arrow/vendored/musl/strptime.c",
-    ] + glob(["cpp/src/arrow/vendored/uriparser/*.c"]),
-    hdrs = glob([
+    ] + glob(
+        [
+            "cpp/src/arrow/vendored/uriparser/*.c",
+            "cpp/src/arrow/vendored/uriparser/*.h",
+        ],
+        exclude = _URIPARSER_PUBLIC_HEADERS,
+    ),
+    hdrs = [
         "cpp/src/arrow/util/visibility.h",
-        "cpp/src/arrow/vendored/uriparser/*.h",
         "cpp/src/arrow/vendored/strptime.h",
-    ]),
+    ] + _URIPARSER_PUBLIC_HEADERS,
     copts = [
         "-w",
         "-std=gnu11",
@@ -524,8 +537,6 @@ cc_library(
     strip_include_prefix = "config/contrib/arrow-cmake/cpp/src",
     deps = [
         "@clickhouse_boost//:_boost_filesystem",
-        "@clickhouse_brotli//:_brotli",
-        "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_double_conversion//:_double-conversion",
         ":_orc",
         ":_arrow__compile_0",

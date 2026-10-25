@@ -584,3 +584,49 @@ def declare_from_references(root, references):
     print('Embedded LLVM:', len(targets), 'CMake libraries;',
           ', '.join(a + ' ' + str(len(o)) + ' generated headers' for a, o in generated.items()))
     return build, targets, templates | RUNTIME_ROOT_INPUTS
+
+
+def fold_outline_atomics(path):
+    """Replace the repeated compiler-rt declarations only after checking every CMake variant."""
+    import ast
+    from initial_migration.compact_build import Source, render_list
+
+    source = Source(path.read_text())
+    rules = {next(k.value.value for k in call.keywords if k.arg == 'name'): (st, call)
+             for st, call in source.rules()}
+    first = rules['clang_rt_builtins__runtime_objects_2'][1]
+    fields = {k.arg: k.value for k in first.keywords}
+    headers = ast.unparse(fields['srcs'].right)
+    shared_defines = ast.literal_eval(fields['local_defines'])[3:]
+    common = {key: ast.unparse(fields[key]) for key in
+              ('arch', 'copts', 'local_includes', 'reference_source_root', 'system_includes')}
+    arm64 = repr(['@platforms//cpu:aarch64'])
+    edits = []
+
+    def replace(kind, name, attributes, replacement=''):
+        statement, call = rules[name]
+        expected = dict(name=repr(name), target_compatible_with=arm64, **attributes)
+        if call.func.id != kind or {k.arg: ast.unparse(k.value) for k in call.keywords} != expected:
+            raise ValueError(f'{name} no longer matches llvm_outline_atomics')
+        edits.append((*source.span(statement), replacement))
+
+    arguments = dict(common, headers=headers, local_defines=render_list(source, fields['local_defines'].elts[3:], 4))
+    macro = 'llvm_outline_atomics(\n' + ''.join(f'    {k} = {v},\n' for k, v in sorted(arguments.items())) + ')'
+    group = 2
+    for operation in ('cas', 'swp', 'ldadd', 'ldclr', 'ldeor', 'ldset'):
+        for size in ((1, 2, 4, 8, 16) if operation == 'cas' else (1, 2, 4, 8)):
+            for model in range(1, 6):
+                stem = f'outline_atomic_{operation}{size}_{model}'
+                assembly = f'gen/compiler-rt-outline/{stem}.S'
+                objects = f'clang_rt_builtins__runtime_objects_{group}'
+                defines = [f'L_{operation}', f'MODEL={model}', f'SIZE={size}', *shared_defines]
+                replace('copy_file', f'runtime_outline_{stem}_S',
+                        dict(src=repr(':compiler-rt/lib/builtins/aarch64/lse.S'), out=repr(assembly)))
+                replace('llvm_runtime_objects', objects,
+                        dict(language=repr('ASM'), srcs=f'{[":" + assembly]!r} + {headers}',
+                             local_defines=repr(defines), **common), macro if group == 2 else '')
+                replace('cc_library', f'clang_rt_builtins__compile_{group}',
+                        dict(srcs=repr([':' + objects]), alwayslink='True'))
+                group += 1
+    load = 'load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")\n'
+    path.write_text(load + source.rewrite(edits))

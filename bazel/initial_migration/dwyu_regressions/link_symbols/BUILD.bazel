@@ -1,6 +1,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -642,4 +643,47 @@ cc_library(
         ":link_flags",
     ],
     textual_hdrs = ["not_entered.h"],
+)
+
+cc_library(
+    name = "array",
+    srcs = ["array.cpp"],
+)
+
+cc_library(
+    name = "array_bridge",
+    deps = [":array"],
+)
+
+cc_binary(
+    name = "array_binary",
+    srcs = [
+        "array_main.cpp",
+        "array_names.h",
+    ],
+    deps = [":array"],
+)
+
+cc_test(
+    name = "array_test",
+    srcs = [
+        "array_main.cpp",
+        "array_names.h",
+    ],
+    deps = [
+        ":array",
+        ":unrelated_without_header",
+    ],
+)
+
+cc_test(
+    name = "array_forwarded_test",
+    srcs = [
+        "array_main.cpp",
+        "array_names.h",
+    ],
+    deps = [
+        ":array",
+        ":array_bridge",
+    ],
 )

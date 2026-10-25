@@ -67,7 +67,7 @@ DEPENDENCIES = {
     ('src/TableFunctions', 'clickhouse_table_functions'): (['@clickhouse_icu//:_icudata'], [], []),
     ('src', 'benchmark_runtime_filter_objects'): ([], [
         '@clickhouse_google_benchmark//:google_benchmark', '//bazel:clickhouse_config_headers',
-        '@clickhouse_fmtlib//:_fmt', '//base:common', ':dbms', ':dbms__compile_1', '//src/Common',
+        '@clickhouse_fmtlib//:_fmt', '//base:common', ':dbms', ':dbms__compile_0', ':dbms__compile_1', '//src/Common',
         '//src/Functions:headers', '//src/Common:parser_support_api', '//src:headers', '//src:column_types',
     ], []),
     ('src', 'clickhouse_common_io__compile_0'): ([], [
@@ -95,7 +95,9 @@ DEPENDENCIES = {
     ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
         [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
-    ('src', 'unit_tests_dbms'): (['@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid'], [], [TZDATA]),
+    ('src', 'unit_tests_dbms'): (
+        ['@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
+         *LLVM_RUNTIME_HEADERS, '@llvm-project//third-party/siphash'], [], [TZDATA]),
 }
 
 # Drop direct dependencies unused in both native DWYU reports or already supplied
