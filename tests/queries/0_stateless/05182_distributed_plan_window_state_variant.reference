@@ -67,3 +67,10 @@ cascades shape distributes
 [nan,0.707107,0.816497,0.816497]
 14278703978749469126
 14278703978749469126
+-- window state in a join condition in a Cascades stage: distributed then local
+0	0
+0	0
+0	0
+0	0
+0	0
+0	0
