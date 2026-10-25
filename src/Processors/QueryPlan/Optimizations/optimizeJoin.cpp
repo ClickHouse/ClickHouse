@@ -292,6 +292,8 @@ struct QueryGraphBuilder
     std::vector<JoinActionRef> join_edges;
     /// See QueryGraph::edge_conflict_ops
     std::vector<size_t> join_edge_ops;
+    /// See QueryGraph::edge_above_conflict_op
+    std::vector<UInt8> join_edge_above_op;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
@@ -386,6 +388,7 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
     /// The operators of `rhs` are appended after those of `lhs` below.
     const size_t op_shift = lhs.conflict_ops.size();
     lhs.join_edge_ops.append_range(rhs.join_edge_ops | std::views::transform([&](size_t op) { return op + op_shift; }));
+    lhs.join_edge_above_op.append_range(rhs.join_edge_above_op);
 
     for (auto & [id, restriction] : rhs.join_kinds)
     {
@@ -605,6 +608,8 @@ static const QueryPlan::Node * peelMergeableStepsAboveJoin(
 /// the join below the step). For a Filter step the condition becomes ordinary filter edges of the
 /// graph: the optimizer applies them at any step where all their source relations are available,
 /// in the ON clause of an inner join or in the residual (post-join) filter of an outer join step.
+/// For the conflict detector each edge is attributed to the topmost join step of the child graph, the
+/// one the filter is applied above, see `QueryGraph::edge_above_conflict_op`.
 static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanStep * step)
 {
     auto child_dag = child_graph.expression_actions.getActionsDAG();
@@ -647,9 +652,18 @@ static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanS
         auto condition = pending.back().resolveAliases();
         pending.pop_back();
         if (condition.isFunction(JoinConditionOperator::And))
+        {
             pending.append_range(condition.getArguments());
+        }
         else
+        {
+            if (child_graph.conflict_ops.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph to merge filter {} into has no join steps", condition.getColumnName());
             child_graph.join_edges.push_back(condition);
+            /// `buildQueryGraph` records the join step of the graph root last.
+            child_graph.join_edge_ops.push_back(child_graph.conflict_ops.size() - 1);
+            child_graph.join_edge_above_op.push_back(1);
+        }
     }
 }
 
@@ -1038,6 +1052,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
         /// The operator of this join step, pushed to `conflict_ops` below.
         query_graph.join_edge_ops.push_back(query_graph.conflict_ops.size());
+        query_graph.join_edge_above_op.push_back(0);
 
         /// Collect all sources from join expressions
         join_expression_sources |= edge.getSourceRelations();
@@ -1182,6 +1197,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.edge_conflict_ops = std::move(query_graph_builder.join_edge_ops);
+    query_graph.edge_above_conflict_op = std::move(query_graph_builder.join_edge_above_op);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
