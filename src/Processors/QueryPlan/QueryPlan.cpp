@@ -899,6 +899,7 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    distributed_plan_fallback_reason = reason->text;
     for (const auto & context : resources.distributed_plan_decision_contexts)
         context->setSetting("make_distributed_plan", false);
     return true;
@@ -953,7 +954,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 }
 
 
-void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// A non-serializable step found here
     /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
@@ -968,50 +969,75 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);
 
-    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
-    /// fragments never carry their placeholder steps; the sets are added back below.
-    auto delayed_sets = extractSetsForDistributedPlan(root);
+    DistributedPlanCut cut;
 
-    SharedHeader result_header = root->step->getOutputHeader();
+    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
+    /// fragments never carry their placeholder steps; `convertToDistributed` adds the sets back.
+    cut.delayed_sets = extractSetsForDistributedPlan(root);
+
+    cut.result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);
     QueryPlan::Node * old_root = root;
     root = nullptr;
-    auto distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+    cut.distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+    auto & distributed_plan = cut.distributed_plan;
 
     for (const auto & stage : distributed_plan.stages)
     {
-        auto it = distributed_plan.stage_depends_on.find(stage.first);
-        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
+        auto format_dependencies = [&]
+        {
+            Strings dependencies;
+            if (auto it = distributed_plan.stage_depends_on.find(stage.first); it != distributed_plan.stage_depends_on.end())
+                for (const auto & [dependency, exchange] : it->second)
+                    dependencies.push_back(fmt::format("{} ({})", dependency, exchange));
+            return fmt::format("{}", fmt::join(dependencies, ", "));
+        };
         LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
-            stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
+            stage.first, format_dependencies(), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
+    auto & main_stage = distributed_plan.stages["main"];
+
+    /// The main stage produces the final result, so the exchange takes its id. It is not cut from
+    /// a logical exchange step, so `exchange_step_name` stays empty.
+    cut.final_result_exchange = ExchangeDescription
     {
-        ExchangeDescription final_result_exchange
-        {
-            .name = "final_result",
-            .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
-            .source_bucket_count = 1,
-            .destination_bucket_count = 1
-        };
-        auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+        .name = "final_result",
+        .id = main_stage.id,
+        .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
+        .source_bucket_count = 1,
+        .destination_bucket_count = 1,
+        .exchange_step_name = {},
+        .keys = {},
+        .sort_description = {},
+    };
+    const auto & final_result_exchange = cut.final_result_exchange;
+    auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 
-        /// Add a step that writes the result of the main stage to the file
-        auto & main_stage = distributed_plan.stages["main"];
-        if (!main_stage.query_plan_fragment.isCompleted())
-        {
-            main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(result_header, final_result_exchange.name));
-            main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
-            distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
-            distributed_plan.final_result_stream_name = result_stream_id.toString();
-        }
+    /// Add a step that writes the result of the main stage to the file
+    if (!main_stage.query_plan_fragment.isCompleted())
+    {
+        main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(cut.result_header, final_result_exchange.name));
+        main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
+        distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
+        distributed_plan.final_result_stream_name = result_stream_id.toString();
+    }
 
-        /// Fail early (before execution) if any fragment contains a step that cannot be serialized
-        /// for remote execution, instead of throwing late from serializeQueryPlan.
-        for (const auto & [stage_name, stage] : distributed_plan.stages)
-            assertFragmentSerializable(stage.query_plan_fragment, stage_name);
+    /// Fail early (before execution) if any fragment contains a step that cannot be serialized
+    /// for remote execution, instead of throwing late from serializeQueryPlan.
+    for (const auto & [stage_name, stage] : distributed_plan.stages)
+        assertFragmentSerializable(stage.query_plan_fragment, stage_name);
 
+    return cut;
+}
+
+void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    auto [distributed_plan, final_result_exchange, result_header, delayed_sets] = cutIntoDistributedPlan(optimization_settings);
+    auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+
+    {
         /// Collect the list of all temporary files
         Strings all_temporary_files_for_cleanup;
         for (const auto & stage : distributed_plan.stages)
