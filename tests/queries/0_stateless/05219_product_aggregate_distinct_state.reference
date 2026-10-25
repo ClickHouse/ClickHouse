@@ -1,0 +1,8 @@
+numeric state copy
+1	1	1
+numeric finite state copy
+24	24
+MergeTree state round trip
+1	1
+Decimal256 state copy
+1	1

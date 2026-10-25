@@ -38,6 +38,27 @@ public:
         AggregateFunctionPtr res;
         if (arguments.size() == 1)
         {
+            /// productDistinct must reproduce the original multiplication order
+            /// after copying or loading a state. Other Distinct functions retain
+            /// their existing storage and serialization behavior.
+            if (properties.is_order_dependent && nested_function->getName() == "product")
+            {
+                res.reset(createWithNumericType<
+                    AggregateFunctionDistinct,
+                    AggregateFunctionDistinctSingleNumericOrderedData>(
+                        *arguments[0], nested_function, arguments, params, true));
+
+                if (res)
+                    return res;
+
+                if (arguments[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+                    return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericOrderedData<true>>>(
+                        nested_function, arguments, params, true);
+
+                return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctSingleGenericOrderedData<false>>>(
+                    nested_function, arguments, params, true);
+            }
+
             res.reset(createWithNumericType<
                 AggregateFunctionDistinct,
                 AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments, params, properties.is_order_dependent));

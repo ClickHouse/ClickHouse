@@ -8,6 +8,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
 
+#include <vector>
+
 
 namespace DB
 {
@@ -56,6 +58,72 @@ struct AggregateFunctionDistinctSingleNumericData
     void deserialize(ReadBuffer & buf, Arena *)
     {
         history.read(buf);
+    }
+};
+
+
+/** Ordered variant for productDistinct. Its on-disk format is the same as the
+  * regular numeric Distinct set: a count followed by binary-encoded keys.
+  * Recording insertion order also lets us reconstruct the nested aggregate
+  * after deserialization without changing the order of multiplication.
+  */
+template <typename T>
+struct AggregateFunctionDistinctSingleNumericOrderedData : AggregateFunctionDistinctSingleNumericData<T>
+{
+    std::vector<T> insertion_order;
+
+    bool add(const IColumn ** columns, size_t, size_t row_num, Arena *)
+    {
+        return add(*columns[0], row_num);
+    }
+
+    bool add(const IColumn & column, size_t row_num)
+    {
+        const auto & values = assert_cast<const ColumnVector<T> &>(column).getData();
+        const T value = values[row_num];
+        if (!this->history.insert(value).second)
+            return false;
+
+        insertion_order.push_back(value);
+        return true;
+    }
+
+    void merge(const AggregateFunctionDistinctSingleNumericOrderedData & rhs, MutableColumns & argument_columns, Arena *)
+    {
+        for (const T & value : rhs.insertion_order)
+        {
+            if (this->history.insert(value).second)
+            {
+                insertion_order.push_back(value);
+                argument_columns[0]->insert(value);
+            }
+        }
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        writeVarUInt(insertion_order.size(), buf);
+        for (const T & value : insertion_order)
+            writeBinaryLittleEndian(value, buf);
+    }
+
+    void deserialize(ReadBuffer & buf, Arena *)
+    {
+        size_t size = 0;
+        readVarUInt(size, buf);
+        for (size_t i = 0; i < size; ++i)
+        {
+            T value{};
+            readBinaryLittleEndian(value, buf);
+            if (this->history.insert(value).second)
+                insertion_order.push_back(value);
+        }
+    }
+
+    void insertOrderedValues(MutableColumns & argument_columns) const
+    {
+        for (const T & value : insertion_order)
+            argument_columns[0]->insert(value);
     }
 };
 
@@ -108,6 +176,70 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
             if (inserted)
                 deserializeAndInsert<is_plain_column>(it->getValue(), *argument_columns[0]);
         }
+    }
+};
+
+
+/** Keep the first-seen order for non-numeric arguments of productDistinct,
+  * including Decimal and Nullable. The serialized representation remains a
+  * count followed by serialized keys, as in the regular generic Distinct set.
+  */
+template <bool is_plain_column>
+struct AggregateFunctionDistinctSingleGenericOrderedData : AggregateFunctionDistinctSingleGenericData<is_plain_column>
+{
+    using Base = AggregateFunctionDistinctSingleGenericData<is_plain_column>;
+    using Set = typename Base::Set;
+    std::vector<std::string_view> insertion_order;
+
+    bool add(const IColumn ** columns, size_t, size_t row_num, Arena * arena)
+    {
+        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
+        typename Set::LookupResult it = nullptr;
+        bool inserted = false;
+        this->history.emplace(key_holder, it, inserted);
+        if (inserted)
+            insertion_order.push_back(it->getValue());
+        return inserted;
+    }
+
+    void merge(const AggregateFunctionDistinctSingleGenericOrderedData & rhs, MutableColumns & argument_columns, Arena * arena)
+    {
+        for (const auto & key : rhs.insertion_order)
+        {
+            typename Set::LookupResult it = nullptr;
+            bool inserted = false;
+            this->history.emplace(ArenaKeyHolder{key, *arena}, it, inserted);
+            if (inserted)
+            {
+                insertion_order.push_back(it->getValue());
+                deserializeAndInsert<is_plain_column>(it->getValue(), *argument_columns[0]);
+            }
+        }
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        writeVarUInt(insertion_order.size(), buf);
+        for (const auto & key : insertion_order)
+            writeStringBinary(key, buf);
+    }
+
+    void deserialize(ReadBuffer & buf, Arena * arena)
+    {
+        size_t size = 0;
+        readVarUInt(size, buf);
+        for (size_t i = 0; i < size; ++i)
+        {
+            const auto [it, inserted] = this->history.insert(readStringBinaryInto(*arena, buf));
+            if (inserted)
+                insertion_order.push_back(it->getValue());
+        }
+    }
+
+    void insertOrderedValues(MutableColumns & argument_columns) const
+    {
+        for (const auto & key : insertion_order)
+            deserializeAndInsert<is_plain_column>(key, *argument_columns[0]);
     }
 };
 
@@ -306,6 +438,14 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).deserialize(buf, arena);
+        /// Ordered Distinct states serialize only their unique keys. Rebuild the
+        /// nested product in the same order when loading a persisted state.
+        if constexpr (requires(const Data & data, MutableColumns & columns) { data.insertOrderedValues(columns); })
+        {
+            auto argument_columns = prepareArgumentColumns();
+            this->data(place).insertOrderedValues(argument_columns);
+            addToNested(place, argument_columns, arena);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
