@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/array/emptyArrayToSingle.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -47,6 +50,27 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
 void ArrayJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
+}
+
+std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
+{
+    if (is_unaligned)
+        return {};
+
+    ActionsDAG dag(getInputHeaders().front()->getNamesAndTypesList());
+    for (const auto & name : array_join.columns)
+    {
+        const auto * array = &dag.findInOutputs(name);
+        if (array_join.is_left)
+        {
+            if (!isArray(array->result_type))
+                return {};
+            array = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl()), {array}, {});
+        }
+        /// the alias keeps the column name, the index still sees arrayJoin(col)
+        dag.addOrReplaceInOutputs(dag.addAlias(dag.addArrayJoin(*array, {}), name));
+    }
+    return dag;
 }
 
 void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)

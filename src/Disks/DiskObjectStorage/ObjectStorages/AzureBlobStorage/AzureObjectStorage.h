@@ -60,7 +60,8 @@ public:
 
     bool exists(const StoredObject & object) const override;
 
-    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return connection_params.get()->auth_method; }
+    /// Callers obtain tokens from it directly, bypassing the client, so a restricted server identity is never handed out.
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return connection_params.get()->getPermittedAuthMethod(); }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
@@ -129,6 +130,10 @@ public:
     bool isReadOnly() const override { return settings.get()->read_only; }
 
     bool supportParallelWrite() const override { return true; }
+
+    /// A block blob becomes visible only on the commit of its block list. The `ADLS Gen2` (OneLake) path creates
+    /// the destination file first and then appends to it, which is not atomic.
+    bool supportsAtomicWrite() const override;
 
     AzureBlobStorage::ConnectionParams getConnectionParameters() const
     {
