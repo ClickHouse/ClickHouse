@@ -6782,6 +6782,8 @@ void ClientBase::runInteractive()
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText` (and in the AI-chat mode in `processAIChat`), so offer them here.
         .enable_slash_commands = true,
+        /// The lines of the AI-chat mode are dispatched to the agent in `processQueryText`.
+        .enable_ai_chat = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

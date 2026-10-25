@@ -387,6 +387,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , suggest(options.suggest)
     , word_break_characters(options.word_break_characters.data())
     , enable_slash_commands(options.enable_slash_commands)
+    , enable_ai_chat(options.enable_ai_chat)
     , enable_suggestion_hints(options.enable_suggestion_hints)
     , editor(getEditor())
 {
@@ -817,11 +818,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// Only a client built with the AI chat has the mode: the line of the mode reaches the caller
     /// without its `?`, and a client without the AI chat would run it as SQL - a question like
     /// `? DROP TABLE t` would drop the table. There the `?` stays a character, so the line fails
-    /// to parse as SQL instead.
+    /// to parse as SQL instead. The same holds for a caller that does not enable the AI chat (see
+    /// `Options::enable_ai_chat`).
 #if USE_CLIENT_AI
     rx.bind_key('?', [this](char32_t code)
     {
-        if (!ai_mode && rx.get_state().text()[0] == '\0')
+        if (enable_ai_chat && !ai_mode && rx.get_state().text()[0] == '\0')
         {
             ai_mode = true;
             rx.set_prompt(aiModePrompt());
@@ -1026,8 +1028,11 @@ void ReplxxLineReader::syncModeFromHistory()
 {
     /// A client without the AI chat has no mode to recall the questions into, so it recalls them as
     /// they are stored, with the prefix: stripped of it, a question would be run as SQL (see the
-    /// binding of `?`).
+    /// binding of `?`). The same holds for a caller that does not enable the AI chat.
 #if USE_CLIENT_AI
+    if (!enable_ai_chat)
+        return;
+
     const replxx::Replxx::State state = rx.get_state();
     const std::string text = state.text();
     /// AI questions are stored in history with a `? ` prefix (see addToHistory).

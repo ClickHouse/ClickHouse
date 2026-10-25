@@ -31,6 +31,11 @@ public:
         /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
         /// means something else there (the beginning of a path).
         bool enable_slash_commands = false;
+        /// Enter the AI-chat mode on a leading `?` and recall the `? `-prefixed history entries into
+        /// it. Off by default: the line of the mode reaches the caller without its `?`, so only a
+        /// caller that checks `inAIMode` and dispatches the line to the AI agent may enable it -
+        /// `keeper-client` and `clickhouse-disks` would run `? rm /path` as the command `rm /path`.
+        bool enable_ai_chat = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -111,6 +116,8 @@ private:
 
     /// Whether the `/`-commands of the client are offered as hints and completions (see Options).
     const bool enable_slash_commands;
+    /// Whether the AI-chat mode is available (see Options).
+    const bool enable_ai_chat;
     /// Whether ordinary as-you-type hints may query the asynchronously loaded suggestion dictionary.
     const bool enable_suggestion_hints;
 
