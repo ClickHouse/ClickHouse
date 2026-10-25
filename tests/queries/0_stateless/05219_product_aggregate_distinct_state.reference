@@ -5,5 +5,10 @@ numeric finite state copy
 MergeTree state round trip
 1
 1
+wrapped numeric state copy
+1	1	1	1
+wrapped MergeTree state round trip
+1	1
+1	1
 Decimal256 state copy
 1	1

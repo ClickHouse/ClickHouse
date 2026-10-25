@@ -38,10 +38,17 @@ public:
         AggregateFunctionPtr res;
         if (arguments.size() == 1)
         {
-            /// productDistinct must reproduce the original multiplication order
-            /// after copying or loading a state. Other Distinct functions retain
-            /// their existing storage and serialization behavior.
-            if (properties.is_order_dependent && nested_function->getName() == "product")
+            /// Preserve the multiplication order for product even when wrapped
+            /// in OrNull or OrDefault. Do not change other Distinct functions'
+            /// in-memory or serialized state representation.
+            auto base_function = nested_function;
+            if (properties.is_order_dependent)
+            {
+                while (auto nested = base_function->getNestedFunction())
+                    base_function = nested;
+            }
+
+            if (properties.is_order_dependent && base_function->getName() == "product")
             {
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinct,
