@@ -236,7 +236,7 @@ protected:
     void initColumnsCache(bool can_read);
 
     /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
-    bool canWriteToColumnsCache() const;
+    [[nodiscard]] bool canWriteToColumnsCache() const;
 
     /// Whether the cache admits the stripe, see `ColumnsCache::shouldAdmit`: decided once per stripe, when the
     /// block that reads it is sized (see `canReadWholeColumnsCacheStripe`), and the same decision when it is written.

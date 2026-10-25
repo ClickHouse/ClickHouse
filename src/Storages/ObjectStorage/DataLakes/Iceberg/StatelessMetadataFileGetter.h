@@ -72,7 +72,7 @@ public:
     public:
         ~Fetch();
 
-        const ManifestFileCacheKey & key() const { return manifest; }
+        [[nodiscard]] const ManifestFileCacheKey & key() const { return manifest; }
 
         /// Waits for the read. Must be called at most once.
         ManifestFileCacheableInfo get();

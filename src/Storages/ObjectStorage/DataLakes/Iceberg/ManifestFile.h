@@ -83,7 +83,7 @@ struct ManifestFileCacheableInfo
     static ManifestFileCacheableInfo fromBytes(String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings);
 
     /// Thread-safe. Concurrent callers wait for one parse; if it throws, the next caller parses again.
-    std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
+    [[nodiscard]] std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
 
     std::shared_ptr<State> state;
     size_t file_bytes_size = 0;
