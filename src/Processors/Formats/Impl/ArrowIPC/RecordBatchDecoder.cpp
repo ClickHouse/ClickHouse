@@ -87,6 +87,24 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
 }
 
+void declareNullable(ArrowField & copy, const ArrowField & original, const UnorderedSetWithMemoryTracking<const ArrowField *> & fields)
+{
+    if (fields.contains(&original))
+        copy.nullable = true;
+    /// Promotion depends on each batch's nulls, and a `Variant` type can't be converted to another one.
+    if (original.type.kind == TypeKind::Union)
+        return;
+    for (size_t i = 0; i < original.type.children.size(); ++i)
+        declareNullable(copy.type.children[i], original.type.children[i], fields);
+    /// The map entries and keys stay non-nullable, as `parseSchema` requires, so their nulls are rejected.
+    if (original.type.kind == TypeKind::Map)
+    {
+        ArrowField & entries = copy.type.children.at(0);
+        entries.nullable = false;
+        entries.type.children.at(0).nullable = false;
+    }
+}
+
 /// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
 /// flipped, turning the validity bitmap (1 = valid) into a ClickHouse null map (1 = null). Unpacks 8 bits
 /// at a time via SWAR (the same trick as the Parquet decoder), scalar for the trailing < 8 bits.
@@ -1081,9 +1099,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             ColumnPtr entries = decodeField(
                 entries_field, /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path, list_depth + 1,
                 maskPtr(entries_invisible));
-            const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
-            if (entries_tuple.tupleSize() != 2)
+            const auto * entries_tuple_ptr = typeid_cast<const ColumnTuple *>(entries.get());
+            if (!entries_tuple_ptr || entries_tuple_ptr->tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
+            const auto & entries_tuple = *entries_tuple_ptr;
             /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
             /// referenced. Slice the key/value columns to that range so their size matches the base-relative
             /// offsets (matching the Apache Arrow library reader).
@@ -1634,6 +1653,10 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     const auto & node = nextNode();
     if (validate_lengths && node.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node.length());
+    /// Unions have no validity bitmap: `decodeField` rejects their nulls.
+    if (validate_lengths && !field.nullable && node.null_count() != 0
+        && (field.dictionary || field.type.kind != TypeKind::Union))
+        undeclared_null_fields.insert(&field);
     const size_t rows = validate_lengths ? static_cast<size_t>(node.length()) : 0;
 
     auto consume_buffer = [&](size_t count, size_t width, const char * what)
@@ -1820,7 +1843,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
         }
         /// `normalized_name` seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
-        result.push_back(decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0));
+        result.push_back(
+            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -1834,7 +1858,9 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     beginBatch(batch, body, /*reachable_buffers=*/nullptr, target_types_);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
     ColumnUInt8::Ptr null_map;
-    DecodedColumn values = decodeBatchColumn(value_field, use.hint, use.position.path, use.position.list_depth, &null_map);
+    /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
+    DecodedColumn values = decodeBatchColumn(
+        value_field, use.hint, use.position.path, use.position.list_depth, /*read_undeclared_nulls=*/false, &null_map);
     finishBatch();
     ColumnPtr dictionary_null_map = std::move(null_map);
     if (dictionary_null_map && isColumnConst(*values.column))
@@ -1872,28 +1898,52 @@ void RecordBatchDecoder::beginBatch(
 }
 
 RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
-    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
     ColumnUInt8::Ptr * decoded_null_map)
 {
     const size_t batch_rows = static_cast<size_t>(current_batch->length());
 
     DecodedColumn decoded;
     decoded.name = field.name;
+    /// Bufferless roots store one physical value. The reader chooses the output row count before
+    /// expanding it, and dictionaries retain its compact representation across deltas.
+    const bool constant = batch_rows != 0 && isSizeDeterminedSubtree(field);
+    /// Nulls in fields declared non-nullable are read as NULL, as the Apache Arrow library did. Decoding a
+    /// nullable copy of the field keeps the types derived from the schema consistent with the decoded columns.
+    std::optional<ArrowField> nullable_copy;
+    if (!constant)
+    {
+        checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
+        /// Validate the complete subtree before allocating columns or visibility masks. A buffered
+        /// descendant must justify its row count before any preceding bufferless sibling is materialized.
+        const size_t first_node = node_index;
+        const size_t first_buffer = buffer_index;
+        const size_t first_variadic = variadic_index;
+        undeclared_null_fields.clear();
+        advanceField(field, /*validate_lengths=*/true);
+        node_index = first_node;
+        buffer_index = first_buffer;
+        variadic_index = first_variadic;
+        if (read_undeclared_nulls && !undeclared_null_fields.empty())
+        {
+            nullable_copy = field;
+            declareNullable(*nullable_copy, field, undeclared_null_fields);
+        }
+    }
+    const ArrowField & effective_field = nullable_copy ? *nullable_copy : field;
+
     /// Dictionary values retain the type produced by their requested hints. The referencing field
     /// determines whether that type keeps its outer `Nullable` wrapper.
-    if (field.dictionary)
+    if (effective_field.dictionary)
     {
-        const auto & dictionary = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
+        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth});
         const DataTypePtr & value_type = dictionary.segments.front().type;
-        decoded.type = field.nullable ? value_type : removeNullable(value_type);
+        decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
         if (decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
     }
     else
-        decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
-    /// Bufferless roots store one physical value. The reader chooses the output row count before
-    /// expanding it, and dictionaries retain its compact representation across deltas.
-    const bool constant = batch_rows != 0 && isSizeDeterminedSubtree(field);
+        decoded.type = fieldToCHType(effective_field, settings, effective_field.nullable, /*allow_null_type=*/true);
     if (constant)
     {
         decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
@@ -1902,18 +1952,8 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     }
     else
     {
-        checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
-        /// Validate the complete subtree before allocating columns or visibility masks. A buffered
-        /// descendant must justify its row count before any preceding bufferless sibling is materialized.
-        const size_t first_node = node_index;
-        const size_t first_buffer = buffer_index;
-        const size_t first_variadic = variadic_index;
-        advanceField(field, /*validate_lengths=*/true);
-        node_index = first_node;
-        buffer_index = first_buffer;
-        variadic_index = first_variadic;
         decoded.column = decodeField(
-            field,
+            effective_field,
             /*allow_low_cardinality=*/true,
             target_hint,
             path,
