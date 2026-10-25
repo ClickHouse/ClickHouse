@@ -57,4 +57,5 @@ $CLICKHOUSE_CLIENT --query "
     FROM system.tables
     WHERE database = '${CLICKHOUSE_DATABASE}' AND name IN ('m_invoker_05055', 'd_invoker_05055')
     ORDER BY name
+    SETTINGS prefer_localhost_replica = 1
 "

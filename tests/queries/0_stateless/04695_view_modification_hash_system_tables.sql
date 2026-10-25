@@ -45,7 +45,9 @@ CREATE TABLE merge_over_view_04695 (x UInt64) ENGINE = Merge(currentDatabase(), 
 SELECT 'merge over view not null', modification_hash IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = 'merge_over_view_04695';
 
 CREATE TABLE dist_over_view_04695 AS v_04695 ENGINE = Distributed(test_shard_localhost, currentDatabase(), v_04695);
-SELECT 'local distributed over view not null', modification_hash IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_view_04695';
+-- The in-process read of the local shard: with `prefer_localhost_replica = 0` it is read over TCP and the
+-- remote probe does not accept a view.
+SELECT 'local distributed over view not null', modification_hash IS NOT NULL FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_view_04695' SETTINGS prefer_localhost_replica = 1;
 
 -- A view whose stored SELECT reads an engine that cannot report changes still fails closed.
 DROP TABLE IF EXISTS v_over_unsupported_04695;

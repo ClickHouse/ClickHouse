@@ -22,8 +22,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shared S3 bucket. The cache key includes the current database, so the query cache is isolated too.
 prefix="test_04812_${CLICKHOUSE_DATABASE}"
 
-# Pin every query-cache setting so the flaky check's settings randomizer cannot change the outcome.
-qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
+# Pin every query-cache setting so the flaky check's settings randomizer cannot change the outcome, and
+# `prefer_localhost_replica`: with 0 the local shard is probed over TCP, which fails closed for `S3`.
+qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1, prefer_localhost_replica = 1"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO FUNCTION s3(s3_conn, filename = '${prefix}_plain', format = 'TSV', structure = 'x UInt64') SELECT 10 SETTINGS s3_truncate_on_insert = 1"
 

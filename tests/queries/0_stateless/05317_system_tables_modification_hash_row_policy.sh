@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "
 
 function show_hash()
 {
-    $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT '$1', name, isNotNull(modification_hash) FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name IN ('t_05317', 'd_05317') ORDER BY name"
+    $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT '$1', name, isNotNull(modification_hash) FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name IN ('t_05317', 'd_05317') ORDER BY name SETTINGS prefer_localhost_replica = 1"
 }
 
 show_hash 'no policy'
