@@ -124,6 +124,8 @@ struct MergeTreeReaderSettings
     bool use_streaming_marks_compression = false;
     /// Expand the compressed blocks of the streams on the GPU, see `allow_experimental_gpu_read_decompression`.
     bool gpu_decompression = false;
+    /// With `gpu_decompression`, whether `ZSTD` blocks go to the device too, see `gpu_read_decompression_zstd`.
+    bool gpu_decompression_zstd = false;
     /// If true, only column sample with 0 rows will be read.
     /// This information can be used for more optimal reading of
     /// columns prefixes.

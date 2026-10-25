@@ -495,6 +495,7 @@
     M(GPUAggregationBatches, "Number of batches of values sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction.", ValueType::Number) \
     M(GPUAggregationMicroseconds, "Total time spent transferring batches of values to a GPU and reducing them there.", ValueType::Microseconds) \
     M(GPUDecompressionMicroseconds, "Total time spent sending compressed blocks to a GPU and expanding them there.", ValueType::Microseconds) \
+    M(GPUDecompressionWaitMicroseconds, "Time a read of compressed blocks waited for the GPU to expand a batch it had started earlier.", ValueType::Microseconds) \
     M(GPUDecompressionBytes, "Compressed bytes expanded on a GPU.", ValueType::Bytes) \
     M(DeviceChunksMaterialized, "Chunks whose columns were on a device that a step had copied to host memory, see `DeviceChunkInfo`.", ValueType::Number) \
     M(DeviceChunksMaterializedMicroseconds, "Time spent copying the columns of chunks on a device to host memory, see `DeviceChunkInfo`.", ValueType::Microseconds) \

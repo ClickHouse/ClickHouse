@@ -11375,6 +11375,13 @@ whose blocks are decompressed on the CPU.
 Requires a build with `-DENABLE_GPU=1` and has no effect without one.
 )", EXPERIMENTAL, \
         {"26.11", true, true, "New experimental setting to expand the compressed blocks of reads of `MergeTree` tables on a GPU."}) \
+    DECLARE(Bool, gpu_read_decompression_zstd, false, R"(
+Whether a read of a `MergeTree` table that decompresses on the GPU, see `allow_experimental_gpu_read_decompression`,
+expands its `ZSTD` blocks there as well. Off, they are decompressed on the CPU: nvcomp expands `ZSTD` at about 9 GB/s
+of expanded bytes on an A10G, below what the disk delivers and far below what the CPU cores do together, where it
+expands `LZ4` and `GDeflate` many times faster.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting: whether GPU reads expand `ZSTD` on the device."}) \
     DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
 Compute supported aggregations on a CUDA GPU instead of on the CPU.
 

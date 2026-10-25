@@ -139,7 +139,7 @@ void MergeTreeReaderStream::init()
 #if USE_GPU
     else if (settings.gpu_decompression)
     {
-        auto buffer = std::make_unique<GPUCompressedReadBuffer>(build_read_buffer(), /* allow_different_codecs */ true);
+        auto buffer = std::make_unique<GPUCompressedReadBuffer>(build_read_buffer(), /* allow_different_codecs */ true, settings.gpu_decompression_zstd);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

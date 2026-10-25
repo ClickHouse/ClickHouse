@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool allow_experimental_gpu_read_decompression;
+    extern const SettingsBool gpu_read_decompression_zstd;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsBool merge_tree_prefetch_json_shared_data_substreams;
@@ -163,6 +164,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
 #if USE_GPU
     result.gpu_decompression = settings[Setting::allow_experimental_gpu_read_decompression] && GPU::GPUDevice::exists();
+    result.gpu_decompression_zstd = settings[Setting::gpu_read_decompression_zstd];
 #endif
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
