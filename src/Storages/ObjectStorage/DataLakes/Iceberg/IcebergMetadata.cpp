@@ -82,7 +82,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ParallelManifestDecode.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -99,7 +98,6 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
-#include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -150,7 +148,6 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
@@ -1685,80 +1682,65 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
             manifests_to_decode.push_back(manifest_list_entry);
     }
 
-    /// Decoded in parallel as in `totalRows`, consumed in order on this thread.
-    size_t next_manifest = 0;
-    bool has_negative_record_count = false;
+    /// Read ahead on the IO thread pool as in `totalRows`, parsed in order on this thread.
     const auto query_status = context->getProcessListElement();
-    Iceberg::decodeManifestsInOrder(
-        manifests_to_decode,
-        settings[Setting::iceberg_manifest_decode_concurrency],
-        getIcebergManifestDecodeThreadPool().get(),
-        DB::ThreadName::ICEBERG_ITERATOR,
-        [this, &context, &table_state_snapshot](const ManifestFileCacheKey & manifest_list_entry)
-        {
-            return getManifestFileEntriesHandle(
-                object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id, *external_storages);
-        },
-        [&](const ManifestFileIterator::ManifestFileEntriesHandle & files_handle)
-        {
-            /// The walk runs during planning, before any pipeline, so it checks `KILL QUERY` and the time limit itself.
-            if (query_status)
-                query_status->checkTimeLimit();
-
-            const auto & manifest_list_entry = manifests_to_decode[next_manifest++];
-
-            if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
-                || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
-                estimate.has_delete_files = true;
-
-            /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
-            std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
-            for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
-            {
-                if (pruning_filter)
-                {
-                    /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
-                    auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
-                    if (!pruner)
-                        pruner = std::make_unique<ManifestFilesPruner>(
-                            *persistent_components.schema_processor,
-                            table_state_snapshot->schema_id,
-                            data_file->resolved_schema_id,
-                            pruning_filter,
-                            files_handle.getPartitionKeyDescription(),
-                            context,
-                            /* require_ready_sets */ true);
-
-                    const auto hyperrectangles
-                        = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
-                    if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
-                    {
-                        estimate.pruned_data_files = true;
-                        continue;
-                    }
-                }
-
-                /// A negative count comes from a corrupted manifest, as in `totalRows`.
-                if (data_file->parsed_entry->record_count < 0)
-                {
-                    LOG_WARNING(
-                        log,
-                        "Data file '{}' of manifest '{}' has a negative record count {}, so the read gets no row estimate",
-                        data_file->parsed_entry->file_path_key.serialize(),
-                        manifest_list_entry.manifest_file_path,
-                        data_file->parsed_entry->record_count);
-                    has_negative_record_count = true;
-                    return false;
-                }
-                /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
-                *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
-            }
-            return true;
-        });
-    if (has_negative_record_count)
+    Iceberg::ManifestFilesPrefetcher manifests(object_storage, persistent_components, context, log, std::move(manifests_to_decode), external_storages);
+    while (auto fetch = manifests.take())
     {
-        estimate.rows.reset();
-        return estimate;
+        /// The walk runs during planning, before any pipeline, so it checks `KILL QUERY` and the time limit itself.
+        if (query_status)
+            query_status->checkTimeLimit();
+
+        const auto & manifest_list_entry = fetch->key();
+        const auto files_handle = getManifestFileEntriesHandle(
+            fetch->get(), persistent_components, context, manifest_list_entry, table_state_snapshot->schema_id);
+
+        if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
+            || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            estimate.has_delete_files = true;
+
+        /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
+        std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
+        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            if (pruning_filter)
+            {
+                /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
+                auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
+                if (!pruner)
+                    pruner = std::make_unique<ManifestFilesPruner>(
+                        *persistent_components.schema_processor,
+                        table_state_snapshot->schema_id,
+                        data_file->resolved_schema_id,
+                        pruning_filter,
+                        files_handle.getPartitionKeyDescription(),
+                        context,
+                        /* require_ready_sets */ true);
+
+                const auto hyperrectangles
+                    = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
+                if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
+                {
+                    estimate.pruned_data_files = true;
+                    continue;
+                }
+            }
+
+            /// A negative count comes from a corrupted manifest, as in `totalRows`.
+            if (data_file->parsed_entry->record_count < 0)
+            {
+                LOG_WARNING(
+                    log,
+                    "Data file '{}' of manifest '{}' has a negative record count {}, so the read gets no row estimate",
+                    data_file->parsed_entry->file_path_key.serialize(),
+                    manifest_list_entry.manifest_file_path,
+                    data_file->parsed_entry->record_count);
+                estimate.rows.reset();
+                return estimate;
+            }
+            /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
+            *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
+        }
     }
     return estimate;
 }
@@ -1788,48 +1770,32 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
     /// Metadata-only counts must not bypass the access, path, or credential restrictions enforced by a scan,
     /// so the storage of each data file is resolved even when the snapshot summary provides the count.
     UInt64 result = 0;
-    bool exact = true;
-    Iceberg::decodeManifestsInOrder(
-        actual_data_snapshot->manifest_list_entries,
-        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
-        getIcebergManifestDecodeThreadPool().get(),
-        DB::ThreadName::ICEBERG_ITERATOR,
-        [this, &local_context, schema_id, use_summary = summary_total_rows.has_value()](
-            const ManifestFileCacheKey & manifest_list_entry) -> std::optional<UInt64>
-        {
-            auto manifest_file_ptr = getManifestFileEntriesHandle(
-                object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id, *external_storages);
+    Iceberg::ManifestFilesPrefetcher manifests(
+        object_storage, persistent_components, local_context, log, actual_data_snapshot->manifest_list_entries, external_storages);
+    while (auto fetch = manifests.take())
+    {
+        auto manifest_file_ptr = getManifestFileEntriesHandle(fetch->get(), persistent_components, local_context, fetch->key(), schema_id);
 
-            for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
-                checkPathReadable(
-                    persistent_components.table_location,
-                    processed->parsed_entry->file_path_key.serialize(),
-                    object_storage,
-                    *external_storages,
-                    local_context);
+        for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
+            checkPathReadable(
+                persistent_components.table_location,
+                processed->parsed_entry->file_path_key.serialize(),
+                object_storage,
+                *external_storages,
+                local_context);
 
-            if (use_summary)
-                return 0;
+        if (summary_total_rows.has_value())
+            continue;
 
-            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
-                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
-                return std::nullopt;
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+            return {};
 
-            return manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        },
-        [&result, &exact](std::optional<UInt64> manifest_rows)
-        {
-            if (!manifest_rows.has_value())
-            {
-                exact = false;
-                return false;
-            }
-            result += *manifest_rows;
-            return true;
-        });
-
-    if (!exact)
-        return {};
+        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        if (!manifest_rows.has_value())
+            return {};
+        result += *manifest_rows;
+    }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return summary_total_rows.value_or(result);

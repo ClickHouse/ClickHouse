@@ -72,9 +72,10 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
             {
                 const auto manifest = getManifestFile(
                     object_storage, persistent_table_components, context, log, manifest_entry.manifest_file_path, external_storages);
-                for (size_t row = 0; row < manifest.deserializer->rows(); ++row)
+                const auto deserializer = manifest.getDeserializer();
+                for (size_t row = 0; row < deserializer->rows(); ++row)
                 {
-                    auto entry = manifest.deserializer->getParsedManifestFileEntry(row);
+                    auto entry = deserializer->getParsedManifestFileEntry(row);
                     if (entry->status == ManifestEntryStatus::DELETED)
                         files.data_file_paths.insert(entry->file_path_key);
                 }
