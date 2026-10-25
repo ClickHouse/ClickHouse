@@ -14,6 +14,7 @@ GLIBC_COMPATIBILITY = '//base/glibc-compatibility'
 UNWIND = '@clickhouse_llvm_project//:unwind'
 TZDATA = '@clickhouse_cctz//:tzdata'
 SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
+ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
 UNIT_TEST_FUNCTION_DEPS = [
     FUNCTION_REGISTRATION, '//src/Access/Common:headers', '//src/Common/ZooKeeper:headers',
@@ -52,7 +53,10 @@ DEPENDENCIES = {
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     ('src', 'clickhouse_source_headers'): ([
         '//base:common', '//src/Common', '//src/Parsers:headers', '@clickhouse_mongo_cxx_driver//:_bsoncxx',
+        ARRAY_LENGTH,
     ], [], []),
+    ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
+    ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
     ('base/poco/Foundation', '_poco_foundation'): ([], [UNWIND], []),
     ('base/widechar_width', 'widechar_width'): ([UNWIND], [], []),
@@ -153,6 +157,7 @@ EMBEDDED_UNUSED = {
         '@llvm-project//libunwind:headers', '@lz4//:lz4_frame',
     },
     'dbms_embedded': _EMBEDDED_UNUSED | {
+        ARRAY_LENGTH,
         '//base/glibc-compatibility', '//bazel:clickhouse_config_headers', '//src/Common:cow',
         '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
         '@clickhouse_boost//:boost_headers_no_openssl',
@@ -304,8 +309,40 @@ def usearch_implementation_dep(root):
     path.write_text(build.source.rewrite(edits))
 
 
+def private_poco_expat_headers(root):
+    """Keep XML/src's shared Expat headers in the C and C++ libraries that include them."""
+    path = root / 'base/poco/XML/BUILD.bazel'
+    if not path.is_file():
+        return
+    source = Build(root, path, (), ()).source
+    rules = {attributes(rule)['name'].value: rule for _, rule in source.rules()}
+    xml, expat = (rules[n] for n in ('_poco_xml', '_poco_xml_expat'))
+    attrs = attributes(expat)
+    shared = '_EXPAT_INTERNAL_HEADERS'
+    if any(isinstance(s, ast.Assign) and s.targets[0].id == shared for s in source.module.body):
+        return
+    hdrs = attrs['hdrs']
+    foundation = '//base/poco/Foundation:_poco_foundation'
+    if not (isinstance(hdrs, ast.BinOp) and isinstance(hdrs.op, ast.Add)
+            and call_name(hdrs.left) == 'glob' and ast.literal_eval(hdrs.left.args[0]) == ['include/Poco/XML/expat*.h']
+            and all(h.startswith('src/') and h.endswith('.h') for h in ast.literal_eval(hdrs.right))
+            and ast.literal_eval(attrs['deps']) == [foundation]):
+        raise ValueError('Unexpected Poco XML Expat header or dependency declarations')
+    first_var = next(s for s in source.module.body if isinstance(s, ast.Assign))
+    start = source.span(first_var)[0]
+    edits = [(start, start, f'{shared} = {source.text(hdrs.right)}\n\n'),
+             (*source.span(hdrs), source.text(hdrs.left))]
+    for rule in (xml, expat):
+        end = source.span(attributes(rule)['srcs'])[1]
+        edits.append((end, end, ' + ' + shared))
+    dep = next(kw for kw in expat.keywords if kw.arg == 'deps')
+    edits.append((*source.span(dep), f'implementation_deps = ["{foundation}"]'))
+    path.write_text(source.rewrite(edits))
+
+
 def apply(root):
     """Set the declared visibility of each dependency without changing select conditions."""
+    private_poco_expat_headers(root)
     # Older CMake imports declare cc_library wrappers at these labels instead of aliases.
     aliases = {}
     for pkg in ('contrib/libxml2-cmake', 'contrib/lz4-cmake'):

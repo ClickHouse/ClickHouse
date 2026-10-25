@@ -1570,7 +1570,12 @@ def main():
     # The public _lz4 wrapper serves rules_rs/BCR clients; the CMake link uses
     # the original group's ordered objects from its own pinned repository.
     lz4 = builds.setdefault('contrib/lz4', BuildFile('contrib/lz4', owners | {'_lz4': 'contrib/lz4'}, consumers))
-    lz4.target('_lz4', native_lz4)
+    for target in native_lz4.values():
+        group, = target['groups']
+        group['hdrs'].remove(HeaderDirectory('contrib/lz4/lib'))
+        # The native archive uses only the headers paired with its four C sources.
+        group['srcs'] += [src.removesuffix('.c') + '.h' for src in group['srcs']]
+    lz4.target('_lz4__compile_0', native_lz4, input_name='_lz4')
     declare_boost_header_libraries(builds['contrib/boost'])
     llvm, llvm_native_targets, llvm_root_inputs = llvm_targets.declare_from_references(
         ROOT, {arch: graph.build for arch, graph in graphs.items()})

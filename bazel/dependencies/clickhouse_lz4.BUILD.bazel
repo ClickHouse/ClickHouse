@@ -13,12 +13,11 @@ ch_cc_library(
         "lib/lz4hc.c",
         "lib/lz4frame.c",
         "lib/xxhash.c",
+        "lib/lz4.h",
+        "lib/lz4hc.h",
+        "lib/lz4frame.h",
         "lib/xxhash.h",
     ],
-    hdrs = glob(
-        ["lib/*.h"],
-        exclude = ["lib/xxhash.h"],
-    ),
     additional_compiler_inputs = ["lib/lz4.c"],
     copts = [
         "-w",

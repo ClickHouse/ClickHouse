@@ -2,6 +2,16 @@ load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_EXPAT_INTERNAL_HEADERS = [
+    "src/ascii.h",
+    "src/expat_config.h",
+    "src/fallthrough.h",
+    "src/internal.h",
+    "src/xcs.h",
+    "src/xmlrole.h",
+    "src/xmltok.h",
+]
+
 _XML_PRIVATE_HEADERS = [
     "include/Poco/DOM/AttrMap.h",
     "include/Poco/DOM/CDATASection.h",
@@ -46,7 +56,7 @@ poco_cc_library(
     srcs = glob(["src/*.cpp"]) + [
         "src/hash_table.h",
         "src/siphash.h",
-    ] + _XML_PRIVATE_HEADERS,
+    ] + _XML_PRIVATE_HEADERS + _EXPAT_INTERNAL_HEADERS,
     hdrs = glob(
         ["include/**/*.h"],
         exclude = ["include/Poco/XML/expat*.h"] + _XML_PRIVATE_HEADERS,
@@ -108,16 +118,8 @@ poco_cc_library(
         "src/nametab.h",
         "src/utf8tab.h",
         "src/xmltok_impl.h",
-    ],
-    hdrs = glob(["include/Poco/XML/expat*.h"]) + [
-        "src/ascii.h",
-        "src/expat_config.h",
-        "src/fallthrough.h",
-        "src/internal.h",
-        "src/xcs.h",
-        "src/xmlrole.h",
-        "src/xmltok.h",
-    ],
+    ] + _EXPAT_INTERNAL_HEADERS,
+    hdrs = glob(["include/Poco/XML/expat*.h"]),
     copts = [
         "-Wno-cast-qual",
         "-Wno-disabled-macro-expansion",
@@ -129,6 +131,7 @@ poco_cc_library(
         "-Wno-unused-macros",
         "-Wno-implicit-int-conversion",
     ],
+    implementation_deps = ["//base/poco/Foundation:_poco_foundation"],
     includes = ["include"],
     language = "C",
     llvm_headers = False,
@@ -144,8 +147,5 @@ poco_cc_library(
     private_hdrs = [
         "src/xmltok_impl.c",
         "src/xmltok_ns.c",
-    ],
-    deps = [
-        "//base/poco/Foundation:_poco_foundation",
     ],
 )

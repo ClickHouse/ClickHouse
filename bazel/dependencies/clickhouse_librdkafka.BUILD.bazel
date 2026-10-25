@@ -142,7 +142,7 @@ ch_cc_library(
         "config/contrib/librdkafka-cmake",
         "src",
     ],
-    private_hdrs = ["src/rdkafka_conf.c"],
+    private_textual_srcs = ["src/rdkafka_conf.c"],
     strip_include_prefix = "src",
 )
 

@@ -1288,6 +1288,14 @@ class BuildFile:
                         value = [dep for dep in value if dep not in openssl]
                     values['@platforms//cpu:' + arch] = value
                 attrs[field] = select(values)
+            if self.owner == 'contrib/librdkafka' and name == '_rdkafka':
+                # The ClickHouse wrapper includes this C source to inspect its static configuration table.
+                wrapper = 'contrib/librdkafka-cmake/rdkafka_conf_sensitive.c'
+                attrs['private_textual_srcs'] = select({
+                    '@platforms//cpu:' + arch: ['src/rdkafka_conf.c'] if any(
+                        source_path(src) == wrapper for src in groups.get(arch, {}).get('srcs', ())) else []
+                    for arch in attribute_arches
+                })
             if postgres:
                 foreign = {
                     'contrib/openssl-cmake/common/include',

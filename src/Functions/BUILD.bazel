@@ -1249,7 +1249,6 @@ ch_cc_library(
             "//src/Functions/GatherUtils:headers",
             "//src/Functions/JSONPath:clickhouse_functions_jsonpath",
             "//src/Functions/URL:clickhouse_functions_url__compile_1",
-            "//src/Functions/array:headers",
             "//src/Loggers:headers",
             "//src/Parsers:headers",
             "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
