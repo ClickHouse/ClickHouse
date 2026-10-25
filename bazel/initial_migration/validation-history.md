@@ -2086,3 +2086,21 @@ Only an independently verified original report counts as a strict result; a succ
 The initial reader rejected three Cassandra libraries because their Bazel alwayslink archives end in `.lo`. The independent review accepted those archives and checked the original DWYU JSON from the same builds.
 
 On both CPUs, DWYU reported `unverified_link_deps` for `//contrib/cityhash102:_cityhash`: it could not verify whether the target needs `@clickhouse_llvm_project//:cxx` at link time. This is not an unused-dependency finding.
+
+## 6ad07eef0
+
+[6ad07eef0](https://github.com/dzbarsky/clickhouse/commit/6ad07eef0f9e10f2a938637eab5e758c21878a69) groups 252 Common sources and 227 DBMS test sources in 10 filegroups in the packages that own them. This removes 477 individual `.cpp` exports. Google Cloud C++ now declares 65 gRPC libraries from the same schema list used to extract their sources. The expanded library declarations are unchanged.
+
+The stripped and normalized ClickHouse executable matched native CMake on both CPUs. The raw ClickHouse and DBMS unit-test executables matched the previous Bazel builds on both CPUs. All 12 native targets produced their outputs on each CPU, including nine validation JSON reports. [SHA-256 digests and byte counts](../../README.bazel.md#binary-comparison).
+
+| Bazel build | Targets built / requested | Exit |
+| --- | ---: | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/5618f90b-2703-462a-9698-0d63f5744994) | 12 / 12 | 0 |
+| [ARM64](https://app.buildbuddy.io/invocation/13b7a1ab-9bae-4baa-8e02-e44cb3ac8eaa) | 12 / 12 | 0 |
+
+Neither the [x86-64](https://app.buildbuddy.io/invocation/5618f90b-2703-462a-9698-0d63f5744994) nor the [ARM64](https://app.buildbuddy.io/invocation/13b7a1ab-9bae-4baa-8e02-e44cb3ac8eaa) build requested DWYU reports for any of the 65 candidate Google Cloud gRPC libraries. This revision has no new DWYU results for its 661 production targets. The [19 earlier clean results](#9f73209fb) belong to [9f73209fb](https://github.com/dzbarsky/clickhouse/commit/9f73209fbdb82524602e54ad558b2013f5699c99) and are not counted here.
+
+| CPU | Candidates | Requested | Strict clean | Verified finding | Verified analyzer diagnostic | No verified strict result | Original reports unavailable |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/5618f90b-2703-462a-9698-0d63f5744994) | 65 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [ARM64](https://app.buildbuddy.io/invocation/13b7a1ab-9bae-4baa-8e02-e44cb3ac8eaa) | 65 | 0 | 0 | 0 | 0 | 0 | 0 |
