@@ -1047,8 +1047,9 @@ bool resolvedSubcolumnMatchesPath(
     return std::ranges::equal(resolved_path, expected_path, isSameSubstream);
 }
 
-/// Whether the column `column_name` (or the column it is a subcolumn of) is required by the primary
-/// key, the partition key or a secondary index of the storage.
+/// Whether the column `column_name` (or the column it is a subcolumn of) is required by the sorting
+/// key (including its part beyond the primary key), the partition key, a secondary index, an
+/// aggregate projection or the sorting key of a normal projection of the storage.
 bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
 {
     auto get_name_in_storage = [&](const String & name)
@@ -1064,11 +1065,24 @@ bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const St
     };
 
     const auto & metadata = storage_snapshot->metadata;
-    if (is_used(metadata->getColumnsRequiredForPrimaryKey()) || is_used(metadata->getColumnsRequiredForPartitionKey()))
+    if (is_used(metadata->getColumnsRequiredForPrimaryKey()) || is_used(metadata->getColumnsRequiredForSortingKey())
+        || is_used(metadata->getColumnsRequiredForPartitionKey()))
         return true;
 
+    if (std::ranges::any_of(
+            metadata->getSecondaryIndices(), [&](const auto & index) { return is_used(index.expression->getRequiredColumns()); }))
+        return true;
+
+    /// Projection selection matches the expressions of the query (`GROUP BY length(s)`, `count(n)`,
+    /// the key condition of the projection) against the projection literally as well.
     return std::ranges::any_of(
-        metadata->getSecondaryIndices(), [&](const auto & index) { return is_used(index.expression->getRequiredColumns()); });
+        metadata->getProjections(),
+        [&](const ProjectionDescription & projection)
+        {
+            if (projection.type == ProjectionDescription::Type::Aggregate)
+                return is_used(projection.getRequiredColumns());
+            return projection.metadata && is_used(projection.metadata->getColumnsRequiredForSortingKey());
+        });
 }
 
 QueryTreeNodePtr buildSubcolumnProjectionNode(
@@ -1137,10 +1151,11 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
                 return nullptr;
         }
 
-        /// Index analysis matches the key expressions (`ORDER BY length(s)`) against the filter
-        /// literally and does not recognize the equivalent subcolumn (`s.size`), so a function-form
-        /// carrier over a column used by the primary key, the partition key or a secondary index is
-        /// kept, as `FunctionToSubcolumnsPass` does for the equivalent direct query.
+        /// Index analysis, reading in the order of the sorting key and projection selection match
+        /// the key and projection expressions (`ORDER BY length(s)`) against the query literally
+        /// and do not recognize the equivalent subcolumn (`s.size`), so a function-form carrier over
+        /// a column used by the sorting key, the partition key, a secondary index or a projection
+        /// is kept.
         if (via_function_carrier && isColumnUsedByIndexes(storage_snapshot, inner_column->getColumnName()))
             return nullptr;
 
