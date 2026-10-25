@@ -210,9 +210,14 @@ struct AdaptiveAggregationSession
         /// Appends the records of partition `partition` of `partitions` to the stream as one block, creating the stream
         /// in `scope` on the first append, and returns the block's bytes. On a temporary volume the stream is created
         /// on a disk with `reserve_size` bytes of room, and the append throws `NOT_ENOUGH_SPACE` when no disk has them.
-        /// Producers append concurrently.
+        /// A later append throws it when the disk of the stream lacks them. The appends of one spill share
+        /// `space_check`, which checks each disk once. Producers append concurrently.
         UInt64 append(
-            const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition, size_t reserve_size);
+            const TemporaryDataOnDiskScopePtr & scope,
+            const PartitionedRecordBuffer & partitions,
+            size_t partition,
+            size_t reserve_size,
+            TemporaryAppendSpaceCheck & space_check);
 
         /// Reads the stream back in the order the producers wrote it and calls `callback(block)` with the records of
         /// each block in a padded buffer like a chunk's. Every block comes in the same buffer, which the next block

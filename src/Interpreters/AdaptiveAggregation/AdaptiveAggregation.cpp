@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <optional>
 
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -29,6 +30,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char adaptive_aggregation_spill_no_room_to_append[];
 }
 
 namespace
@@ -440,11 +446,13 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
     if (!shared.spill_scope)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
-    /// A stream created by this spill goes to a disk of the temporary volume with room for the rest of the spill and
-    /// the minimum free space, as the file of an ordinary spill does. The partitions written before it already took
-    /// their space on disk, so they are not counted again. The final size of a stream is unknown, since every later
-    /// spill appends to it, so its later growth is not checked, as with the other temporary files that are appended to.
+    /// Every write of this spill goes to a disk that had room for the rest of the spill and the minimum free space, as
+    /// the file of an ordinary spill does. A stream created by this spill goes to a disk of the temporary volume with
+    /// that room. The appends to existing streams check each disk once, at the first append to it, and that check
+    /// covers the later appends to the disk. The partitions written before already took their space on disk, so they
+    /// are not counted again.
     size_t unwritten_bytes = partitions.allocatedChunkBytes();
+    TemporaryAppendSpaceCheck space_check;
 
     partitions.finishAppending();
 
@@ -462,7 +470,7 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
             continue;
 
         const UInt64 partition_bytes = shared.spilled_partitions[partition].append(
-            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space);
+            shared.spill_scope, partitions, partition, unwritten_bytes + params.min_free_disk_space, space_check);
         unwritten_bytes -= std::min<size_t>(unwritten_bytes, partition_bytes);
         spilled_bytes += partition_bytes;
         partitions.releasePartition(partition);
@@ -478,14 +486,29 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, Pa
 }
 
 UInt64 AdaptiveAggregationSession::SpilledPartition::append(
-    const TemporaryDataOnDiskScopePtr & scope, const PartitionedRecordBuffer & partitions, size_t partition, size_t reserve_size)
+    const TemporaryDataOnDiskScopePtr & scope,
+    const PartitionedRecordBuffer & partitions,
+    size_t partition,
+    size_t reserve_size,
+    TemporaryAppendSpaceCheck & space_check)
 {
     UInt64 bytes = 0;
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
 
     std::lock_guard lock(mutex);
     if (!stream)
+    {
         stream = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
+    }
+    else
+    {
+        /// Stands for a disk that has no room left for the appends of the later spills.
+        fiu_do_on(FailPoints::adaptive_aggregation_spill_no_room_to_append,
+        {
+            reserve_size = std::numeric_limits<size_t>::max();
+        });
+        space_check.beforeAppend(*stream, reserve_size);
+    }
     writeBinaryLittleEndian(bytes, *stream);
     partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
     record_count += partitions.recordsOf(partition);
