@@ -60,3 +60,10 @@ normalized_clickhouse(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_binary(
+    name = "dwyu_partition",
+    srcs = ["dwyu_partition.py"],
+    interpreter_args = ["-B"],
+    python_version = "3.11",
+)

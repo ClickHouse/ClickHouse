@@ -240,6 +240,7 @@ cc_library(
 # The Fusion fold wrappers choose detail/fold.hpp or their preprocessed expansion.
 # result_of.hpp includes the variadic implementation or repeats result_of_iterate.hpp with BOOST_PP_ITERATE.
 # FunctionTypes sets BOOST_FT_al_path before including its arity loops.
+# Archive, Iostreams, Iterator, and Log include these pairs around declarations.
 # MultiIndex pairs define_if_constexpr_macro.hpp with undef_if_constexpr_macro.hpp.
 # Boost.MPL wrappers define AUX778076_OP_NAME or BOOST_MPL_PREPROCESSED_HEADER for each inclusion.
 # Both Outcome coroutine_support.hpp headers supply namespace macros to coroutine_support.ipp.
@@ -260,12 +261,20 @@ _BOOST_MACRO_FRAGMENTS = glob([
     "boost/preprocessor/slot/detail/slot*.hpp",
 ]) + [
     "boost/accumulators/numeric/detail/function_n.hpp",
+    "boost/archive/detail/abi_prefix.hpp",
+    "boost/archive/detail/abi_suffix.hpp",
     "boost/function_types/detail/components_impl/master.hpp",
     "boost/function_types/detail/pp_cc_loop/master.hpp",
     "boost/function_types/detail/pp_retag_default_cc/master.hpp",
     "boost/function_types/detail/pp_tags/cc_tag.hpp",
     "boost/function_types/detail/synthesize_impl/master.hpp",
     "boost/fusion/algorithm/iteration/detail/fold.hpp",
+    "boost/iostreams/detail/config/disable_warnings.hpp",
+    "boost/iostreams/detail/config/enable_warnings.hpp",
+    "boost/iterator/detail/config_def.hpp",
+    "boost/iterator/detail/config_undef.hpp",
+    "boost/log/detail/footer.hpp",
+    "boost/log/detail/header.hpp",
     "boost/mpl/aux_/arithmetic_op.hpp",
     "boost/mpl/aux_/comparison_op.hpp",
     "boost/mpl/aux_/shift_op.hpp",
@@ -326,7 +335,7 @@ _BOOST_IMPLEMENTATIONS = glob(
         "boost/json/**/*.ipp",
     ],
     exclude = _BOOST_SOURCE_ENTRIES + ["boost/asio/ssl/**/*.ipp"],
-)
+) + ["boost/dynamic_bitset/impl/dynamic_bitset.ipp"]
 
 # config.hpp and the nested WinAPI helpers are portable. The remaining top-level
 # WinAPI headers include basic_types.hpp, which rejects Linux.

@@ -1216,7 +1216,7 @@ ch_cc_library(
             "//base/poco/JSON:_poco_json",
             "//base/poco/Net:_poco_net",
             "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
-            "//base/poco/Redis:_poco_redis",
+            "//base/poco/Redis",
             "//base/poco/Util:_poco_util",
             "//base/poco/XML:_poco_xml",
             "//base/readpassphrase",

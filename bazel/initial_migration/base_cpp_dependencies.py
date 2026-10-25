@@ -393,6 +393,51 @@ def inherited_netssl_includes(root, paths, stats):
         target.write_text(source.rewrite(edits))
 
 
+def publish_redis_sdk(root):
+    """Publish Poco::Redis after assigning CMake archive members to their Bazel owners."""
+    package = root / "base/poco/Redis/BUILD.bazel"
+    text = package.read_text()
+    source = Source(text)
+    names = {attrs(call)["name"].value for _, call in source.rules()}
+    text = replace_attrs(text, {"_poco_redis": {"visibility": strings([
+        "//:__pkg__", "//src:__pkg__", "//src/Storages/System:__pkg__",
+    ])}})
+    if "Redis" not in names:
+        if 'load("@rules_cc//cc:cc_library.bzl", "cc_library")' not in text:
+            text = 'load("@rules_cc//cc:cc_library.bzl", "cc_library")\n' + text
+        text += """
+# AsyncReader uses ThreadPool.cpp from CMake's Poco::Foundation, which links clickhouse_common_io.
+cc_library(
+    name = "Redis",
+    deps = [":_poco_redis"],
+    implementation_deps = [
+        "//base/poco/Foundation:thread_pool",
+        "//src:clickhouse_common_io",
+    ],
+)
+"""
+    package.write_text(text)
+    for directory, users in (
+        ("src", {"unit_tests_dbms"}),
+        ("src/AggregateFunctions", {"clickhouse_aggregate_functions"}),
+        ("src/Dictionaries", {"clickhouse_dictionaries", "clickhouse_dictionaries__compile_1"}),
+        ("src/Functions", {"clickhouse_functions_obj__compile_2"}),
+        ("src/Functions/URL", {"clickhouse_functions_url"}),
+    ):
+        path = root / directory / "BUILD.bazel"
+        source = Source(path.read_text())
+        edits = [
+            (*source.span(item), '"//base/poco/Redis"')
+            for _, call in source.rules() if attrs(call)["name"].value in users
+            for key in ("deps", "implementation_deps") if key in attrs(call)
+            for item in ast.walk(attrs(call)[key])
+            if isinstance(item, ast.Constant) and item.value == "//base/poco/Redis:_poco_redis"
+        ]
+        if edits:
+            path.write_text(source.rewrite(edits))
+
+
+
 def run(root, from_generator=False):
     stats = Counter()
     paths = build_files(root)

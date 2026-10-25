@@ -1706,7 +1706,7 @@ def main():
             after = normalize_library_runtime(before, '')
             if after != before:
                 path.write_text(after)
-    from initial_migration.base_cpp_dependencies import run as publish_base_cpp_dependencies
+    from initial_migration.base_cpp_dependencies import publish_redis_sdk, run as publish_base_cpp_dependencies
     publish_base_cpp_dependencies(ROOT, from_generator=True)
     from initial_migration.web_resources import run as publish_web_resources
     publish_web_resources(ROOT, write=True)
@@ -1786,6 +1786,7 @@ def main():
         after = remove_unused_constants(Source(after))
         if after != before:
             path.write_text(after)
+    publish_redis_sdk(ROOT)
     llvm_targets.fold_outline_atomics(ROOT / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel')
     format_build_files(read_only=read_only)
     if arrow.read_bytes() != original_arrow:

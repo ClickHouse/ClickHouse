@@ -2091,7 +2091,6 @@ ch_cc_library(
         "third_party/xxhash",
     ],
     deps = [
-        "@clickhouse_google_protobuf//:_libprotoc",
         ":grpc++",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_google_protobuf//:_libprotoc__compile_0",

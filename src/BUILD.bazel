@@ -4258,7 +4258,7 @@ ch_cc_test(
         "@clickhouse_arrow//:_parquet",
         "//base/poco/Foundation:_poco_foundation_pcre",
         "//base/poco/JSON:_poco_json_pdjson",
-        "//base/poco/Redis:_poco_redis",
+        "//base/poco/Redis",
         "//contrib/prometheus-protobufs-cmake:_prometheus_protobufs",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_re2//:_re2",

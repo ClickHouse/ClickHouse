@@ -923,13 +923,34 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -582,5 +1323,313 @@
+@@ -582,5 +1323,334 @@
          arguments = [args],
      )
  
 -    accumulated_reports = depset(direct = [report_file], transitive = _gather_transitive_reports(ctx))
 +    imports = _import_evidence(ctx, target, captured, import_sources, symbols) if captured != None else []
 +    accumulated_reports = depset(direct = [report_file] + imports, transitive = _gather_transitive_reports(ctx))
++    if config.preprocessing_mode == "compiler" and not ctx.attr._recursive:
++        # Each DwyuProcessSourceFile writes a public/private pair. Raw .s inputs
++        # have an assembly witness instead; leave those in dwyu_analyzer_inputs.
++        groups = {"dwyu": accumulated_reports}
++        observations = {}
++        for role, public, private in [
++            ("hdrs", public_from_headers, private_from_headers),
++            ("srcs", public_from_srcs, [file for file in private_from_srcs if file.extension != "o"]),
++        ]:
++            if len(public) != len(private):
++                fail("{}: incomplete DWYU {} output pairs".format(target.label, role))
++            for start in range(0, len(public), 256):
++                files = public[start:start + 256] + private[start:start + 256]
++                groups["dwyu_{}_{}".format(role, start // 256)] = depset(files)
++                for file in files:
++                    observations[file] = True
++        groups["dwyu_analyzer_inputs"] = depset(
++            direct = [f for f in analysis_inputs.to_list() if f not in observations] + [ctx.executable._tool_analyze_includes],
++            transitive = [ctx.attr._tool_analyze_includes[DefaultInfo].default_runfiles.files],
++        )
++        return [OutputGroupInfo(**groups)]
      return [OutputGroupInfo(dwyu = accumulated_reports)]
 +
 +def _import_evidence(ctx, target, captured, sources, symbols):
