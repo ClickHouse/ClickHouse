@@ -235,6 +235,11 @@ void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_pa
     }
 }
 
+bool IMergeTreeReader::canMeasureCompressedSizeOfStringValuesSkippedByFilters() const
+{
+    return std::ranges::any_of(string_value_filters_by_part_column_name, [](const auto & entry) { return entry.second.codec != nullptr; });
+}
+
 StringValuesSkippedInBlockByColumn IMergeTreeReader::takeStringValuesSkippedByFilters()
 {
     StringValuesSkippedInBlockByColumn res;
