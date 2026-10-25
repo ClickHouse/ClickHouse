@@ -1,5 +1,4 @@
 <clickhouse>
-    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
     <remote_servers>
         <two_shards>
             <!-- just to check that there's no conflict between automatic and manual clusters -->

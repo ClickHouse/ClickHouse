@@ -91,7 +91,7 @@
     </create_query>
 
     <fill_query>
-        INSERT INTO promql_tags_transform (metric_name, tags, time_series)
+        INSERT INTO promql_tags_transform (metric_name, tags, samples)
         SELECT
             if(number &lt; 100000, 'foo', 'bar'),
             map('namespace', 'ns' || toString(intDiv(number % 100000, 1000)), 'pod', 'pod' || toString(number % 100000)),

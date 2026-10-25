@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer
+# Tags: no-fasttest
 # - no-fasttest: reads Parquet files from Minio
-# - no-old-analyzer: make_distributed_plan and lazy materialization require the analyzer
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,7 +37,6 @@ TABLE_FN="s3('${URL}/data_{1,2}.parquet', ${AUTH}, 'Parquet')"
 # `query_plan_max_limit_for_lazy_materialization = 0` because the CI settings randomizer may set it
 # to 1, and `s3_validate_etag_on_read = 1` because the lazy plan requires the ETag-pinned reread.
 SETTINGS_COMMON=(
-    --enable_analyzer=1
     --s3_validate_etag_on_read=1
     --query_plan_optimize_lazy_materialization=1
     --query_plan_max_limit_for_lazy_materialization=0

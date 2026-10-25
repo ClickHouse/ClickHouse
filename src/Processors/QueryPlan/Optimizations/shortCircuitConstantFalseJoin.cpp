@@ -80,7 +80,7 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
             return 0;
 
         auto & empty_node = nodes.emplace_back();
-        empty_node.step = std::make_unique<ReadNothingStep>(join->getInputHeaders()[side]);
+        empty_node.step = std::make_unique<ReadNothingStep>(side_node->step->getOutputHeader());
         parent_node->children[side] = &empty_node;
         return 1;
     };

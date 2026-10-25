@@ -9,9 +9,11 @@
 #include <aws/glue/GlueClient.h>
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
+#include <aws/glue/model/GetDatabaseRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
 #include <aws/glue/model/DeleteTableRequest.h>
+#include <aws/glue/model/DeleteDatabaseRequest.h>
 #include <aws/glue/model/CreateDatabaseRequest.h>
 #include <aws/glue/model/UpdateTableRequest.h>
 #include <aws/glue/model/TableInput.h>
@@ -20,6 +22,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <base/unit.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -68,13 +71,13 @@ namespace DB::FailPoints
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
 }
 
 namespace DB::ServerSetting
@@ -85,8 +88,8 @@ namespace DB::ServerSetting
 
 namespace CurrentMetrics
 {
-    extern const Metric MarkCacheBytes;
-    extern const Metric MarkCacheFiles;
+    extern const Metric GlueCatalogSchemaCacheBytes;
+    extern const Metric GlueCatalogSchemaCacheEntries;
 }
 
 namespace DataLake
@@ -119,7 +122,7 @@ GlueCatalog::GlueCatalog(
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
-    , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
+    , current_schema_field_types(CurrentMetrics::GlueCatalogSchemaCacheBytes, CurrentMetrics::GlueCatalogSchemaCacheEntries, 16_MiB)
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
@@ -163,7 +166,6 @@ GlueCatalog::GlueCatalog(
 
 
     Aws::Glue::GlueClientConfiguration client_configuration;
-    client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
     client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
     client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
@@ -272,7 +274,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
                 /// For some reason glue allow to have empty tables
                 /// without any columns. They are also empty in object
                 /// storage, so just ignore them.
-                if (table.GetStorageDescriptor().GetColumns().empty())
+                if (table.GetStorageDescriptor().GetColumns().empty() && !isReadableGlueTable(table))
                     continue;
 
                 if (limit != 0 && result.size() >= limit)
@@ -475,7 +477,8 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(
+    const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
 {
     /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
     /// web-identity, etc.) refreshes its cached credentials internally before
@@ -515,17 +518,16 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
 
     const String & metadata_uri = table_specific_properties->iceberg_metadata_file_location;
 
-    if (!metadata_objects.get(metadata_uri))
+    auto [field_types, _] = current_schema_field_types.getOrSet(metadata_uri, [&]
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
         auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
         auto metadata_object = DB::Iceberg::getMetadataJSONObject(
             metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
-        metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
-    }
+        return std::make_shared<FieldTypes>(getCurrentSchemaFieldTypes(metadata_object));
+    });
 
-    auto metadata_object = *metadata_objects.get(metadata_uri);
-    return resolveTimestampTypeFromMetadata(metadata_object, column_name, glue_column_type);
+    return resolveTimestampType(*field_types, column_name, glue_column_type);
 }
 
 String GlueCatalog::resolveTimestampTypeFromMetadata(
@@ -533,24 +535,46 @@ String GlueCatalog::resolveTimestampTypeFromMetadata(
     const String & column_name,
     const String & glue_column_type)
 {
+    return resolveTimestampType(getCurrentSchemaFieldTypes(metadata_object), column_name, glue_column_type);
+}
+
+GlueCatalog::FieldTypes GlueCatalog::getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    FieldTypes result;
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
     {
         auto schema = schemas->getObject(static_cast<UInt32>(i));
-        if (schema->getValue<Int64>("schema-id") == current_schema_id)
+        if (schema->getValue<Int64>("schema-id") != current_schema_id)
+            continue;
+
+        auto fields = schema->getArray(DB::Iceberg::f_fields);
+        for (size_t j = 0; j < fields->size(); ++j)
         {
-            auto fields = schema->getArray(DB::Iceberg::f_fields);
-            for (size_t j = 0; j < fields->size(); ++j)
-            {
-                auto field = fields->getObject(static_cast<UInt32>(j));
-                if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
-                    return field->getValue<String>(DB::Iceberg::f_type);
-            }
+            auto field = fields->getObject(static_cast<UInt32>(j));
+            auto type = field->get(DB::Iceberg::f_type);
+            if (type.isString())
+                result.emplace(field->getValue<String>(DB::Iceberg::f_name), type.extract<String>());
         }
     }
+    return result;
+}
+
+String GlueCatalog::resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type)
+{
+    if (auto it = field_types.find(column_name); it != field_types.end())
+        return it->second;
 
     return glue_column_type == "timestamp_nano" ? "timestamp_ns" : "timestamp";
+}
+
+size_t GlueCatalog::FieldTypesWeightFunction::operator()(const FieldTypes & field_types) const
+{
+    size_t result = 0;
+    for (const auto & [name, type] : field_types)
+        result += sizeof(FieldTypes::value_type) + name.size() + type.size();
+    return result;
 }
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
@@ -612,10 +636,15 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
+    auto resolve_context = DB::Context::createCopy(getContext());
+    DB::Settings resolve_settings = resolve_context->getSettingsCopy();
+    resolve_settings[DB::Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
+    resolve_context->setSettings(resolve_settings);
+
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 
@@ -628,7 +657,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
@@ -643,6 +672,32 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
             "Exception calling CreateDatabase for namespace {}: {}",
             namespace_name, outcome.GetError().GetMessage());
     }
+}
+
+std::optional<std::string> GlueCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    Aws::Glue::Model::GetDatabaseRequest request;
+    request.SetName(namespace_name);
+
+    auto outcome = glue_client->GetDatabase(request);
+    if (!outcome.IsSuccess())
+    {
+        if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+            return std::nullopt;
+
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling GetDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
+    }
+
+    const auto & location_uri = outcome.GetResult().GetDatabase().GetLocationUri();
+    if (location_uri.empty())
+        return std::nullopt;
+
+    return std::string(std::filesystem::path(location_uri) / table_name);
 }
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const

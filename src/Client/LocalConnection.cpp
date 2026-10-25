@@ -5,6 +5,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -16,6 +17,14 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageFile.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
@@ -31,6 +40,8 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -42,13 +53,14 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
-    extern const SettingsBool allow_experimental_trino_dialect;
+    extern const SettingsBool enable_trino_dialect;
     extern const SettingsString database;
     extern const SettingsDialect dialect;
     extern const SettingsString input_format;
     extern const SettingsString format;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -64,7 +76,12 @@ namespace Setting
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
+    extern const SettingsBool enable_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
 }
 
 namespace ErrorCodes
@@ -153,6 +170,11 @@ void LocalConnection::sendProfileEvents()
 
 void LocalConnection::captureCurrentException()
 {
+    /// Stop the executors before `onException`, as `finishQuery` does before `onFinish`:
+    /// `onException` logs the processors' profile counters, which the executor threads write.
+    state->executor.reset();
+    state->pushing_async_executor.reset();
+    state->pushing_executor.reset();
     state->io.onException();
     try
     {
@@ -176,13 +198,70 @@ void LocalConnection::captureCurrentException()
     }
 }
 
+/// Reads the data of `INSERT ... FROM INFILE` from the file, with globs and compression, the same way as `ClientBase::sendData` does.
+static QueryPipeline createPipeFromInsertInfile(
+    const ASTInsertQuery & insert, const String & format, const ColumnsDescription & columns_description, const Block & sample, ContextPtr context)
+{
+    const auto in_file = insert.infile->as<ASTLiteral &>().value.safeGet<String>();
+
+    String compression_method;
+    if (insert.compression)
+        compression_method = insert.compression->as<ASTLiteral &>().value.safeGet<String>();
+
+    /// `StorageFile` doesn't support ephemeral, materialized and alias columns, so the columns of the block are read as ordinary ones.
+    ColumnsDescription columns_for_storage_file;
+    for (const auto & column_in_sample : sample)
+    {
+        ColumnDescription column = columns_description.has(column_in_sample.name)
+            ? columns_description.get(column_in_sample.name)
+            : ColumnDescription(column_in_sample.name, column_in_sample.type);
+        column.type = column_in_sample.type;
+        column.default_desc.kind = ColumnDefaultKind::Default;
+        columns_for_storage_file.add(std::move(column));
+    }
+
+    StorageFile::CommonArguments args{
+        WithContext(context),
+        insert.table_id,
+        format,
+        getFormatSettings(context),
+        compression_method,
+        columns_for_storage_file,
+        ConstraintsDescription{},
+        String{},
+        {},
+    };
+    StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, context), args);
+    storage->startup();
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    SelectQueryInfo query_info;
+    QueryPlan plan;
+    storage->read(
+        plan,
+        sample.getNames(),
+        storage->getStorageSnapshot(metadata, context),
+        query_info,
+        context,
+        {},
+        context->getSettingsRef()[Setting::max_block_size],
+        getNumberOfCPUCoresToUse());
+
+    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    QueryPlanResourceHolder resources;
+    QueryPipeline pipeline(QueryPipelineBuilder::getPipe(std::move(*builder), resources));
+    pipeline.addResources(std::move(resources));
+    pipeline.addStorageHolder(storage);
+    return pipeline;
+}
+
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
     const NameToNameMap & query_parameters,
     const String & query_id,
     UInt64 stage,
-    const Settings *,
+    const Settings * query_settings,
     const ClientInfo * client_info,
     bool,
     const std::vector<String> & /*external_roles*/,
@@ -197,6 +276,41 @@ void LocalConnection::sendQuery(
         query_context = session->makeQueryContext(*client_info);
     else
         query_context = session->makeQueryContext();
+
+    /// Capture the parse-time parser limits and parser flags before overlaying the client-sent
+    /// settings: `ClientBase::processParsedSingleQuery` has already folded the query's own
+    /// `SETTINGS` clause into `query_settings`, while the query text was parsed under the session
+    /// values. The `input()` initializer below reparses `state->query` and must apply the settings
+    /// the text was originally accepted with, not stricter (or looser) query-local ones.
+    const auto & parse_time_settings = query_context->getSettingsRef();
+    const UInt64 parse_time_max_query_size = parse_time_settings[Setting::max_query_size];
+    const UInt64 parse_time_max_parser_depth = parse_time_settings[Setting::max_parser_depth];
+    const UInt64 parse_time_max_parser_backtracks = parse_time_settings[Setting::max_parser_backtracks];
+    const bool parse_time_allow_settings_after_format_in_insert = parse_time_settings[Setting::allow_settings_after_format_in_insert];
+    const bool parse_time_implicit_select = parse_time_settings[Setting::implicit_select];
+    const bool parse_time_enable_trino_dialect = parse_time_settings[Setting::enable_trino_dialect];
+    const String parse_time_promql_database = parse_time_settings[Setting::promql_database];
+    const String parse_time_promql_table = parse_time_settings[Setting::promql_table];
+    const Field parse_time_promql_evaluation_time = Field{parse_time_settings[Setting::promql_evaluation_time]};
+    const String parse_time_logsql_database = parse_time_settings[Setting::logsql_database];
+    const String parse_time_logsql_table = parse_time_settings[Setting::logsql_table];
+    const String parse_time_logsql_time_column = parse_time_settings[Setting::logsql_time_column];
+    const String parse_time_logsql_message_column = parse_time_settings[Setting::logsql_message_column];
+    const bool parse_time_enable_logsql_dialect = parse_time_settings[Setting::enable_logsql_dialect];
+    const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
+    const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
+
+    /// Apply only what the client changed, like `TCPHandler` does. Replacing the whole `Settings`
+    /// would drop what the session context holds beyond the client's copy, e.g. the settings of
+    /// a `SET profile`, which the client does not track.
+    /// The changes must be checked against the constraints, as the session may belong to a restricted
+    /// user (the embedded client of the web terminal and the SSH interface).
+    if (query_settings)
+    {
+        SettingsChanges settings_changes = query_settings->changes();
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
@@ -263,26 +377,39 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
-    /// during execution. The `input()` initializer below reparses `state->query`, and must use the
-    /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
+    /// The dialect/gate are taken from the overlaid settings: `pinOutboundDialect` has pinned them
+    /// in `query_settings` to the values the query text was accepted with, matching the form of the
+    /// outbound text (JSON body vs an AST->SQL rewrite vs the text as typed) and undoing a
+    /// query-local `SETTINGS dialect = ...`. That is exactly what the `input()` initializer must
+    /// reparse with, rather than the (possibly mutated) live session ones. The parser limits and
+    /// parser flags come from the parse-time snapshot above: the overlaid values may already contain
+    /// the query's own `SETTINGS` clause, which must not affect the reparse of the query text itself.
     state->parsed_dialect = query_context->getSettingsRef()[Setting::dialect];
     state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
-    state->max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
-    state->max_parser_depth = query_context->getSettingsRef()[Setting::max_parser_depth];
-    state->max_parser_backtracks = query_context->getSettingsRef()[Setting::max_parser_backtracks];
-    state->allow_settings_after_format_in_insert = query_context->getSettingsRef()[Setting::allow_settings_after_format_in_insert];
-    state->implicit_select = query_context->getSettingsRef()[Setting::implicit_select];
-    state->allow_experimental_trino_dialect = query_context->getSettingsRef()[Setting::allow_experimental_trino_dialect];
-    state->promql_database = query_context->getSettingsRef()[Setting::promql_database];
-    state->promql_table = query_context->getSettingsRef()[Setting::promql_table];
-    state->promql_evaluation_time = Field{query_context->getSettingsRef()[Setting::promql_evaluation_time]};
-    state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
-    state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
+    state->max_query_size = parse_time_max_query_size;
+    state->max_parser_depth = parse_time_max_parser_depth;
+    state->max_parser_backtracks = parse_time_max_parser_backtracks;
+    state->allow_settings_after_format_in_insert = parse_time_allow_settings_after_format_in_insert;
+    state->implicit_select = parse_time_implicit_select;
+    state->enable_trino_dialect = parse_time_enable_trino_dialect;
+    state->promql_database = parse_time_promql_database;
+    state->promql_table = parse_time_promql_table;
+    state->promql_evaluation_time = parse_time_promql_evaluation_time;
+    state->logsql_database = parse_time_logsql_database;
+    state->logsql_table = parse_time_logsql_table;
+    state->logsql_time_column = parse_time_logsql_time_column;
+    state->logsql_message_column = parse_time_logsql_message_column;
+    state->enable_logsql_dialect = parse_time_enable_logsql_dialect;
+    state->json_ast_max_depth = parse_time_max_ast_depth;
+    state->json_ast_max_elements = parse_time_max_ast_elements;
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
-    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    /// Nothing drains the unbounded queue when profile events are not sent.
+    if (send_profile_events)
+    {
+        state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    }
     state->logs_queue = std::make_shared<InternalTextLogsQueue>();
     const auto client_logs_level = getContext()->getSettingsRef()[Setting::send_logs_level];
     state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
@@ -298,13 +425,10 @@ void LocalConnection::sendQuery(
     next_packet_type.reset();
 
     /// Prepare input() function
-    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription & columns_description, const Block & sample)
     {
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
-
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-        Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;
         state->block = sample;
@@ -322,7 +446,8 @@ void LocalConnection::sendQuery(
         /// except for plain `SET` queries which are still parsed with `ParserQuery` so
         /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
         /// without being locked into JSON-only input.
-        if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(begin, end, state->max_query_size))
+        if (dialect == Dialect::clickhouse_json
+            && !isClickHouseJSONSetEscape(begin, end, state->max_query_size, state->max_parser_depth, state->max_parser_backtracks))
         {
             if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -378,27 +503,43 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserPRQLQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
+            else if (dialect == Dialect::logsql)
+                parser = std::make_unique<ParserLogsQLQuery>(
+                    state->logsql_database, state->logsql_table,
+                    state->logsql_time_column, state->logsql_message_column,
+                    begin, end, state->enable_logsql_dialect, state->max_parser_depth,
+                    state->max_query_size);
             else if (dialect == Dialect::trino)
-                parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->allow_experimental_trino_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
+                parser = std::make_unique<ParserTrinoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, end, state->enable_trino_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
-            parsed_query = parseQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                state->max_query_size,
-                state->max_parser_depth,
-                state->max_parser_backtracks);
+            if (dialect == Dialect::logsql)
+                parsed_query = parseLogsQLQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    /*allow_multi_statements*/ false,
+                    state->max_query_size,
+                    state->max_parser_depth,
+                    state->max_parser_backtracks);
+            else
+                parsed_query = parseQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    state->max_query_size,
+                    state->max_parser_depth,
+                    state->max_parser_backtracks);
         }
 
-        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
-        {
-            if (!insert->format.empty())
-                current_format = insert->format;
-        }
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && !insert->format.empty())
+            current_format = insert->format;
+        else if (insert && insert->infile)
+            current_format = FormatFactory::instance().getFormatFromFileName(insert->infile->as<ASTLiteral &>().value.safeGet<String>());
 
         /// `input_format` / `format` settings override the FORMAT for input (mirrors
         /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
@@ -407,6 +548,15 @@ void LocalConnection::sendQuery(
             current_format = settings[Setting::input_format];
         else if (!settings[Setting::format].value.empty())
             current_format = settings[Setting::format];
+
+        if (insert && insert->infile)
+        {
+            /// The data of `INSERT ... RETURNING ... FROM INFILE` is read from the file, the same way as `ClientBase::sendData` does.
+            state->input_pipeline = std::make_unique<QueryPipeline>(
+                createPipeFromInsertInfile(*insert, current_format, columns_description, sample, context));
+            state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(*state->input_pipeline);
+            return;
+        }
 
         chassert(in, "ReadBuffer should be initialized");
 
@@ -421,7 +571,6 @@ void LocalConnection::sendQuery(
             settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
-        auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
             pipe.addSimpleTransform([&](const SharedHeader & header)

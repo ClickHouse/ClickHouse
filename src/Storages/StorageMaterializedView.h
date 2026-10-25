@@ -31,6 +31,7 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
     bool isRemote() const override;
+    bool readRequiresAnalyzedQuery() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
 
@@ -46,6 +47,7 @@ public:
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
+    bool supportsSubcolumnCodecs() const override { return has_inner_table && getTargetTable()->supportsSubcolumnCodecs(); }
     /// readImpl forwards the already-analyzed query tree straight to the target table, so the
     /// initiator must not rewrite functions to subcolumns when the target opts out (e.g. Distributed).
     bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
@@ -75,7 +77,7 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 

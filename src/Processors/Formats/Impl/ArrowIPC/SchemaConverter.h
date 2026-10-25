@@ -48,9 +48,14 @@ enum class TypeKind : UInt8
     List,
     LargeList,
     FixedSizeList,
+    /// Lists described by an offset and a size per row: the ranges can overlap and come in any order.
+    ListView,
+    LargeListView,
     Struct,
     Map,
     Union,
+    /// Values stored once per run: children `run_ends` (Int16/Int32/Int64, the exclusive end of each run) and `values`.
+    RunEndEncoded,
     /// An Arrow type the native reader does not support. Parsed as a placeholder (rather than failing
     /// during schema parsing) so schema inference can drop it with
     /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`; decoding or requesting
@@ -92,20 +97,13 @@ struct ArrowType
     /// Children (List/LargeList/FixedSizeList element, Struct/Union fields, Map's key_value struct).
     VectorWithMemoryTracking<ArrowField> children;
 
+    /// Struct: the field names are empty or repeated, which Arrow allows but a named `Tuple` cannot have. Such a
+    /// struct is read as an unnamed `Tuple`, and its fields are matched with the requested type and identified by
+    /// position instead of by name.
+    bool positional_fields = false;
+
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
-
-    /// Physical buffer layout of a `TypeKind::Unsupported` field, when it is known. The reader cannot
-    /// decode these types, but knowing the layout lets `advanceField` advance the node/buffer cursors past an
-    /// unrequested column of such a type (subset-of-columns support), instead of failing a `SELECT` of the
-    /// other columns. `Unknown` means the layout is not known and the column cannot be skipped.
-    enum class SkipLayout : UInt8
-    {
-        Unknown,        /// cannot be skipped
-        ListView,       /// validity + offsets + sizes buffers, then one child (same buffer count for LargeListView)
-        RunEndEncoded,  /// no buffers (not even validity), then two children (run_ends, values)
-    };
-    SkipLayout skip_layout = SkipLayout::Unknown;
 };
 
 struct DictionaryEncoding
@@ -137,11 +135,18 @@ struct ArrowSchema
     bool little_endian = true;
 };
 
-/// Parses the IPC Schema FlatBuffer into the Arrow-free description above.
-ArrowSchema parseSchema(const flatbuf::Schema & schema);
+/// Parses the IPC Schema FlatBuffer into the Arrow-free description above. `version` is the metadata
+/// version of the message (or file footer) the schema came from: the union buffer layout differs between
+/// V4 and V5, and only the V5 one is implemented, so a union field under V4 is rejected here.
+ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version);
 
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);
+
+/// The ClickHouse type name a field carries when the writer had no Arrow mapping for it and wrote it as an
+/// opaque column, or empty when the field is not one. The field's Arrow type says which encoding it holds:
+/// `Utf8` is the text form, `Binary` is `serializeBinary`.
+std::string_view opaqueFieldTypeName(const ArrowField & field);
 
 /// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock
@@ -174,11 +179,15 @@ void buildFooter(
     const ArrowFileBlocks & dictionary_blocks,
     const ArrowFileBlocks & record_blocks);
 
+/// Whether the values of a field can be null, i.e. whether its natural ClickHouse type is `Nullable` when following the
+/// metadata. A `RunEndEncoded` field has no validity bitmap, so its own nullability flag says nothing: its nulls are the
+/// nulls of its values.
+bool isNullableField(const ArrowField & field);
+
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).
 /// `allow_null_type` maps an Arrow `null`-typed field to the all-null `Nullable(Nothing)` instead of
-/// throwing — the data reader enables it (matching the library's `allow_arrow_null_type`), schema
-/// inference leaves it off.
+/// throwing `UNKNOWN_TYPE`. The data reader and schema inference both enable it.
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type = false);
 
