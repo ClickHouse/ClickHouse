@@ -11,6 +11,10 @@
 # stream holds at least 3.5625 MiB. The data-volume bound priced about 3.06 MiB per stream without the scratch
 # buffers.
 #
+# The reservation also includes the readers of the two `CODEC(NONE)` source parts: each column is read through
+# its compressed and decompressed bytes, 1 MiB per column for 65537 `UInt64` values. The threshold adds them, so
+# the estimate without the scratch buffers (about 4.06 MiB per column) stays below it.
+#
 # The reservation is read from the MergesMutationsMemoryReservation metric while a background merge is held
 # on the plain_merge_task_pause_before_prepare failpoint (see 05220_merge_memory_reservation_marks_streams).
 
@@ -66,5 +70,5 @@ do
 done
 
 echo "$((result > 0))"
-# 3.5625 MiB = 3735552 bytes per stream.
-echo "$((result >= COLUMNS * 3735552))"
+# 3.5625 MiB = 3735552 bytes per stream of the writer and 1 MiB = 1048576 bytes per column of the readers.
+echo "$((result >= COLUMNS * (3735552 + 1048576)))"
