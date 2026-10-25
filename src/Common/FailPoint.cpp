@@ -42,6 +42,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(parallel_sync_paths_fail_fsync) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(smt_blobs_list_split_file_writes) \
     REGULAR(smt_blobs_list_split_file_writes_small) \

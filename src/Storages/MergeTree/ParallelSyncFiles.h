@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -21,7 +20,8 @@ void parallelSyncFiles(const std::vector<const MergeTreeWriterStream *> & stream
 
 /// Opens each file on the local filesystem by its path and calls fsync on it, in parallel.
 /// Used to make durable the files that were already written and closed.
-/// If the fsync of a file fails, `on_failure` is called with its index before the exception is rethrown.
-void parallelSyncPaths(const std::vector<std::string> & paths, const std::function<void(size_t)> & on_failure);
+/// If the fsync of a file fails, the file is remembered, and every later attempt to sync it
+/// (or its hardlink) by this function fails as well.
+void parallelSyncPaths(const std::vector<std::string> & paths);
 
 }

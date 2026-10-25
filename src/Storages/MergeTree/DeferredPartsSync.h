@@ -22,9 +22,8 @@ class MergeTreeData;
 /// for the whole duration of a long insert, the parts committed long enough ago are synced while the
 /// insert is still running.
 ///
-/// If the fsync of a part fails, the part is remembered, and every later insert that relies on it
-/// (for example, a retry that is deduplicated against it) fails as well: after a failed fsync, the kernel
-/// may report success for a new file descriptor, although the data was not written.
+/// If the fsync of a file fails, the file is remembered, and every later insert that relies on it
+/// (for example, a retry that is deduplicated against its part) fails as well, see `parallelSyncPaths`.
 class DeferredPartsSync
 {
 public:

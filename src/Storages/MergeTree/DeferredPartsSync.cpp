@@ -6,55 +6,15 @@
 #include <Common/logger_useful.h>
 
 #include <filesystem>
-#include <mutex>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_FSYNC;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool group_fsync_before_insert_finish;
-}
-
-namespace
-{
-
-/// The parts, for which the fsync failed. Such failures are rare, so it is a small process-wide set
-/// that holds weak references, to not prevent the removal of the parts.
-class FailedParts
-{
-public:
-    static FailedParts & instance()
-    {
-        static FailedParts failed_parts;
-        return failed_parts;
-    }
-
-    void add(const MergeTreeDataPartPtr & part)
-    {
-        std::lock_guard lock(mutex);
-        std::erase_if(parts, [](const auto & weak_part) { return weak_part.expired(); });
-        parts.push_back(part);
-    }
-
-    bool contains(const MergeTreeDataPartPtr & part)
-    {
-        std::lock_guard lock(mutex);
-        return std::ranges::any_of(parts, [&](const auto & weak_part) { return weak_part.lock() == part; });
-    }
-
-private:
-    std::mutex mutex;
-    std::vector<std::weak_ptr<const IMergeTreeDataPart>> parts;
-};
-
 }
 
 bool DeferredPartsSync::isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -110,30 +70,20 @@ void DeferredPartsSync::sync(bool only_old)
     if (parts_to_sync.empty())
         return;
 
-    auto & failed_parts = FailedParts::instance();
-
     std::vector<std::string> paths;
-    std::vector<size_t> part_of_path;
-    for (size_t i = 0; i < parts_to_sync.size(); ++i)
+    for (const auto & part : parts_to_sync)
     {
-        const auto & part = parts_to_sync[i];
-        if (failed_parts.contains(part))
-            throw Exception(ErrorCodes::CANNOT_FSYNC, "The fsync of part {} failed earlier, so its data may not be durable", part->name);
-
         for (const auto & entry : std::filesystem::recursive_directory_iterator(part->getDataPartStorage().getFullPath()))
         {
             /// Temporary files, such as `txn_version.txt.tmp`, are renamed over the files of a committed part
             /// when its metadata is updated. The writer syncs them itself, and they may disappear at any moment.
             if (entry.is_regular_file() && !entry.path().filename().string().ends_with(".tmp"))
-            {
                 paths.push_back(entry.path());
-                part_of_path.push_back(i);
-            }
         }
     }
 
     LOG_TRACE(getLogger("DeferredPartsSync"), "Syncing {} files of {} inserted parts", paths.size(), parts_to_sync.size());
-    parallelSyncPaths(paths, [&](size_t path_index) { failed_parts.add(parts_to_sync[part_of_path[path_index]]); });
+    parallelSyncPaths(paths);
 }
 
 }
