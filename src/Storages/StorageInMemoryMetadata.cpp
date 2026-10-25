@@ -457,7 +457,16 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
-    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set, bool is_projection = false)
+    /// A dependency can be a subcolumn (e.g. `m.x`) of an updated column `m`.
+    auto is_updated = [&](const String & dependency)
+    {
+        if (updated_columns.contains(dependency))
+            return true;
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, dependency);
+        return column && column->isSubcolumn() && updated_columns.contains(column->getNameInStorage());
+    };
+
+    auto add_dependent_columns = [&updated_columns, &is_updated](const Names & required_columns, auto & to_set, bool is_projection = false)
     {
         for (const auto & dependency : required_columns)
         {
@@ -468,7 +477,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
                 return true;
             }
 
-            if (updated_columns.contains(dependency))
+            if (is_updated(dependency))
             {
                 to_set.insert(required_columns.begin(), required_columns.end());
                 return true;
@@ -716,14 +725,19 @@ NameSet StorageInMemoryMetadata::getStorageColumnsRequiredForKeys() const
 {
     NameSet result;
     for (const auto & required : {getColumnsRequiredForPartitionKey(), getColumnsRequiredForSortingKey(), getColumnsRequiredForPrimaryKey()})
+        result.merge(getStorageColumnNames(required));
+    return result;
+}
+
+NameSet StorageInMemoryMetadata::getStorageColumnNames(const Names & names) const
+{
+    NameSet result;
+    for (const auto & name : names)
     {
-        for (const auto & name : required)
-        {
-            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
-                result.insert(column->getNameInStorage());
-            else
-                result.insert(name);
-        }
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            result.insert(column->getNameInStorage());
+        else
+            result.insert(name);
     }
     return result;
 }

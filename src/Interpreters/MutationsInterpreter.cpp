@@ -1389,16 +1389,17 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// Can't materialize a column the sort key depends on. Source columns of sort-key
             /// expressions (e.g. `ORDER BY m + 1`) count too: rewriting them in place breaks
             /// the stored order just the same as rewriting a bare key column.
-            Names sort_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
-            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
+            /// A key can read a subcolumn (e.g. `ORDER BY m.x`), so compare by the storage column.
+            const NameSet sort_columns = metadata_snapshot->getStorageColumnNames(metadata_snapshot->getColumnsRequiredForSortingKey());
+            if (sort_columns.contains(command.column_name))
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the sort key depends on it. Doing so could break the sort order", backQuote(command.column_name));
             }
 
             /// Same for the partition key: rewriting a column it depends on would leave the rows
             /// in parts whose partition IDs and names were computed from the old values.
-            Names partition_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
-            if (std::find(partition_columns.begin(), partition_columns.end(), command.column_name) != partition_columns.end())
+            const NameSet partition_columns = metadata_snapshot->getStorageColumnNames(metadata_snapshot->getColumnsRequiredForPartitionKey());
+            if (partition_columns.contains(command.column_name))
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the partition key depends on it. Doing so could leave rows in wrong partitions", backQuote(command.column_name));
             }
@@ -1835,8 +1836,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
                 backQuote(*unsafe_column));
 
-        const Names sorting_key_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
-        const Names partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+        /// A key can read a subcolumn of a recalculated column (e.g. `PARTITION BY m.x`), so compare by the storage column.
+        const NameSet sorting_key_columns = metadata_snapshot->getStorageColumnNames(metadata_snapshot->getColumnsRequiredForSortingKey());
+        const NameSet partition_key_columns = metadata_snapshot->getStorageColumnNames(metadata_snapshot->getColumnsRequiredForPartitionKey());
 
         /// The recalculation stages below rewrite the stale MATERIALIZED columns in place, without
         /// re-sorting rows or moving parts between partitions, so a column the sorting or partition
@@ -1845,13 +1847,13 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// this is a fail-fast for mutation entries created before that check existed.
         for (const auto & name : clear_stale_materialized)
         {
-            if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), name) != sorting_key_columns.end())
+            if (sorting_key_columns.contains(name))
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
                     "but the sort key depends on it, and rewriting it could break the sort order",
                     backQuote(name));
 
-            if (std::find(partition_key_columns.begin(), partition_key_columns.end(), name) != partition_key_columns.end())
+            if (partition_key_columns.contains(name))
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
                     "but the partition key depends on it, and the rewritten values would disagree with the "
@@ -2040,6 +2042,24 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// An index or a projection can read a subcolumn (e.g. `m.x`) of a rewritten column `m`,
+    /// so a required column is also checked by the column it is stored in.
+    const auto is_column_changed = [&](const String & required_column)
+    {
+        auto is_changed = [&](const String & col)
+        {
+            return updated_columns.contains(col) || changed_columns.contains(col)
+                || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
+                || clear_rematerialized_columns.contains(col) || all_affected_materialized.contains(col);
+        };
+
+        if (is_changed(required_column))
+            return true;
+
+        auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+        return column && column->isSubcolumn() && is_changed(column->getNameInStorage());
+    };
+
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         if (!source.hasSecondaryIndex(index.name, metadata_snapshot) || dropped_indices.contains(index.name))
@@ -2058,12 +2078,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         bool changed = std::any_of(
             index_cols.begin(),
             index_cols.end(),
-            [&](const auto & col)
-            {
-                return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
-                    || clear_rematerialized_columns.contains(col) || all_affected_materialized.contains(col);
-            });
+            is_column_changed);
 
         if (changed)
         {
@@ -2107,12 +2122,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         bool changed = std::any_of(
             projection_cols.begin(),
             projection_cols.end(),
-            [&](const auto & col)
-            {
-                return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
-                    || clear_rematerialized_columns.contains(col) || all_affected_materialized.contains(col);
-            });
+            is_column_changed);
 
         if (changed)
             materialized_projections.insert(projection.name);

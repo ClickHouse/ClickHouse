@@ -2635,17 +2635,18 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
                             backQuote(command.column_name), backQuote(*unsafe_column));
 
-                    Names sorting_key_columns = metadata->getColumnsRequiredForSortingKey();
-                    Names partition_key_columns = metadata->getColumnsRequiredForPartitionKey();
+                    /// A key can read a subcolumn (e.g. `PARTITION BY m.x`), so compare by the storage column.
+                    const NameSet sorting_key_columns = metadata->getStorageColumnNames(metadata->getColumnsRequiredForSortingKey());
+                    const NameSet partition_key_columns = metadata->getStorageColumnNames(metadata->getColumnsRequiredForPartitionKey());
                     for (const auto & stale_column : stale_columns)
                     {
-                        if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), stale_column) != sorting_key_columns.end())
+                        if (sorting_key_columns.contains(stale_column))
                             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                                 "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
                                 "sort key depends on it, and rewriting it could break the sort order",
                                 backQuote(command.column_name), backQuote(stale_column));
 
-                        if (std::find(partition_key_columns.begin(), partition_key_columns.end(), stale_column) != partition_key_columns.end())
+                        if (partition_key_columns.contains(stale_column))
                             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                                 "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
                                 "partition key depends on it, and the rewritten values would disagree with the "
