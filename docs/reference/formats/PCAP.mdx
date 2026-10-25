@@ -52,6 +52,16 @@ metadata and `raw`, but `link_type` is `RAW`, `protocols` is `['RAW']`, and the
 layer-specific columns are empty.
 </Note>
 
+<Note>
+When the snapshot length cuts a frame inside a header that has to be complete
+to be decoded, such as an IP header or an 802.1Q tag, an Ethernet, Linux
+cooked capture, BSD loopback or PPI frame is still dissected up to its last
+complete outer header, and the rest is kept raw. IEEE 802.11 frames, with or
+without a radiotap header, are not: such a cut 802.11 frame produces a row like
+a frame of an unsupported link type, where `link_type` is `RAW`, `protocols` is
+`['RAW']`, and the layer-specific columns are empty.
+</Note>
+
 <Info>
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved
