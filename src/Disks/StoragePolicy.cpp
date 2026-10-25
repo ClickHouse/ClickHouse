@@ -2,6 +2,7 @@
 #include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
@@ -474,6 +475,9 @@ std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & 
 
 void StoragePolicy::buildVolumeIndices()
 {
+    /// A cache disk shares the files of the disk it wraps, so a policy must not contain two disks over the same underlying disk.
+    std::unordered_map<String, String> policy_disk_by_underlying_disk;
+
     for (size_t index = 0; index < volumes.size(); ++index)
     {
         const VolumePtr & volume = volumes[index];
@@ -493,6 +497,19 @@ void StoragePolicy::buildVolumeIndices()
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
+
+            if (auto underlying_disk = std::dynamic_pointer_cast<const DiskObjectStorage>(disk))
+            {
+                while (auto wrapped_disk = underlying_disk->getWrappedDisk())
+                    underlying_disk = wrapped_disk;
+
+                auto [it, inserted] = policy_disk_by_underlying_disk.emplace(underlying_disk->getName(), disk_name);
+                if (!inserted)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Disks {} and {} in storage policy {} store data on the same disk {}, "
+                                    "so a table would load each of its parts twice",
+                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(underlying_disk->getName()));
+            }
 
             volume_index_by_disk_name[disk_name] = index;
         }
