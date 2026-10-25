@@ -40,8 +40,10 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <map>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -422,38 +424,6 @@ size_t nonAdaptiveStreamsShare(const NameAndTypePair & column, size_t column_str
     return std::min(column_streams, 2 * countNonAdaptiveColumnStreams(column));
 }
 
-/// Stream names of the column data files (.bin) a wide part physically stores: one per non-ephemeral
-/// substream. This is the ground truth for the stream layout of an old part that predates
-/// columns_substreams.txt and, unlike the default serialization, it accounts for the dynamic substreams of
-/// JSON / Dynamic columns (which are written as separate files on disk but cannot be enumerated from the
-/// default serialization). The .bin extension is stripped, so the names compare equal to the stream names
-/// ISerialization::getFileNameForStream produces (collectStaticStreamFileNames) and that
-/// columns_substreams.txt records.
-std::unordered_set<std::string> collectWidePartDataFileNames(const IMergeTreeDataPart & part)
-{
-    std::unordered_set<std::string> data_files;
-    for (const auto & [file_name, _] : part.checksums.files)
-        if (file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
-            data_files.insert(file_name.substr(0, file_name.size() - std::string_view(IMergeTreeDataPart::DATA_FILE_EXTENSION).size()));
-    return data_files;
-}
-
-/// Whether a wide part's on-disk stream (a name from collectWidePartDataFileNames) belongs to the given column.
-/// Every stream is named escapeForFileName(column), optionally followed by a substream suffix starting with '.'
-/// or '%2E' (the ColumnsSubstreams substream-name invariant, see ColumnsSubstreams::findInvalidSubstreamName),
-/// so no column's escaped name is a prefix of another column's streams. Used to keep only the streams of columns
-/// the merged part still writes and to drop an old part's on-disk files for a column removed by a metadata-only
-/// ALTER DROP COLUMN. The offsets a Nested object's columns share (share_nested_offsets) are named after the
-/// Nested object, not after any of its columns, so they do not belong to any column here; callers that count a
-/// part's streams match them by their static name (collectStaticStreamFileNames) instead.
-bool streamFileBelongsToColumn(const std::string & file_name, const std::string & escaped_column_name)
-{
-    if (!file_name.starts_with(escaped_column_name))
-        return false;
-    const std::string_view rest(file_name.data() + escaped_column_name.size(), file_name.size() - escaped_column_name.size());
-    return rest.empty() || rest.starts_with('.') || rest.starts_with("%2E");
-}
-
 /// Number of on-disk column streams that a wide part actually reads/writes through. Prefer the exact
 /// per-column substream layout recorded in columns_substreams.txt - the reliable source of truth for
 /// types with a dynamic structure such as JSON and Dynamic, whose real substreams cannot be recovered
@@ -463,18 +433,133 @@ bool streamFileBelongsToColumn(const std::string & file_name, const std::string 
 /// default serialization when neither source is available.
 std::unordered_set<std::string> collectStaticStreamFileNames(const NamesAndTypesList & columns, const ISerialization::StreamFileNameSettings & settings);
 
+/// The columns, recorded substreams and column data files of one part, indexed by the column name. The
+/// estimate probes the same parts once per column in several places (the gathering columns of a vertical
+/// merge, the substreams of a compact output part, the columns of a rebuilt projection), and a scan of the
+/// part's column list, its `columns_substreams.txt` and its checksums on each probe would make the estimate
+/// quadratic in the number of columns. The estimate runs while merges are selected, under
+/// `currently_processing_in_background_mutex`, so each part is indexed once per estimate instead.
+struct PartColumnsIndex
+{
+    using DataFile = std::pair<std::string_view, const MergeTreeDataPartChecksum *>;
+
+    const IMergeTreeDataPart * part = nullptr;
+    std::unordered_map<std::string_view, const NameAndTypePair *> columns;
+    std::unordered_map<String, const std::vector<String> *> recorded_substreams;
+    /// Wide parts only: the column data files (.bin) the part physically stores, one per non-ephemeral
+    /// substream, with their checksums. This is the ground truth for the stream layout of an old part that
+    /// predates columns_substreams.txt and, unlike the default serialization, it accounts for the dynamic
+    /// substreams of JSON / Dynamic columns (which are written as separate files on disk but cannot be
+    /// enumerated from the default serialization). The .bin extension is stripped, so the names compare equal
+    /// to the stream names ISerialization::getFileNameForStream produces (collectStaticStreamFileNames) and
+    /// that columns_substreams.txt records.
+    std::unordered_map<String, const MergeTreeDataPartChecksum *> data_files;
+    /// The data files of each column. Every stream is named escapeForFileName(column), optionally followed by
+    /// a substream suffix starting with '.' or '%2E' (the ColumnsSubstreams substream-name invariant, see
+    /// ColumnsSubstreams::findInvalidSubstreamName). Used to keep only the streams of columns the merged part
+    /// still writes and to drop an old part's on-disk files for a column removed by a metadata-only ALTER DROP
+    /// COLUMN. The offsets a Nested object's columns share (share_nested_offsets) are named after the Nested
+    /// object, not after any of its columns, so they do not belong to any column here; callers that count a
+    /// part's streams match them by their static name (collectStaticStreamFileNames) instead.
+    std::unordered_map<std::string_view, std::vector<DataFile>> column_data_files;
+    bool has_dynamic_structure_column = false;
+    /// The static stream file names of all columns of the part (collectStaticStreamFileNames) for each
+    /// combination of the file name settings, computed on first use.
+    std::map<std::pair<bool, bool>, std::unordered_set<std::string>> static_files;
+
+    const NameAndTypePair * tryGetColumn(const String & name) const
+    {
+        const auto it = columns.find(name);
+        return it == columns.end() ? nullptr : it->second;
+    }
+
+    const std::vector<String> * tryGetRecordedSubstreams(const String & name) const
+    {
+        const auto it = recorded_substreams.find(name);
+        return it == recorded_substreams.end() ? nullptr : it->second;
+    }
+
+    const std::vector<DataFile> & getColumnDataFiles(const String & name) const
+    {
+        static const std::vector<DataFile> no_files;
+        const auto it = column_data_files.find(name);
+        return it == column_data_files.end() ? no_files : it->second;
+    }
+
+    const std::unordered_set<std::string> & getStaticFiles(const ISerialization::StreamFileNameSettings & settings)
+    {
+        auto [it, inserted] = static_files.try_emplace({settings.escape_variant_substreams, settings.share_nested_offsets});
+        if (inserted)
+            it->second = collectStaticStreamFileNames(part->getColumns(), settings);
+        return it->second;
+    }
+};
+
+class PartsColumnsIndex
+{
+public:
+    PartColumnsIndex & get(const IMergeTreeDataPart & part)
+    {
+        auto [it, inserted] = parts.try_emplace(&part);
+        PartColumnsIndex & index = it->second;
+        if (!inserted)
+            return index;
+
+        index.part = &part;
+        std::unordered_map<std::string, std::string_view> column_by_escaped_name;
+        for (const auto & column : part.getColumns())
+        {
+            index.columns.emplace(column.name, &column);
+            index.has_dynamic_structure_column |= column.type->hasDynamicStructure();
+            column_by_escaped_name.emplace(escapeForFileName(column.name), column.name);
+        }
+
+        const auto & columns_substreams = part.getColumnsSubstreams();
+        const auto recorded_columns = columns_substreams.getColumnNames();
+        for (size_t i = 0; i < recorded_columns.size(); ++i)
+            index.recorded_substreams.emplace(recorded_columns[i], &columns_substreams.getColumnSubstreams(i));
+
+        if (part.getType() != MergeTreeDataPartType::Wide)
+            return index;
+
+        const std::string_view extension(IMergeTreeDataPart::DATA_FILE_EXTENSION);
+        for (const auto & [file_name, checksum] : part.checksums.files)
+            if (file_name.ends_with(extension))
+                index.data_files.emplace(file_name.substr(0, file_name.size() - extension.size()), &checksum);
+
+        /// A stream belongs to every column whose escaped name is the whole stream name or its prefix followed
+        /// by '.' or '%2E' (see column_data_files), so look the column up by each such prefix.
+        for (const auto & [stream_name, checksum] : index.data_files)
+        {
+            const std::string_view stream(stream_name);
+            const auto add_to_owner = [&](std::string_view prefix)
+            {
+                if (const auto owner = column_by_escaped_name.find(std::string(prefix)); owner != column_by_escaped_name.end())
+                    index.column_data_files[owner->second].emplace_back(stream, checksum);
+            };
+            add_to_owner(stream);
+            for (size_t pos = 1; pos < stream.size(); ++pos)
+                if (stream[pos] == '.' || stream.substr(pos).starts_with("%2E"))
+                    add_to_owner(stream.substr(0, pos));
+        }
+        return index;
+    }
+
+private:
+    std::unordered_map<const IMergeTreeDataPart *, PartColumnsIndex> parts;
+};
+
 /// The distinct stream names recorded in columns_substreams.txt for the given columns of a part.
 /// ColumnsSubstreams is a per-column list, not a part-wide deduplicated set: with share_nested_offsets
 /// every column of one Nested object records the shared offsets stream (n.size0) under its own name, while
 /// the wide-part writer opens that stream once for the whole part (MergeTreeDataPartWriterWide::addStreams
 /// skips a stream name it already created), so the names must be deduplicated across columns before they
 /// are counted, or every Nested layout is priced one extra full write buffer per sibling column.
-std::unordered_set<std::string_view> collectRecordedStreamNames(const IMergeTreeDataPart & part, const NamesAndTypesList & columns)
+std::unordered_set<std::string_view> collectRecordedStreamNames(const PartColumnsIndex & part_index, const NamesAndTypesList & columns)
 {
     std::unordered_set<std::string_view> names;
-    const auto & columns_substreams = part.getColumnsSubstreams();
     for (const auto & column : columns)
-        if (const auto * substreams = columns_substreams.tryGetColumnSubstreams(column.name))
+        if (const auto * substreams = part_index.tryGetRecordedSubstreams(column.name))
             for (const auto & substream : *substreams)
                 names.insert(substream);
     return names;
@@ -488,13 +573,13 @@ size_t countDistinctColumnStreams(const NamesAndTypesList & columns, const ISeri
     return collectStaticStreamFileNames(columns, stream_file_name_settings).size();
 }
 
-size_t countPartStreams(const IMergeTreeDataPart & part, const MergeTreeSettings & settings)
+size_t countPartStreams(const IMergeTreeDataPart & part, const MergeTreeSettings & settings, PartsColumnsIndex & parts_index)
 {
     const auto & columns_substreams = part.getColumnsSubstreams();
     if (!columns_substreams.empty())
-        return collectRecordedStreamNames(part, part.getColumns()).size();
+        return collectRecordedStreamNames(parts_index.get(part), part.getColumns()).size();
     if (part.getType() == MergeTreeDataPartType::Wide)
-        if (const size_t data_files = collectWidePartDataFileNames(part).size(); data_files != 0)
+        if (const size_t data_files = parts_index.get(part).data_files.size(); data_files != 0)
             return data_files;
     return countDistinctColumnStreams(part.getColumns(), ISerialization::StreamFileNameSettings(settings));
 }
@@ -506,35 +591,33 @@ size_t countPartStreams(const IMergeTreeDataPart & part, const MergeTreeSettings
 /// metadata's columns, so such a dead column must not raise the output-stream floor and reserve memory for a
 /// column that is never written.
 size_t countPartStreamsForColumns(
-    const IMergeTreeDataPart & part, const NamesAndTypesList & output_columns, const MergeTreeSettings & settings)
+    const IMergeTreeDataPart & part, const NamesAndTypesList & output_columns, const MergeTreeSettings & settings,
+    PartsColumnsIndex & parts_index)
 {
+    const auto & part_index = parts_index.get(part);
     NamesAndTypesList written_columns;
-    for (const auto & column : part.getColumns())
-        if (output_columns.contains(column.name))
-            written_columns.push_back(column);
+    std::unordered_set<std::string_view> written_names;
+    for (const auto & output_column : output_columns)
+        if (const auto * column = part_index.tryGetColumn(output_column.name); column && written_names.insert(column->name).second)
+            written_columns.push_back(*column);
 
     if (!part.getColumnsSubstreams().empty())
-        return collectRecordedStreamNames(part, written_columns).size();
+        return collectRecordedStreamNames(part_index, written_columns).size();
 
     if (part.getType() == MergeTreeDataPartType::Wide)
     {
-        std::vector<std::string> escaped_written_columns;
-        escaped_written_columns.reserve(written_columns.size());
-        for (const auto & column : written_columns)
-            escaped_written_columns.push_back(escapeForFileName(column.name));
-
         /// The offsets shared by the columns of a Nested object (share_nested_offsets, e.g. n.size0) are named
         /// after the Nested object rather than any of its columns, so they are matched by their static name.
         const auto static_files = collectStaticStreamFileNames(written_columns, ISerialization::StreamFileNameSettings(settings));
-        size_t data_files = 0;
-        for (const auto & file_name : collectWidePartDataFileNames(part))
-            if (static_files.contains(file_name)
-                || std::any_of(
-                    escaped_written_columns.begin(), escaped_written_columns.end(),
-                    [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped); }))
-                ++data_files;
-        if (data_files != 0)
-            return data_files;
+        std::unordered_set<std::string_view> data_files;
+        for (const auto & file_name : static_files)
+            if (part_index.data_files.contains(file_name))
+                data_files.insert(file_name);
+        for (const auto & column : written_columns)
+            for (const auto & [file_name, _] : part_index.getColumnDataFiles(column.name))
+                data_files.insert(file_name);
+        if (!data_files.empty())
+            return data_files.size();
     }
 
     return countDistinctColumnStreams(written_columns, ISerialization::StreamFileNameSettings(settings));
@@ -550,7 +633,7 @@ size_t countPartStreamsForColumns(
 /// part does not track per-column sizes, and its single shared stream reads the whole data file anyway
 /// (dead columns are interleaved with live ones), so its total columns size - the data file itself,
 /// which likewise excludes projections - is the cap there.
-ColumnSize partReadBytes(const IMergeTreeDataPart & part, const NamesAndTypesList & read_columns)
+ColumnSize partReadBytes(const IMergeTreeDataPart & part, const NamesAndTypesList & read_columns, PartsColumnsIndex & parts_index)
 {
     if (part.getType() != MergeTreeDataPartType::Wide)
         return part.getTotalColumnsSize();
@@ -560,27 +643,23 @@ ColumnSize partReadBytes(const IMergeTreeDataPart & part, const NamesAndTypesLis
     /// so the files of its JSON paths are missing from the column size. Recover them from the column's actual
     /// .bin files on disk, so the same data is priced the same whether the part records its substreams or not.
     const bool recover_dynamic_sizes = part.getColumnsSubstreams().empty();
+    const auto & part_index = parts_index.get(part);
     ColumnSize read_size;
-    for (const auto & column : part.getColumns())
+    std::unordered_set<std::string_view> read_names;
+    for (const auto & read_column : read_columns)
     {
-        if (!read_columns.contains(column.name))
+        const auto * column = part_index.tryGetColumn(read_column.name);
+        if (!column || !read_names.insert(column->name).second)
             continue;
-        ColumnSize column_size = part.getColumnSize(column.name);
-        if (recover_dynamic_sizes && column.type->hasDynamicStructure())
+        ColumnSize column_size = part.getColumnSize(column->name);
+        if (recover_dynamic_sizes && column->type->hasDynamicStructure())
         {
-            const auto escaped_column_name = escapeForFileName(column.name);
             size_t data_compressed = 0;
             size_t data_uncompressed = 0;
-            for (const auto & [file_name, checksum] : part.checksums.files)
+            for (const auto & [_, checksum] : part_index.getColumnDataFiles(column->name))
             {
-                if (!file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
-                    continue;
-                const std::string stream_name(
-                    file_name.data(), file_name.size() - std::string_view(IMergeTreeDataPart::DATA_FILE_EXTENSION).size());
-                if (!streamFileBelongsToColumn(stream_name, escaped_column_name))
-                    continue;
-                data_compressed += checksum.file_size;
-                data_uncompressed += checksum.uncompressed_size;
+                data_compressed += checksum->file_size;
+                data_uncompressed += checksum->uncompressed_size;
             }
             column_size.data_compressed = std::max(column_size.data_compressed, data_compressed);
             column_size.data_uncompressed = std::max(column_size.data_uncompressed, data_uncompressed);
@@ -619,12 +698,13 @@ std::unordered_set<std::string> collectStaticStreamFileNames(const NamesAndTypes
 /// fallback. The union is an upper bound on the real count - the merge may collapse some dynamic substreams
 /// via max_dynamic_paths / max_dynamic_types - which is the safe direction for a reservation.
 bool tryCollectColumnSubstreamsFromParts(
-    const String & column_name, const MergeTreeDataPartsVector & source_parts, std::unordered_set<std::string_view> & union_substreams)
+    const String & column_name, const MergeTreeDataPartsVector & source_parts, std::unordered_set<std::string_view> & union_substreams,
+    PartsColumnsIndex & parts_index)
 {
     bool recorded = false;
     for (const auto & part : source_parts)
     {
-        if (const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column_name))
+        if (const auto * substreams = parts_index.get(*part).tryGetRecordedSubstreams(column_name))
         {
             recorded = true;
             for (const auto & substream : *substreams)
@@ -772,7 +852,8 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
     const NameAndTypePair & column,
     const MergeTreeDataPartsVector & source_parts,
     const NameSet & default_filled_dynamic_columns,
-    const MergeTreeSettings & settings)
+    const MergeTreeSettings & settings,
+    PartsColumnsIndex & parts_index)
 {
     if (default_filled_dynamic_columns.contains(column.name))
         return std::nullopt;
@@ -782,7 +863,8 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
     bool recorded = false;
     for (const auto & part : source_parts)
     {
-        const auto part_column = part->getColumns().tryGetByName(column.name);
+        const auto & part_index = parts_index.get(*part);
+        const auto * part_column = part_index.tryGetColumn(column.name);
         if (!part_column)
             continue;
         /// A same-name source part with a DIFFERENT type is still reserialized into this projection column
@@ -794,7 +876,7 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
         /// Bail out to the type's write-time capacity, which no rebuilt column can exceed.
         if (!part_column->type->equals(*column.type))
             return std::nullopt;
-        const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name);
+        const auto * substreams = part_index.tryGetRecordedSubstreams(column.name);
         if (!substreams)
         {
             /// A legacy wide part predating columns_substreams.txt: its real per-column stream layout is on
@@ -806,10 +888,9 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
                 return std::nullopt;
             const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
             const auto static_files = collectStaticStreamFileNames({*part_column}, stream_file_name_settings);
-            const auto escaped_column_name = escapeForFileName(column.name);
-            for (const auto & file_name : collectWidePartDataFileNames(*part))
-                if (!static_files.contains(file_name) && streamFileBelongsToColumn(file_name, escaped_column_name))
-                    legacy_dynamic_files.insert(file_name);
+            for (const auto & [file_name, _] : part_index.getColumnDataFiles(column.name))
+                if (std::string name(file_name); !static_files.contains(name))
+                    legacy_dynamic_files.insert(std::move(name));
             continue;
         }
         recorded = true;
@@ -851,33 +932,33 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
 size_t countVisibleProjectionColumnStreams(
     const NameAndTypePair & column,
     const MergeTreeDataPartsVector & source_parts,
-    const MergeTreeSettings & settings)
+    const MergeTreeSettings & settings,
+    PartsColumnsIndex & parts_index)
 {
     std::unordered_set<std::string_view> recorded_substreams;
-    const size_t visible_streams = tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams)
+    const size_t visible_streams = tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams, parts_index)
         ? recorded_substreams.size()
         : countColumnStreams({column});
 
     const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
-    const auto escaped_column_name = escapeForFileName(column.name);
     /// A recovered file that a modern part also records is the same stream, written once: skip it.
     std::unordered_set<std::string> legacy_dynamic_files;
     for (const auto & part : source_parts)
     {
-        const auto part_column = part->getColumns().tryGetByName(column.name);
+        const auto & part_index = parts_index.get(*part);
+        const auto * part_column = part_index.tryGetColumn(column.name);
         if (!part_column)
             continue;
-        if (part->getColumnsSubstreams().tryGetColumnSubstreams(column.name))
+        if (part_index.tryGetRecordedSubstreams(column.name))
             continue;
         if (part->getType() != MergeTreeDataPartType::Wide)
             continue;
         /// Subtract the static skeleton of the part's OWN column definition - its on-disk files are named
         /// for the type the part was written with, not for the current projection output type.
         const auto static_files = collectStaticStreamFileNames({*part_column}, stream_file_name_settings);
-        for (const auto & file_name : collectWidePartDataFileNames(*part))
-            if (!static_files.contains(file_name) && !recorded_substreams.contains(file_name)
-                && streamFileBelongsToColumn(file_name, escaped_column_name))
-                legacy_dynamic_files.insert(file_name);
+        for (const auto & [file_name, _] : part_index.getColumnDataFiles(column.name))
+            if (std::string name(file_name); !static_files.contains(name) && !recorded_substreams.contains(file_name))
+                legacy_dynamic_files.insert(std::move(name));
     }
     return visible_streams + legacy_dynamic_files.size();
 }
@@ -907,18 +988,19 @@ WriterStreamCounts countRebuiltProjectionStreams(
     const NamesAndTypesList & projection_columns,
     const MergeTreeDataPartsVector & source_parts,
     const MergeTreeSettings & settings,
-    const NameSet & default_filled_dynamic_columns)
+    const NameSet & default_filled_dynamic_columns,
+    PartsColumnsIndex & parts_index)
 {
     WriterStreamCounts counts;
     for (const auto & column : projection_columns)
     {
         size_t column_streams = 0;
-        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts, default_filled_dynamic_columns, settings))
+        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts, default_filled_dynamic_columns, settings, parts_index))
             column_streams = *recorded;
         else
             column_streams = std::max(
                 countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings),
-                countVisibleProjectionColumnStreams(column, source_parts, settings));
+                countVisibleProjectionColumnStreams(column, source_parts, settings, parts_index));
         counts.total += column_streams;
         counts.non_adaptive += nonAdaptiveStreamsShare(column, column_streams);
     }
@@ -968,7 +1050,8 @@ WriterStreamCounts countOutputStreams(
     const NamesAndTypesList & output_columns,
     const MergeTreeDataPartsVector & source_parts,
     const MergeTreeSettings & settings,
-    const NameSet & default_filled_dynamic_columns)
+    const NameSet & default_filled_dynamic_columns,
+    PartsColumnsIndex & parts_index)
 {
     /// Per-column union of the source parts' recorded substreams, matched by name, except for the columns
     /// whose real output substreams the union cannot see: a column any source part stores under a different
@@ -998,7 +1081,7 @@ WriterStreamCounts countOutputStreams(
             source_parts.begin(), source_parts.end(),
             [&](const auto & part)
             {
-                const auto part_column = part->getColumns().tryGetByName(column.name);
+                const auto * part_column = parts_index.get(*part).tryGetColumn(column.name);
                 return part_column && !part_column->type->equals(*column.type);
             });
 
@@ -1010,7 +1093,7 @@ WriterStreamCounts countOutputStreams(
         {
             size_t column_streams = 0;
             std::unordered_set<std::string_view> recorded_substreams;
-            if (tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams))
+            if (tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams, parts_index))
             {
                 for (const auto & substream : recorded_substreams)
                     if (output_stream_names.emplace(substream).second)
@@ -1073,11 +1156,8 @@ WriterStreamCounts countOutputStreams(
         /// substreams that the default serialization cannot enumerate, so only such parts need the recovery
         /// at all. hasDynamicSubcolumns() would be too broad as the gate: a plain Map or Variant reports true
         /// there, yet its physical streams are fully enumerable from the default serialization.
-        const auto & part_columns = part->getColumns();
-        const bool has_dynamic_structure_column = std::any_of(
-            part_columns.begin(), part_columns.end(),
-            [](const auto & column) { return column.type->hasDynamicStructure(); });
-        if (!has_dynamic_structure_column)
+        auto & part_index = parts_index.get(*part);
+        if (!part_index.has_dynamic_structure_column)
             continue;
 
         if (part->getType() == MergeTreeDataPartType::Wide)
@@ -1095,46 +1175,47 @@ WriterStreamCounts countOutputStreams(
             /// column's dynamic files are collected separately, per column, and folded into the
             /// max(capacity, visible streams) pricing of such columns below rather than into the shared union,
             /// so they are not priced twice.
-            const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
+            const auto & static_files = part_index.getStaticFiles(stream_file_name_settings);
+            /// A file whose stream a modern part already records is in the union above under the same name
+            /// (the same JSON path resolved to the same type is named identically in every part), and the
+            /// writer opens it once, so it must not be charged again as an unrecorded dynamic file.
+            const auto is_accounted = [&](const std::string & file_name)
+            {
+                return static_files.contains(file_name) || output_stream_names.contains(file_name);
+            };
             /// The recovered file's adaptivity class follows its owning column: a file of a column with
             /// dynamic structure that survived the skeleton subtraction is a dynamic substream the writer
             /// opens adaptively, while a file of a plain column that survived it is a non-dynamic extra (a
             /// sparse offsets stream the full skeleton does not name) that keeps the full write buffer.
-            std::vector<std::pair<std::string, bool>> recoverable_escaped_columns;
-            std::vector<std::pair<std::string, std::string>> capacity_priced_escaped_columns;
-            for (const auto & column : part_columns)
+            /// A file that belongs to a recoverable column is not attributed to a capacity-priced one.
+            std::unordered_set<std::string_view> recovered_files;
+            for (const auto & output_column : output_columns)
             {
-                if (!output_columns.contains(column.name))
+                const auto * column = part_index.tryGetColumn(output_column.name);
+                if (!column || capacity_priced_columns.contains(column->name))
                     continue;
-                if (capacity_priced_columns.contains(column.name))
-                    capacity_priced_escaped_columns.emplace_back(escapeForFileName(column.name), column.name);
-                else
-                    recoverable_escaped_columns.emplace_back(escapeForFileName(column.name), column.type->hasDynamicStructure());
-            }
-
-            for (const auto & file_name : collectWidePartDataFileNames(*part))
-            {
-                /// A file whose stream a modern part already records is in the union above under the same name
-                /// (the same JSON path resolved to the same type is named identically in every part), and the
-                /// writer opens it once, so it must not be charged again as an unrecorded dynamic file.
-                if (static_files.contains(file_name) || output_stream_names.contains(file_name))
-                    continue;
-                const auto recoverable = std::find_if(
-                    recoverable_escaped_columns.begin(), recoverable_escaped_columns.end(),
-                    [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped.first); });
-                if (recoverable != recoverable_escaped_columns.end())
+                for (const auto & [file_view, _] : part_index.getColumnDataFiles(column->name))
                 {
-                    if (unrecorded_dynamic_files.insert(file_name).second && !recoverable->second)
-                        unrecorded_non_adaptive_files.insert(file_name);
-                    continue;
+                    std::string file_name(file_view);
+                    if (is_accounted(file_name))
+                        continue;
+                    if (!recovered_files.insert(file_view).second)
+                        continue;
+                    if (unrecorded_dynamic_files.insert(file_name).second && !column->type->hasDynamicStructure())
+                        unrecorded_non_adaptive_files.insert(std::move(file_name));
                 }
-                for (const auto & [escaped, name] : capacity_priced_escaped_columns)
+            }
+            for (const auto & output_column : output_columns)
+            {
+                const auto * column = part_index.tryGetColumn(output_column.name);
+                if (!column || !capacity_priced_columns.contains(column->name))
+                    continue;
+                for (const auto & [file_view, _] : part_index.getColumnDataFiles(column->name))
                 {
-                    if (streamFileBelongsToColumn(file_name, escaped))
-                    {
-                        capacity_priced_dynamic_files[name].insert(file_name);
-                        break;
-                    }
+                    std::string file_name(file_view);
+                    if (is_accounted(file_name) || !recovered_files.insert(file_view).second)
+                        continue;
+                    capacity_priced_dynamic_files[column->name].insert(std::move(file_name));
                 }
             }
         }
@@ -1149,15 +1230,15 @@ WriterStreamCounts countOutputStreams(
             /// would under-reserve. A column absent from the merged part (dropped by ALTER) is not written and
             /// is skipped, and a capacity-priced (widened / default-filled) column is priced at no less than
             /// its output-type capacity below.
-            for (const auto & column : part_columns)
+            for (const auto & output_column : output_columns)
             {
-                if (!column.type->hasDynamicStructure())
+                const auto * column = part_index.tryGetColumn(output_column.name);
+                if (!column || !column->type->hasDynamicStructure())
                     continue;
-                if (capacity_priced_columns.contains(column.name))
+                if (capacity_priced_columns.contains(column->name))
                     continue;
-                const auto output_column = output_columns.tryGetByName(column.name);
-                if (output_column && compact_recovered_columns.insert(column.name).second)
-                    compact_dynamic_streams += countDynamicCapacityStreams(*output_column->type, settings);
+                if (compact_recovered_columns.insert(column->name).second)
+                    compact_dynamic_streams += countDynamicCapacityStreams(*output_column.type, settings);
             }
         }
     }
@@ -1192,7 +1273,7 @@ WriterStreamCounts countOutputStreams(
         if (!capacity_priced_columns.contains(column.name))
             continue;
         std::unordered_set<std::string_view> recorded_substreams;
-        size_t visible_streams = tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams)
+        size_t visible_streams = tryCollectColumnSubstreamsFromParts(column.name, source_parts, recorded_substreams, parts_index)
             ? recorded_substreams.size()
             : countColumnStreams({column});
         /// Union the recovered legacy files with the recorded substreams by name: a stream both kinds of
@@ -1214,7 +1295,7 @@ WriterStreamCounts countOutputStreams(
     /// what the union already accounts for.
     size_t max_source_streams = 0;
     for (const auto & part : source_parts)
-        max_source_streams = std::max(max_source_streams, countPartStreamsForColumns(*part, output_columns, settings));
+        max_source_streams = std::max(max_source_streams, countPartStreamsForColumns(*part, output_columns, settings, parts_index));
 
     /// When the floor wins, the excess streams cannot be attributed to a column, so classify them as
     /// non-adaptive - the direction that can only over-price, and only on the legacy upgrade path where the
@@ -1554,6 +1635,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 expired_columns.insert(storage_column.name);
     }
 
+    /// The source parts' columns, substreams and data files, indexed once for all the per-column probes below.
+    PartsColumnsIndex parts_index;
+
     /// The source-part view of a column name: a pending rename target is stored in the source parts under
     /// its old name, so every probe of a source part for it - stream counts, recorded substreams, column
     /// sizes, missing-rows accounting - goes through this mapping. The merge predicates only select parts
@@ -1727,10 +1811,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         {
             /// Compact and in-memory parts read all columns through a single shared stream.
             const size_t streams = part->getType() == MergeTreeDataPartType::Wide
-                ? countPartStreamsForColumns(*part, read_columns, settings)
+                ? countPartStreamsForColumns(*part, read_columns, settings, parts_index)
                 : 1;
             const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
-            const ColumnSize read_bytes = partReadBytes(*part, read_columns);
+            const ColumnSize read_bytes = partReadBytes(*part, read_columns, parts_index);
             memory = saturatingAdd(memory, std::min<UInt64>(
                 saturatingStreamsTimesBuffer(streams, read_buffer_size), read_bytes.data_compressed + read_bytes.data_uncompressed));
         }
@@ -1738,12 +1822,12 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     };
     UInt64 sum_input_bytes_uncompressed = 0;
     for (const auto & part : future_part.parts)
-        sum_input_bytes_uncompressed += partReadBytes(*part, part_view_input_columns).data_uncompressed;
+        sum_input_bytes_uncompressed += partReadBytes(*part, part_view_input_columns, parts_index).data_uncompressed;
     UInt64 patch_input_memory = 0;
     for (const auto & part : future_part.patch_parts)
     {
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
-            ? countPartStreams(*part, settings)
+            ? countPartStreams(*part, settings, parts_index)
             : 1;
         const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
@@ -1832,7 +1916,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         const String & source_name = part_source_name(column.name);
         const bool missing_from_some_part = std::any_of(
             future_part.parts.begin(), future_part.parts.end(),
-            [&](const auto & part) { return !part->getColumns().contains(source_name); });
+            [&](const auto & part) { return !parts_index.get(*part).tryGetColumn(source_name); });
         if (missing_from_some_part)
         {
             default_filled_columns.insert(column.name);
@@ -1847,7 +1931,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// writer's per-stream adaptive decision; it is counted as a single stream here (for the marks and the
     /// vertical-merge checks), and its buffers are priced by compact_eager_buffers / compact_worst_case below.
     const auto output_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? countOutputStreams(part_view_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
+        ? countOutputStreams(part_view_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns, parts_index)
         : WriterStreamCounts{.total = 1, .non_adaptive = 1};
     const size_t output_streams = output_stream_counts.total;
 
@@ -1930,7 +2014,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             size_t output_compact_substreams = 0;
             for (const auto & column : part_view_output_columns)
                 output_compact_substreams
-                    += countOutputStreams({column}, source_and_patch_parts, settings, default_filled_dynamic_columns).total;
+                    += countOutputStreams({column}, source_and_patch_parts, settings, default_filled_dynamic_columns, parts_index).total;
             output_marks_per_granule = std::max(output_marks_per_granule, output_compact_substreams);
         }
     }
@@ -2439,7 +2523,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             {
                 const NamesAndTypesList part_view_merging_columns = part_source_view(merging_columns);
                 const auto merging_stream_counts
-                    = countOutputStreams(part_view_merging_columns, source_and_patch_parts, settings, default_filled_dynamic_columns);
+                    = countOutputStreams(part_view_merging_columns, source_and_patch_parts, settings, default_filled_dynamic_columns, parts_index);
 
                 /// The eager buffers are priced per WRITER, mirroring how a vertical merge writes: the
                 /// horizontal stage's writer opens only the merging columns' streams (so the count-based
@@ -2455,7 +2539,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 {
                     const NamesAndTypesList single_column{NameAndTypePair(part_source_name(column.name), column.type)};
                     const auto column_stream_counts
-                        = countOutputStreams(single_column, source_and_patch_parts, settings, default_filled_dynamic_columns);
+                        = countOutputStreams(single_column, source_and_patch_parts, settings, default_filled_dynamic_columns, parts_index);
                     gathering_column_streams.push_back(column_stream_counts.total);
                     max_gathering_column_streams = std::max(max_gathering_column_streams, column_stream_counts.total);
                     max_gathering_column_eager_buffers
@@ -2465,13 +2549,13 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
                     UInt64 column_uncompressed = 0;
                     for (const auto & part : source_and_patch_parts)
-                        column_uncompressed += partReadBytes(*part, single_column).data_uncompressed;
+                        column_uncompressed += partReadBytes(*part, single_column, parts_index).data_uncompressed;
                     max_gathering_column_uncompressed = std::max(max_gathering_column_uncompressed, column_uncompressed);
                 }
 
                 UInt64 merging_uncompressed = 0;
                 for (const auto & part : source_and_patch_parts)
-                    merging_uncompressed += partReadBytes(*part, part_view_merging_columns).data_uncompressed;
+                    merging_uncompressed += partReadBytes(*part, part_view_merging_columns, parts_index).data_uncompressed;
 
                 /// Exactly the condition MergeTask keeps delayed per-column writers under: it asks the
                 /// destination part storage for supportParallelWrite(), NOT whether the disk has multipart
@@ -2762,7 +2846,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// reservation.
                 const auto projection_column_list = projection.sample_block.getNamesAndTypesList();
                 const auto projection_wide_stream_counts = countRebuiltProjectionStreams(
-                    part_source_view(projection_column_list), source_and_patch_parts, projection_settings, default_filled_dynamic_columns);
+                    part_source_view(projection_column_list), source_and_patch_parts, projection_settings, default_filled_dynamic_columns, parts_index);
 
                 /// The temp-part writer's per-stream buffers are sized by the projection's own
                 /// max_compress_block_size and by the projection columns' own column-level overrides
