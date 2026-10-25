@@ -7,8 +7,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
-
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -70,7 +69,7 @@ struct AggregateFunctionDistinctSingleNumericData
 template <typename T>
 struct AggregateFunctionDistinctSingleNumericOrderedData : AggregateFunctionDistinctSingleNumericData<T>
 {
-    std::vector<T> insertion_order;
+    VectorWithMemoryTracking<T> insertion_order;
 
     bool add(const IColumn ** columns, size_t, size_t row_num, Arena *)
     {
@@ -189,7 +188,7 @@ struct AggregateFunctionDistinctSingleGenericOrderedData : AggregateFunctionDist
 {
     using Base = AggregateFunctionDistinctSingleGenericData<is_plain_column>;
     using Set = typename Base::Set;
-    std::vector<std::string_view> insertion_order;
+    VectorWithMemoryTracking<std::string_view> insertion_order;
 
     bool add(const IColumn ** columns, size_t, size_t row_num, Arena * arena)
     {
