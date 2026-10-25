@@ -180,6 +180,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
+#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 
@@ -323,6 +324,7 @@ namespace Setting
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
+    extern const SettingsNameMatchMode database_and_table_name_matching;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
@@ -500,6 +502,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
 #if USE_GPU
     extern const int GPU_ERROR;
@@ -9350,6 +9353,8 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
+    /// Canonicalize before UUID stamping, so everything downstream (access checks, caches, logs) sees canonical names.
+    resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
@@ -9365,6 +9370,8 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
         SharedLockGuard lock(mutex);
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
+    if (resolved)
+        resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
         auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
@@ -9409,14 +9416,43 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (look_for_external_table)
     {
         auto resolved_id = StorageID::createEmpty();
+        /// Under `standard` matching a name that is not double-quoted finds a temporary table through
+        /// the ASCII-case-folded namespace, the same way as tables in databases.
+        const bool fold_table_name = !is_internal_query
+            && (*settings)[Setting::database_and_table_name_matching] == NameMatchMode::Standard
+            && IdentifierPart{storage_id.table_name, storage_id.table_name_quote}.isCaseFoldable();
         auto try_resolve = [&](ContextPtr context) -> bool
         {
             const auto & tables = context->external_tables_mapping;
-            auto it = tables.find(storage_id.getTableName());
-            if (it == tables.end())
-                return false;
-            resolved_id = it->second->getGlobalTableID();
-            return true;
+            if (!fold_table_name)
+            {
+                auto it = tables.find(storage_id.getTableName());
+                if (it == tables.end())
+                    return false;
+                resolved_id = it->second->getGlobalTableID();
+                return true;
+            }
+
+            const String folded_name = foldIdentifierCaseASCII(storage_id.getTableName());
+            std::vector<String> candidates;
+            for (const auto & [table_name, table_holder] : tables)
+            {
+                if (foldIdentifierCaseASCII(table_name) == folded_name)
+                {
+                    candidates.push_back(table_name);
+                    resolved_id = table_holder->getGlobalTableID();
+                }
+            }
+            if (candidates.size() > 1)
+            {
+                std::sort(candidates.begin(), candidates.end());
+                resolved_id = StorageID::createEmpty();
+                if (exception)
+                    exception->emplace(Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Temporary table name {} is ambiguous: it matches temporary tables {}. Double-quote the name to select one exactly",
+                        backQuoteIfNeed(storage_id.getTableName()), fmt::join(candidates, ", ")));
+            }
+            return !candidates.empty();
         };
 
         /// Firstly look for temporary table in current context
@@ -9447,6 +9483,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
+        /// The implicit current database is canonical already; keep it exact.
+        storage_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }

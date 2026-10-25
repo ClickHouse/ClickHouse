@@ -45,8 +45,12 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!table_id)
         return false;
     query->table = table_id->shortName();
+    query->table_quote = table_id->name_parts.back().quote;
     if (table_id->compound())
-        query->database = table_id->name_parts[0];
+    {
+        query->database = table_id->name_parts.front().spelling;
+        query->database_quote = table_id->name_parts.front().quote;
+    }
     else
     {
         if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
@@ -54,6 +58,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 return false;
         tryGetIdentifierNameInto(from2, from2_str);
         query->database = from2_str;
+        query->database_quote = identifierPartQuoteFromAST(from2);
     }
 
     if (ParserKeyword(Keyword::NOT).ignore(pos, expected))

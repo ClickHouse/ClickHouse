@@ -372,7 +372,7 @@ void forEachChild(const ASTPtr & ast, F && f)
 /// when the query text is executed. Returns the name parts after substitution, or nothing if a value is missing.
 std::optional<Strings> substitutedNameParts(const ASTPtr & ast, const NameToNameMap & query_parameters)
 {
-    Strings parts = ast->as<ASTIdentifier &>().name_parts;
+    Strings parts = ast->as<ASTIdentifier &>().name_parts.spellings();
     auto param = ast->children.begin();
     for (auto & part : parts)
     {

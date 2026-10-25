@@ -54,7 +54,11 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
 
     /// Re-resolve inner query columns with the unique internal aliases.
     query_node->clearProjectionColumns();
-    query_node->setProjectionAliasesToOverride(unique_column_names);
+    std::vector<IdentifierPart> unique_column_aliases;
+    unique_column_aliases.reserve(unique_column_names.size());
+    for (const auto & unique_column_name : unique_column_names)
+        unique_column_aliases.push_back(IdentifierPart{unique_column_name, IdentifierPartQuote::Unquoted});
+    query_node->setProjectionAliasesToOverride(std::move(unique_column_aliases));
     query_node->resolveProjectionColumns(subquery_projection_columns);
     query_node->setIsSubquery(true);
 

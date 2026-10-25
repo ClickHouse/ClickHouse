@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <memory>
@@ -26,12 +28,22 @@ struct DatabaseAndTableWithAlias
     String table;
     String alias;
     UUID uuid = UUIDHelpers::Nil;
+    /// Quote styles of the source identifier parts; needed to resolve canonical spellings.
+    IdentifierPartQuote database_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote table_quote = IdentifierPartQuote::Unquoted;
+    /// `database` was not written in the query but filled in with the current database. Such a name may
+    /// refer to a temporary table, which resolves by its exact name before any database.
+    bool database_is_implicit = false;
 
     DatabaseAndTableWithAlias() = default;
     explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
     explicit DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
     explicit DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database = "");
     explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+
+    /// `standard` name matching: rewrite database/table to the canonical spellings of the existing
+    /// objects they fold to, so qualified column matching sees the same names as the catalog lookup.
+    void resolveCanonicalNames(ContextPtr context);
 
 
     /// "alias." or "table." if alias is empty

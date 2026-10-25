@@ -36,6 +36,8 @@ void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     /// Length-prefixed, otherwise the name runs into whatever `getID` writes next.
     hash_state.update(name.size());
     hash_state.update(name);
+    /// `name_quote` is not hashed: formatting does not preserve quote styles, and the hash must survive
+    /// a format/reparse round trip. The query result cache key mixes it in instead.
     hash_state.update(is_materialized);
     hash_state.update(aliases != nullptr);
     if (aliases)
@@ -47,6 +49,7 @@ void ASTWithElement::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "WithElement");
     w.writeString("name", name);
+    w.writeQuote("name_quote", name_quote);
     if (is_materialized)
         w.writeBool("is_materialized", true);
     w.writeChild("subquery", subquery);
@@ -58,6 +61,7 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     name = r.getString("name");
+    name_quote = r.readQuote("name_quote");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' during AST JSON deserialization");
     is_materialized = r.getBool("is_materialized");

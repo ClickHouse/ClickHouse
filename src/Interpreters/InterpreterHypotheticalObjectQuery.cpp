@@ -262,7 +262,8 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
         context->checkAccess(
             AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
 
-    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    /// StorageID built from the AST carries the quote pins, so double-quoted parts stay exact.
+    auto table_id = context->resolveStorageID(StorageID(query));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     auto & store = context->getHypotheticalObjectStore();
 

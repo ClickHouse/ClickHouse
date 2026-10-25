@@ -260,12 +260,29 @@ public:
         return readFieldFromObject(*field_obj);
     }
 
+    /// Read the quote style of a name written by `JSONObjectWriter::writeQuote`; absent means unquoted.
+    IdentifierPartQuote readQuote(const char * key) const
+    {
+        return quoteFromJSONString(getString(key), key);
+    }
+
+    static IdentifierPartQuote quoteFromJSONString(const String & value, const char * key)
+    {
+        if (value.empty() || value == "unquoted")
+            return IdentifierPartQuote::Unquoted;
+        if (value == "double_quoted")
+            return IdentifierPartQuote::DoubleQuoted;
+        if (value == "backticked")
+            return IdentifierPartQuote::Backticked;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown quote style '{}' for key '{}' during AST JSON deserialization", value, key);
+    }
+
     /// Read an alias and prefer_alias_to_column_name (for ASTWithAlias nodes).
     void readAlias(ASTWithAlias & node) const
     {
         String alias = getString("alias");
         if (!alias.empty())
-            node.setAlias(alias);
+            node.setAlias(alias, readQuote("alias_quote"));
         if (getBool("prefer_alias_to_column_name"))
             node.setPreferAliasToColumnName(true);
         if (has("parametrised_alias"))

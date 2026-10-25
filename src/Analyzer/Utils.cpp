@@ -459,9 +459,9 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
+const std::vector<IdentifierPart> & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
 {
-    static const Names no_aliases;
+    static const std::vector<IdentifierPart> no_aliases;
 
     QueryTreeNodePtr current = query_or_union_node;
     while (current)
@@ -495,16 +495,15 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier_node = table_expression_node->as<IdentifierNode &>();
         const auto & identifier = identifier_node.getIdentifier();
 
-        if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
-        else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
-        else
+        if (identifier.getPartsSize() != 1 && identifier.getPartsSize() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
                 identifier.getFullName());
 
-        table_expression_node_ast->setAlias(identifier_node.getAlias());
+        /// Keep per-part and alias quoting, which is semantic under `standard` name matching.
+        auto table_identifier_ast = make_intrusive<ASTTableIdentifier>(identifier_node.getIdentifierName());
+        table_identifier_ast->setAlias(identifier_node.getAlias(), identifier_node.getAliasQuote());
+        table_expression_node_ast = std::move(table_identifier_ast);
     }
     else
     {
@@ -527,7 +526,7 @@ static ASTPtr convertIntoTableExpressionAST(
             auto column_aliases_ast = make_intrusive<ASTExpressionList>();
             column_aliases_ast->children.reserve(column_aliases.size());
             for (const auto & column_alias : column_aliases)
-                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
+                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(IdentifierName({column_alias})));
 
             result_table_expression->column_aliases = std::move(column_aliases_ast);
             result_table_expression->children.push_back(result_table_expression->column_aliases);

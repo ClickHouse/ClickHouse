@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Aliases.h>
 
@@ -18,6 +19,8 @@ public:
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns;
         const Aliases & aliases;
         const String current_database;
+        /// tables_with_columns stores canonical names; needed to match them against the query AST.
+        ContextPtr context;
         UInt8 cross_to_inner_join_rewrite = 1;
     };
 
