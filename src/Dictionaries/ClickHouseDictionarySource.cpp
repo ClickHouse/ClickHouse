@@ -3,7 +3,6 @@
 #include <Client/ConnectionPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -109,7 +108,8 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
         time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - configuration.update_lag;
-        std::string str_time = DateLUT::instance().timeToString(hr_time);
+        /// A Unix timestamp is read as the same instant in any time zone, unlike local wall-clock text.
+        std::string str_time = std::to_string(hr_time);
         update_time = std::chrono::system_clock::now();
         return query_builder->composeUpdateQuery(configuration.update_field, str_time);
     }
