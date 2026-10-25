@@ -539,6 +539,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         {
             if (!job.executor)
             {
+                /// The sinks of the nested INSERT are created only now, possibly after a sibling sink of the
+                /// query writing into the same local table has made the pre-write decision of its gate.
+                runHiddenPreWriteChecks();
+
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
 
@@ -928,6 +932,10 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
+        /// The sinks of the nested INSERT are created only now, possibly after a sibling sink of the
+        /// query writing into the same local table has made the pre-write decision of its gate.
+        runHiddenPreWriteChecks();
+
         InterpreterInsertQuery interp(
             query_ast,
             context,

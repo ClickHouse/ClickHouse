@@ -132,6 +132,7 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+    extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
 }
@@ -758,9 +759,34 @@ static constexpr size_t max_insert_forwarding_depth = 16;
 namespace
 {
 
-/// Registers the deferred pre-write checks of the tables a nested INSERT into `storage` writes into, see
-/// `collectHiddenPreWriteChecks`. `context` is the context the nested INSERT runs with.
+/// The local table a `DistributedSink` writes into for the local shards through nested INSERTs with a copy of
+/// `context` (see `DistributedSink::writeToLocal` and `DistributedSink::runWritingJob`), or null if it writes
+/// into no local shard. A target given by a table function is rejected by `StorageDistributed::write`.
+StoragePtr tryGetDistributedLocalTarget(const StorageDistributed & distributed, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::prefer_localhost_replica] || distributed.getRemoteTableName().empty()
+        || distributed.getCluster()->getLocalShardCount() == 0)
+        return nullptr;
+
+    auto local_database = distributed.getRemoteDatabaseName();
+    if (local_database.empty())
+        local_database = context->getCurrentDatabase();
+    return DatabaseCatalog::instance().tryGetTable(StorageID(local_database, distributed.getRemoteTableName()), context);
+}
+
 void registerHiddenPreWriteChecks(
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const InsertStartGatesPtr & gates,
+    const StorageID & forwarded_to,
+    size_t depth,
+    std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
+    bool follow_dependent_views = true);
+
+/// Registers the deferred pre-write checks of the materialized views depending on `storage`, which the
+/// nested INSERT into `storage` (running with `context`) expands only during the execution. A view
+/// runs with its own `SQL SECURITY` context, as in `InsertDependenciesBuilder::createSelectInsertContext`.
+void registerHiddenDependentViewsPreWriteChecks(
     const StoragePtr & storage,
     const ContextPtr & context,
     const InsertStartGatesPtr & gates,
@@ -768,8 +794,52 @@ void registerHiddenPreWriteChecks(
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
 {
+    /// The errors of the views (`Too many parts` included) are ignored by the nested INSERT, so their
+    /// checks must not reject the write either.
+    if (context->getSettingsRef()[Setting::materialized_views_ignore_errors])
+        return;
+
+    const auto storage_id = storage->getStorageID();
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage_id))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            continue;
+
+        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+        /// A stale dependency is skipped by the nested INSERT as well, see `InsertDependenciesBuilder::observePath`.
+        if (view_metadata->getSelectQuery().select_table_id != storage_id)
+            continue;
+
+        registerHiddenPreWriteChecks(
+            materialized_view->tryGetTargetTable(),
+            view_metadata->getSQLSecurityOverriddenContext(context),
+            gates,
+            forwarded_to,
+            depth + 1,
+            result);
+    }
+}
+
+/// Registers the deferred pre-write checks of the tables a nested INSERT into `storage` writes into, see
+/// `collectHiddenPreWriteChecks`. `context` is the context the nested INSERT runs with. The dependent
+/// views of `storage` are followed as well, unless `storage` is only the nested storage of a proxy whose
+/// dependent views have already been followed.
+void registerHiddenPreWriteChecks(
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const InsertStartGatesPtr & gates,
+    const StorageID & forwarded_to,
+    size_t depth,
+    std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
+    bool follow_dependent_views)
+{
     if (!storage || depth > max_insert_forwarding_depth)
         return;
+
+    if (follow_dependent_views)
+        registerHiddenDependentViewsPreWriteChecks(storage, context, gates, forwarded_to, depth, result);
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
@@ -791,12 +861,21 @@ void registerHiddenPreWriteChecks(
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
-        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), context, gates, forwarded_to, depth + 1, result);
+        /// `StorageMaterializedView::write` writes into the target table with the `SQL SECURITY` context of the view.
+        auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), view_context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(tryGetDistributedLocalTarget(*distributed, context), context, gates, forwarded_to, depth + 1, result);
         return;
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
     {
-        registerHiddenPreWriteChecks(proxy->getNested(), context, gates, forwarded_to, depth + 1, result);
+        registerHiddenPreWriteChecks(
+            proxy->getNested(), context, gates, forwarded_to, depth + 1, result, /* follow_dependent_views= */ false);
         return;
     }
 
@@ -806,7 +885,7 @@ void registerHiddenPreWriteChecks(
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
         gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome});
-        result.push_back({forwarded_to, std::move(gate), std::move(outcome)});
+        result.push_back({forwarded_to, std::move(gate), std::move(outcome), context});
     }
 }
 
@@ -815,8 +894,10 @@ void registerHiddenPreWriteChecks(
 /// sink of the query writing into the same table may already have made the decision of its gate, so the
 /// checks of these sinks, which may use different limits (e.g. the settings of the `Buffer`), would not
 /// take part in it. Register their checks now, while the pipeline is being built, as deferred checks, and
-/// return them for the forwarding sink to consult before it writes. The dependent views of the tables
-/// behind the forwarding sink are not followed.
+/// return them for the forwarding sink to consult before it writes. The dependent materialized views of
+/// the tables behind the forwarding sink are followed as well: their sinks are created by the nested
+/// INSERT too. A `Distributed` sink writes into the local shards through nested INSERTs into the
+/// underlying local table in the same way.
 std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
     const StoragePtr & storage, const ContextPtr & context, const InsertStartGatesPtr & gates)
 {
@@ -838,6 +919,8 @@ std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
             if (time_series->hasTarget(kind))
                 add_forwarded_to(time_series->tryGetTargetTable(kind, context), context);
     }
+    else if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
+        add_forwarded_to(tryGetDistributedLocalTarget(*distributed, context), context);
 
     return result;
 }

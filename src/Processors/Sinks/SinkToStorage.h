@@ -1,4 +1,5 @@
 #pragma once
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InsertStartGates.h>
 #include <Storages/TableLockHolder.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
@@ -41,6 +42,10 @@ public:
         StorageID forwarded_to = StorageID::createEmpty();
         InsertStartGatePtr gate;
         std::shared_ptr<InsertStartGate::DeferredOutcome> outcome;
+        /// The context the check runs with. The gate refers to it only weakly (see `InsertStartGate::Check`),
+        /// and it may be created only for the check, e.g. the `SQL SECURITY` context of a view behind the
+        /// forwarding sink, so the forwarding sink keeps it alive.
+        ContextPtr context;
     };
 
     /// Set by `InsertDependenciesBuilder` for a forwarding sink, which consults them before it writes, see

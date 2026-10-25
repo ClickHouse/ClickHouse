@@ -30,9 +30,10 @@ class InsertStartGate
 {
 public:
     /// The outcome of a deferred check. A sink that forwards the write through a nested INSERT (`AliasSink`,
-    /// `BufferSink`, `TimeSeriesSink`) creates the real sinks of the target table only during the execution -
-    /// possibly after the decision has been made - so their checks could not take part in it (see
-    /// `addCheck`). Instead, the forwarding sink registers the checks of the tables behind it while the
+    /// `BufferSink`, `TimeSeriesSink`, and `DistributedSink` for its local shards) creates the real sinks of
+    /// the target table and of its dependent views only during the execution - possibly after the decision
+    /// has been made - so their checks could not take part in it (see `addCheck`). Instead, the forwarding
+    /// sink registers the checks of the tables behind it while the
     /// pipeline is being built, as deferred checks. They run together with the other checks, before anything
     /// is written, but their failure does not reject the query on its own: it is stored here, and the
     /// forwarding sink rethrows it before it actually writes through the nested INSERT. A `Buffer` may only
