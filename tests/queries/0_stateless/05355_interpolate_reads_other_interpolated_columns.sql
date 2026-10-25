@@ -92,3 +92,11 @@ SELECT g, c FROM
     INNER JOIN (SELECT number, toUInt32(number + 1) AS x FROM numbers(2)) AS r ON l.number = r.number
     ORDER BY g WITH FILL INTERPOLATE (a AS a * 2, b AS intDiv(b, b - b), c AS c + l.x)
 );
+
+SELECT 'a target named like another column';
+SELECT n, count() AS c, toUInt64(n * 2) AS `count()` FROM (SELECT number * 3 AS n FROM numbers(3))
+GROUP BY n ORDER BY n WITH FILL STEP 1 INTERPOLATE (`count()` AS `count()` + 1, c AS c + `count()`);
+
+SELECT 'a constant target named like another column';
+SELECT n, count() AS c, 5 AS `count()` FROM (SELECT number * 3 AS n FROM numbers(3))
+GROUP BY n ORDER BY n WITH FILL STEP 1 INTERPOLATE (`count()` AS `count()` + 1, c AS c + `count()`);

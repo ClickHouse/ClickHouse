@@ -116,3 +116,19 @@ equal columns of different tables are different expressions
 1	1
 2	3
 3	1
+a target named like another column
+0	1	0
+1	1	1
+2	2	2
+3	1	6
+4	7	7
+5	14	8
+6	1	12
+a constant target named like another column
+0	1	5
+1	6	6
+2	12	7
+3	1	5
+4	6	6
+5	12	7
+6	1	5
