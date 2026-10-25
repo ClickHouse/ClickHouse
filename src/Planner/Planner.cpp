@@ -1515,12 +1515,27 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
 
         ActionsDAG interpolate_actions_dag;
+        ActionsDAG rename_dag;
+        NameSet target_column_names_set;
+        for (const auto & [_, column_name] : sort_analysis_result.interpolate_target_column_names)
+            target_column_names_set.insert(column_name);
+
         auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
             query_plan_column.column = nullptr;
-            interpolate_actions_dag.addInput(query_plan_column);
+
+            /// A target column is named by the user, so while the items are visited it is an input under a name no generated name can equal.
+            if (target_column_names_set.contains(query_plan_column.name))
+            {
+                auto name = calculateInterpolateColumnActionNodeName(query_plan_column.name);
+                const auto & target_input = rename_dag.addInput(query_plan_column);
+                rename_dag.getOutputs().push_back(&rename_dag.addAlias(target_input, name));
+                interpolate_actions_dag.addInput(name, query_plan_column.type);
+            }
+            else
+                interpolate_actions_dag.addInput(query_plan_column);
         }
 
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
@@ -1538,7 +1553,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         }
         else
         {
-            ActionsDAG rename_dag;
             const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
 
             /// `FillingTransform` rejects an ORDER BY column as an INTERPOLATE output by name, which a renamed target column no longer has.
@@ -1550,21 +1564,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
             /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
             std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
-
-            for (const auto & interpolate_node : interpolate_list_nodes)
-            {
-                const auto & column_name = target_column_names.at(interpolate_node->as<InterpolateNode &>().getExpressionName());
-                const ActionsDAG::Node * target_input = nullptr;
-                for (const auto * input_node : interpolate_actions_dag.getInputs())
-                    if (input_node->result_name == column_name)
-                        target_input = input_node;
-
-                if (!target_input)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE target {} is not present in the block {}",
-                        column_name, query_plan.getCurrentHeader()->dumpNames());
-
-                interpolate_actions_dag.addAlias(*target_input, calculateInterpolateColumnActionNodeName(column_name));
-            }
 
             for (auto & interpolate_node : interpolate_list_nodes)
             {
