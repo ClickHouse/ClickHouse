@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple = 1;
 
 -- Only aliases written in the query text may name tuple elements. Aliases synthesized by

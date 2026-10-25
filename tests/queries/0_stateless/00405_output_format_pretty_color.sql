@@ -1,7 +1,6 @@
 SET output_format_pretty_display_footer_column_names=0;
 SET output_format_pretty_color = 0;
 SET output_format_pretty_squash_consecutive_ms = 0;
-SET enable_analyzer = 1;
 
 SHOW SETTING output_format_pretty_color;
 

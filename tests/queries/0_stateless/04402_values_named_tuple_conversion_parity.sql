@@ -3,7 +3,6 @@
 --  - input_format_null_as_default fills defaults against the destination elements after reordering;
 --  - the named-tuple insert guard applies to Dynamic/JSON destinations too.
 
-SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple = 1;
 SET input_format_values_interpret_expressions = 1;
 

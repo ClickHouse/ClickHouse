@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple = 1;
 
 -- Tuples with disjoint sets of element names are converted positionally, no source fields are

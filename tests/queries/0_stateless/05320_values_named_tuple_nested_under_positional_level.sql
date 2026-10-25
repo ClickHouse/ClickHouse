@@ -1,7 +1,6 @@
 -- The interpreted VALUES path must keep descending into nested named tuples when an outer tuple level
 -- is converted positionally (a side is unnamed or the element names are disjoint), like INSERT ... SELECT.
 
-SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple = 1;
 SET input_format_values_interpret_expressions = 1;
 SET input_format_values_deduce_templates_of_expressions = 0;
