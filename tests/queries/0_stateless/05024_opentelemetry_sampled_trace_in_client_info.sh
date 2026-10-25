@@ -39,7 +39,7 @@ function check_remote_select_under_initiator
                 and attribute['db.statement'] like 'SELECT%'
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = initiator.1
-        settings enable_analyzer = 1")
+")
     [[ -z "$_edges" ]] && return 1
 
     local -A _parent=()

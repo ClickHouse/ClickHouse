@@ -84,7 +84,7 @@ private:
 class TTLRowDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
@@ -102,7 +102,7 @@ private:
 class TTLColumnDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0);
 
 private:
     /// Returns the earliest due time among the unfinished column TTLs of the part, so that a row TTL
@@ -116,7 +116,7 @@ private:
 class TTLRecompressMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0);
 
 private:
     /// Return part min recompression TTL.

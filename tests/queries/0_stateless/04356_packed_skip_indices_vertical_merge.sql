@@ -57,12 +57,12 @@ SELECT 'm_a_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_vert_packed WHERE a = 700) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 SELECT 'm_b_filters', countIf(
     splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
     < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_vert_packed WHERE b = 1100) AS s
-WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%';
 
 -- Both predicates return the right rows through the merged packed indices.
 SELECT 'm_a_lookup', count() FROM t_vert_packed WHERE a = 700;

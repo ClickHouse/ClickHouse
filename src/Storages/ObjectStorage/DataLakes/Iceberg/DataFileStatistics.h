@@ -31,6 +31,7 @@ public:
 
     void update(const Chunk & chunk);
     void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
+    void setSplitOffsets(std::vector<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
     void merge(const DataFileStatistics & other);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
@@ -39,6 +40,7 @@ public:
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    const std::vector<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 
@@ -46,6 +48,7 @@ private:
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
     Ranges ranges;
+    std::vector<UInt64> split_offsets;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;

@@ -190,11 +190,6 @@ void StorageMySQL::readImpl(
     for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
-
-        WhichDataType which(column_data.type);
-        /// Convert enum to string.
-        if (which.isEnum())
-            column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -217,7 +212,8 @@ public:
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
-        const size_t & mysql_max_rows_to_insert)
+        const size_t & mysql_max_rows_to_insert,
+        bool auto_close_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{std::move(storage_)}
         , metadata_snapshot{metadata_snapshot_}
@@ -225,10 +221,17 @@ public:
         , remote_table_name{remote_table_name_}
         , entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
+        , auto_close{auto_close_}
     {
     }
 
     String getName() const override { return "StorageMySQLSink"; }
+
+    void onFinish() override
+    {
+        if (auto_close)
+            entry.disconnect();
+    }
 
     void consume(Chunk & chunk) override
     {
@@ -325,6 +328,7 @@ private:
     std::string remote_table_name;
     mysqlxx::PoolWithFailover::Entry entry;
     size_t max_batch_rows;
+    bool auto_close;
 };
 
 
@@ -339,7 +343,8 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         remote_database_name,
         remote_table_or_query.getTableName(),
         pool->get(),
-        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
+        local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert],
+        (*mysql_settings)[MySQLSetting::connection_auto_close]);
 }
 
 mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_collection)
