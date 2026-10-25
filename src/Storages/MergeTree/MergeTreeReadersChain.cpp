@@ -526,12 +526,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// columns; keep them out of the skip set so the conversion still runs.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
-        Block previous_steps_columns;
+        Block previous_steps_block;
         /// A previous step may hold a value written after the ALTER, which the DEFAULT replacing NULLs must not read.
         if (merge_tree_reader->convertsNullsToDefaults() && !has_writes_after_alter)
-            previous_steps_columns = getPreviousStepsColumns(previous_header, result);
+            previous_steps_block = getPreviousStepsColumns(previous_header, result);
 
-        merge_tree_reader->performRequiredConversions(read_columns, &previous_steps_columns);
+        merge_tree_reader->performRequiredConversions(read_columns, &previous_steps_block);
     }
     else
     {
