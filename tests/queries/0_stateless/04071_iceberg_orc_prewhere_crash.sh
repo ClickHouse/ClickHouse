@@ -42,15 +42,11 @@ ${CLICKHOUSE_CLIENT} --query "
 # Read with Parquet config (enables PREWHERE) — this used to crash on ORC files.
 # Use explicit PREWHERE (not WHERE + optimizer) because the query plan optimizer
 # cannot push PREWHERE for ObjectStorage tables (getColumnSizes() returns empty).
-# Explicit PREWHERE on mixed-format Iceberg tables requires the analyzer
-# because the old analyzer evaluates PREWHERE through a different code path that
-# doesn't go through FormatFilterInfo (our per-file format check). Force enable_analyzer=1
-# to ensure PREWHERE is handled by the new pipeline even in old-analyzer CI configs.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM icebergLocal('${ICEBERG_PATH}', 'Parquet', 'c0 Int64, c1 String')
     PREWHERE c0 > 50
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Also test pure ORC read through Parquet config
@@ -69,7 +65,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM icebergLocal('${ICEBERG_PATH_ORC}', 'Parquet', 'c0 Int64, c1 String')
     PREWHERE c0 > 50
-    SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Cleanup
