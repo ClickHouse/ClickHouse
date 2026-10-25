@@ -1938,3 +1938,18 @@ The builds on [x86-64](https://app.buildbuddy.io/invocation/579a5e79-4209-4f80-a
 BuildBuddy reported 4,677 remote executions on x86-64 and 4,674 on ARM64, including 4,667 and 4,664 successful C++ compiles. Each CPU had one failed validation action. The two builds had 93,584 remote cache hits and used 14.37 worker CPU hours. DBMS accounted for 2,345 x86-64 compiles and 2,346 ARM64 compiles. Remote cache hits and worker executions are separate counts.
 
 The hosted audits on [x86-64](https://app.buildbuddy.io/invocation/d443afc7-9d32-46cc-8d12-afac39dcac6b) and [ARM64](https://app.buildbuddy.io/invocation/6bb7ab42-b441-4a68-8d2e-acef0f931769) considered 108 production targets and five fixtures per CPU. Even the required subset needed 20,215 scheduled actions on x86-64 and 21,619 on ARM64, above the limit of 4,000. Neither an ordinary nor a strict DWYU build started. No production owner received a DWYU grade.
+
+## e2e3669a8 retry
+
+[e2e3669a8](https://github.com/dzbarsky/clickhouse/commit/e2e3669a8da6e404e9a43a94ac13bdab893ee673) produced all three executables again on [x86-64](https://app.buildbuddy.io/invocation/7ef767c1-0302-4b59-a1bb-7ec4c9564271) and [ARM64](https://app.buildbuddy.io/invocation/795c330b-ad98-466c-b43d-672e9009f8b2). All six SHA-256 values and sizes are unchanged: the normalized ClickHouse executables match native CMake, and the raw ClickHouse and unit-test executables match their Bazel references. [Hashes and byte counts](../../README.bazel.md#binary-comparison). The comparison downloaded no executables or object files.
+
+Each build passed 38 GoogleTests, six SQL cases and 16 Decimal assertions. The SDK test passed its original Python import and stopped at `json.loads` of `parquet_reader --json` output (line 16, column 68). Both Bazel invocations exited with code 1; 11 of their 12 requested targets succeeded.
+
+The hosted runs on [x86-64](https://app.buildbuddy.io/invocation/f6ec9126-a0b7-44ec-9b9c-b5e6c66d1f01) and [ARM64](https://app.buildbuddy.io/invocation/8c640de0-64a3-4103-b89e-0d71a6d13923) withheld the DWYU query archive when its credential check matched. Neither run admitted an audit or measured its additional actions. No production targets or expected-failure fixtures received a DWYU grade.
+
+The previous pair compiled 4,667 C++ actions on x86-64 and 4,664 on ARM64. On the retry, the SDK test was the only remote worker action on each CPU. Worker input downloads are distinct from client downloads.
+
+| CPU | Bazel remote cache hits | C++ compilations on workers | SDK worker input bytes |
+| --- | ---: | ---: | ---: |
+| x86-64 | 51,206 | 0 | 1,096,279,543 |
+| ARM64 | 51,727 | 0 | 1,105,115,070 |
