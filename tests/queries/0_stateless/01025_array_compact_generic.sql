@@ -18,3 +18,13 @@ SELECT arrayCompact([toDecimal128('1.20000000', 8), toDecimal128('1.20000000', 8
 SELECT arrayCompact([toDecimal256('1.200000000000', 12), toDecimal256('1.200000000000', 12), toDecimal256('-2.300000000000', 12), toDecimal256('-2.300000000000', 12), toDecimal256('3.400000000000', 12)]);
 SELECT arrayCompact(x -> toInt32(x), [toDecimal64('1.10', 2), toDecimal64('1.10', 2), toDecimal64('2.20', 2)]);
 SELECT arrayCompact([toDecimal64('1.10', 2), NULL, NULL, toDecimal64('2.20', 2), toDecimal64('2.20', 2)]);
+SELECT arrayCompact(materialize(CAST([], 'Array(Int128)')));
+SELECT arrayCompact(materialize(CAST([7], 'Array(UInt128)')));
+SELECT arrayCompact(materialize(CAST([-2, -2, 0, 0, 3, 3, -2], 'Array(Int128)')));
+SELECT arrayCompact(materialize(CAST([1, 1, 2, 1, 1], 'Array(UInt128)')));
+SELECT arrayCompact(materialize(CAST([9, 9, 9, 9], 'Array(Int256)')));
+SELECT arrayCompact(materialize(CAST([-2, -2, 0, 0, 3, 3, -2], 'Array(Int256)')));
+SELECT arrayCompact(materialize(CAST([1, 1, 2, 1, 1], 'Array(UInt256)')));
+SELECT arrayCompact(materialize([toUInt256('18446744073709551616'), toUInt256('18446744073709551616'), toUInt256('18446744073709551617')]));
+SELECT arrayCompact(materialize(CAST([1, NULL, NULL, 2, 2], 'Array(Nullable(Int256))')));
+SELECT arrayCompact(x -> toInt64(x), materialize(CAST([1, 1, 2, 2], 'Array(Int256)')));
