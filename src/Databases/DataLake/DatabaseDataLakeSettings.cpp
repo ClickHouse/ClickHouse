@@ -27,6 +27,10 @@ namespace ErrorCodes
     DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0) \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0) \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0) \
+    DECLARE(String, bearer_token_endpoint, "", "HTTP(S) endpoint returning a JWT bearer token on GET for REST catalog authentication. Tokens are refreshed using their `exp` claim. Requires `s3_allow_server_credentials_in_user_queries` and the server-side `iceberg_bearer_token_host` allow-list. Cannot be combined with other catalog authentication settings", 0) \
+    DECLARE(String, bearer_token_header, "", "Optional header of format 'HeaderName: HeaderValue' sent only to `bearer_token_endpoint`, for example 'Metadata-Flavor: Google'", 0) \
+    DECLARE(String, bearer_token_response_format, "raw", "Response format of `bearer_token_endpoint`: `raw` means the HTTP body is the token; `json` extracts a string using `bearer_token_response_field`", 0) \
+    DECLARE(String, bearer_token_response_field, "access_token", "Field containing the token when `bearer_token_response_format = 'json'`. Supports dot-separated nested object fields, for example `data.token`. Ignored for `raw` responses", 0) \
     DECLARE(String, aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
     DECLARE(String, aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
     DECLARE(String, region, "", "Region for Glue catalog", 0) \

@@ -24,6 +24,28 @@ namespace DataLake
 /// Parses "Name: value" into a header entry.
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
+/// Fetches a JWT from a raw or JSON HTTP response and caches it using its `exp` claim.
+class JWTEndpointAuth : public DB::WithContext
+{
+public:
+    JWTEndpointAuth(
+        const std::string & token_url_, const std::string & token_header_,
+        const std::string & response_format_, const std::string & response_field_,
+        DB::ContextPtr context_, bool allow_server_credentials_in_user_queries_);
+
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+
+private:
+    AccessToken retrieveToken() const;
+
+    const std::string token_url;
+    DB::HTTPHeaderEntries token_headers;
+    const std::string response_format;
+    const std::string response_field;
+    const bool allow_server_credentials_in_user_queries;
+    mutable MultiVersion<AccessToken> access_token;
+};
+
 class RestCatalog : public ICatalog, public DB::WithContext
 {
 public:
@@ -36,7 +58,8 @@ public:
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        std::shared_ptr<JWTEndpointAuth> jwt_auth_ = {});
 
     ~RestCatalog() override = default;
 
@@ -171,6 +194,7 @@ protected:
     bool oauth_server_use_request_body;
     bool flat_namespaces = false;
     mutable MultiVersion<AccessToken> access_token;
+    const std::shared_ptr<JWTEndpointAuth> jwt_auth;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -347,11 +371,12 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE;
     }
 
-    DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
-
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
     const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
+
+protected:
+    DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
