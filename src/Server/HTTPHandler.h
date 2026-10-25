@@ -272,6 +272,13 @@ private:
     std::string predefined_query;
     CompiledRegexPtr url_regexp;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regexp;
+    /// Whether the query uses the special `_request_body` parameter. Usually it is in `receive_params`, but a
+    /// SQL-defined handler binding it from a capture of its `URL REGEXP` drops it from there (see `SQLDefinedHandler`).
+    /// Such a query must not receive `_request_body` from the URL query string.
+    bool uses_request_body_param;
+
+protected:
+    void setUsesRequestBodyParam(bool value) { uses_request_body_param = value; }
 
 public:
     PredefinedQueryHandler(

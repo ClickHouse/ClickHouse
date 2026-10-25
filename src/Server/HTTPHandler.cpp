@@ -1785,6 +1785,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     , predefined_query(predefined_query_)
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
+    , uses_request_body_param(receive_params_.contains("_request_body"))
 {
     setHasServerOwnedQuery();
 }
@@ -1797,18 +1798,20 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
     };
 
-    /// `_request_body` is bound from the request body (see `customizeContext`). Supplying it in the URL would leave
-    /// the body unread, so that the body would be appended to the text of the handler's query instead.
+    /// `_request_body` is bound from the request body (see `customizeContext`), or from a capture of the `URL REGEXP`
+    /// of a SQL-defined handler. Supplying it in the URL query string would leave the body unread, so that the body
+    /// would be appended to the text of the handler's query instead. This is checked with `uses_request_body_param`
+    /// rather than `receive_params`, which does not contain a captured `_request_body` of a SQL-defined handler.
     const auto check_not_request_body = [&](const String & name)
     {
-        if (name == "_request_body")
+        if (uses_request_body_param && name == "_request_body")
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The query parameter `_request_body` is bound from the HTTP request body and cannot be passed in the URL");
     };
 
+    check_not_request_body(key);
     if (receive_params.contains(key))
     {
-        check_not_request_body(key);
         set_query_parameter(key, value);
         return true;
     }
@@ -1818,11 +1821,9 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
+        check_not_request_body(parameter_name);
         if (receive_params.contains(parameter_name))
-        {
-            check_not_request_body(parameter_name);
             set_query_parameter(parameter_name, value);
-        }
         return true;
     }
 
@@ -1978,6 +1979,7 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
 {
     setIntrospectionHandlerName(handler.name);
     setRequestBodyContract(handler.consumes_request_body, handler.feeds_request_body_to_query);
+    setUsesRequestBodyParam(handler.uses_request_body_param);
 }
 
 std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)

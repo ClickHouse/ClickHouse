@@ -41,6 +41,10 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_capture_get\` URL REGEXP '${P}/capt
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/capture_get/carol"
 ${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/capture/dave" -H 'Transfer-Encoding:' -H 'Content-Length:'
 
+echo "=== _request_body bound from a URL capture group cannot be passed in the URL query string either ==="
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/capture_get/erin?param__request_body=Eve" | grep -o -m1 "BAD_ARGUMENTS"
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/capture_get/erin?_request_body=Eve" | grep -o -m1 "BAD_ARGUMENTS"
+
 echo "=== the body is still the data of an INSERT ==="
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t05407 (s String) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_insert\` URL '${P}/insert' METHODS (POST) AS INSERT INTO ${DB}.t05407 FORMAT TSV"

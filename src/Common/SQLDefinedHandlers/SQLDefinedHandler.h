@@ -50,6 +50,11 @@ struct SQLDefinedHandler
     /// precomputed at build time so the request path does not re-parse the query on every matching request.
     NameSet receive_params;
 
+    /// Whether `query` uses the special `_request_body` parameter, regardless of where it is bound from: the request
+    /// body, or a named capture group of the `URL REGEXP` (in which case it is not in `receive_params`). Such a
+    /// handler rejects `_request_body` passed in the URL query string.
+    bool uses_request_body_param = false;
+
     /// The canonical CREATE HANDLER statement, used for persistence and introspection.
     String create_statement;
 
