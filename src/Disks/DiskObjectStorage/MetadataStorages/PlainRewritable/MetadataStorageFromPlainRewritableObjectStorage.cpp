@@ -1727,7 +1727,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
         uncommitted_state.markDirectoryExplicit(pathToGenericString(normalized_path.parent_path()));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
-        path,
+        pathFromString(path),
         if_exists,
         commit_snapshot,
         metadata_storage.object_storage,
@@ -1757,7 +1757,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         uncommitted_state.removeDirectory(path);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation>(
-        path,
+        pathFromString(path),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
@@ -1793,8 +1793,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         uncommitted_state.recordCreatedFile(path_to, blob_key);
 
         auto copy = std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
-            path_from,
-            path_to,
+            pathFromString(path_from),
+            pathFromString(path_to),
             std::move(blob_key),
             commit_snapshot,
             metadata_storage.object_storage,
@@ -1809,8 +1809,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     uncommitted_state.recordHardLink(path_from, path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageHardLinkOperation>(
-        path_from,
-        path_to,
+        pathFromString(path_from),
+        pathFromString(path_to),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
@@ -1858,8 +1858,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/false,
-        path_from,
-        path_to,
+        pathFromString(path_from),
+        pathFromString(path_to),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
@@ -1876,8 +1876,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/true,
-        path_from,
-        path_to,
+        pathFromString(path_from),
+        pathFromString(path_to),
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,

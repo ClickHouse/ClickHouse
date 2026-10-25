@@ -251,7 +251,7 @@ CreateDirectoryRecursiveOperation::CreateDirectoryRecursiveOperation(std::string
 
 void CreateDirectoryRecursiveOperation::execute()
 {
-    fs::path p(path);
+    fs::path p = pathFromString(path);
     while (!disk.existsFileOrDirectory(pathToGenericString(p)))
     {
         paths_created.push_back(pathToGenericString(p));

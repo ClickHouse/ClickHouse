@@ -557,7 +557,7 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
     StoredObjects & removed_objects_)
-    : path(std::move(path_))
+    : path(pathFromString(path_))
     , object(std::move(object_))
     , blob_key(std::move(blob_key_))
     , fs_tree(std::move(fs_tree_))
