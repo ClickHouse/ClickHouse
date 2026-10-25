@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
+load("@clickhouse//bazel/rules:native_compile_options.bzl", "native_cxx_tool_copts")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -1877,56 +1877,7 @@ ch_cc_binary(
         "src/compiler/cpp_plugin.cc",
         "src/compiler/cpp_plugin.h",
     ],
-    copts = [
-        "--no-default-config",
-        "-fdiagnostics-color=always",
-        "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
-        "@platforms//cpu:aarch64": [],
-    })) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
-        "-fdiagnostics-absolute-paths",
-        "-fstrict-vtable-pointers",
-        "-fPIE",
-        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-        "-w",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-        "-O3",
-        "-DNDEBUG",
-        "-std=c++17",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
-        "-Werror",
-        "-nostdinc++",
-    ] + cmake_prefix_maps([
-        "aarch64",
-        "x86_64",
-    ]),
+    copts = native_cxx_tool_copts("-std=c++17"),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
@@ -2021,18 +1972,8 @@ ch_cc_binary(
         "@clickhouse_llvm_project//:libllvmlibc",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_google_protobuf//:_libprotoc",
-        "@clickhouse_abseil_cpp//:absl_examine_stack",
-        "@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor",
-        "@clickhouse_abseil_cpp//:absl_flags_program_name",
-        "@clickhouse_abseil_cpp//:absl_graphcycles_internal",
         "@clickhouse_abseil_cpp//:absl_log_globals",
-        "@clickhouse_abseil_cpp//:absl_log_internal_fnmatch",
-        "@clickhouse_abseil_cpp//:absl_log_internal_format",
-        "@clickhouse_abseil_cpp//:absl_log_internal_globals",
         "@clickhouse_abseil_cpp//:absl_log_internal_log_sink_set",
-        "@clickhouse_abseil_cpp//:absl_malloc_internal",
-        "@clickhouse_abseil_cpp//:absl_stacktrace",
-        "@clickhouse_abseil_cpp//:absl_symbolize",
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
         "@clickhouse//base/glibc-compatibility",

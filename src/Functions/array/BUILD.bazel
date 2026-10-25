@@ -11,8 +11,10 @@ exports_files([
 
 exports_files(
     [
+        "arrayIndex.h",
         "arrayResize.h",
         "emptyArrayToSingle.h",
+        "has.h",
     ],
     visibility = ["//src:__pkg__"],
 )
@@ -25,6 +27,7 @@ _PRIVATE_FUNCTIONS_ARRAY_0_HEADERS = [
     "arrayEnumerateRanked.h",
     "arrayExists.h",
     "arrayFilter.h",
+    "arrayIndex.h",
     "arrayMap.h",
     "arrayPop.h",
     "arrayPush.h",
@@ -471,19 +474,6 @@ cc_library(
 
 cc_library(
     name = "headers",
-    hdrs = [
-        "arrayIndex.h",
-        "has.h",
-        "length.h",
-    ],
-    deps = [
-        "//src:headers",
-        "//base:common",
-        "//src/Functions:headers",
-        "//src/Common:memory_tracking_api",
-        "//src/Common:assert_cast",
-        "//src:with_context",
-        "//src/Common",
-        "//src:column_types",
-    ],
+    hdrs = ["length.h"],
+    deps = ["//src/Functions:headers"],
 )

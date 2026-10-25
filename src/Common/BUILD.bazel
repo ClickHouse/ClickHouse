@@ -246,7 +246,6 @@ exports_files([
     "XMLUtils.cpp",
     "ZooKeeperNodeVersion.cpp",
     "assertProcessUserMatchesDataOwner.cpp",
-    "assert_cast.cpp",
     "atomicRename.cpp",
     "blockDumper.cpp",
     "checkSSLReturnCode.cpp",

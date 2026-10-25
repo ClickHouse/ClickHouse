@@ -2,7 +2,8 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
 load("@clickhouse//bazel/rules:codegen_actions.bzl", "declare_codegen")
 load("@clickhouse//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version", "cmake_prefix_maps")
+load("@clickhouse//bazel/rules:native_compile_options.bzl", "native_cxx_tool_copts")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -466,6 +467,8 @@ ch_cc_library(
         "-g1",
     ],
     implementation_deps = [
+        "@clickhouse//bazel:arrow_flatbuffer_headers",
+        "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
@@ -484,9 +487,7 @@ ch_cc_library(
         "cpp/src/arrow/vendored/datetime/tz.cpp",
     ],
     deps = [
-        "@clickhouse//bazel:arrow_flatbuffer_headers",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
-        "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",
         ":_arrow__compile_1",
@@ -798,56 +799,7 @@ _GENERATED_FEATURES_1 = [
     "-llvm_system_c_headers",
 ]
 
-_PARQUET_COPTS = [
-    "--no-default-config",
-    "-fdiagnostics-color=always",
-    "-pipe",
-] + (select({
-    "@platforms//cpu:x86_64": [
-        "-march=x86-64-v3",
-        "-mpclmul",
-    ],
-    "@platforms//cpu:aarch64": [
-        "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-    ],
-}) + [
-    "-fasynchronous-unwind-tables",
-    "-fdebug-compilation-dir=.",
-    "-falign-functions=64",
-    "-falign-loops=32",
-    "-ffunction-sections",
-    "-fdata-sections",
-    "-faddrsig",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "-mbranches-within-32B-boundaries",
-    ],
-    "@platforms//cpu:aarch64": [],
-})) + [
-    "-fstack-protector-strong",
-    "-fstack-clash-protection",
-    "-ffp-contract=off",
-    "-fno-math-errno",
-    "-fdiagnostics-absolute-paths",
-    "-fstrict-vtable-pointers",
-    "-fPIE",
-    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-    "-w",
-    "-ffunction-sections",
-    "-fdata-sections",
-    "-faddrsig",
-    "-O3",
-    "-DNDEBUG",
-    "-std=c++23",
-    "-D",
-    "OS_LINUX",
-    "-gz=zlib",
-    "-Werror",
-    "-nostdinc++",
-] + cmake_prefix_maps([
-    "aarch64",
-    "x86_64",
-])
+_PARQUET_COPTS = native_cxx_tool_copts("-std=c++23")
 
 ch_cc_binary(
     name = "parquet_dump_schema",

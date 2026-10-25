@@ -12,7 +12,7 @@ MODULES = {
     "bazel/rules/ch_cc_library.bzl": ("CXX_RUNTIME_DEFINES",),
     "src/common_io_flags.bzl": (
         "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES", "CLICKHOUSE_COMMON_IO_LOCAL_DEFINES",
-        "DBMS_CONSUMER_DEFINES",
+        "DBMS_CONSUMER_DEFINES", "DBMS_LOCAL_DEFINES", "DBMS_USEARCH_LOCAL_DEFINES",
     ),
     "programs/program_defines.bzl": ("CLICKHOUSE_PROGRAM_DEFINES", "CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES"),
     "bazel/dependencies/aws_crt_defines.bzl": ("AWS_CRT_DEFINES",),
@@ -21,6 +21,12 @@ CPUS = ("x86_64", "aarch64", "unsupported")
 
 
 class Defines(StrictConfigured):
+    def visit_Subscript(self, node):
+        node = self.generic_visit(node)
+        if call_name(node.value) == "dict" and isinstance(node.slice, ast.Constant):
+            return next((kw.value for kw in node.value.keywords if kw.arg == node.slice.value), node)
+        return node
+
     def visit_Call(self, node):
         node = super().visit_Call(node)
         if (call_name(node) == "sorted" and len(node.args) == 1 and not node.keywords
@@ -99,6 +105,13 @@ def share_local_defines(root, paths):
                 if not owner:
                     continue
                 label, symbol = owner
+                attrs = {kw.arg: kw.value for kw in rule.keywords}
+                if (symbol == "DBMS_LOCAL_DEFINES" and path == root / "src/BUILD.bazel"
+                        and attrs["name"].value == "dbms__compile_0"):
+                    deps = signature(visitors, attrs["implementation_deps"])
+                    if deps is None or any(row is None or row.count("@clickhouse_usearch//:usearch") != 1 for row in deps[:2]):
+                        raise ValueError("dbms__compile_0 must receive the USearch definitions from its dependency")
+                    symbol = "DBMS_USEARCH_LOCAL_DEFINES"
                 if symbol in defined or bindings.get(symbol, owner) != owner:
                     continue
                 if isinstance(attr.value, ast.Name):
@@ -108,6 +121,14 @@ def share_local_defines(root, paths):
                         aliases.add(attr.value.id)
                 edits.append((*source.span(attr.value), symbol))
                 imports.setdefault(label, set()).add(symbol)
+        # An attribute dictionary may still reference a factored list after its rules have been rewritten.
+        for statement in source.module.body:
+            if isinstance(statement, ast.Assign) and statement.targets[0].id in aliases:
+                owner = names.get(signature(visitors, statement.value))
+                if owner:
+                    label, symbol = owner
+                    edits.append((*source.span(statement.value), symbol))
+                    imports.setdefault(label, set()).add(symbol)
         if not edits:
             continue
         for statement in source.module.body:

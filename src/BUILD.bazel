@@ -1,20 +1,16 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library", "ch_cc_test")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
-load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_LOCAL_DEFINES", "DBMS_CONSUMER_DEFINES")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_LOCAL_DEFINES", "DBMS_CONSUMER_DEFINES", "DBMS_LOCAL_DEFINES", "DBMS_USEARCH_LOCAL_DEFINES")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "Access/AccessRights.cpp",
     "Server/IndexRequestHandler.cpp",
     "Server/KeeperDashboardRequestHandler.cpp",
     "Server/KeeperJemallocHandler.cpp",
     "Server/WebTerminalRequestHandler.cpp",
     "Server/WebUIRequestHandler.cpp",
-    "Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
-    "Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
-    "Storages/MergeTree/MergeTreeRangeReader.cpp",
 ])
 
 _SERVER_FACTORY_HEADERS = [
@@ -1493,7 +1489,7 @@ ch_cc_library(
     hdrs = _IO_STRING_BUFFER_HEADERS,
     clickhouse_code = _IO_0_COMPILE_ATTRIBUTES["clickhouse_code"],
     includes = _IO_0_COMPILE_ATTRIBUTES["includes"],
-    local_defines = _IO_0_COMPILE_ATTRIBUTES["local_defines"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     deps = [
         ":core_defines",
         ":with_context",
@@ -1798,7 +1794,7 @@ ch_cc_library(
         "//src/Parsers:clickhouse_parsers",
     ],
     includes = _IO_0_COMPILE_ATTRIBUTES["includes"],
-    local_defines = _IO_0_COMPILE_ATTRIBUTES["local_defines"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     deps = _IO_0_COMPILE_ATTRIBUTES["deps"] + [
         "//src/Common:exception_api",
         "//src/Common:stopwatch",
@@ -1853,7 +1849,6 @@ ch_cc_library(
         "//src/Common/Config:clickhouse_common_config",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_silk//:_silk_util",
-        "@lz4//:lz4_frame",
         "//src/Common:current_metrics",
         "//src/Common:exception_api",
         ":io_string_buffers",
@@ -1863,7 +1858,7 @@ ch_cc_library(
         ":with_context",
     ],
     includes = _IO_0_COMPILE_ATTRIBUTES["includes"],
-    local_defines = _IO_0_COMPILE_ATTRIBUTES["local_defines"],
+    local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
 )
 
 ch_cc_library(
@@ -1991,89 +1986,7 @@ _CORE_TYPE_HEADERS = [
     "Core/LoadBalancing.h",
 ]
 
-_DBMS_LOCAL_DEFINES = [
-    "AI_SDK_HAS_ANTHROPIC=1",
-    "AI_SDK_HAS_OPENAI=1",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "ARROW_HAVE_AVX2",
-        "ARROW_HAVE_BMI2",
-        "ARROW_HAVE_RUNTIME_AVX2",
-        "ARROW_HAVE_RUNTIME_BMI2",
-        "ARROW_HAVE_RUNTIME_SSE4_2",
-        "ARROW_HAVE_SSE4_2",
-    ],
-    "@platforms//cpu:aarch64": [
-        "ARM_ACLE",
-        "ARM_ASM_HWCAP",
-        "ARM_AUXV_HAS_CRC32",
-        "ARM_AUXV_HAS_NEON",
-        "ARM_FEATURES",
-        "ARM_NEON",
-        "ARM_NEON_HASLD4",
-        "ARROW_HAVE_NEON",
-    ],
-}) + [
-    "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
-    "BOOST_ASIO_STANDALONE=1",
-    "BOOST_TIMER_ENABLE_DEPRECATED=1",
-    "ENABLE_DISTRIBUTED_CACHE=0",
-    "ENABLE_MULTITARGET_CODE=1",
-    "FIU_ENABLE",
-] + select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "HAVE_ARM_ACLE_H",
-    ],
-}) + [
-    "HAVE_ATTRIBUTE_ALIGNED",
-    "HAVE_BUILTIN_CTZ",
-    "HAVE_BUILTIN_CTZLL",
-    "HAVE_CONFIG_H",
-    "HAVE_POSIX_MEMALIGN",
-] + select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "HAVE_SYS_AUXV_H",
-    ],
-}) + [
-    "HAVE_VISIBILITY_HIDDEN",
-    "HAVE_VISIBILITY_INTERNAL",
-    "JEMALLOC_NO_RENAME",
-    "PICOJSON_USE_LOCALE=0",
-    "POCO_ENABLE_CPP11",
-    "POCO_OS_FAMILY_UNIX",
-    "SIMSIMD_DYNAMIC_DISPATCH",
-    "SIMSIMD_NATIVE_BF16=0",
-    "SNAPPY_CODEC_AVAILABLE",
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "UNALIGNED_OK",
-    "USEARCH_CAN_COMPILE_BF16=0",
-    "USEARCH_CAN_COMPILE_FLOAT16",
-    "USEARCH_USE_FP16LIB",
-    "USEARCH_USE_SIMSIMD",
-    "USE_CLICKHOUSE_THREADS=1",
-    "WITH_COVERAGE=0",
-    "WITH_COVERAGE_DEPTH=0",
-    "WITH_GZFILEOP",
-    "X86_64",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "X86_AVX2",
-        "X86_FEATURES",
-        "X86_PCLMULQDQ_CRC",
-        "X86_SSE2",
-        "X86_SSE42",
-        "X86_SSSE3",
-    ],
-    "@platforms//cpu:aarch64": [],
-}) + [
-    "XXH_INLINE_ALL",
-    "ZLIB_COMPAT",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
+_DBMS_LOCAL_DEFINES = DBMS_LOCAL_DEFINES
 
 _DBMS_0_PRIVATE_SRC_HEADERS = _PRIVATE_DBMS_0_HEADERS + [
     "//src/Common:BSONCXXHelper.h",
@@ -2089,6 +2002,7 @@ _DBMS_0_PRIVATE_SRC_HEADERS = _PRIVATE_DBMS_0_HEADERS + [
     "//src/Common:Scheduler/Workload/createWorkloadEntityStorage.h",
     "//src/Common:SystemAllocatedMemoryHolder.h",
     "//src/Common:saturatedWaitDuration.h",
+    "//src/Functions/array:arrayIndex.h",
     "//src/Functions/array:arrayResize.h",
     "//src/Functions/array:emptyArrayToSingle.h",
     "//src/Functions:FunctionDynamicAdaptor.h",
@@ -2142,7 +2056,7 @@ _DBMS_IMPLEMENTATION_DEPS_BEFORE_ARCH = [
     "@clickhouse_openldap//:_lber",
     "@clickhouse_orc//:_orc",
     "@clickhouse_s2geometry//:_s2",
-    "@clickhouse_simsimd//:_simsimd",
+    "@clickhouse_usearch//:usearch",
     "@clickhouse_vectorscan//:_vectorscan__compile_0",
     "@clickhouse_wordnet_blast//:_wnb",
     "@clickhouse_xxhash//:xxHash",
@@ -2185,7 +2099,6 @@ _DBMS_IMPLEMENTATION_DEPS_AFTER_ARCH = [
     "@clickhouse_mongo_cxx_driver//:_bsoncxx",
     "@clickhouse_msgpack_c//:msgpack_c",
     "@clickhouse_postgres//:_libpq",
-    "@clickhouse_usearch//:usearch",
     "@clickhouse_abseil_cpp//:absl_log_severity",
     "@clickhouse_abseil_cpp//:absl_strings",
     "@clickhouse_capnproto//:_kj",
@@ -2277,7 +2190,7 @@ ch_cc_library(
     clickhouse_code = _DBMS_0_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = ["//src/Common:exception_api"],
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
-    local_defines = _DBMS_0_COMPILE_ATTRIBUTES["local_defines"],
+    local_defines = DBMS_LOCAL_DEFINES,
     deps = ["//base:common"],
 )
 
@@ -3024,7 +2937,7 @@ ch_cc_library(
     hdrs = _DBMS_0_COMPILE_ATTRIBUTES["hdrs"] + _DBMS_0_PUBLIC_HEADERS + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["Storages/StorageGenerateRandom.h"],
-    }),
+    }) + ["//src/Functions/array:has.h"],
     clickhouse_code = _DBMS_0_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = [
         "@lz4//:lz4",
@@ -3053,7 +2966,7 @@ ch_cc_library(
         "//src/Common:once_and_atomic",
     ],
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
-    local_defines = _DBMS_0_COMPILE_ATTRIBUTES["local_defines"],
+    local_defines = DBMS_USEARCH_LOCAL_DEFINES,
     source_headers = True,
     textual_hdrs = _DBMS_0_COMPILE_ATTRIBUTES["textual_hdrs"],
     deps = [
@@ -3214,7 +3127,7 @@ ch_cc_library(
         "//bazel:web_ui_resources",
     ],
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
-    local_defines = _DBMS_0_COMPILE_ATTRIBUTES["local_defines"],
+    local_defines = DBMS_LOCAL_DEFINES,
 )
 
 ch_cc_library(
@@ -3264,7 +3177,7 @@ ch_cc_library(
         "//src/Functions:cast_api",
         "//src/Common:parser_support_api",
     ],
-    local_defines = _DBMS_LOCAL_DEFINES,
+    local_defines = DBMS_LOCAL_DEFINES,
 )
 
 ch_cc_library(
@@ -3300,7 +3213,7 @@ ch_cc_library(
         ":headers",
         "//src/Compression:codec_api",
     ],
-    local_defines = _DBMS_LOCAL_DEFINES,
+    local_defines = DBMS_LOCAL_DEFINES,
 )
 
 ch_cc_library(
@@ -3341,7 +3254,7 @@ ch_cc_library(
             "@clickhouse_boost//:boost_headers_no_openssl",
         ],
     }),
-    local_defines = _DBMS_LOCAL_DEFINES,
+    local_defines = DBMS_LOCAL_DEFINES,
 )
 
 ch_cc_library(

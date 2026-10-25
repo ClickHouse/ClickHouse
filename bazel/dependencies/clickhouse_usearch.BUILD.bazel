@@ -1,3 +1,4 @@
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -6,11 +7,38 @@ exports_files([
     "LICENSE",
 ])
 
+selects.config_setting_group(
+    name = "simsimd_supported",
+    match_any = [
+        "@platforms//cpu:x86_64",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
 cc_library(
     name = "usearch",
     hdrs = glob(["include/usearch/**/*.hpp"]),
+    defines = [
+        "USEARCH_USE_FP16LIB",
+    ] + select({
+        ":simsimd_supported": [
+            "SIMSIMD_DYNAMIC_DISPATCH",
+            "SIMSIMD_NATIVE_BF16=0",
+            "USEARCH_CAN_COMPILE_BF16=0",
+            "USEARCH_CAN_COMPILE_FLOAT16",
+            "USEARCH_USE_SIMSIMD",
+        ],
+        "//conditions:default": [],
+    }),
     includes = [
         "include",
     ],
-    deps = ["@clickhouse_fp16//:fp16"],
+    deps = [
+        "@clickhouse_fp16//:fp16",
+    ] + select({
+        ":simsimd_supported": [
+            "@clickhouse_simsimd//:_simsimd",
+        ],
+        "//conditions:default": [],
+    }),
 )

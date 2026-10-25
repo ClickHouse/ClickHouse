@@ -1721,8 +1721,7 @@ def main():
     prune_native_cpp_inputs(ROOT, write=True)
     # The compiler input scan needs the original .cpp labels to inspect each translation unit.
     from initial_migration.first_party_packages import group_runtime_filter_benchmark_sources
-    benchmark_exports = group_runtime_filter_benchmark_sources(ROOT)
-    prune_native_exports(ROOT, write=True, only=set(benchmark_exports))
+    group_runtime_filter_benchmark_sources(ROOT)
     from initial_migration.native_proto_owners import transfer as publish_native_protos
     publish_native_protos(ROOT, write=True)
     # Publishing base moves its BUILD file. Resolve globs against the final
@@ -1795,6 +1794,10 @@ def main():
             path.write_text(after)
     publish_redis_sdk(ROOT)
     llvm_targets.fold_outline_atomics(ROOT / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel')
+    from initial_migration.native_compile_options import shared_native_compile_options
+    shared_native_compile_options(ROOT, selection_builds)
+    # Consumers and source owners are final after the BUILD rule rewrites.
+    prune_native_exports(ROOT, write=True)
     format_build_files(read_only=read_only)
     if arrow.read_bytes() != original_arrow:
         raise ValueError(f'The CMake importer modified {arrow}')

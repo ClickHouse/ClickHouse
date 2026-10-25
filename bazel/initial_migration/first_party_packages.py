@@ -426,46 +426,47 @@ def declare_dictionary_private_headers(rows, files):
         declare_compiled_headers(rows, files, compilers, list_expr(names), field="srcs")
 
 
-# Only these dbms compile groups read these headers from other Bazel packages.
-DBMS_PRIVATE_PACKAGE_HEADERS = {
-    ("src/Common", (0,)): (
+# Cross-package headers used by the listed dbms compile groups.
+DBMS_PACKAGE_HEADERS = {
+    ("src/Common", (0,), "srcs"): (
         "BSONCXXHelper.h", "CounterInFile.h", "Increment.h", "LockGuardWithStopWatch.h",
         "NamedCollections/NamedCollectionConfiguration.h", "PrimeGenerator.h",
         "Scheduler/Workload/createWorkloadEntityStorage.h", "SystemAllocatedMemoryHolder.h",
         "saturatedWaitDuration.h",
     ),
-    ("src/Functions", (0,)): (
+    ("src/Functions", (0,), "srcs"): (
         "FunctionTopKFilter.h", "TypeMismatchStrictness.h", "castNestedResult.h", "exists.h",
         "extractKeyValuePairs.h", "generateSnowflakeID.h", "productQuantization.h", "vectorQuantization.h",
         "UserDefined/UserDefinedExecutableFunctionDriver*.h", "UserDefined/UserDefinedSQLObject*.h",
         "UserDefined/UserDefinedSQLFunctionVisitor.h", "UserDefined/UserDefinedWebAssemblyScriptAbi.h",
         "UserDefined/UserDefinedWebAssemblyTypeHelpers.h", "UserDefined/createUserDefinedSQLObjectsStorage.h",
     ),
-    ("src/Functions", (1,)): ("FunctionIfBase.h",),
-    ("src/Functions", (0, 1)): (
+    ("src/Functions", (1,), "srcs"): ("FunctionIfBase.h",),
+    ("src/Functions", (0, 1), "srcs"): (
         "FunctionDynamicAdaptor.h", "FunctionVariantAdaptor.h", "if.h", "logical.h", "multiIf.h",
     ),
-    ("src/Functions/array", (0,)): ("arrayResize.h", "emptyArrayToSingle.h"),
-    ("src/TableFunctions", (0,)): ("TableFunctionView.h",),
+    ("src/Functions/array", (0,), "srcs"): ("arrayIndex.h", "arrayResize.h", "emptyArrayToSingle.h"),
+    ("src/Functions/array", (0,), "hdrs"): ("has.h",),
+    ("src/TableFunctions", (0,), "srcs"): ("TableFunctionView.h",),
 }
 
 
 def declare_dbms_package_headers(rows, inventory):
     private = defaultdict(set)
     labels = defaultdict(list)
-    for (package, groups), patterns in DBMS_PRIVATE_PACKAGE_HEADERS.items():
+    for (package, groups, field), patterns in DBMS_PACKAGE_HEADERS.items():
         files = inventory(package)
         globs = GlobFiles(files)
         missing = [pattern for pattern in patterns if not globs.matching(pattern)]
         if missing:
-            raise ValueError(f"{package}: missing private dbms headers: {missing}")
+            raise ValueError(f"{package}: missing dbms headers: {missing}")
         names = globs.result(patterns, ())
         private[package].update(names)
         declare_compiled_headers(rows[package], files, (), list_expr(names))
-        labels[groups].extend(relative_label(package, name, "src") for name in names)
-    for groups, paths in labels.items():
+        labels[groups, field].extend(relative_label(package, name, "src") for name in names)
+    for (groups, field), paths in labels.items():
         compilers = [f"dbms__compile_{index}" for index in groups]
-        declare_compiled_headers(rows["src"], inventory("src"), compilers, list_expr(paths), field="srcs")
+        declare_compiled_headers(rows["src"], inventory("src"), compilers, list_expr(paths), field=field)
     return {package: sorted(names) for package, names in private.items()}
 
 
@@ -552,7 +553,7 @@ def group_runtime_filter_benchmark_sources(root):
                 or ast.literal_eval(group["visibility"]) != ["//src:__pkg__"]
                 or ast.literal_eval(srcs) != [own_source, label]):
             raise ValueError("runtime_filter_benchmark_sources differs from the CMake benchmark sources")
-        return old_labels
+        return
     if ast.literal_eval(srcs) != [own_source, *old_labels]:
         raise ValueError("benchmark_runtime_filter_objects changed its CMake sources or their order")
     exports = next(stmt for stmt in functions.module.body
@@ -562,7 +563,6 @@ def group_runtime_filter_benchmark_sources(root):
                    ', visibility=["//src:__pkg__"])')
     package.write_text(functions.rewrite([(end, end, declaration)]))
     src_build.write_text(benchmark.rewrite([(*benchmark.span(srcs), json.dumps([own_source, label]))]))
-    return old_labels
 
 
 def git_inventory(root):
@@ -1106,6 +1106,7 @@ class Migration:
             for package, compiler, headers in (
                 ("src/Compression", "clickhouse_compression",
                  list_expr(["PFor/bitpack.h", "PFor/block.h", "PFor/bulk.h", "PFor/vertical.h"])),
+                ("src/Functions/array", "clickhouse_functions_array__compile_0", list_expr(["arrayIndex.h"])),
                 ("src/Functions/JSONPath", "clickhouse_functions_jsonpath", expr('glob(["Generator/VisitorJSONPath*.h"])')),
             ):
                 if package in self.rows:

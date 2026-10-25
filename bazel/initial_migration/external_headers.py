@@ -122,7 +122,7 @@ class HeaderLibraries:
         """Add one logical cc_library to each observed dependency repository."""
         # Import after build_file has loaded; build_file supplies the Glob
         # renderer used for both native libraries and these header libraries.
-        from initial_migration.build_file import Glob
+        from initial_migration.build_file import Concat, Glob, Select
 
         for owner, directories in sorted(self.directories.items()):
             if owner not in builds:
@@ -140,4 +140,21 @@ class HeaderLibraries:
             attrs = {'hdrs': Glob(patterns, ('**/BUILD', '**/BUILD.bazel'))}
             if name == 'sparsehash_c11':
                 attrs['textual_hdrs'] = Glob(['sparsehash/*'], ['sparsehash/*.*'])
+            if name == 'usearch':
+                # contrib/usearch-cmake exports FP16 everywhere and SimSIMD on the two
+                # supported Linux platforms. Its headers include simsimd/simsimd.h.
+                build.loads.setdefault('@bazel_skylib//lib:selects.bzl', set()).add('selects')
+                build.rule('selects.config_setting_group', 'simsimd_supported', {
+                    'match_any': ['@platforms//cpu:x86_64', '@platforms//cpu:aarch64'],
+                })
+                simsimd_defines = [
+                    'SIMSIMD_DYNAMIC_DISPATCH', 'SIMSIMD_NATIVE_BF16=0',
+                    'USEARCH_CAN_COMPILE_BF16=0', 'USEARCH_CAN_COMPILE_FLOAT16', 'USEARCH_USE_SIMSIMD',
+                ]
+                attrs['defines'] = Concat([['USEARCH_USE_FP16LIB'], Select({
+                    ':simsimd_supported': simsimd_defines, '//conditions:default': [],
+                })])
+                attrs['deps'] = Concat([['@clickhouse_fp16//:fp16'], Select({
+                    ':simsimd_supported': ['@clickhouse_simsimd//:_simsimd'], '//conditions:default': [],
+                })])
             build.rule('cc_library', name, attrs)

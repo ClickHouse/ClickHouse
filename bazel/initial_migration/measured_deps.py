@@ -25,6 +25,18 @@ DEPENDENCIES = {
     ('@clickhouse_arrow', '_arrow__compile_0'): ([], ['@clickhouse_boost//:boost_headers_no_openssl'], []),
     ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_grpc', 'grpc_cpp_plugin'): ([
+        '@clickhouse_abseil_cpp//:absl_examine_stack',
+        '@clickhouse_abseil_cpp//:absl_flags_private_handle_accessor',
+        '@clickhouse_abseil_cpp//:absl_flags_program_name',
+        '@clickhouse_abseil_cpp//:absl_graphcycles_internal',
+        '@clickhouse_abseil_cpp//:absl_log_internal_fnmatch',
+        '@clickhouse_abseil_cpp//:absl_log_internal_format',
+        '@clickhouse_abseil_cpp//:absl_log_internal_globals',
+        '@clickhouse_abseil_cpp//:absl_malloc_internal',
+        '@clickhouse_abseil_cpp//:absl_stacktrace',
+        '@clickhouse_abseil_cpp//:absl_symbolize',
+    ], [], []),
     ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
@@ -53,13 +65,13 @@ DEPENDENCIES = {
         '@clickhouse_llvm_project//:LLVMSupport', GLIBC_COMPATIBILITY,
     ], [], []),
     ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
-    ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA], [], []),
-    ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt'], [], []),
+    ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
+    ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt', '@clickhouse_boost//:_boost_context'], [], []),
     ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Columns/benchmarks', 'column_insert_many_from_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_base'): (['@clickhouse_replxx//:_replxx'], [], []),
-    ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc'], [], []),
-    ('src/Common/benchmarks', 'profile_events_objects'): ([TZDATA], [], []),
+    ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc', '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
+    ('src/Common/benchmarks', 'profile_events_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
     ('src/Common/benchmarks', 'benchmark_radix_sort_objects'): (
         ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
     ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (
@@ -95,6 +107,10 @@ DEPENDENCIES = {
     ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
         '@clickhouse_libhdfs3//:_hdfs3', '//src/Common:string_utils']),
     ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
+    ('src/Functions/array', 'headers'): ([
+        '//src:headers', '//base:common', '//src/Common:memory_tracking_api',
+        '//src/Common:assert_cast', '//src:with_context', '//src/Common', '//src:column_types',
+    ], [], []),
     ('src/Functions/array', 'clickhouse_functions_array__compile_0'): ([], ['//src:dbms__compile_0'], []),
     ('src/Storages/System', 'headers'): (['//bazel:clickhouse_config_headers'], [], []),
     ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
@@ -120,7 +136,7 @@ EMBEDDED_UNUSED = {
         '//bazel:clickhouse_config_headers', '@clickhouse_abseil_cpp//:absl_base_config',
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_crc32c//:_crc32c',
         '@clickhouse_fast_float//:fast_float', '@clickhouse_heks//:heks', '@clickhouse_jemalloc//:_jemalloc',
-        '@llvm-project//libunwind:headers',
+        '@llvm-project//libunwind:headers', '@lz4//:lz4_frame',
     },
     'dbms_embedded': _EMBEDDED_UNUSED | {
         '//base/glibc-compatibility', '//bazel:clickhouse_config_headers', '//src/Common:cow',
@@ -219,7 +235,7 @@ for group in range(3):
     private.extend([SPARSEHASH, *(['//src/Common:shared_mutex'] if group < 2 else []), '//src:core_defines'])
 
 
-def editable_dependency_lists(build, node, drop, canonical):
+def editable_dependency_lists(build, node, drop, canonical, replacements=None):
     """Remove labels at their declaration if every changed list has one consumer."""
     uses = Counter(n.id for n in ast.walk(build.source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load))
     subscripts = [n for n in ast.walk(build.source.module) if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name)]
@@ -238,8 +254,9 @@ def editable_dependency_lists(build, node, drop, canonical):
                       sum(s.slice.value == n.slice.value for s in refs) == 1)
             return visit(value, writable and single)
         if isinstance(n, ast.List) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in n.elts):
-            keep = [e.value for e in n.elts if canonical(e.value) not in drop]
-            if len(keep) != len(n.elts):
+            labels = [e.value for e in n.elts]
+            keep = [(replacements or {}).get(canonical(v), v) for v in labels if canonical(v) not in drop]
+            if keep != labels:
                 if not writable:
                     return False
                 edits.append((*build.source.span(n), json.dumps(keep)))
@@ -251,6 +268,26 @@ def editable_dependency_lists(build, node, drop, canonical):
         return False
 
     return edits if visit(node, True) else None
+
+
+def usearch_implementation_dep(root):
+    """USearch supplies dbms's SimSIMD link input at its original position."""
+    path = root / 'src/BUILD.bazel'
+    build = Build(root, path, (), ())
+    rule = next(rule for _, rule in build.source.rules() if attributes(rule)['name'].value == 'dbms__compile_0')
+    deps = attributes(rule)['implementation_deps']
+    usearch = '@clickhouse_usearch//:usearch'
+    simsimd = '@clickhouse_simsimd//:_simsimd'
+    defs = constant_defs(build.source.module)
+    branches = [ast.literal_eval(eval_node(deps, defs, cpu)) for cpu in CPUS]
+    if all(row.count(usearch) == 1 and simsimd not in row for row in branches):
+        return
+    if not all(row.count(simsimd) == row.count(usearch) == 1 for row in branches):
+        raise ValueError('dbms__compile_0: expected one USearch and one SimSIMD dependency')
+    edits = editable_dependency_lists(build, deps, {usearch}, lambda label: label, {simsimd: usearch})
+    if not edits:
+        raise ValueError('dbms__compile_0: cannot replace its private SimSIMD dependency')
+    path.write_text(build.source.rewrite(edits))
 
 
 def apply(root):
@@ -399,3 +436,5 @@ def apply(root):
             raise ValueError(f'{package}: missing measured dependency target')
         if edits:
             path.write_text(source.rewrite(edits))
+
+    usearch_implementation_dep(root)

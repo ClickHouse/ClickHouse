@@ -4,6 +4,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")
 load("@clickhouse//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
+load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_CODEGEN_COPTS", "native_release_copts")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -5690,41 +5691,15 @@ llvm_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
+    ] + NATIVE_CODEGEN_COPTS + [
         "-fdiagnostics-absolute-paths",
         "-fstrict-vtable-pointers",
         "-fPIE",
         "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-        "-O3",
-        "-DNDEBUG",
-        "-std=c++23",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
+    ] + native_release_copts("-std=c++23") + [
         "-nostdinc++",
         "-w",
-    ]) + cmake_prefix_maps([
+    ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
@@ -5784,38 +5759,12 @@ llvm_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
-        "@platforms//cpu:aarch64": [],
-    })) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
+    ] + NATIVE_CODEGEN_COPTS + [
         "-fdiagnostics-absolute-paths",
         "-fstrict-vtable-pointers",
         "-fPIE",
         "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-        "-O3",
-        "-DNDEBUG",
-        "-std=c++23",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
+    ] + native_release_copts("-std=c++23") + [
         "-w",
         "-nostdinc++",
         "-fno-sanitize=undefined",
@@ -5904,28 +5853,7 @@ llvm_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
+    ] + NATIVE_CODEGEN_COPTS + [
         "-fdiagnostics-absolute-paths",
         "-fstrict-vtable-pointers",
         "-fPIE",
@@ -5934,17 +5862,12 @@ llvm_runtime_objects(
         "-ffunction-sections",
         "-fdata-sections",
         "-faddrsig",
-        "-O3",
-        "-DNDEBUG",
-        "-std=c++23",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
+    ] + native_release_copts("-std=c++23") + [
         "-ffreestanding",
         "-fno-builtin",
         "-Werror",
         "-nostdinc++",
-    ]) + cmake_prefix_maps([
+    ] + cmake_prefix_maps([
         "aarch64",
         "x86_64",
     ]),
@@ -6032,37 +5955,11 @@ llvm_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
-        "@platforms//cpu:aarch64": [],
-    })) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
+    ] + NATIVE_CODEGEN_COPTS + [
         "-fdiagnostics-absolute-paths",
         "-fstrict-vtable-pointers",
         "-fPIE",
-        "-O3",
-        "-DNDEBUG",
-        "-std=c++23",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
+    ] + native_release_copts("-std=c++23") + [
         "-O3",
         "-fno-exceptions",
         "-funwind-tables",
@@ -6103,35 +6000,10 @@ llvm_runtime_objects(
         "--no-default-config",
         "-fdiagnostics-color=always",
         "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
-        "@platforms//cpu:aarch64": [],
-    })) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
+    ] + NATIVE_CODEGEN_COPTS + [
         "-fdiagnostics-absolute-paths",
         "-fPIE",
-        "-O3",
-        "-DNDEBUG",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
+    ] + native_release_copts() + [
         "-O3",
         "-fno-exceptions",
         "-funwind-tables",
@@ -6168,33 +6040,7 @@ llvm_runtime_objects(
         "--no-default-config",
         "-fdebug-compilation-dir=.",
         "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": ["-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16"],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": ["-mbranches-within-32B-boundaries"],
-        "@platforms//cpu:aarch64": [],
-    })) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
-        "-O3",
-        "-DNDEBUG",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
+    ] + NATIVE_CODEGEN_COPTS + native_release_copts() + [
         "-O3",
         "-fno-exceptions",
         "-funwind-tables",

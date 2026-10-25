@@ -68,30 +68,52 @@ CLICKHOUSE_COMMON_IO_LOCAL_DEFINES = select({
 })
 
 # The DBMS consumers also compile with the AI SDK, Arrow, and usearch definitions.
-_DBMS = [
-    "AI_SDK_HAS_ANTHROPIC=1",
-    "AI_SDK_HAS_OPENAI=1",
+_USEARCH_DEFINES = [
     "SIMSIMD_DYNAMIC_DISPATCH",
     "SIMSIMD_NATIVE_BF16=0",
     "USEARCH_CAN_COMPILE_BF16=0",
     "USEARCH_CAN_COMPILE_FLOAT16",
     "USEARCH_USE_FP16LIB",
     "USEARCH_USE_SIMSIMD",
+]
+
+_DBMS = [
+    "AI_SDK_HAS_ANTHROPIC=1",
+    "AI_SDK_HAS_OPENAI=1",
     "USE_CLICKHOUSE_THREADS=1",
 ]
 
-DBMS_INTERFACE_X86_64_DEFINES = sorted(_COMMON_IO_X86_64 + _DBMS + [
+_DBMS_X86_64 = _COMMON_IO_X86_64 + _DBMS + [
     "ARROW_HAVE_AVX2",
     "ARROW_HAVE_BMI2",
     "ARROW_HAVE_RUNTIME_AVX2",
     "ARROW_HAVE_RUNTIME_BMI2",
     "ARROW_HAVE_RUNTIME_SSE4_2",
     "ARROW_HAVE_SSE4_2",
-])
+]
 
-DBMS_INTERFACE_AARCH64_DEFINES = sorted(_COMMON_IO_AARCH64 + _DBMS + ["ARROW_HAVE_NEON"])
+_DBMS_AARCH64 = _COMMON_IO_AARCH64 + _DBMS + ["ARROW_HAVE_NEON"]
+
+DBMS_INTERFACE_X86_64_DEFINES = sorted(_DBMS_X86_64 + _USEARCH_DEFINES)
+DBMS_INTERFACE_AARCH64_DEFINES = sorted(_DBMS_AARCH64 + _USEARCH_DEFINES)
 
 DBMS_CONSUMER_DEFINES = select({
     "@platforms//cpu:x86_64": sorted(DBMS_INTERFACE_X86_64_DEFINES + _MULTITARGET),
     "@platforms//cpu:aarch64": sorted(DBMS_INTERFACE_AARCH64_DEFINES + _MULTITARGET),
+})
+
+_DBMS_LOCAL = _MULTITARGET + [
+    "SNAPPY_CODEC_AVAILABLE",
+    "XXH_INLINE_ALL",
+]
+
+DBMS_LOCAL_DEFINES = select({
+    "@platforms//cpu:x86_64": sorted(DBMS_INTERFACE_X86_64_DEFINES + _DBMS_LOCAL),
+    "@platforms//cpu:aarch64": sorted(DBMS_INTERFACE_AARCH64_DEFINES + _DBMS_LOCAL),
+})
+
+# dbms__compile_0 receives the USearch definitions from its implementation dependency.
+DBMS_USEARCH_LOCAL_DEFINES = select({
+    "@platforms//cpu:x86_64": sorted(_DBMS_X86_64 + _DBMS_LOCAL),
+    "@platforms//cpu:aarch64": sorted(_DBMS_AARCH64 + _DBMS_LOCAL),
 })

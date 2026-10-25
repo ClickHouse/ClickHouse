@@ -4,7 +4,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "license.txt",
-    "pdqsort.h",
 ])
 
 cc_library(

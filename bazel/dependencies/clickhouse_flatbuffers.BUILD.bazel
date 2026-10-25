@@ -1,5 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
+load("@clickhouse//bazel/rules:native_compile_options.bzl", "native_cxx_tool_copts")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -81,56 +81,7 @@ ch_cc_binary(
         "include/flatbuffers/flatc.h",
         "grpc/**/*.h",
     ]),
-    copts = [
-        "--no-default-config",
-        "-fdiagnostics-color=always",
-        "-pipe",
-    ] + (select({
-        "@platforms//cpu:x86_64": [
-            "-march=x86-64-v3",
-            "-mpclmul",
-        ],
-        "@platforms//cpu:aarch64": [
-            "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        ],
-    }) + [
-        "-fasynchronous-unwind-tables",
-        "-fdebug-compilation-dir=.",
-        "-falign-functions=64",
-        "-falign-loops=32",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "-mbranches-within-32B-boundaries",
-        ],
-        "@platforms//cpu:aarch64": [],
-    })) + [
-        "-fstack-protector-strong",
-        "-fstack-clash-protection",
-        "-ffp-contract=off",
-        "-fno-math-errno",
-        "-fdiagnostics-absolute-paths",
-        "-fstrict-vtable-pointers",
-        "-fPIE",
-        "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-        "-w",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-faddrsig",
-        "-O3",
-        "-DNDEBUG",
-        "-std=c++23",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
-        "-Werror",
-        "-nostdinc++",
-    ] + cmake_prefix_maps([
-        "aarch64",
-        "x86_64",
-    ]),
+    copts = native_cxx_tool_copts("-std=c++23"),
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
