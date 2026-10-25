@@ -1,4 +1,6 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel: dropping a table without UUID (e.g. in an `Ordinary` database) in a concurrent test
+-- clears all caches of the server, including the statistics cache, which turns the expected hits into misses.
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only.
 
 -- The statistics of all columns of a data part are read at once, by the first query that needs the
