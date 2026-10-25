@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
+#include <vector>
 
 namespace DB
 {
@@ -73,6 +74,7 @@ public:
     /// from the configuration stays even if a custom disk has the same name. A cache that has other names stays under them.
     /// A cache with no other name is removed only if it was not defined in the configuration and nothing else uses it anymore,
     /// including the snapshots returned by `getAll`, so that a new cache is never created for a path still used by the old one.
+    /// If something still uses it, the name is removed by a later call of a method of the factory, once nothing does.
     void removeNameOfReleasedDisk(const std::string & cache_name);
 
     void clear();
@@ -82,6 +84,13 @@ private:
     CacheByName caches_by_name;
     /// The names in `caches_by_name` added by custom cache disks.
     std::unordered_set<std::string> names_of_custom_disks;
+    /// The names in `names_of_custom_disks` whose disks were released, but whose caches were still used by something
+    /// else at that moment, see `removeNameOfReleasedDisk`.
+    std::unordered_set<std::string> names_of_released_disks;
+
+    /// Removes the names in `names_of_released_disks` whose caches are not used anymore. The removed caches are moved
+    /// to `removed`, to be destroyed by the caller after unlocking `mutex`.
+    void removeUnusedNamesOfReleasedDisks(std::vector<FileCacheDataPtr> & removed);
 };
 
 /// Get default path prefix for non-disk caches.

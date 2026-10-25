@@ -23,7 +23,16 @@ SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_f
 INSERT INTO test_cache SELECT number FROM numbers(5);
 SELECT 'rows with the first cache path', count() FROM test_cache;
 DROP TABLE test_cache SYNC;
+"
 
+# A query of another test reading `system.filesystem_cache` at the same time may still use the cache, and then
+# its name is removed only after that query is finished.
+for _ in {1..600}; do
+    [ "$($CLIENT -q "SELECT count() FROM system.filesystem_cache_settings WHERE cache_name = '$cache_disk'")" = 0 ] && break
+    sleep 0.1
+done
+
+$CLIENT -q "
 CREATE TABLE test_cache (a Int32) ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(name = '$cache_disk', type = cache, max_size = '1Mi', max_file_segment_size = '256Ki', boundary_alignment = '256Ki', path = '${cache_disk}_second/',
                      disk = disk(name = '$inner_disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$inner_disk/'));
