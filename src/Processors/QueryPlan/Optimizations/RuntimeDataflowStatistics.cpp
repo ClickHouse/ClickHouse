@@ -8,6 +8,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -914,7 +915,11 @@ RuntimeDataflowStatisticsCacheUpdater::KeyOrderProvider RuntimeDataflowStatistic
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
     chassert(chunk.getNumColumns() == header.columns());
-    const auto & columns = chunk.getColumns();
+    /// `NativeWriter::write` compacts `ColumnReplicated` before serialization: after a lazy `JOIN` and a
+    /// filter, the nested column can hold many rows - aggregate states, say - that no index references any
+    /// more, and the writer drops them or materializes the referenced rows. Measure the same columns.
+    Columns columns = chunk.getColumns();
+    compactReplicatedColumns(columns);
     ColumnsWithTypeAndName cols;
     cols.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)

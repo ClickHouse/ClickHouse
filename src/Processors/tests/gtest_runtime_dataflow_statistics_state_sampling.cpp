@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -1620,4 +1621,44 @@ TEST(RuntimeDataflowStatisticsStateSampling, StateLeafIdentityFollowsTheGlobalVa
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes * 5, wire_bytes * 4);
     EXPECT_LE(stats->output_bytes * 4, wire_bytes * 5);
+}
+
+/// After a lazy `JOIN` and a filter, a `ColumnReplicated` can keep nested rows that none of its indexes
+/// reference any more. `NativeWriter::write` compacts such columns before serialization, so those rows never
+/// reach the wire, and the estimate must not count them. Here the nested column holds an empty
+/// `groupArray(UInt64)` state and one with 4000 values, and every output row references the empty one.
+TEST(RuntimeDataflowStatisticsStateSampling, UnreferencedReplicatedStatesAreNotCounted)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 32;
+    AggregateFunctionPtr function;
+    const ColumnPtr nested = createSkewedGroupArrayColumn(2, /*giant_state_row=*/1, /*elements_in_giant_state=*/4000, function);
+    const ColumnPtr indexes = ColumnUInt8::create(rows, UInt8(0));
+    const ColumnPtr replicated = ColumnReplicated::create(nested, indexes);
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{replicated, std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}), "state"});
+
+    /// Without compression the estimate is the uncompressed size, so the ground truth is what `NativeWriter`
+    /// writes for the block to a peer of the current revision.
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size();
+    /// The giant state alone takes 32000 bytes.
+    ASSERT_LT(wire_bytes, 4000);
+
+    const size_t cache_key = 0x111985 + 50;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, none));
+        Block header = block.cloneEmpty();
+        updater.recordOutputChunk(Chunk(Columns{replicated}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_LE(stats->output_bytes, wire_bytes * 2);
 }
