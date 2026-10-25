@@ -1953,3 +1953,14 @@ The previous pair compiled 4,667 C++ actions on x86-64 and 4,664 on ARM64. On th
 | --- | ---: | ---: | ---: |
 | x86-64 | 51,206 | 0 | 1,096,279,543 |
 | ARM64 | 51,727 | 0 | 1,105,115,070 |
+
+## d88879968
+
+[d88879968](https://github.com/dzbarsky/clickhouse/commit/d88879968fe56b263fd23d32d4ba6089701ad89e) moves object storage headers to their direct owners, makes IntervalTree a compiled library, keeps ORC implementation headers private, and groups contiguous LLVM linker inputs. On [x86-64](https://app.buildbuddy.io/invocation/58c87a28-5381-4ada-a474-fa13e6e48afa) and [ARM64](https://app.buildbuddy.io/invocation/1447d333-4a34-47c6-846d-abfc8b5098f5), all 12 native targets passed, including the corrected Parquet reader check. The stripped and normalized ClickHouse SHA-256 and size matched native CMake; the raw ClickHouse and unit-test executables matched their Bazel references. [All six SHA-256 values and sizes](../../README.bazel.md#binary-comparison).
+
+The [x86-64](https://app.buildbuddy.io/invocation/a4615c7f-9d89-4127-964d-66e06c1ab961) and [ARM64](https://app.buildbuddy.io/invocation/3f3ccce9-2de4-4c73-a258-fda68a3416dc) hosted builds considered a roster of 154 x86-64 and 151 ARM64 targets (160 distinct). On both CPUs the first three planning queries succeeded. The fourth, a Bazel action query for C++ outputs, exited with code 8 and produced no output. The fifth command did not run. The audit selected no production targets, produced no strict DWYU reports, and graded **0 of 786** targets. The available records do not identify what interrupted the fourth query.
+
+| CPU | Bazel remote cache hits | C++ compilations executed on workers | Peak concurrent worker commands | Worker input bytes |
+| --- | ---: | ---: | ---: | ---: |
+| x86-64 | 48,409 | 2,802 | 168 | 10,553,874,245 |
+| ARM64 | 48,931 | 2,801 | 209 | 15,438,674,577 |
