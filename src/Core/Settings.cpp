@@ -2350,6 +2350,17 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.5", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."}) \
+    DECLARE(Bool, use_top_k_dynamic_filtering_for_single_string_sort_column, true, R"(
+Apply `use_top_k_dynamic_filtering` to a `MergeTree` table when `ORDER BY` has a single `String` column (also inside `Nullable`), even if `use_top_k_dynamic_filtering_for_variable_length_types` is `0`.
+
+For such a column, the filter also drops the rows equal to the threshold once most rows of a block are equal to it (for example, a column of mostly empty strings). Each threshold value is checked on one block: the first one in which most rows pass the filter. Other sources, such as Parquet files, are not affected.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
 For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
 
@@ -9085,6 +9096,10 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
 Only has an effect in ClickHouse Cloud. On a seek away from the current position of an open distributed cache stream, if the estimated number of in-flight bytes that would have to be discarded to keep reusing the connection (via the read range id mechanism) exceeds this value, drop the connection and open a new one instead. This avoids draining a large amount of unused data when seeks are frequent. 0 disables this and always reuses the connection.
 )", 0, \
         {"26.8", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."}) \
+    DECLARE(UInt64, distributed_cache_min_inflight_bytes_to_discard_connection, 4 * 1024 * 1024, R"(
+Only has an effect in ClickHouse Cloud. When a distributed cache read request is cancelled while data may still arrive, discard the connection if the estimated number of in-flight bytes exceeds this value; otherwise return it to the pool, and the next request on the connection drains them. 0 always discards the connection. On a seek, `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek` first decides whether to re-request on the same connection; if the request is cancelled instead, this setting also applies. Unlike that setting, 0 here means "always discard". It has no effect if `distributed_cache_discard_connection_if_unread_data` is disabled, because the connection is then always kept.
+)", 0, \
+        {"26.11", 0, 4 * 1024 * 1024, "New setting to keep a distributed cache connection with a small amount of in-flight data when a read request is cancelled. Defaults to 4 MiB; 0 restores the previous behavior (discard the connection whenever data may still arrive)."}) \
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0, \
@@ -9899,6 +9914,12 @@ The setting affects only queries with `JOIN`, where the non-leftmost side is rea
 Replace table function engines with their -Cluster alternatives
 )", 0, \
         {"25.3", false, true, "New setting."}) \
+    DECLARE(Bool, parallel_replicas_for_object_storage_tables, true, R"(
+Read a table with an object storage engine that has a `-Cluster` table function (`S3`, `AzureBlobStorage`, `HDFS`, `Iceberg`, `IcebergS3`, `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`) over the replicas of `cluster_for_parallel_replicas`, the same way `parallel_replicas_for_cluster_engines` does for the table functions. Has no effect when `parallel_replicas_for_cluster_engines` is disabled.
+
+A replica takes part in the read only if it has the table, and the table must have the same definition on every replica.
+)", 0, \
+        {"26.11", false, true, "New setting to read tables with an object storage engine with parallel replicas."}) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0, \
@@ -10300,9 +10321,10 @@ Max rows of iceberg parquet data file on insert operation.
 Max bytes of iceberg parquet data file on insert operation.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
-see https://iceberg.apache.org/docs/1.5.2/configuration/. Note that ClickHouse compares the limit against the
-uncompressed size of the data written into the file so far, while the Iceberg property targets the size of the
-resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file independently of its size.
+see https://iceberg.apache.org/docs/1.5.2/configuration/. The limit is compared against the size of the file
+written so far, that is, the compressed size, so a file can exceed it by what the writer still buffers, such as
+incomplete Parquet row groups and the ones being encoded. `iceberg_insert_max_rows_in_data_file` caps the file
+independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
@@ -10317,7 +10339,10 @@ Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
 Max bytes of an iceberg parquet data file produced by compaction.
 
 The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
-see https://iceberg.apache.org/docs/1.5.2/configuration/. Keep it above
+see https://iceberg.apache.org/docs/1.5.2/configuration/. The limit is compared against the size of the file
+written so far, that is, the compressed size, the same measure as `iceberg_data_file_size_lower_threshold_compaction`,
+so a file can exceed it by what the writer still buffers, such as incomplete Parquet row groups and the ones being
+encoded. Keep it above
 `iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
 and is selected for compaction again.
 )", 0, \
@@ -10749,8 +10774,17 @@ Enables the `ZXC` compression codec.
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
     DECLARE(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, R"(
-Wait for committed changes to become actually visible in the latest snapshot
+What `COMMIT` waits for:
+- `wait_commit`: the commit request. If its outcome is unknown (the Keeper connection was lost), `COMMIT` throws `UNKNOWN_STATUS_OF_TRANSACTION`.
+- `wait_unknown`: also the outcome of a commit whose status is unknown.
+- `wait_visible`: also until a new transaction on this replica sees the changes, at most `wait_changes_become_visible_timeout_ms`; then `COMMIT` throws `TIMEOUT_EXCEEDED`, although the transaction is committed.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, wait_changes_become_visible_timeout_ms, 10000, R"(
+How long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` of a table with transactions, and `COMMIT` with
+`wait_changes_become_visible_after_commit_mode = 'wait_visible'` wait until the commits are visible to a new
+transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
+)", EXPERIMENTAL, \
+        {"26.11", 10000, 10000, "New setting bounding how long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` and `COMMIT` wait for commits to become visible on this replica."}) \
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
