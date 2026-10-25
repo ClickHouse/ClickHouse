@@ -2411,16 +2411,31 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// columns one at a time and must not be priced at the full horizontal footprint - that is the same
     /// starvation pattern as above, and a rows-TTL merge of a big wide table on object storage is exactly
     /// where it hurts. Mirror canVerticalTTLDelete conservatively: everything it rejects (a GROUP BY TTL,
-    /// a column TTL, a lightweight delete, a non-Ordinary mode) keeps the horizontal pricing. The
-    /// lightweight-delete term is the broader source_and_patch_parts one, which can only reject more
-    /// merges from the vertical pricing than the merge itself does - again the over-reserving direction.
+    /// a column TTL, a lightweight delete, a non-Ordinary mode, a rows TTL that reads an expired column -
+    /// only `TTLTransform`, after the merge, fills the columns no source part stores) keeps the horizontal
+    /// pricing, and so does a `TTLDrop` merge of a table with a rows TTL, which chooseMergeAlgorithm forces
+    /// to Horizontal. The lightweight-delete term is the broader source_and_patch_parts one, which can only
+    /// reject more merges from the vertical pricing than the merge itself does - again the over-reserving
+    /// direction.
+    const auto ttl_reads_expired_column = [&](const TTLDescription & ttl_description)
+    {
+        const auto is_expired = [&](const NameAndTypePair & column)
+        {
+            return Nested::tryGetColumnNameInStorage(column.name, expired_columns).has_value();
+        };
+        return std::ranges::any_of(ttl_description.expression_columns, is_expired)
+            || std::ranges::any_of(ttl_description.where_expression_columns, is_expired);
+    };
     const bool can_vertical_ttl_delete = !future_part.parts.empty()
         && merge_merging_params.mode == MergeTreeData::MergingParams::Ordinary
         && settings[MergeTreeSetting::vertical_merge_optimize_ttl_delete]
         && !metadata_snapshot->hasAnyGroupByTTL()
         && !metadata_snapshot->hasAnyColumnTTL()
         && !has_lightweight_delete
-        && (metadata_snapshot->hasRowsTTL() || metadata_snapshot->hasAnyRowsWhereTTL());
+        && (metadata_snapshot->hasRowsTTL() || metadata_snapshot->hasAnyRowsWhereTTL())
+        && !(metadata_snapshot->hasRowsTTL() && ttl_reads_expired_column(metadata_snapshot->getRowsTTL()))
+        && std::ranges::none_of(metadata_snapshot->getRowsWhereTTLs(), ttl_reads_expired_column)
+        && !(future_part.merge_type == MergeType::TTLDrop && metadata_snapshot->hasRowsTTL());
 
     if (!future_part.parts.empty()
         && future_part.part_format.part_type == MergeTreeDataPartType::Wide
@@ -2484,10 +2499,11 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             if (merge_may_reduce_rows)
                 for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
                     insert_storage_name(name);
-            /// A vertical TTL-delete merge evaluates the TTL filter in the horizontal stage, so
-            /// extractMergingAndGatheringColumns pulls every column the TTL expressions read into the
-            /// merging set (MergeTask.cpp, the canVerticalTTLDelete branch). Mirror it, or those columns
-            /// would be priced as gathered one at a time while the merge keeps them all alive.
+            /// A vertical TTL-delete merge evaluates the TTL step in the horizontal stage, so
+            /// extractMergingAndGatheringColumns pulls every column the rows, rows-WHERE, move and
+            /// recompression TTL expressions read into the merging set (MergeTask.cpp, the
+            /// canVerticalTTLDelete branch). Mirror it, or those columns would be priced as gathered one
+            /// at a time while the merge keeps them all alive.
             if (need_remove_expired_values && can_vertical_ttl_delete)
             {
                 const auto insert_ttl_expression_columns = [&](const TTLDescription & ttl_description)
@@ -2501,6 +2517,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     insert_ttl_expression_columns(metadata_snapshot->getRowsTTL());
                 for (const auto & rows_where_ttl : metadata_snapshot->getRowsWhereTTLs())
                     insert_ttl_expression_columns(rows_where_ttl);
+                for (const auto & move_ttl : metadata_snapshot->getMoveTTLs())
+                    insert_ttl_expression_columns(move_ttl);
+                for (const auto & recompression_ttl : metadata_snapshot->getRecompressionTTLs())
+                    insert_ttl_expression_columns(recompression_ttl);
             }
             if (merging_names.empty() && !output_columns.empty())
                 merging_names.insert(output_columns.front().name);
