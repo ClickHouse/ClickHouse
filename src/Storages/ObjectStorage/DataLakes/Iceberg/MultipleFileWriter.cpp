@@ -112,7 +112,10 @@ void MultipleFileWriter::finalize()
 
     auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
     if (current_file_stats)
+    {
         current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+        current_file_stats->setSplitOffsets(output_format->getRowGroupOffsets());
+    }
     stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
 
     buffer->finalize();
