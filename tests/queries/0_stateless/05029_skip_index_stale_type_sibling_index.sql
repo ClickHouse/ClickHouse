@@ -2,7 +2,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 28-29 and 36 of the series started in 04165_skip_index_stale_type_after_alter and continued in
+-- Cases 28-29 and 36-37 of the series started in 04165_skip_index_stale_type_after_alter and continued in
 -- 04869_skip_index_stale_type_absent_column: a part carries index files for a column it holds no
 -- bytes of, and a SECOND index on the part decides whether the mutation may record that column.
 -- The series is split across files because one test exceeded the flaky-check runtime limit under
@@ -149,8 +149,65 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_full_rewrite_
 SELECT count() FROM t_full_rewrite_stale_update WHERE toHour(dt) = 9 SETTINGS ignore_data_skipping_indices = 'idx_all';
 SELECT count() FROM t_full_rewrite_stale_update WHERE toHour(dt) = 9 SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 37. a mutation that rewrites the whole part rebuilds the indices over block columns ATTACH invalidated';
+-- ATTACH PARTITION FROM invalidates the adopted part's stored _block_number and _block_offset, so reads
+-- synthesize them and the reader refuses the indices over them. The rewrite writes the synthesized values
+-- and drops the invalidation, so those indices must be rebuilt, not carried over.
+DROP TABLE IF EXISTS t_adopted_src;
+DROP TABLE IF EXISTS t_adopted;
+CREATE TABLE t_adopted_src (k UInt64)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    packed_skip_index_max_bytes = 0, enable_block_number_column = 1, enable_block_offset_column = 1,
+    add_minmax_index_for_block_number_column = 1, add_minmax_index_for_block_offset_column = 1;
+INSERT INTO t_adopted_src SELECT number FROM numbers(32);
+INSERT INTO t_adopted_src SELECT number + 32 FROM numbers(32);
+OPTIMIZE TABLE t_adopted_src FINAL;
+CREATE TABLE t_adopted AS t_adopted_src;
+ALTER TABLE t_adopted ATTACH PARTITION tuple() FROM t_adopted_src;
+ALTER TABLE t_adopted ADD COLUMN c UInt64 DEFAULT k * 3 SETTINGS alter_sync = 2;
+ALTER TABLE t_adopted ADD INDEX idx_new (c, k) TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_adopted MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 2, alter_sync = 2;
+-- Every stored _block_number is now 1 and every _block_offset the row's position, so the rebuilt indices
+-- select 0/16 and 8/16 granules below; the carried ones would select 8/16 and 0/16.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_adopted WHERE _block_number = 2)
+    WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_adopted WHERE _block_offset >= 32)
+    WHERE explain ILIKE '%Granules: 8/16%';
+SELECT count() FROM t_adopted WHERE _block_number = 1;
+SELECT count() FROM t_adopted WHERE _block_number = 1 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_adopted WHERE _block_offset >= 32;
+SELECT count() FROM t_adopted WHERE _block_offset >= 32 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 37b. the same when an UPDATE of another column is what rewrites the whole part';
+DROP TABLE IF EXISTS t_adopted_update_src;
+DROP TABLE IF EXISTS t_adopted_update;
+CREATE TABLE t_adopted_update_src (k UInt64, v UInt64, INDEX idx_all (k, v) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    packed_skip_index_max_bytes = 0, enable_block_number_column = 1, enable_block_offset_column = 1,
+    add_minmax_index_for_block_number_column = 1, add_minmax_index_for_block_offset_column = 1;
+INSERT INTO t_adopted_update_src SELECT number, number FROM numbers(32);
+INSERT INTO t_adopted_update_src SELECT number + 32, number FROM numbers(32);
+OPTIMIZE TABLE t_adopted_update_src FINAL;
+CREATE TABLE t_adopted_update AS t_adopted_update_src;
+ALTER TABLE t_adopted_update ATTACH PARTITION tuple() FROM t_adopted_update_src;
+ALTER TABLE t_adopted_update UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_adopted_update WHERE _block_number = 2)
+    WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_adopted_update WHERE _block_offset >= 32)
+    WHERE explain ILIKE '%Granules: 8/16%';
+SELECT count() FROM t_adopted_update WHERE _block_number = 1;
+SELECT count() FROM t_adopted_update WHERE _block_number = 1 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_adopted_update WHERE _block_offset >= 32;
+SELECT count() FROM t_adopted_update WHERE _block_offset >= 32 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_two_indices_absent;
 DROP TABLE t_two_indices_dotted;
 DROP TABLE t_sibling_rebuilt;
 DROP TABLE t_full_rewrite_stale;
 DROP TABLE t_full_rewrite_stale_update;
+DROP TABLE t_adopted_src;
+DROP TABLE t_adopted;
+DROP TABLE t_adopted_update_src;
+DROP TABLE t_adopted_update;

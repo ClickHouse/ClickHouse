@@ -39,3 +39,17 @@ DateTime(\'Asia/Tokyo\')
 1
 64
 64
+-- 37. a mutation that rewrites the whole part rebuilds the indices over block columns ATTACH invalidated
+1
+1
+64
+64
+32
+32
+-- 37b. the same when an UPDATE of another column is what rewrites the whole part
+1
+1
+64
+64
+32
+32
