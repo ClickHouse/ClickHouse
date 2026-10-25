@@ -26,7 +26,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Parsers/makeASTForLogicalFunction.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
@@ -969,9 +969,11 @@ namespace
 
             try
             {
-                InterpreterSelectQueryAnalyzer interpreter(probe_query, context, SelectQueryOptions{});
+                auto probe_context = Context::createCopy(context);
+                probe_context->setSetting("enable_parallel_replicas", Field{0});
+                InterpreterSelectQueryAnalyzer interpreter(probe_query, probe_context, SelectQueryOptions{});
                 auto io = interpreter.execute();
-                PullingPipelineExecutor executor(io.pipeline);
+                PullingAsyncPipelineExecutor executor(io.pipeline);
                 Block block;
                 while (executor.pull(block))
                 {
