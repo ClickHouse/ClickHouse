@@ -2135,7 +2135,7 @@ void writeInvalidatedSystemColumnsFileImpl(Storage & storage, bool storage_suppo
     /// part's copy. Unlinking first lets the hardlink accounting keep the shared blobs alive; on a local
     /// disk it likewise keeps the rewrite from going into the shared inode.
     ///
-    /// Metadata storages with deterministic object keys (`plain`, `plain_rewritable`) have no hardlinks,
+    /// Metadata storages with deterministic object keys (`plain`, `plain_rewritable` without `enable_hard_links`) have no hardlinks,
     /// and there the removal must NOT be issued: it addresses the very same object as the write, so when
     /// both are queued in one transaction - as they are under a part-storage transaction - the removal
     /// executes after the blob has been uploaded and deletes it, leaving the part with metadata that

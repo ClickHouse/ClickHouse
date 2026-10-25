@@ -35,6 +35,7 @@ $CLICKHOUSE_CLIENT -q "
         disk = disk(
             name = '04065_le_${CLICKHOUSE_DATABASE}',
             type = s3_plain_rewritable,
+            enable_hard_links = 0,
             endpoint = 'http://localhost:11111/test/04065_le_${CLICKHOUSE_DATABASE}/',
             access_key_id = clickhouse,
             secret_access_key = clickhouse),
@@ -57,8 +58,8 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_leader_election_s3"
 # Verify data correctness.
 $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM test_leader_election_s3"
 
-# The documented mutation contract of the only supported layout: `s3_plain_rewritable` has no
-# hard-link semantics, so `checkMutationIsPossible` rejects `ALTER ... DELETE/UPDATE` with
+# The documented mutation contract of the only supported layout: `leader_election` requires
+# `s3_plain_rewritable` with `enable_hard_links = 0`, so `checkMutationIsPossible` rejects `ALTER ... DELETE/UPDATE` with
 # `SUPPORT_IS_DISABLED` even here, on the leader. Assert it instead of describing it: the path
 # (`InterpreterAlterQuery` -> `checkMutationIsPossible` -> `StorageMergeTree::mutate`) is not
 # exercised by any other check in this suite, so a regression there would go unnoticed.
@@ -70,3 +71,19 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE test_leader_election_s3 UPDATE s = 'x' WHERE 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_leader_election_s3"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_leader_election_s3"
+
+# A disk with hard links (`enable_hard_links` is on by default) is rejected: the link counts of
+# blobs shared between directories are not coordinated between the nodes.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE test_leader_election_s3_hard_links (x UInt64)
+    ENGINE = MergeTree ORDER BY x
+    SETTINGS
+        disk = disk(
+            name = '04065_le_hl_${CLICKHOUSE_DATABASE}',
+            type = s3_plain_rewritable,
+            endpoint = 'http://localhost:11111/test/04065_le_hl_${CLICKHOUSE_DATABASE}/',
+            access_key_id = clickhouse,
+            secret_access_key = clickhouse),
+        leader_election = true
+" 2>&1 | grep -o -m1 -F "Set \`enable_hard_links = false\` for this disk"
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE test_leader_election_s3_hard_links"

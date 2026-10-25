@@ -367,6 +367,22 @@ StorageMergeTree::StorageMergeTree(
                     " invisible to its peers. Use a disk with `metadata_type = plain_rewritable`.",
                     disk->getName());
             }
+
+            /// Hard links on `plain_rewritable` (`enable_hard_links`, on by default) let a blob be shared by several
+            /// directories, with the number of links kept only in the memory of each node. Nothing of the
+            /// election protocol accounts for that: a node that loads the disk metadata recomputes the links from
+            /// its own, possibly stale, listing, and its startup recovery deletes the blobs of unfinished removals
+            /// that it believes are no longer linked - which may be a blob the live leader has just linked into a
+            /// new part. Without hard links every blob belongs to exactly one directory, so the layout that the
+            /// protocol is built and tested for is the one where hard links are disabled.
+            if (disk->supportsHardLinks())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting requires every disk in the storage policy to have hard links"
+                    " disabled, because the link counts of blobs shared between directories are not coordinated"
+                    " between nodes. Disk '{}' supports hard links. Set `enable_hard_links = false` for this disk.",
+                    disk->getName());
+            }
         }
 
         /// Create the election state before the storage is exposed: `CREATE` / `ATTACH` publish the

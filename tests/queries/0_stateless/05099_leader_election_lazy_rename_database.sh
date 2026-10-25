@@ -28,6 +28,7 @@ $CLICKHOUSE_CLIENT -q "
         disk = disk(
             name = '05099_le_${CLICKHOUSE_DATABASE}',
             type = s3_plain_rewritable,
+            enable_hard_links = 0,
             endpoint = 'http://localhost:11111/test/05099_le_${CLICKHOUSE_DATABASE}/',
             access_key_id = clickhouse,
             secret_access_key = clickhouse),

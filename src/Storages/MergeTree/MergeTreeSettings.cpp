@@ -2883,12 +2883,14 @@ This setting is not supported for `ReplicatedMergeTree`.
     DECLARE(Bool, leader_election, false, R"(
 Enable leader election for non-replicated MergeTree tables on shared `S3` object storage.
 When enabled, the table uses conditional writes on the object storage to elect a single leader among
-multiple server instances sharing the same data. Only the leader can perform writes and merges (and
-mutations on disks that support hard links; note the recommended `plain_rewritable` layout does not, so
-`ALTER TABLE ... UPDATE`/`DELETE` is rejected even on the leader there).
+multiple server instances sharing the same data. Only the leader can perform writes and merges.
+Heavy mutations (`ALTER TABLE ... UPDATE`/`DELETE`) need hard links, which the required disks do not have,
+so they are rejected even on the leader.
 Follower instances act as read-only replicas. Requires every disk in the storage policy to be an `S3`
 object storage disk with `metadata_type = plain_rewritable` — the only metadata layout currently
 accepted — so that after a failover the new leader sees the parts written by the previous leader.
+The disks must also have hard links disabled (`enable_hard_links = false`, which is not the default),
+because the link counts of blobs shared between directories are not coordinated between nodes.
 Tables on disks with any other metadata layout, including the default per-replica
 `metadata_type = local`, are rejected at creation.
 (`Azure` object storage is implemented but not yet test-covered, so it is rejected for now.)

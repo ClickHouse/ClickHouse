@@ -3,3 +3,5 @@
 SUPPORT_IS_DISABLED
 SUPPORT_IS_DISABLED
 100
+Set `enable_hard_links = false` for this disk
+0
