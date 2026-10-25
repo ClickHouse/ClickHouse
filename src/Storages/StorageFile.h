@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/ISource.h>
@@ -32,6 +33,8 @@ class PullingPipelineExecutor;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
+struct ParquetCachedStatisticsFilter;
 
 class StorageFile final : public IStorage
 {
@@ -115,6 +118,7 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool storesDataOnDisk() const override;
+    bool hasUnreplicatedTableDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     /// Check if the format supports reading only some subset of columns.
@@ -355,7 +359,8 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -387,6 +392,9 @@ private:
     /// key was made for; `still_holds` is false if the file has changed since it was opened.
     void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
 
+    /// Whether the cached Parquet statistics of the current file version show that no row group can match the filter.
+    bool canSkipFileByCachedStatistics();
+
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
 
@@ -407,6 +415,8 @@ private:
     /// settle check in `generate`). The query condition cache skips data based on the
     /// token, so it must fail close and stay bypassed while this is false.
     bool current_file_version_settled = false;
+    bool cached_statistics_filter_prepared = false;
+    std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
@@ -416,6 +426,8 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     /// A file read by a TopN read, whose query condition cache entry is written only when the source
@@ -433,6 +445,9 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+    ArchiveEntryPositions entry_positions;
+    /// The row count cache key of the archive entry being read, unset for a plain file.
+    std::optional<String> current_archive_entry_cache_key;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
@@ -471,6 +486,9 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
+    bool supportsMinMaxFromStatistics() const override;
+    void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
+
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -503,7 +521,7 @@ public:
     LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
-    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;
@@ -515,6 +533,7 @@ private:
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+    bool read_min_max_from_statistics = false;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyFileRegistryPtr lazy_row_index_registry;

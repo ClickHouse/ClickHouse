@@ -1,0 +1,17 @@
+<test>
+    <create_query>
+        CREATE TABLE test_kc_large_in
+        (
+            ts DateTime('UTC')
+        )
+        ENGINE = MergeTree() ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+    </create_query>
+
+    <fill_query>INSERT INTO test_kc_large_in SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_kc_large_in FINAL</fill_query>
+
+    <!-- The set is transformed once per applicable key column (toYYYYMM, toDate, ts). -->
+    <query>SELECT count() FROM test_kc_large_in WHERE ts IN (SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 977 FROM numbers(10000))</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_kc_large_in</drop_query>
+</test>
