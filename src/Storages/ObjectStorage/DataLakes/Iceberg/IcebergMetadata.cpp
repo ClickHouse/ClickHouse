@@ -1703,6 +1703,14 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
         std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
+            /// The estimate is observable in `EXPLAIN`, so it must fail where the scan would, as in `totalRows`.
+            checkPathReadable(
+                persistent_components.table_location,
+                data_file->parsed_entry->file_path_key.serialize(),
+                object_storage,
+                *external_storages,
+                context);
+
             if (pruning_filter)
             {
                 /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.

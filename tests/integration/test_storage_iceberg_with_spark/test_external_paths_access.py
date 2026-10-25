@@ -86,11 +86,21 @@ def test_same_bucket_external_path_requires_source_grant(started_cluster_iceberg
     error = instance.query_and_get_error(f"SELECT count() FROM {table_function}", user=user)
     assert "ACCESS_DENIED" in error, error
 
+    # The join estimate from manifest statistics is visible in `EXPLAIN`, which does not run the scan.
+    explain_query = (
+        f"SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 "
+        f"SELECT count() FROM {table_function} AS a JOIN {table_function} AS b ON a.id = b.id) "
+        f"WHERE explain LIKE '%Join: %' "
+        f"SETTINGS use_iceberg_manifest_statistics = 1, explain_query_plan_default = 'legacy'")
+    error = instance.query_and_get_error(explain_query, user=user)
+    assert "ACCESS_DENIED" in error, error
+
     assert instance.query(iceberg_files_query, user=user) == ""
 
     instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{external_prefix}/.*') TO {user}")
     assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
     assert instance.query(f"SELECT count() FROM {table_function}", user=user) == "3\n"
+    assert "[3]" in instance.query(explain_query, user=user)
     assert instance.query(iceberg_files_query, user=user) == expected_paths
 
     instance.query(f"DROP USER {user}")
