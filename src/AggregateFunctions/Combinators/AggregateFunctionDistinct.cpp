@@ -3,6 +3,8 @@
 
 #include <AggregateFunctions/Helpers.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 namespace DB
 {
 struct Settings;
@@ -40,7 +42,7 @@ public:
         /// Tuple has multiple nested functions and no getNestedFunction().
         /// Only product needs an ordered distinct history here, because its
         /// Float64 multiplication may change when unique keys are replayed.
-        const bool ordered_product = properties.is_order_dependent && nested_function->getName().starts_with("product");
+        const bool ordered_product = properties.is_order_dependent && boost::istarts_with(nested_function->getName(), "product");
 
         if (arguments.size() == 1)
         {

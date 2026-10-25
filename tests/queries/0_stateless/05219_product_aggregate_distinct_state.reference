@@ -14,6 +14,8 @@ If ordered state
 0	0
 Tuple ordered state
 1	1
+case-insensitive Tuple state copy
+1	1	1	1
 ArgMax ordered state
 0	0
 Resample ordered state

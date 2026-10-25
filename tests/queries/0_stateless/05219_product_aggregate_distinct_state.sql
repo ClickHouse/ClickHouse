@@ -116,6 +116,22 @@ FROM
 )
 SETTINGS max_threads = 1;
 
+-- Tuple retains the original base-name spelling, but product is case-insensitive.
+-- DISTINCT state copying must preserve the ordered result for either spelling.
+SELECT 'case-insensitive Tuple state copy';
+SELECT
+    isNull(tupleElement(PRODUCTTupleDistinct(tuple(x)), 1)),
+    isNull(tupleElement(finalizeAggregation(PRODUCTTupleDistinctState(tuple(x))), 1)),
+    isNull(tupleElement(ProductTupleDistinct(tuple(x)), 1)),
+    isNull(tupleElement(finalizeAggregation(ProductTupleDistinctState(tuple(x))), 1))
+FROM
+(
+    SELECT x
+    FROM VALUES('k UInt8, x Float64', (1, 1e300), (2, 2e300), (3, 0))
+    ORDER BY k
+)
+SETTINGS max_threads = 1;
+
 -- Both resampling and ArgMax add an argument to the nested aggregate.
 SELECT 'ArgMax ordered state';
 SELECT
