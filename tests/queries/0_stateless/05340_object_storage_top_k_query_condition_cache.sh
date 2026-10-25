@@ -146,21 +146,39 @@ run case_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 run case_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 CASE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_05340_case'")
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case SYNC"
-${CLICKHOUSE_CLIENT} --query "
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 --query "
     CREATE TABLE t_05340_case UUID '${CASE_UUID}' (k Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_case/*.parquet', format = Parquet)
     SETTINGS input_format_parquet_case_insensitive_column_matching = 0"
 run case_reloaded_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 run case_reloaded_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
+
+echo "--- storage changed by recreating the table with the same UUID"
+# The paths of the objects are relative to the storage, which a table keeps across a reload with its UUID,
+# while e.g. `ALTER NAMED COLLECTION` may point it to another bucket with identical copies of the objects,
+# where a predicate on `_path` selects other rows. So the key covers the storage: here, another endpoint
+# of the same bucket makes the entries of the first table miss.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_source"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340_source (k Int64, s String) ENGINE = S3(s3_conn, filename = '${S3_DIR}/*.parquet', format = Parquet)"
+run source_1 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
+run source_2 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
+SOURCE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_05340_source'")
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_source SYNC"
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 --query "
+    CREATE TABLE t_05340_source UUID '${SOURCE_UUID}' (k Int64, s String)
+    ENGINE = S3('http://127.0.0.1:11111/test/${S3_DIR}/*.parquet', 'test', 'testtest', 'Parquet')"
+run source_reloaded_1 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
+run source_reloaded_2 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
 
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 source_1 source_2 source_reloaded_1 source_reloaded_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_default"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_keys"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_key"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_source"

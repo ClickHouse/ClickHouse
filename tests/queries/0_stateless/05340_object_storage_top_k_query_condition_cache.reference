@@ -107,6 +107,19 @@
 100999
 100998
 100997
+--- storage changed by recreating the table with the same UUID
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
+100999
+100998
+100997
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998
@@ -147,5 +160,9 @@ case_1	1	0
 case_2	1	1
 case_reloaded_1	1	0
 case_reloaded_2	1	1
+source_1	1	0
+source_2	1	1
+source_reloaded_1	1	0
+source_reloaded_2	1	1
 gate_1	0	0
 gate_2	0	0

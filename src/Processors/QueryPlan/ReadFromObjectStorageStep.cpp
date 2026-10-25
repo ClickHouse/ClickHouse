@@ -404,6 +404,13 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     hash.update(top_k_filter->plan_hash);
     hash.update(*format_settings->source_settings_hash);
 
+    /// The paths of the files are relative to the storage (endpoint, bucket, container, ...), which a
+    /// table keeps across a `DETACH` / `ATTACH` with its UUID, while e.g. an `ALTER NAMED COLLECTION`
+    /// may point it to another bucket with identical copies of the objects, where `_path` differs.
+    const String data_source = configuration->getDataSourceDescription();
+    hash.update(data_source.size());
+    hash.update(data_source);
+
     if (!is_data_lake)
     {
         key->condition_hash_without_files = hash.get64();
