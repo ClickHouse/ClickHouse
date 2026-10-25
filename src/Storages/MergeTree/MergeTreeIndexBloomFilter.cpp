@@ -650,8 +650,8 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
                 }
                 else if (!areNativeConversionsEquivalentForBloomFilterExpressionMatching(*function_base, *function_base))
                 {
-                    /// The self-comparison is an exact native semantic whitelist for integer->UInt8,
-                    /// numeric->Decimal and numeric/Decimal->String. FromString templates and every
+                    /// The self-comparison is an exact native semantic whitelist for context-independent
+                    /// integer->UInt8/UInt64, numeric->Decimal and numeric/Decimal->String. FromString templates and every
                     /// unproved settings-capturing conversion fail closed here.
                     return false;
                 }
@@ -661,7 +661,7 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
             {
                 const auto & function_capture = static_cast<const FunctionCapture &>(*function_base);
                 const auto & capture = function_capture.getCapture();
-                const auto & body = function_capture.getAcionsDAG();
+                const auto & body = function_capture.getActionsDAGForSemanticAnalysis();
                 pending_dags.push_back(&body);
                 /// Captures are separate children of FunctionCapture, but scan their declared
                 /// types as well so malformed/missing capture edges fail closed.
@@ -691,7 +691,7 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
                 || typeid(*function_expression) != typeid(FunctionExpression))
                 return false;
             const auto & capture = function_expression->getCapture();
-            pending_dags.push_back(&function_expression->getAcionsDAG());
+            pending_dags.push_back(&function_expression->getActionsDAGForSemanticAnalysis());
 
             const auto & captures = column_function->getCapturedColumns();
             if (captures.size() != capture.captured_types.size() || !budget.consume(captures.size()))
@@ -1542,7 +1542,11 @@ bool getLambdaCarrierView(const ActionsDAG::Node & node, LambdaCarrierView & vie
         if (!function_capture)
             return false;
 
-        view = {LambdaCarrierKind::FunctionCapture, &function_capture->getCapture(), &function_capture->getAcionsDAG(), &node};
+        view
+            = {LambdaCarrierKind::FunctionCapture,
+               &function_capture->getCapture(),
+               &function_capture->getActionsDAGForSemanticAnalysis(),
+               &node};
         return true;
     }
 
@@ -1559,8 +1563,12 @@ bool getLambdaCarrierView(const ActionsDAG::Node & node, LambdaCarrierView & vie
         if (!column_function || !function_expression)
             return false;
 
-        view = {LambdaCarrierKind::ColumnFunction,
-            &function_expression->getCapture(), &function_expression->getAcionsDAG(), &node, column_function};
+        view
+            = {LambdaCarrierKind::ColumnFunction,
+               &function_expression->getCapture(),
+               &function_expression->getActionsDAGForSemanticAnalysis(),
+               &node,
+               column_function};
         return true;
     }
 
@@ -1855,11 +1863,11 @@ const char * getAuditedDirectFunctionName(const FunctionCreator * handle)
 {
     /// This is deliberately a closed set. A registered function handle is not enough to
     /// certify an empty/default semantic hash: its implementation must be admitted here.
-    static constexpr std::array<const char *, 30> names{
-        "lower",        "toYear",        "plus",        "modulo",         "length",   "arrayReverse", "arraySort",   "tuple",
-        "cityHash64",   "arraySlice",    "arrayResize", "arrayIntersect", "mapKeys",  "if",           "isNull",      "arraySum",
-        "arrayMap",     "arrayDistinct", "arrayConcat", "CAST",           "toString", "toDecimal32",  "toDecimal64", "toDecimal128",
-        "toDecimal256", "abs",           "negate",      "sign",           "bitNot",   "toUInt8"};
+    static constexpr std::array<const char *, 32> names{
+        "lower",        "toYear",       "plus",          "minus",       "modulo",         "length",   "arrayReverse", "arraySort",
+        "tuple",        "cityHash64",   "arraySlice",    "arrayResize", "arrayIntersect", "mapKeys",  "if",           "isNull",
+        "arraySum",     "arrayMap",     "arrayDistinct", "arrayConcat", "CAST",           "toString", "toDecimal32",  "toDecimal64",
+        "toDecimal128", "toDecimal256", "abs",           "negate",      "sign",           "bitNot",   "toUInt8",      "toUInt64"};
 
     if (!handle)
         return nullptr;
@@ -1989,6 +1997,9 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
     if (name == "toUInt8")
         return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && typeid_cast<const DataTypeUInt8 *>(result.get())
             && !result->getCustomName() && !result->getCustomSerialization();
+    if (name == "toUInt64")
+        return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && typeid_cast<const DataTypeUInt64 *>(result.get())
+            && !result->getCustomName() && !result->getCustomSerialization();
     if (name == "lower")
         return arguments.size() == 1 && isStringType(arguments[0]) && isStringType(result);
     if (name == "toYear")
@@ -2003,6 +2014,9 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
     if (name == "plus")
         return arguments.size() == 2 && isPrimitiveNumericType(arguments[0]) && isPrimitiveNumericType(arguments[1])
             && isPrimitiveNumericType(result);
+    if (name == "minus")
+        return arguments.size() == 2 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(arguments[1])
+            && isPrimitiveIntegerType(result);
     if (name == "modulo")
         return arguments.size() == 2 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(arguments[1])
             && isPrimitiveIntegerType(result);
@@ -2030,7 +2044,19 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
                 return false;
         return true;
     }
-    if (name == "arraySlice" || name == "arrayResize")
+    if (name == "arraySlice")
+    {
+        if (arguments.size() != 2 || !isPrimitiveIntegerType(arguments[1]) || !same_argument_and_result(0))
+            return false;
+
+        const auto * array_type = arguments[0] ? typeid_cast<const DataTypeArray *>(arguments[0].get()) : nullptr;
+        if (!array_type)
+            return false;
+
+        const auto nested_type = array_type->getNestedType();
+        return typeid_cast<const DataTypeUInt64 *>(nested_type.get()) || isNativeStringType(nested_type);
+    }
+    if (name == "arrayResize")
         return arguments.size() == 2 && typeid_cast<const DataTypeArray *>(arguments[0].get())
             && typeid_cast<const DataTypeUInt64 *>(typeid_cast<const DataTypeArray *>(arguments[0].get())->getNestedType().get())
             && isPrimitiveIntegerType(arguments[1]) && same_argument_and_result(0);

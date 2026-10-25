@@ -58,11 +58,18 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
     const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
 
-ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+ExpressionActions::ExpressionActions(
+    ActionsDAG actions_dag_,
+    const ExpressionActionsSettings & settings_,
+    bool project_inputs_,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
     : actions_dag(std::move(actions_dag_))
     , project_inputs(project_inputs_)
     , settings(settings_)
 {
+    if (uncompiled_actions_dag)
+        uncompiled_actions_dag->reset();
+
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_map<const ActionsDAG::Node *, size_t> short_circuit_eager_arguments;
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
@@ -73,7 +80,7 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes, uncompiled_actions_dag);
 #endif
 
     std::unordered_set<const ActionsDAG::Node *> reorderable_short_circuit_arguments;

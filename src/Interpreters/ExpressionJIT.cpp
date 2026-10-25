@@ -502,7 +502,10 @@ static CompileDAG getCompilableDAG(
     return dag;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ActionsDAG::compileFunctions(
+    size_t min_count_to_compile_expression,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
 {
     struct Data
     {
@@ -646,9 +649,17 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
+            auto executable_function = fn->prepare(arguments);
+
+            /// Only consumers of the original semantics request this copy. Threshold misses and
+            /// unsupported bodies do not allocate a snapshot. Preserve the whole DAG before the
+            /// first replacement, including non-compilable siblings and folded-function ancestry.
+            if (uncompiled_actions_dag && !*uncompiled_actions_dag)
+                *uncompiled_actions_dag = std::make_shared<ActionsDAG>(clone());
+
             node->type = ActionsDAG::ActionType::FUNCTION;
             node->function_base = fn;
-            node->function = fn->prepare(arguments);
+            node->function = std::move(executable_function);
             node->children.swap(new_children);
             node->is_function_compiled = true;
             node->column = nullptr;

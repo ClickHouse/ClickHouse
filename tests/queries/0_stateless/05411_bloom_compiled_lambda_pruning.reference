@@ -1,0 +1,30 @@
+interpreted index, interpreted query prunes 1/16	1
+interpreted index, compiled query prunes 1/16	1
+interpreted index preserves typed rows with JIT on and off	1
+compiled index, interpreted query prunes 1/16	1
+compiled index, compiled query prunes 1/16	1
+compiled index preserves typed rows with JIT on and off	1
+[3]
+[4]
+[5]
+[6]
+[7]
+[8]
+[9]
+[10]
+[11]
+[12]
+[13]
+[14]
+[15]
+[16]
+[17]
+[18]
+4
+serialized plan executes lambda JIT iff build supports it	1	1
+serialized plan reads and Bloom-prunes marks	1	1
+different compiled body declines index and reads 16/16	1
+different compiled body preserves typed rows	1
+compiled body keeps unsafe context guard	1
+unsafe context preserves typed rows	1
+lambda compilation matches build support	1	1

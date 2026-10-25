@@ -191,10 +191,11 @@ TEST(BloomFilterConversionMatching, UnsupportedStringAndCustomSerializationPaths
     EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left_wrapped_string, *right_wrapped_string));
 }
 
-TEST(BloomFilterConversionMatching, NativeIntegerToUInt8IgnoresInputParsingSettings)
+TEST(BloomFilterConversionMatching, NativeIntegerToUInt8AndUInt64IgnoreInputParsingSettings)
 {
     auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
     auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
+    const std::vector<String> conversion_names{"toUInt8", "toUInt64"};
     const std::vector<String> integer_type_names{
         "UInt8",
         "UInt16",
@@ -210,21 +211,26 @@ TEST(BloomFilterConversionMatching, NativeIntegerToUInt8IgnoresInputParsingSetti
         "Int256",
     };
 
-    for (const auto & type_name : integer_type_names)
+    for (const auto & conversion_name : conversion_names)
     {
-        const auto input_type = getType(type_name);
-        auto left = buildFunctionBase("toUInt8", left_context, {input_type});
-        auto right = buildFunctionBase("toUInt8", right_context, {input_type});
+        for (const auto & type_name : integer_type_names)
+        {
+            const auto input_type = getType(type_name);
+            auto left = buildFunctionBase(conversion_name, left_context, {input_type});
+            auto right = buildFunctionBase(conversion_name, right_context, {input_type});
 
-        ASSERT_NE(getFunctionHash(*left), getFunctionHash(*right)) << type_name;
-        EXPECT_TRUE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right)) << type_name;
+            ASSERT_NE(getFunctionHash(*left), getFunctionHash(*right)) << conversion_name << ", " << type_name;
+            EXPECT_TRUE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right))
+                << conversion_name << ", " << type_name;
+        }
     }
 }
 
-TEST(BloomFilterConversionMatching, UInt8ConversionDeclinesUnauditedOrDifferentInputTypes)
+TEST(BloomFilterConversionMatching, UInt8AndUInt64ConversionsDeclineUnauditedOrDifferentInputTypes)
 {
     auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
     auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
+    const std::vector<String> conversion_names{"toUInt8", "toUInt64"};
     const std::vector<String> unsupported_type_names{
         "String",
         "Float32",
@@ -236,19 +242,27 @@ TEST(BloomFilterConversionMatching, UInt8ConversionDeclinesUnauditedOrDifferentI
         "Bool",
     };
 
-    for (const auto & type_name : unsupported_type_names)
+    for (const auto & conversion_name : conversion_names)
     {
-        const auto input_type = getType(type_name);
-        auto left = buildFunctionBase("toUInt8", left_context, {input_type});
-        auto right = buildFunctionBase("toUInt8", right_context, {input_type});
-        EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right)) << type_name;
+        for (const auto & type_name : unsupported_type_names)
+        {
+            const auto input_type = getType(type_name);
+            auto left = buildFunctionBase(conversion_name, left_context, {input_type});
+            auto right = buildFunctionBase(conversion_name, right_context, {input_type});
+            EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left, *right))
+                << conversion_name << ", " << type_name;
+        }
+
+        auto signed_input = buildFunctionBase(conversion_name, left_context, {getType("Int64")});
+        auto unsigned_input = buildFunctionBase(conversion_name, right_context, {getType("UInt64")});
+        EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*signed_input, *unsigned_input)) << conversion_name;
     }
 
     auto signed_input = buildFunctionBase("toUInt8", left_context, {getType("Int64")});
-    auto unsigned_input = buildFunctionBase("toUInt8", right_context, {getType("UInt64")});
     auto different_result = buildFunctionBase("toUInt16", right_context, {getType("Int64")});
-    EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*signed_input, *unsigned_input));
+    auto different_result_width = buildFunctionBase("toUInt64", right_context, {getType("Int64")});
     EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*signed_input, *different_result));
+    EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*signed_input, *different_result_width));
 }
 
 TEST(BloomFilterConversionMatching, NativeCastAuthenticationIncludesWholeArrayConversions)

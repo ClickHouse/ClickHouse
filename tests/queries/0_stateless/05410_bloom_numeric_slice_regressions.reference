@@ -1,0 +1,14 @@
+toUInt64(UInt32) direct IN preserves typed rows	1
+toUInt64(UInt32) direct IN uses named index and prunes 1/16	1
+toUInt64(UInt32) context keeps safe sibling typed rows	1
+toUInt64(UInt32) context keeps safe sibling pruning at 1/16	1
+integer minus direct IN preserves typed rows	1
+integer minus direct IN uses named index and prunes 1/16	1
+reversed integer minus preserves typed rows	1
+reversed integer minus declines idx_minus and reads 16/16	1
+different integer minus literal preserves typed rows	1
+different integer minus literal declines idx_minus and reads 16/16	1
+Array(String) arraySlice direct IN preserves typed rows	1
+Array(String) arraySlice direct IN uses named index and prunes 1/16	1
+different Array(String) arraySlice offset preserves typed rows	1
+different Array(String) arraySlice offset declines named index, reads 16/16	1

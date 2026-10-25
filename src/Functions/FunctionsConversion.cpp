@@ -3724,12 +3724,15 @@ bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunct
     if (!left_result || !right_result)
         return false;
 
-    if (typeid(left_function) == typeid(detail::FunctionToUInt8))
+    if (typeid(left_function) == typeid(detail::FunctionToUInt8) || typeid(left_function) == typeid(detail::FunctionToUInt64))
     {
+        const bool to_uint8 = typeid(left_function) == typeid(detail::FunctionToUInt8);
         return left_arguments.size() == 1 && right_arguments.size() == 1 && left_arguments[0] && right_arguments[0]
             && isAuditedPrimitiveIntegerType(*left_arguments[0]) && isAuditedPrimitiveIntegerType(*right_arguments[0])
-            && haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0]) && isConcreteDataType<DataTypeUInt8>(*left_result)
-            && isConcreteDataType<DataTypeUInt8>(*right_result) && haveEqualConcreteNonDecimalTypes(*left_result, *right_result);
+            && haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0])
+            && (to_uint8 ? isConcreteDataType<DataTypeUInt8>(*left_result) && isConcreteDataType<DataTypeUInt8>(*right_result)
+                         : isConcreteDataType<DataTypeUInt64>(*left_result) && isConcreteDataType<DataTypeUInt64>(*right_result))
+            && haveEqualConcreteNonDecimalTypes(*left_result, *right_result);
     }
 
     if (isFunctionToDecimal(left_function))

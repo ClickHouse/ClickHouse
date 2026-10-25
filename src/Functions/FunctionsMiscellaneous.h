@@ -29,9 +29,34 @@ struct LambdaCapture
     String return_name;
     DataTypePtr return_type;
     bool allow_constant_folding = false;
+
+    /// JIT replaces function nodes in the execution DAG. Preserve their original semantics
+    /// for consumers which must inspect the lambda body rather than execute it.
+    std::shared_ptr<const ActionsDAG> uncompiled_actions_dag = nullptr;
 };
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
+
+inline ExpressionActionsPtr createLambdaExpressionActions(
+    ActionsDAG actions_dag, const ExpressionActionsSettings & actions_settings, LambdaCapture & capture)
+{
+    std::shared_ptr<const ActionsDAG> uncompiled_actions_dag;
+    auto actions = std::make_shared<ExpressionActions>(
+        std::move(actions_dag), actions_settings, /*project_inputs=*/false, &uncompiled_actions_dag);
+
+    if (uncompiled_actions_dag)
+    {
+        for (const auto & node : actions->getActionsDAG().getNodes())
+        {
+            if (node.is_function_compiled)
+            {
+                capture.uncompiled_actions_dag = std::move(uncompiled_actions_dag);
+                break;
+            }
+        }
+    }
+    return actions;
+}
 
 class ExecutableFunctionExpression final : public IExecutableFunction
 {
@@ -272,6 +297,10 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
+    const ActionsDAG & getActionsDAGForSemanticAnalysis() const
+    {
+        return capture->uncompiled_actions_dag ? *capture->uncompiled_actions_dag : getAcionsDAG();
+    }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -408,6 +437,10 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
+    const ActionsDAG & getActionsDAGForSemanticAnalysis() const
+    {
+        return capture->uncompiled_actions_dag ? *capture->uncompiled_actions_dag : getAcionsDAG();
+    }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -469,7 +502,7 @@ public:
             .allow_constant_folding = allow_constant_folding,
         });
 
-        expression_actions = std::make_shared<ExpressionActions>(std::move(actions_dag), actions_settings);
+        expression_actions = createLambdaExpressionActions(std::move(actions_dag), actions_settings, *capture);
     }
 
     String getName() const override { return name; }

@@ -11,6 +11,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDate.h>
@@ -44,6 +45,15 @@
 #include <vector>
 
 using namespace DB;
+
+namespace DB
+{
+namespace Setting
+{
+extern const SettingsBool compile_expressions;
+extern const SettingsUInt64 min_count_to_compile_expression;
+}
+}
 
 namespace
 {
@@ -956,6 +966,9 @@ struct TestLambdaSpec
     String body_output_name = "result";
     bool override_return_name = false;
     String return_name_override = {};
+    bool compile_expressions = false;
+    bool add_compilable_chain = false;
+    bool bypass_lambda_snapshot = false;
 };
 
 struct TestLambdaInResult
@@ -970,6 +983,10 @@ struct TestLambdaInResult
     bool canonical_names_equal;
     bool header_name_matches_query;
     bool header_name_matches_index;
+    bool query_has_compiled_runtime_action;
+    bool index_has_compiled_runtime_action;
+    bool query_has_uncompiled_semantic_snapshot;
+    bool index_has_uncompiled_semantic_snapshot;
 };
 
 struct TestMappedLambda
@@ -977,6 +994,15 @@ struct TestMappedLambda
     const ActionsDAG::Node * lambda;
     const ActionsDAG::Node * mapped_array;
 };
+
+#if USE_EMBEDDED_COMPILER
+struct TestCompiledContextDependentLambdaResult
+{
+    bool runtime_has_compiled_action;
+    bool has_uncompiled_semantic_snapshot;
+    bool condition_declines_pruning;
+};
+#endif
 
 bool isColumnFunctionLambda(const ActionsDAG::Node & node)
 {
@@ -1014,6 +1040,53 @@ const LambdaCapture * getNativeLambdaCapture(const ActionsDAG::Node & node)
     return nullptr;
 }
 
+const ActionsDAG * getNativeLambdaActionsDAG(const ActionsDAG::Node & node, bool semantic_analysis)
+{
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+    {
+        const auto * column_function = typeid_cast<const ColumnFunction *>(&node.column->getDataColumn());
+        if (!column_function)
+            return nullptr;
+        const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+        if (!function_expression)
+            return nullptr;
+        return semantic_analysis ? &function_expression->getActionsDAGForSemanticAnalysis() : &function_expression->getAcionsDAG();
+    }
+
+    if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+    {
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
+        if (!function_capture)
+            return nullptr;
+        return semantic_analysis ? &function_capture->getActionsDAGForSemanticAnalysis() : &function_capture->getAcionsDAG();
+    }
+
+    return nullptr;
+}
+
+bool hasCompiledFunction(const ActionsDAG * dag)
+{
+    if (!dag)
+        return false;
+
+    for (const auto & node : dag->getNodes())
+        if (node.is_function_compiled)
+            return true;
+
+    return false;
+}
+
+ExpressionActionsSettings getLambdaActionsSettings(const ContextPtr & context, bool compile_expressions)
+{
+    if (!compile_expressions)
+        return ExpressionActionsSettings(context);
+
+    Settings settings = context->getSettingsRef();
+    settings[Setting::compile_expressions] = true;
+    settings[Setting::min_count_to_compile_expression] = 0;
+    return ExpressionActionsSettings(settings, CompileExpressions::yes);
+}
+
 TestMappedLambda addMappedArrayWithLambda(
     ActionsDAG & dag,
     const String & prefix,
@@ -1039,22 +1112,35 @@ TestMappedLambda addMappedArrayWithLambda(
 
     const auto & body_value = lambda_dag.addColumn(
         uint64_type->createColumnConst(0, Field(UInt64(spec.body_value))), uint64_type, "body_value", true);
-    const auto & output = lambda_dag.addFunction(
-        FunctionFactory::instance().get("plus", context),
-        {&lambda_argument, captured_input ? captured_input : &body_value},
-        spec.body_output_name);
-    lambda_dag.getOutputs().push_back(&output);
+    const ActionsDAG::Node * output = nullptr;
+    if (spec.add_compilable_chain)
+    {
+        const auto & intermediate = lambda_dag.addFunction(
+            FunctionFactory::instance().get("plus", context),
+            {&lambda_argument, captured_input ? captured_input : &body_value},
+            "jit_intermediate");
+        const auto & zero = lambda_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(0))), uint64_type, "jit_identity", true);
+        output = &lambda_dag.addFunction(FunctionFactory::instance().get("plus", context), {&intermediate, &zero}, spec.body_output_name);
+    }
+    else
+    {
+        output = &lambda_dag.addFunction(
+            FunctionFactory::instance().get("plus", context),
+            {&lambda_argument, captured_input ? captured_input : &body_value},
+            spec.body_output_name);
+    }
+    lambda_dag.getOutputs().push_back(output);
 
     const Names captured_names = spec.capture_value ? Names{spec.capture_name} : Names{};
     const auto lambda_capture = std::make_shared<LambdaCapture>(LambdaCapture{
         .captured_names = captured_names,
         .captured_types = spec.capture_value ? DataTypes{uint64_type} : DataTypes{},
         .lambda_arguments = NamesAndTypesList{{"v", uint64_type}},
-        .return_name = spec.override_return_name ? spec.return_name_override : output.result_name,
+        .return_name = spec.override_return_name ? spec.return_name_override : output->result_name,
         .return_type = uint64_type,
         .allow_constant_folding = spec.allow_constant_folding,
     });
-    const auto return_name = spec.override_return_name ? spec.return_name_override : output.result_name;
+    const auto return_name = spec.override_return_name ? spec.return_name_override : output->result_name;
 
     const auto & array_input = dag.addInput("a", array_type);
     const ActionsDAG::Node * lambda_node = nullptr;
@@ -1069,8 +1155,10 @@ TestMappedLambda addMappedArrayWithLambda(
                 spec.capture_name);
         }
 
-        auto expression_actions = std::make_shared<ExpressionActions>(
-            std::move(lambda_dag), ExpressionActionsSettings(context));
+        const auto actions_settings = getLambdaActionsSettings(context, spec.compile_expressions);
+        auto expression_actions = spec.bypass_lambda_snapshot
+            ? std::make_shared<ExpressionActions>(std::move(lambda_dag), actions_settings)
+            : createLambdaExpressionActions(std::move(lambda_dag), actions_settings, *lambda_capture);
         FunctionBasePtr function = std::make_shared<FunctionExpression>(lambda_capture, std::move(expression_actions));
         auto column_function = ColumnFunction::create(1, std::move(function), captures);
         auto constant_column_function = ColumnConst::create(std::move(column_function), 0);
@@ -1084,7 +1172,7 @@ TestMappedLambda addMappedArrayWithLambda(
     {
         auto lambda_resolver = std::make_shared<FunctionCaptureOverloadResolver>(
             std::move(lambda_dag),
-            ExpressionActionsSettings(context),
+            getLambdaActionsSettings(context, spec.compile_expressions),
             captured_names,
             NamesAndTypesList{{"v", uint64_type}},
             uint64_type,
@@ -1113,6 +1201,84 @@ TestMappedLambda addMappedArrayWithLambda(
         FunctionFactory::instance().get("arrayMap", context), {lambda_node, &array_input}, prefix + "mapped");
     return {lambda_node, &mapped_array};
 }
+
+#if USE_EMBEDDED_COMPILER
+TestCompiledContextDependentLambdaResult constructorDeclinesDateTimeConversionInPartiallyCompiledFunctionCaptureBody()
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto datetime_type = std::make_shared<DataTypeDateTime>("UTC");
+    const auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{datetime_type, uint64_type});
+    const auto array_uint64_type = std::make_shared<DataTypeArray>(uint64_type);
+    const auto array_tuple_type = std::make_shared<DataTypeArray>(tuple_type);
+
+    ActionsDAG lambda_dag;
+    const auto & captured_input = lambda_dag.addInput("captured", string_type);
+    const auto & lambda_argument = lambda_dag.addInput("v", uint64_type);
+    const auto & converted = lambda_dag.addFunction(
+        FunctionFactory::instance().get("toDateTime", context)->build({{nullptr, string_type, "captured"}}),
+        {&captured_input},
+        "date_time_conversion");
+    const auto & one = lambda_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "one", true);
+    const auto & intermediate
+        = lambda_dag.addFunction(FunctionFactory::instance().get("plus", context), {&lambda_argument, &one}, "jit_intermediate");
+    const auto & zero = lambda_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(0))), uint64_type, "jit_identity", true);
+    const auto & safe_compiled_result
+        = lambda_dag.addFunction(FunctionFactory::instance().get("plus", context), {&intermediate, &zero}, "safe_compiled_result");
+    const auto & lambda_result
+        = lambda_dag.addFunction(FunctionFactory::instance().get("tuple", context), {&converted, &safe_compiled_result}, "lambda_result");
+    lambda_dag.getOutputs().push_back(&lambda_result);
+    const String lambda_return_name = lambda_result.result_name;
+
+    auto lambda_resolver = std::make_shared<FunctionCaptureOverloadResolver>(
+        std::move(lambda_dag),
+        getLambdaActionsSettings(context, /*compile_expressions=*/true),
+        Names{"captured"},
+        NamesAndTypesList{{"v", uint64_type}},
+        tuple_type,
+        lambda_return_name,
+        /* allow_constant_folding= */ false);
+
+    ActionsDAG query_dag;
+    const auto & query_input = query_dag.addInput("x", uint64_type);
+    const auto & query_value = query_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "query_value", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_input, &query_value}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & safe_input = index_dag.addInput("x", uint64_type);
+    const auto & captured_value = index_dag.addInput("captured", string_type);
+    const auto & lambda = index_dag.addFunction(lambda_resolver, {&captured_value}, "lambda");
+    const auto & array_input = index_dag.addInput("values", array_uint64_type);
+    const auto & mapped = index_dag.addFunction(FunctionFactory::instance().get("arrayMap", context), {&lambda, &array_input}, "mapped");
+    const auto & safe_output = index_dag.addAlias(safe_input, "x");
+    const auto & mapped_output = index_dag.addAlias(mapped, "mapped");
+    index_dag.getOutputs().clear();
+    index_dag.getOutputs().push_back(&safe_output);
+    index_dag.getOutputs().push_back(&mapped_output);
+
+    const auto * runtime_dag = getNativeLambdaActionsDAG(lambda, /*semantic_analysis=*/false);
+    const auto * semantic_dag = getNativeLambdaActionsDAG(lambda, /*semantic_analysis=*/true);
+    const auto * capture = getNativeLambdaCapture(lambda);
+    const bool runtime_has_compiled_action = hasCompiledFunction(runtime_dag);
+    const bool has_uncompiled_semantic_snapshot
+        = capture && capture->uncompiled_actions_dag && semantic_dag && !hasCompiledFunction(semantic_dag);
+
+    Block header(
+        ColumnsWithTypeAndName{
+            {uint64_type->createColumn(), uint64_type, "x"},
+            {array_tuple_type->createColumn(), array_tuple_type, "mapped"},
+        });
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return {
+        .runtime_has_compiled_action = runtime_has_compiled_action,
+        .has_uncompiled_semantic_snapshot = has_uncompiled_semantic_snapshot,
+        .condition_declines_pruning = condition.alwaysUnknownOrTrue(),
+    };
+}
+#endif
 
 TestLambdaInResult canPruneLambdaInWithCarriers(
     const TestLambdaSpec & query_spec,
@@ -1171,13 +1337,21 @@ TestLambdaInResult canPruneLambdaInWithCarriers(
         .index_is_column_function = isColumnFunctionLambda(*index_mapping.lambda),
         .query_is_function_capture = isFunctionCaptureLambda(*query_mapping.lambda),
         .index_is_function_capture = isFunctionCaptureLambda(*index_mapping.lambda),
-        .query_allows_constant_folding = getNativeLambdaCapture(*query_mapping.lambda)
-            && getNativeLambdaCapture(*query_mapping.lambda)->allow_constant_folding,
-        .index_allows_constant_folding = getNativeLambdaCapture(*index_mapping.lambda)
-            && getNativeLambdaCapture(*index_mapping.lambda)->allow_constant_folding,
+        .query_allows_constant_folding
+        = getNativeLambdaCapture(*query_mapping.lambda) && getNativeLambdaCapture(*query_mapping.lambda)->allow_constant_folding,
+        .index_allows_constant_folding
+        = getNativeLambdaCapture(*index_mapping.lambda) && getNativeLambdaCapture(*index_mapping.lambda)->allow_constant_folding,
         .canonical_names_equal = query_name == index_name,
         .header_name_matches_query = header.has(query_name),
         .header_name_matches_index = output_name == index_name,
+        .query_has_compiled_runtime_action = hasCompiledFunction(getNativeLambdaActionsDAG(*query_mapping.lambda, false)),
+        .index_has_compiled_runtime_action = hasCompiledFunction(getNativeLambdaActionsDAG(*index_mapping.lambda, false)),
+        .query_has_uncompiled_semantic_snapshot = getNativeLambdaCapture(*query_mapping.lambda)
+            && getNativeLambdaCapture(*query_mapping.lambda)->uncompiled_actions_dag
+            && !hasCompiledFunction(getNativeLambdaActionsDAG(*query_mapping.lambda, true)),
+        .index_has_uncompiled_semantic_snapshot = getNativeLambdaCapture(*index_mapping.lambda)
+            && getNativeLambdaCapture(*index_mapping.lambda)->uncompiled_actions_dag
+            && !hasCompiledFunction(getNativeLambdaActionsDAG(*index_mapping.lambda, true)),
     };
 }
 
@@ -2138,6 +2312,87 @@ TEST(MergeTreeIndexBloomFilter, MatchesNativeLambdaCarriersOnlyWhenEquivalent)
     EXPECT_TRUE(ambiguous_capture.index_is_column_function);
     EXPECT_FALSE(ambiguous_capture.can_prune);
 }
+
+#if USE_EMBEDDED_COMPILER
+TEST(MergeTreeIndexBloomFilter, MatchesCompiledNativeLambdaCarriersUsingSemanticBodies)
+{
+    for (const auto carrier : {TestLambdaCarrier::ColumnFunction, TestLambdaCarrier::FunctionCapture})
+    {
+        TestLambdaSpec compiled_spec;
+        compiled_spec.carrier = carrier;
+        compiled_spec.allow_constant_folding = carrier == TestLambdaCarrier::ColumnFunction;
+        compiled_spec.compile_expressions = true;
+        compiled_spec.add_compilable_chain = true;
+
+        const auto compiled_match = canPruneLambdaInWithCarriers(compiled_spec, compiled_spec);
+        EXPECT_TRUE(compiled_match.can_prune);
+        EXPECT_TRUE(compiled_match.query_has_compiled_runtime_action);
+        EXPECT_TRUE(compiled_match.index_has_compiled_runtime_action);
+        EXPECT_TRUE(compiled_match.query_has_uncompiled_semantic_snapshot);
+        EXPECT_TRUE(compiled_match.index_has_uncompiled_semantic_snapshot);
+
+        auto uncompiled_spec = compiled_spec;
+        uncompiled_spec.compile_expressions = false;
+        const auto uncompiled_match = canPruneLambdaInWithCarriers(uncompiled_spec, uncompiled_spec);
+        EXPECT_TRUE(uncompiled_match.can_prune);
+        EXPECT_EQ(compiled_match.can_prune, uncompiled_match.can_prune);
+        EXPECT_FALSE(uncompiled_match.query_has_compiled_runtime_action);
+        EXPECT_FALSE(uncompiled_match.index_has_compiled_runtime_action);
+
+        TestLambdaSpec other_interpreted_carrier = uncompiled_spec;
+        other_interpreted_carrier.carrier
+            = carrier == TestLambdaCarrier::ColumnFunction ? TestLambdaCarrier::FunctionCapture : TestLambdaCarrier::ColumnFunction;
+        other_interpreted_carrier.allow_constant_folding = other_interpreted_carrier.carrier == TestLambdaCarrier::ColumnFunction;
+
+        const auto compiled_query
+            = canPruneLambdaInWithCarriers(compiled_spec, other_interpreted_carrier, TestIndexOutputName::QueryNameCollision);
+        EXPECT_TRUE(compiled_query.can_prune);
+        EXPECT_TRUE(compiled_query.query_has_compiled_runtime_action);
+        EXPECT_FALSE(compiled_query.index_has_compiled_runtime_action);
+
+        const auto compiled_index
+            = canPruneLambdaInWithCarriers(other_interpreted_carrier, compiled_spec, TestIndexOutputName::QueryNameCollision);
+        EXPECT_TRUE(compiled_index.can_prune);
+        EXPECT_FALSE(compiled_index.query_has_compiled_runtime_action);
+        EXPECT_TRUE(compiled_index.index_has_compiled_runtime_action);
+
+        auto mismatched_body = compiled_spec;
+        mismatched_body.body_value = 2;
+        const auto compiled_mismatch
+            = canPruneLambdaInWithCarriers(compiled_spec, mismatched_body, TestIndexOutputName::QueryNameCollision);
+        EXPECT_TRUE(compiled_mismatch.query_has_compiled_runtime_action);
+        EXPECT_TRUE(compiled_mismatch.index_has_compiled_runtime_action);
+        EXPECT_TRUE(compiled_mismatch.query_has_uncompiled_semantic_snapshot);
+        EXPECT_TRUE(compiled_mismatch.index_has_uncompiled_semantic_snapshot);
+        EXPECT_FALSE(compiled_mismatch.can_prune);
+    }
+}
+
+TEST(MergeTreeIndexBloomFilter, ScansUncompiledBodyOfPartiallyCompiledLambdaForContextDependentConversion)
+{
+    const auto result = constructorDeclinesDateTimeConversionInPartiallyCompiledFunctionCaptureBody();
+    EXPECT_TRUE(result.runtime_has_compiled_action);
+    EXPECT_TRUE(result.has_uncompiled_semantic_snapshot);
+    EXPECT_TRUE(result.condition_declines_pruning);
+}
+
+TEST(MergeTreeIndexBloomFilter, CompiledLambdaWithoutSemanticSnapshotDeclinesPruning)
+{
+    TestLambdaSpec opaque_compiled_spec;
+    opaque_compiled_spec.carrier = TestLambdaCarrier::ColumnFunction;
+    opaque_compiled_spec.allow_constant_folding = true;
+    opaque_compiled_spec.compile_expressions = true;
+    opaque_compiled_spec.add_compilable_chain = true;
+    opaque_compiled_spec.bypass_lambda_snapshot = true;
+
+    const auto result = canPruneLambdaInWithCarriers(opaque_compiled_spec, opaque_compiled_spec, TestIndexOutputName::QueryNameCollision);
+    EXPECT_TRUE(result.query_has_compiled_runtime_action);
+    EXPECT_TRUE(result.index_has_compiled_runtime_action);
+    EXPECT_FALSE(result.query_has_uncompiled_semantic_snapshot);
+    EXPECT_FALSE(result.index_has_uncompiled_semantic_snapshot);
+    EXPECT_FALSE(result.can_prune);
+}
+#endif
 
 TEST(MergeTreeIndexBloomFilter, MatchesOnlyEquivalentNativeNullableNothingConstants)
 {

@@ -355,7 +355,10 @@ public:
     bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileExpressions(
+        size_t min_count_to_compile_expression,
+        const std::unordered_set<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
@@ -667,7 +670,10 @@ private:
         bool all_const);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileFunctions(
+        size_t min_count_to_compile_expression,
+        const std::unordered_set<const Node *> & lazy_executed_nodes = {},
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
 #endif
 
     bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
