@@ -175,20 +175,20 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObject>(*this);
 
         new_state->typed_path_states.reserve(typed_path_states.size());
         for (const auto & [path, path_state] : typed_path_states)
-            new_state->typed_path_states[path] = path_state ? path_state->clone() : nullptr;
+            new_state->typed_path_states[path] = path_state ? path_state->clone(context) : nullptr;
 
         new_state->dynamic_path_states.reserve(dynamic_path_states.size());
         for (const auto & [path, path_state] : dynamic_path_states)
-            new_state->dynamic_path_states[path] = path_state ? path_state->clone() : nullptr;
+            new_state->dynamic_path_states[path] = path_state ? path_state->clone(context) : nullptr;
 
-        new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->shared_data_state = shared_data_state ? shared_data_state->clone(context) : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
 
         return new_state;
     }

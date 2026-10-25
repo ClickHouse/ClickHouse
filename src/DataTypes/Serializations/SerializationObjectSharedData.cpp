@@ -112,14 +112,14 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_map_states;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> bucket_structure_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectSharedData>(*this);
-        new_state->map_state = map_state ? map_state->clone() : nullptr;
+        new_state->map_state = map_state ? map_state->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_map_states.size(); ++bucket)
-            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone() : nullptr;
+            new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone(context) : nullptr;
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
-            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
+            new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone(context) : nullptr;
         return new_state;
     }
 };

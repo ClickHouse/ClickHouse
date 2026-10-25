@@ -12,13 +12,11 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
-Controla se o usuário pode alterar configurações relacionadas aos diferentes níveis de recursos.
+Controla se o usuário pode alterar configurações relacionadas aos diferentes tiers de recursos.
 
 * `0` - São permitidas alterações em qualquer configuração (experimental, prévia privada, beta, produção).
 * `1` - São permitidas apenas alterações em configurações de recursos de prévia privada, beta e produção. Alterações em configurações experimentais são rejeitadas.
@@ -26,6 +24,14 @@ Controla se o usuário pode alterar configurações relacionadas aos diferentes 
 * `3` - São permitidas apenas alterações em configurações de produção. Alterações em configurações experimentais, de prévia privada ou beta são rejeitadas.
 
 Isso equivale a definir uma restrição readonly em todos os recursos `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
+
+Uma instrução que atua sobre um usuário, uma função ou um perfil de configurações é rejeitada quando define uma dessas configurações com um valor diferente
+daquele em vigor na sessão que a executa. Isso também ocorre quando a instrução altera uma dessas configurações para algum usuário, mesmo
+sem mencionar nenhuma configuração: ao conceder ou revogar uma função que contenha uma delas, atribuir um perfil de configurações,
+remover uma função ou um perfil ou remover uma substituição por omissão. Um usuário definido por SQL não pode fazer login se suas próprias configurações ou
+as configurações de suas funções contiverem um valor desse tipo. As configurações que o próprio servidor aplica por meio
+do arquivo de configuração e os usuários definidos nesse arquivo nunca são rejeitados. A configuração `compatibility` mantém uma
+configuração de um tier desabilitado em seu valor padrão, em vez de aplicar o valor padrão da versão anterior.
 
 <Note>
   Um valor de `0` significa que todas as configurações podem ser alteradas.
@@ -36,15 +42,11 @@ Isso equivale a definir uma restrição readonly em todos os recursos `EXPERIMEN
   que fixava `2` para permitir apenas configurações de produção deve usar `3`.
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Habilita/desabilita o recurso IMPERSONATE (EXECUTE AS target&#95;user). A configuração foi descontinuada.
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH no&#95;password&#39; seja especificado explicitamente.
 
@@ -54,9 +56,7 @@ Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH n
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 Define se é permitido usar o tipo de senha inseguro no&#95;password.
 
@@ -66,9 +66,7 @@ Define se é permitido usar o tipo de senha inseguro no&#95;password.
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 Define se tipos de senha em texto puro (inseguros) são permitidos.
 
@@ -78,9 +76,7 @@ Define se tipos de senha em texto puro (inseguros) são permitidos.
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Permite o uso da memória jemalloc.
 
