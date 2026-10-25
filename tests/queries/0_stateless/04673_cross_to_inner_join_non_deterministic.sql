@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET query_plan_merge_filter_into_join_condition = 0;
 
 DROP TABLE IF EXISTS l;

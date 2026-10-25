@@ -484,7 +484,49 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto subcolumn_name = required_column.getSubcolumnName();
 
     if (alter_conversions->isColumnRenamed(name_in_storage))
+    {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+    }
+    else if (!subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
+    {
+        /** A leaf of a Nested column is requested as a subcolumn of its parent (`n.z` becomes the
+          * subcolumn `z` of `n`, see `Nested::convertToSubcolumns`), while a pending rename of that
+          * leaf is recorded under the flattened name `n.z`. The lookup above asks for the parent and
+          * misses it, so the part is searched for a column that only exists there under its old name
+          * and the values are read as defaults while the mutation is pending.
+          */
+        /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
+        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found
+        /// among the elements of the Nested type in the current metadata. The longest matching element wins:
+        /// the leaves `x` and `x.y` may coexist, and a read of `x.y` must not be taken for the subcolumn `y`
+        /// of the leaf `x`, which could have a pending rename of its own.
+        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
+
+        std::optional<size_t> leaf_length;
+        for (const auto & element_name : nested_names)
+        {
+            bool is_prefix = subcolumn_name.starts_with(element_name)
+                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
+
+            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
+                leaf_length = element_name.size();
+        }
+
+        if (leaf_length)
+        {
+            auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
+
+            if (alter_conversions->isColumnRenamed(leaf_name))
+            {
+                /// A rename cannot move a leaf to another Nested column, so the parent stays the same.
+                auto old_leaf_split = Nested::splitName(alter_conversions->getColumnOldName(leaf_name));
+                auto leaf_subcolumn_name = *leaf_length < subcolumn_name.size() ? subcolumn_name.substr(*leaf_length + 1) : String{};
+
+                name_in_storage = old_leaf_split.first;
+                subcolumn_name = Nested::concatenateName(old_leaf_split.second, leaf_subcolumn_name);
+            }
+        }
+    }
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
@@ -520,6 +562,14 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String
 
 SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const
 {
+    /// Take a static subcolumn's serialization from the part instead of composing it from the column's
+    /// serialization below (a walk over all the column's substreams).
+    if (column_in_part.isSubcolumn())
+    {
+        if (auto serialization = data_part_info_for_read->tryGetSubcolumnSerialization(column_in_part.getNameInStorage(), column_in_part.getSubcolumnName()))
+            return serialization->supportsPooling() ? serialization : nullptr;
+    }
+
     auto serialization_in_part = data_part_info_for_read->tryGetSerialization(column_in_part.getNameInStorage());
     if (!serialization_in_part)
         return nullptr;
@@ -598,6 +648,11 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
 
 bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const
 {
+    /// A hit means the subcolumn is present; a miss is inconclusive (a dynamic path is never in the
+    /// part's subcolumns), so fall back to resolving it against the column's serialization.
+    if (data_part_info_for_read->tryGetSubcolumnSerialization(name_in_part, subcolumn_name))
+        return true;
+
     /// Resolved against the serialization the part holds for the column, when there is one, instead of building one.
     if (auto serialization_in_part = data_part_info_for_read->tryGetSerialization(name_in_part))
         return type_in_part.tryGetSubcolumnType(subcolumn_name, serialization_in_part) != nullptr;
@@ -626,6 +681,23 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+
+            /** A column a pending mutation drops is not read from the part: the readers skip it and the
+              * value comes from the current metadata - the column's default, in the requested type - so
+              * the type the part carries says nothing about what is in `res_columns`. Converting from
+              * that type builds the conversion for the part's type and hands it a column of another
+              * one, which raises `Illegal column ... of first argument of function ...`.
+              *
+              * That is reachable whenever the dropped name is taken by a new column of a different type
+              * before the drop's mutation has rewritten the part:
+              *
+              *     ALTER TABLE t DROP COLUMN c;               -- c UInt64 still in the part
+              *     ALTER TABLE t ADD COLUMN c UInt32;         -- new column, absent from the part
+              *     SELECT c FROM t;                           -- read as UInt32, not converted from UInt64
+              */
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
+
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
@@ -834,14 +906,15 @@ MergeTreeReaderPtr createMergeTreeReader(
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules)
 {
+    const auto & index = index_read_task.index;
     if (index.index->index.type == "text")
     {
         auto it = index_granules.find(index.index->index.name);
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+        return createMergeTreeReaderTextIndex(main_reader, index_read_task, columns_to_read, it != index_granules.end() ? it->second : nullptr);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);

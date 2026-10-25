@@ -46,6 +46,15 @@ If your MCP client runs on a remote or headless host where a browser-based OAuth
 
 1. In the ClickHouse Cloud console, open your organization and select **API Keys**.
 2. Create a key with the minimum roles and permissions required for the organizations and services the MCP client needs to access, then download the key ID and secret.
+
+   To create the key with [`clickhousectl`](/concepts/features/interfaces/cli) instead, find a role ID, then create the key with an IP allowlist for the MCP host. `clickhousectl` needs an existing API key with permission to create keys:
+
+   ```bash
+   clickhousectl cloud org role list
+   clickhousectl cloud key create --name mcp-headless --role-id <role_id> --ip-allow <host_ip>/32
+   ```
+
+   The command prints the new key ID and secret once; store them in your secret manager. Without `--ip-allow`, the key's IP allowlist is empty and denies all access.
 3. On the remote host, provide the credentials through your secret-management system and create an HTTP Basic authorization value:
 
 ```bash
@@ -125,7 +134,7 @@ See the [OpenCode MCP documentation](https://opencode.ai/v2/docs/mcp-servers#rem
 
 Keep `CH_AUTH` available in each client session, and do not commit the API key, secret, or `CH_AUTH` value to source control. Base64 encoding does not encrypt the credentials.
 
-This API-key flow does not require a browser or a separate `clickhousectl` login.
+This API-key flow does not require a browser or a separate `clickhousectl` login. If you also use `clickhousectl` on the same host, it reads the same `CLICKHOUSE_CLOUD_API_KEY` and `CLICKHOUSE_CLOUD_API_SECRET` variables, and they take precedence over a browser login.
 
 ### Claude Code {#claude-code}
 
