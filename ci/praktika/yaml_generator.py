@@ -83,7 +83,7 @@ on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}
 
 concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}{CONCURRENCY_QUEUE}
+  group: ${{{{{{{{ github.workflow }}}}}}}}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -103,7 +103,7 @@ jobs:
 
 name: {NAME}
 concurrency:
-  group: {CONCURRENCY_GROUP}{CONCURRENCY_QUEUE}
+  group: {CONCURRENCY_GROUP}
 on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}{WORKFLOW_CALL}
 
@@ -598,11 +598,6 @@ class PullRequestPushYamlGen:
 
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,
-            CONCURRENCY_QUEUE=(
-                "\n  queue: max"
-                if self.workflow_config.config.enable_concurrency_queue
-                else ""
-            ),
             JOBS="{}" * len(job_items),
             ENV_CHECKOUT_REFERENCE=ENV_CHECKOUT_REFERENCE,
             **format_kwargs,

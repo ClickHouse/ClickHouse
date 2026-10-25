@@ -1,3 +1,0 @@
-<clickhouse>
-    <collect_connection_metrics>true</collect_connection_metrics>
-</clickhouse>

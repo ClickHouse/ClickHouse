@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>
 #include <limits>
 #include <set>
@@ -47,14 +46,14 @@ std::vector<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bu
     return {delayed.begin(), delayed.end()};
 }
 
-void GroupingAggregatedTransform::pushData(VectorWithMemoryTracking<Chunk> chunks, Int32 bucket, bool is_overflows)
+void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_overflows)
 {
     auto & output = outputs.front();
 
     auto info = std::make_shared<ChunksToMerge>();
     info->bucket_num = bucket;
     info->is_overflows = is_overflows;
-    info->chunks = std::make_shared<VectorWithMemoryTracking<Chunk>>(std::move(chunks));
+    info->chunks = std::make_shared<Chunks>(std::move(chunks));
     if (!is_overflows)
         info->out_of_order_buckets = getDelayedBucketsBefore(bucket);
 
@@ -86,7 +85,7 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
         if (batch_it == chunks_map.end())
             return false;
 
-        VectorWithMemoryTracking<Chunk> & cur_chunks = batch_it->second;
+        Chunks & cur_chunks = batch_it->second;
         if (cur_chunks.empty())
         {
             chunks_map.erase(batch_it);

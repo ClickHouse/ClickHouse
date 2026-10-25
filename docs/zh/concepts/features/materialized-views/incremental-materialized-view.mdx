@@ -9,7 +9,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-## 背景 {#background}
+<div id="background">
+  ## 背景
+</div>
 
 增量materialized view (Materialized Views) 可将计算成本从查询时转移到写入时，从而加快 `SELECT` 查询。
 
@@ -620,24 +622,24 @@ WHERE DisplayName = 'brand_new_user'
 不过，请注意，这个结果并不正确。
 
 <div id="join-best-practices">
-  ### materialized view 中连接的最佳实践
+  ### materialized view 中 JOIN 的最佳实践
 </div>
 
 * **将最左侧的表作为触发器。** 只有 `SELECT` 语句左侧的表会触发 materialized view。右侧表中的变更不会触发更新。
 
-* **预先写入连接所需的数据。** 确保在向源表插入行之前，关联表中的数据已存在。连接会在写入时求值，因此如果数据缺失，就会出现未匹配的行或 NULL 值。
+* **预先写入 JOIN 所需的数据。** 确保在向源表插入行之前，关联表中的数据已存在。JOIN 会在写入时求值，因此如果数据缺失，就会出现未匹配的行或 NULL 值。
 
-* **限制从连接中取回的列。** 只选择关联表中必需的列，以尽量减少内存占用并降低写入时延迟 (见下文) 。
+* **限制从 JOIN 中取回的列。** 只选择关联表中必需的列，以尽量减少内存占用并降低写入时延迟 (见下文) 。
 
-* **评估写入时性能。** 连接会增加插入成本，尤其是在右侧表较大时。请使用具有代表性的生产数据对插入速率进行基准测试。
+* **评估写入时性能。** JOIN 会增加插入成本，尤其是在右侧表较大时。请使用具有代表性的生产数据对插入速率进行基准测试。
 
-* **简单查找优先使用字典**。对于键值查找 (例如将用户 ID 映射为名称) ，请使用 [字典](/zh/concepts/features/dictionaries/index)，以避免开销较高的连接操作。如需在写入时进行可靠的查找，请使用完全加载的字典布局；[基于缓存的布局](/zh/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) 可能导致摄取依赖于本地已预热的缓存。
+* **简单查找优先使用字典**。对于键值查找 (例如将用户 ID 映射为名称) ，请使用 [字典](/zh/concepts/features/dictionaries/index)，以避免开销较高的 JOIN 操作。
 
 * **对齐 `GROUP BY` 和 `ORDER BY` 以提高合并效率。** 使用 `SummingMergeTree` 或 `AggregatingMergeTree` 时，请确保 `GROUP BY` 与目标表中的 `ORDER BY` 子句一致，以便高效合并行。
 
 * **使用明确的列别名。** 当多个表中存在同名列时，请使用别名以避免歧义，并确保目标表中的结果正确。
 
-* **考虑写入量和频率。** 连接在中等写入负载下通常表现良好。对于高吞吐量摄取，请考虑使用暂存表、预连接，或字典以及 [Refreshable Materialized Views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 等其他方式。
+* **考虑写入量和频率。** JOIN 在中等写入负载下通常表现良好。对于高吞吐量摄取，请考虑使用暂存表、预 JOIN，或字典以及 [Refreshable Materialized Views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 等其他方式。
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
   ### 在过滤器和 JOIN 中使用源表
@@ -1045,7 +1047,9 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-## 并行处理与串行处理 {#materialized-views-parallel-vs-sequential}
+<div id="materialized-views-parallel-vs-sequential">
+  ## 并行处理与串行处理
+</div>
 
 如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings/parallel#parallel_view_processing)。
 

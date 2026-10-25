@@ -31,7 +31,6 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
         in_prewhere = parent_scope->in_prewhere;
-        resolving_join_on_expression = parent_scope->resolving_join_on_expression;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -217,11 +216,6 @@ bool IdentifierResolveScope::canCacheIdentifier(
     if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
         return false;
 
-    /// Cannot use cache for a hidden lambda argument: outside of the hiding window the same name
-    /// resolves to the argument, inside it resolves to whatever the enclosing scopes provide.
-    if (!hidden_expression_arguments.empty() && hidden_expression_arguments.contains(lookup.identifier.front()))
-        return false;
-
     return true;
 }
 
@@ -238,7 +232,7 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
 
     /// There are 2 kinds of expressions:
     /// 1. Does not contain any subquery -- it is safe to return by reference
-    /// 2. Contains subqueries -- it is required to make a deep copy because
+    /// 2. Contains subqueries -- it is required to make a deep copy becuase
     ///    distributed queries may fail.
     /// It could be simplified once StorageDistributed and Parallel Replicas
     /// stop using AST to send task to the shards.

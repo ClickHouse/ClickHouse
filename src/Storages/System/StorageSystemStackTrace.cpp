@@ -68,6 +68,9 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+#ifdef OS_LINUX
+    extern const int FILE_DOESNT_EXIST;
+#endif
     extern const int LOGICAL_ERROR;
 }
 
@@ -143,22 +146,18 @@ void signalHandler(int, siginfo_t * info, void * context)
         return;
 
 #ifdef OS_DARWIN
-    /// Load before the check below: a number loaded after it could already belong to the next thread.
-    int notification_num = sequence_num.load(std::memory_order_acquire);
-#endif
-
-    /// Re-check under the latch: a handler delayed past the reader's timeout must not overwrite the next thread's data.
-#ifdef OS_LINUX
-    const bool still_expected = notification_num == sequence_num.load(std::memory_order_acquire);
-#else
-    const bool still_expected = reinterpret_cast<uintptr_t>(pthread_self()) == expected_responding_thread.load(std::memory_order_acquire);
-#endif
-    if (!still_expected)
+    /// Re-verify after acquiring the latch. This closes the race window where
+    /// expected_responding_thread or sequence_num could change between the
+    /// pre-check above and latch acquisition (e.g. if this handler was delayed
+    /// past the wait timeout and the main thread moved on to another thread).
+    if (reinterpret_cast<uintptr_t>(pthread_self()) != expected_responding_thread.load(std::memory_order_acquire))
     {
         signal_latch.store(false, std::memory_order_release);
         errno = saved_errno;
         return;
     }
+    int notification_num = sequence_num.load(std::memory_order_acquire);
+#endif
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -267,10 +266,10 @@ ThreadIdToName getFilteredThreadNames(const ActionsDAG::Node * predicate, Contex
             readEscapedStringUntilEOL(thread_name, comm);
             comm.close();
         }
-        catch (const ErrnoException & e)
+        catch (const Exception & e)
         {
             /// Ignore TOCTOU error
-            if (e.getErrno() == ENOENT || e.getErrno() == ESRCH)
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
                 continue;
             throw;
         }
@@ -335,10 +334,10 @@ bool isSignalBlocked(UInt64 tid, int signal)
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
-    catch (const ErrnoException & e)
+    catch (const Exception & e)
     {
         /// Ignore TOCTOU error
-        if (e.getErrno() != ENOENT && e.getErrno() != ESRCH)
+        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
             throw;
     }
 
@@ -735,7 +734,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
-            "are stored as physical file offsets, and frames outside it (shared libraries, JIT code) are stored as 0."},
+            "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
         {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());

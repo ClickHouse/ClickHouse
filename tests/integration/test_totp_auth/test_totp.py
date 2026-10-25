@@ -8,7 +8,6 @@ import struct
 import time
 import xml.etree.ElementTree as ET
 
-import psycopg2
 import pymysql
 import pytest
 
@@ -33,7 +32,7 @@ MYSQL_USERS = {
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["config/mysql.xml", "config/postgresql.xml"],
+    main_configs=["config/mysql.xml"],
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
@@ -408,47 +407,6 @@ def test_mysql_protocol_user_altered_during_authentication(started_cluster):
         node.query(f"DROP USER IF EXISTS {user}")
 
 
-def test_postgresql_protocol_requires_totp(started_cluster):
-    """The PostgreSQL protocol must enforce TOTP. A SCRAM proof is derived from the password
-    alone and cannot carry a one-time password, so the server refuses the SCRAM exchange for
-    a `scram_sha256_password` user with TOTP. For cleartext password authentication the client
-    appends the TOTP to the password."""
-
-    def connect(user, password):
-        return psycopg2.connect(
-            host=node.ip_address,
-            port=9005,
-            user=user,
-            password=password,
-            dbname="default",
-        )
-
-    # A SCRAM user with TOTP must be refused: the exchange cannot verify the second factor.
-    scram_user = "totuser_postgresql_scram"
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, "abacaba")
-
-    with pytest.raises(psycopg2.OperationalError, match="not supported"):
-        connect(scram_user, f"abacaba+{get_otp(scram_user)}")
-
-    # Cleartext password authentication enforces the second factor.
-    # The message is intentionally generic and does not reveal the reason.
-    user = "totuser_postgresql_plaintext"
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb")
-
-    with pytest.raises(psycopg2.OperationalError, match="Invalid user or password"):
-        connect(user, "aa+bb+000000000")
-
-    conn = connect(user, f"aa+bb+{get_otp(user)}")
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT currentUser()")
-        assert cursor.fetchall() == [(user,)]
-    finally:
-        conn.close()
-
-
 def test_one_time_only_no_password(started_cluster):
     query_text = "SELECT currentUser() || toString(42)"
     user0, user1 = NO_PASSWORD_USERS
@@ -542,26 +500,3 @@ def test_code_single_use(started_cluster):
     assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
         query_text, user=user, password=f"pw+{next_code}"
     )
-
-
-def test_secret_rotation_on_reload(started_cluster):
-    """A changed secret in the users config applies on `SYSTEM RELOAD USERS`."""
-    query_text = "SELECT currentUser() || toString(42)"
-    user = "totuser_rotation"
-    config_path = "/etc/clickhouse-server/users.d/users.xml"
-    old_secret = "MFRGGZDFMZTWQ2LK"
-    new_secret = "QTUD6Q3PJBFU2OMU"
-
-    node.replace_in_config(config_path, old_secret, new_secret)
-    try:
-        node.query("SYSTEM RELOAD USERS")
-
-        assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
-            query_text, user=user, password=f"pw+{get_otp(user)}"
-        )
-        assert f"{user}42\n" == node.query(
-            query_text, user=user, password=f"pw+{get_one_time_password(new_secret)}"
-        )
-    finally:
-        node.replace_in_config(config_path, new_secret, old_secret)
-        node.query("SYSTEM RELOAD USERS")

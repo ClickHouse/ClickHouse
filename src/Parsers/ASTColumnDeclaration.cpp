@@ -308,7 +308,7 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     /// the restored AST has the same shape - and the same tree hash - as a parsed one.
     setSettings(r.readChildOfType<ASTSetQuery>("settings"));
     setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
-    setTTL(r.readExpressionChild("ttl"));
+    setTTL(r.readChild("ttl"));
     setCollation(r.readChildOfType<ASTCollation>("collation"));
 }
 

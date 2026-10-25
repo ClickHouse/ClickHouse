@@ -18,10 +18,12 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 本页介绍如何使用 `MySQL` 表引擎从 MySQL 表中读取数据。
 
 <Note>
-  对于 ClickHouse Cloud，你还可以使用 [MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index) 轻松将数据从 MySQL 表迁移到 ClickHouse。
+  对于 ClickHouse Cloud，你还可以使用 [MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index) (当前处于 Public Beta) 轻松将数据从 MySQL 表迁移到 ClickHouse。
 </Note>
 
-## 使用 MySQL 表引擎将 ClickHouse 连接到 MySQL {#connecting-clickhouse-to-mysql-using-the-mysql-table-engine}
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## 使用 MySQL 表引擎将 ClickHouse 连接到 MySQL
+</div>
 
 `MySQL` 表引擎可让你将 ClickHouse 连接到 MySQL。**SELECT** 和 **INSERT** 语句既可以在 ClickHouse 中执行，也可以在 MySQL 表中执行。本文介绍如何使用 `MySQL` 表引擎的基本方法。
 
@@ -163,6 +165,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-### 摘要 {#summary}
+<div id="summary">
+  ### 摘要
+</div>
 
 `MySQL` 表引擎可让你将 ClickHouse 连接到 MySQL，在两者之间双向交换数据。更多详情请参阅 [MySQL 表引擎](/zh/reference/functions/table-functions/mysql) 的文档页面。

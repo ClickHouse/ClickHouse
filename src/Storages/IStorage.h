@@ -21,7 +21,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <expected>
-#include <functional>
 #include <optional>
 #include <list>
 
@@ -122,22 +121,11 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
-    /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
-    /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
-    /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
-    virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
-
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
     /// of the rows read from such a storage carry the name of the table that actually produced
     /// each row, which is not necessarily the name of this storage.
     virtual bool readsFromOtherTables() const { return false; }
-
-    /// Storages whose rows this storage returns as its own on read, e.g. the target of `Alias`.
-    /// Their row policies apply to reads from this storage as well, so only a wrapper that exposes
-    /// the target's schema unchanged and reads it in the caller's context may list one here.
-    /// `Merge` is not listed: it resolves the policies of its children itself, per child.
-    virtual std::vector<StoragePtr> getUnderlyingStorages() const { return {}; }
 
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
@@ -207,8 +195,6 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
-    /// Returns true if the storage compresses each stream of a column with its own codec, so codecs can be declared for subcolumns.
-    virtual bool supportsSubcolumnCodecs() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
     /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
@@ -237,15 +223,6 @@ public:
 
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
-
-    /** Returns true for a synthetic storage which stands in for a data source inside the server
-      * instead of a table of the catalog - the source of a projection calculation, for example.
-      * Such a storage is not a table the user can query, and it may borrow the name of an existing
-      * table, so reading from it must not be affected by the row policies and the
-      * `additional_table_filters` of that name, nor split between the replicas by
-      * `parallel_replicas_custom_key`.
-      */
-    virtual bool isSyntheticDataSource() const { return false; }
 
     /// Returns true if asynchronous inserts are enabled for table.
     virtual bool areAsynchronousInsertsEnabled() const { return false; }
@@ -281,9 +258,6 @@ public:
     {
         return metadata.get();
     }
-
-    /// Whether this table has a unique-key constraint.
-    virtual bool hasUniqueKey() const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -368,18 +342,6 @@ protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const;
 
-    /// The same, but waits in slices of `check_period` and polls `need_stop` between them (see the public
-    /// `tryLockForShare` overload with `need_stop` below). Returns a nullptr only if `need_stop` returned true.
-    RWLockImpl::LockHolder tryLockTimedSliced(
-        const RWLock & rwlock,
-        RWLockImpl::Type type,
-        const String & query_id,
-        const Poco::Timespan & acquire_timeout,
-        const std::function<bool()> & need_stop,
-        const Poco::Timespan & check_period) const;
-
-    [[noreturn]] void throwLockTimedOut(const RWLock & rwlock, RWLockImpl::Type type, const Poco::Timespan & acquire_timeout) const;
-
 public:
     /// Lock table for share. This lock must be acquired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
@@ -390,19 +352,6 @@ public:
     /// Similar to lockForShare, but returns a nullptr if the table is dropped while
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
-
-    /// Similar to tryLockForShare, but waits for the lock in slices of `check_period`, calling `need_stop`
-    /// between the slices, so that a query that is cancelled (or runs into its time limit) while a concurrent
-    /// DDL query holds the drop lock does not sit in the lock queue for the whole `acquire_timeout`.
-    /// The slicing happens below the throwing API boundary: an expired slice is a plain non-throwing retry,
-    /// and only the exhaustion of the whole `acquire_timeout` throws DEADLOCK_AVOIDED, with the total wait
-    /// in the message. A zero `acquire_timeout` means an infinite wait, as in the other locking methods.
-    /// Returns a nullptr if the table is dropped while acquiring the lock or if `need_stop` returned true.
-    TableLockHolder tryLockForShare(
-        const String & query_id,
-        const Poco::Timespan & acquire_timeout,
-        const std::function<bool()> & need_stop,
-        const Poco::Timespan & check_period);
 
     /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
@@ -579,10 +528,6 @@ public:
         TableExclusiveLockHolder &);
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
-
-    /// Checked before `RENAME DATABASE` moves this table into `new_database_name`. Unlike a table rename,
-    /// only the database name changes there: the table name and the table UUID are preserved.
-    virtual void checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const {}
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
@@ -805,11 +750,6 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
-    /// Returns true if the table can store its own unreplicated data on disk.
-    /// Such a table cannot be created in a `Replicated` database while
-    /// `database_replicated_allow_only_replicated_engine` is enabled.
-    virtual bool hasUnreplicatedTableDataOnDisk() const { return storesDataOnDisk() && !supportsReplication(); }
-
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -832,16 +772,9 @@ public:
     /// - For total_rows column in system.tables
     ///
     /// Does takes underlying Storage (if any) into account.
-    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRows(ContextPtr) const { return {}; }
 
-    virtual std::optional<UInt64> totalRowsInSnapshot(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr query_context) const
-    {
-        return totalRows(query_context);
-    }
-
     /// Same as above but also take partition predicate into account.
-    /// Passed context pointer must not be `nullptr`.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
     /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,

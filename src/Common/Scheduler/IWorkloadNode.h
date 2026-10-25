@@ -102,10 +102,6 @@ public:
     /// Returns true if this workload node has workload children
     virtual bool hasWorkloadChildren() const = 0;
 
-    /// Fails the requests and allocations still in the queue of this leaf workload. Called on the scheduler thread when
-    /// the workload is dropped, before the node is destroyed: query threads may still reach the queue through older versions.
-    virtual void purgeQueue() = 0;
-
     /// Introspection. Calls a visitor for self and every internal node. Do not recurse into workload children.
     virtual void forEachSchedulerNode(std::function<void(ISchedulerNode *)> visitor) = 0;
 };

@@ -5,9 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A credential embedded in an HTTP URI must never appear in an error message, in SHOW CREATE output,
-# or in system.query_log. Only the masked form scheme://[HIDDEN]@host (or X-Amz-Signature=[HIDDEN] for
-# a presigned URL) may be shown.
+# A credential embedded in an HTTP URI must never appear in an error message. Only the masked form
+# scheme://[HIDDEN]@host (or X-Amz-Signature=[HIDDEN] for a presigned URL) may be shown.
 
 PW="pwleakprobe9f2a"
 URI="http://leakuser:${PW}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping"
@@ -57,23 +56,6 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DICTIONARY dict_uri_leak (id UInt64, val St
 # 2a. Reloading fails to parse; the URI must be masked in the exception.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY dict_uri_leak" 2>&1 \
     | grep -F 'in file/uri' | assert_shape "dictionary_reload" "$PW" "$USERINFO_SHAPE"
-
-# 2b. SHOW CREATE must mask the password.
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE DICTIONARY dict_uri_leak" 2>&1 | assert_shape "show_create" "$PW" "$USERINFO_SHAPE"
-
-# 3. system.query_log must store neither the query text nor the exception with the cleartext password.
-#    Print the offending rows rather than a count: on success this selects nothing (the reference has
-#    no line here), and any row printed on failure is the culprit - its query and exception show what
-#    leaked. The needle is split so that this checking query does not itself contain the contiguous
-#    secret.
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT type, query, exception
-    FROM system.query_log
-    WHERE event_date >= yesterday()
-      AND current_database = currentDatabase()
-      AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')
-    FORMAT Vertical"
 
 # 4. Schema inference stores the source URL in system.schema_inference_cache; the credential in its
 #    userinfo must be masked there too. Inferring a schema from a credentialed /ping URL (which needs
