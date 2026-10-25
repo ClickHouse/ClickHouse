@@ -5251,100 +5251,110 @@ void ClientBase::runInteractive()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
-    char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
+    [[maybe_unused]] char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
     std::unique_ptr<LineReader> lr;
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
-
-    if (ConfigHelper::getBool(getClientConfiguration(), "highlight", true))
-    {
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
-        {
-            highlight(query, colors, *client_context, pos, rainbow_parentheses);
-        };
-    }
-
-    /// Don't allow embedded client to read from and write to any file on the server's filesystem.
-    String actual_history_file_path;
-    if (!isEmbeeddedClient())
-    {
-        /// Load command history if present.
-        bool should_create_parent_directories = false;
-        if (getClientConfiguration().has("history_file"))
-            history_file = pathFromString(getClientConfiguration().getString("history_file"));
-        else
-        {
-            history_file = getHistoryFilePath();
-
-            /// Avoid creating parent directories
-            /// if history file path was specified explicitly in config.
-            should_create_parent_directories = true;
-        }
-
-        if (!history_file.empty() && !fs::exists(history_file))
-        {
-            /// Avoid TOCTOU issue.
-            try
-            {
-                if (should_create_parent_directories && history_file.has_parent_path())
-                    fs::create_directories(history_file.parent_path());
-
-                FS::createFile(pathToGenericString(history_file));
-            }
-            catch (const ErrnoException & e)
-            {
-                if (e.getErrno() != EEXIST)
-                    error_stream << getCurrentExceptionMessage(false) << '\n';
-            }
-        }
-
-        actual_history_file_path = pathToGenericString(history_file);
-    }
-
-    auto options = ReplxxLineReader::Options
-    {
-        .suggest = *suggest,
-        .history_file_path = actual_history_file_path,
-        .history_max_entries = history_max_entries,
-        .multiline = getClientConfiguration().has("multiline"),
-        .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
-        .embedded_mode = isEmbeeddedClient(),
-        .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting. Client slash
-        /// commands have a static list and can therefore remain hinted when suggestions are off.
-        .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
-        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
-        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
-        /// `processQueryText`, so offer them here.
-        .enable_slash_commands = true,
-        .extenders = query_extenders,
-        .delimiters = query_delimiters,
-        .word_break_characters = word_break_characters,
-        .highlighter = highlight_callback,
-        .input_stream = input_stream,
-        .output_stream = output_stream,
-        .in_fd = stdin_fd,
-        .out_fd = stdout_fd,
-        .err_fd = stderr_fd,
-    };
-
-    lr = std::make_unique<ReplxxLineReader>(std::move(options));
-#else
-    lr = LineReader(
-        history_file,
-        getClientConfiguration().has("multiline"),
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        input_stream,
-        output_stream,
-        stdin_fd
-    );
+    bool use_replxx = true;
+#if defined(OS_WINDOWS)
+    /// The Windows backend of replxx renders through the console screen buffer of the output
+    /// handle and does not check that it is one, so with the output redirected to a file or a pipe
+    /// it would work with garbage geometry. Read the queries with the basic reader then.
+    use_replxx = isTerminal(stdout_fd);
 #endif
+
+    if (use_replxx)
+    {
+        replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
+
+        if (ConfigHelper::getBool(getClientConfiguration(), "highlight", true))
+        {
+            highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
+            {
+                highlight(query, colors, *client_context, pos, rainbow_parentheses);
+            };
+        }
+
+        /// Don't allow embedded client to read from and write to any file on the server's filesystem.
+        String actual_history_file_path;
+        if (!isEmbeeddedClient())
+        {
+            /// Load command history if present.
+            bool should_create_parent_directories = false;
+            if (getClientConfiguration().has("history_file"))
+                history_file = pathFromString(getClientConfiguration().getString("history_file"));
+            else
+            {
+                history_file = getHistoryFilePath();
+
+                /// Avoid creating parent directories
+                /// if history file path was specified explicitly in config.
+                should_create_parent_directories = true;
+            }
+
+            if (!history_file.empty() && !fs::exists(history_file))
+            {
+                /// Avoid TOCTOU issue.
+                try
+                {
+                    if (should_create_parent_directories && history_file.has_parent_path())
+                        fs::create_directories(history_file.parent_path());
+
+                    FS::createFile(pathToGenericString(history_file));
+                }
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() != EEXIST)
+                        error_stream << getCurrentExceptionMessage(false) << '\n';
+                }
+            }
+
+            actual_history_file_path = pathToGenericString(history_file);
+        }
+
+        auto options = ReplxxLineReader::Options
+        {
+            .suggest = *suggest,
+            .history_file_path = actual_history_file_path,
+            .history_max_entries = history_max_entries,
+            .multiline = getClientConfiguration().has("multiline"),
+            .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
+            .embedded_mode = isEmbeeddedClient(),
+            .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
+            /// Hints need color, so they are enabled only together with highlighting. Client slash
+            /// commands have a static list and can therefore remain hinted when suggestions are off.
+            .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
+                && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+            .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
+            /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+            /// `processQueryText`, so offer them here.
+            .enable_slash_commands = true,
+            .extenders = query_extenders,
+            .delimiters = query_delimiters,
+            .word_break_characters = word_break_characters,
+            .highlighter = highlight_callback,
+            .input_stream = input_stream,
+            .output_stream = output_stream,
+            .in_fd = stdin_fd,
+            .out_fd = stdout_fd,
+            .err_fd = stderr_fd,
+        };
+
+        lr = std::make_unique<ReplxxLineReader>(std::move(options));
+    }
+#endif
+
+    if (!lr)
+        lr = std::make_unique<LineReader>(
+            pathToGenericString(history_file),
+            getClientConfiguration().has("multiline"),
+            query_extenders,
+            query_delimiters,
+            input_stream,
+            output_stream,
+            stdin_fd);
 
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr->enableBracketedPaste();
