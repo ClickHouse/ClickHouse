@@ -347,10 +347,9 @@ struct AggregateFunctionDistinctMultipleGenericOrderedData : AggregateFunctionDi
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
         {
-            auto key = readStringBinaryInto(*arena, buf);
-            Set::LookupResult it = nullptr;
-            bool inserted = false;
-            history.emplace(ArenaKeyHolder{key, *arena}, it, inserted);
+            /// readStringBinaryInto already owns the key in the Arena.
+            /// Avoid copying every persisted key into the same Arena again.
+            const auto [it, inserted] = history.insert(readStringBinaryInto(*arena, buf));
             if (inserted)
                 insertion_order.push_back(it->getValue());
         }
