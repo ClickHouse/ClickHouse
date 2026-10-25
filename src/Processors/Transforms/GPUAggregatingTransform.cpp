@@ -161,7 +161,7 @@ void GPUAggregatingTransform::consume(Chunk chunk)
 Chunk GPUAggregatingTransform::generate()
 {
     if (generated)
-        return {};
+        return group_by_accumulator ? nextGroupsChunk() : Chunk{};
 
     generated = true;
 
@@ -205,14 +205,33 @@ Chunk GPUAggregatingTransform::generateGroups(const Block & header)
 
     group_by_accumulator->copyGroupsTo(key_columns, value_columns);
 
-    Columns columns;
-    columns.reserve(key_columns.size() + value_columns.size());
+    groups.reserve(key_columns.size() + value_columns.size());
     for (auto & column : key_columns)
-        columns.push_back(std::move(column));
+        groups.push_back(std::move(column));
     for (auto & column : value_columns)
-        columns.push_back(std::move(column));
+        groups.push_back(std::move(column));
+    groups_rows = num_groups;
+    groups_offset = 0;
 
-    return Chunk(std::move(columns), num_groups);
+    return nextGroupsChunk();
+}
+
+Chunk GPUAggregatingTransform::nextGroupsChunk()
+{
+    if (groups_offset >= groups_rows)
+    {
+        groups.clear();
+        return {};
+    }
+    const size_t rows = std::min(groups_per_chunk, groups_rows - groups_offset);
+    Columns chunk_columns;
+    chunk_columns.reserve(groups.size());
+    for (const auto & column : groups)
+        chunk_columns.push_back(groups_offset == 0 && rows == groups_rows ? column : column->cut(groups_offset, rows));
+    groups_offset += rows;
+    if (groups_offset >= groups_rows)
+        groups.clear();
+    return Chunk(std::move(chunk_columns), rows);
 }
 
 }

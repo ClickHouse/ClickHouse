@@ -277,8 +277,11 @@ void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
 /// link, where more of them hold more buffers on both sides of it than they gain.
 size_t automaticReaders(const SharedState & state)
 {
+    /// Where the device expands the blocks, a reader only copies them into pinned memory, and two keep the link busy
+    /// from the page cache; but a cold read is bound by the disk, which wants many reads in flight: TPC-H Q7 at SF100
+    /// read `lineitem` cold in 3.4 s with 4 readers and in 3.0 s with 16 or 32.
     if (expandsOnDevice(state.decompression))
-        return 2;
+        return std::clamp<size_t>(getNumberOfCPUCoresToUse() / 2, 2, 16);
     return std::max<size_t>(2, getNumberOfCPUCoresToUse() / 4);
 }
 
@@ -581,8 +584,11 @@ protected:
         if (state->collect)
             return generateCollected();
 
+        /// The groups go out in chunks of `groups_per_chunk` rows, so that the steps above, resized to many streams,
+        /// take them in parallel: an aggregation of tens of millions of groups came out as one chunk, and whatever ran
+        /// above it on the CPU ran on one thread.
         if (generated)
-            return {};
+            return nextGroupsChunk();
 
         generated = true;
 
@@ -616,14 +622,34 @@ protected:
 
         accumulator.copyGroupsTo(key_columns, aggregate_columns);
 
-        Columns result_columns;
-        result_columns.reserve(header.columns());
+        groups.reserve(header.columns());
         for (auto & column : key_columns)
-            result_columns.push_back(std::move(column));
+            groups.push_back(std::move(column));
         for (auto & column : aggregate_columns)
-            result_columns.push_back(std::move(column));
+            groups.push_back(std::move(column));
+        groups_rows = num_groups;
+        groups_offset = 0;
 
-        return Chunk(std::move(result_columns), num_groups);
+        return nextGroupsChunk();
+    }
+
+    /// The next `groups_per_chunk` rows of the groups, or nothing after the last.
+    Chunk nextGroupsChunk()
+    {
+        if (groups_offset >= groups_rows)
+        {
+            groups.clear();
+            return {};
+        }
+        const size_t rows = std::min(groups_per_chunk, groups_rows - groups_offset);
+        Columns chunk_columns;
+        chunk_columns.reserve(groups.size());
+        for (const auto & column : groups)
+            chunk_columns.push_back(groups_offset == 0 && rows == groups_rows ? column : column->cut(groups_offset, rows));
+        groups_offset += rows;
+        if (groups_offset >= groups_rows)
+            groups.clear();
+        return Chunk(std::move(chunk_columns), rows);
     }
 
 private:
@@ -1152,6 +1178,11 @@ private:
     SharedStatePtr state;
     QueryStatusPtr query_status;
     const size_t num_readers;
+    /// The groups of a keyed read, given out chunk by chunk, see `generate`.
+    static constexpr size_t groups_per_chunk = 1UL << 18;
+    Columns groups;
+    size_t groups_rows = 0;
+    size_t groups_offset = 0;
     /// Of a collecting read: the chunks handed over, which `generate` takes. Before `accumulator`, which pushes into it.
     std::unique_ptr<ConcurrentBoundedQueue<Chunk>> output_queue;
     GPU::GroupByGPUAccumulator accumulator;
@@ -1270,6 +1301,11 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+
+    /// A keyed or a collecting read is one source: the steps above take its chunks in as many streams as the read would
+    /// have had, as a filter or a join over tens of millions of its rows would otherwise run on one thread.
+    if (pipeline.getNumStreams() == 1 && num_streams > 1)
+        pipeline.resize(num_streams);
 }
 
 void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_settings) const

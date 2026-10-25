@@ -134,10 +134,16 @@ void GPUAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
 {
     pipeline.dropTotalsAndExtremes();
 
+    /// One transform aggregates every stream, and the groups go back out in as many streams as came in, so that the
+    /// steps above take them in parallel.
+    const size_t streams = pipeline.getNumStreams();
     pipeline.resize(1);
 
     pipeline.addTransform(std::make_shared<GPUAggregatingTransform>(
         pipeline.getSharedHeader(), getOutputHeader(), params, batch_bytes));
+
+    if (streams > 1)
+        pipeline.resize(streams);
 }
 
 void GPUAggregatingStep::describeActions(FormatSettings & settings) const

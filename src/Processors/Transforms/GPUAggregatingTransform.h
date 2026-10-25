@@ -44,6 +44,13 @@ private:
 
     size_t total_rows = 0;
     bool generated = false;
+
+    /// The groups, given out in chunks of `groups_per_chunk` rows, so that the steps above take them in parallel.
+    static constexpr size_t groups_per_chunk = 1UL << 18;
+    Columns groups;
+    size_t groups_rows = 0;
+    size_t groups_offset = 0;
+    Chunk nextGroupsChunk();
 };
 
 }
