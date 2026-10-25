@@ -2,13 +2,10 @@
 
 -- { echoOn }
 
-{% for enable_analyzer in [1] -%}
 {% for join_use_nulls in [0, 1] -%}
 {% for kind in ['LEFT', 'RIGHT'] -%}
 {% for strictness in ['SEMI', 'ANTI'] -%}
 {% for maybe_materialize in ['', 'materialize'] -%}
-
-SET enable_analyzer = {{ enable_analyzer }};
 
 SET join_use_nulls = {{ join_use_nulls }};
 
@@ -53,7 +50,6 @@ FROM (SELECT {{ maybe_materialize }}(NULL :: Nullable(UInt64)) AS id) AS a
 ON a.id = d.id
 ;
 
-{% endfor -%}
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}
