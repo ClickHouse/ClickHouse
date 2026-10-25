@@ -1769,20 +1769,22 @@ class LogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithCont
 public:
     using Base = InDepthQueryTreeVisitorWithContext<LogicalExpressionOptimizerVisitor>;
 
-    explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
+    enum class Mode : uint8_t
+    {
+        JOIN_ON_AND_COMPARE_CHAIN,
+        OTHER_REWRITES,
+    };
+
+    LogicalExpressionOptimizerVisitor(ContextPtr context, Mode mode_)
         : Base(std::move(context))
+        , mode(mode_)
         , and_compare_chain_max_hash_work(getSettings()[Setting::optimize_and_compare_chain_max_hash_work])
         , and_compare_chain_hash_work_start(getTreeHashWorkCounter())
     {}
 
-    /// Work budget for tryOptimizeAndCompareChain, measured directly in nodes hashed by getTreeHash
-    /// (its dominant cost). We snapshot the global counter when the visitor starts and stop the
-    /// optimization once it has hashed more than `and_compare_chain_max_hash_work` nodes for this
-    /// query. On queries with very many / very large AND-comparison chains this caps a cost that
-    /// otherwise dominates analysis while folding nothing (e.g. a 16x16 SQL ray-trace: ~72s -> ~3s),
-    /// while normal queries hash only thousands of nodes and never approach the budget. Stopping
-    /// early is always safe -- it only forgoes an optimization, never changes results.
-    /// The budget is the `optimize_and_compare_chain_max_hash_work` setting (0 disables it).
+    const Mode mode;
+
+    /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost).
     const size_t and_compare_chain_max_hash_work = 0;
     const size_t and_compare_chain_hash_work_start = 0;
 
@@ -1793,6 +1795,28 @@ public:
     {
         return and_compare_chain_max_hash_work != 0
             && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+    }
+
+    /// `and` nodes the compare chain appended conjuncts to, with their state before the first append.
+    struct AndNodeBeforeCompareChain
+    {
+        size_t arguments_size;
+        FunctionBasePtr function;
+    };
+    std::unordered_map<QueryTreeNodePtr, AndNodeBeforeCompareChain> and_nodes_before_compare_chain;
+
+    /// All or nothing per query: equal copies of an expression (a SELECT alias and its GROUP BY key) must be rewritten alike.
+    void revertAndCompareChainIfBudgetExceeded()
+    {
+        if (!andCompareChainHashBudgetExceeded())
+            return;
+        for (const auto & [node, before] : and_nodes_before_compare_chain)
+        {
+            auto & function_node = node->as<FunctionNode &>();
+            function_node.getArguments().getNodes().resize(before.arguments_size);
+            function_node.resolveAsFunction(before.function);
+        }
+        and_nodes_before_compare_chain.clear();
     }
 
     /// Memoized "this subtree contains a correlated subquery" bit, keyed by node identity.
@@ -1829,6 +1853,8 @@ public:
 
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
+    /// the join evaluates an input-less conjunct of ON with its left side
+    bool join_left_side_preserved = false;
 
     /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
     /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
@@ -1868,13 +1894,30 @@ public:
         return !reads_other_table;
     }
 
+    void visitWithPreservedJoinSides(QueryTreeNodePtr & node, TableExpressionNodes tables, bool left_side_preserved)
+    {
+        std::swap(preserved_join_tables, tables);
+        std::swap(join_left_side_preserved, left_side_preserved);
+        visit(node);
+        std::swap(preserved_join_tables, tables);
+        std::swap(join_left_side_preserved, left_side_preserved);
+    }
+
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        /// a subquery is a separate query, the sides of a join around it do not apply
+        if (isQueryOrUnionNode(child))
+        {
+            visitWithPreservedJoinSides(child, {}, false);
+            return false;
+        }
+
         const auto * join_node = parent->as<JoinNode>();
         if (!join_node || child != join_node->getJoinExpression())
             return true;
 
         TableExpressionNodes tables;
+        bool left_side_preserved = false;
         /// semi join keeps only matched rows
         if (join_node->getStrictness() != JoinStrictness::Semi)
         {
@@ -1882,11 +1925,12 @@ public:
                 tables = extractTableExpressions(join_node->getLeftTableExpressionNodeTyped(), /*add_array_join=*/ true);
             if (isRightOrFull(join_node->getKind()))
                 tables.append_range(extractTableExpressions(join_node->getRightTableExpressionNodeTyped(), /*add_array_join=*/ true));
+            /// the planner may swap the sides of a GLOBAL RIGHT JOIN, see tryRewriteGlobalRightJoinAsLeftJoin
+            left_side_preserved = isLeftOrFull(join_node->getKind())
+                || (join_node->getKind() == JoinKind::Right && isGlobalJoin(*join_node, getSettings()));
         }
 
-        std::swap(preserved_join_tables, tables);
-        visit(child);
-        std::swap(preserved_join_tables, tables);
+        visitWithPreservedJoinSides(child, std::move(tables), left_side_preserved);
         return false;
     }
 
@@ -1895,11 +1939,19 @@ public:
         if (auto * join_node = node->as<JoinNode>())
         {
             /// Operator <=> is not supported outside of JOIN ON section
-            if (join_node->hasJoinExpression())
+            if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN && join_node->hasJoinExpression())
             {
                 JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(*join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
+            return;
+        }
+
+        if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
+        {
+            auto * function_node = node->as<FunctionNode>();
+            if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
+                tryOptimizeAndCompareChain(node);
             return;
         }
 
@@ -1916,11 +1968,6 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
-            /// Run transitive inference first so that the conflict detector can see inferred equalities.
-            /// E.g. `x = 3 AND x = y AND y = 5` — the compare-chain pass infers `x = 5`,
-            /// then the equals-chain pass detects `x = 3` vs `x = 5` and collapses to FALSE.
-            if (getSettings()[Setting::optimize_and_compare_chain])
-                tryOptimizeAndCompareChain(node);
             tryOptimizeAndCompareNotEqualsChain(node);
             return;
         }
@@ -1934,6 +1981,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
+            return;
+
         if (!getSettings()[Setting::optimize_extract_common_expressions])
             return;
 
@@ -2304,6 +2354,9 @@ private:
         if (andCompareChainHashBudgetExceeded())
             return;
 
+        const size_t arguments_size_before = function_node.getArguments().getNodes().size();
+        const auto function_before = function_node.getFunctionOrThrow();
+
         enum CompareType
         {
             less = 0,
@@ -2578,11 +2631,11 @@ private:
                                     existing_plain_conjuncts.emplace(and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (preserved_join_tables.empty() && existing_hint_conjuncts.emplace(and_node).second)
+                                else if (!join_left_side_preserved && existing_hint_conjuncts.emplace(and_node).second)
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
-                                    /// Not in an outer join ON: the join evaluates the input-less `indexHint` with its left side.
+                                    /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(
@@ -2616,6 +2669,9 @@ private:
             visited.clear();
             find_pairs(less_pairs, constant.node, nullptr, CompareType::equals, {});
         }
+
+        if (function_node.getArguments().getNodes().size() > arguments_size_before)
+            and_nodes_before_compare_chain.emplace(node, AndNodeBeforeCompareChain{arguments_size_before, function_before});
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
@@ -2889,7 +2945,13 @@ private:
 
 void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    LogicalExpressionOptimizerVisitor visitor(std::move(context));
+    /// The JOIN ON rewrites and the derivation of transitive comparisons run first: the derivation sees the rewritten JOIN ON,
+    /// and the conflict detector of the other rewrites sees the derived conjuncts (`x = 3 AND x = y AND y = 5` -> FALSE).
+    LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
+    and_compare_chain_visitor.visit(query_tree_node);
+    and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
+
+    LogicalExpressionOptimizerVisitor visitor(std::move(context), LogicalExpressionOptimizerVisitor::Mode::OTHER_REWRITES);
     visitor.visit(query_tree_node);
 }
 
