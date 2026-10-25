@@ -90,6 +90,57 @@ def list_nodes(node):
             yield from list_nodes(value)
 
 
+def cpu_choices(node):
+    if call_name(node) != "select" or len(node.args) != 1 or node.keywords:
+        return {}
+    choices = node.args[0]
+    if not isinstance(choices, ast.Dict) or not all(
+            isinstance(key, ast.Constant) and key.value in (*CPUS, DEFAULT) for key in choices.keys):
+        return {}
+    return {key.value: value for key, value in zip(choices.keys, choices.values)}
+
+
+def fold_single_cpu_lists(source):
+    """Keep the configured list on the only CPU allowed by target_compatible_with."""
+    constants = {}
+    edits = []
+    for stmt in source.module.body:
+        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+            constants[stmt.targets[0].id] = stmt.value
+        if not isinstance(stmt, ast.Expr) or call_name(stmt.value) not in CPP_LIBRARIES | {"nasm_objects"}:
+            continue
+        rule = stmt.value
+        attrs = {kw.arg: kw.value for kw in rule.keywords}
+        guard = attrs.get("target_compatible_with")
+        if isinstance(guard, ast.Name):
+            guard = constants.get(guard.id)
+        try:
+            guards = {key: ast.literal_eval(value) for key, value in cpu_choices(guard).items()}
+        except (TypeError, ValueError):
+            continue
+        cpus = [key for key in CPUS if guards.get(key) == []]
+        if len(cpus) != 1 or any(value != ["@platforms//:incompatible"]
+                                 for key, value in guards.items() if key != cpus[0]):
+            continue
+        cpu, = cpus
+        for field in (FIELDS | {"srcs", "private_hdrs", "copts", "includes", "defines"}) & attrs.keys():
+            end = -1
+            for node in list_nodes(attrs[field]):
+                choices = cpu_choices(node)
+                if cpu not in choices or (DEFAULT not in choices and
+                                           (DEFAULT in guards or not set(CPUS) <= choices.keys())):
+                    continue
+                # An unchosen glob() or function can still run during package loading.
+                if any(not isinstance(value, ast.List) or value.elts
+                       for key, value in choices.items() if key != cpu):
+                    continue
+                start, stop = source.span(node)
+                if start >= end and "#" not in source.text(node):
+                    edits.append((start, stop, source.text(choices[cpu])))
+                    end = stop
+    return source.rewrite(edits)
+
+
 def list_parts(node):
     """Flatten only additions in an attribute that requires a list."""
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):

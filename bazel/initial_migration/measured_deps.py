@@ -26,6 +26,7 @@ DEPENDENCIES = {
     ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
     ('contrib/bech32', '_bech32'): ([GLIBC_COMPATIBILITY], [], []),
     ('contrib/cityhash102', '_cityhash'): ([GLIBC_COMPATIBILITY], [], []),

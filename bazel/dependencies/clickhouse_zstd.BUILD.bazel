@@ -42,6 +42,7 @@ ch_cc_library(
         "ZSTD_LEGACY_SUPPORT=1",
         "-fno-sanitize=undefined",
     ],
+    implementation_deps = [":_zstd__compile_1"],
     includes = [
         "lib",
     ],
@@ -51,9 +52,6 @@ ch_cc_library(
     local_includes = [
         "lib/legacy",
         "lib/common",
-    ],
-    deps = [
-        ":_zstd__compile_1",
     ],
 )
 

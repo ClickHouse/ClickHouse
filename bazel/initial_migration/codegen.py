@@ -367,6 +367,18 @@ class Codegen:
         outputs = ['gen/' + self.graph.arch + '/' + p for p in node['outputs']]
         mkdirs = sorted({str(Path('$(BINDIR)/bazel') / p).rsplit('/', 1)[0] for p in outputs})
         script = 'execroot=$$PWD\nmkdir -p ' + ' '.join(mkdirs) + '\n' + ' && '.join(segments)
+        if tools == ['flatc'] and node['outputs'][0] == 'contrib/flatbuffers/generated/File_generated.h':
+            arrow = self.root / 'contrib/arrow'
+            schemas = sorted((arrow / 'format').glob('*.fbs')) + [arrow / 'cpp/src/arrow/ipc/feather.fbs']
+            directory = Path(node['outputs'][0]).parent
+            argv = shlex.split(command.rsplit(' && ', 1)[-1])
+            tail = ['-o', str(self.graph.build / directory), *map(str, schemas)]
+            if (argv[-len(tail):] != tail
+                    or node['outputs'] != [str(directory / (s.stem + '_generated.h')) for s in schemas]):
+                raise ValueError('Arrow IPC schema filegroup disagrees with the native flatc command')
+            inputs = {'@clickhouse_arrow//:ipc_metadata_schemas'}
+            script = ('"$(execpath //:flatc)" ' + shlex.join(argv[1:-len(tail)])
+                      + ' -o "$(RULEDIR)/' + str(Path(outputs[0]).parent) + '" $(SRCS)')
         name = 'generate_' + self.graph.arch + '_' + hashlib.sha256(node['outputs'][0].encode()).hexdigest()[:16]
         self.rules[name] = dict(srcs=sorted(inputs), outs=outputs, tools=['//:' + t for t in tools], cmd=script)
         self.handled.update(node['outputs'])

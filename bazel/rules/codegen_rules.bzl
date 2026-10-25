@@ -1701,12 +1701,7 @@ KRB5_PRIVATE_CODEGEN_RULES = {
 CODEGEN_RULES = {
     "generate_contrib_flatbuffers_generated_File_generated_h": {
         "srcs": [
-            "@clickhouse_arrow//:cpp/src/arrow/ipc/feather.fbs",
-            "@clickhouse_arrow//:format/File.fbs",
-            "@clickhouse_arrow//:format/Message.fbs",
-            "@clickhouse_arrow//:format/Schema.fbs",
-            "@clickhouse_arrow//:format/SparseTensor.fbs",
-            "@clickhouse_arrow//:format/Tensor.fbs",
+            "@clickhouse_arrow//:ipc_metadata_schemas",
         ],
         "outs": [
             "gen/contrib/flatbuffers/generated/File_generated.h",
@@ -1719,7 +1714,7 @@ CODEGEN_RULES = {
         "tools": [
             "@clickhouse_flatbuffers//:flatc",
         ],
-        "cmd": "execroot=$$PWD\nmkdir -p $(BINDIR)/bazel/gen/contrib/flatbuffers/generated\nmkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && cd \"$$execroot/$(BINDIR)/bazel/gen/contrib/arrow-cmake\" && mkdir -p \"$$execroot/$(BINDIR)/bazel/gen/contrib/flatbuffers/generated\" && \"$$execroot/$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$$execroot/$(BINDIR)/bazel/gen/contrib/flatbuffers/generated\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/File.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Message.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Schema.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/SparseTensor.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/format/Tensor.fbs\" \"$$execroot/" + repository_path("contrib/arrow") + "/cpp/src/arrow/ipc/feather.fbs\"",
+        "cmd": "\"$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$(RULEDIR)/gen/contrib/flatbuffers/generated\" $(SRCS)",
     },
     "generate_contrib_openldap_cmake_lber_version_c": {
         "srcs": [

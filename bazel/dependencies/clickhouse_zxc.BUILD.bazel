@@ -116,14 +116,11 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-            "src/lib",
-            "src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [
+        "include",
+        "src/lib",
+        "src/lib/vendors",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -165,14 +162,11 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-            "src/lib",
-            "src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [
+        "include",
+        "src/lib",
+        "src/lib/vendors",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -220,14 +214,11 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-            "src/lib",
-            "src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [
+        "include",
+        "src/lib",
+        "src/lib/vendors",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -242,14 +233,11 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-            "src/lib",
-            "src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [
+        "include",
+        "src/lib",
+        "src/lib/vendors",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -288,14 +276,11 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-            "src/lib",
-            "src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [
+        "include",
+        "src/lib",
+        "src/lib/vendors",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -310,14 +295,11 @@ ch_cc_library(
     language = "C",
     libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "include",
-            "src/lib",
-            "src/lib/vendors",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_includes = [
+        "include",
+        "src/lib",
+        "src/lib/vendors",
+    ],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )

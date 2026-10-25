@@ -235,7 +235,10 @@ DBMS_PUBLIC_HEADERS = {
     "Databases": ("DatabaseOverlay.h", "DatabaseURL.h"),
     "Databases/DataLake": ("HTTPBasedCatalogUtils.h",),
     "Databases/MySQL": ("DatabaseMySQL.h",),
-    "Disks": ("DiskEncryptedTransaction.h", "IDiskTransaction.h", "SingleDiskVolume.h"),
+    "Disks": (
+        "DiskEncryptedTransaction.h", "IDiskTransaction.h", "MetadataStorageWithPathWrapper.h",
+        "SingleDiskVolume.h",
+    ),
     "Disks/DiskObjectStorage/MetadataStorages": (
         "DiskObjectStorageMetadata.h", "InMemoryRemovalQueue.h", "MetadataOperationsHolder.h",
         "MetadataStorageTransactionState.h", "NormalizedPath.h",

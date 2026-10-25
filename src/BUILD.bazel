@@ -159,6 +159,7 @@ _DBMS_0_PUBLIC_HEADERS = glob([
     "Disks/IO/WriteBufferFromTemporaryFile.h",
     "Disks/IO/WriteBufferInlineOrBlob.h",
     "Disks/LocalDirectorySyncGuard.h",
+    "Disks/MetadataStorageWithPathWrapper.h",
     "Disks/SingleDiskVolume.h",
     "Disks/TemporaryFileOnDisk.h",
     "Disks/registerDisks.h",

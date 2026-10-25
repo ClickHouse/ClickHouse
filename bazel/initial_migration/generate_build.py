@@ -1715,7 +1715,7 @@ def main():
     format_build_files(read_only=read_only)
     # Factor formatted lists last: earlier normalization folds equal CPU
     # branches and would discard required no-match errors.
-    from initial_migration.factor_build_selections import run as factor_build_selections
+    from initial_migration.factor_build_selections import fold_single_cpu_lists, run as factor_build_selections
     selection_builds = {
         path for path in build_paths
         if not (package := path.parent.relative_to(ROOT).as_posix().removeprefix('.'))
@@ -1735,14 +1735,15 @@ def main():
     declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import share_local_defines
     share_local_defines(ROOT, selection_builds)
-    # Rule transfers can leave adjacent literal lists. Preserve select()
-    # and its no-match error after the CPU selections have been factored.
+    # Fold remaining CPU choices only when target_compatible_with fixes the CPU.
+    # Rule transfers can also leave adjacent literal lists or empty attributes.
     from initial_migration.compact_build import Source, remove_unused_constants, simplify_list_expressions
     for path in sorted(selection_builds):
         before = path.read_text()
         after = before
         while True:
-            updated = simplify_list_expressions(Source(after), preserve_selects=True)
+            folded = fold_single_cpu_lists(Source(after))
+            updated = simplify_list_expressions(Source(folded), preserve_selects=True)
             if updated == after:
                 break
             after = updated

@@ -135,7 +135,7 @@ def label_repository(label):
     return repo + "//"
 
 
-def read_compatibility(path, rows):
+def read_compatibility(path, rows, header_labels=()):
     """Bind a Starlark provider observation to a unique config(expr, target) row."""
     by_label = defaultdict(list)
     for key, row in rows.items():
@@ -143,6 +143,8 @@ def read_compatibility(path, rows):
     seen = {}
     for line in path.read_text().splitlines():
         event = json.loads(line)
+        extra = isinstance(event, dict) and "standalone_headers" in event
+        headers = event.pop("standalone_headers") if extra else None
         if (not isinstance(event, dict) or set(event) != {"label", "incompatible"} or
                 not isinstance(event["label"], str) or type(event["incompatible"]) is not bool):
             raise ValueError("invalid cquery platform provider observation")
@@ -152,6 +154,12 @@ def read_compatibility(path, rows):
         key = by_label[label][0]
         if key in seen:
             raise ValueError("duplicate platform provider observation: " + key)
+        if label in header_labels and not event["incompatible"]:
+            if not isinstance(headers, dict):
+                raise ValueError("missing requested CcInfo header observation: " + key)
+            rows[key]["standalone_headers"] = headers
+        elif extra:
+            raise ValueError("unexpected CcInfo header observation: " + key)
         seen[key] = event["incompatible"]
     if set(seen) != set(rows):
         raise ValueError("missing platform provider observations: " + repr(sorted(set(rows) - set(seen))))
@@ -193,23 +201,28 @@ def choose_production_roots(audit, census, initial):
     return initial + sorted(result["added_roots"]), result
 
 
-def query_compatibility(audit, name, expr, rows):
+def query_compatibility(audit, name, expr, rows, header_labels=()):
     query_file = audit.out / (name + ".query")
     query_file.write_text(expr + "\n")
     provider_file = audit.out / (name + ".cquery")
-    provider_file.write_text(
-        'def format(target):\n'
-        '    p = providers(target)\n'
-        '    return json.encode({"label": str(target.label), '
-        '"incompatible": None if p == None else "IncompatiblePlatformProvider" in p})\n'
-    )
+    if header_labels:
+        from audit_public_headers import provider_query
+        provider = provider_query(header_labels)
+    else:
+        provider = (
+            'def format(target):\n'
+            '    p = providers(target)\n'
+            '    return json.encode({"label": str(target.label), '
+            '"incompatible": None if p == None else "IncompatiblePlatformProvider" in p})\n'
+        )
+    provider_file.write_text(provider)
     run = audit.command(name, "cquery", [
         "--query_file=" + str(query_file), "--output=starlark", "--consistent_labels",
         "--starlark:file=" + str(provider_file),
     ], output=True)
     if run["exit_code"]:
         raise RuntimeError("cquery standalone platform providers failed: " + run["log"]["file"])
-    return read_compatibility(Path(run["stdout"]["file"]), rows), run["stdout"]
+    return read_compatibility(Path(run["stdout"]["file"]), rows, header_labels), run["stdout"]
 
 
 def ordinary_reachability(bep, rows, roots):
@@ -516,6 +529,10 @@ def parse_cquery(raw):
                 if name in attrs
             },
         }
+        if "additional_compiler_inputs" in attrs:
+            rule_inputs = attrs["additional_compiler_inputs"]
+            rules[key]["extra_compiler_inputs"] = (None if "selectorList" in rule_inputs
+                                                  else len(rule_inputs.get("stringListValue", [])))
     return rules, dict(sorted(skipped.items()))
 
 
@@ -681,6 +698,9 @@ class Audit:
         return run
 
     def query(self, name, subcommand, expr, extra=()):
+        if name == "requested-cpp-outputs" and getattr(self, "standalone_header_outputs", ()):
+            from audit_public_headers import add_outputs
+            expr = add_outputs(expr, self.standalone_header_outputs)
         query = self.out / (name + ".query")
         query.write_text(expr + "\n")
         opts = ["--query_file=" + str(query), "--output=jsonproto", "--consistent_labels"]
@@ -690,6 +710,8 @@ class Audit:
                      "--noproto:rule_inputs_and_outputs",
                      "--proto:output_rule_attrs=srcs,hdrs,textual_hdrs,tags,features,deps,implementation_deps,"
                      "refs,actual,language,exports,option_deps,cc_deps,cc_implementation_deps"]
+            if name == "requested" and getattr(self.args, "standalone_header_owner", ()):
+                opts[-1] += ",additional_compiler_inputs"
         else:
             opts += ["--noinclude_artifacts", "--noinclude_commandline",
                      "--noinclude_param_files", "--noinclude_file_write_contents"]
@@ -1636,7 +1658,15 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
     if (omitted or len(rows) != len(labels) or {row["label"] for row in rows.values()} != set(apparent)
             or any(row["is_tool"] or row["rule_class"] not in NATIVE_CC for row in rows.values())):
         raise ValueError("requested C/C++ declarations differ from configured target identities")
-    incompatible, _ = query_compatibility(audit, "requested-platform", target_config, rows)
+    selected_headers = getattr(audit.args, "standalone_header_owner", ())
+    header_labels = {census_canonical(label) for label in selected_headers}
+    header_graphs = {}
+    if selected_headers:
+        import audit_public_headers as public_headers
+        if (len(header_labels) != len(selected_headers) or len(header_labels) > public_headers.MAX_OWNERS
+                or not set(selected_headers) <= labels):
+            raise ValueError("standalone header owners must be distinct, requested labels (at most eight)")
+    incompatible, providers = query_compatibility(audit, "requested-platform", target_config, rows, header_labels)
     active = {key: row for key, row in rows.items() if not incompatible[key]}
     analyzers, headers, ordinary, ordinary_events, strict, strict_events, filesets = {}, {}, {}, {}, {}, {}, {}
     ready = {}
@@ -1665,11 +1695,41 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
             record_error(name, exc)
         outputs = "outputs('.*(_dwyu_report[.]json|[.]dwyu_owned_headers[.]json)$', " + expr + ")"
         name = "requested-cpp-outputs"
+        if header_labels:
+            try:
+                public_headers.check_sources(Path("."))
+                audit.standalone_header_labels = public_headers.candidates(active, header_labels)
+                audit.standalone_header_outputs = [str(report_path(Path(), row)) for row in active.values()
+                                                   if row["label"] in audit.standalone_header_labels]
+            except evidence_errors as exc:
+                for key, row in active.items():
+                    if row["label"] in header_labels:
+                        header_graphs[key] = {"reason": str(exc)}
         try:
-            graph = declared_action_graph(audit.query(name, "aquery", outputs, (
+            query = audit.query(name, "aquery", outputs, (
                 "--config=dwyu", "--include_aspects", "--include_artifacts", "--include_file_write_contents",
-                "--include_commandline", "--include_param_files")), active, name, accounting)
+                "--include_commandline", "--include_param_files"))
+            capture = getattr(audit, "standalone_header_labels", ())
+            if capture and query.stat().st_size > public_headers.MAX_GRAPH_BYTES:
+                raise ValueError("requested header action graph exceeds 32 MiB")
+            graph = declared_action_graph(query, active, name, accounting)
+            if capture:
+                header_actions = public_headers.configured_header_graph(graph, active, capture)
+                graph = dict(graph, actions=[a for a in graph["actions"]
+                                             if a["mnemonic"] not in (public_headers.PP, public_headers.PROCESS)])
             analyzers, headers = configured_analyzers(graph)
+            if capture:
+                for key, row in active.items():
+                    if row["label"] in capture:
+                        try:
+                            report, = analyzers[key]
+                            manifest, = headers[key]
+                            header_graphs[key] = public_headers.verify_actions(header_actions, row, manifest, report, audit.args.config)
+                            header_graphs[key]["provider_query"] = providers["sha256"]
+                            header_graphs[key]["action_query"] = accounting[name]["input"]["sha256"]
+                        except evidence_errors as exc:
+                            header_graphs[key] = {"reason": str(exc)[:512]}
+                del header_actions
             del graph
         except evidence_errors as exc:
             record_error(name, exc)
@@ -1769,6 +1829,16 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
             outcome = "ordinary_" + row["ordinary"]["status"]
         if category == "compiled_native" and row["actions"].get("CppModuleCompile") and outcome == "clean":
             outcome = "unchecked_modules"
+        if row["label"] in header_labels:
+            proof = header_graphs.get(key, {})
+            if (outcome == "header_pp_not_verified" and not errors and (proof.get("headers") or proof.get("textual_files"))
+                    and public_headers.successful_report(row, proof, ordinary, strict)):
+                if proof.get("headers"):
+                    outcome = "header_pp_verified"
+                status["standalone_headers"] = proof
+            else:
+                status["standalone_headers"] = {"reason": proof.get("reason") or
+                    row.get("standalone_headers", {}).get("error") or "no complete configured header actions and successful report"}
         if errors and outcome in ("clean", "no_cpp", "header_pp_not_verified", "no_compiled_cpp_proof"):
             outcome = "unverified_query_accounting"
         row["outcome"] = outcome
@@ -1815,9 +1885,13 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
             "actionable_production": sorted(set(actionables) - fixtures),
             "compiled_owners_clean": not errors and bool(scored) and all(r["outcome"] == "clean" for r in scored),
             "incomplete_build_evidence": [r["label"] for r in production_rows if
+                r["label"] in header_labels and r["outcome"] != "header_pp_verified" or
                 r["category"] != "incompatible" and (errors or r["ordinary"]["status"] != "passed" or
                 r["outcome"] in ("invalid", "missing", "failed", "unproved_failed_report") or
                 r["actions"].get("CppCompile") and r["category"] != "compiled_native")],
+            **({"standalone_headers_requested": sorted(selected_headers),
+                "standalone_headers_verified": sum(len(r["strict"]["standalone_headers"]["headers"]) for r in rows.values()
+                                                  if r["outcome"] == "header_pp_verified")} if selected_headers else {}),
             "consumer_evidence_requested": audit.args.declared_contexts,
             "unverified_scopes": ["header-only preprocessing", "generated C++", "assembly", "tool configurations",
                                   "fixture expectations", "Rust import ownership", "textual consumer contexts"],
@@ -1840,6 +1914,8 @@ def main():
                         help="audit top-level declarations in one configuration; --audit-target selects a subset")
     parser.add_argument("--add-fixture", action="append", default=[], metavar="LABEL",
                         help="add a declared fixture to --declared-owners; report fixture results separately")
+    parser.add_argument("--standalone-header-owner", action="append", default=[], metavar="LABEL",
+                        help="verify the exported standalone C++ header preprocessing of a requested owner (repeatable)")
     parser.add_argument("--declared-contexts", action="store_true",
                         help="also inspect the configured Rust imports and textual header consumers (extra queries)")
     args = parser.parse_args()
@@ -1847,6 +1923,8 @@ def main():
         parser.error("--production-census and --production-census-sha256 must be supplied together")
     if args.declared_owners and (not args.production_census or args.seed or args.enumerate_only):
         parser.error("--declared-owners requires the source census and does not take --seed or --enumerate-only")
+    if args.standalone_header_owner and not args.declared_owners:
+        parser.error("--standalone-header-owner requires --declared-owners")
     if (args.add_fixture or args.declared_contexts) and not args.declared_owners:
         parser.error("--add-fixture and --declared-contexts require --declared-owners")
     if args.production_census and not args.declared_owners and (args.audit_target or args.seed):

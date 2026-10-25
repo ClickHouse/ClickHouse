@@ -87,15 +87,13 @@ _PARQUET_PRIVATE_HEADERS = [
     "cpp/src/parquet/schema_internal.h",
 ]
 
-exports_files([
-    "LICENSE.txt",
-    "cpp/src/arrow/ipc/feather.fbs",
-    "format/File.fbs",
-    "format/Message.fbs",
-    "format/Schema.fbs",
-    "format/SparseTensor.fbs",
-    "format/Tensor.fbs",
-])
+exports_files(["LICENSE.txt"])
+
+filegroup(
+    name = "ipc_metadata_schemas",
+    srcs = glob(["format/*.fbs"]) + ["cpp/src/arrow/ipc/feather.fbs"],
+    visibility = ["@clickhouse//bazel:__pkg__"],
+)
 
 expand_template(
     name = "configure_cpp_src_arrow_util_config_h",

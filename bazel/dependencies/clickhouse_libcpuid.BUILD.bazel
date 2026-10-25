@@ -11,48 +11,36 @@ exports_files([
 
 ch_cc_library(
     name = "_cpuid",
-    srcs = select({
-        "@platforms//cpu:x86_64": glob(["libcpuid/*.c"]) + [
-            "libcpuid/asm-bits.h",
-            "libcpuid/libcpuid_internal.h",
-            "libcpuid/libcpuid_util.h",
-            "libcpuid/rdcpuid.h",
-            "libcpuid/rdtsc.h",
-        ] + glob(["libcpuid/recog_*.h"]),
-        "@platforms//cpu:aarch64": [],
-    }),
-    hdrs = select({
-        "@platforms//cpu:x86_64": [
-            "libcpuid/libcpuid.h",
-            "libcpuid/libcpuid_arm_driver.h",
-            "libcpuid/libcpuid_constants.h",
-            "libcpuid/libcpuid_types.h",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = glob(["libcpuid/*.c"]) + [
+        "libcpuid/asm-bits.h",
+        "libcpuid/libcpuid_internal.h",
+        "libcpuid/libcpuid_util.h",
+        "libcpuid/rdcpuid.h",
+        "libcpuid/rdtsc.h",
+    ] + glob(["libcpuid/recog_*.h"]),
+    hdrs = [
+        "libcpuid/libcpuid.h",
+        "libcpuid/libcpuid_arm_driver.h",
+        "libcpuid/libcpuid_constants.h",
+        "libcpuid/libcpuid_types.h",
+    ],
     arches = [
         "x86_64",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "-w",
-            "-std=gnu11",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
     language = "C",
     libcxx_headers = False,
-    local_defines = select({
-        "@platforms//cpu:x86_64": [
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "'VERSION=\"v0.8.2\"'",
-            "_GNU_SOURCE",
-            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-            "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_defines = [
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "'VERSION=\"v0.8.2\"'",
+        "_GNU_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
     target_compatible_with = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
