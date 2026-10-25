@@ -1459,8 +1459,8 @@ class Graph:
 
 def main():
     # These overlays own Bazel declarations that CMake does not describe:
-    # Abseil's public and private headers, Arrow/Parquet's header libraries,
-    # msgpack_c_api, and Google Cloud C++'s protobuf dependencies.
+    # Preserve the Abseil, Arrow/Parquet, and Google Cloud C++ public/private
+    # headers, msgpack_c_api, and Google Cloud C++'s protobuf dependencies.
     abseil = ROOT / 'bazel/dependencies/clickhouse_abseil_cpp.BUILD.bazel'
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
@@ -1797,7 +1797,11 @@ def main():
     share_local_defines(ROOT, selection_builds)
     # Fold remaining CPU choices only when target_compatible_with fixes the CPU.
     # Rule transfers can also leave adjacent literal lists or empty attributes.
-    from initial_migration.compact_build import Source, remove_unused_constants, simplify_list_expressions
+    from initial_migration.compact_build import Source, intern_attributes, remove_unused_constants, simplify_list_expressions
+    include_dirs = {
+        "clickhouse_grpc.BUILD.bazel": "_GRPC_LOCAL_INCLUDES",
+        "clickhouse_zxc.BUILD.bazel": "_ZXC_LOCAL_INCLUDES",
+    }
     for path in sorted(selection_builds):
         before = path.read_text()
         after = before
@@ -1809,6 +1813,8 @@ def main():
             after = updated
         after = omit_compile_defaults(Source(drop_defaults(Source(after))))
         after = remove_parens(remove_unused_constants(Source(after)), key=source_list_key)
+        if include_name := include_dirs.get(path.name):
+            after = intern_attributes(Source(after), names={"local_includes": include_name})
         if after != before:
             path.write_text(after)
     publish_redis_sdk(ROOT)

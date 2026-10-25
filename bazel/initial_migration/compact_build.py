@@ -168,13 +168,14 @@ def factor_selects(source):
     return source.rewrite(edits)
 
 
-def intern_attributes(source):
+def intern_attributes(source, *, names=None):
+    """Share repeated attributes; callers can supply a package-specific name for an attribute."""
     occurrences = defaultdict(list)
     used_names = {node.id for node in ast.walk(source.module) if isinstance(node, ast.Name)}
     for statement, rule in source.rules():
         for attr in rule.keywords:
             value = attr.value
-            if (attr.arg in ATTRIBUTES and not isinstance(value, ast.Constant)
+            if (attr.arg in (ATTRIBUTES if names is None else names) and not isinstance(value, ast.Constant)
                     and safe_expression(value)):
                 occurrences[(attr.arg, ast_key(value))].append((statement, value))
     edits = []
@@ -183,9 +184,14 @@ def intern_attributes(source):
     for (attr, _), occurrences_for_attr in occurrences.items():
         if len(occurrences_for_attr) < 2:
             continue
-        number = numbers[attr]
-        while (name := f"{CONSTANT_PREFIX}{attr.upper()}_{number}") in used_names:
-            number += 1
+        if names is None:
+            number = numbers[attr]
+            while (name := f"{CONSTANT_PREFIX}{attr.upper()}_{number}") in used_names:
+                number += 1
+        else:
+            name = names[attr]
+            if name in used_names:
+                continue
         statement, value = occurrences_for_attr[0]
         definition = name + " = " + source.text(value) + "\n\n"
         old_bytes = sum(end - start for _, item in occurrences_for_attr
@@ -194,7 +200,8 @@ def intern_attributes(source):
         # Tiny constants obscure a BUILD more than they simplify it.
         if old_bytes - new_bytes < 64:
             continue
-        numbers[attr] = number + 1
+        if names is None:
+            numbers[attr] = number + 1
         used_names.add(name)
         declarations[source.span(statement)[0]].append(definition)
         edits.extend((*source.span(item), name) for _, item in occurrences_for_attr)

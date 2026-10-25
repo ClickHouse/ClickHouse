@@ -19,6 +19,8 @@ MODULES = {
     "bazel/dependencies/aws_crt_defines.bzl": ("AWS_CRT_DEFINES",),
 }
 CPUS = ("x86_64", "aarch64", "unsupported")
+FAMILY_MODULE = "@clickhouse//src:common_io_flags.bzl"
+FAMILIES = ("dbms_defines", "common_io_defines")
 
 
 class Defines(StrictConfigured):
@@ -30,6 +32,11 @@ class Defines(StrictConfigured):
 
     def visit_Call(self, node):
         node = super().visit_Call(node)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Lambda) and not node.keywords and len(node.args) <= 1:
+            # configured() binds the helper's module constants before it is loaded in a BUILD file.
+            scoped = copy.copy(self)
+            scoped.constants = {"extra": node.args[0] if node.args else node.func.args.defaults[0]}
+            return scoped.visit(copy.deepcopy(node.func.body))
         if (call_name(node) == "sorted" and len(node.args) == 1 and not node.keywords
                 and isinstance(node.args[0], ast.List)
                 and all(isinstance(v, ast.Constant) and isinstance(v.value, str) for v in node.args[0].elts)):
@@ -105,6 +112,13 @@ def configured(source, modules):
             if imported:
                 for visitor, exports in zip(visitors, imported):
                     visitor.constants.update({local: exports[remote] for local, remote in loaded_names(call).items() if remote in exports})
+        elif isinstance(statement, ast.FunctionDef) and statement.name in FAMILIES:
+            if ([p.arg for p in statement.args.args] != ["extra"] or len(statement.args.defaults) != 1 or
+                    ast.unparse(statement.args.defaults[0]) != "[]" or not isinstance(statement.body[-1], ast.Return)):
+                raise ValueError(f"unexpected signature of {statement.name}")
+            for visitor in visitors:
+                body = visitor.visit(copy.deepcopy(statement.body[-1].value))
+                visitor.constants[statement.name] = ast.Lambda(args=statement.args, body=body)
         elif (isinstance(statement, ast.Assign) and len(statement.targets) == 1
               and isinstance(statement.targets[0], ast.Name)):
             for visitor in visitors:
@@ -126,13 +140,27 @@ def signature(visitors, node):
     return tuple(ordered)
 
 
+def replacement(value, names, families):
+    if value in names:
+        label, symbol = names[value]
+        return label, symbol, symbol
+    if value and value[2] is None and all(value[:2]):
+        for symbol, base in families.items():
+            extra = [flag for flag in value[0] if flag not in base[0]]
+            if all(tuple(sorted(row + tuple(extra))) == actual for row, actual in zip(base[:2], value[:2])):
+                return FAMILY_MODULE, symbol, symbol + "(" + (repr(extra) if extra else "") + ")"
+    return None
+
+
 def share_local_defines(root, paths):
-    modules, names = {}, {}
+    modules, names, families = {}, {}, {}
     for path, exports in MODULES.items():
         package, _, filename = path.rpartition("/")
         label = "@clickhouse//" + package + ":" + filename
         visitors = configured(Source((root / path).read_text()), modules)
         modules[label] = [v.constants for v in visitors]
+        if label == FAMILY_MODULE:
+            families = {s: signature(visitors, ast.parse(s + "()", mode="eval").body) for s in FAMILIES}
         for symbol in exports:
             key = signature(visitors, ast.Name(id=symbol, ctx=ast.Load()))
             if key is None or key in names:
@@ -143,6 +171,7 @@ def share_local_defines(root, paths):
         source = Source(path.read_text())
         visitors = configured(source, modules)
         edits, imports, aliases = [], {}, set()
+        package_families = families if path.relative_to(root).parts[0] in {"base", "programs", "src"} else {}
         defined = {n.targets[0].id for n in source.module.body
                    if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)}
         bindings = {}
@@ -157,10 +186,10 @@ def share_local_defines(root, paths):
             for attr in rule.keywords:
                 if attr.arg != "local_defines":
                     continue
-                owner = names.get(signature(visitors, attr.value))
+                owner = replacement(signature(visitors, attr.value), names, package_families)
                 if not owner:
                     continue
-                label, symbol = owner
+                label, symbol, expr = owner
                 attrs = {kw.arg: kw.value for kw in rule.keywords}
                 if (symbol == "DBMS_LOCAL_DEFINES" and path == root / "src/BUILD.bazel"
                         and attrs["name"].value == "dbms__compile_0"):
@@ -168,22 +197,34 @@ def share_local_defines(root, paths):
                     if deps is None or any(row is None or row.count("@clickhouse_usearch//:usearch") != 1 for row in deps[:2]):
                         raise ValueError("dbms__compile_0 must receive the USearch definitions from its dependency")
                     symbol = "DBMS_USEARCH_LOCAL_DEFINES"
-                if symbol in defined or bindings.get(symbol, owner) != owner:
+                    expr = symbol
+                if symbol in defined or bindings.get(symbol, (label, symbol)) != (label, symbol):
                     continue
+                if ast.dump(attr.value) == ast.dump(ast.parse(expr, mode="eval").body):
+                    continue
+                # Edit the shared definition once. Keep uses of a package's attribute dictionary.
+                if symbol in FAMILIES:
+                    if isinstance(attr.value, ast.Subscript):
+                        continue
+                    if isinstance(attr.value, ast.Name) and attr.value.id.startswith("_") and not attr.value.id.startswith("_GENERATED_"):
+                        aliases.add(attr.value.id)
+                        continue
                 if isinstance(attr.value, ast.Name):
                     if attr.value.id == symbol:
                         continue
                     if attr.value.id.startswith("_"):
                         aliases.add(attr.value.id)
-                edits.append((*source.span(attr.value), symbol))
+                edits.append((*source.span(attr.value), expr))
                 imports.setdefault(label, set()).add(symbol)
         # An attribute dictionary may still reference a factored list after its rules have been rewritten.
         for statement in source.module.body:
             if isinstance(statement, ast.Assign) and statement.targets[0].id in aliases:
-                owner = names.get(signature(visitors, statement.value))
+                owner = replacement(signature(visitors, statement.value), names, package_families)
                 if owner:
-                    label, symbol = owner
-                    edits.append((*source.span(statement.value), symbol))
+                    label, symbol, expr = owner
+                    if ast.dump(statement.value) == ast.dump(ast.parse(expr, mode="eval").body):
+                        continue
+                    edits.append((*source.span(statement.value), expr))
                     imports.setdefault(label, set()).add(symbol)
         if not edits:
             continue

@@ -18,6 +18,7 @@ package(default_visibility = ["//visibility:public"])
 
 _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/array/dict_internal.h",
+    "cpp/src/arrow/c/util_internal.h",
     "cpp/src/arrow/compute/cast_internal.h",
     "cpp/src/arrow/compute/exec_internal.h",
     "cpp/src/arrow/compute/expression_internal.h",
@@ -35,6 +36,7 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/compute/kernels/scalar_cast_internal.h",
     "cpp/src/arrow/compute/kernels/scalar_string_internal.h",
     "cpp/src/arrow/compute/kernels/temporal_internal.h",
+    "cpp/src/arrow/compute/kernels/util_internal.h",
     "cpp/src/arrow/compute/kernels/vector_selection_filter_internal.h",
     "cpp/src/arrow/compute/kernels/vector_selection_internal.h",
     "cpp/src/arrow/compute/kernels/vector_selection_take_internal.h",
@@ -49,6 +51,8 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/compute/row/row_encoder_internal.h",
     "cpp/src/arrow/compute/row/row_internal.h",
     "cpp/src/arrow/ipc/metadata_internal.h",
+    "cpp/src/arrow/ipc/reader_internal.h",
+    "cpp/src/arrow/status_internal.h",
     "cpp/src/arrow/tensor/converter_internal.h",
     "cpp/src/arrow/util/atfork_internal.h",
     "cpp/src/arrow/util/bpacking_dispatch_internal.h",
@@ -57,6 +61,7 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/util/bpacking_simd_internal.h",
     "cpp/src/arrow/util/bpacking_simd_kernel_internal.h",
     "cpp/src/arrow/util/chrono_internal.h",
+    "cpp/src/arrow/util/compression_internal.h",
     "cpp/src/arrow/util/counting_semaphore_internal.h",
     "cpp/src/arrow/util/date_internal.h",
     "cpp/src/arrow/util/decimal_internal.h",
@@ -75,13 +80,16 @@ _ARROW_PRIVATE_HEADERS = [
 ]
 
 _PARQUET_PRIVATE_HEADERS = [
+    "cpp/src/parquet/arrow/fuzz_internal.h",
     "cpp/src/parquet/arrow/path_internal.h",
+    "cpp/src/parquet/arrow/reader_internal.h",
     "cpp/src/parquet/arrow/schema_internal.h",
     "cpp/src/parquet/bloom_filter_block_impl_internal.h",
     "cpp/src/parquet/chunker_internal.h",
     "cpp/src/parquet/chunker_internal_generated.h",
     "cpp/src/parquet/encryption/encryption_internal.h",
     "cpp/src/parquet/encryption/openssl_internal.h",
+    "cpp/src/parquet/geospatial/util_internal.h",
     "cpp/src/parquet/geospatial/util_json_internal.h",
     "cpp/src/parquet/level_comparison_avx2_internal.h",
     "cpp/src/parquet/level_conversion_bmi2_internal.h",

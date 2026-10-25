@@ -37,9 +37,11 @@ def googleapis_path(value):
 
 
 def parse_google_api_schemas(text):
-    schema_list, = [n.value for n in ast.parse(text).body if isinstance(n, ast.Assign)
-                    and [getattr(t, 'id', None) for t in n.targets] == ['GOOGLE_API_SCHEMAS']]
-    schemas = ast.literal_eval(schema_list)
+    data = {n.targets[0].id: n.value for n in ast.parse(text).body if isinstance(n, ast.Assign)
+            and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)}
+    # Earlier revisions stored the same ordered names without their proto imports.
+    schemas = (list(ast.literal_eval(data['GOOGLE_API_IMPORTS'])) if 'GOOGLE_API_IMPORTS' in data
+               else ast.literal_eval(data['GOOGLE_API_SCHEMAS']))
     if (not isinstance(schemas, list) or not schemas
             or not all(isinstance(s, str) and re.fullmatch(r'google/(?:[\w-]+/)*[\w-]+\.proto', s)
                        for s in schemas) or schemas != sorted(set(schemas))):

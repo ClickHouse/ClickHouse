@@ -51,21 +51,22 @@ _COMMON_IO_AARCH64 = _COMMON_IO + [
 
 _MULTITARGET = ["ENABLE_MULTITARGET_CODE=1"]
 
+def common_io_defines(extra = []):
+    """Compile with common IO's definitions and the target's extra definitions in CMake order."""
+    return select({
+        "@platforms//cpu:x86_64": sorted(_COMMON_IO_X86_64 + extra),
+        "@platforms//cpu:aarch64": sorted(_COMMON_IO_AARCH64 + extra),
+    })
+
 # These definitions come from the private minizip and stringzilla dependencies.
 _COMMON_IO_PRIVATE = [
     "MZ_COMPAT_VERSION=110",
     "SZ_DYNAMIC_DISPATCH=1",
 ]
 
-CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES = select({
-    "@platforms//cpu:x86_64": sorted(_COMMON_IO_X86_64 + _MULTITARGET),
-    "@platforms//cpu:aarch64": sorted(_COMMON_IO_AARCH64 + _MULTITARGET),
-})
+CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES = common_io_defines(_MULTITARGET)
 
-CLICKHOUSE_COMMON_IO_LOCAL_DEFINES = select({
-    "@platforms//cpu:x86_64": sorted(_COMMON_IO_X86_64 + _MULTITARGET + _COMMON_IO_PRIVATE),
-    "@platforms//cpu:aarch64": sorted(_COMMON_IO_AARCH64 + _MULTITARGET + _COMMON_IO_PRIVATE),
-})
+CLICKHOUSE_COMMON_IO_LOCAL_DEFINES = common_io_defines(_MULTITARGET + _COMMON_IO_PRIVATE)
 
 # The DBMS consumers also compile with the AI SDK, Arrow, and usearch definitions.
 _USEARCH_DEFINES = [
@@ -97,10 +98,14 @@ _DBMS_AARCH64 = _COMMON_IO_AARCH64 + _DBMS + ["ARROW_HAVE_NEON"]
 DBMS_INTERFACE_X86_64_DEFINES = sorted(_DBMS_X86_64 + _USEARCH_DEFINES)
 DBMS_INTERFACE_AARCH64_DEFINES = sorted(_DBMS_AARCH64 + _USEARCH_DEFINES)
 
-DBMS_CONSUMER_DEFINES = select({
-    "@platforms//cpu:x86_64": sorted(DBMS_INTERFACE_X86_64_DEFINES + _MULTITARGET),
-    "@platforms//cpu:aarch64": sorted(DBMS_INTERFACE_AARCH64_DEFINES + _MULTITARGET),
-})
+def dbms_defines(extra = []):
+    """Compile with the DBMS consumer definitions and the target's extra definitions in CMake order."""
+    return select({
+        "@platforms//cpu:x86_64": sorted(DBMS_INTERFACE_X86_64_DEFINES + _MULTITARGET + extra),
+        "@platforms//cpu:aarch64": sorted(DBMS_INTERFACE_AARCH64_DEFINES + _MULTITARGET + extra),
+    })
+
+DBMS_CONSUMER_DEFINES = dbms_defines()
 
 _DBMS_LOCAL = _MULTITARGET + [
     "SNAPPY_CODEC_AVAILABLE",

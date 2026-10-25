@@ -49,17 +49,14 @@ ch_cc_library(
     ],
 )
 
-_GENERATED_LOCAL_DEFINES_0 = select({
-    "@platforms//cpu:x86_64": [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "ZXC_FUNCTION_SUFFIX=_avx2",
-        "ZXC_STATIC_DEFINE",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_GENERATED_LOCAL_DEFINES_0 = [
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "ZXC_FUNCTION_SUFFIX=_avx2",
+    "ZXC_STATIC_DEFINE",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
 
 _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
     "@platforms//cpu:x86_64": [],
@@ -80,24 +77,24 @@ _ZXC_PRIVATE_HEADERS = [
     "src/lib/zxc_internal.h",
 ]
 
-_ZXC_COMPRESS_SRCS = select({
-    "@platforms//cpu:x86_64": [
-        "src/lib/zxc_compress.c",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_ZXC_COMPRESS_SRCS = [
+    "src/lib/zxc_compress.c",
+]
 
-_GENERATED_COPTS_1 = select({
-    "@platforms//cpu:x86_64": [
-        "-w",
-        "-std=gnu11",
-        "-mavx2",
-        "-mbmi",
-        "-mbmi2",
-        "-mlzcnt",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_GENERATED_COPTS_1 = [
+    "-w",
+    "-std=gnu11",
+    "-mavx2",
+    "-mbmi",
+    "-mbmi2",
+    "-mlzcnt",
+]
+
+_ZXC_LOCAL_INCLUDES = [
+    "include",
+    "src/lib",
+    "src/lib/vendors",
+]
 
 ch_cc_library(
     name = "_zxc_compress_avx2",
@@ -108,41 +105,31 @@ ch_cc_library(
     copts = _GENERATED_COPTS_1,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
 
-_GENERATED_LOCAL_DEFINES_1 = select({
-    "@platforms//cpu:x86_64": [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "ZXC_FUNCTION_SUFFIX=_avx512",
-        "ZXC_STATIC_DEFINE",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_GENERATED_LOCAL_DEFINES_1 = [
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "ZXC_FUNCTION_SUFFIX=_avx512",
+    "ZXC_STATIC_DEFINE",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
 
-_GENERATED_COPTS_2 = select({
-    "@platforms//cpu:x86_64": [
-        "-w",
-        "-std=gnu11",
-        "-mavx512f",
-        "-mavx512bw",
-        "-mavx512vbmi",
-        "-mavx512vbmi2",
-        "-mbmi",
-        "-mbmi2",
-        "-mlzcnt",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_GENERATED_COPTS_2 = [
+    "-w",
+    "-std=gnu11",
+    "-mavx512f",
+    "-mavx512bw",
+    "-mavx512vbmi",
+    "-mavx512vbmi2",
+    "-mbmi",
+    "-mbmi2",
+    "-mlzcnt",
+]
 
 ch_cc_library(
     name = "_zxc_compress_avx512",
@@ -153,11 +140,7 @@ ch_cc_library(
     copts = _GENERATED_COPTS_2,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -178,20 +161,13 @@ ch_cc_library(
     ] + _ZXC_PRIVATE_HEADERS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     alwayslink = True,
 )
 
-_ZXC_DECOMPRESS_SRCS = select({
-    "@platforms//cpu:x86_64": [
-        "src/lib/zxc_decompress.c",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_ZXC_DECOMPRESS_SRCS = [
+    "src/lib/zxc_decompress.c",
+]
 
 ch_cc_library(
     name = "_zxc_decompress_avx2",
@@ -202,11 +178,7 @@ ch_cc_library(
     copts = _GENERATED_COPTS_1,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -220,11 +192,7 @@ ch_cc_library(
     copts = _GENERATED_COPTS_2,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -236,20 +204,13 @@ ch_cc_library(
     ] + _ZXC_PRIVATE_HEADERS,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     alwayslink = True,
 )
 
-_ZXC_HUFFMAN_SRCS = select({
-    "@platforms//cpu:x86_64": [
-        "src/lib/zxc_huffman.c",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_ZXC_HUFFMAN_SRCS = [
+    "src/lib/zxc_huffman.c",
+]
 
 ch_cc_library(
     name = "_zxc_huffman_avx2",
@@ -260,11 +221,7 @@ ch_cc_library(
     copts = _GENERATED_COPTS_1,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -278,11 +235,7 @@ ch_cc_library(
     copts = _GENERATED_COPTS_2,
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
     alwayslink = True,
 )
@@ -294,10 +247,6 @@ ch_cc_library(
     ] + _ZXC_PRIVATE_HEADERS + ["src/lib/zxc_pivco_tables.h"],
     language = "C",
     local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = [
-        "include",
-        "src/lib",
-        "src/lib/vendors",
-    ],
+    local_includes = _ZXC_LOCAL_INCLUDES,
     alwayslink = True,
 )

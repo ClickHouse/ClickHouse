@@ -103,7 +103,25 @@ def cpu_choices(node):
 def fold_single_cpu_lists(source):
     """Keep the configured list on the only CPU allowed by target_compatible_with."""
     constants = {}
+    reads = Counter(n.id for n in ast.walk(source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load))
+    guarded = defaultdict(list)
     edits = []
+
+    def fold(value, cpu, guards):
+        end = -1
+        for node in list_nodes(value):
+            choices = cpu_choices(node)
+            if cpu not in choices or (DEFAULT not in choices and
+                                       (DEFAULT in guards or not set(CPUS) <= choices.keys())):
+                continue
+            # An unchosen glob() or function can still run during package loading.
+            if any(not isinstance(row, ast.List) or row.elts for key, row in choices.items() if key != cpu):
+                continue
+            start, stop = source.span(node)
+            if start >= end and "#" not in source.text(node):
+                edits.append((start, stop, source.text(choices[cpu])))
+                end = stop
+
     for stmt in source.module.body:
         if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
             constants[stmt.targets[0].id] = stmt.value
@@ -124,20 +142,19 @@ def fold_single_cpu_lists(source):
             continue
         cpu, = cpus
         for field in (FIELDS | {"srcs", "private_hdrs", "copts", "includes", "defines"}) & attrs.keys():
-            end = -1
+            fold(attrs[field], cpu, guards)
             for node in list_nodes(attrs[field]):
-                choices = cpu_choices(node)
-                if cpu not in choices or (DEFAULT not in choices and
-                                           (DEFAULT in guards or not set(CPUS) <= choices.keys())):
-                    continue
-                # An unchosen glob() or function can still run during package loading.
-                if any(not isinstance(value, ast.List) or value.elts
-                       for key, value in choices.items() if key != cpu):
-                    continue
-                start, stop = source.span(node)
-                if start >= end and "#" not in source.text(node):
-                    edits.append((start, stop, source.text(choices[cpu])))
-                    end = stop
+                if isinstance(node, ast.Name) and node.id in constants:
+                    guarded[node.id].append((cpu, guards))
+    # Other uses of a constant may lack this guard or select the other CPU.
+    for name, uses in guarded.items():
+        if len(uses) == reads[name] and all(use == uses[0] for use in uses):
+            cpu, guards = uses[0]
+            chosen = cpu_choices(constants[name]).get(cpu)
+            # A nonempty list also preserves ch_cc_library's pre-analysis truth test for srcs.
+            if isinstance(chosen, ast.List) and chosen.elts and all(
+                    isinstance(v, ast.Constant) and isinstance(v.value, str) for v in chosen.elts):
+                fold(constants[name], cpu, guards)
     return source.rewrite(edits)
 
 
