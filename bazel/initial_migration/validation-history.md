@@ -2154,3 +2154,30 @@ There are 661 production targets. Only a verified DWYU report counts as clean or
 The [x86-64 workflow](https://app.buildbuddy.io/invocation/8888cb14-dcad-4230-a1cc-d893a6d39670) considered 144 libraries. The action query did not select any, so DWYU did not run.
 
 The [ARM64 workflow](https://app.buildbuddy.io/invocation/21e88bfc-9ea2-4d07-b9a6-2139955cbc3c) considered 144 libraries. The action query did not select any, so DWYU did not run.
+
+The following totals count each declared target once per CPU on this commit. Only a verified ordinary archive and its original DWYU report establish a grade.
+
+| CPU | Repeat build | Requested | Clean | With findings | Ungraded (all targets) | Requested, ungraded | Not requested |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| x86-64 | [DWYU](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874) | 90 | 83 | 1 | 577 | 6 | 571 |
+| ARM64 | [DWYU](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7) | 94 | 89 | 1 | 571 | 4 | 567 |
+
+The ungraded count includes targets that were never requested. The BUILD files declare 4 targets incompatible on x86-64 and 14 on ARM64. Header-only libraries and source-free aggregators have no ordinary compilation to check in this batch.
+
+Every requested library produced its original analyzer JSON (90 on x86-64, 94 on ARM64). Each requested library that remains ungraded reported `unverified_link_deps`: DWYU could not prove link use.
+
+Verified dependency findings:
+
+- `@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage`: Move `@clickhouse_abseil_cpp//:absl_function_ref`, `@clickhouse_google_cloud_cpp//:google_cloud_cpp_grpc_utils` from `deps` to `implementation_deps`. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874), [ARM64](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7).
+
+Analyzer diagnostics without a grade:
+
+- `//programs:clickhouse__compile_0`: DWYU could not verify whether 11 dependencies are needed for linking. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874), [ARM64](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7).
+- `//src/AggregateFunctions:clickhouse_aggregate_functions__compile_1`: DWYU could not verify whether 28 dependencies are needed for linking. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874).
+- `//src/Dictionaries/Embedded:clickhouse_dictionaries_embedded`: DWYU could not verify whether `@clickhouse_llvm_project//:cxx` is needed for linking. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874), [ARM64](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7).
+- `//src/Functions/GatherUtils:clickhouse_functions_gatherutils`: DWYU could not verify whether 36 dependencies are needed for linking. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874).
+- `//src/Functions:clickhouse_functions_obj__compile_2`: DWYU could not verify whether `//src/Functions:clickhouse_functions_obj__compile_0`, `//src:clickhouse_source_headers`, `//src:dbms__compile_1` are needed for linking. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874).
+- `@clickhouse_arrow//:_parquet`: DWYU could not verify whether `@clickhouse_arrow//:_arrow` is needed for linking. [x86-64](https://app.buildbuddy.io/invocation/84806611-f971-43b4-a182-4ca1f8908874), [ARM64](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7).
+- `//src/Functions/GatherUtils:clickhouse_functions_gatherutils`: DWYU could not verify whether 35 dependencies are needed for linking. [ARM64](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7).
+
+Separately, `DwyuRustImportEvidence` for `//programs:clickhouse__compile_0` rejected its symbol manifest as incomplete on x86-64 and ARM64. This action does not grade the C++ library.
