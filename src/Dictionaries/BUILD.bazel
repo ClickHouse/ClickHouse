@@ -8,12 +8,6 @@ exports_files([
     "DictionarySourceFactory.cpp",
     "DictionaryStructure.cpp",
     "getDictionaryConfigurationFromAST.cpp",
-    "tests/gtest_dictionary_configuration.cpp",
-    "tests/gtest_dictionary_helpers_nullable.cpp",
-    "tests/gtest_dictionary_ssd_cache_dictionary_storage.cpp",
-    "tests/gtest_external_query_builder.cpp",
-    "tests/gtest_hierarchy_dictionaries_utils.cpp",
-    "tests/gtest_ytsaurus_dictionary_source.cpp",
 ])
 
 _CACHE_DICTIONARY_HEADERS = [
@@ -676,4 +670,11 @@ cc_library(
         "//bazel:clickhouse_config_headers",
         "@clickhouse_boost//:boost_headers_no_openssl",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
 )

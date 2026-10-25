@@ -2,18 +2,6 @@ load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "tests/gtest_compressed_read_buffer_from_file.cpp",
-    "tests/gtest_compressionCodec.cpp",
-    "tests/gtest_compression_codec_adaptive.cpp",
-    "tests/gtest_compression_codec_multiple.cpp",
-    "tests/gtest_ffor.cpp",
-    "tests/gtest_lz4_decompress_branchless.cpp",
-    "tests/gtest_lz4_decompress_literal_bounds.cpp",
-    "tests/gtest_mixed_codec_append.cpp",
-    "tests/gtest_pfor.cpp",
-])
-
 _PRIVATE_COMPRESSION_HEADERS = [
     "CompressionCodecNone.h",
     "CompressionCodecZSTD.h",
@@ -177,4 +165,11 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers_no_openssl",
         "//base:common",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
 )

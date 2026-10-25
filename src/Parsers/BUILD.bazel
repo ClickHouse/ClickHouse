@@ -3,39 +3,6 @@ load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFI
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "MySQL/tests/gtest_alter_command_parser.cpp",
-    "MySQL/tests/gtest_alter_parser.cpp",
-    "MySQL/tests/gtest_column_parser.cpp",
-    "MySQL/tests/gtest_constraint_parser.cpp",
-    "MySQL/tests/gtest_create_parser.cpp",
-    "MySQL/tests/gtest_index_parser.cpp",
-    "MySQL/tests/gtest_partition_options_parser.cpp",
-    "MySQL/tests/gtest_partition_parser.cpp",
-    "MySQL/tests/gtest_reference_parser.cpp",
-    "MySQL/tests/gtest_subpartition_parser.cpp",
-    "MySQL/tests/gtest_table_options_parser.cpp",
-    "Prometheus/tests/gtest_PromQLParser.cpp",
-    "tests/gtest_Parser.cpp",
-    "tests/gtest_alter_comment_only.cpp",
-    "tests/gtest_ast_deleter.cpp",
-    "tests/gtest_create_user_valid_until_children.cpp",
-    "tests/gtest_dictionary_parser.cpp",
-    "tests/gtest_identifier_quoting_style.cpp",
-    "tests/gtest_literal_escaping_style.cpp",
-    "tests/gtest_literal_token_map.cpp",
-    "tests/gtest_play_bracket_matching.cpp",
-    "tests/gtest_play_detect_explicit_format.cpp",
-    "tests/gtest_play_detect_framing_setting.cpp",
-    "tests/gtest_play_get_query_under_cursor.cpp",
-    "tests/gtest_play_highlight_query_error.cpp",
-    "tests/gtest_play_query_is_read_only.cpp",
-    "tests/gtest_split_multipart_query.cpp",
-    "tests/gtest_stream_settings.cpp",
-    "tests/gtest_text_between.cpp",
-    "tests/gtest_tree_hash_completeness.cpp",
-])
-
 exports_files(
     [
         "tests/gtest_common.h",
@@ -371,4 +338,15 @@ ch_cc_library(
         "@clickhouse_boost//:boost_headers_no_openssl",
         "//contrib/cityhash102:_cityhash",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob([
+        "MySQL/tests/gtest*.cpp",
+        "Prometheus/tests/gtest*.cpp",
+        "tests/gtest*.cpp",
+    ]),
+    visibility = ["//src:__pkg__"],
 )

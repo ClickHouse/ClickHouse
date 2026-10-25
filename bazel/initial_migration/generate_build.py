@@ -14,7 +14,9 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from initial_migration.codegen import Codegen, common_googleapis_rules, googleapis_path, googleapis_source_map, render_rules
+from initial_migration.codegen import (
+    Codegen, common_googleapis_rules, google_api_schemas, googleapis_path, googleapis_source_map, render_rules,
+)
 from initial_migration.cmake_metadata import read_metadata, write_metadata
 from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from initial_migration.reference_readers import read_file_api
@@ -1456,11 +1458,12 @@ class Graph:
 
 
 def main():
-    # CMake does not declare the Arrow/Parquet header libraries or msgpack_c_api.
-    # Keep these hand-maintained overlays when importing a new CMake build.
+    # CMake does not declare the Arrow/Parquet header libraries, msgpack_c_api,
+    # or the Google Cloud C++ libraries' native protobuf dependencies.
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
-    read_only = {arrow, msgpack}
+    google_cloud = ROOT / 'bazel/dependencies/clickhouse_google_cloud_cpp.BUILD.bazel'
+    read_only = {arrow, msgpack, google_cloud}
     maintained = {path: path.read_bytes() for path in read_only}
     from initial_migration.compact_build import Source
     arrow_targets = {kw.value.value for _, rule in Source(maintained[arrow].decode()).rules()
@@ -1496,7 +1499,8 @@ def main():
         build_options[arch] = graph.build_options
         cmake_metadata[arch]['build_options'] = build_options[arch].pop('cmake_substitutions')
         parity_sources.update(graph.parity_sources)
-    codegen_rules = common_googleapis_rules(relocate_tools(codegen_rules, owners))
+    google_schemas = google_api_schemas(ROOT)
+    codegen_rules = common_googleapis_rules(relocate_tools(codegen_rules, owners), google_schemas)
     # Keep CMake node names until Graph.generate() finishes indexing generators.
     # Only the Google APIs input/compile directories are configuration-neutral.
     for graph in graphs.values():
@@ -1537,7 +1541,8 @@ def main():
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
     # Preserve the CMake declarations for checking both CPUs and rewriting consumer labels.
-    configuration_inputs = {arrow: '\n'.join(builds['contrib/arrow'].rules)}
+    configuration_inputs = {overlay: '\n'.join(builds[owner].rules)
+                            for overlay, owner in ((arrow, 'contrib/arrow'), (google_cloud, 'contrib/google-cloud-cpp'))}
     for name, owner in sorted(owners.items()):
         if owner == 'contrib/arrow':
             if name not in arrow_targets:
@@ -1599,7 +1604,7 @@ def main():
     (ROOT / 'bazel/headers.bzl').unlink(missing_ok=True)
     (ROOT / 'bazel/initial_migration/coverage.json').write_text(json.dumps(inventories, indent=2) + '\n')
     preamble = 'load("//bazel/rules:repository_paths.bzl", "repository_path")\n'
-    (ROOT / 'bazel/rules/codegen_rules.bzl').write_text(render_rules(codegen_rules))
+    (ROOT / 'bazel/rules/codegen_rules.bzl').write_text(render_rules(codegen_rules, google_schemas))
     (ROOT / 'bazel/rules/build_options_data.bzl').write_text(preamble + 'BUILD_OPTIONS = ' + starlark(build_options) + '\n')
     write_metadata(ROOT, cmake_metadata)
     (ROOT / 'bazel/rules/rust_cxx_flags.bzl').write_text(preamble + 'RUST_CXX = ' + starlark(rust_cxx) + '\n')
@@ -1808,6 +1813,8 @@ def main():
     llvm_targets.fold_outline_atomics(ROOT / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel')
     from initial_migration.native_compile_options import shared_native_compile_options
     shared_native_compile_options(ROOT, selection_builds)
+    from initial_migration.first_party_packages import group_package_sources
+    group_package_sources(ROOT)
     # Consumers and source owners are final after the BUILD rule rewrites.
     prune_native_exports(ROOT, write=True)
     format_build_files(read_only=read_only)

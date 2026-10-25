@@ -10,6 +10,7 @@ import ast
 from collections import Counter, defaultdict
 from copy import deepcopy
 from functools import cache
+from itertools import groupby
 import json
 from pathlib import Path, PurePosixPath
 import posixpath
@@ -563,6 +564,81 @@ def group_runtime_filter_benchmark_sources(root):
                    ', visibility=["//src:__pkg__"])')
     package.write_text(functions.rewrite([(end, end, declaration)]))
     src_build.write_text(benchmark.rewrite([(*benchmark.span(srcs), json.dumps([own_source, label]))]))
+
+
+def _package_source_globs(folder, files, pattern, allow_excludes):
+    # Bazel sorts the complete result of a glob. Start a new glob when
+    # switching directories would change the CMake object order.
+    runs = []
+    for directory, members in groupby(files, key=posixpath.dirname):
+        members = list(members)
+        if members != sorted(set(members)):
+            return None
+        if not runs or runs[-1][-1] >= members[0]:
+            runs.append([])
+        runs[-1].extend(members)
+    expressions = []
+    for run in runs:
+        if len(run) == 1:
+            expressions.append(json.dumps(run))
+            continue
+        patterns = sorted({posixpath.join(posixpath.dirname(f), pattern) for f in run})
+        matches = {p.relative_to(folder).as_posix() for pat in patterns for p in folder.glob(pat)}
+        excludes = sorted(matches - set(run))
+        if not set(run) <= matches or (excludes and not allow_excludes):
+            return None
+        options = ", exclude = " + json.dumps(excludes) if excludes else ""
+        expressions.append("glob(" + json.dumps(patterns) + options + ")")
+    return " + ".join(expressions)
+
+
+def group_package_sources(root):
+    """Keep unit_tests_dbms and clickhouse_common_io sources in their own packages."""
+    path = root / "src/BUILD.bazel"
+    source = Source(path.read_text())
+    groups = defaultdict(dict)
+    edits = []
+    for _, rule in source.rules():
+        attrs = attributes(rule)
+        target = attrs["name"].value
+        if target not in {"unit_tests_dbms", "clickhouse_common_io__compile_0"}:
+            continue
+        test = target == "unit_tests_dbms"
+        label = re.compile(r"//(src/[^:]+):(?:[^/]+/)*tests/gtest[^/]*[.]cpp" if test else r"//(src/Common):[^:]+[.]cpp")
+        for node in ast.walk(attrs["srcs"]):
+            if not isinstance(node, ast.List) or not all(isinstance(x, ast.Constant) for x in node.elts):
+                continue
+            original = ast.literal_eval(node)
+            entries = []
+            for package, run in groupby(original, key=lambda x: m[1] if (m := label.fullmatch(x)) else None):
+                labels = list(run)
+                if not package:
+                    entries.extend(labels)
+                    continue
+                files = [s.split(":", 1)[1] for s in labels]
+                expr = _package_source_globs(root / package, files, "gtest*.cpp" if test else "*.cpp", not test)
+                if expr is None:
+                    entries.extend(labels)
+                    continue
+                if test:
+                    dirs = sorted({posixpath.dirname(f) for f in files})
+                    prefix = "" if "tests" in dirs else dirs[0].removesuffix("/tests").lower().replace("/", "_") + "_"
+                    name = prefix + "unit_test_sources"
+                else:
+                    name = "common_io_sources"
+                group = (expr, test)
+                if groups[package].setdefault(name, group) != group:
+                    raise ValueError(f"{package}:{name} has different source groups")
+                entries.append(f"//{package}:{name}")
+            if entries != original:
+                edits.append((*source.span(node), json.dumps(entries)))
+    for package, names in groups.items():
+        with (root / package / "BUILD.bazel").open("a") as output:
+            for name, (expr, test) in names.items():
+                testonly = ", testonly = True" if test else ""
+                print(f'\nfilegroup(name = "{name}", srcs = {expr}{testonly}, visibility = ["//src:__pkg__"])', file=output)
+    if edits:
+        path.write_text(source.rewrite(edits))
 
 
 def git_inventory(root):

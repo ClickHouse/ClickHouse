@@ -21,7 +21,7 @@ import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from initial_migration.codegen import GCP_OUTPUT, GOOGLEAPIS_ARCHIVE, GOOGLEAPIS_OUTPUT
+from initial_migration.codegen import GCP_OUTPUT, GOOGLEAPIS_ARCHIVE, GOOGLEAPIS_OUTPUT, parse_google_api_schemas
 from initial_migration.native_cc_inputs import Sources, TUS
 from initial_migration.prune_inherited_headers import ARCHES, CC_COMPILERS, CC_PROVIDERS
 from initial_migration.repository_inputs import ROOT
@@ -80,6 +80,18 @@ def strings(node, cpu):
             return ()
         result.append(value.replace('gen/{arch}/', 'gen/' + cpu + '/'))
     return tuple(result)
+
+
+def declared_codegen_outputs(name, node, cpu, read_file):
+    """Read the output names of an entry in CODEGEN_RULES."""
+    if (name == 'extract_googleapis' and isinstance(node, ast.Call)
+            and getattr(node.func, 'id', None) == 'googleapis_archive_inputs'):
+        schemas = parse_google_api_schemas(read_file('bazel/rules/googleapis.bzl'))
+        return 'genrule', tuple('gen/' + GOOGLEAPIS_OUTPUT + schema for schema in schemas)
+    attrs = dictionary(node)
+    if not attrs:
+        return None, ()
+    return string(attrs.get('kind')) or 'genrule', strings(attrs.get('outs'), cpu)
 
 
 class GoogleProtos:

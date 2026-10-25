@@ -75,22 +75,6 @@ exports_files([
     "if.cpp",
     "multiIf.cpp",
     "productQuantization.cpp",
-    "tests/gtest_connection_id_expired_context.cpp",
-    "tests/gtest_conversion_monotonic.cpp",
-    "tests/gtest_functions_stress.cpp",
-    "tests/gtest_generate_random_structure.cpp",
-    "tests/gtest_has_all.cpp",
-    "tests/gtest_highlight.cpp",
-    "tests/gtest_hilbert_curve.cpp",
-    "tests/gtest_low_cardinality_default_impl.cpp",
-    "tests/gtest_md5.cpp",
-    "tests/gtest_monotonic.cpp",
-    "tests/gtest_number_traits.cpp",
-    "tests/gtest_port_function.cpp",
-    "tests/gtest_reinterpret_decimal_scale.cpp",
-    "tests/gtest_reverse.cpp",
-    "tests/gtest_sha1.cpp",
-    "tests/gtest_string_similarity.cpp",
     "vectorQuantization.cpp",
 ])
 
@@ -1464,4 +1448,11 @@ ch_cc_library(
         "//src:column_types",
         "//src:with_context",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
 )

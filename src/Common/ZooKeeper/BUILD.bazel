@@ -2,12 +2,6 @@ load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "tests/gtest_testkeeper.cpp",
-    "tests/gtest_zookeeper.cpp",
-    "tests/gtest_zookeeper_args.cpp",
-])
-
 ch_cc_library(
     name = "clickhouse_common_zookeeper",
     srcs = ["ZooKeeperImpl.cpp"],
@@ -359,4 +353,11 @@ ch_cc_library(
         "//src/Common:string_utils",
         "//src:column_types",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
 )

@@ -23,7 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from initial_migration.native_cc_inputs import FORCED, Sources, TUS
 from initial_migration.compact_build import Source, ast_key
-from initial_migration.native_gcp_proto_inputs import codegen_rules_filename, dictionary, git_file, string, strings
+from initial_migration.native_gcp_proto_inputs import (
+    codegen_rules_filename, declared_codegen_outputs, dictionary, git_file, string,
+)
 from initial_migration.native_public_includes import IncludeRewrite, directory, list_elements
 from initial_migration.prune_inherited_headers import (
     ARCHES, CC_COMPILERS, CC_PROVIDERS, Document, Graph, label,
@@ -133,13 +135,13 @@ class GeneratedIncludes(Graph):
                     and len(data.args) == 2 and isinstance(data.args[0], ast.Subscript)):
                 cpu = string(data.args[1])
                 data = shared[string(data.args[0].slice)]
-            data = dictionary(data)
-            if not data:
-                raise ValueError('Unknown codegen ' + name)
             # Direct rules already contain the architecture in their output.
-            for out in strings(data.get('outs'), cpu or 'not-an-architecture'):
-                self.declare('@clickhouse//bazel:' + name, string(data.get('kind')) or 'genrule',
-                             '@clickhouse//bazel:' + out)
+            kind, outputs = declared_codegen_outputs(
+                name, data, cpu or 'not-an-architecture', lambda p: git_file(root, revision, p).decode())
+            if not kind:
+                raise ValueError('Unknown codegen ' + name)
+            for out in outputs:
+                self.declare('@clickhouse//bazel:' + name, kind, '@clickhouse//bazel:' + out)
 
         self.known_files = frozenset(self.inventory | set(self.outputs))
         self.directives = dict(sources.directives)

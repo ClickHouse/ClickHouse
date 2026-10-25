@@ -365,7 +365,7 @@ class PublishedGraph(Graph):
         self.outputs = {}
         if source_files_only:
             return
-        from initial_migration.native_gcp_proto_inputs import dictionary, string, strings
+        from initial_migration.native_gcp_proto_inputs import declared_codegen_outputs, dictionary, string
         for target, (doc, kind, attrs) in self.rules.items():
             if kind in CC_COMPILERS:
                 continue
@@ -385,9 +385,9 @@ class PublishedGraph(Graph):
                 arch = string(data.args[1])
                 data = shared.get(string(data.args[0].slice))
                 arches = (arch,) if arch in ARCHES else ()
-            attrs = dictionary(data)
             for cpu in arches:
-                for path in strings(attrs.get('outs'), cpu):
+                _, outputs = declared_codegen_outputs(name, data, cpu, lambda p: (root / p).read_text())
+                for path in outputs:
                     ref = '@clickhouse//bazel:' + path
                     self.outputs.setdefault((ref, cpu), set()).add('@clickhouse//bazel:' + name)
 

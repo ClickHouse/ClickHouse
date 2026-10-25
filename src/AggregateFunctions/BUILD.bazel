@@ -10,14 +10,6 @@ exports_files([
     "Combinators/AggregateFunctionCombinatorFactory.cpp",
     "IAggregateFunction.cpp",
     "parseAggregateFunctionParameters.cpp",
-    "tests/gtest_crosstab.cpp",
-    "tests/gtest_ddsketch.cpp",
-    "tests/gtest_placeholder_state_compatibility.cpp",
-    "tests/gtest_ranks.cpp",
-    "tests/gtest_tuple_combinator_sparse_add.cpp",
-    "tests/gtest_uniq_exact_parallel_merge.cpp",
-    "tests/gtest_uniq_exact_shared_pointee_cow.cpp",
-    "tests/gtest_uniques_hash_set.cpp",
 ])
 
 _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS = [
@@ -643,4 +635,11 @@ ch_cc_library(
         "//src/Common:parser_support_api",
         "//src:core_types",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
 )

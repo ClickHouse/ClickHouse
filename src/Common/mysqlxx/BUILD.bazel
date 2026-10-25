@@ -3,11 +3,6 @@ load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFI
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "tests/gtest_pool_entry_name.cpp",
-    "tests/gtest_ssl_params.cpp",
-])
-
 ch_cc_library(
     name = "mysqlxx",
     srcs = [
@@ -51,4 +46,11 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common:parser_support_api",
     ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
 )

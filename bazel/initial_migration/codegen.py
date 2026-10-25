@@ -4,6 +4,7 @@ Compilation and linking are never delegated to Ninja or CMake. Untranslated
 custom commands stay visible in the coverage inventory.
 """
 
+import ast
 import hashlib
 import json
 import os
@@ -35,8 +36,38 @@ def googleapis_path(value):
     return value
 
 
-def common_googleapis_rules(rules):
-    """Use one protoc invocation for each identical recorded Google API schema."""
+def parse_google_api_schemas(text):
+    schema_list, = [n.value for n in ast.parse(text).body if isinstance(n, ast.Assign)
+                    and [getattr(t, 'id', None) for t in n.targets] == ['GOOGLE_API_SCHEMAS']]
+    schemas = ast.literal_eval(schema_list)
+    if (not isinstance(schemas, list) or not schemas
+            or not all(isinstance(s, str) and re.fullmatch(r'google/(?:[\w-]+/)*[\w-]+\.proto', s)
+                       for s in schemas) or schemas != sorted(set(schemas))):
+        raise ValueError('Expected sorted, unique Google API schema paths')
+    return schemas
+
+
+def google_api_schemas(root):
+    return parse_google_api_schemas((root / 'bazel/rules/googleapis.bzl').read_text())
+
+
+def googleapis_archive_rule(archive, prefix, schemas):
+    tool = '//bazel/rules:extract_archive'
+    return dict(srcs=[archive], outs=[prefix + s for s in schemas], tools=[tool],
+                cmd=f'$(execpath {tool}) --archive=$(execpath {archive}) --root=$(BINDIR)/bazel/{prefix}'
+                    + ' --strip-prefix=googleapis-' + GOOGLEAPIS_REVISION + ' ' + shlex.join(schemas))
+
+
+def render_googleapis_archive(attrs, schemas):
+    archive, = attrs['srcs']
+    if (archive.replace('//contrib:', '//:contrib/') != '//:' + GOOGLEAPIS_ARCHIVE
+            or attrs != googleapis_archive_rule(archive, 'gen/' + GOOGLEAPIS_OUTPUT, schemas)):
+        raise ValueError('CMake extract_googleapis differs from googleapis_archive_inputs')
+    return 'googleapis_archive_inputs(' + json.dumps(archive) + ')'
+
+
+def common_googleapis_rules(rules, schemas):
+    """Keep the archive extractor; the native protobuf rules own its C++ outputs."""
     remaining, recorded = {}, {}
     for name, attrs in rules.items():
         outs = [googleapis_path(path) for path in attrs['outs']]
@@ -64,33 +95,23 @@ def common_googleapis_rules(rules):
             raise ValueError('Google APIs generators differ across target platforms: ' + output)
         shared[output] = variants[ARCHES[0]]
 
-    for output, attrs in shared.items():
-        if output.startswith('gen/' + GOOGLEAPIS_OUTPUT):
-            name = 'extract_googleapis'
-        elif output.endswith('.grpc.pb.cc'):
-            continue
-        elif output.startswith('gen/' + GCP_OUTPUT) and output.endswith('.pb.cc'):
-            stem = output.removesuffix('.pb.cc')
-            grpc = shared.get(stem + '.grpc.pb.cc')
-            if (grpc is None or attrs['outs'] != [stem + '.pb.cc', stem + '.pb.h']
-                    or grpc['outs'] != [stem + '.grpc.pb.cc', stem + '.grpc.pb.h']
-                    or attrs['srcs'] != grpc['srcs']
-                    or set(attrs['tools']) != {'@clickhouse_google_protobuf//:protoc'}
-                    or set(grpc['tools']) != {
-                        '@clickhouse_google_protobuf//:protoc',
-                        '@clickhouse_grpc//:grpc_cpp_plugin',
-                    }
-                    or '--cpp_out' not in attrs['cmd']
-                    or '--cpp_out' not in grpc['cmd'] or '--grpc_out' not in grpc['cmd']):
-                raise ValueError('Google APIs protobuf and gRPC generators disagree: ' + output)
-            # The recorded gRPC command already produces the C++ outputs.
-            attrs = dict(grpc, outs=attrs['outs'] + grpc['outs'])
-            name = 'generate_googleapis_' + stem.removeprefix('gen/' + GCP_OUTPUT).replace('/', '_')
-        else:
-            raise ValueError('Unsupported Google APIs generator output: ' + output)
-        if name in remaining:
-            raise ValueError('Duplicate Google APIs target: ' + name)
-        remaining[name] = attrs
+    extractor = 'gen/' + GOOGLEAPIS_OUTPUT + schemas[0]
+    stems = ['gen/' + GCP_OUTPUT + s.removesuffix('.proto') for s in schemas]
+    if set(shared) != {extractor} | {stem + suffix for stem in stems for suffix in ('.pb.cc', '.grpc.pb.cc')}:
+        raise ValueError('CMake protobuf and gRPC outputs differ from GOOGLE_API_SCHEMAS')
+    for stem in stems:
+        cpp, grpc = shared[stem + '.pb.cc'], shared[stem + '.grpc.pb.cc']
+        if (cpp['outs'] != [stem + '.pb.cc', stem + '.pb.h']
+                or grpc['outs'] != [stem + '.grpc.pb.cc', stem + '.grpc.pb.h']
+                or cpp['srcs'] != grpc['srcs']
+                or set(cpp['tools']) != {'@clickhouse_google_protobuf//:protoc'}
+                or set(grpc['tools']) != {'@clickhouse_google_protobuf//:protoc', '@clickhouse_grpc//:grpc_cpp_plugin'}
+                or '--cpp_out' not in cpp['cmd']
+                or '--cpp_out' not in grpc['cmd'] or '--grpc_out' not in grpc['cmd']):
+            raise ValueError('Google APIs protobuf and gRPC generators disagree: ' + stem)
+    if 'extract_googleapis' in remaining:
+        raise ValueError('Duplicate extract_googleapis target')
+    remaining['extract_googleapis'] = shared[extractor]
     return remaining
 
 
@@ -138,7 +159,7 @@ def render_license(attrs, license_inputs):
     return '{\n' + ''.join(fields) + '  }'
 
 
-def render_rules(rules):
+def render_rules(rules, google_schemas):
     """Record identical generators once; retain rule and input order for both architectures."""
     from initial_migration.package_codegen import partition
     rules, package_rules = partition(rules)
@@ -170,6 +191,7 @@ def render_rules(rules):
     license_inputs = dict(zip(first_licenses['source_paths'], first_licenses['srcs'], strict=True))
     text = [
         'load("//bazel/rules:codegen_actions.bzl", "codegen_for_arch")\n',
+        'load("//bazel/rules:googleapis.bzl", "googleapis_archive_inputs")\n',
         'load("//bazel/rules:repository_paths.bzl", "repository_path")\n\n',
         '_SHARED_CODEGEN = ' + starlark(shared) + '\n\n',
         '_LICENSE_INPUTS = ' + starlark(license_inputs) + '\n\n',
@@ -182,6 +204,8 @@ def render_rules(rules):
             rendered = 'codegen_for_arch(_SHARED_CODEGEN[' + json.dumps(output) + '], ' + json.dumps(arch) + ')'
         elif attrs.get('kind') == 'licenses':
             rendered = render_license(attrs, license_inputs)
+        elif name == 'extract_googleapis':
+            rendered = render_googleapis_archive(attrs, google_schemas)
         else:
             rendered = starlark(attrs, 2)
         text.append('  ' + json.dumps(name) + ': ' + rendered + ',\n')
@@ -469,15 +493,8 @@ class Codegen:
             self.translate(node)
         if self.googleapis_used:
             prefix = 'gen/' + self.graph.arch + '/' + GOOGLEAPIS_OUTPUT
-            self.rules['extract_googleapis_' + self.graph.arch] = dict(
-                srcs=[self.label(GOOGLEAPIS_ARCHIVE)],
-                outs=[prefix + n for n in sorted(self.googleapis_used)],
-                tools=['//bazel/rules:extract_archive'],
-                cmd='$(execpath //bazel/rules:extract_archive) --archive=$(execpath ' + self.label(GOOGLEAPIS_ARCHIVE) + ')'
-                    + ' --root=$(BINDIR)/bazel/' + prefix
-                    + ' --strip-prefix=googleapis-' + GOOGLEAPIS_REVISION + ' '
-                    + ' '.join(shlex.quote(n) for n in sorted(self.googleapis_used)),
-            )
+            self.rules['extract_googleapis_' + self.graph.arch] = googleapis_archive_rule(
+                self.label(GOOGLEAPIS_ARCHIVE), prefix, sorted(self.googleapis_used))
 
     def target_generated_inputs(self, name):
         found = set()
