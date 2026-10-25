@@ -1079,6 +1079,10 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
     endif()
 
+    if (TARGET ch_contrib::brotli)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::brotli)
+    endif()
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
@@ -1105,6 +1109,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::parquet)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
+
+    if (TARGET ch_contrib::arrow_ipc_metadata)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::arrow_ipc_metadata)
     endif()
 
     if (TARGET ch_contrib::silk_fibers)
