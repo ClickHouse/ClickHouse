@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
@@ -124,8 +125,13 @@ struct QueryState
     /// Data was read.
     bool read_all_data = true;
 
-    /// Request requires data from client for function input()
+    /// Request requires data from client for function input() or for INSERT ... RETURNING
     bool need_receive_data_for_input = false;
+    /// The data for input() is received completely (or receiving failed). Set by the thread of the pipeline reading the data.
+    std::atomic_bool received_all_data_for_input = false;
+    /// The result of the query is sent while the data for input() is received (INSERT ... RETURNING).
+    /// In this case the result is sent without `callback_mutex`, which is held by the thread reading the data.
+    bool send_result_while_receiving_data_for_input = false;
     /// temporary place for incoming data block for input()
     Block block_for_input;
     /// sample block from StorageInput

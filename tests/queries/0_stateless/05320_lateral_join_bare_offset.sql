@@ -1,7 +1,6 @@
 -- A bare `OFFSET` (without `LIMIT`) inside a `LATERAL` subquery skips rows within each
 -- evaluation of the subquery, not within the combined result.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS outer_t;
