@@ -4,7 +4,6 @@
 -- e.g. a partial aggregation created for `WITH TOTALS` reaches `TotalsHaving`
 -- unmerged and produces duplicate groups.
 
-SET enable_analyzer = 1;
 -- The join order optimizer's randomization replaces the relation statistics with random ones, and
 -- the plan shapes below depend on the estimates.
 SET query_plan_optimize_join_order_randomize = 0;

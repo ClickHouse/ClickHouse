@@ -121,6 +121,8 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+    /// The number in `getUniqID`, unique within the query.
+    size_t getStepIndex() const { return step_index.value; }
 
     /// The estimate the optimizer attached to this step's plan node, copied here when the pipeline is
     /// built so that the processors can record it in `system.processors_profile_log`.
@@ -256,7 +258,17 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    /// A copy is a separate step, so it takes a new index; a move keeps it.
+    struct StepIndex
+    {
+        size_t value = 0;
+
+        StepIndex();
+        StepIndex(const StepIndex &) : StepIndex() {}
+        StepIndex(StepIndex &&) = default;
+    };
+
+    StepIndex step_index;
     std::optional<CostEstimationInfo> estimation;
 };
 

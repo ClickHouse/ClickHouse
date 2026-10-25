@@ -65,12 +65,14 @@ enum class RowEstimateSource : UInt8
     Randomized,
     /// Measured row count reused from a previous run's hash table.
     HashTableCache,
+    /// Row count from data lake metadata (Iceberg manifest files).
+    DataLakeMetadata,
 };
 
-/// A serialized plan carries the source as its underlying value; `HashTableCache` is the last enumerator.
+/// A serialized plan carries the source as its underlying value; `DataLakeMetadata` is the last enumerator.
 constexpr bool isRowEstimateSource(UInt8 value)
 {
-    return value <= static_cast<UInt8>(RowEstimateSource::HashTableCache);
+    return value <= static_cast<UInt8>(RowEstimateSource::DataLakeMetadata);
 }
 
 /// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
@@ -96,6 +98,8 @@ constexpr std::string_view rowEstimateSourceTag(RowEstimateSource source)
             return "cache";
         case RowEstimateSource::NoSource:
         case RowEstimateSource::Statistics:
+        /// Labelled like MergeTree: no tag when exact, `no_stats` from `displayName` when imprecise.
+        case RowEstimateSource::DataLakeMetadata:
             return "";
     }
     return "";
@@ -120,6 +124,8 @@ constexpr std::string_view rowEstimateSourceName(RowEstimateSource source)
             return "randomized";
         case RowEstimateSource::HashTableCache:
             return "hash_table_cache";
+        case RowEstimateSource::DataLakeMetadata:
+            return "data_lake_metadata";
     }
     return "";
 }

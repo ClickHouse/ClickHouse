@@ -40,6 +40,7 @@ namespace Setting
 {
 extern const SettingsBool use_statistics;
 extern const SettingsBool use_primary_key;
+extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -547,26 +548,37 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        /// A data lake table knows its rows from its metadata; a plain object storage read does not.
-        /// The count is the table's, so with a filter (pushed into the read or passed in) it is only
-        /// a bound: there are no column statistics to estimate the filter by.
-        RelationStats stats;
-        stats.table_name = reading->getTableName();
-        if (const auto total_rows = reading->totalRows())
-        {
-            stats.max_rows = total_rows;
-            if (filter || reading->getFilterActionsDAG())
-            {
-                stats.imprecise_estimate = true;
-                stats.source = RowEstimateSource::NoStatistics;
-            }
-            else
-            {
-                stats.estimated_rows = total_rows;
-                stats.source = RowEstimateSource::Statistics;
-            }
-        }
-        return stats;
+        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+            return RelationStats{};
+
+        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        if (!estimate)
+            return RelationStats{};
+
+        String table_display_name = reading->getStorageID().getTableName();
+        RelationStats unknown{
+            .estimated_rows = {},
+            .max_rows = estimate->rows,
+            .table_name = table_display_name,
+            .imprecise_estimate = true,
+            .source = RowEstimateSource::DataLakeMetadata};
+        if (!estimate->rows)
+            return unknown;
+
+        /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
+        const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+
+        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
+        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
+            return unknown;
+
+        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
+        return RelationStats{
+            .estimated_rows = estimate->rows,
+            .max_rows = estimate->rows,
+            .table_name = table_display_name,
+            .imprecise_estimate = !exact,
+            .source = RowEstimateSource::DataLakeMetadata};
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -598,17 +610,25 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
         return estimateReadRowsCount(*reading->getSubplanRoot(), filter, for_runtime_filter_transport);
     }
 
+    /// A join that has already been optimized enters its parent's join graph as a single relation,
+    /// and the row count it settled on is the only estimate that relation has. Read it before the
+    /// single-child check below, which a join, having two children, would never pass.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
+        /// to keep the parent from appending a second estimate to it.
+        /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
+        /// a storage read with a filter it cannot use, the row count is then unknown; the bound still holds.
         return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
+            .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
             .max_rows = join_step->getResultRowsUpperBound(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = join_step->hasImpreciseEstimate(),
-            .estimate_from_defaults = join_step->isEstimateFromDefaults()};
+            .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
+            .estimate_from_defaults = join_step->isEstimateFromDefaults(),
+            .composite = true};
     }
 
     /// The plan of the chosen join order stands for the graph.

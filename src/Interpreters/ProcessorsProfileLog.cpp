@@ -39,9 +39,9 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the event happened."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time with microseconds precision when the event happened."},
 
-        {"id", std::make_shared<DataTypeUInt64>(), "ID of processor."},
+        {"id", std::make_shared<DataTypeUInt64>(), "ID of processor, unique within the query. It is the number in `processor_uniq_id`."},
         {"parent_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Parent processors IDs."},
-        {"plan_step", std::make_shared<DataTypeUInt64>(), "ID of the query plan step which created this processor. The value is zero if the processor was not added from any step."},
+        {"plan_step", std::make_shared<DataTypeUInt64>(), "ID of the query plan step which created this processor, unique within the query. It is one plus the number in `step_uniq_id`. The value is zero if the processor was not added from any step."},
         {"plan_step_name", std::make_shared<DataTypeString>(), "Name of the query plan step which created this processor. The value is empty if the processor was not added from any step."},
         {"plan_step_description", std::make_shared<DataTypeString>(), "Description of the query plan step which created this processor. The value is empty if the processor was not added from any step."},
         {"plan_group", std::make_shared<DataTypeUInt64>(), "Group of the processor if it was created by query plan step. A group is a logical partitioning of processors added from the same query plan step. Group is used only for beautifying the result of EXPLAIN PIPELINE result."},
@@ -64,7 +64,7 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
             "The number of rows the query optimizer estimated for the output of the query plan step which created this processor. "
             "NULL if the step has no estimate. Compare with the sum of `output_rows` over the processors of the step whose consumers belong to other steps."},
         {"plan_step_estimate_source", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-            "Where the estimate came from: `statistics`, `primary_index`, `no_statistics`, `hint`, `randomized` or `hash_table_cache`. "
+            "Where the estimate came from: `statistics`, `primary_index`, `no_statistics`, `hint`, `randomized`, `hash_table_cache` or `data_lake_metadata`. "
             "Empty if the step carries no annotation or the origin of its estimate is not recorded. "
             "`no_statistics` with a NULL `plan_step_estimated_rows` means the optimizer found no statistics to estimate the step from."},
     };

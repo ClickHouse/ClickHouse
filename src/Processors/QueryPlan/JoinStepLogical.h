@@ -287,6 +287,13 @@ public:
     /// Swap left and right sides
     void swapInputs();
 
+    /// The input a hash join builds its table from, and the input it streams through that table. The planner
+    /// builds from the smaller input (`swapInputs`); a sorting join reads both inputs at once.
+    static constexpr JoinTableSide getBuildSide() { return JoinTableSide::Right; }
+    static constexpr JoinTableSide getProbeSide() { return JoinTableSide::Left; }
+    /// The index of the input of `side`, which is also its index in the children of the plan node.
+    static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
+
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 

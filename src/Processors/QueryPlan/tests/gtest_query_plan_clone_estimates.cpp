@@ -9,6 +9,8 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 
+#include <magic_enum.hpp>
+
 using namespace DB;
 
 namespace
@@ -44,4 +46,17 @@ TEST(QueryPlanClone, KeepsStepEstimates)
     ASSERT_TRUE(root->children[0]->cost_estimation.has_value());
     EXPECT_EQ(root->children[0]->cost_estimation->rows, 42.0);
     EXPECT_EQ(root->children[0]->cost_estimation->cost, std::nullopt);
+}
+
+/// A serialized plan carries the source of each step estimate, and the reader rejects a value it does not know. Every
+/// source must read back, and must have a name for the processors profile log.
+TEST(RowEstimateSource, EveryValueReadsBack)
+{
+    for (const auto source : magic_enum::enum_values<RowEstimateSource>())
+    {
+        EXPECT_TRUE(isRowEstimateSource(static_cast<UInt8>(source))) << magic_enum::enum_name(source);
+        if (source != RowEstimateSource::NoSource)
+            EXPECT_FALSE(rowEstimateSourceName(source).empty()) << magic_enum::enum_name(source);
+    }
+    EXPECT_FALSE(isRowEstimateSource(static_cast<UInt8>(magic_enum::enum_count<RowEstimateSource>())));
 }

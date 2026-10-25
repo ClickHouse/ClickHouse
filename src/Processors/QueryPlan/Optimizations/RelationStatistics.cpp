@@ -563,7 +563,7 @@ std::optional<Range> mapRangeThroughMonotonicChain(const ActionsDAG::Node & outp
     }
     std::ranges::reverse(chain);
     return KeyCondition::applyMonotonicFunctionsChainToRange(
-        Range(*stats.min_value, true, *stats.max_value, true), chain, input.result_type);
+        Range(*stats.min_value, true, *stats.max_value, true), chain, /*first_function_number=*/ 0, input.result_type);
 }
 
 /// Number of integers in a closed range whose bounds are 64-bit integers.

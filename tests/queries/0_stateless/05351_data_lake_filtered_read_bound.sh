@@ -27,6 +27,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET use_statistics = 0;
 SET allow_insert_into_iceberg = 1;
 SET use_iceberg_metadata_files_cache = 0;
+SET use_iceberg_manifest_statistics = 1;
 SET iceberg_delete_data_on_drop = 1;
 SET async_insert = 0;
 

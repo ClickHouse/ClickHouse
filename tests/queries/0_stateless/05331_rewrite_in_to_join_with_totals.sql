@@ -1,7 +1,6 @@
 -- `WITH TOTALS` of a subquery on the right of `IN` must be ignored when `rewrite_in_to_join`
 -- rewrites the `IN` into a correlated `EXISTS`, as it is by the regular `IN` set.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 
 SELECT 'rewrite_in_to_join = 0';

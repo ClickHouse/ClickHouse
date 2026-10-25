@@ -9,9 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-
 #include <algorithm>
 #include <cmath>
 
@@ -82,38 +79,6 @@ FragmentExchange::Kind getExchangeKind(const ExchangeDescription & description)
         return FragmentExchange::Kind::Gather;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange step '{}' of exchange {}",
         description.exchange_step_name, description.name);
-}
-
-std::string_view formatExchangeMode(ExchangeDescription::Kind mode)
-{
-    switch (mode)
-    {
-        case ExchangeDescription::Kind::Streaming:
-            return "streaming";
-        case ExchangeDescription::Kind::Persisted:
-            return "persisted";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected exchange mode {}", static_cast<int>(mode));
-}
-
-String formatExchangeKind(const FragmentExchange & exchange)
-{
-    switch (exchange.kind)
-    {
-        case FragmentExchange::Kind::Hash:
-            return fmt::format("hash({})", fmt::join(exchange.keys, ", "));
-        case FragmentExchange::Kind::Broadcast:
-            return "broadcast";
-        case FragmentExchange::Kind::Gather:
-            if (exchange.merge_sort)
-                return fmt::format("gather(merge: {})", dumpSortDescription(*exchange.merge_sort));
-            return "gather";
-        case FragmentExchange::Kind::Any:
-            return "any";
-        case FragmentExchange::Kind::SetValues:
-            return "set values";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.id);
 }
 
 }
@@ -316,93 +281,6 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
         .plan = &plan,
     });
     return graph;
-}
-
-String dumpFragmentGraph(const FragmentGraph & graph)
-{
-    String result;
-    auto out = std::back_inserter(result);
-
-    size_t stage_name_width = 0;
-    for (const auto & fragment : graph.fragments)
-        stage_name_width = std::max(stage_name_width, fragment.stage_name.size());
-
-    fmt::format_to(out, "query fragments: {}\n", graph.fragments.size());
-    for (const auto & fragment : graph.fragments)
-    {
-        fmt::format_to(out, "  F{} {:<{}}  {:<11}  tasks={}",
-            fragment.id, fragment.stage_name, stage_name_width,
-            fragment.execution_mode == QueryFragment::ExecutionMode::Distributed ? "distributed" : "single node",
-            fragment.tasks);
-
-        bool first_input = true;
-        for (const auto & exchange : graph.exchanges)
-        {
-            if (exchange.to != fragment.id)
-                continue;
-            fmt::format_to(out, "{}F{} via {}", first_input ? "  needs " : ", ", exchange.from, exchange.name);
-            first_input = false;
-        }
-        if (fragment.fallback_reason)
-            fmt::format_to(out, "  not distributed: {}", *fragment.fallback_reason);
-        if (fragment.description)
-            fmt::format_to(out, "  description: {}", *fragment.description);
-        result += '\n';
-    }
-
-    struct ExchangeColumns
-    {
-        String name;
-        String edge;
-        String kind;
-        String mode;
-        String buckets;
-    };
-    std::vector<ExchangeColumns> rows;
-    size_t name_width = 0;
-    size_t edge_width = 0;
-    size_t kind_width = 0;
-    size_t mode_width = 0;
-    for (const auto & exchange : graph.exchanges)
-    {
-        ExchangeColumns row
-        {
-            .name = exchange.name,
-            .edge = fmt::format("F{} -> F{}", exchange.from, exchange.to),
-            .kind = formatExchangeKind(exchange),
-            .mode = String(formatExchangeMode(exchange.mode)),
-            .buckets = fmt::format("{} -> {}", exchange.source_buckets, exchange.destination_buckets),
-        };
-        name_width = std::max(name_width, row.name.size());
-        edge_width = std::max(edge_width, row.edge.size());
-        kind_width = std::max(kind_width, row.kind.size());
-        mode_width = std::max(mode_width, row.mode.size());
-        rows.push_back(std::move(row));
-    }
-
-    fmt::format_to(out, "exchanges: {}\n", graph.exchanges.size());
-    for (size_t i = 0; i < rows.size(); ++i)
-    {
-        const auto & row = rows[i];
-        fmt::format_to(out, "  {:<{}}  {:<{}}  {:<{}}  {:<{}}  {}",
-            row.name, name_width, row.edge, edge_width, row.kind, kind_width, row.mode, mode_width, row.buckets);
-        if (graph.exchanges[i].statistics.estimated_rows)
-            fmt::format_to(out, "  ~{} rows", *graph.exchanges[i].statistics.estimated_rows);
-        result += '\n';
-    }
-
-    result += "levels:";
-    for (const auto & level : computeLevels(graph))
-    {
-        std::vector<String> names;
-        names.reserve(level.size());
-        for (UInt32 id : level)
-            names.push_back(fmt::format("F{}", id));
-        fmt::format_to(out, " [{}]", fmt::join(names, ", "));
-    }
-    result += '\n';
-
-    return result;
 }
 
 }

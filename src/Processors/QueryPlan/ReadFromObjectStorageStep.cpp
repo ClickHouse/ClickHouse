@@ -1,4 +1,3 @@
-#include <Storages/IStorage.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -53,11 +52,6 @@ namespace DataLakeStorageSetting
 }
 
 
-String ReadFromObjectStorageStep::getTableName() const
-{
-    return storage_snapshot->storage.getStorageID().getTableName();
-}
-
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
@@ -96,6 +90,7 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+    data_lake_read_estimate.reset();
     if (!filter_actions_dag)
         return;
 
@@ -151,6 +146,18 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
+    data_lake_read_estimate.reset();
+}
+
+std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromDataLakeMetadata() const
+{
+    /// The initiator assigns the files of this replica, so its own metadata may describe other files.
+    if (distributed_processing)
+        return std::nullopt;
+
+    if (!data_lake_read_estimate)
+        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), getContext());
+    return data_lake_read_estimate;
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
@@ -278,7 +285,7 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
     /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
     /// yields different sets of files from query to query.
-    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::paimon_incremental_read])
+    if ((*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
