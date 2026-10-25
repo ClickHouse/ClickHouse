@@ -72,7 +72,7 @@ SELECT 'dictionary', dictGetOrDefault('dict', 'v', toUInt64(9), 0), dictGetOrDef
 SETTINGS log_comment = 'dictionary';
 
 SELECT 'old analyzer', countIf(number IN (SELECT number * 3 FROM numbers(10000))), countIf(number IN keys) FROM numbers(30000)
-SETTINGS enable_analyzer = 0, log_comment = 'old analyzer';
+SETTINGS log_comment = 'old analyzer';
 
 -- The conversion of `JOIN` to `IN` replaces the hash join by a set.
 SELECT 'join to in', count(), sum(l.number) FROM numbers(1000) AS l ANY INNER JOIN (SELECT number * 3 AS n FROM numbers(1000)) AS r
