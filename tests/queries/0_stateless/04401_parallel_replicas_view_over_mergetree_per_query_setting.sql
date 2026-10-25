@@ -14,7 +14,6 @@ SET parallel_replicas_allow_view_over_mergetree = 1;
 -- make every assertion below pass without exercising the planner paths under test.
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
-SET enable_analyzer = 1;
 
 -- Per-query values of parallel_replicas_allow_view_over_mergetree must be honored
 -- consistently by the parallel-replicas decision and the plan build.
@@ -27,6 +26,12 @@ EXCEPT DISTINCT
 SELECT materialize(-2147483648) FROM v_pr_view LIMIT 255 SETTINGS parallel_replicas_allow_view_over_mergetree = 0
 EXCEPT DISTINCT
 SELECT 1024 FROM v_pr_view LIMIT 1024 SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
+
+-- The assertions below read the relation out of the SQL the initiator ships, so they describe the
+-- query-based implementation. Plan-based reads a view with parallel replicas without any of this:
+-- it resolves the view and ships a plan fragment, so there is no shipped relation to name and the
+-- setting varied here plays no part. The result assertions above and below run under either.
+SET parallel_replicas_plan_based = 0;
 
 -- Parallel replicas must be used either way, so assert on what the setting actually
 -- changes: which relation the remote step reads. Enabled sends the view, disabled sends
