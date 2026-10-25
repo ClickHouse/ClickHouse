@@ -17,7 +17,9 @@
 #include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Server/ConnectionRegistry.h>
 #include <Storages/MarkCache.h>
+#include <limits>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
@@ -132,7 +134,7 @@ namespace
 // clang-format off
 
 /// Settings without path are top-level server settings (no nesting).
-#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
@@ -208,6 +210,15 @@ Maximum number of idle standby threads to keep in the thread pool for decoding I
 )", 0) \
     DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+)", 0) \
+    DECLARE(NonZeroUInt64, ai_function_max_thread_pool_size, 1000, R"(
+Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of it.
+)", 0) \
+    DECLARE(UInt64, ai_function_max_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
+)", 0) \
+    DECLARE(UInt64, ai_function_thread_pool_queue_size, 10'000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
@@ -610,26 +621,17 @@ This setting can be modified at runtime and will take effect immediately. Querie
 </Note>
 )", 0) \
     DECLARE(UInt64, max_waiting_queries, 0, R"(
-Limit on total number of concurrently waiting queries.
-Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases).
-
-<Note>
-Waiting queries are not counted when limits controlled by the following settings are checked:
-
-- [`max_concurrent_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
-- [`max_concurrent_insert_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user)
-- [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
-
-This correction is done to avoid hitting these limits just after server startup.
-</Note>
+Limit on the number of queries that are waiting to start executing because an asynchronous load or startup job
+they need is still running: loading a table, starting up a table or a database, or starting up the distributed
+DDL worker (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases)).
+Internal queries are not counted.
 
 <Note>
 
 A value of `0` (default) means unlimited.
 
-This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. The limit is checked when a query
+starts to wait, so lowering it refuses new queries and leaves queries that are already waiting in place.
 </Note>
 )", 0) \
     \
@@ -1256,6 +1258,26 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_max_allocation_size, 0, R"(Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
+    DECLARE(Bool, collect_connection_metrics, false, R"(Enables the collection of connections for the `system.connections` table. This table shows the connections of the native TCP and HTTP query interfaces. It does not show connections of MySQL, PostgreSQL, gRPC, or other protocols.
+
+When you set this setting to `true`, the server keeps a list of connections in memory:
+- The server adds a native TCP connection to the list after authentication.
+- The server adds an HTTP connection to the list when the connection gets its first query.
+- The server removes a connection from the list when the connection closes. Between the requests, an HTTP keep-alive connection has the status `idle`.
+
+Each connection and each query has a small synchronization cost. Thus, the default value is `false`.
+
+A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+
+You can change this setting without a restart. When you change it to `false`, `system.connections` becomes empty and the server stops the registration of new connections. When you change it to `true`, an open connection shows in `system.connections` on its next query.
+
+Example configuration:
+
+```xml
+<collect_connection_metrics>true</collect_connection_metrics>
+```
+
+See also: `system.connections`, `system.processes`.)", 0) \
     DECLARE(Bool, user_profile_events_per_cpu, true, R"(Shard per-user `ProfileEvents` counters per CPU to avoid cross-CPU cache-line contention under high thread counts. Each user pays `getNumCPUs() * num_events * sizeof(atomic)` of memory (hundreds of KiB on machines with many cores). Disable to fall back to a single shared atomic per event per user, trading throughput for memory.)", 0) \
     DECLARE(Bool, validate_tcp_client_information, false, R"(Determines whether validation of client information is enabled when a query packet is received.
 
@@ -1444,7 +1466,7 @@ The threshold ratio for purging jemalloc relative to the memory available to Cli
 Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
 )", 0) \
     DECLARE(Bool, memory_worker_correct_memory_tracker, 1, R"(
-Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`.
+Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`. The tracker is set to the maximum of this measurement and jemalloc's `stats.allocated`, so that memory which is allocated but not touched yet, and therefore not resident, stays accounted, and concurrent queries cannot be admitted past `max_server_memory_usage` before their pages are touched.
 
 The global memory tracker is a counter: allocations add to it and deallocations subtract from it. Any accounting asymmetry stays in it for the lifetime of the process, because nothing else lowers it, and an upward drift is never worked off — the memory it describes has already been freed. Once the drift alone exceeds `max_server_memory_usage`, every allocation fails, down to the zero-byte check at the start of a connection, and the server rejects all queries while using a fraction of its limit. Correcting from a measurement bounds the lifetime of such a drift to one tick of the worker (`memory_worker_period_ms`, by default 50 ms when reading from cgroups and 100 ms when reading from jemalloc).
 
@@ -1645,7 +1667,7 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
-    DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
+    DECLARE_WITH_ALIAS(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
 Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
 `DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
 its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
@@ -1659,17 +1681,34 @@ permitted source again. It never silently regains the server's identity. This ke
 for example one created in an older version before the restriction existed, or one whose named collection was
 later re-bound to `use_environment_credentials = 1` — from aborting server startup.
 
+It applies to Azure the same way: a persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic
+`disk(type = azure_blob_storage, ...)`, whose definition would authenticate with the server's own Azure identity
+(the AKS workload identity or the machine's managed identity) is loaded at server startup with a client that carries
+no credentials. `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead. A table on
+such a dynamic Azure disk loads only if loading it reads nothing from Azure, for example an empty `MergeTree` table
+with local metadata; a table with data parts, or a disk with `plain_rewritable` metadata, may still fail to load,
+because those requests are denied as well. A dynamic Azure disk created with
+`s3_allow_server_credentials_in_user_queries` keeps the server's identity and is not affected.
+
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
 if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
-)", 0) \
-    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+
+Also available under the alias `load_table_anonymously_if_credentials_restricted`, as it applies to Azure as well.
+)", 0, load_table_anonymously_if_credentials_restricted) \
+    DECLARE_WITH_ALIAS(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
 Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
 S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
 server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
 cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
 exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
 database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
-)", 0) \
+
+It applies to a dynamic `disk(type = azure_blob_storage, ...)` the same way: such a disk may use the server's own
+Azure identity (the AKS workload identity or the machine's managed identity) despite
+`s3_allow_server_credentials_in_user_queries`.
+
+Also available under the alias `allow_server_credentials_for_system_table_disks`, as it applies to Azure as well.
+)", 0, allow_server_credentials_for_system_table_disks) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
@@ -1702,6 +1741,9 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
     DECLARE(Bool, enable_silk_runtime, false, R"(Enable experimental support for the silk fiber runtime: initialize the silk fiber scheduler at server startup, so that subsystems supporting it can run their jobs on fibers)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_gpu, false, R"(Take the GPU at the start of the server to run queries on it. The server refuses to start if it is built without GPU support or there is no CUDA device.)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_pinned_memory_pool_release_threshold, 1024UL * 1024 * 1024, R"(The maximum size of freed pinned host memory that the GPU's pool of pinned host memory keeps for reuse instead of returning it to the system.)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_memory_pool_release_threshold, std::numeric_limits<uint64_t>::max(), R"(The amount of freed device memory that the GPU's default memory pool keeps instead of returning it to the driver. With the default, the pool grows to the peak of the queries and stays there until the server shuts down.)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
@@ -2030,7 +2072,7 @@ that no disk of this type reads is reported as `UNKNOWN_ELEMENT_IN_CONFIG` inste
 )", 0)
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
-#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(String, named_collections_storage_type, "local", R"(
 The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
 `keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`.
@@ -2086,7 +2128,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(String, openssl_client_cipher_suites, "", R"(Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.)", 0, "openSSL.client.cipherSuites") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
-    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
     DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
     DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
@@ -2165,6 +2207,29 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const auto & name = setting.getName();
         String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
+
+        /// A setting may also be configured under one of its aliases, but only under one name.
+        String configured_alias;
+        if (path.empty())
+        {
+            const auto & aliases = ServerSettingsTraits::settingsToAliases();
+            if (auto it = aliases.find(name); it != aliases.end())
+            {
+                for (const auto & alias : it->second)
+                {
+                    if (!config.has(String(alias)))
+                        continue;
+                    const String & other = configured_alias.empty() && config.has(name) ? name : configured_alias;
+                    if (!other.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Server setting `{}` is configured under more than one name: `{}` and `{}`", name, other, alias);
+                    configured_alias = alias;
+                }
+            }
+        }
+        if (!configured_alias.empty())
+            path_or_name = &configured_alias;
+
         /// `set` names the setting and the value it was given, so nothing has to be added here.
         if (config.has(*path_or_name))
             set(name, config.getString(*path_or_name));
@@ -2261,6 +2326,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
+        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+            known_keys.insert(String(alias));
     }
 
     /// Known config sections that have complex/dynamic structure
@@ -2329,6 +2396,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "profiles",
         "quotas",
         "roles",
+        "masking_policies",
         "users_config",
         "user_directories",
         "ldap_servers",
@@ -3741,6 +3809,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {SettingFieldAsynchronousMetricsKeyValuesMode(getAsynchronousMetricsKeyValuesMode(context->getConfigRef())).toString(),
               ChangeableWithoutRestart::Yes}},
 
+            {"collect_connection_metrics", {ConnectionRegistry::instance().isEnabled() ? "1" : "0", ChangeableWithoutRestart::Yes}},
+
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
             {"max_named_collection_num_to_warn", {std::to_string(context->getMaxNamedCollectionNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_table_num_to_warn", {std::to_string(context->getMaxTableNumToWarn()), ChangeableWithoutRestart::Yes}},
@@ -3881,6 +3951,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"iceberg_manifest_decode_thread_pool_queue_size",
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_free_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_thread_pool_queue_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 
