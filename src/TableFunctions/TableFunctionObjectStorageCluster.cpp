@@ -642,7 +642,7 @@ void registerTableFunctionLanceCluster(TableFunctionFactory & factory)
             .description = R"DOCS_MD(
 This is an extension to the [lanceS3](/sql-reference/table-functions/lance) table function.
 
-Allows reading [Lance](https://lancedb.github.io/lance/) datasets from Amazon S3 in parallel across nodes in a specified cluster. The initiator pins a dataset version, splits fragments into packs, and dispatches packs to workers. Each worker opens the pinned version and scans only its fragment subset.
+Allows reading [Lance](https://lance.org/) datasets from Amazon S3 in parallel across nodes in a specified cluster. The initiator pins a dataset version, splits fragments into packs, and dispatches packs to workers. Each worker opens the pinned version and scans only its fragment subset.
 
 ## Syntax {#syntax}
 
