@@ -151,10 +151,13 @@ KeeperMoveResult moveChangelogBetweenDisks(
 /// may have been copied, the writer continues on the source, so the copy must not survive: restart
 /// would select it, either because it matches its move marker or by disk precedence, and lose the
 /// entries appended to the source. Throws if the copy cannot be removed.
+/// With `force_sync`, throws if the source disk cannot make appended entries durable (it is not
+/// local): the configured `latest_log_disk` is checked to be local, but the source is not.
 void moveChangelogBetweenDisksForAppend(
     DiskPtr disk_from,
     ChangelogFileDescriptionPtr description,
     DiskPtr disk_to,
+    bool force_sync,
     const KeeperContextPtr & keeper_context)
 {
     const auto path_to = description->path;
@@ -162,11 +165,12 @@ void moveChangelogBetweenDisksForAppend(
     if (move_result)
         return;
 
+    bool copy_may_exist = false;
     switch (move_result.error())
     {
         case KeeperMoveError::FailedBeforeMarkerPublication:
             /// Nothing was copied.
-            return;
+            break;
         case KeeperMoveError::DestinationPublishedSourceRemovalFailed:
             /// The description already points to the destination, which wins on restart.
             return;
@@ -174,19 +178,35 @@ void moveChangelogBetweenDisksForAppend(
         case KeeperMoveError::CopyCompletedDestinationValidationFailed:
         case KeeperMoveError::MarkerRemovalFailed:
         case KeeperMoveError::CallbackRejectedOrThrew:
+            copy_may_exist = true;
             break;
     }
 
     chassert(description->disk != disk_to);
-    LOG_WARNING(
-        getLogger("Changelog"),
-        "Removing unpublished copy {} of changelog {} from disk {} before appending to it on disk {}",
-        path_to,
-        description->path,
-        disk_to->getName(),
-        description->disk->getName());
-    /// A leftover move marker without its destination is an orphan that startup removes.
-    removeKeeperFileIfExists(disk_to, path_to);
+    if (copy_may_exist)
+    {
+        LOG_WARNING(
+            getLogger("Changelog"),
+            "Removing unpublished copy {} of changelog {} from disk {} before appending to it on disk {}",
+            path_to,
+            description->path,
+            disk_to->getName(),
+            description->disk->getName());
+        /// A leftover move marker without its destination is an orphan that startup removes.
+        removeKeeperFileIfExists(disk_to, path_to);
+    }
+
+    /// For example, an append to object storage publishes its metadata only on finalization, so
+    /// `sync` does not make the appended entries durable, while the writer reports them as durable.
+    if (force_sync && dynamic_cast<const DiskLocal *>(description->disk.get()) == nullptr)
+        throw Exception(
+            ErrorCodes::CANNOT_FSYNC,
+            "Cannot move changelog {} from disk {} to disk {}, and cannot append to it on disk {} because force_sync is set to "
+            "true and the disk is not of type DiskLocal",
+            description->path,
+            description->disk->getName(),
+            disk_to->getName(),
+            description->disk->getName());
 }
 
 constexpr auto DEFAULT_PREFIX = "changelog";
@@ -4040,6 +4060,7 @@ Changelog::Changelog(
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)
+    , force_sync(log_file_settings.force_sync)
     , startup_read_max_streams(
           log_file_settings.startup_read_max_streams == 0 ? getNumberOfCPUCoresToUse() : log_file_settings.startup_read_max_streams)
     , startup_read_buffer_size(log_file_settings.startup_read_buffer_size)
@@ -4472,7 +4493,7 @@ void Changelog::initWriter(ChangelogFileDescriptionPtr description)
     auto log_disk = description->disk;
     auto latest_log_disk = getLatestLogDisk();
     if (log_disk != latest_log_disk)
-        moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context);
+        moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, force_sync, keeper_context);
 
     current_writer->setFile(std::move(description), WriteMode::Append);
 }
@@ -4806,7 +4827,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
                 auto log_disk = description->disk;
                 auto latest_log_disk = getLatestLogDisk();
                 if (log_disk != latest_log_disk)
-                    moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, keeper_context);
+                    moveChangelogBetweenDisksForAppend(log_disk, description, latest_log_disk, force_sync, keeper_context);
 
                 LOG_INFO(log, "Writing into {}", description->path);
                 current_writer->setFile(std::move(description), WriteMode::Append);

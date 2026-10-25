@@ -757,6 +757,7 @@ private:
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool compress_logs;
+    const bool force_sync;
     const uint64_t startup_read_max_streams;
     const uint64_t startup_read_buffer_size;
     LoggerPtr log;

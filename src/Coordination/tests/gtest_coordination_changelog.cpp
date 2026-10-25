@@ -13,6 +13,12 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <IO/ReadHelpers.h>
 
 #include <Poco/AutoPtr.h>
@@ -5264,6 +5270,82 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterMovesAwayFromRetaine
         EXPECT_FALSE(disk->existsFile("changelog_21_30.bin"));
     }
     EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+}
+
+/// An append-capable disk that is not `DiskLocal`, like S3 with local metadata.
+static std::shared_ptr<DB::DiskObjectStorage> createLocalObjectStorageLogDisk(const std::string & meta_path, const std::string & obj_path)
+{
+    getContext(); /// needed for DiskObjectStorage background threads
+    auto obj_storage = std::make_shared<DB::LocalObjectStorage>(DB::LocalObjectStorageSettings("ObjectStorageLogDisk", obj_path, false));
+    std::unordered_map<DB::Location, DB::LocationInfo> cluster_locations = {{"main", {true, true, ""}}};
+    auto cluster = std::make_shared<DB::ClusterConfiguration>("ObjectStorageLogDisk", std::move(cluster_locations));
+    auto router = std::make_shared<DB::ObjectStorageRouter>(std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", obj_storage}});
+    auto metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
+        std::make_shared<DB::DiskLocal>("ObjectStorageLogMetaDisk", meta_path),
+        "",
+        obj_storage->createKeyGenerator(),
+        /*persist_removal_queue_=*/false,
+        /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
+    getContext().context->setConfig(config_ptr);
+    return std::make_shared<DB::DiskObjectStorage>(
+        "ObjectStorageLogDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "");
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupRejectsAppendingOnNonLocalSourceDiskWithForceSync)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    ChangelogDirTest regular_meta("./logs_force_sync_failed_move_regular_meta");
+    ChangelogDirTest regular_objects("./logs_force_sync_failed_move_regular_objects");
+    ChangelogDirTest latest("./logs_force_sync_failed_move_latest");
+    auto regular_disk = createLocalObjectStorageLogDisk(regular_meta.path, regular_objects.path + "/");
+    auto latest_disk = std::make_shared<MarkerWriteFailingDisk>("latest", latest.path);
+    DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+
+    auto coordination_settings = std::make_shared<DB::CoordinationSettings>();
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
+    this->keeper_context = std::make_shared<DB::KeeperContext>(true, coordination_settings);
+    this->keeper_context->setLocalLogsPreprocessed();
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(
+            this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        writer.appendEntry(1, getLogEntry("one", 1));
+        writer.flush();
+    }
+
+    /// The move of the unfinished changelog to the local `latest_log_disk` fails, and appending to the
+    /// source on object storage cannot make entries durable.
+    log_file_settings.force_sync = true;
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog recovered(
+            this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        EXPECT_THROW(recovered.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_EQ(latest_disk->failed_marker_writes.load(), 1);
+    }
+    EXPECT_TRUE(regular_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_FALSE(latest_disk->existsFile("changelog_1_10.bin"));
+
+    /// Once the move succeeds, the changelog is appended on the local disk.
+    this->keeper_context->setLatestLogDisk(std::make_shared<DB::DiskLocal>("latest", latest.path));
+    DB::Changelog restarted(this->log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 2);
+    restarted.appendEntry(2, getLogEntry("two", 1));
+    restarted.flush();
+    EXPECT_EQ(restarted.getNextEntryIndex(), 3);
+    EXPECT_FALSE(regular_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_TRUE(fs::exists(fs::path(latest.path) / "changelog_1_10.bin"));
 }
 
 #endif
