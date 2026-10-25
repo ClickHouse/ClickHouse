@@ -8,7 +8,11 @@ exports_files([
 
 ch_cc_library(
     name = "_brotli",
-    srcs = glob(["c/common/*.c"]) + glob(["c/dec/*.c"]) + glob(["c/enc/*.c"]) + glob([
+    srcs = glob([
+        "c/common/*.c",
+        "c/dec/*.c",
+        "c/enc/*.c",
+    ]) + glob([
         "c/common/**/*.h",
         "c/dec/**/*.h",
         "c/enc/**/*.h",

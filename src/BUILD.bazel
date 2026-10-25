@@ -1956,10 +1956,18 @@ ch_cc_library(
         "Disks/DiskObjectStorage/MetadataStorages/Memory/InMemoryDirectoryTree.cpp",
         "Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.cpp",
         "Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.cpp",
-    ] + glob(["Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/*.cpp"]) + glob(["Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/*.cpp"]) + glob(["Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/*.cpp"]) + [
+    ] + glob(["Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/*.cpp"]) + glob([
+        "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/*.cpp",
+        "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/*.cpp",
+    ]) + [
         "Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.cpp",
         "Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.cpp",
-    ] + glob(["Databases/SQLite/*.cpp"]) + glob(["Storages/Kafka/*.cpp"]) + glob(["Storages/NATS/*.cpp"]) + glob(["Storages/ObjectStorage/*.cpp"]) + [
+    ] + glob([
+        "Databases/SQLite/*.cpp",
+        "Storages/Kafka/*.cpp",
+        "Storages/NATS/*.cpp",
+        "Storages/ObjectStorage/*.cpp",
+    ]) + [
         "Storages/ObjectStorage/Azure/AzureSecretArguments.cpp",
         "Storages/ObjectStorage/Azure/Configuration.cpp",
         "Storages/ObjectStorage/S3/Configuration.cpp",
@@ -1970,7 +1978,10 @@ ch_cc_library(
     ] + glob(["Storages/ObjectStorage/DataLakes/*.cpp"]) + [
         "Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.cpp",
         "Storages/ObjectStorage/DataLakes/Common/Common.cpp",
-    ] + glob(["Storages/ObjectStorage/DataLakes/Iceberg/*.cpp"]) + glob(["Storages/ObjectStorage/DataLakes/DeltaLake/*.cpp"]) + glob(["Storages/ObjectStorage/DataLakes/Paimon/*.cpp"]) + [
+    ] + glob(["Storages/ObjectStorage/DataLakes/Iceberg/*.cpp"]) + glob([
+        "Storages/ObjectStorage/DataLakes/DeltaLake/*.cpp",
+        "Storages/ObjectStorage/DataLakes/Paimon/*.cpp",
+    ]) + [
         "//src/Common:dbms_sources",
         "Core/YTsaurus/YTsaurusClient.cpp",
         "Storages/YTsaurus/StorageYTsaurus.cpp",
@@ -1983,7 +1994,12 @@ ch_cc_library(
     ] + glob(["Storages/MergeTree/Streaming/ReadingPlan/*.cpp"]) + [
         "Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.cpp",
         "Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.cpp",
-    ] + glob(["Storages/RabbitMQ/*.cpp"]) + glob(["Core/PostgreSQL/*.cpp"]) + glob(["Databases/PostgreSQL/*.cpp"]) + glob(["Storages/PostgreSQL/*.cpp"]) + glob(["Storages/RocksDB/*.cpp"]) + glob(["Disks/DiskObjectStorage/ObjectStorages/S3/*.cpp"]) + [
+    ] + glob(["Storages/RabbitMQ/*.cpp"]) + glob([
+        "Core/PostgreSQL/*.cpp",
+        "Databases/PostgreSQL/*.cpp",
+        "Storages/PostgreSQL/*.cpp",
+        "Storages/RocksDB/*.cpp",
+    ]) + glob(["Disks/DiskObjectStorage/ObjectStorages/S3/*.cpp"]) + [
         "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp",
         "Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp",
     ] + glob(["IO/AzureBlobStorage/*.cpp"]) + [
@@ -1992,14 +2008,33 @@ ch_cc_library(
         "Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.cpp",
         "Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.cpp",
         "Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.cpp",
-    ] + glob(["Storages/Cache/*.cpp"]) + glob(["Storages/Hive/*.cpp"]) + glob(["Client/AI/*.cpp"]) + glob(["Storages/FileLog/*.cpp"]) + glob(["Access/*.cpp"]) + [
+    ] + glob([
+        "Storages/Cache/*.cpp",
+        "Storages/Hive/*.cpp",
+    ]) + glob([
+        "Client/AI/*.cpp",
+        "Storages/FileLog/*.cpp",
+    ]) + glob(["Access/*.cpp"]) + [
         "Access/SSH/SSHPublicKey.cpp",
-    ] + glob(["Backups/*.cpp"]) + glob(["Core/*.cpp"]) + [
+    ] + glob([
+        "Backups/*.cpp",
+        "Core/*.cpp",
+    ]) + [
         "//src/Common:ExceptionExt.cpp",
-    ] + glob(["Core/MySQL/*.cpp"]) + glob(["QueryPipeline/*.cpp"]) + glob(["DataTypes/*.cpp"]) + glob(["DataTypes/Serializations/*.cpp"]) + glob(["Databases/*.cpp"]) + [
+    ] + glob([
+        "Core/MySQL/*.cpp",
+        "QueryPipeline/*.cpp",
+    ]) + glob(["DataTypes/*.cpp"]) + glob([
+        "DataTypes/Serializations/*.cpp",
+        "Databases/*.cpp",
+    ]) + [
         "Databases/MySQL/DatabaseMySQL.cpp",
         "Databases/MySQL/FetchTablesColumnsList.cpp",
-    ] + glob(["Disks/*.cpp"]) + glob(["Analyzer/*.cpp"]) + glob(["Analyzer/Passes/*.cpp"]) + glob(["Analyzer/Resolve/*.cpp"]) + glob(["Planner/*.cpp"]) + glob(["Interpreters/Action*.cpp"]) + [
+    ] + glob(["Disks/*.cpp"]) + glob(["Analyzer/*.cpp"]) + glob([
+        "Analyzer/Passes/*.cpp",
+        "Analyzer/Resolve/*.cpp",
+        "Planner/*.cpp",
+    ]) + glob(["Interpreters/Action*.cpp"]) + [
         "Interpreters/AdaptiveAggregation.cpp",
         "Interpreters/AdaptiveAggregationKernels.cpp",
         "Interpreters/AddIndexConstraintsOptimizer.cpp",
@@ -2051,7 +2086,10 @@ ch_cc_library(
         "Interpreters/ErrorLog.cpp",
         "Interpreters/ExecuteScalarSubqueriesVisitor.cpp",
         "Interpreters/ExpandedASTBudget.cpp",
-    ] + glob(["Interpreters/Expression*.cpp"]) + glob(["Interpreters/External*.cpp"]) + [
+    ] + glob([
+        "Interpreters/Expression*.cpp",
+        "Interpreters/External*.cpp",
+    ]) + [
         "Interpreters/ExtractExpressionInfoVisitor.cpp",
         "Interpreters/FilesystemCacheLog.cpp",
         "Interpreters/FilesystemReadPrefetchesLog.cpp",
@@ -2205,7 +2243,16 @@ ch_cc_library(
         "Interpreters/removeOnClusterClauseIfNeeded.cpp",
     ] + glob(["Interpreters/replace*.cpp"]) + [
         "Interpreters/sortBlock.cpp",
-    ] + glob(["Interpreters/Cache/*.cpp"]) + glob(["Interpreters/FileCache/*.cpp"]) + glob(["Interpreters/HashJoin/*.cpp"]) + glob(["Interpreters/Access/*.cpp"]) + glob(["Interpreters/ClusterProxy/*.cpp"]) + glob(["Interpreters/JIT/*.cpp"]) + glob(["Interpreters/WebAssembly/*.cpp"]) + glob(["Interpreters/MergeTreeTransaction/*.cpp"]) + [
+    ] + glob([
+        "Interpreters/Cache/*.cpp",
+        "Interpreters/FileCache/*.cpp",
+        "Interpreters/HashJoin/*.cpp",
+    ]) + glob([
+        "Interpreters/Access/*.cpp",
+        "Interpreters/ClusterProxy/*.cpp",
+        "Interpreters/JIT/*.cpp",
+        "Interpreters/WebAssembly/*.cpp",
+    ]) + glob(["Interpreters/MergeTreeTransaction/*.cpp"]) + [
         "Interpreters/Streaming/Utils.cpp",
         "Columns/Collator.cpp",
     ] + glob(["Columns/Column*.cpp"]) + [
@@ -2317,7 +2364,20 @@ ch_cc_library(
             "Storages/transformQueryForExternalDatabaseAnalyzer.cpp",
             "Storages/MySQL/MySQLHelpers.cpp",
             "Storages/MySQL/MySQLSettings.cpp",
-        ] + glob(["Storages/Distributed/*.cpp"]) + glob(["Storages/MergeTree/*.cpp"]) + glob(["Storages/MergeTree/UniqueKey/*.cpp"]) + glob(["Storages/MergeTree/Compaction/*.cpp"]) + glob(["Storages/MergeTree/Compaction/MergePredicates/*.cpp"]) + glob(["Storages/MergeTree/Compaction/MergeSelectors/*.cpp"]) + glob(["Storages/MergeTree/Compaction/PartsCollectors/*.cpp"]) + glob(["Storages/MergeTree/PatchParts/*.cpp"]) + glob(["Storages/MergeTree/ProjectionIndex/*.cpp"]) + glob(["Storages/Statistics/*.cpp"]) + glob(["Storages/ObjectStorageQueue/*.cpp"]) + glob(["Storages/MaterializedView/*.cpp"]) + glob(["Storages/TimeSeries/*.cpp"]) + glob(["Storages/TimeSeries/PrometheusQueryToSQL/*.cpp"]) + [
+        ] + glob([
+            "Storages/Distributed/*.cpp",
+            "Storages/MergeTree/*.cpp",
+        ]) + glob(["Storages/MergeTree/UniqueKey/*.cpp"]) + glob(["Storages/MergeTree/Compaction/*.cpp"]) + glob([
+            "Storages/MergeTree/Compaction/MergePredicates/*.cpp",
+            "Storages/MergeTree/Compaction/MergeSelectors/*.cpp",
+            "Storages/MergeTree/Compaction/PartsCollectors/*.cpp",
+            "Storages/MergeTree/PatchParts/*.cpp",
+            "Storages/MergeTree/ProjectionIndex/*.cpp",
+            "Storages/Statistics/*.cpp",
+        ]) + glob(["Storages/ObjectStorageQueue/*.cpp"]) + glob([
+            "Storages/MaterializedView/*.cpp",
+            "Storages/TimeSeries/*.cpp",
+        ]) + glob(["Storages/TimeSeries/PrometheusQueryToSQL/*.cpp"]) + [
             "Storages/ArrowFlight/ArrowFlightConnection.cpp",
             "Client/ClientApplicationBase.cpp",
             "Client/ClientBase.cpp",
@@ -2441,7 +2501,20 @@ ch_cc_library(
             "Storages/transformQueryForExternalDatabaseAnalyzer.cpp",
             "Storages/MySQL/MySQLHelpers.cpp",
             "Storages/MySQL/MySQLSettings.cpp",
-        ] + glob(["Storages/Distributed/*.cpp"]) + glob(["Storages/MergeTree/*.cpp"]) + glob(["Storages/MergeTree/UniqueKey/*.cpp"]) + glob(["Storages/MergeTree/Compaction/*.cpp"]) + glob(["Storages/MergeTree/Compaction/MergePredicates/*.cpp"]) + glob(["Storages/MergeTree/Compaction/MergeSelectors/*.cpp"]) + glob(["Storages/MergeTree/Compaction/PartsCollectors/*.cpp"]) + glob(["Storages/MergeTree/PatchParts/*.cpp"]) + glob(["Storages/MergeTree/ProjectionIndex/*.cpp"]) + glob(["Storages/Statistics/*.cpp"]) + glob(["Storages/ObjectStorageQueue/*.cpp"]) + glob(["Storages/MaterializedView/*.cpp"]) + glob(["Storages/TimeSeries/*.cpp"]) + glob(["Storages/TimeSeries/PrometheusQueryToSQL/*.cpp"]) + [
+        ] + glob([
+            "Storages/Distributed/*.cpp",
+            "Storages/MergeTree/*.cpp",
+        ]) + glob(["Storages/MergeTree/UniqueKey/*.cpp"]) + glob(["Storages/MergeTree/Compaction/*.cpp"]) + glob([
+            "Storages/MergeTree/Compaction/MergePredicates/*.cpp",
+            "Storages/MergeTree/Compaction/MergeSelectors/*.cpp",
+            "Storages/MergeTree/Compaction/PartsCollectors/*.cpp",
+            "Storages/MergeTree/PatchParts/*.cpp",
+            "Storages/MergeTree/ProjectionIndex/*.cpp",
+            "Storages/Statistics/*.cpp",
+        ]) + glob(["Storages/ObjectStorageQueue/*.cpp"]) + glob([
+            "Storages/MaterializedView/*.cpp",
+            "Storages/TimeSeries/*.cpp",
+        ]) + glob(["Storages/TimeSeries/PrometheusQueryToSQL/*.cpp"]) + [
             "Storages/ArrowFlight/ArrowFlightConnection.cpp",
             "Client/ClientApplicationBase.cpp",
             "Client/ClientBase.cpp",
@@ -2511,9 +2584,28 @@ ch_cc_library(
         "Server/socketBindListen.cpp",
         "Server/stopServers.cpp",
         "Server/waitServersToFinish.cpp",
-    ] + glob(["Server/HTTP/*.cpp"]) + glob(["Server/IcebergRESTCatalog/*.cpp"]) + glob(["Server/ACME/*.cpp"]) + glob(["Server/SSH/*.cpp"]) + glob(["Server/ArrowFlight/*.cpp"]) + glob(["Server/ClientEmbedded/*.cpp"]) + glob(["Server/StatelessWorker/*.cpp"]) + glob(["Server/DistributedQuery/*.cpp"]) + glob(["Formats/*.cpp"]) + glob(["Processors/*.cpp"]) + glob(["Processors/Executors/*.cpp"]) + [
+    ] + glob([
+        "Server/HTTP/*.cpp",
+        "Server/IcebergRESTCatalog/*.cpp",
+    ]) + glob([
+        "Server/ACME/*.cpp",
+        "Server/SSH/*.cpp",
+    ]) + glob([
+        "Server/ArrowFlight/*.cpp",
+        "Server/ClientEmbedded/*.cpp",
+        "Server/StatelessWorker/*.cpp",
+    ]) + glob(["Server/DistributedQuery/*.cpp"]) + glob([
+        "Formats/*.cpp",
+        "Processors/*.cpp",
+    ]) + glob(["Processors/Executors/*.cpp"]) + [
         "Processors/Executors/Runtime/createExecutor.cpp",
-    ] + glob(["Processors/Executors/Runtime/V1/*.cpp"]) + glob(["Processors/Formats/*.cpp"]) + glob(["Processors/Formats/Framing/*.cpp"]) + glob(["Processors/Formats/Impl/*.cpp"]) + [
+    ] + glob([
+        "Processors/Executors/Runtime/V1/*.cpp",
+        "Processors/Formats/*.cpp",
+    ]) + glob([
+        "Processors/Formats/Framing/*.cpp",
+        "Processors/Formats/Impl/*.cpp",
+    ]) + [
         "Processors/Transforms/AddingDefaultsTransform.cpp",
         "Processors/Transforms/AggregatingInOrderTransform.cpp",
         "Processors/Transforms/AggregatingTransform.cpp",
@@ -2592,7 +2684,10 @@ ch_cc_library(
         "Processors/Sinks/SinkToStorage.cpp",
         "Processors/Merges/IMergingTransform.cpp",
         "Processors/Merges/MergingSortedTransform.cpp",
-    ] + glob(["Processors/TTL/*.cpp"]) + glob(["Processors/Merges/Algorithms/*.cpp"]) + glob(["Processors/Streaming/*.cpp"]) + glob(["Processors/QueryPlan/*.cpp"]) + glob(["Processors/QueryPlan/Optimizations/*.cpp"]) + [
+    ] + glob(["Processors/TTL/*.cpp"]) + glob([
+        "Processors/Merges/Algorithms/*.cpp",
+        "Processors/Streaming/*.cpp",
+    ]) + glob(["Processors/QueryPlan/*.cpp"]) + glob(["Processors/QueryPlan/Optimizations/*.cpp"]) + [
         "Processors/QueryPlan/Profiling/Execution/StepProfiler.cpp",
         "Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.cpp",
     ] + glob(["Processors/QueryPlan/Profiling/Time/*.cpp"]) + glob(["Processors/QueryPlan/Profiling/Analysis/*.cpp"]) + [
@@ -2842,7 +2937,10 @@ ch_cc_library(
         "Interpreters/Aggregator.cpp",
         "Columns/IColumn.cpp",
         "Processors/Transforms/WindowTransform.cpp",
-    ] + glob(["Processors/Transforms/Window/*.cpp"]) + glob(["WindowFunctions/WindowFunction*.cpp"]) + _DBMS_0_2_PRIVATE_HEADERS,
+    ] + glob([
+        "Processors/Transforms/Window/*.cpp",
+        "WindowFunctions/WindowFunction*.cpp",
+    ]) + _DBMS_0_2_PRIVATE_HEADERS,
     clickhouse_code = True,
     copts = [
         "-U_LIBCPP_HARDENING_MODE",
@@ -3120,7 +3218,10 @@ ch_cc_test(
     ] + glob(["Backups/tests/*.cpp"]) + [
         "Client/AI/tests/gtest_ai_client_factory.cpp",
         "Client/AI/tests/gtest_ai_sql_generator.cpp",
-    ] + glob(["Client/tests/*.cpp"]) + glob(["Columns/tests/*.cpp"]) + [
+    ] + glob([
+        "Client/tests/*.cpp",
+        "Columns/tests/*.cpp",
+    ]) + [
         "//src/Common:scheduler_nodes_unit_test_sources",
         "//src/Common/ZooKeeper:unit_test_sources",
         "//src/Common/mysqlxx:unit_test_sources",
@@ -3129,31 +3230,57 @@ ch_cc_test(
         "Coordination/Storage/tests/gtest_keeper_storage.cpp",
     ] + glob(["Coordination/tests/*.cpp"]) + [
         "Core/Streaming/tests/gtest_cursor_tree.cpp",
-    ] + glob(["Core/tests/*.cpp"]) + glob(["DataTypes/Serializations/tests/*.cpp"]) + glob(["DataTypes/tests/*.cpp"]) + glob(["Databases/DataLake/tests/gtest_*.cpp"]) + [
+    ] + glob([
+        "Core/tests/*.cpp",
+        "DataTypes/Serializations/tests/*.cpp",
+        "DataTypes/tests/*.cpp",
+        "Databases/DataLake/tests/gtest_*.cpp",
+    ]) + [
         "Databases/MySQL/tests/gtest_mysql_tolerated_connection_failure.cpp",
     ] + glob(["Databases/tests/*.cpp"]) + [
         "//src/Dictionaries:unit_test_sources",
         "Disks/DiskObjectStorage/ObjectStorages/tests/gtest_object_storage_iterator_async.cpp",
         "Disks/IO/tests/gtest_adls_gen2_url.cpp",
-    ] + glob(["Disks/tests/*.cpp"]) + glob(["Formats/tests/*.cpp"]) + [
+    ] + glob([
+        "Disks/tests/*.cpp",
+        "Formats/tests/*.cpp",
+    ]) + [
         "//src/Functions:unit_test_sources",
         "IO/AzureBlobStorage/tests/gtest_poco_azure_http_client.cpp",
         "IO/AzureBlobStorage/tests/gtest_poco_azure_http_client_host_filter.cpp",
-    ] + glob(["IO/S3/tests/*.cpp"]) + glob(["IO/tests/*.cpp"]) + glob(["Interpreters/tests/*.cpp"]) + [
+    ] + glob([
+        "IO/S3/tests/*.cpp",
+        "IO/tests/*.cpp",
+        "Interpreters/tests/*.cpp",
+    ]) + [
         "//src/Parsers:unit_test_sources",
         "Planner/tests/gtest_planner_empty_projection.cpp",
         "Processors/Executors/Runtime/V1/tests/gtest_polling_queue.cpp",
         "Processors/Formats/Impl/Parquet/tests/gtest_parquet_reader_prewhere_tail_suppression.cpp",
-    ] + glob(["Processors/Formats/Impl/tests/*.cpp"]) + glob(["Processors/Merges/Algorithms/tests/*.cpp"]) + glob(["Processors/QueryPlan/Optimizations/Cascades/tests/*.cpp"]) + [
+    ] + glob([
+        "Processors/Formats/Impl/tests/*.cpp",
+        "Processors/Merges/Algorithms/tests/*.cpp",
+        "Processors/QueryPlan/Optimizations/Cascades/tests/*.cpp",
+    ]) + [
         "Processors/QueryPlan/Optimizations/tests/gtest_convert_any_join.cpp",
-    ] + glob(["Processors/QueryPlan/tests/*.cpp"]) + glob(["Processors/tests/*.cpp"]) + glob(["QueryPipeline/tests/*.cpp"]) + glob(["Server/DistributedQuery/tests/*.cpp"]) + [
+    ] + glob([
+        "Processors/QueryPlan/tests/*.cpp",
+        "Processors/tests/*.cpp",
+        "QueryPipeline/tests/*.cpp",
+        "Server/DistributedQuery/tests/*.cpp",
+    ]) + [
         "Server/StatelessWorker/tests/gtest_task_status_serialization.cpp",
     ] + glob(["Server/tests/*.cpp"]) + [
         "Storages/Kafka/tests/gtest_aws_msk_iam_auth.cpp",
         "Storages/MaterializedView/tests/gtest_refresh_task_startup_after_shutdown.cpp",
         "Storages/MergeTree/PatchParts/tests/gtest_apply_patches_type_mismatch.cpp",
         "Storages/MergeTree/PatchParts/tests/gtest_patch_part_index_read.cpp",
-    ] + glob(["Storages/MergeTree/Streaming/tests/*.cpp"]) + glob(["Storages/MergeTree/UniqueKey/tests/*.cpp"]) + glob(["Storages/MergeTree/tests/*.cpp"]) + glob(["Storages/ObjectStorage/DataLakes/Iceberg/tests/*.cpp"]) + [
+    ] + glob([
+        "Storages/MergeTree/Streaming/tests/*.cpp",
+        "Storages/MergeTree/UniqueKey/tests/*.cpp",
+        "Storages/MergeTree/tests/*.cpp",
+        "Storages/ObjectStorage/DataLakes/Iceberg/tests/*.cpp",
+    ]) + [
         "Storages/ObjectStorage/DataLakes/Paimon/tests/gtest_paimon_binary_row.cpp",
         "Storages/ObjectStorage/DataLakes/Paimon/tests/gtest_paimon_latest_hint.cpp",
     ] + glob(["Storages/ObjectStorage/tests/*.cpp"]) + [
@@ -3538,8 +3665,8 @@ ch_cc_test(
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_iam_policy_protos",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_options_protos",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_policy_protos",
-        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage_protos",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_type_date_protos",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_type_expr_protos",

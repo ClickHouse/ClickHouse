@@ -28,6 +28,7 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/compute/kernels/aggregate_var_std_internal.h",
     "cpp/src/arrow/compute/kernels/base_arithmetic_internal.h",
     "cpp/src/arrow/compute/kernels/chunked_internal.h",
+    "cpp/src/arrow/compute/kernels/codegen_internal.h",
     "cpp/src/arrow/compute/kernels/common_internal.h",
     "cpp/src/arrow/compute/kernels/copy_data_internal.h",
     "cpp/src/arrow/compute/kernels/gather_internal.h",
@@ -50,6 +51,7 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/compute/row/grouper_internal.h",
     "cpp/src/arrow/compute/row/row_encoder_internal.h",
     "cpp/src/arrow/compute/row/row_internal.h",
+    "cpp/src/arrow/compute/util_internal.h",
     "cpp/src/arrow/ipc/metadata_internal.h",
     "cpp/src/arrow/ipc/reader_internal.h",
     "cpp/src/arrow/status_internal.h",
@@ -70,6 +72,7 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/util/fixed_width_internal.h",
     "cpp/src/arrow/util/int128_internal.h",
     "cpp/src/arrow/util/memory_internal.h",
+    "cpp/src/arrow/util/reflection_internal.h",
     "cpp/src/arrow/util/slice_util_internal.h",
     "cpp/src/arrow/util/sort_internal.h",
     "cpp/src/arrow/util/tdigest_internal.h",
@@ -555,9 +558,12 @@ cc_library(
 _FLIGHT_PRIVATE_HEADERS = [
     "cpp/src/arrow/flight/cookie_internal.h",
     "cpp/src/arrow/flight/otel_logging_internal.h",
+    "cpp/src/arrow/flight/protocol_internal.h",
     "cpp/src/arrow/flight/serialization_internal.h",
     "cpp/src/arrow/flight/sql/sql_info_internal.h",
+    "cpp/src/arrow/flight/transport/grpc/protocol_grpc_internal.h",
     "cpp/src/arrow/flight/transport/grpc/serialization_internal.h",
+    "cpp/src/arrow/flight/transport/grpc/util_internal.h",
 ]
 
 ch_cc_library(

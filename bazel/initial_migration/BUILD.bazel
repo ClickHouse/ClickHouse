@@ -1,6 +1,7 @@
 """CMake migration, parity checks and CMake comparison snapshots."""
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
 load(":normalized_clickhouse.bzl", "normalized_clickhouse")
 
 package(default_visibility = ["//visibility:public"])
@@ -9,6 +10,15 @@ py_binary(
     name = "rust_import_evidence",
     srcs = ["rust_import_evidence.py"],
     interpreter_args = ["-B"],
+    python_version = "3.11",
+)
+
+py_test(
+    name = "rust_import_evidence_test",
+    srcs = [
+        "rust_import_evidence.py",
+        "rust_import_evidence_test.py",
+    ],
     python_version = "3.11",
 )
 

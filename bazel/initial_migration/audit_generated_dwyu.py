@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Check owned protobuf C++ and LLVM runtime compilers in one existing remote batch.
 
-Run in a source tree whose generated_cc_inventory.json matches its BUILD files.
+Discover the generated rules in the three production packages before selecting
+the target platform. Use --enumerate-only to list them without building.
 The imports section checks CcInfo against original archive actions and C++
 consumer inputs. It does not classify Rust as C++. LLVM .S preprocessing is
 checked against original Assemble actions.
 """
 
 import argparse
-from collections import Counter
-import hashlib
 import json
 from pathlib import Path
 import sys
@@ -25,13 +24,12 @@ from audit_proto_dwyu import ProtoBep, audit_proto
 from audit_rust_import_dwyu import check_imports
 
 
-INVENTORY = Path("bazel/initial_migration/generated_cc_inventory.json")
 PLATFORM_QUERY = Path("bazel/initial_migration/generated_platform.cquery")
 DWYU = "--aspects=//bazel/rules:dwyu.bzl%dwyu"
 GROUPS = {
-    "protobuf_generated_cc": "cc_proto_library",
-    "llvm_runtime_compile_without_CcInfo": "llvm_runtime_objects",
-    "precompiled_cc_import": "cc_import",
+    "protobuf_generated_cc": ("cc_proto_library", "//bazel"),
+    "llvm_runtime_compile_without_CcInfo": ("llvm_runtime_objects", "@clickhouse_llvm_project//"),
+    "precompiled_cc_import": ("cc_import", "//bazel/rust"),
 }
 COMPILE_ACTIONS = (
     "CppCompile", "CppCompileHeader", "CppModuleCompile", "Assemble",
@@ -42,40 +40,32 @@ ARTIFACT_OPTIONS = (
 )
 
 
-def inventory(path):
-    data = json.loads(path.read_bytes())
-    if set(data) != {"schema", "base_revision", "base_tree", "build_files", "groups"} or data["schema"] != 1:
-        raise ValueError("invalid generated C++ inventory")
-    if set(data["groups"]) != set(GROUPS) or not data["build_files"]:
-        raise ValueError("missing generated production rule kinds or BUILD files")
+def inventory(audit):
+    # A loading query includes incompatible targets and rules declared by macros.
+    query = audit.out / "generated-declarations.query"
+    query.write_text(" union ".join(
+        f"kind('^{kind} rule$', '{package}:all')" for kind, package in GROUPS.values()
+    ) + "\n")
+    run = audit.command("generated-declarations", "query", [
+        "--query_file=" + str(query), "--consistent_labels", "--output=label_kind",
+    ])
+    if run["exit_code"]:
+        raise RuntimeError("generated declarations query failed: " + run["log"]["file"])
+
+    groups = {(kind, census_canonical(package + ":")): group
+              for group, (kind, package) in GROUPS.items()}
     declared = {}
-    counts = Counter()
-    for group, rules in data["groups"].items():
-        if not rules:
-            raise ValueError("empty generated production group " + group)
-        for rule in rules:
-            if (set(rule) != {"label", "file", "line", "kind"} or
-                    rule["kind"] != GROUPS[group] or rule["file"] not in data["build_files"] or
-                    type(rule["line"]) is not int or rule["line"] < 1):
-                raise ValueError("invalid generated declaration: " + repr(rule))
-            query_labels([rule["label"]])
-            label = census_canonical(rule["label"])
-            if label in declared:
-                raise ValueError("duplicate generated declaration: " + label)
-            declared[label] = dict(rule, group=group)
-            counts[rule["file"]] += 1
-    if set(counts) != set(data["build_files"]):
-        raise ValueError("inventory BUILD list differs from declared BUILD owners")
-    for name, info in data["build_files"].items():
-        if (Path(name).is_absolute() or ".." in Path(name).parts or
-                not name.endswith("BUILD.bazel") or set(info) != {"blob", "declarations"} or
-                info["declarations"] != counts[name]):
-            raise ValueError("invalid generated BUILD record: " + name)
-        body = Path(name).read_bytes()
-        blob = hashlib.sha1(b"blob " + str(len(body)).encode() + b"\0" + body).hexdigest()
-        if blob != info["blob"]:
-            raise ValueError("generated inventory BUILD changed: " + name)
-    return declared, data
+    for line in Path(run["stdout"]["file"]).read_text().splitlines():
+        kind, rule, name = line.split()
+        label = canonical(name)
+        query_labels([label])
+        group = groups.get((kind, label.rpartition(":")[0] + ":"))
+        if rule != "rule" or group is None or label in declared:
+            raise ValueError("unexpected generated declaration: " + line)
+        declared[label] = {"label": label, "kind": kind, "group": group}
+    if {row["group"] for row in declared.values()} != set(GROUPS):
+        raise ValueError("generated declarations query omitted a production rule group")
+    return declared, run["stdout"]
 
 
 def platform_observations(audit, expr, rows, name="generated-platform"):
@@ -222,12 +212,14 @@ def check_runtime(audit, keys, rows, observations, graph, ordinary, execroot):
 
 
 def run(args):
-    declared, source = inventory(INVENTORY)
     audit = Audit(args)
+    declared, source = inventory(audit)
+    if args.enumerate_only:
+        print(source["file"])
+        return 0
     result = {
         "kind": "GENERATED_PRODUCTION_DWYU", "schema": 1,
-        "config": args.config, "inventory": sha_file(INVENTORY),
-        "base_revision": source["base_revision"], "base_tree": source["base_tree"],
+        "config": args.config, "inventory": source,
         "runs": audit.runs, "declared": declared, "incompatible": {},
         "protobuf": {}, "runtime": {}, "imports": {}, "errors": {},
         "cpp_qualified": False, "asm_qualified": False, "whole_repository_clean": False,
@@ -244,7 +236,7 @@ def run(args):
             raise ValueError("original generated roots omitted/added declarations or returned tool configurations")
         for row in top.values():
             if row["rule_class"] != declared[row["label"]]["kind"]:
-                raise ValueError("generated BUILD kind differs from configured rule: " + row["label"])
+                raise ValueError("generated query kind differs from configured rule: " + row["label"])
         observations, evidence = platform_observations(audit, expr, top)
         result["queries"] = {"roots": sha_file(original), "platforms": evidence}
         for key, value in observations.items():
@@ -352,6 +344,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, choices=("cmake_match", "cmake_match_aarch64"))
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--enumerate-only", action="store_true", help="list expanded generated rules without building")
     parser.add_argument("--cpp-manifest", action="append", type=Path, default=[],
                         help="completed original CPP census manifests for the requested platform")
     args = parser.parse_args()

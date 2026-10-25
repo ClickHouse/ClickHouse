@@ -137,7 +137,11 @@ ch_cc_library(
         "crypto/aria/aria.c",
     ] + glob(["crypto/asn1/*.c"]) + [
         "crypto/asn1_dsa.c",
-    ] + glob(["crypto/async/arch/*.c"]) + glob(["crypto/async/*.c"]) + glob(["crypto/bf/*.c"]) + glob(["crypto/bio/*.c"]) + [
+    ] + glob(["crypto/async/arch/*.c"]) + glob([
+        "crypto/async/*.c",
+        "crypto/bf/*.c",
+        "crypto/bio/*.c",
+    ]) + [
         "crypto/bn/bn_add.c",
         "crypto/bn/bn_blind.c",
         "crypto/bn/bn_const.c",
@@ -179,7 +183,11 @@ ch_cc_library(
         "crypto/camellia/cmll_ofb.c",
     ] + glob(["crypto/cast/*.c"]) + [
         "crypto/cmac/cmac.c",
-    ] + glob(["crypto/cmp/*.c"]) + glob(["crypto/cms/*.c"]) + glob(["crypto/comp/*.c"]) + [
+    ] + glob([
+        "crypto/cmp/*.c",
+        "crypto/cms/*.c",
+        "crypto/comp/*.c",
+    ]) + [
         "crypto/comp_methods.c",
     ] + glob(["crypto/conf/*.c"]) + [
         "crypto/context.c",
@@ -213,7 +221,11 @@ ch_cc_library(
         "crypto/des/str2key.c",
         "crypto/des/xcbc_enc.c",
         "crypto/deterministic_nonce.c",
-    ] + glob(["crypto/dh/*.c"]) + glob(["crypto/dsa/*.c"]) + glob(["crypto/dso/*.c"]) + [
+    ] + glob([
+        "crypto/dh/*.c",
+        "crypto/dsa/*.c",
+        "crypto/dso/*.c",
+    ]) + [
         "crypto/ebcdic.c",
         "crypto/ec/curve25519.c",
         "crypto/ec/curve448/arch_32/f_impl32.c",
@@ -233,7 +245,11 @@ ch_cc_library(
         "crypto/ec/ecx_backend.c",
         "crypto/ec/ecx_key.c",
         "crypto/ec/ecx_meth.c",
-    ] + glob(["crypto/encode_decode/*.c"]) + glob(["crypto/err/*.c"]) + glob(["crypto/ess/*.c"]) + [
+    ] + glob([
+        "crypto/encode_decode/*.c",
+        "crypto/err/*.c",
+        "crypto/ess/*.c",
+    ]) + [
         "crypto/evp/asymcipher.c",
     ] + glob(["crypto/evp/bio_*.c"]) + [
         "crypto/evp/c_allc.c",
@@ -289,7 +305,10 @@ ch_cc_library(
         "crypto/hmac/hmac.c",
         "crypto/hpke/hpke.c",
         "crypto/hpke/hpke_util.c",
-    ] + glob(["crypto/http/*.c"]) + glob(["crypto/idea/*.c"]) + [
+    ] + glob([
+        "crypto/http/*.c",
+        "crypto/idea/*.c",
+    ]) + [
         "crypto/indicator_core.c",
         "crypto/info.c",
         "crypto/init.c",
@@ -306,7 +325,12 @@ ch_cc_library(
         "crypto/mem_sec.c",
     ] + glob(["crypto/ml_dsa/*.c"]) + [
         "crypto/ml_kem/ml_kem.c",
-    ] + glob(["crypto/modes/*.c"]) + glob(["crypto/o_*.c"]) + glob(["crypto/objects/*.c"]) + glob(["crypto/ocsp/*.c"]) + [
+    ] + glob([
+        "crypto/modes/*.c",
+        "crypto/o_*.c",
+        "crypto/objects/*.c",
+        "crypto/ocsp/*.c",
+    ]) + [
         "crypto/packet.c",
         "crypto/param_build.c",
         "crypto/param_build_set.c",
@@ -314,7 +338,11 @@ ch_cc_library(
         "crypto/params_dup.c",
         "crypto/params_from_text.c",
         "crypto/passphrase.c",
-    ] + glob(["crypto/pem/*.c"]) + glob(["crypto/pkcs12/*.c"]) + glob(["crypto/pkcs7/*.c"]) + [
+    ] + glob([
+        "crypto/pem/*.c",
+        "crypto/pkcs12/*.c",
+        "crypto/pkcs7/*.c",
+    ]) + [
         "crypto/poly1305/poly1305.c",
     ] + glob(["crypto/property/*.c"]) + [
         "crypto/provider.c",
@@ -366,7 +394,10 @@ ch_cc_library(
         "crypto/sha/sha512.c",
         "crypto/siphash/siphash.c",
         "crypto/sleep.c",
-    ] + glob(["crypto/slh_dsa/*.c"]) + glob(["crypto/sm2/*.c"]) + [
+    ] + glob([
+        "crypto/slh_dsa/*.c",
+        "crypto/sm2/*.c",
+    ]) + [
         "crypto/sm3/legacy_sm3.c",
         "crypto/sm3/sm3.c",
         "crypto/sm4/sm4.c",
@@ -378,7 +409,10 @@ ch_cc_library(
         "crypto/store/store_meth.c",
         "crypto/store/store_result.c",
         "crypto/store/store_strings.c",
-    ] + glob(["crypto/thread/**/*.c"]) + glob(["crypto/threads_*.c"]) + [
+    ] + glob([
+        "crypto/thread/**/*.c",
+        "crypto/threads_*.c",
+    ]) + [
         "crypto/time.c",
         "crypto/trace.c",
     ] + glob(["crypto/ts/*.c"]) + [
@@ -386,7 +420,12 @@ ch_cc_library(
     ] + glob(["crypto/ui/*.c"]) + [
         "crypto/uid.c",
         "crypto/whrlpool/wp_dgst.c",
-    ] + glob(["crypto/x509/by_*.c"]) + glob(["crypto/x509/pcy_*.c"]) + glob(["crypto/x509/t_*.c"]) + glob(["crypto/x509/v3_*.c"]) + [
+    ] + glob([
+        "crypto/x509/by_*.c",
+        "crypto/x509/pcy_*.c",
+        "crypto/x509/t_*.c",
+        "crypto/x509/v3_*.c",
+    ]) + [
         "crypto/x509/v3err.c",
     ] + glob(["crypto/x509/x509_*.c"]) + [
         "crypto/x509/x509cset.c",
@@ -444,7 +483,10 @@ ch_cc_library(
         "providers/implementations/ciphers/cipher_tdes.c",
     ] + glob(["providers/implementations/ciphers/cipher_tdes_*.c"]) + [
         "providers/implementations/ciphers/ciphercommon.c",
-    ] + glob(["providers/implementations/ciphers/ciphercommon_*.c"]) + glob(["providers/implementations/digests/blake2*.c"]) + [
+    ] + glob([
+        "providers/implementations/ciphers/ciphercommon_*.c",
+        "providers/implementations/digests/blake2*.c",
+    ]) + [
         "providers/implementations/digests/digestcommon.c",
         "providers/implementations/digests/md4_prov.c",
         "providers/implementations/digests/md5_prov.c",
@@ -456,7 +498,12 @@ ch_cc_library(
         "providers/implementations/digests/sha3_prov.c",
         "providers/implementations/digests/sm3_prov.c",
         "providers/implementations/digests/wp_prov.c",
-    ] + glob(["providers/implementations/encode_decode/*.c"]) + glob(["providers/implementations/exchange/*.c"]) + glob(["providers/implementations/kdfs/*.c"]) + glob(["providers/implementations/kem/*.c"]) + [
+    ] + glob([
+        "providers/implementations/encode_decode/*.c",
+        "providers/implementations/exchange/*.c",
+        "providers/implementations/kdfs/*.c",
+        "providers/implementations/kem/*.c",
+    ]) + [
         "providers/implementations/keymgmt/dh_kmgmt.c",
         "providers/implementations/keymgmt/dsa_kmgmt.c",
         "providers/implementations/keymgmt/ec_kmgmt.c",
@@ -792,7 +839,10 @@ ch_cc_library(
         "ssl/record/methods/tlsany_meth.c",
         "ssl/record/rec_layer_d1.c",
         "ssl/record/rec_layer_s3.c",
-    ] + glob(["ssl/rio/*.c"]) + glob(["ssl/s3_*.c"]) + [
+    ] + glob([
+        "ssl/rio/*.c",
+        "ssl/s3_*.c",
+    ]) + [
         "ssl/ssl_asn1.c",
         "ssl/ssl_cert.c",
         "ssl/ssl_cert_comp.c",
@@ -807,7 +857,10 @@ ch_cc_library(
         "ssl/ssl_stat.c",
         "ssl/ssl_txt.c",
         "ssl/ssl_utst.c",
-    ] + glob(["ssl/statem/*.c"]) + glob(["ssl/t1_*.c"]) + [
+    ] + glob([
+        "ssl/statem/*.c",
+        "ssl/t1_*.c",
+    ]) + [
         "ssl/tls13_enc.c",
         "ssl/tls_depr.c",
     ] + glob(

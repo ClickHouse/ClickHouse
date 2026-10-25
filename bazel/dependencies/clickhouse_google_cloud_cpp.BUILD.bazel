@@ -401,6 +401,8 @@ ch_cc_library(
         "-g1",
     ],
     implementation_deps = [
+        ":google_cloud_cpp_grpc_utils",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_abseil_cpp//:absl_base_config",
         "@clickhouse_abseil_cpp//:absl_crc32c",
@@ -411,11 +413,9 @@ ch_cc_library(
         ".",
     ],
     deps = [
-        ":google_cloud_cpp_grpc_utils",
         ":google_cloud_cpp_rest_internal",
         ":google_cloud_cpp_common",
         "@clickhouse_abseil_cpp//:absl_cord",
-        "@clickhouse_abseil_cpp//:absl_function_ref",
         "@clickhouse_abseil_cpp//:absl_optional",
         "@clickhouse_abseil_cpp//:absl_span",
         "@clickhouse_abseil_cpp//:absl_strings",

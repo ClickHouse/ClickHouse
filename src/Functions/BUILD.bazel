@@ -227,7 +227,10 @@ ch_cc_library(
             ["*.cpp"],
             exclude = _DBMS_COMPILE_0_SOURCES + _DBMS_COMPILE_1_SOURCES + ["pointInPolygon.cpp"],
         ),
-    }) + glob(["AI/*.cpp"]) + glob(["Kusto/*.cpp"]) + _PRIVATE_FUNCTIONS_OBJ_0_HEADERS,
+    }) + glob([
+        "AI/*.cpp",
+        "Kusto/*.cpp",
+    ]) + _PRIVATE_FUNCTIONS_OBJ_0_HEADERS,
     hdrs = ["registerFunctions.h"],
     clickhouse_code = True,
     copts = ["-g1"],

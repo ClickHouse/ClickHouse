@@ -21,7 +21,11 @@ ch_cc_library(
         "lib/compress/zstdmt_compress.c",
         "lib/compress/zstd_opt.c",
         "lib/compress/zstd_preSplit.c",
-    ] + glob(["lib/decompress/*.c"]) + glob(["lib/dictBuilder/*.c"]) + glob(["lib/legacy/*.c"]) + glob(
+    ] + glob([
+        "lib/decompress/*.c",
+        "lib/dictBuilder/*.c",
+        "lib/legacy/*.c",
+    ]) + glob(
         [
             "lib/common/*.h",
             "lib/compress/*.h",

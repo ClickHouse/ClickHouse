@@ -127,7 +127,8 @@ expand_template(
 
 ch_cc_library(
     name = "_libbson",
-    srcs = glob(["src/libbson/src/bson/*.c"]) + ["src/libbson/src/jsonsl/jsonsl.c"] + glob(["src/common/src/*.c"]) + glob([
+    srcs = glob(["src/libbson/src/bson/*.c"]) + ["src/libbson/src/jsonsl/jsonsl.c"] + glob([
+        "src/common/src/*.c",
         "src/libbson/src/bson/*-private.h",
         "src/libbson/src/jsonsl/*.h",
     ]),

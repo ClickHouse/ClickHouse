@@ -599,6 +599,53 @@ def declare_from_references(root, references):
     return build, targets, templates | RUNTIME_ROOT_INPUTS
 
 
+def fold_component_libraries(root):
+    """Use llvm_cc_library where the CMake component has the same options and defines."""
+    import ast
+    from initial_migration.compact_build import Source, ast_key
+    from initial_migration.normalize_cpp_builds import remove_keyword
+
+    def constants(source):
+        return {s.targets[0].id: s.value for s in source.module.body
+                if isinstance(s, ast.Assign) and isinstance(s.targets[0], ast.Name)}
+
+    path = root / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel'
+    source = Source(path.read_text())
+    bindings = constants(source)
+    settings = constants(Source((root / 'bazel/rules/llvm_cc_library.bzl').read_text()))
+    defaults = {k: ast_key(settings[v]) for k, v in
+                {'copts': '_LLVM_CXX_COPTS', 'local_defines': 'LLVM_DEFINES'}.items()}
+    edits = []
+    for _, call in source.rules():
+        attrs = {kw.arg: kw for kw in call.keywords}
+        if (call.func.id != 'ch_cc_library' or not attrs['name'].value.value.startswith('LLVM') or
+                not {'srcs', *defaults} <= attrs.keys() or
+                'language' in attrs and ast.literal_eval(attrs['language'].value) != 'CXX'):
+            continue
+        values = {k: bindings.get(getattr(attrs[k].value, 'id', None), attrs[k].value) for k in defaults}
+        if all(ast_key(values[k]) == expected for k, expected in defaults.items()):
+            edits.append((*source.span(call.func), 'llvm_cc_library'))
+            edits.extend(remove_keyword(source, attrs[k]) for k in defaults)
+    if not edits:
+        return
+
+    # LLVM's C sources also use LLVM_DEFINES, with their own compiler options.
+    source = Source(source.rewrite(edits))
+    edits = []
+    used = {n.id for n in ast.walk(source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    defines = {name for name, value in bindings.items() if ast_key(value) == defaults['local_defines']}
+    for statement in source.module.body:
+        if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name):
+            name = statement.targets[0].id
+            if name in defines or (name not in used and ast_key(statement.value) == defaults['copts']):
+                edits.append((*source.span(statement), ''))
+    edits.extend((*source.span(n), 'LLVM_DEFINES') for n in ast.walk(source.module)
+                 if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in defines)
+    symbols = (['"LLVM_DEFINES"'] if used & defines else []) + ['"llvm_cc_library"']
+    load = 'load("@clickhouse//bazel/rules:llvm_cc_library.bzl", ' + ', '.join(symbols) + ')\n'
+    path.write_text(load + source.rewrite(edits))
+
+
 def fold_outline_atomics(path):
     """Replace the repeated compiler-rt declarations only after checking every CMake variant."""
     import ast

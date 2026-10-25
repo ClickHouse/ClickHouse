@@ -42,7 +42,9 @@ ch_cc_library(
         "src/stream_compress.c",
         "src/fdr/fdr.c",
         "src/hwlm/hwlm.c",
-    ] + glob(["src/nfa/*.c"]) + glob(["src/rose/*.c"]) + glob([
+    ] + glob([
+        "src/nfa/*.c",
+        "src/rose/*.c",
         "src/som/*.c",
         "src/util/*.c",
     ]) + select({

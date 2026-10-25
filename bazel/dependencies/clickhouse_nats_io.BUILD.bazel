@@ -62,7 +62,10 @@ ch_cc_library(
         "src/timer.c",
         "src/url.c",
         "src/util.c",
-    ] + glob(["src/glib/*.c"]) + glob(["src/unix/*.c"]),
+    ] + glob([
+        "src/glib/*.c",
+        "src/unix/*.c",
+    ]),
     hdrs = [
         "src/adapters/libuv.h",
         "src/nats.h",

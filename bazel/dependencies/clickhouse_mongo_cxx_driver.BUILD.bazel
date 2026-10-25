@@ -199,12 +199,16 @@ ch_cc_library(
     srcs = glob([
         "src/bsoncxx/lib/bsoncxx/private/*.cpp",
         "src/bsoncxx/lib/bsoncxx/v1/array/*.cpp",
-    ]) + glob(["src/bsoncxx/lib/bsoncxx/v1/config/*.cpp"]) + glob([
+        "src/bsoncxx/lib/bsoncxx/v1/config/*.cpp",
+    ]) + glob([
         "src/bsoncxx/lib/bsoncxx/v1/*.cpp",
         "src/bsoncxx/lib/bsoncxx/v1/detail/*.cpp",
         "src/bsoncxx/lib/bsoncxx/v1/document/*.cpp",
         "src/bsoncxx/lib/bsoncxx/v1/element/*.cpp",
-    ]) + glob(["src/bsoncxx/lib/bsoncxx/v1/types/*.cpp"]) + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/array/*.cpp"]) + [
+    ]) + glob([
+        "src/bsoncxx/lib/bsoncxx/v1/types/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/array/*.cpp",
+    ]) + [
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/builder/core.cpp",
     ] + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/*.cpp"]) + [
         "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/decimal128.cpp",
@@ -252,7 +256,10 @@ ch_cc_library(
         "src/mongocxx/lib/mongocxx/private/mongoc.cpp",
         "src/mongocxx/lib/mongocxx/private/scoped_bson.cpp",
         ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
-    ] + glob(["src/mongocxx/lib/mongocxx/v1/**/*.cpp"]) + glob(["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/**/*.cpp"]) + glob(
+    ] + glob([
+        "src/mongocxx/lib/mongocxx/v1/**/*.cpp",
+        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/**/*.cpp",
+    ]) + glob(
         ["src/mongocxx/lib/**/*.hh"],
         exclude = ["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/apm.hh"],
     ),

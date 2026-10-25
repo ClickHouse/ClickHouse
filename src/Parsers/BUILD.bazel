@@ -248,7 +248,11 @@ _PARSERS_API_HEADERS = [
 
 ch_cc_library(
     name = "clickhouse_parsers",
-    srcs = glob(["*.cpp"]) + glob(["Access/*.cpp"]) + glob(["Kusto/*.cpp"]) + glob(["MySQL/*.cpp"]) + [
+    srcs = glob(["*.cpp"]) + glob([
+        "Access/*.cpp",
+        "Kusto/*.cpp",
+        "MySQL/*.cpp",
+    ]) + [
         "PRQL/ParserPRQLQuery.cpp",
         "Polyglot/ParserPolyglotQuery.cpp",
     ] + glob(["Trino/*.cpp"]) + glob(["Prometheus/*.cpp"]) + glob(["LogsQL/*.cpp"]) + _PRIVATE_PARSERS_HEADERS,

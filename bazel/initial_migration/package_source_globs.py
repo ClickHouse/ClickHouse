@@ -2,8 +2,10 @@
 
 import ast
 import json
+from itertools import pairwise
 from pathlib import Path
 
+from initial_migration.compact_build import Source
 from initial_migration.factor_build_selections import CPUS, cpu_choices, list_parts
 from initial_migration.normalize_cpp_builds import CPP_LIBRARIES, call_name
 from initial_migration.prune_inherited_headers import SourceDocument
@@ -113,3 +115,41 @@ def compact_owned_source_globs(root, build_paths):
                         edits.append((*doc.source.span(kw.value), updated))
         if edits:
             path.write_text(doc.source.rewrite(edits))
+
+
+def join_source_globs(text):
+    """Combine adjacent srcs globs only when their prefixes guarantee Bazel's sort order."""
+    source = Source(text)
+    edits = []
+
+    def prefixes(node):
+        if call_name(node) != "glob" or node.keywords or len(node.args) != 1:
+            return []
+        patterns = _literal_strings(node.args[0]) if isinstance(node.args[0], ast.List) else None
+        if not patterns or not all(pattern.isascii() for pattern in patterns):
+            return []
+        return [pattern.partition("*")[0] for pattern in patterns]
+
+    def visit(value):
+        parts = list_parts(value)
+        for part in parts:
+            if call_name(part) == "select" and len(part.args) == 1 and isinstance(part.args[0], ast.Dict):
+                for branch in part.args[0].values:
+                    visit(branch)
+        for left, right in pairwise(parts):
+            a, b = prefixes(left), prefixes(right)
+            # A differing literal before either wildcard orders every possible
+            # match and rules out duplicates. A shared prefix is insufficient.
+            if not a or not b or not all(x < y and not y.startswith(x) for x in a for y in b):
+                continue
+            start = source.span(left.args[0].elts[-1])[1]
+            end = source.span(right.args[0].elts[0])[0]
+            # Leave comments and parenthesized expressions intact.
+            if source.bytes[start:end].translate(None, b", \t\r\n") == b"])+glob([":
+                edits.append((start, end, ",\n"))
+
+    for _, rule in source.rules():
+        for kw in rule.keywords:
+            if kw.arg == "srcs":
+                visit(kw.value)
+    return source.rewrite(edits)

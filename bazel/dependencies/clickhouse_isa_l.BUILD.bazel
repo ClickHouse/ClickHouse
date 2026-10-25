@@ -112,7 +112,14 @@ nasm_objects(
         "crc/crc64_multibinary.asm",
     ] + glob(["erasure_code/gf_2vect_dot_*.asm"]) + [
         "erasure_code/ec_multibinary.asm",
-    ] + glob(["erasure_code/gf_2vect_mad_*.asm"]) + glob(["erasure_code/gf_3vect_*.asm"]) + glob(["erasure_code/gf_4vect_*.asm"]) + glob(["erasure_code/gf_5vect_*.asm"]) + glob(["erasure_code/gf_6vect_*.asm"]) + glob(["erasure_code/gf_vect_*.asm"]) + [
+    ] + glob([
+        "erasure_code/gf_2vect_mad_*.asm",
+        "erasure_code/gf_3vect_*.asm",
+        "erasure_code/gf_4vect_*.asm",
+        "erasure_code/gf_5vect_*.asm",
+        "erasure_code/gf_6vect_*.asm",
+        "erasure_code/gf_vect_*.asm",
+    ]) + [
         "igzip/adler32_avx2_4.asm",
         "igzip/adler32_sse.asm",
         "igzip/bitbuf2.asm",

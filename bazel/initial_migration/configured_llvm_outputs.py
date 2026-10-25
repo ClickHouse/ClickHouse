@@ -298,7 +298,7 @@ class Migration:
         single = {out: next(iter(arches)) for out, arches in cpus.items() if len(arches) == 1}
         for name, call in compiled.items():
             if not isinstance(call.func, ast.Name) or call.func.id not in {
-                    "cc_library", "ch_cc_library", "llvm_runtime_objects", "filegroup", "nasm_objects"}:
+                    "cc_library", "ch_cc_library", "llvm_cc_library", "llvm_runtime_objects", "filegroup", "nasm_objects"}:
                 continue
             for field, node in attributes(call).items():
                 if field not in {"srcs", "hdrs", "textual_hdrs", "additional_compiler_inputs", "data"}:

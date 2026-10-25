@@ -20,7 +20,12 @@ expand_template(
 
 ch_cc_library(
     name = "_aws__compile_0",
-    srcs = glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/auth/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/client/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/config/**/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/endpoint/**/*.cpp"]) + [
+    srcs = glob(["src/aws-cpp-sdk-core/source/*.cpp"]) + glob([
+        "src/aws-cpp-sdk-core/source/auth/**/*.cpp",
+        "src/aws-cpp-sdk-core/source/client/*.cpp",
+        "src/aws-cpp-sdk-core/source/config/**/*.cpp",
+        "src/aws-cpp-sdk-core/source/endpoint/**/*.cpp",
+    ]) + [
         "src/aws-cpp-sdk-core/source/external/cjson/cJSON.cpp",
         "src/aws-cpp-sdk-core/source/external/tinyxml2/tinyxml2.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/http/*.cpp"]) + [
@@ -28,10 +33,13 @@ ch_cc_library(
         "src/aws-cpp-sdk-core/source/http/standard/StandardHttpRequest.cpp",
         "src/aws-cpp-sdk-core/source/http/standard/StandardHttpResponse.cpp",
         "src/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp",
-    ] + glob(["src/aws-cpp-sdk-core/source/monitoring/*.cpp"]) + glob([
+    ] + glob([
+        "src/aws-cpp-sdk-core/source/monitoring/*.cpp",
         "src/aws-cpp-sdk-core/source/net/*.cpp",
         "src/aws-cpp-sdk-core/source/net/linux-shared/*.cpp",
-    ]) + glob(["src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp"]) + glob(["src/aws-cpp-sdk-core/source/smithy/client/**/*.cpp"]) + [
+        "src/aws-cpp-sdk-core/source/platform/linux-shared/*.cpp",
+        "src/aws-cpp-sdk-core/source/smithy/client/**/*.cpp",
+    ]) + [
         "src/aws-cpp-sdk-core/source/smithy/identity/AuthSchemeOption.cpp",
         "src/aws-cpp-sdk-core/source/smithy/tracing/TracingUtils.cpp",
     ] + glob(["src/aws-cpp-sdk-core/source/utils/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-s3/source/**/*.cpp"]) + glob(["generated/src/aws-cpp-sdk-glue/source/**/*.cpp"]) + [

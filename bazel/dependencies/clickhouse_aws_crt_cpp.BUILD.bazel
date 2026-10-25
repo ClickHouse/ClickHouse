@@ -38,7 +38,10 @@ ch_cc_library(
     ] + glob(["source/crypto/*.cpp"]) + [
         "source/endpoints/BddEngine.cpp",
         "source/endpoints/RuleEngine.cpp",
-    ] + glob(["source/http/*.cpp"]) + glob(["source/io/*.cpp"]) + glob(["include/aws/crt/io/private/*.h"]),
+    ] + glob([
+        "source/http/*.cpp",
+        "source/io/*.cpp",
+    ]) + glob(["include/aws/crt/io/private/*.h"]),
     hdrs = glob(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],

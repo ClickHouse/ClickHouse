@@ -54,7 +54,12 @@ ch_cc_library(
         "src/lib/event/ares_event_wake_pipe.c",
         "src/lib/inet_net_pton.c",
         "src/lib/inet_ntop.c",
-    ] + glob(["src/lib/legacy/*.c"]) + glob(["src/lib/record/*.c"]) + glob(["src/lib/str/*.c"]) + glob(["src/lib/util/*.c"]) + [
+    ] + glob([
+        "src/lib/legacy/*.c",
+        "src/lib/record/*.c",
+        "src/lib/str/*.c",
+        "src/lib/util/*.c",
+    ]) + [
         "src/lib/ares_conn.h",
         "src/lib/ares_data.h",
         "src/lib/ares_inet_net_pton.h",

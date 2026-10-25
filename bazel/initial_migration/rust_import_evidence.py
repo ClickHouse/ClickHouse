@@ -52,9 +52,12 @@ def link_records(data, route, owner):
 
 
 def inspect(data, consumer, imported):
-    if (set(data) != {"owner", "deps", "implementation_deps", "inventory", "objects", "symbols", "archives"} or
+    if (set(data) != {"owner", "deps", "implementation_deps", "inventory", "objects", "symbols", "archives",
+                      "executable_objects", "incomplete_executable_objects"} or
             not isinstance(data["inventory"], list) or not isinstance(data["archives"], dict)):
         raise ValueError("incomplete original DWYU symbol manifest")
+    if data["executable_objects"] != [] or data["incomplete_executable_objects"] is not False:
+        raise ValueError("Rust import evidence requires cc_library object inputs")
     own = link_records(data, data["owner"], consumer)
     if not own:
         raise ValueError("CPP caller owns no original DWYU object inputs")

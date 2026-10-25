@@ -119,7 +119,10 @@ ch_cc_library(
         "src/lib/crypto/builtin/enc_provider/rc4.c",
         "src/lib/crypto/builtin/hash_provider/hash_md4.c",
         "src/lib/crypto/builtin/md4/md4.c",
-    ] + glob(["src/lib/crypto/krb/*.c"]) + glob(["src/lib/crypto/openssl/enc_provider/*.c"]) + glob(["src/lib/crypto/openssl/*.c"]) + [
+    ] + glob([
+        "src/lib/crypto/krb/*.c",
+        "src/lib/crypto/openssl/enc_provider/*.c",
+    ]) + glob(["src/lib/crypto/openssl/*.c"]) + [
         "src/lib/crypto/openssl/hash_provider/hash_evp.c",
         "src/lib/crypto/openssl/des/des_keys.c",
         "src/util/support/fake-addrinfo.c",

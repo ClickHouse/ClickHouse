@@ -76,7 +76,10 @@ ch_cc_library(
         "c++/src/TypeImpl.cc",
         "c++/src/Vector.cc",
         "c++/src/Writer.cc",
-    ] + glob(["c++/src/io/*.cc"]) + glob(["c++/src/sargs/*.cc"]) + glob(
+    ] + glob([
+        "c++/src/io/*.cc",
+        "c++/src/sargs/*.cc",
+    ]) + glob(
         [
             "c++/src/*.hh",
             "c++/src/io/*.hh",

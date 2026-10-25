@@ -23,7 +23,11 @@ ch_cc_library(
         "gl/base64.c",
         "gl/memxor.c",
         "gl/sha1.c",
-    ] + glob(["openid20/*.c"]) + glob(["anonymous/*.c"]) + glob(["saml20/*.c"]) + glob(["scram/*.c"]) + [
+    ] + glob(["openid20/*.c"]) + glob([
+        "anonymous/*.c",
+        "saml20/*.c",
+        "scram/*.c",
+    ]) + [
         "src/free.c",
         "src/supportp.c",
         "src/init.c",
@@ -46,7 +50,10 @@ ch_cc_library(
         "src/register.c",
         "src/base64.c",
         "src/md5pwd.c",
-    ] + glob(["external/*.c"]) + glob(["securid/*.c"]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(
+    ] + glob([
+        "external/*.c",
+        "securid/*.c",
+    ]) + glob(["plain/*.c"]) + glob(["cram-md5/*.c"]) + glob(
         ["digest-md5/*.c"],
         exclude = ["digest-md5/test-parser.c"],
     ) + glob(["login/*.c"]) + glob(["gssapi/*.c"]) + glob(

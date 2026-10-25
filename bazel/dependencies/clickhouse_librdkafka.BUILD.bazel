@@ -77,7 +77,10 @@ ch_cc_library(
         "src/rdkafka_telemetry.c",
         "src/rdkafka_telemetry_decode.c",
         "src/rdkafka_telemetry_encode.c",
-    ] + glob(["src/nanopb/*.c"]) + glob(["src/opentelemetry/*.c"]) + [
+    ] + glob([
+        "src/nanopb/*.c",
+        "src/opentelemetry/*.c",
+    ]) + [
         "src/rdkafka_timer.c",
         "src/rdkafka_topic.c",
         "src/rdkafka_transport.c",

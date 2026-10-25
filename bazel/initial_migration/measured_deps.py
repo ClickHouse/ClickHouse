@@ -502,6 +502,12 @@ def apply(root):
                                  max((i + 1 for i, dep in enumerate(ordered) if dep in predecessors),
                                      default=len(ordered)))
                             ordered.insert(i, interval_tree)
+                        # Storage links its gRPC objects before its REST objects in unit_tests_dbms.
+                        storage = '@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage'
+                        rest = '@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal'
+                        if storage in ordered and rest in ordered:
+                            ordered.remove(rest)
+                            ordered.insert(ordered.index(storage) + 1, rest)
                         i = ordered.index('//src/Functions:clickhouse_functions_obj')
                         ordered[i:i] = UNIT_TEST_FUNCTION_DEPS
                         branches['@platforms//cpu:' + cpu] = ordered

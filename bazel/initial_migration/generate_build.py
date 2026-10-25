@@ -1460,7 +1460,7 @@ class Graph:
 def main():
     # These overlays own Bazel declarations that CMake does not describe:
     # Preserve the Abseil, Arrow/Parquet, and Google Cloud C++ public/private
-    # headers, msgpack_c_api, and Google Cloud C++'s protobuf dependencies.
+    # headers, msgpack_c_api, and Google Cloud C++'s protobuf and private dependencies.
     abseil = ROOT / 'bazel/dependencies/clickhouse_abseil_cpp.BUILD.bazel'
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
@@ -1826,11 +1826,18 @@ def main():
     from initial_migration.first_party_packages import group_package_sources
     group_package_sources(ROOT)
     from initial_migration.package_source_groups import group_owned_sources
-    from initial_migration.package_source_globs import compact_owned_source_globs
+    from initial_migration.package_source_globs import compact_owned_source_globs, join_source_globs
     group_owned_sources(ROOT, build_paths, header_inventory, final_packages)
     compact_owned_source_globs(ROOT, build_paths)
+    for path in sorted(selection_builds):
+        if path.is_file():
+            before = path.read_text()
+            after = join_source_globs(before)
+            if after != before:
+                path.write_text(after)
     # Consumers and source owners are final after the BUILD rule rewrites.
     prune_native_exports(ROOT, write=True)
+    llvm_targets.fold_component_libraries(ROOT)
     format_build_files(read_only=read_only)
     for path, original in maintained.items():
         if path.read_bytes() != original:

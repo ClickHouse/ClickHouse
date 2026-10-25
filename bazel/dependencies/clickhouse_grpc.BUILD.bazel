@@ -743,7 +743,10 @@ ch_cc_library(
     ] + glob(["src/core/client_channel/subchannel_*.cc"]) + [
         "src/core/config/core_configuration.cc",
         "src/core/config/experiment_env_var.cc",
-    ] + glob(["src/core/credentials/call/**/*.cc"]) + glob(["src/core/credentials/transport/alts/*.cc"]) + [
+    ] + glob([
+        "src/core/credentials/call/**/*.cc",
+        "src/core/credentials/transport/alts/*.cc",
+    ]) + [
         "src/core/credentials/transport/channel_creds_registry_init.cc",
         "src/core/credentials/transport/composite/composite_channel_credentials.cc",
         "src/core/credentials/transport/fake/fake_credentials.cc",
@@ -822,7 +825,10 @@ ch_cc_library(
         "src/core/handshaker/tcp_connect/tcp_connect_handshaker.cc",
         "src/core/lib/address_utils/parse_address.cc",
         "src/core/lib/address_utils/sockaddr_utils.cc",
-    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + [
+    ] + glob([
+        "src/core/lib/channel/*.cc",
+        "src/core/lib/compression/*.cc",
+    ]) + [
         "src/core/lib/debug/trace.cc",
         "src/core/lib/debug/trace_flags.cc",
         "src/core/lib/event_engine/ares_resolver.cc",
@@ -882,7 +888,10 @@ ch_cc_library(
         "src/core/lib/security/authorization/matchers.cc",
         "src/core/lib/security/authorization/rbac_policy.cc",
         "src/core/lib/security/authorization/stdout_logger.cc",
-    ] + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
+    ] + glob([
+        "src/core/lib/slice/*.cc",
+        "src/core/lib/surface/*.cc",
+    ]) + [
         "src/core/lib/transport/bdp_estimator.cc",
         "src/core/lib/transport/call_final_info.cc",
         "src/core/lib/transport/connectivity_state.cc",
@@ -925,7 +934,11 @@ ch_cc_library(
         "src/core/transport/endpoint_transport_client_channel_factory.cc",
         "src/core/tsi/alts/crypt/aes_gcm.cc",
         "src/core/tsi/alts/crypt/gsec.cc",
-    ] + glob(["src/core/tsi/alts/frame_protector/*.cc"]) + glob(["src/core/tsi/alts/handshaker/*.cc"]) + glob(["src/core/tsi/alts/zero_copy_frame_protector/*.cc"]) + [
+    ] + glob([
+        "src/core/tsi/alts/frame_protector/*.cc",
+        "src/core/tsi/alts/handshaker/*.cc",
+        "src/core/tsi/alts/zero_copy_frame_protector/*.cc",
+    ]) + [
         "src/core/tsi/fake_transport_security.cc",
         "src/core/tsi/local_transport_security.cc",
         "src/core/tsi/ssl/key_logging/ssl_key_logging.cc",
@@ -942,7 +955,10 @@ ch_cc_library(
         "src/core/util/glob.cc",
         "src/core/util/grpc_if_nametoindex_posix.cc",
         "src/core/util/grpc_if_nametoindex_unsupported.cc",
-    ] + glob(["src/core/util/http_client/*.cc"]) + glob(["src/core/util/json/*.cc"]) + [
+    ] + glob([
+        "src/core/util/http_client/*.cc",
+        "src/core/util/json/*.cc",
+    ]) + [
         "src/core/util/latent_see.cc",
         "src/core/util/load_file.cc",
         "src/core/util/matchers.cc",
@@ -961,7 +977,10 @@ ch_cc_library(
         "src/core/util/work_serializer.cc",
         "src/core/xds/grpc/certificate_provider_store.cc",
         "src/core/xds/grpc/file_watcher_certificate_provider_factory.cc",
-    ] + glob(["src/core/xds/grpc/xds_*.cc"]) + glob(["src/core/xds/xds_client/*.cc"]) + [
+    ] + glob([
+        "src/core/xds/grpc/xds_*.cc",
+        "src/core/xds/xds_client/*.cc",
+    ]) + [
         "include/grpc/census.h",
         "include/grpc/fork.h",
         "include/grpc/grpc_audit_logging.h",
@@ -1397,7 +1416,10 @@ ch_cc_library(
         "src/core/ext/upb-gen/envoy/config/core/v3/socket_option.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/core/v3/substitution_format_string.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/core/v3/udp_socket_config.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/envoy/config/endpoint/v3/*.c"]) + glob(["src/core/ext/upb-gen/envoy/config/listener/v3/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upb-gen/envoy/config/endpoint/v3/*.c",
+        "src/core/ext/upb-gen/envoy/config/listener/v3/*.c",
+    ]) + [
         "src/core/ext/upb-gen/envoy/config/metrics/v3/metrics_service.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/metrics/v3/stats.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/config/overload/v3/overload.upb_minitable.c",
@@ -1432,7 +1454,11 @@ ch_cc_library(
     ] + glob(["src/core/ext/upb-gen/envoy/type/matcher/v3/*.c"]) + [
         "src/core/ext/upb-gen/envoy/type/metadata/v3/metadata.upb_minitable.c",
         "src/core/ext/upb-gen/envoy/type/tracing/v3/custom_tag.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/envoy/type/v3/*.c"]) + glob(["src/core/ext/upb-gen/google/api/**/*.c"]) + glob(["src/core/ext/upb-gen/google/protobuf/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upb-gen/envoy/type/v3/*.c",
+        "src/core/ext/upb-gen/google/api/**/*.c",
+        "src/core/ext/upb-gen/google/protobuf/*.c",
+    ]) + [
         "src/core/ext/upb-gen/google/rpc/status.upb_minitable.c",
     ] + glob(["src/core/ext/upb-gen/src/proto/grpc/gcp/*.c"]) + [
         "src/core/ext/upb-gen/src/proto/grpc/health/v1/health.upb_minitable.c",
@@ -1441,10 +1467,17 @@ ch_cc_library(
         "src/core/ext/upb-gen/src/proto/grpc/lookup/v1/rls_config.upb_minitable.c",
     ] + glob(["src/core/ext/upb-gen/udpa/annotations/*.c"]) + [
         "src/core/ext/upb-gen/validate/validate.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upb-gen/xds/core/v3/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upb-gen/xds/annotations/v3/*.c",
+        "src/core/ext/upb-gen/xds/core/v3/*.c",
+    ]) + [
         "src/core/ext/upb-gen/xds/data/orca/v3/orca_load_report.upb_minitable.c",
         "src/core/ext/upb-gen/xds/service/orca/v3/orca.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upb-gen/xds/type/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/envoy/admin/v3/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upb-gen/xds/type/matcher/v3/*.c",
+        "src/core/ext/upb-gen/xds/type/v3/*.c",
+        "src/core/ext/upbdefs-gen/envoy/admin/v3/*.c",
+    ]) + [
         "src/core/ext/upbdefs-gen/envoy/annotations/deprecation.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/annotations/resource.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/config/accesslog/v3/accesslog.upbdefs.c",
@@ -1469,7 +1502,10 @@ ch_cc_library(
         "src/core/ext/upbdefs-gen/envoy/config/core/v3/socket_option.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/config/core/v3/substitution_format_string.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/config/core/v3/udp_socket_config.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/envoy/config/endpoint/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/envoy/config/listener/v3/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upbdefs-gen/envoy/config/endpoint/v3/*.c",
+        "src/core/ext/upbdefs-gen/envoy/config/listener/v3/*.c",
+    ]) + [
         "src/core/ext/upbdefs-gen/envoy/config/metrics/v3/metrics_service.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/config/metrics/v3/stats.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/config/overload/v3/overload.upbdefs.c",
@@ -1499,13 +1535,22 @@ ch_cc_library(
     ] + glob(["src/core/ext/upbdefs-gen/envoy/type/matcher/v3/*.c"]) + [
         "src/core/ext/upbdefs-gen/envoy/type/metadata/v3/metadata.upbdefs.c",
         "src/core/ext/upbdefs-gen/envoy/type/tracing/v3/custom_tag.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/envoy/type/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/google/api/**/*.c"]) + glob(["src/core/ext/upbdefs-gen/google/protobuf/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upbdefs-gen/envoy/type/v3/*.c",
+        "src/core/ext/upbdefs-gen/google/api/**/*.c",
+        "src/core/ext/upbdefs-gen/google/protobuf/*.c",
+    ]) + [
         "src/core/ext/upbdefs-gen/google/rpc/status.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/src/proto/grpc/channelz/**/*.c"]) + [
         "src/core/ext/upbdefs-gen/src/proto/grpc/lookup/v1/rls_config.upbdefs.c",
     ] + glob(["src/core/ext/upbdefs-gen/udpa/annotations/*.c"]) + [
         "src/core/ext/upbdefs-gen/validate/validate.upbdefs.c",
-    ] + glob(["src/core/ext/upbdefs-gen/xds/annotations/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/core/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c"]) + glob(["src/core/ext/upbdefs-gen/xds/type/v3/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upbdefs-gen/xds/annotations/v3/*.c",
+        "src/core/ext/upbdefs-gen/xds/core/v3/*.c",
+        "src/core/ext/upbdefs-gen/xds/type/matcher/v3/*.c",
+        "src/core/ext/upbdefs-gen/xds/type/v3/*.c",
+    ]) + [
         "src/core/ext/upb-gen/envoy/admin/v3/certs.upb_minitable.h",
         "src/core/ext/upb-gen/envoy/admin/v3/clusters.upb_minitable.h",
         "src/core/ext/upb-gen/envoy/admin/v3/config_dump.upb_minitable.h",
@@ -1664,7 +1709,10 @@ ch_cc_library(
         "src/cpp/client/call_credentials.cc",
         "src/cpp/client/channel_cc.cc",
         "src/cpp/client/channel_credentials.cc",
-    ] + glob(["src/cpp/client/client_*.cc"]) + glob(["src/cpp/client/create_*.cc"]) + [
+    ] + glob([
+        "src/cpp/client/client_*.cc",
+        "src/cpp/client/create_*.cc",
+    ]) + [
         "src/cpp/client/global_callback_hook.cc",
         "src/cpp/client/insecure_credentials.cc",
         "src/cpp/client/secure_credentials.cc",
@@ -1757,7 +1805,10 @@ ch_cc_library(
         "src/cpp/client/call_credentials.cc",
         "src/cpp/client/channel_cc.cc",
         "src/cpp/client/channel_credentials.cc",
-    ] + glob(["src/cpp/client/client_*.cc"]) + glob(["src/cpp/client/create_*.cc"]) + [
+    ] + glob([
+        "src/cpp/client/client_*.cc",
+        "src/cpp/client/create_*.cc",
+    ]) + [
         "src/cpp/client/global_callback_hook.cc",
         "src/cpp/client/insecure_credentials.cc",
         "src/cpp/common/alarm.cc",
@@ -2016,7 +2067,10 @@ ch_cc_library(
         "src/core/credentials/call/composite/composite_call_credentials.cc",
         "src/core/credentials/call/json_util.cc",
         "src/core/credentials/call/plugin/plugin_credentials.cc",
-    ] + glob(["src/core/credentials/transport/alts/check_*.cc"]) + glob(["src/core/credentials/transport/alts/grpc_*.cc"]) + [
+    ] + glob([
+        "src/core/credentials/transport/alts/check_*.cc",
+        "src/core/credentials/transport/alts/grpc_*.cc",
+    ]) + [
         "src/core/credentials/transport/composite/composite_channel_credentials.cc",
         "src/core/credentials/transport/fake/fake_credentials.cc",
         "src/core/credentials/transport/fake/fake_security_connector.cc",
@@ -2080,7 +2134,10 @@ ch_cc_library(
         "src/core/handshaker/tcp_connect/tcp_connect_handshaker.cc",
         "src/core/lib/address_utils/parse_address.cc",
         "src/core/lib/address_utils/sockaddr_utils.cc",
-    ] + glob(["src/core/lib/channel/*.cc"]) + glob(["src/core/lib/compression/*.cc"]) + [
+    ] + glob([
+        "src/core/lib/channel/*.cc",
+        "src/core/lib/compression/*.cc",
+    ]) + [
         "src/core/lib/debug/trace.cc",
         "src/core/lib/debug/trace_flags.cc",
         "src/core/lib/event_engine/ares_resolver.cc",
@@ -2135,7 +2192,10 @@ ch_cc_library(
         "src/core/lib/security/authorization/authorization_policy_provider_vtable.cc",
         "src/core/lib/security/authorization/evaluate_args.cc",
         "src/core/lib/security/authorization/grpc_server_authz_filter.cc",
-    ] + glob(["src/core/lib/slice/*.cc"]) + glob(["src/core/lib/surface/*.cc"]) + [
+    ] + glob([
+        "src/core/lib/slice/*.cc",
+        "src/core/lib/surface/*.cc",
+    ]) + [
         "src/core/lib/transport/bdp_estimator.cc",
         "src/core/lib/transport/call_final_info.cc",
         "src/core/lib/transport/connectivity_state.cc",
@@ -2477,7 +2537,10 @@ ch_cc_library(
         "src/core/ext/upb-gen/google/api/http.upb_minitable.c",
     ] + glob(["src/core/ext/upb-gen/google/protobuf/*.c"]) + [
         "src/core/ext/upb-gen/google/rpc/status.upb_minitable.c",
-    ] + glob(["src/core/ext/upb-gen/src/proto/grpc/channelz/v2/*.c"]) + glob(["src/core/ext/upb-gen/src/proto/grpc/gcp/*.c"]) + [
+    ] + glob([
+        "src/core/ext/upb-gen/src/proto/grpc/channelz/v2/*.c",
+        "src/core/ext/upb-gen/src/proto/grpc/gcp/*.c",
+    ]) + [
         "src/core/ext/upb-gen/src/proto/grpc/health/v1/health.upb_minitable.c",
         "src/core/ext/upb-gen/src/proto/grpc/lb/v1/load_balancer.upb_minitable.c",
         "src/core/ext/upb-gen/src/proto/grpc/lookup/v1/rls.upb_minitable.c",
