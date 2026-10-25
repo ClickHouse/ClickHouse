@@ -1,5 +1,9 @@
 101	106050
 106050
 106050
+106050
+106050
 distributed	1
 no_local_replica	1
+plan_based_distributed	1
+plan_based_no_local_replica	1

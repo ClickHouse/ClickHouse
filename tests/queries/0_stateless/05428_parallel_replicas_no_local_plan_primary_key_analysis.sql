@@ -23,10 +23,21 @@ SELECT count(), sum(k) FROM t_pr_no_local_plan WHERE k BETWEEN 1000 AND 1100
 SETTINGS enable_parallel_replicas = 0, log_comment = '05428_single';
 
 SELECT sum(k) FROM t_pr_no_local_plan_d WHERE k BETWEEN 1000 AND 1100
-SETTINGS enable_parallel_replicas = 1, prefer_localhost_replica = 0, log_comment = '05428_distributed';
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0, prefer_localhost_replica = 0,
+    log_comment = '05428_distributed';
 
 SELECT sum(k) FROM t_pr_no_local_plan WHERE k BETWEEN 1000 AND 1100
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_prefer_local_replica = 0, log_comment = '05428_no_local_replica';
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 0, parallel_replicas_prefer_local_replica = 0,
+    log_comment = '05428_no_local_replica';
+
+-- The plan-based implementation ships a plan fragment instead of a query, which has to carry `_shard_num` as well.
+SELECT sum(k) FROM t_pr_no_local_plan_d WHERE k BETWEEN 1000 AND 1100
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 1, prefer_localhost_replica = 0,
+    log_comment = '05428_plan_based_distributed';
+
+SELECT sum(k) FROM t_pr_no_local_plan WHERE k BETWEEN 1000 AND 1100
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_plan_based = 1, parallel_replicas_prefer_local_replica = 0,
+    log_comment = '05428_plan_based_no_local_replica';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -43,7 +54,7 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_quer
     AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query
-            AND log_comment IN ('05428_distributed', '05428_no_local_replica'))
+            AND log_comment IN ('05428_distributed', '05428_no_local_replica', '05428_plan_based_distributed', '05428_plan_based_no_local_replica'))
 GROUP BY mode
 ORDER BY mode;
 

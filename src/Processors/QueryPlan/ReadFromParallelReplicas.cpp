@@ -247,7 +247,9 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
         out_header,
         context,
         getThrottler(context),
-        Scalars{},
+        /// Carries `_shard_num` of an enclosing distributed query: without it a follower assumes the initiator
+        /// runs a local plan (see `canUseLocalPlanForParallelReplicas`) and skips its own index analysis.
+        context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{},
         context->getExternalTables(),
         QueryProcessingStage::QueryPlan,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
