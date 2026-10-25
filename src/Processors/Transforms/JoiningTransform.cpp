@@ -1,10 +1,13 @@
 #include <optional>
+#include <utility>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/JoinUtils.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
+#include <Processors/ISpillable.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
@@ -59,8 +62,11 @@ JoiningTransform::JoiningTransform(
     , max_block_size(max_block_size_)
     , match_counter(std::move(match_counter_))
 {
+    if (const auto & actions = join->getTableJoin().getMixedJoinExpression())
+        set_spillables.add(actions->getActionsDAG());
+
     if (!join->isFilled())
-        inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
+        build_finished_input = &inputs.emplace_back(Block(), this); // Wait for FillingRightJoinSideTransform
 }
 
 JoiningTransform::~JoiningTransform() = default;
@@ -71,15 +77,20 @@ OutputPort & JoiningTransform::getFinishedSignal()
     return outputs.back();
 }
 
+InputPort & JoiningTransform::addDelayedBlocksInput()
+{
+    if (delayed_blocks_input)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delayed blocks input was already added to JoiningTransform");
+
+    delayed_blocks_input = &inputs.emplace_back(outputs.front().getHeader(), this);
+    return *delayed_blocks_input;
+}
+
 IProcessor::Status JoiningTransform::prepare()
 {
     /// Check if we can fully skip reading left side when right side is empty
-    if (inputs.size() > 1)
-    {
-        auto & last_in = inputs.back();
-        if (last_in.isFinished() && !right_abandoned && join->alwaysReturnsEmptySet() && !on_totals)
-            stop_reading = true;
-    }
+    if (build_finished_input && build_finished_input->isFinished() && !right_abandoned && join->alwaysReturnsEmptySet() && !on_totals)
+        stop_reading = true;
 
     auto & output = outputs.front();
     auto & on_finish_output = outputs.back();
@@ -110,28 +121,35 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::PortFull;
     }
 
-    if (inputs.size() > 1)
+    if (build_finished_input && !build_finished_input->isFinished())
     {
-        auto & last_in = inputs.back();
-        if (!last_in.isFinished())
-        {
-            last_in.setNeeded();
-            if (last_in.hasData())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
+        build_finished_input->setNeeded();
+        if (build_finished_input->hasData())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
 
-            /// The left side starts to work before the right one is filled, up to what the ports in between hold.
-            /// A set operation is a left semi or anti join, which outputs only left rows, so a stream whose left
-            /// side is exhausted is done: it closes its port to the right side, and once every stream has, the
-            /// right side, which may be unbounded, stops being read and its build is abandoned.
-            const auto & table_join = join->getTableJoin();
-            if (!table_join.readsLeftWhileFillingRight() || !isLeft(table_join.kind()))
-                return Status::NeedData;
-            inputs.front().setNeeded();
-            if (!inputs.front().isFinished() || has_input)
-                return Status::NeedData;
-            last_in.close();
-            right_abandoned = true;
-        }
+        /// The left side starts to work before the right one is filled, up to what the ports in between hold.
+        /// A set operation is a left semi or anti join, which outputs only left rows, so a stream whose left
+        /// side is exhausted is done: it closes its port to the right side, and once every stream has, the
+        /// right side, which may be unbounded, stops being read and its build is abandoned.
+        const auto & table_join = join->getTableJoin();
+        if (!table_join.readsLeftWhileFillingRight() || !isLeft(table_join.kind()))
+            return Status::NeedData;
+        inputs.front().setNeeded();
+        if (!inputs.front().isFinished() || has_input)
+            return Status::NeedData;
+        build_finished_input->close();
+        right_abandoned = true;
+        /// No left row was joined, so there are no delayed blocks either.
+        if (delayed_blocks_input)
+            delayed_blocks_input->close();
+        delayed_blocks_checked = true;
+    }
+
+    if (delayed_blocks_input && !delayed_blocks_checked)
+    {
+        delayed_blocks_checked = true;
+        if (!join->isDelayedBlocksProcessingEnabled())
+            delayed_blocks_input->close();
     }
 
     if (has_input)
@@ -158,6 +176,16 @@ IProcessor::Status JoiningTransform::prepare()
         /// safely skip processing non-joined blocks depending on `isParallelNonJoinedProcessingEnabled()`.
         if (process_non_joined && !right_abandoned && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
             return Status::Ready;
+
+        if (delayed_blocks_input && !delayed_blocks_input->isFinished())
+        {
+            delayed_blocks_input->setNeeded();
+            if (!delayed_blocks_input->hasData())
+                return Status::NeedData;
+
+            output.pushData(delayed_blocks_input->pullData(true));
+            return Status::PortFull;
+        }
 
         output.finish();
         on_finish_output.finish();
@@ -277,12 +305,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
 
     auto data = join_result->next();
-    if (data.is_last && data.next_block)
-    {
-        data.next_block->filterBySelector();
-        auto next_block = std::move(*data.next_block).getSourceBlock();
-        chunk.setColumns(next_block.getColumns(), next_block.rows());
-    }
+    chassert(!data.next_block);
 
     if (data.is_last)
     {
@@ -300,7 +323,6 @@ FillingRightJoinSideTransform::FillingRightJoinSideTransform(
     , finish_counter(std::move(finish_counter_))
     , build_context(build_context_)
 {
-    spillable = join->canSpillToDisk();
 }
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
@@ -452,29 +474,6 @@ void FillingRightJoinSideTransform::work()
     set_totals = for_totals;
 }
 
-ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
-{
-    if (!spillable)
-        return {};
-
-    ProcessorMemoryStats res;
-    res.spillable_memory_bytes = static_cast<Int64>(join->getSpillableBytes());
-    // in case the hash table will resize which requires more than 2x additional memory.
-    // we must reserve enough memory.
-    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
-    return res;
-}
-
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
-{
-    if (spillable && join->getSpillableBytes() >= bytes)
-    {
-        join->requestSpill(build_context);
-        return true;
-    }
-    return false;
-}
-
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     SharedHeader output_header_,
     NonJoinedStreamBuilder non_joined_stream_builder_)
@@ -610,6 +609,8 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
     : IProcessor(InputPorts{}, OutputPorts(num_streams, Block()))
     , join(std::move(join_))
 {
+    if (const auto & actions = join->getTableJoin().getMixedJoinExpression())
+        set_spillables.add(actions->getActionsDAG());
 }
 
 void DelayedJoinedBlocksTransform::work()
