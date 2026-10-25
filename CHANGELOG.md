@@ -24,6 +24,45 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 8e3eb7adf197a5e7890b02ced66d6febe68b0493 (8e3eb7adf19) FIXME as compared to 310191b4f92c1e524a49a512ebd3dde020247960 (310191b4f92)
+
+#### Performance Improvement
+* Reading an `Arrow` file from a pipe or a compressed file now needs about one copy of the file in memory instead of 2.25–4.5 times its size. [#126520](https://github.com/ClickHouse/ClickHouse/pull/126520) ([Vitaly Pryakhin](https://github.com/naushniki)).
+* `hasAny` and `hasAll` with a long constant array of numbers are much faster: the elements are looked up in a table of the constant instead of searching it for each element. [#126529](https://github.com/ClickHouse/ClickHouse/pull/126529) ([Manuel](https://github.com/raimannma)).
+* Large inserts into `MergeTree` tables now write their parts with `ZSTD(3)` right away instead of writing them with `LZ4` first, because the size-aware default codec is now evaluated with the uncompressed size of the inserted block. This reduces the amount of data written during a bulk load. [#127652](https://github.com/ClickHouse/ClickHouse/pull/127652) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Repeating arrays of numbers, as `materialize` of a constant array and `arrayWithConstant` do, is faster: the result is allocated once, and arrays of up to 64 bytes are copied inline instead of through a separate `memcpy` call. For example, `SELECT has(materialize(range(10)), 5) FROM numbers(10000000)` is about 35% faster. [#127665](https://github.com/ClickHouse/ClickHouse/pull/127665) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* Write `split_offsets` of Parquet data files to Iceberg manifests. [#125619](https://github.com/ClickHouse/ClickHouse/pull/125619) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* The `Arrow` and `ArrowStream` input formats read struct columns whose fields have empty or repeated names as an unnamed `Tuple` instead of failing schema inference. [#125674](https://github.com/ClickHouse/ClickHouse/pull/125674) ([Jay Pokale](https://github.com/JayPokale)).
+* The `Arrow` and `ArrowStream` input formats can read files with repeated column names: a repeated name gets a numeric suffix, for example `ints_1`. [#125994](https://github.com/ClickHouse/ClickHouse/pull/125994) ([Jay Pokale](https://github.com/JayPokale)).
+* A table with the `S3`, `AzureBlobStorage`, `HDFS`, `Iceberg*`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure` or `PaimonHDFS` engine is now read over the replicas of `cluster_for_parallel_replicas` when parallel replicas are enabled, as the table functions of these engines already are with `parallel_replicas_for_cluster_engines`. A replica takes part only if it has the table. The new setting `parallel_replicas_for_object_storage_tables` turns it off. Closes [#127052](https://github.com/ClickHouse/ClickHouse/issues/127052). [#127138](https://github.com/ClickHouse/ClickHouse/pull/127138) ([Groene AI](https://github.com/groeneai)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* A query that reads `system.stack_trace` more than once, for example through `merge('system', ...)`, a `UNION ALL` or a self join, deadlocked while its pipeline was built, could not be cancelled or killed, and left every later reader of that table blocked for the lifetime of the server. [#120216](https://github.com/ClickHouse/ClickHouse/pull/120216) ([Groene AI](https://github.com/groeneai)).
+* Fixed `NOT_IMPLEMENTED` (Code 48) when lazy materialization squashed chunks that still carried a captured-lambda `ColumnFunction` (shared lambda in `WHERE` and `SELECT` with `ORDER BY ... LIMIT`). [#122063](https://github.com/ClickHouse/ClickHouse/pull/122063) ([Ria Khatoniar](https://github.com/Ria-K912)).
+* Reject malformed ORC timezone data with an error instead of aborting. [#125651](https://github.com/ClickHouse/ClickHouse/pull/125651) ([Sergey Kuznetsov](https://github.com/skuznetsov-clickhouse)).
+* Reading a brotli-compressed file now accepts several concatenated brotli streams, so a file that a second `INSERT` appended to (`File` table engine or `file` table function, path ending in `.br` or `compression_method = 'br'`) can be read again. Previously every read of such a file failed with `BROTLI_READ_FAILED`, including the rows of the first `INSERT`. [#126757](https://github.com/ClickHouse/ClickHouse/pull/126757) ([Groene AI](https://github.com/groeneai)).
+* The `RawBLOB` output format now writes the serialized state of `AggregateFunction` columns (the same as their conversion to `String`) instead of an in-memory pointer. [#127288](https://github.com/ClickHouse/ClickHouse/pull/127288) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix a logical error when insert deduplication removes all rows of a partition block before it is merged on insert into a ReplacingMergeTree or another special MergeTree engine, e.g. when coalesced async inserts with the same insert deduplication token push to a partitioned materialized view target. [#127439](https://github.com/ClickHouse/ClickHouse/pull/127439) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Fix values silently changed when inserting into the `JSON` type or using `JSONExtract` into `Dynamic`: once a path held a `Date` or `DateTime` value, a later date or time outside its range was saturated, fractional seconds were dropped, and `JSONExtract` replaced invalid array elements with `NULL`. Such values now get their own type. [#127622](https://github.com/ClickHouse/ClickHouse/pull/127622) ([Pavel Kruglov](https://github.com/Avogar)).
+* Fixed `SYSTEM RESTORE REPLICA` leaving a replica behind the metadata version of the table when the replicas were restored at the same time (for example with `ON CLUSTER`) or one after another, after which every `ALTER` on that replica failed with `CANNOT_ASSIGN_ALTER`. Closes [#127629](https://github.com/ClickHouse/ClickHouse/issues/127629). [#127656](https://github.com/ClickHouse/ClickHouse/pull/127656) ([Groene AI](https://github.com/groeneai)).
+* The settings `iceberg_insert_max_bytes_in_data_file` and `iceberg_compaction_max_bytes_in_data_file` now limit the compressed size of a data file, as written to the storage, instead of the uncompressed size of the data. This is consistent with the Iceberg property `write.target-file-size-bytes` and with `iceberg_data_file_size_lower_threshold_compaction`, and fixes the Iceberg compaction endlessly rewriting files that compress well. [#127670](https://github.com/ClickHouse/ClickHouse/pull/127670) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Not required (test-only change). [#125162](https://github.com/ClickHouse/ClickHouse/pull/125162) ([Groene AI](https://github.com/groeneai)).
+* Port masking-policy gate and Keeper component propagation in `MergeTreeDataSelectExecutor`. [#126866](https://github.com/ClickHouse/ClickHouse/pull/126866) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Pin the parallel replicas checks that only the query-based implementation passes. [#127396](https://github.com/ClickHouse/ClickHouse/pull/127396) ([Igor Nikonov](https://github.com/devcrafter)).
+* The test `05401_autopr_set_transplant_unpaired_sets` now keeps the randomized `index_granularity` and `index_granularity_bytes` at their defaults or above, so it no longer times out when the runner draws tiny granules. [#127515](https://github.com/ClickHouse/ClickHouse/pull/127515) ([Groene AI](https://github.com/groeneai)).
+* [UpSync]: Sync critical files. [#127654](https://github.com/ClickHouse/ClickHouse/pull/127654) ([clickhouse-cloud-ci[bot]](https://github.com/apps/clickhouse-cloud-ci)).
+* Index analysis names the cached results of monotonic key functions by a number assigned when the condition is built, instead of by the function address. [#127658](https://github.com/ClickHouse/ClickHouse/pull/127658) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `05294_drop_table_cancels_vector_index_merge`. [#127662](https://github.com/ClickHouse/ClickHouse/pull/127662) ([Groene AI](https://github.com/groeneai)).
+* Do not allocate per-resource scheduling state for a query whose workload is defined for no resource, which removes a UBSan `alignment` report on UBSan-only builds. [#127664](https://github.com/ClickHouse/ClickHouse/pull/127664) ([Groene AI](https://github.com/groeneai)).
+* Stop the AST fuzzer oracles from reporting false mismatches when the fuzzer turns a reference to an alias into a `{name:Identifier}` query parameter. [#127668](https://github.com/ClickHouse/ClickHouse/pull/127668) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
