@@ -2128,3 +2128,29 @@ The normalized binaries matched native CMake. The other four binaries matched th
 There are 661 production targets. Only a verified DWYU report counts as clean or with findings. Targets without a verified report remain ungraded.
 
 The HDFS verifier expected at most two invocations per workflow. The workflow also ran DWYU. Verification checked the analysis, native build and DWYU invocation IDs against the original workflow events, then verified the original HDFS graph and SDK on both CPUs: 8 generators, 89 compile actions and 2 consuming targets per CPU.
+
+## 9b8e46d60
+
+[9b8e46d60](https://github.com/dzbarsky/clickhouse/commit/9b8e46d605330154af22e8ee6e87defb4ac31512): Share Google API proto rules and compile settings and move private headers to srcs.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/1b47b00a-1d90-4fd3-b156-dbe2048e828e) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/1b47b00a-1d90-4fd3-b156-dbe2048e828e) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/1b47b00a-1d90-4fd3-b156-dbe2048e828e) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/58828e83-3781-4933-8d89-b47b43155633) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/58828e83-3781-4933-8d89-b47b43155633) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/58828e83-3781-4933-8d89-b47b43155633) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The normalized binaries matched native CMake. The other four binaries matched the [previous Bazel build](#42191bb75). Both native builds produced all nine validation reports.
+
+| CPU | Native build | DWYU build | Requested | Clean | With findings | Requested, ungraded | Not requested |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| x86-64 | [Native](https://app.buildbuddy.io/invocation/1b47b00a-1d90-4fd3-b156-dbe2048e828e) | Not run | 0 | 0 | 0 | 0 | 661 |
+| ARM64 | [Native](https://app.buildbuddy.io/invocation/58828e83-3781-4933-8d89-b47b43155633) | Not run | 0 | 0 | 0 | 0 | 661 |
+
+There are 661 production targets. Only a verified DWYU report counts as clean or with findings. Targets without a verified report remain ungraded.
+
+The [x86-64 workflow](https://app.buildbuddy.io/invocation/8888cb14-dcad-4230-a1cc-d893a6d39670) considered 144 libraries. The action query did not select any, so DWYU did not run.
+
+The [ARM64 workflow](https://app.buildbuddy.io/invocation/21e88bfc-9ea2-4d07-b9a6-2139955cbc3c) considered 144 libraries. The action query did not select any, so DWYU did not run.
