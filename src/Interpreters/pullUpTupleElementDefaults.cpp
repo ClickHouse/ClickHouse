@@ -29,10 +29,11 @@ namespace
 /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
 
 /// Build `defaultValueOfTypeName('<type>')` for the (already stripped) element type, used to fill
-/// positions of a tuple that do not have an explicit DEFAULT.
+/// positions of a tuple that do not have an explicit DEFAULT. The type name is parsed back, so it is
+/// formatted without `query_masking_rules` (unlike `formatForLogging`), which could alter it.
 ASTPtr makeDefaultValueOfType(const IAST & type)
 {
-    return makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(type.formatForLogging()));
+    return makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(type.formatWithSecretsOneLine()));
 }
 
 /// Build `tuple(e0, e1, ...)` where each element is either its explicit default expression or the
@@ -61,7 +62,7 @@ ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_default
 /// the built tuple has to be brought to the type of the alternative it came from first.
 ASTPtr makeCastToType(ASTPtr expression, const IAST & type)
 {
-    return makeASTFunction("CAST", std::move(expression), make_intrusive<ASTLiteral>(type.formatForLogging()));
+    return makeASTFunction("CAST", std::move(expression), make_intrusive<ASTLiteral>(type.formatWithSecretsOneLine()));
 }
 
 /// Collect the names of identifiers referenced by an expression (for the ambiguity check below).
