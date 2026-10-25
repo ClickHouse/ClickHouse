@@ -929,8 +929,9 @@ namespace
                     other_matcher_conditions.push_back(matcherToAST(matcher, column_name_by_tag_name));
             }
 
+            const bool has_other_matchers = !other_matcher_conditions.empty();
             ASTPtr counterexample = makeIDOutOfRangeCondition(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), metric_id_range);
-            if (!other_matcher_conditions.empty())
+            if (has_other_matchers)
             {
                 counterexample = makeASTForLogicalOr(
                     {makeASTFunction("not", makeASTForLogicalAnd(std::move(other_matcher_conditions))), std::move(counterexample)});
@@ -949,7 +950,9 @@ namespace
                 probe_select_ids->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTTableIdentifier>(tags_table_id)));
                 probe_select_ids->setExpression(ASTSelectQuery::Expression::WHERE, std::move(probe_where));
             }
-            applyTimeRangeFilterToSelectIDsQuery(*probe_select_ids, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
+            /// Only the other matchers need the time range filter: it keeps every series with an id outside the range anyway.
+            if (has_other_matchers)
+                applyTimeRangeFilterToSelectIDsQuery(*probe_select_ids, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
 
             /// SELECT 1 FROM (<probe_select_ids>) LIMIT 1
             auto probe_select = make_intrusive<ASTSelectQuery>();

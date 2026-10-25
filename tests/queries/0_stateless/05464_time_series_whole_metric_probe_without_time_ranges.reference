@@ -1,0 +1,19 @@
+-- whole metric: the probe reads the tags table only, the id range is emitted
+0
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+1970-01-01 00:02:30.000	10
+1
+-- other matchers: the probe joins the time ranges table, no id range
+1
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+0
+-- a series with a foreign id and a time range outside the window is still found by the probe
+0
+1970-01-01 00:03:20.000	2
+0
+0
+1970-01-01 00:03:20.000	2
+1970-01-01 01:23:20.000	5
+0
