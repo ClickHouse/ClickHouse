@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 gcs::IfGenerationMatch makeGCSWritePrecondition(const WriteSettings & write_settings, const String & bucket, const String & key)
@@ -202,14 +203,29 @@ void WriteBufferFromGCS::finalizeWriteStream()
     /// Record the upload in `system.blob_storage_log` (like the S3 and Azure backends do), including
     /// the failed outcome. The stream is a single (internally resumable) upload, so one event covers
     /// the whole object.
-    logUploadResult(result ? 0 : static_cast<Int32>(result.status().code()), result ? "" : result.status().message());
-
     if (!result)
     {
+        logUploadResult(static_cast<Int32>(result.status().code()), result.status().message());
         ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
         throwFromGCSStatus(result.status(),
             fmt::format("while finalizing the upload of '{}' in bucket '{}'", key, bucket));
     }
+
+    /// The server accepted the upload, but `Close` also compares the hash the client computed over the
+    /// bytes it sent with the one the server reports for the stored object. A mismatch keeps the
+    /// metadata and an OK `last_status` and only sets `badbit` on the stream, so it has to be checked
+    /// separately: the stored object does not hold the data that was written.
+    if (write_stream->bad())
+    {
+        const String message = fmt::format(
+            "Checksum mismatch after the upload of '{}' in bucket '{}': computed {}, received {}",
+            key, bucket, write_stream->computed_hash(), write_stream->received_hash());
+        logUploadResult(ErrorCodes::CHECKSUM_DOESNT_MATCH, message);
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "{}", message);
+    }
+
+    logUploadResult(0, "");
 }
 
 void WriteBufferFromGCS::insertObject()
