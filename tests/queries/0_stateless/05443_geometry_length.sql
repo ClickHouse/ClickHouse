@@ -26,6 +26,10 @@ FROM values('wkt String',
     'POINT (1 2)',
     'MULTIPOINT ((1 2), (3 4))');
 
+-- A `NULL` geometry has no length.
+SELECT lengthCartesian(g), round(lengthSpherical(g), 9), round(lengthSpheroid(g), 3)
+FROM (SELECT arrayJoin([readWKT('LINESTRING (0 0, 3 4)'), NULL]) AS g);
+
 -- `lengthSpherical` is an angle in radians: one degree along the equator, also across the antimeridian.
 SELECT round(lengthSpherical([(0., 0.), (1., 0.)]::LineString), 9), round(lengthSpherical([(179.5, 0.), (-179.5, 0.)]::LineString), 9);
 
@@ -36,8 +40,19 @@ SELECT
     round(lengthSpheroid([(0., 0.), (0., 1.)]::LineString), 3),
     round(lengthSpheroid([(179.5, 0.), (-179.5, 0.)]::LineString), 3);
 
--- London, Paris, Berlin (1223596.207 meters by Vincenty's formulae).
-SELECT round(lengthSpheroid(readWKTLineString('LINESTRING (-0.1276 51.5072, 2.3522 48.8566, 13.405 52.52)')), 1);
+-- Nearly antipodal points, where Vincenty's formulae do not converge (19936288.579 meters by GeographicLib), and antipodal
+-- points on the equator, where the shortest path runs through the poles: twice the length of a meridian quadrant.
+SELECT
+    round(lengthSpheroid([(0., 0.), (179.5, 0.5)]::LineString), 3),
+    round(lengthSpheroid([(0., 0.), (180., 0.)]::LineString), 3);
+
+-- A `Ring` is measured as a line on the spheroid too.
+SELECT round(lengthSpheroid([(0., 0.), (1., 0.), (1., 1.), (0., 0.)]::Ring), 3);
+
+-- London, Paris, Berlin (1223596.207 meters by Vincenty's formulae), also from (latitude, longitude) with `flipCoordinates`.
+SELECT
+    round(lengthSpheroid(readWKTLineString('LINESTRING (-0.1276 51.5072, 2.3522 48.8566, 13.405 52.52)')), 3),
+    round(lengthSpheroid(flipCoordinates(readWKT('LINESTRING (51.5072 -0.1276, 48.8566 2.3522, 52.52 13.405)'))), 3);
 
 SELECT lengthCartesian(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT lengthSpheroid('LINESTRING (0 0, 1 1)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

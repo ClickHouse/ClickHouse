@@ -135,6 +135,8 @@ Multiply it by the mean radius of the Earth, 6371008.8 meters, for an approximat
         FunctionDocumentation::Description description = R"(
 Returns the length of a line in meters on the WGS84 spheroid, the model of the Earth used by GPS, with points given as (longitude, latitude) in degrees.
 Each segment is the shortest path between its points on the spheroid (a geodesic), calculated with Karney's algorithm, as in GeographicLib.
+For coordinates stored as (latitude, longitude), such as the input of `ST_Length_Spheroid` in DuckDB, swap them first with `flipCoordinates`:
+without it, the result is the length of a different line.
 )" + what_is_measured;
         FunctionDocumentation::Syntax syntax = "lengthSpheroid(geometry)";
         FunctionDocumentation::ReturnedValue returned_value = {"The length of the lines, in meters.", {"Float64"}};

@@ -199,6 +199,7 @@ SELECT lengthSpherical(readWKT('LINESTRING(0 0,1 0)')) AS length;
 Calculates the length of the lines of a Geometry object in meters on the WGS84 spheroid, the model of the Earth used by GPS, with points given as (longitude, latitude) in degrees.
 Each segment is the shortest path between its points on the spheroid (a geodesic), calculated with Karney's algorithm, as in GeographicLib.
 Like [lengthCartesian](#lengthcartesian), it returns 0 for points, polygons and multipolygons.
+For coordinates stored as (latitude, longitude), such as the input of `ST_Length_Spheroid` in DuckDB, swap them first with [flipCoordinates](/reference/functions/regular-functions/geo/flipCoordinates): without it, the result is the length of a different line.
 
 **Syntax**
 
