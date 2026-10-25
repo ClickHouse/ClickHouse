@@ -10941,7 +10941,7 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
     DECLARE(Bool, allow_experimental_macaddress_type, false, R"(
 Allows creation of [MacAddress](/sql-reference/data-types/macaddress) columns in tables.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New experimental setting to allow the use of `MacAddress` data type"}) \
+        {"26.11", false, false, "New experimental setting to allow the use of `MacAddress` data type"}) \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL, \
