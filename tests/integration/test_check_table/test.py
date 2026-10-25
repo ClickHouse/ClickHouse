@@ -467,16 +467,24 @@ def test_check_cancelled_in_json_prefix_read_keeps_part(started_cluster):
     )
     node1.query(f"ATTACH TABLE {table_name}")
 
-    # The delay before the part check outlasts the timeout, so the check meets the cancellation at its
-    # first cancellable point, the structure prefix read.
+    # The failpoint sleeps for a random time under a second before the part check. The timeout leaves the
+    # check time to start and usually cancels the query during the sleep, so the check meets the
+    # cancellation at its first cancellable point, the structure prefix read. A short sleep lets it finish.
     node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
     try:
-        for _ in range(5):
-            error = node1.query_and_get_error(
+        for _ in range(10):
+            answer, error = node1.query_and_get_answer_with_error(
                 f"CHECK TABLE {table_name}",
-                settings={"max_threads": 1, "max_execution_time": 0.001},
+                settings={
+                    "max_threads": 1,
+                    "max_execution_time": 0.1,
+                    "check_query_single_value_result": 1,
+                },
             )
-            assert "TIMEOUT_EXCEEDED" in error, error
+            assert ("TIMEOUT_EXCEEDED" in error) if error else answer == "1\n", (
+                answer,
+                error,
+            )
     finally:
         node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
 
