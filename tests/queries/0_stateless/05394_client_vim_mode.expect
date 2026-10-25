@@ -370,5 +370,61 @@ submit
 expect "3645"
 expect ":) "
 
+# `%` and the bracket text objects ignore brackets inside quotes.
+send -- "SELECT (length(')') + 20) + 3700"
+escape
+send -- "0f(c%5"
+submit
+expect "3705"
+expect ":) "
+
+send -- "SELECT length(')') + 3800"
+escape
+send -- "0f(ci('abc'"
+submit
+expect "3803"
+expect ":) "
+
+# Counted word objects continue across lines.
+send -- "SELECT 3900 - 200\r- 30"
+escape
+send -- "gg0f2d2aw"
+submit
+expect "3870"
+expect ":) "
+
+send -- "SELECT 4000 - 200\r- 30"
+escape
+send -- "gg0f2d3iw"
+submit
+expect "3970"
+expect ":) "
+
+# An empty line is a word for `w`.
+send -- "SELECT 4100\r\r+ 234"
+escape
+send -- "ggwwxi+ 1 -- "
+escape
+submit
+expect "4335"
+expect ":) "
+
+# A line number past the end moves to the first non-blank of the last line.
+send -- "SELECT 4200\r+ 234"
+escape
+send -- "gg99Gi+1 -- "
+escape
+submit
+expect "4201"
+expect ":) "
+
+send -- "SELECT 4300\r+ 345"
+escape
+send -- "gg99ggi+2 -- "
+escape
+submit
+expect "4302"
+expect ":) "
+
 send -- "\4"
 expect eof

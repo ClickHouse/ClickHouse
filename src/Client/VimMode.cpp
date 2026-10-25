@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -206,6 +207,9 @@ static int wordForward(const std::u32string & text, int pos, int reps, bool bigw
         {
             if (stop_at_eol && pos > prev && text[pos] == '\n')
                 break;
+            /* An empty line is a word of its own. */
+            if (pos > prev && text[pos] == '\n' && text[pos - 1] == '\n')
+                break;
             if (bigword)
             {
                 if (break_on_char && !iswhitespace(text[pos]))
@@ -334,6 +338,22 @@ static int wordBackward(const std::u32string & text, int pos, int reps, bool big
     return pos;
 }
 
+/* The start of the line with the given 1-based number, or of the last line if there are fewer lines. */
+static int lineStart(const std::u32string & text, int line)
+{
+    int length = static_cast<int>(text.length());
+    int start = 0;
+    for (int pos = 0; line > 1 && pos < length; pos++)
+    {
+        if (text[pos] == '\n')
+        {
+            line--;
+            start = pos + 1;
+        }
+    }
+    return start;
+}
+
 /* The first non-blank character of the line that starts at `line_start`, or the end of the line. */
 static int firstNonBlank(const std::u32string & text, int line_start)
 {
@@ -356,29 +376,82 @@ static int charClass(const std::u32string & text, int i, bool bigword)
     return 2;
 }
 
+/* Like `charClass`, but for the extra chunks of a counted word object, which continue
+ * across lines: a line break is whitespace, and an empty line is a word of its own. */
+static int chunkClass(const std::u32string & text, int i, bool bigword)
+{
+    if (text[i] == '\n')
+        return i > 0 && text[i - 1] == '\n' ? 3 : 0;
+    return charClass(text, i, bigword);
+}
+
 /* Extend the position over the same character class. */
 static int extendChunk(const std::u32string & text, int & end, bool bigword)
 {
     int length = static_cast<int>(text.length());
     if (end + 1 >= length)
         return -1;
-    int cls = charClass(text, end + 1, bigword);
-    if (cls == -1)
-        return -1;
+    int cls = chunkClass(text, end + 1, bigword);
     end++;
-    while (end + 1 < length && charClass(text, end + 1, bigword) == cls)
+    if (cls == 3)
+        return cls;
+    while (end + 1 < length && chunkClass(text, end + 1, bigword) == cls)
         end++;
     return cls;
 }
 
-static bool
-findEnclosingPair(const std::u32string & text, int from_open, int from_close, char32_t open_char, char32_t close_char, int & open, int & close)
+/* For every position, whether it belongs to a quoted string literal or identifier. */
+static std::vector<bool> quotedPositions(const std::u32string & text)
+{
+    size_t length = text.length();
+    std::vector<bool> quoted(length);
+    char32_t quote = 0;
+    for (size_t i = 0; i < length; ++i)
+    {
+        char32_t c = text[i];
+        if (quote)
+        {
+            quoted[i] = true;
+            if (c == '\\' && i + 1 < length)
+                quoted[++i] = true;
+            else if (c == quote)
+                quote = 0;
+        }
+        else if (c == '\'' || c == '"' || c == '`')
+        {
+            quoted[i] = true;
+            quote = c;
+        }
+    }
+    return quoted;
+}
+
+/* Like vim, brackets inside quotes are ignored, unless the cursor is inside quotes itself. */
+static std::vector<bool> ignoredBrackets(const std::u32string & text, int pos)
+{
+    std::vector<bool> quoted = quotedPositions(text);
+    if (pos >= 0 && pos < static_cast<int>(text.length()) && quoted[pos])
+        return std::vector<bool>(text.length());
+    return quoted;
+}
+
+static bool findEnclosingPair(
+    const std::u32string & text,
+    const std::vector<bool> & ignored,
+    int from_open,
+    int from_close,
+    char32_t open_char,
+    char32_t close_char,
+    int & open,
+    int & close)
 {
     int length = static_cast<int>(text.length());
     int depth = 0;
     open = -1;
     for (int i = std::min(from_open, length - 1); i >= 0; i--)
     {
+        if (ignored[i])
+            continue;
         if (text[i] == close_char)
             depth++;
         else if (text[i] == open_char)
@@ -397,6 +470,8 @@ findEnclosingPair(const std::u32string & text, int from_open, int from_close, ch
     close = -1;
     for (int i = from_close; i < length; i++)
     {
+        if (ignored[i])
+            continue;
         if (text[i] == open_char)
             depth++;
         else if (text[i] == close_char)
@@ -412,13 +487,21 @@ findEnclosingPair(const std::u32string & text, int from_open, int from_close, ch
     return close >= 0;
 }
 
-static bool findBracketPair(const std::u32string & text, int pos, char32_t open_char, char32_t close_char, int & open, int & close)
+static bool findBracketPair(
+    const std::u32string & text,
+    const std::vector<bool> & ignored,
+    int pos,
+    char32_t open_char,
+    char32_t close_char,
+    int & open,
+    int & close)
 {
     int length = static_cast<int>(text.length());
 
-    int from_open = pos < length && text[pos] == close_char ? pos - 1 : pos;
-    int from_close = pos < length && text[pos] == open_char ? pos + 1 : pos;
-    if (findEnclosingPair(text, from_open, from_close, open_char, close_char, open, close))
+    bool on_bracket = pos < length && !ignored[pos];
+    int from_open = on_bracket && text[pos] == close_char ? pos - 1 : pos;
+    int from_close = on_bracket && text[pos] == open_char ? pos + 1 : pos;
+    if (findEnclosingPair(text, ignored, from_open, from_close, open_char, close_char, open, close))
         return true;
 
     if (open >= 0)
@@ -426,6 +509,8 @@ static bool findBracketPair(const std::u32string & text, int pos, char32_t open_
 
     for (int i = pos; i < length; i++)
     {
+        if (ignored[i])
+            continue;
         if (text[i] == close_char)
             return false;
         if (text[i] == open_char)
@@ -434,6 +519,8 @@ static bool findBracketPair(const std::u32string & text, int pos, char32_t open_
             int depth = 0;
             for (int j = i + 1; j < length; j++)
             {
+                if (ignored[j])
+                    continue;
                 if (text[j] == open_char)
                     depth++;
                 else if (text[j] == close_char)
@@ -603,7 +690,7 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
          * takes the trailing whitespace, or the leading whitespace if there is none. */
         if (cls == 0)
             extendChunk(text, end, bigword);
-        else if (end + 1 < length && charClass(text, end + 1, bigword) == 0)
+        else if (end + 1 < length && (reps > 1 ? chunkClass(text, end + 1, bigword) : charClass(text, end + 1, bigword)) == 0)
             extendChunk(text, end, bigword);
         else
             while (start > 0 && charClass(text, start - 1, bigword) == 0)
@@ -613,7 +700,7 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
             int chunk = extendChunk(text, end, bigword);
             if (chunk == -1)
                 break;
-            if (chunk == 0 || (end + 1 < length && charClass(text, end + 1, bigword) == 0))
+            if (chunk == 0 || (end + 1 < length && chunkClass(text, end + 1, bigword) == 0))
                 extendChunk(text, end, bigword);
         }
     }
@@ -650,9 +737,10 @@ void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32
     int open = -1;
     int close = -1;
 
-    bool found = findBracketPair(text, pos, open_char, close_char, open, close);
+    std::vector<bool> ignored = ignoredBrackets(text, pos);
+    bool found = findBracketPair(text, ignored, pos, open_char, close_char, open, close);
     for (int rep = 1; rep < reps && found; rep++)
-        found = findEnclosingPair(text, open - 1, close + 1, open_char, close_char, open, close);
+        found = findEnclosingPair(text, ignored, open - 1, close + 1, open_char, close_char, open, close);
     if (!found)
     {
         resetVim(&pos, &text);
@@ -1294,10 +1382,13 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                     return;
             }
 
+            std::vector<bool> ignored = ignoredBrackets(text, pos);
             int paren_count = 1;
             int found = -1;
             for (int i = opening ? pos + 1 : pos - 1; opening ? i < length : i >= 0; i += opening ? 1 : -1)
             {
+                if (ignored[i])
+                    continue;
                 char32_t c = text[i];
                 if (c == paren)
                     paren_count++;
@@ -1452,11 +1543,7 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             if (vimbuffer || vimbufferinner)
             {
                 /* A count is an absolute line number, not a repeat. */
-                int line = vimReps();
-                pos = 0;
-                for (; line > 1 && pos < length; pos++)
-                    if (text[pos] == '\n')
-                        line--;
+                pos = lineStart(text, vimReps());
             }
             else
                 for (pos = length; pos > 0 && text[pos - 1] != '\n'; pos--)
@@ -1474,16 +1561,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         [this](int & pos, std::u32string & text, char32_t)
         {
             int oldpos = pos;
-            int length = static_cast<int>(text.length());
-            pos = 0;
-            if (vimbuffer || vimbufferinner)
-            {
-                /* A count is an absolute line number, not a repeat. */
-                int line = vimReps();
-                for (; line > 1 && pos < length; pos++)
-                    if (text[pos] == '\n')
-                        line--;
-            }
+            /* A count is an absolute line number, not a repeat. */
+            pos = vimbuffer || vimbufferinner ? lineStart(text, vimReps()) : 0;
             pos = firstNonBlank(text, pos);
             vimLinewise(pos, text, oldpos);
         },
