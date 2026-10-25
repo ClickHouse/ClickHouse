@@ -246,9 +246,11 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
             namespace_name, table_name);
     }
 
+    checkTableNameIsCanonical(table_name);
+
     const auto state_snapshot = state.get();
     const std::string endpoint
-        = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
+        = (base_url / state_snapshot->config.prefix / "namespaces" / encodeNamespaceForURI(namespace_name) / "tables" / table_name).string()
         + "?purgeRequested=true";
 
     Poco::JSON::Object::Ptr request_body = nullptr;

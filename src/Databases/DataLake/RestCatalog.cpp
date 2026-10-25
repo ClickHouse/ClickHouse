@@ -119,6 +119,32 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
     return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
 }
 
+String encodeNamespaceForURI(const String & namespace_name)
+{
+    String encoded;
+    for (const auto & ch : namespace_name)
+    {
+        if (ch == '.')
+            encoded += "%1F";
+        else
+            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
+    }
+    return encoded;
+}
+
+void checkTableNameIsCanonical(const String & table_name)
+{
+    String decoded;
+    Poco::URI::decode(table_name, decoded);
+    String encoded;
+    Poco::URI::encode(decoded, "/?#", encoded);
+    if (encoded != table_name)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Table name `{}` is not percent-encoded as the catalog lists it, expected `{}`",
+            table_name, encoded);
+}
+
 namespace
 {
 
@@ -173,20 +199,6 @@ std::string correctAPIURI(const std::string & uri)
     if (uri.ends_with("v1"))
         return uri;
     return std::filesystem::path(uri) / "v1";
-}
-
-/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
-String encodeNamespaceForURI(const String & namespace_name)
-{
-    String encoded;
-    for (const auto & ch : namespace_name)
-    {
-        if (ch == '.')
-            encoded += "%1F";
-        else
-            Poco::URI::encode(String(1, ch), "#&+/:;=?@", encoded);
-    }
-    return encoded;
 }
 
 /// Per Iceberg REST spec, `namespace` is a JSON array of segments. Split `ns.a.b` on dots.
@@ -1756,6 +1768,8 @@ bool RestCatalog::getTableMetadataImpl(
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
     }
 
+    checkTableNameIsCanonical(table_name);
+
     const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
     auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
@@ -2340,6 +2354,8 @@ bool RestCatalog::updateSchema(
 
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
+    checkTableNameIsCanonical(table_name);
+
     const auto state_snapshot = state.get();
     const std::string base_endpoint =
         (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();

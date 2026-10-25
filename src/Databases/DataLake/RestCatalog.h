@@ -24,6 +24,13 @@ namespace DataLake
 /// Parses "Name: value" into a header entry.
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
+/// Percent-encodes every byte of a level outside the RFC 3986 unreserved set and joins the levels with `%1F`.
+String encodeNamespaceForURI(const String & namespace_name);
+
+/// Request paths carry the table name verbatim, so it must be spelled as `getTables` lists it:
+/// percent-encoded, with `/`, `?` and `#` escaped. Any other spelling throws.
+void checkTableNameIsCanonical(const String & table_name);
+
 class RestCatalog : public ICatalog, public DB::WithContext
 {
 public:

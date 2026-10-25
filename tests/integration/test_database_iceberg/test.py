@@ -1847,6 +1847,33 @@ def test_drop_table_in_multi_level_namespace(started_cluster):
     assert catalog.list_tables(namespace) == []
 
 
+def test_drop_table_rejects_non_canonical_name(started_cluster):
+    # A raw `#` or `?` would cut the request path, so a grant on `<table>#suffix` must not drop `<table>`.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_drop_non_canonical_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    user = f"user_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    node.query(f"CREATE USER {user}")
+    try:
+        for suffix in ["#suffix", "?suffix"]:
+            name = f"{CATALOG_NAME}.`{root_namespace}.{table_name}{suffix}`"
+            node.query(f"GRANT DROP TABLE ON {name} TO {user}")
+            for if_exists in ["", "IF EXISTS "]:
+                error = node.query_and_get_error(f"DROP TABLE {if_exists}{name}", user=user)
+                assert "BAD_ARGUMENTS" in error, error
+        assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+
+
 def test_drop_table_purge(started_cluster):
     # DROP asks the catalog to purge the table's files only with `iceberg_delete_data_on_drop`,
     # which node2's default profile enables.
