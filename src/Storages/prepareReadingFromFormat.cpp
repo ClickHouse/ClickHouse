@@ -175,54 +175,42 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         /// (Note that `t.a.b.c` will not be listed by enumerateStreams because `c`
         ///  is a dynamic subcolumn.)
         auto & column_info = columns_info[idx];
-        bool found_full_path = false;
         column_info.type = column_to_read.getTypeInStorage();
 
         if (column_to_read.isSubcolumn())
         {
-            /// Do subcolumn lookup similar to getColumnFromBlock.
-
+            /// Element names may contain dots, so an element whose name prefixes the subcolumn name need not be on its path.
+            /// Follow the substreams of the subcolumn the name resolves to, as getColumnFromBlock does.
             auto type = column_to_read.getTypeInStorage();
-            auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
-            auto subcolumn_name = column_to_read.getSubcolumnName();
-
-            ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
+            if (auto resolved = type->tryGetSubcolumnInfo(column_to_read.getSubcolumnName()))
             {
-                if (found_full_path)
-                    return;
+                const auto & resolved_path = resolved->substreams_path;
+                auto data = ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type);
 
-                for (size_t i = 0; i < subpath.size(); ++i)
+                ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
                 {
-                    /// Allow `a.x` where `a` is array of tuples.
-                    if (subpath[i].type == ISerialization::Substream::ArrayElements)
-                        continue;
+                    for (size_t i = 0; i < subpath.size() && i < resolved_path.size(); ++i)
+                    {
+                        if (subpath[i].type != resolved_path[i].type || subpath[i].name_of_substream != resolved_path[i].name_of_substream)
+                            break;
 
-                    if (subpath[i].type != ISerialization::Substream::TupleElement)
-                        break;
+                        /// Allow `a.x` where `a` is array of tuples.
+                        if (subpath[i].type == ISerialization::Substream::ArrayElements)
+                            continue;
 
-                    if (subpath[i].visited)
-                        continue;
-                    subpath[i].visited = true;
-                    size_t prefix_len = i + 1;
-                    if (prefix_len <= column_info.path.size())
-                        continue;
+                        if (subpath[i].type != ISerialization::Substream::TupleElement)
+                            break;
 
-                    auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                    if (name == subcolumn_name)
-                        found_full_path = true;
-                    else if (!subcolumn_name.starts_with(name + "."))
-                        continue;
+                        if (i + 1 > column_info.path.size())
+                            column_info.path.assign(subpath.begin(), subpath.begin() + i + 1);
+                    }
+                };
 
-                    column_info.path.insert(column_info.path.end(), subpath.begin() + column_info.path.size(), subpath.begin() + prefix_len);
-                    if (found_full_path)
-                        break;
-                }
-            };
-
-            ISerialization::EnumerateStreamsSettings settings;
-            settings.position_independent_encoding = false;
-            settings.enumerate_dynamic_streams = false;
-            data.serialization->enumerateStreams(settings, callback_with_data, data);
+                ISerialization::EnumerateStreamsSettings settings;
+                settings.position_independent_encoding = false;
+                settings.enumerate_dynamic_streams = false;
+                data.serialization->enumerateStreams(settings, callback_with_data, data);
+            }
 
             if (!column_info.path.empty())
                 column_info.type = ISerialization::createFromPath(column_info.path, column_info.path.size()).type;
@@ -325,6 +313,21 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
             /// Column produced by prewhere expression.
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
+    }
+
+    /// A subcolumn that the format does not read itself is extracted from its column after reading: `t.x` requested
+    /// together with `t` (see `filterTupleColumnsToRead`), or a dynamic subcolumn like `j.a` of a JSON column. Keep
+    /// requesting it while its column is still read, otherwise the filter left after PREWHERE cannot find it.
+    /// It goes before the hive partition and virtual columns, which the source appends after extracting.
+    size_t position = new_info.format_header.columns();
+    for (const auto & column : info.requested_columns)
+    {
+        if (!column.isSubcolumn() || new_info.format_header.has(column.name)
+            || !new_info.format_header.has(column.getNameInStorage()))
+            continue;
+        new_info.requested_columns.push_back(column);
+        new_info.source_header.insert(position, {column.type->createColumn(), column.type, column.name});
+        ++position;
     }
 
     return new_info;
@@ -432,7 +435,8 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(false), ctx.out);
+    /// The reader needs only names, types and defaults.
+    writeStringBinary(columns_description.toString(/* include_comments = */ false, /* include_codecs = */ false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);

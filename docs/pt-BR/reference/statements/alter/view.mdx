@@ -195,9 +195,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## Instrução ALTER TABLE ... MODIFY REFRESH
-</div>
+## Privilégios necessários {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` requer o privilégio `ALTER VIEW MODIFY QUERY` na VIEW. A nova consulta é executada com a [SQL security](/pt-BR/reference/statements/create/view#sql_security) da VIEW; por isso, a instrução também exige as concessões necessárias para criar uma VIEW com essa SQL security:
+
+* `SQL SECURITY DEFINER` com um definer que não seja o usuário atual: `SET DEFINER` nesse definer.
+* `SQL SECURITY NONE`: `ALLOW SQL SECURITY NONE`.
+
+Quando a mesma instrução altera a SQL security com `MODIFY SQL SECURITY`, essas concessões são exigidas para a nova SQL security, e não para a antiga.
+
+Com `ON CLUSTER`, a instrução é autorizada no host em que é executada; portanto, a VIEW precisa existir nesse host. Caso contrário, a instrução falha com `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## Instrução ALTER TABLE ... MODIFY REFRESH {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` altera os parâmetros de atualização de uma [view materializada atualizável](/pt-BR/reference/statements/create/view#refreshable-materialized-view), incluindo o agendamento, as dependências, a aleatorização e as [configurações de atualização](/pt-BR/reference/statements/create/view#refresh-settings).
 
