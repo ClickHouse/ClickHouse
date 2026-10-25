@@ -3458,7 +3458,10 @@ static BlockIO executeQueryImpl(
                     interpreter = InterpreterFactory::instance().get(
                         out_ast,
                         context,
-                        SelectQueryOptions(stage).setInternal(internal).positionalArgumentsAlreadyResolved(!internal && is_secondary_query));
+                        SelectQueryOptions(stage)
+                            .setInternal(internal)
+                            .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
+                            .secondaryQueryRoot(!internal && is_secondary_query));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
