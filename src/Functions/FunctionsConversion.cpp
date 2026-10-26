@@ -872,14 +872,7 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
     }
     else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
     {
-        const auto & from_function = agg_type->getFunction();
-        const auto & to_function = to_type->getFunction();
-        /// An aggregate function's own state does not depend on the state variant of its arguments.
-        bool differs_only_by_argument_variant = from_function->getStateVariant() == to_function->getStateVariant()
-            && !from_function->haveEqualArgumentTypes(*to_function)
-            && differsOnlyByAggregateStateVariant(from_type_untyped, to_type->getPtr());
-
-        if (from_function->haveSameStateRepresentation(*to_function) || differs_only_by_argument_variant)
+        if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
         {
             /// The states are shared as they are, but the result column must take the state version
             /// of the target type (e.g. `AggregateFunction(1, uniq, UInt64)`), because the version
@@ -908,11 +901,47 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
             };
         }
 
+        /// A state whose arguments differ only by the variant of a nested state serializes the same way,
+        /// but it may keep the nested state in memory (e.g. `any` of a `Dynamic` value keeps a column).
+        if (agg_type->getFunction()->getStateVariant() == to_type->getFunction()->getStateVariant()
+            && !agg_type->getFunction()->haveEqualArgumentTypes(*to_type->getFunction())
+            && differsOnlyByAggregateStateVariant(from_type_untyped, to_type->getPtr()))
+        {
+            return [function = to_type->getFunction(), version = to_type->getVersionIfExplicit(), format_version = to_type->getVersion()](
+                       ColumnsWithTypeAndName & arguments,
+                       const DataTypePtr & /* result_type */,
+                       const ColumnNullable * /* nullable_source */,
+                       size_t /*input_rows_count*/) -> ColumnPtr
+            {
+                const auto & argument_column = arguments.front();
+                const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
+                if (!col_agg)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Illegal column {} for function CAST AS AggregateFunction",
+                        argument_column.column->getName());
+
+                WriteBufferFromOwnString buf;
+                const auto source_function = col_agg->getAggregateFunction();
+                for (const auto * src_state : col_agg->getData())
+                    source_function->serialize(src_state, buf, format_version);
+
+                ReadBufferFromMemory in(buf.str());
+                auto res = ColumnAggregateFunction::create(function, version);
+                for (size_t i = 0; i < col_agg->size(); ++i)
+                {
+                    res->insertDefault();
+                    function->deserialize(res->getData().back(), in, format_version, &res->createOrGetArena());
+                }
+                return res;
+            };
+        }
+
         /// Different state variants (e.g. Window vs Aggregation) of the same aggregate function
         /// can be converted by merging the source state into a fresh target state.
-        if (to_function->canMergeStateFromDifferentVariant(*from_function))
+        if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
         {
-            return [function = to_function, from_function, version = to_type->getVersionIfExplicit()](
+            return [function = to_type->getFunction(), from_function = agg_type->getFunction(), version = to_type->getVersionIfExplicit()](
                        ColumnsWithTypeAndName & arguments,
                        const DataTypePtr & /* result_type */,
                        const ColumnNullable * /* nullable_source */,
