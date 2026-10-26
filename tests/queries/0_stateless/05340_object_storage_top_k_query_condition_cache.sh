@@ -144,9 +144,10 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS input_format_parquet_case_insensitive_column_matching = 1"
 run case_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
 run case_2 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
+# `--send_logs_level=error` hides the warning about an explicit UUID in a `Replicated` database.
 CASE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_05340_case'")
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case SYNC"
-${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 --query "
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 --send_logs_level=error --query "
     CREATE TABLE t_05340_case UUID '${CASE_UUID}' (k Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_case/*.parquet', format = Parquet)
     SETTINGS input_format_parquet_case_insensitive_column_matching = 0"
 run case_reloaded_1 "SELECT k FROM t_05340_case ORDER BY k DESC LIMIT 3"
@@ -163,18 +164,47 @@ run source_1 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
 run source_2 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
 SOURCE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_05340_source'")
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_source SYNC"
-${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 --query "
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 1 --send_logs_level=error --query "
     CREATE TABLE t_05340_source UUID '${SOURCE_UUID}' (k Int64, s String)
     ENGINE = S3('http://127.0.0.1:11111/test/${S3_DIR}/*.parquet', 'test', 'testtest', 'Parquet')"
 run source_reloaded_1 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
 run source_reloaded_2 "SELECT k FROM t_05340_source ORDER BY k DESC LIMIT 3"
+
+echo "--- hive partitioning changed by recreating the table with the same UUID"
+# Both objects store `p = 1`, while their path says `p=0`. Without Hive partitioning all rows pass the
+# predicate, and the result comes from `a.parquet`. After the table is created again with it, `p` comes
+# from the path, only `k < 1000000` passes, and the result comes from `b.parquet`, whose row groups the
+# entries of the first table recorded as holding no row of the result. So the key covers which columns
+# are read from the path.
+function write_hive_object()
+{
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_DIR}_hive/p=0/$1.parquet', format = Parquet)
+        SELECT if(number < 1000, $2 + number, number % 1000) AS k, 1 AS p FROM numbers(20000)
+        SETTINGS output_format_parquet_row_group_size = 1000, s3_truncate_on_insert = 1"
+}
+write_hive_object a 1000000
+write_hive_object b 100000
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05340_hive"
+${CLICKHOUSE_CLIENT} --use_hive_partitioning 0 --query "
+    CREATE TABLE t_05340_hive (k Int64, p Int64) ENGINE = S3(s3_conn, filename = '${S3_DIR}_hive/p=0/*.parquet', format = Parquet)"
+HIVE_QUERY="SELECT k FROM t_05340_hive WHERE p = 1 OR k < 1000000 ORDER BY k DESC LIMIT 3"
+run hive_1 "$HIVE_QUERY"
+run hive_2 "$HIVE_QUERY"
+HIVE_UUID=$(${CLICKHOUSE_CLIENT} --query "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_05340_hive'")
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_hive SYNC"
+${CLICKHOUSE_CLIENT} --use_hive_partitioning 1 --database_replicated_allow_explicit_uuid 1 --send_logs_level=error --query "
+    CREATE TABLE t_05340_hive UUID '${HIVE_UUID}' (k Int64, p Int64)
+    ENGINE = S3(s3_conn, filename = '${S3_DIR}_hive/p=0/*.parquet', format = Parquet)"
+run hive_reloaded_1 "$HIVE_QUERY"
+run hive_reloaded_2 "$HIVE_QUERY"
 
 echo "--- use_query_condition_cache_for_top_k = 0"
 run gate_1 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 run gate_2 "SELECT k FROM t_05340 ORDER BY k DESC LIMIT 6" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 source_1 source_2 source_reloaded_1 source_reloaded_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 rewritten_nowhere_1 rewritten_where_1 rewritten_nowhere_2 unpinned_1 unpinned_2 tags_1 tags_2 time_1 time_2 default_1 default_2 keys_1 keys_2 key_1 key_2 case_1 case_2 case_reloaded_1 case_reloaded_2 source_1 source_2 source_reloaded_1 source_reloaded_2 hive_1 hive_2 hive_reloaded_1 hive_reloaded_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_default"
@@ -182,3 +212,4 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_keys"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_key"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_case"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_source"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05340_hive"

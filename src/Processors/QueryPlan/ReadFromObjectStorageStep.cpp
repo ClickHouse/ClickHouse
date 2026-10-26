@@ -411,6 +411,19 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     hash.update(data_source.size());
     hash.update(data_source);
 
+    /// Whether a column is read from the file or from the Hive partition in its path (and with which type)
+    /// is captured by the table when it is loaded (`use_hive_partitioning`), so a `DETACH` / `ATTACH`,
+    /// which keeps the UUID, may change it, while the paths, the ETags and the hash of the filter stay.
+    hash.update(info.hive_partition_columns_to_read_from_file_path.size());
+    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
+    {
+        hash.update(column.name.size());
+        hash.update(column.name);
+        const String type_name = column.type->getName();
+        hash.update(type_name.size());
+        hash.update(type_name);
+    }
+
     if (!is_data_lake)
     {
         key->condition_hash_without_files = hash.get64();

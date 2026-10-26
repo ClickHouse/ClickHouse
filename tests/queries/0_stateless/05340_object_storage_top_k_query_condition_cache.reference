@@ -120,6 +120,19 @@
 100999
 100998
 100997
+--- hive partitioning changed by recreating the table with the same UUID
+1000999
+1000998
+1000997
+1000999
+1000998
+1000997
+100999
+100998
+100997
+100999
+100998
+100997
 --- use_query_condition_cache_for_top_k = 0
 100999
 100998
@@ -164,5 +177,9 @@ source_1	1	0
 source_2	1	1
 source_reloaded_1	1	0
 source_reloaded_2	1	1
+hive_1	1	0
+hive_2	1	1
+hive_reloaded_1	1	0
+hive_reloaded_2	1	1
 gate_1	0	0
 gate_2	0	0
