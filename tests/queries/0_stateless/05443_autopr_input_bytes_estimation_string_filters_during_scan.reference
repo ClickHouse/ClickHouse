@@ -17,6 +17,10 @@
 1
 1
 1
+1
+1
+1
+1
 1000
 1
 1
@@ -38,6 +42,8 @@ skip_index	1
 same_block_of_128_rows	1	1
 same_block_of_one_row	1	1
 same_compressibility_changes	1	1
+same_compressible_first_values	1	1
+same_compressible_first_values_inline_sizes	1	1
 same_empty_granules	1	1
 same_large_matching_value	1	1
 same_large_replaced_value	1	1

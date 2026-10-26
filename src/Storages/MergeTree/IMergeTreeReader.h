@@ -359,15 +359,14 @@ private:
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
 
-    struct CompressedSizeMeasurement;
-
     struct StringValueFilterForColumn
     {
         StringValueFilterPtr filter;
         StringValuesSkippedByFilter skipped;
         /// See `measureCompressedSizeOfStringValuesSkippedByFilters`.
         CompressionCodecPtr codec;
-        std::shared_ptr<CompressedSizeMeasurement> compressed_size_measurement;
+        /// The same as `codec`, unless it is slow: then a fast codec of the same kind, see `getFastCodecOfSameKind`.
+        CompressionCodecPtr fast_codec;
     };
 
     /// String value filters from `settings.string_value_filters` for the columns that pass all

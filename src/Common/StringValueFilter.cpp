@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringSearcher.h>
 #include <IO/WriteHelpers.h>
+#include <base/unaligned.h>
 
 #include <cstring>
 
@@ -207,42 +208,67 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
         disabled.store(true, std::memory_order_relaxed);
 }
 
-void StringValuesSkippedByFilter::writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline)
+void StringValueSample::add(const char * prefix, size_t prefix_size, const char * value, size_t size)
+{
+    const size_t index = num_values++;
+    total_bytes += prefix_size + size;
+    if (index % stride)
+        return;
+
+    const size_t sampled_size = std::min(size, max_bytes - prefix_size);
+    while (!ends.empty() && data.size() + prefix_size + sampled_size > max_bytes)
+    {
+        halve();
+        if (index % stride)
+            return;
+    }
+
+    if (prefix_size)
+        data.append(prefix, prefix_size);
+    data.append(value, sampled_size);
+    ends.push_back(data.size());
+}
+
+void StringValueSample::halve()
+{
+    /// The sampled values are those with the indices divisible by `stride`, so every other of them stays.
+    stride *= 2;
+    size_t size = 0;
+    size_t num_kept = 0;
+    size_t begin = 0;
+    for (size_t i = 0; i < ends.size(); ++i)
+    {
+        const size_t end = ends[i];
+        if (i % 2 == 0)
+        {
+            memmove(data.data() + size, data.data() + begin, end - begin);
+            size += end - begin;
+            ends[num_kept++] = size;
+        }
+        begin = end;
+    }
+    data.resize(size);
+    ends.resize(num_kept);
+}
+
+void StringValuesSkippedByFilter::addToSamples(const char * data, size_t size, bool size_is_inline)
 {
     measured_bytes += size;
 
-    const bool is_long = size > MAX_SHORT_VALUE_SIZE;
-    auto & measurement = is_long ? long_values : short_values;
-    auto & values_bytes = measurement.values_bytes;
-    const size_t max_bytes_to_compress = is_long ? MAX_BYTES_TO_COMPRESS_OF_LONG_VALUES : MAX_BYTES_TO_COMPRESS_OF_SHORT_VALUES;
-
+    auto & values = size > MAX_SHORT_VALUE_SIZE ? samples->long_values : samples->short_values;
     if (size_is_inline)
     {
-        const size_t size_of_size = getLengthOfVarUInt(size);
-        values_bytes.total += size_of_size + size;
-        if (values_bytes.compressed + size_of_size >= max_bytes_to_compress)
-            return;
-        writeVarUInt(size, *measurement.values);
-        values_bytes.compressed += size_of_size;
+        char size_buf[10];
+        const size_t size_of_size = writeVarUInt(size, size_buf) - size_buf;
+        values.add(size_buf, size_of_size, data, size);
     }
     else
     {
-        auto & sizes_bytes = measurement.sizes_bytes;
-        sizes_bytes.total += sizeof(UInt64);
-        if (sizes_bytes.compressed < MAX_BYTES_TO_COMPRESS_OF_SIZES)
-        {
-            writeBinaryLittleEndian(static_cast<UInt64>(size), *measurement.sizes);
-            sizes_bytes.compressed += sizeof(UInt64);
-        }
-        values_bytes.total += size;
-        if (values_bytes.compressed >= max_bytes_to_compress)
-            return;
+        char size_buf[sizeof(UInt64)];
+        unalignedStoreLittleEndian<UInt64>(size_buf, size);
+        samples->sizes.add(nullptr, 0, size_buf, sizeof(size_buf));
+        values.add(nullptr, 0, data, size);
     }
-
-    /// What is compressed of the long values fits into one block of the codec, as their parts do in the part.
-    const size_t size_to_compress = is_long ? std::min(size, max_bytes_to_compress - values_bytes.compressed) : size;
-    measurement.values->write(data, size_to_compress);
-    values_bytes.compressed += size_to_compress;
 }
 
 }

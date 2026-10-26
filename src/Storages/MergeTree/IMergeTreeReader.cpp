@@ -17,8 +17,11 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/NullWriteBuffer.h>
+#include <Compression/CompressionCodecMultiple.h>
+#include <Compression/CompressionFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <city.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
@@ -159,94 +162,75 @@ IMergeTreeReader::IMergeTreeReader(
 
             /// The key is the name in the part: it may differ from the requested name
             /// when the column is affected by a pending RENAME.
-            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, StringValueFilterForColumn{.filter = it->second, .skipped = {}, .codec = {}, .compressed_size_measurement = {}});
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, StringValueFilterForColumn{.filter = it->second, .skipped = {}, .codec = {}, .fast_codec = {}});
         }
     }
 }
 
-/// The data is compressed into nowhere, only to count the bytes. The values and their sizes are compressed each in a block
-/// of what is compressed of them at most, see `StringValuesSkippedByFilter`. The blocks are smaller when a reader measures
-/// many columns at once, so that the buffers of all of them fit into a fixed budget.
-struct IMergeTreeReader::CompressedSizeMeasurement
+namespace
 {
-    /// A short value that does not fit into what is compressed of them is still compressed in full, with its size.
-    static constexpr size_t MAX_SHORT_VALUES_BLOCK_SIZE = StringValuesSkippedByFilter::MAX_BYTES_TO_COMPRESS_OF_SHORT_VALUES
-        + StringValuesSkippedByFilter::MAX_SHORT_VALUE_SIZE + sizeof(UInt64);
-    static constexpr size_t MAX_LONG_VALUES_BLOCK_SIZE = StringValuesSkippedByFilter::MAX_BYTES_TO_COMPRESS_OF_LONG_VALUES;
-    static constexpr size_t MAX_SIZES_BLOCK_SIZE = StringValuesSkippedByFilter::MAX_BYTES_TO_COMPRESS_OF_SIZES;
-    static constexpr size_t MAX_TOTAL_BLOCK_SIZE = MAX_SHORT_VALUES_BLOCK_SIZE + MAX_LONG_VALUES_BLOCK_SIZE + 2 * MAX_SIZES_BLOCK_SIZE;
-    static constexpr size_t BUDGET = 4 * DBMS_DEFAULT_BUFFER_SIZE;
-    static constexpr size_t MIN_BLOCK_SIZE = 4096;
 
-    struct Stream
+/// The codec of the same kind as `codec` that compresses much faster, at the cost of compressing a little worse.
+CompressionCodecPtr getFastCodecOfSameKind(const CompressionCodecPtr & codec)
+{
+    if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
     {
-        NullWriteBuffer out;
-        CompressedWriteBuffer compressed;
-
-        Stream(CompressionCodecPtr codec, size_t block_size) : compressed(out, std::move(codec), block_size) {}
-
-        ~Stream()
-        {
-            compressed.cancel();
-            out.cancel();
-        }
-
-        size_t getCompressedBytes()
-        {
-            compressed.next();
-            return out.count();
-        }
-    };
-
-    struct Streams
-    {
-        Stream values;
-        Stream sizes;
-
-        Streams(const CompressionCodecPtr & codec, size_t values_block_size, size_t num_measured_columns)
-            : values(codec, getBlockSize(values_block_size, num_measured_columns))
-            , sizes(codec, getBlockSize(MAX_SIZES_BLOCK_SIZE, num_measured_columns))
-        {
-        }
-
-        void attach(StringValuesSkippedByFilter::CompressedSizeMeasurement & measurement)
-        {
-            measurement.values = &values.compressed;
-            measurement.sizes = &sizes.compressed;
-        }
-
-        /// The compressed size of all the measured values, extrapolated from the bytes compressed of them.
-        size_t estimateCompressedBytes(StringValuesSkippedByFilter::CompressedSizeMeasurement & measurement)
-        {
-            const size_t res = extrapolate(values, measurement.values_bytes) + extrapolate(sizes, measurement.sizes_bytes);
-            measurement = {};
-            return res;
-        }
-
-        static size_t extrapolate(Stream & stream, const StringValuesSkippedByFilter::CompressedSizeMeasurement::Bytes & bytes)
-        {
-            if (!bytes.compressed)
-                return 0;
-            return static_cast<size_t>(
-                static_cast<double>(stream.getCompressedBytes()) * static_cast<double>(bytes.total) / static_cast<double>(bytes.compressed));
-        }
-    };
-
-    Streams short_values;
-    Streams long_values;
-
-    CompressedSizeMeasurement(const CompressionCodecPtr & codec, size_t num_measured_columns)
-        : short_values(codec, MAX_SHORT_VALUES_BLOCK_SIZE, num_measured_columns)
-        , long_values(codec, MAX_LONG_VALUES_BLOCK_SIZE, num_measured_columns)
-    {
+        Codecs fast_codecs;
+        for (const auto & nested : multiple->getCodecs())
+            fast_codecs.push_back(getFastCodecOfSameKind(nested));
+        if (std::ranges::equal(fast_codecs, multiple->getCodecs()))
+            return codec;
+        return std::make_shared<CompressionCodecMultiple>(std::move(fast_codecs));
     }
 
-    static size_t getBlockSize(size_t max_block_size, size_t num_measured_columns)
+    const auto description = codec->getCodecDescription();
+    const auto * function = description->as<ASTFunction>();
+    if (!function)
+        return codec;
+    if (function->name == "LZ4HC")
+        return CompressionCodecFactory::instance().get("LZ4", {});
+    if (function->name == "ZSTD")
     {
-        const size_t share = max_block_size * BUDGET / MAX_TOTAL_BLOCK_SIZE / num_measured_columns;
-        return std::clamp(share, MIN_BLOCK_SIZE, max_block_size);
+        const auto & arguments = function->arguments->children;
+        const auto * level = arguments.empty() ? nullptr : arguments.front()->as<ASTLiteral>();
+        if (level && level->value.safeGet<UInt64>() > 1)
+            return CompressionCodecFactory::instance().get("ZSTD", 1);
     }
-};
+    return codec;
+}
+
+/// The size of the data compressed into one block, without the header and the checksum of the block.
+size_t getCompressedSizeOfBlockData(const ICompressionCodec & codec, const char * data, size_t size)
+{
+    PODArray<char> compressed(codec.getCompressedReserveSize(static_cast<UInt32>(size)));
+    return codec.compress(data, static_cast<UInt32>(size), compressed.data()) - ICompressionCodec::getHeaderSize();
+}
+
+/// Estimates how all of the sampled values compress, in blocks of the default `max_compress_block_size`. A slow codec only
+/// compresses the first bytes of the sample, to correct the estimate of the fast one by how much better it compresses them.
+size_t estimateCompressedSize(const StringValueSample & sample, const ICompressionCodec & codec, const ICompressionCodec & fast_codec)
+{
+    static constexpr size_t BYTES_TO_COMPARE_CODECS = 8 * 1024;
+    static constexpr size_t BLOCK_OVERHEAD = ICompressionCodec::getHeaderSize() + sizeof(CityHash_v1_0_2::uint128);
+
+    const auto & data = sample.getData();
+    if (data.empty())
+        return 0;
+
+    double compressed = static_cast<double>(getCompressedSizeOfBlockData(fast_codec, data.data(), data.size()));
+    if (&fast_codec != &codec)
+    {
+        const size_t size = std::min(data.size(), BYTES_TO_COMPARE_CODECS);
+        compressed *= static_cast<double>(getCompressedSizeOfBlockData(codec, data.data(), size))
+            / static_cast<double>(std::max<size_t>(1, getCompressedSizeOfBlockData(fast_codec, data.data(), size)));
+    }
+
+    const size_t total_bytes = sample.getTotalBytes();
+    const size_t num_blocks = (total_bytes + DBMS_DEFAULT_BUFFER_SIZE - 1) / DBMS_DEFAULT_BUFFER_SIZE;
+    return static_cast<size_t>(compressed * static_cast<double>(total_bytes) / static_cast<double>(data.size())) + num_blocks * BLOCK_OVERHEAD;
+}
+
+}
 
 void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings)
 {
@@ -263,15 +247,11 @@ void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_pa
     deserialize_settings.string_value_filter = it->second.filter;
     deserialize_settings.string_values_skipped_by_filter = &it->second.skipped;
 
-    /// Created only when the column is read, because the buffers of the compressors are large.
     auto & filter_for_column = it->second;
     if (rows_to_measure_compressed_size_of_string_values_skipped_by_filters && filter_for_column.codec
-        && !filter_for_column.compressed_size_measurement)
+        && !filter_for_column.skipped.samples)
     {
-        filter_for_column.compressed_size_measurement
-            = std::make_shared<CompressedSizeMeasurement>(filter_for_column.codec, string_value_filters_by_part_column_name.size());
-        filter_for_column.compressed_size_measurement->short_values.attach(filter_for_column.skipped.short_values);
-        filter_for_column.compressed_size_measurement->long_values.attach(filter_for_column.skipped.long_values);
+        filter_for_column.skipped.samples = std::make_unique<StringValuesSkippedByFilter::Samples>();
         filter_for_column.skipped.rows_to_measure = rows_to_measure_compressed_size_of_string_values_skipped_by_filters;
     }
 }
@@ -286,14 +266,16 @@ StringValuesSkippedInBlockByColumn IMergeTreeReader::takeStringValuesSkippedByFi
     StringValuesSkippedInBlockByColumn res;
     for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
     {
-        /// The compressors are released after each block, because they are large, and the next block is rarely measured.
+        /// The samples are released after each block, because they are large, and the next block is rarely measured.
         auto & skipped = filter_for_column.skipped;
         StringValuesSkippedInBlock skipped_in_block{.bytes = std::exchange(skipped.bytes, 0), .measured_bytes = {}};
-        if (auto measurement = std::exchange(filter_for_column.compressed_size_measurement, nullptr))
+        if (auto samples = std::exchange(skipped.samples, nullptr))
         {
+            const auto & codec = *filter_for_column.codec;
+            const auto & fast_codec = *filter_for_column.fast_codec;
             skipped_in_block.measured_bytes = std::exchange(skipped.measured_bytes, 0);
-            skipped_in_block.measured_compressed_bytes = measurement->short_values.estimateCompressedBytes(skipped.short_values)
-                + measurement->long_values.estimateCompressedBytes(skipped.long_values);
+            skipped_in_block.measured_compressed_bytes = estimateCompressedSize(samples->short_values, codec, fast_codec)
+                + estimateCompressedSize(samples->long_values, codec, fast_codec) + estimateCompressedSize(samples->sizes, codec, fast_codec);
             skipped_in_block.measured_rows = std::exchange(skipped.measured_rows, 0);
         }
         skipped.rows_to_measure = 0;
@@ -307,7 +289,10 @@ void IMergeTreeReader::setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFi
     const std::function<CompressionCodecPtr(const String &)> & get_codec)
 {
     for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
+    {
         filter_for_column.codec = get_codec(name);
+        filter_for_column.fast_codec = filter_for_column.codec ? getFastCodecOfSameKind(filter_for_column.codec) : nullptr;
+    }
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
