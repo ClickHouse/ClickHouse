@@ -74,6 +74,8 @@ SELECT key, avg(length(renamed)) FROM t_renamed WHERE renamed <> '' GROUP BY key
 SELECT key, avg(length(n.a)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested';
 -- Both read the one stream `n.size0`.
 SELECT key, avg(length(n.a)), avg(length(n.b)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_shared_stream';
+-- `n.b` read whole shares `n.size0` with `n.a.size0`, although the part counts it in the size of `n.a` only.
+SELECT key, avg(length(n.a)), sum(arraySum(n.b)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_offsets_and_full';
 SELECT key, avg(length(n.a)) FROM t_nested_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_compact';
 SELECT key, max(s) FROM t_codec GROUP BY key FORMAT Null SETTINGS log_comment = '05452_codec';
 SELECT key, max(renamed) FROM t_codec_renamed GROUP BY key FORMAT Null SETTINGS log_comment = '05452_codec_renamed';
@@ -116,6 +118,18 @@ WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND
     AND type = 'QueryFinish'
 )
 ORDER BY log_comment;
+
+-- What is read next to the offsets is the data of `n.b`, which is at most the size the part gives `n.b`.
+WITH
+    (SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] FROM system.query_log
+     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+        AND log_comment = '05452_nested_offsets_and_full' AND type = 'QueryFinish') AS offsets_and_full,
+    (SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] FROM system.query_log
+     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+        AND log_comment = '05452_nested' AND type = 'QueryFinish') AS offsets,
+    (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
+     WHERE database = currentDatabase() AND table = 't_nested' AND active AND column = 'n.b') AS n_b_bytes
+SELECT offsets > 0 AND offsets_and_full BETWEEN offsets AND (offsets + n_b_bytes) * 1.25 AS offsets_charged_with_full_column;
 
 -- The renamed column holds the same rows with the same `CODEC`, so it must be priced like the original.
 WITH

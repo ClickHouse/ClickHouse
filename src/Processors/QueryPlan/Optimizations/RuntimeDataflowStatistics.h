@@ -241,12 +241,13 @@ public:
     /// empty strings in `input_columns` (see `StringValueFilter`), by column name.
     /// `compressed_bytes_read`, if the reader knows it, is the compressed size of the data read from disk, which is
     /// recorded as it is instead of estimating it from the read columns.
-    /// `column_sizes` is keyed by storage column, so a column it has no entry for - a subcolumn such as `s.size` read
-    /// for `length(s)`, or the offsets `n.size0` shared by the arrays of a `Nested` - comes in `streams_bytes_per_row`,
-    /// with the compressed bytes per row of the streams read for it. Priced per row rather than by a compression ratio
-    /// because its in-memory bytes need not match those streams: a `single_stream` `String` keeps its sizes inside its
-    /// only stream, so reading `s.size` reads all of `s`. A stream several columns of the block read is charged once,
-    /// whichever way they are priced. `part_columns` must name the columns the way the readers do.
+    /// A column of a wide part is priced by the streams read for it, as given in `streams_bytes_per_row` with their
+    /// compressed bytes per row, and a stream several columns of the block read is charged once: a full `single_stream`
+    /// `s` and `s.size` share the only stream of `s`, the arrays of a `Nested` their offsets `n.size0`. Priced per row
+    /// rather than by a compression ratio because the in-memory bytes of a column need not match its streams, and
+    /// `column_sizes`, keyed by storage column, holds no subcolumn and gives shared streams to one of the columns
+    /// only. It prices just the columns whose streams are not known, those of a dynamic structure.
+    /// `part_columns` must name the columns the way the readers do.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,

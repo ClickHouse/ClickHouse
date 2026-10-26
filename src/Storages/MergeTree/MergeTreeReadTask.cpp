@@ -175,9 +175,9 @@ MergeTreeReadTask::MergeTreeReadTask(
         /// Everything below is keyed by the names the readers give the columns they read, which are the names in the
         /// part: a column renamed by a mutation not yet applied to the part keeps its old one there.
         ColumnCodecByName resolved_codecs;
-        /// The part's column sizes are keyed by storage column, so what is read for a subcolumn - `s.size` for
-        /// `length(s)`, or the offsets `n.size0` that the arrays of a `Nested` share - is looked up by the streams the
-        /// readers open for it.
+        /// The streams the readers open for each column, which the part's column sizes cannot give: they hold no
+        /// subcolumn (`s.size` for `length(s)`), and a stream shared by several columns (the offsets `n.size0` of the
+        /// arrays of a `Nested`) is counted in one of them only.
         RuntimeDataflowStatisticsCacheUpdater::StreamsBytesPerRowByName resolved_streams_bytes;
         const size_t part_rows = info->data_part_info->getIndexGranularity().getTotalRows();
         const bool resolve_streams = info->data_part_info->isWidePart() && part_rows;
