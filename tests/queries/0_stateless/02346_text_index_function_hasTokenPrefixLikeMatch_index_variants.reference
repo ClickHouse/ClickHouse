@@ -41,6 +41,33 @@ Parts: 1 | Granules: 7
 Granules: 8/8
 Name: idx_paths
 Granules: 7/8
+-- an index on JSONAllPaths(j) or mapKeys(m) next to an index on the element: the functions use the tokenizer of the element index
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	0
+JSON	0
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	0
+Map	0
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
 -- LowCardinality(String): direct read
 8
 8

@@ -738,8 +738,36 @@ private:
         const std::vector<SelectedCondition> & selected_conditions,
         const ContextPtr & context)
     {
-        if (selected_conditions.size() != 1 || function_node.children.size() < 2 || function_node.children.size() > 3)
+        if (function_node.children.size() < 2 || function_node.children.size() > 3)
             return &function_node;
+
+        auto function_name = function_node.function_base->getName();
+        const SelectedCondition * condition = nullptr;
+
+        if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_name))
+        {
+            /// Take the tokenizer only from the index chosen for this function, `selectConditions` keeps no other one for it.
+            /// An index on `mapKeys(m)` or `JSONAllPaths(j)` can be selected next to it, but it only adds a hint for the key
+            /// or the path. Its tokenizer does not define the function, and it must not prevent the rewrite: otherwise the
+            /// function uses `splitByNonAlpha` wherever the index is not read directly.
+            auto it = std::ranges::find_if(selected_conditions, [&](const SelectedCondition & selected)
+            {
+                return selected.virtual_column.search_query->getFunctionName() == function_name;
+            });
+
+            if (it == selected_conditions.end())
+                return &function_node;
+
+            condition = &*it;
+        }
+        else if (selected_conditions.size() == 1)
+        {
+            condition = &selected_conditions.front();
+        }
+        else
+        {
+            return &function_node;
+        }
 
         auto new_children = function_node.children;
         const auto & arg_haystack = new_children[0];
@@ -754,19 +782,11 @@ private:
         Field needles_field = (*arg_needles->column)[0];
         DataTypePtr needles_type = arg_needles->result_type;
 
-        const auto & condition = selected_conditions.front();
-
-        /// Take the tokenizer only from an index built for this function, not e.g. from a `mapKeys(m)` index.
-        if (MergeTreeIndexConditionText::isPerTokenPatternFunction(function_node.function_base->getName())
-            && condition.virtual_column.search_query->getFunctionName() != function_node.function_base->getName())
-            return &function_node;
-
-        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->condition);
+        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition->info->condition);
         auto preprocessor = condition_text.getPreprocessor();
         auto postprocessor = condition_text.getPostprocessor();
         const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         const auto * tokenizer = condition_text.getTokenizer();
-        auto function_name = function_node.function_base->getName();
 
         /// All three transforms follow the index definition, so they apply to every occurrence of the function.
         const bool apply_preprocessor = needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();

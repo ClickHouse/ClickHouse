@@ -115,6 +115,74 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE
 
 DROP TABLE tab;
 
+SELECT '-- an index on JSONAllPaths(j) or mapKeys(m) next to an index on the element: the functions use the tokenizer of the element index';
+
+-- The result is the same with direct read, without the index, without direct read, and when the dictionary scan is abandoned.
+-- Each granule has two tokens with the prefix, so `text_index_like_max_matched_tokens = 1` abandons the scan.
+
+CREATE TABLE tab
+(
+    id UInt32,
+    j JSON,
+    INDEX idx_paths(JSONAllPaths(j)) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_k(j.k::String) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, multiIf(number < 16, if(number % 2 = 0, '{"k": "env:prod-eu"}', '{"k": "env:prod-us"}'), number < 24, '{"k": "env prod"}', number < 32, '{"x": "env:prod-eu"}', '{"k": "dev"}') FROM numbers(64);
+
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'env:prod');
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'env:prod') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'prod');
+SELECT 'JSON', count() FROM tab WHERE hasTokenPrefix(j.k::String, 'prod') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON', count() FROM tab WHERE hasTokenLike(j.k::String, 'env:prod-%');
+SELECT 'JSON', count() FROM tab WHERE hasTokenLike(j.k::String, 'env:prod-%') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON', count() FROM tab WHERE hasTokenLike(j.k::String, 'env:prod-%') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'JSON', count() FROM tab WHERE hasTokenMatch(j.k::String, '^env:prod-(eu|us)$');
+SELECT 'JSON', count() FROM tab WHERE hasTokenMatch(j.k::String, '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON', count() FROM tab WHERE hasTokenMatch(j.k::String, '^env:prod-(eu|us)$') SETTINGS text_index_like_max_matched_tokens = 1;
+
+DROP TABLE tab;
+
+-- The index on mapKeys(m) has another tokenizer, which the functions must not take.
+SET optimize_functions_to_subcolumns = 0;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX idx_keys(mapKeys(m)) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX idx_k(m['k']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, multiIf(number < 16, map('k', if(number % 2 = 0, 'env:prod-eu', 'env:prod-us')), number < 24, map('k', 'env prod'), number < 32, map('x', 'env:prod-eu'), map('k', 'dev')) FROM numbers(64);
+
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod');
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'prod');
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'prod') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenLike(m['k'], 'env:prod-%');
+SELECT 'Map', count() FROM tab WHERE hasTokenLike(m['k'], 'env:prod-%') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenLike(m['k'], 'env:prod-%') SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'Map', count() FROM tab WHERE hasTokenMatch(m['k'], '^env:prod-(eu|us)$');
+SELECT 'Map', count() FROM tab WHERE hasTokenMatch(m['k'], '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenMatch(m['k'], '^env:prod-(eu|us)$') SETTINGS text_index_like_max_matched_tokens = 1;
+
+DROP TABLE tab;
+
+SET optimize_functions_to_subcolumns = DEFAULT;
+
 SELECT '-- LowCardinality(String): direct read';
 
 CREATE TABLE tab
