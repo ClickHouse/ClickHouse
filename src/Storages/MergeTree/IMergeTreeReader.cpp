@@ -357,15 +357,18 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
         /// and the resources of the reading query, so that the limits of its user also bound the set.
         context_copy = Context::createCopy(settings.read_context);
         auto default_expressions_settings = storage_context->getSettingsCopy();
-        for (std::string_view name : {
-                 "readonly", "allow_ddl", "allow_introspection_functions",
-                 "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
-                 "max_bytes_before_external_set", "max_bytes_ratio_before_external_set",
-                 "max_bytes_for_external_set_bloom_filter", "max_bytes_for_external_set_cache",
-                 "min_free_disk_space_for_temporary_data", "temporary_files_codec", "temporary_files_buffer_size",
-                 "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
-                 "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
-                 "max_execution_time", "timeout_overflow_mode"})
+        static constexpr std::string_view reader_settings[] =
+        {
+            "readonly", "allow_ddl", "allow_introspection_functions",
+            "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
+            "max_bytes_before_external_set", "max_bytes_ratio_before_external_set",
+            "max_bytes_for_external_set_bloom_filter", "max_bytes_for_external_set_cache",
+            "min_free_disk_space_for_temporary_data", "temporary_files_codec", "temporary_files_buffer_size",
+            "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
+            "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
+            "max_execution_time", "timeout_overflow_mode",
+        };
+        for (std::string_view name : reader_settings)
             default_expressions_settings.set(name, settings.read_context->getSettingsRef().get(name));
         context_copy->setSettings(default_expressions_settings);
         context_copy->setCurrentDatabaseUnchecked(storage_context->getCurrentDatabase());
