@@ -10,9 +10,14 @@
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
+#include <Functions/ComparisonParams.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -25,6 +30,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TokenizerFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -190,7 +196,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
     NameSet columns_shadowing_map_subcolumns_,
-    JSONIndexArgumentTypes json_argument_types_)
+    JSONIndexArgumentTypes json_argument_types_,
+    NamesAndTypesList index_input_columns_)
     : WithContext(context_)
     , header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
@@ -198,6 +205,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , index_input_columns(std::move(index_input_columns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -1071,6 +1079,164 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+/// A `Dynamic` or `Variant` value has the type of its row, not of its path.
+static bool holdsValuesOfSeveralTypes(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & part) { return isDynamic(part) || isVariant(part); });
+}
+
+static bool isCastFunction(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+
+    const auto function = node.toFunctionNode();
+    const auto function_name = function.getFunctionName();
+    return (function_name == "CAST" || function_name == "_CAST") && function.getArgumentsSize() == 2;
+}
+
+/// The JSON path in the node, as `tryMatchNodeToJSONIndex` matches it.
+static RPNBuilderTreeNode getJSONPathNode(const RPNBuilderTreeNode & node)
+{
+    return isCastFunction(node) ? node.toFunctionNode().getArgumentAt(0) : node;
+}
+
+static std::shared_ptr<const DataTypeObject> tryGetJSONColumnType(const NamesAndTypesList & columns, const String & name)
+{
+    for (const auto & column : columns)
+        if (column.name == name)
+            return typeid_cast<std::shared_ptr<const DataTypeObject>>(removeNullable(column.type));
+
+    for (const auto & column : columns)
+    {
+        if (!name.starts_with(column.name + "."))
+            continue;
+
+        const auto subcolumn_type = column.type->tryGetSubcolumnType(std::string_view(name).substr(column.name.size() + 1));
+        return subcolumn_type ? typeid_cast<std::shared_ptr<const DataTypeObject>>(removeNullable(subcolumn_type)) : nullptr;
+    }
+
+    return nullptr;
+}
+
+/// Whether `JSONAllValues` writes one text for a value of the type: a `DateTime` without a time zone is written
+/// in `session_timezone`, and a nested `JSON` holds values of runtime types.
+static bool hasStableText(const IDataType & type)
+{
+    auto is_stable = [](const IDataType & part)
+    {
+        if (isObject(part))
+            return false;
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&part))
+            return date_time->hasExplicitTimeZone();
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&part))
+            return date_time64->hasExplicitTimeZone();
+        return true;
+    };
+
+    return !anyInTypeTree(type, [&](const IDataType & part) { return !is_stable(part); });
+}
+
+/// `-0` equals `0` and has another text.
+static bool containsFloatZero(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::Float64:
+            return value.safeGet<Float64>() == 0;
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), containsFloatZero);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), containsFloatZero);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), containsFloatZero);
+        default:
+            return false;
+    }
+}
+
+/// The text of the only value of `type` that `equals` matches with the constant, or nullopt when it is not known exactly.
+static std::optional<String> getTextOfEqualValue(
+    const DataTypePtr & type, const Field & value, const DataTypePtr & value_type, const ContextPtr & context)
+{
+    const auto constant_type = removeNullable(removeLowCardinality(value_type));
+
+    Field converted;
+    if (constant_type->equals(*type))
+        converted = value;
+    else if (isStringOrFixedString(constant_type))
+        converted = tryConvertFieldToType(value, *type, constant_type.get(), ComparisonParams(context).format_settings);
+    else if (isNativeNumber(constant_type) && isNativeNumber(type))
+        converted = tryConvertFieldToTypeExact(value, *type, constant_type.get());
+
+    if (converted.isNull() || containsFloatZero(converted))
+        return {};
+
+    /// The conversion leaves a string longer than the `FixedString` as is.
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type.get());
+        fixed_string_type && converted.safeGet<String>().size() > fixed_string_type->getN())
+        return {};
+
+    return serializeFieldAsText(converted, type);
+}
+
+bool MergeTreeIndexConditionText::readsStoredJSONValue(const RPNBuilderTreeNode & path, bool * is_type_hint) const
+{
+    const auto name = path.getColumnName();
+    const auto info = tryMatchJSONSubcolumnToIndex(name, header, "JSONAllValues", json_argument_types);
+    if (!info)
+        return false;
+
+    const auto object_type = tryGetJSONColumnType(index_input_columns, info->json_column_name);
+    if (!object_type)
+        return false;
+
+    const auto & typed_paths = object_type->getTypedPaths();
+    const std::string_view subcolumn = std::string_view(name).substr(info->json_column_name.size() + 1);
+    if (subcolumn == info->path)
+        return typed_paths.contains(info->path);
+
+    const auto type_hint_prefix = info->path + ".:`";
+    if (!subcolumn.starts_with(type_hint_prefix) || subcolumn.find('`', type_hint_prefix.size()) != subcolumn.size() - 1)
+        return false;
+
+    if (is_type_hint)
+        *is_type_hint = true;
+
+    return std::ranges::none_of(typed_paths, [&](const auto & typed_path)
+    {
+        return info->path == typed_path.first || info->path.starts_with(typed_path.first + ".");
+    });
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetTextOfJSONTypeHintDefault(const RPNBuilderTreeNode & node) const
+{
+    const auto path = getJSONPathNode(node);
+    const auto * path_dag_node = path.getDAGNode();
+    bool is_type_hint = false;
+    if (!path_dag_node || canContainNull(*path_dag_node->result_type) || !readsStoredJSONValue(path, &is_type_hint) || !is_type_hint)
+        return {};
+
+    return serializeFieldAsText(path_dag_node->result_type->getDefault(), path_dag_node->result_type);
+}
+
+bool MergeTreeIndexConditionText::canUseJSONAllValuesForPath(const RPNBuilderTreeNode & node) const
+{
+    const auto path = getJSONPathNode(node);
+    const auto * path_dag_node = path.getDAGNode();
+    if (!path_dag_node)
+        return false;
+
+    const auto path_type = removeNullable(removeLowCardinality(path_dag_node->result_type));
+    if (!hasStableText(*path_type))
+        return false;
+
+    if (holdsValuesOfSeveralTypes(*path_type))
+        return true;
+
+    return !isCastFunction(node) && readsStoredJSONValue(path);
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -1233,6 +1399,33 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
+        if (!canUseJSONAllValuesForPath(index_column_node))
+            return false;
+
+        /// `JSONAllValues` holds the text of a typed path's value in the path's type.
+        const auto path_type = removeNullable(removeLowCardinality(getJSONPathNode(index_column_node).getDAGNode()->result_type));
+        if (!holdsValuesOfSeveralTypes(*path_type) && !isString(path_type))
+        {
+            if (function_name == "equals")
+            {
+                auto text = getTextOfEqualValue(path_type, value_field, value_type, getContext());
+                if (!text || text == tryGetTextOfJSONTypeHintDefault(index_column_node))
+                    return false;
+
+                value_field = std::move(*text);
+                value_type = std::make_shared<DataTypeString>();
+            }
+            else if (!isFixedString(path_type))
+            {
+                return false;
+            }
+        }
+        else if (function_name == "equals" && tryGetTextOfJSONTypeHintDefault(index_column_node))
+        {
+            /// `equals` converts the constant to the path's type, so a constant of another text can equal the default.
+            return false;
+        }
+
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
@@ -2322,6 +2515,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
+    std::optional<String> json_type_hint_default;
+    std::optional<size_t> fixed_string_size = indexed_fixed_string_size;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
@@ -2331,8 +2526,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             has_index_for_map_element_value = true;
             return true;
         }
-        return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
+        if (hasIndexForColumn(node.getColumnName()))
+            return true;
+        if (!tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types) || !canUseJSONAllValuesForPath(node))
+            return false;
+        json_type_hint_default = tryGetTextOfJSONTypeHintDefault(node);
+
+        /// `JSONAllValues` stores a `FixedString` value with its padding.
+        const auto path_type = removeNullable(removeLowCardinality(getJSONPathNode(node).getDAGNode()->result_type));
+        if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(path_type.get()))
+            fixed_string_size = fixed_string_type->getN();
+        return true;
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
@@ -2391,10 +2595,10 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     size_t total_row_count = prepared_set->getTotalRowCount();
     const bool set_is_fixed_string = WhichDataType(set_column_values.getDataType()).isFixedString();
     /// `IN` casts the value to the set's type, so a `FixedString` on either side drops trailing zero bytes like `equals`.
-    const bool has_fixed_string = set_is_fixed_string || indexed_fixed_string_size.has_value();
+    const bool has_fixed_string = set_is_fixed_string || fixed_string_size.has_value();
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
-        .indexed_fixed_string_size = indexed_fixed_string_size,
+        .indexed_fixed_string_size = fixed_string_size,
         .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
@@ -2425,7 +2629,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
+        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)) || element == json_type_hint_default)
         {
             out.text_search_queries.clear();
             return false;

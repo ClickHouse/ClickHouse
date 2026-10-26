@@ -2330,7 +2330,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.enable_positions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        preprocessor, postprocessor, params.enable_positions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression),
+        getColumnsWithTypesRequiredForIndexCalc());
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
