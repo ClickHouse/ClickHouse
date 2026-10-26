@@ -952,7 +952,8 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         last_scanned_snapshot_id = snapshot_id;
         last_scanned_state = state;
 
-        /// Deliver APPEND snapshots only, like Paimon's streaming read: COMPACT and OVERWRITE ones rewrite or replace data files, ANALYZE ones add none.
+        /// Deliver APPEND snapshots only, like Paimon's streaming read: COMPACT and OVERWRITE snapshots
+        /// rewrite or replace data files, ANALYZE ones add none.
         if (append_only && !state->isAppend())
         {
             if (!state->isCompact() && state->commit_kind != "OVERWRITE" && state->commit_kind != "ANALYZE")
