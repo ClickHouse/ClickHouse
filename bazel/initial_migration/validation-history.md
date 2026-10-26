@@ -2409,3 +2409,26 @@ Bazel's `buildMetrics.actionSummary.runnerCount` reported the following:
 | --- | ---: | ---: | ---: | ---: |
 | x86-64 | 16,630 | 20,844 | Unavailable | Unavailable |
 | ARM64 | 25,254 | 12,192 | Unavailable | Unavailable |
+
+## 5d95244ba
+
+At [5d95244ba](https://github.com/dzbarsky/clickhouse/commit/5d95244ba7782b74139e364ab3b74715fe66f8d3), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the [preceding Bazel build](https://github.com/dzbarsky/clickhouse/commit/06cd225afedcba4133e9f551f86604fb9c7323d4).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/1fd50416-2f19-4a9b-bbdb-ca686e50cf1a) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/1fd50416-2f19-4a9b-bbdb-ca686e50cf1a) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/1fd50416-2f19-4a9b-bbdb-ca686e50cf1a) | `//src:unit_tests_dbms` | `6c7a927df0328c38debc566680fa9b3c5bffe8f3a6225a66139e373e65152350` | 811968280 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/2aeeaab6-e87b-4986-8e83-6ef0062485e5) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/2aeeaab6-e87b-4986-8e83-6ef0062485e5) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Differs from previous Bazel (216 bytes smaller) |
+| [ARM64](https://app.buildbuddy.io/invocation/2aeeaab6-e87b-4986-8e83-6ef0062485e5) | `//src:unit_tests_dbms` | `03a6e01f641d05d267e71bec7f73f876ad06c79e16d4a0352ba34ec75cb0a118` | 795060896 | Matches previous Bazel |
+
+`GlibcPieStartup` combines glibc startup objects with GNU ld `-r -z noexecstack`. This keeps an assembly input without a `.note.GNU-stack` section from making the final executable request an executable stack.
+
+[x86-64 workflow](https://app.buildbuddy.io/invocation/1dd33669-fee9-4dbc-b9ce-d1aed208ddfb): all 12 targets built. Nine JSON files identified the actual executables and recorded 38 GoogleTest cases, 10 interval tests and 6 SQL cases (16 decimal boundary values). CRT action check: verified; HDFS: verified; DWYU did not run; no libraries were graded.
+
+x86-64 native: 12 remote executions, 39,318 remote cache hits.
+
+[ARM64 workflow](https://app.buildbuddy.io/invocation/dd9a65ee-511e-4d76-bf98-67a0662ea6c3): all 12 targets built. Nine JSON files identified the actual executables and recorded 38 GoogleTest cases, 10 interval tests and 6 SQL cases (16 decimal boundary values). CRT action check: verified; HDFS: verified; DWYU did not run; no libraries were graded.
+
+ARM64 native: 11 remote executions, 39,365 remote cache hits.
