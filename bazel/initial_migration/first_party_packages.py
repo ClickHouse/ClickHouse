@@ -280,7 +280,7 @@ DBMS_PUBLIC_HEADERS = {
     "Planner": ("PlannerContext.h", "PlannerCorrelatedSubqueries.h", "Utils.h"),
     "Processors": ("IAccumulatingTransform.h", "ResizeProcessor.h"),
     "Processors/Executors": ("PushingPipelineExecutor.h",),
-    "Processors/Executors/Runtime/V1": ("ExecutionThreadContext.h", "ExecutorTasks.h", "PollingQueue.h"),
+    "Processors/Executors/Runtime/V1": ("*.h",),
     "Processors/Formats": ("IRowInputFormat.h", "RowInputFormatWith*.h"),
     "Processors/Formats/Impl": (
         "ArrowGeoTypes.h", "CHColumnToArrowColumn.h", "JSONEachRowRowInputFormat.h",
