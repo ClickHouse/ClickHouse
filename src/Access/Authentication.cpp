@@ -515,6 +515,23 @@ bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authen
     }
 }
 
+bool Authentication::awsSignatureV4CannotVerify(const AuthenticationData & authentication_method)
+{
+    if (authentication_method.getOneTimePassword())
+        return true;
+
+    switch (authentication_method.getType())
+    {
+        case AuthenticationType::SHA256_PASSWORD:
+        case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        case AuthenticationType::BCRYPT_PASSWORD:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
 {
     const auto & otp_secret = authentication_method.getOneTimePassword();

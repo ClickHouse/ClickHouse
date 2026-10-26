@@ -58,6 +58,13 @@ struct Authentication
       */
     static bool mysqlNative41CannotVerify(const AuthenticationData & authentication_method);
 
+    /** The AWS Signature Version 4 (`AWSSignatureV4Credentials`) is derived from the plaintext secret, so it can be verified
+      * only against `no_password` and `plaintext_password` methods, and it cannot carry a one-time password.
+      * For the same reason as with `mysqlNative41CannotVerify`, the login is rejected if any other method that limits
+      * the `GRANTS` or the `VALID UNTIL` returns true here: it could not take part in the combination of the matching methods.
+      */
+    static bool awsSignatureV4CannotVerify(const AuthenticationData & authentication_method);
+
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>
     class Require : public Exception
