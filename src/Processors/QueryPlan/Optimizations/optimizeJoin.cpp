@@ -14,7 +14,6 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -705,12 +704,14 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
     return true;
 }
 
-/// An outer join pads an unmatched row with a top-level NULL only for a type its nullability
-/// conversion can wrap. `Array`/`Map` are padded with the type default (`[]`, `map()`) instead, and
-/// `Variant`/`Dynamic` with an internal NULL: both match another such key rather than rejecting it.
+/// Whether an outer join of the join graph pads a column of this type with NULL. Only a join that changes
+/// no column types is flattened into the graph (see `addChildQueryGraph`), so whatever `join_use_nulls`
+/// it ran with, it pads a `Nullable` column with NULL and any other column with the type default: `0`,
+/// `''`, `[]`, or an internal NULL of `Variant`/`Dynamic`, which another such key matches rather than
+/// rejects. A subquery's join may also have run with a `join_use_nulls` other than the query's.
 static bool nullExtensionIsNull(const DataTypePtr & type)
 {
-    return isNullableOrLowCardinalityNullable(type) || JoinCommon::canBecomeNullable(type);
+    return isNullableOrLowCardinalityNullable(type);
 }
 
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
@@ -912,14 +913,11 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     /// clause is the conjunction of the `join_expression` conjuncts, so a relation is rejecting for
     /// the operator as soon as any conjunct rejects on it -- hence the union.
     ///
-    /// Null-rejection is only meaningful when an unmatched outer-join row is padded with a real SQL
-    /// NULL, i.e. under `join_use_nulls = 1`. With `join_use_nulls = 0` (the default) the padded value
-    /// is a type default (`0`/`''`), so a "null-rejecting" predicate like `t2.id = t3.id` still
-    /// matches the padded `0`; trusting null-rejection then unlocks unsound assoc/asscom reorderings
-    /// -- e.g. `(t1 LEFT JOIN t2) LEFT JOIN t3` becoming `t1 LEFT JOIN (t2 LEFT JOIN t3)`, which
-    /// changes the result. So we claim no null-rejection unless `join_use_nulls` is on, which makes
-    /// the detectors fall back to the conservative (correct) outer-join reordering in that case.
-    const bool trust_null_rejection = query_graph.context->optimization_settings.join_use_nulls;
+    /// Null-rejection only counts on columns that an outer join pads with a real SQL NULL, the
+    /// `Nullable` ones (see `nullExtensionIsNull`). Any other column is padded with a type default
+    /// (`0`/`''`), which a "null-rejecting" predicate like `t2.id = t3.id` still matches; trusting it
+    /// would unlock unsound assoc/asscom reorderings, e.g. `(t1 LEFT JOIN t2) LEFT JOIN t3` becoming
+    /// `t1 LEFT JOIN (t2 LEFT JOIN t3)`, which changes the result.
     BitSet cda_nr_rels;
     for (const auto * old_node : join_expression)
     {
@@ -931,8 +929,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
         /// Collect all sources from join expressions
         join_expression_sources |= edge.getSourceRelations();
-        if (trust_null_rejection)
-            cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
+        cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
 
         /// ON-clause predicates of an outer join must be applied exactly at the step
         /// that joins the null-supplying side, in its ON clause.
@@ -1097,6 +1094,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
+    Strings relations_estimated_from_data_lake_metadata;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
@@ -1112,7 +1110,18 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
+        else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate)
+            relations_estimated_from_data_lake_metadata.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
+
+    /// `ALTER TABLE ... MATERIALIZE STATISTICS` does not apply to data lake tables, so they get their own message.
+    if (!relations_estimated_from_data_lake_metadata.empty())
+        LOG_DEBUG(
+            getLogger("optimizeJoin"),
+            "Join order optimization uses imprecise row count estimates derived from data lake metadata "
+            "(for example Iceberg manifest files) for the following relation(s): {}. They have no column statistics "
+            "for join reordering, so the chosen join order may be suboptimal",
+            fmt::join(relations_estimated_from_data_lake_metadata, ", "));
 
     /// The listed names can be aliases or subquery labels, so no concrete `ALTER` command is suggested.
     if (!relations_without_statistics.empty())

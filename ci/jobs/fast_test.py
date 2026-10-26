@@ -42,6 +42,7 @@ def clone_submodules():
         "contrib/lz4",
         "contrib/zstd",
         "contrib/zxc",
+        "contrib/gdeflate",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
