@@ -7,7 +7,6 @@
 -- code path at line 200) was only covered by a `cityHash64` query that does not
 -- visibly fail in release builds if the column is nullptr — `dumpColumnStructure`
 -- gives a strong mutation guard by directly observing the Const wrapper.
-SET enable_analyzer = 1;
 
 -- GROUPING SETS path (line 200 in PlannerExpressionAnalysis.cpp)
 SELECT dumpColumnStructure('x') GROUP BY GROUPING SETS (('x'));

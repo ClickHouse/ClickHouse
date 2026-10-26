@@ -1,0 +1,13 @@
+-- A malformed nested `JSON` type must be a syntax error, not exhaust the parser backtracking budget: the type of
+-- a typed path is parsed once per nesting level, so a malformed type of depth N costs N parses, not 2^N.
+
+SELECT defaultValueOfTypeName('JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a Int8'); -- { serverError SYNTAX_ERROR }
+SELECT defaultValueOfTypeName('JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a Int8'); -- { serverError SYNTAX_ERROR }
+SELECT defaultValueOfTypeName('JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a Int8 b)))))))))))))))))))))))'); -- { serverError SYNTAX_ERROR }
+
+-- Well-formed types of the same depth keep working.
+SELECT toTypeName(defaultValueOfTypeName('JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a Int8))))))))))))))))))))))))')) = 'JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a JSON(a Int8))))))))))))))))))))))))';
+SELECT toTypeName(defaultValueOfTypeName('JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a Int8)))))))))))))))))))))))))')) = 'JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a JSON(SHARED a Int8)))))))))))))))))))))))))';
+
+-- The other argument shapes still parse: a parameter, a path named like the keyword, a plain and a SHARED path.
+SELECT toTypeName(defaultValueOfTypeName('JSON(max_dynamic_paths=3, shared Int8, a.b String, SHARED c Int8)')) = 'JSON(max_dynamic_paths=3, `a.b` String, SHARED c Int8, `shared` Int8)';
