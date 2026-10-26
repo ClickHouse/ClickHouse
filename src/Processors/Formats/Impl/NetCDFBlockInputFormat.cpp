@@ -933,15 +933,17 @@ Chunk NetCDFBlockInputFormat::read()
     approx_bytes_read_for_chunk = 0;
     block_missing_values.clear();
 
-    /// The number of rows is known from the header, so counting them reads no data.
+    UInt64 count = std::min<UInt64>(max_chunk_rows, layout.num_rows - current_row);
+
+    /// The number of rows is known from the header, so counting them reads no data. The chunks
+    /// stay bounded, because the virtual columns, such as `_path`, are materialized for all their
+    /// rows after this.
     if (need_only_count)
     {
-        UInt64 count = layout.num_rows - current_row;
-        current_row = layout.num_rows;
+        current_row += count;
         return getChunkForCount(count);
     }
 
-    UInt64 count = std::min<UInt64>(max_chunk_rows, layout.num_rows - current_row);
     const auto & result_header = getPort().getHeader();
 
     Columns result;
