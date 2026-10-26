@@ -154,6 +154,7 @@ public:
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
+        global_ctx->future_retrieved = true;
         return global_ctx->promise.get_future();
     }
 
@@ -290,6 +291,9 @@ private:
         std::map<String, UInt64> projections_merge_time;
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
+        /// The part moved into `promise`. Until the owner retrieves the future, `cancel` rolls it back.
+        std::weak_ptr<IMergeTreeDataPart> handed_off_part;
+        bool future_retrieved{false};
 
         WrittenOffsetSubstreams written_offset_substreams{};
         /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
@@ -628,10 +632,21 @@ private:
     static BuildStatisticsTransformPtr addBuildStatisticsStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
 };
 
+/// Rolls back the uncommitted transaction of `storage`, removing the blobs it has uploaded; logs a failure.
+void tryUndoTransaction(IDataPartStorage & storage) noexcept;
+
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
+    try
+    {
+        while (task->execute()) {}
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
     return task->getFuture().get();
 }
 
