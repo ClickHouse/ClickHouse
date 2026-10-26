@@ -61,6 +61,10 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
+    /// The compressed size of the blocks read so far, see `CompressedReadBufferBase::getCompressedBytesOfBlocksRead`.
+    /// Must not be called for a stream of uncompressed data.
+    size_t getCompressedBytesOfBlocksRead() const;
+
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
 

@@ -59,6 +59,9 @@ protected:
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;
 
+    /// See `getCompressedBytesOfBlocksRead`. Maintained by the buffers that read from a file.
+    size_t compressed_bytes_of_blocks_read = 0;
+
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false, bool external_data_ = false);
@@ -72,6 +75,10 @@ public:
     {
         disable_checksum = true;
     }
+
+    /// The total compressed size, with the headers and the checksums, of the blocks this buffer has decompressed or
+    /// taken decompressed from a cache. A block is counted every time it is loaded, e.g. again after a seek away from it.
+    size_t getCompressedBytesOfBlocksRead() const { return compressed_bytes_of_blocks_read; }
 
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);

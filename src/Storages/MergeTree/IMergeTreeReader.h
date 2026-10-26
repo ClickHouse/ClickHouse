@@ -104,21 +104,11 @@ public:
     /// Returns the total size of the values that the string value filters replaced with empty strings since
     /// the previous call, keyed by the column name in the part, and resets it. The in-memory size of the read
     /// columns misses these values, although they were read from disk.
-    StringValuesSkippedInBlockByColumn takeStringValuesSkippedByFilters();
+    std::unordered_map<String, size_t> takeBytesSkippedByStringValueFilters();
 
-    /// Makes it possible to measure the compressed size of the skipped values with the codec that `get_codec` returns
-    /// for the column (by its name in the part), see `measureCompressedSizeOfStringValuesSkippedByFilters`.
-    void setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(const std::function<CompressionCodecPtr(const String &)> & get_codec);
-
-    /// Whether a column has a codec to measure the compressed size of its skipped values with.
-    bool canMeasureCompressedSizeOfStringValuesSkippedByFilters() const;
-
-    /// Measures the compressed size of the values skipped in at most this many first rows of the block read next, for the
-    /// columns that have a codec.
-    void measureCompressedSizeOfStringValuesSkippedByFilters(size_t rows)
-    {
-        rows_to_measure_compressed_size_of_string_values_skipped_by_filters = rows;
-    }
+    /// For a reader that knows how many bytes it read from disk as they are stored, compressed: returns the compressed
+    /// size of the blocks it read since the previous call. A compact part has no per-column sizes to estimate it from.
+    virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -175,7 +165,7 @@ protected:
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     /// Sets the string value filter to apply during deserialization of the column, or resets it if there is none,
-    /// together with the account of the values it skips (see `takeStringValuesSkippedByFilters`).
+    /// together with the counter of the bytes it skips (see `takeBytesSkippedByStringValueFilters`).
     /// Takes the column as it is named in the part (an element of `columns_to_read`).
     /// See `MergeTreeReaderSettings::string_value_filters`.
     void setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings);
@@ -289,17 +279,13 @@ private:
     struct StringValueFilterForColumn
     {
         StringValueFilterPtr filter;
-        StringValuesSkippedByFilter skipped;
-        /// See `measureCompressedSizeOfStringValuesSkippedByFilters`.
-        CompressionCodecPtr codec;
-        /// The same as `codec`, unless it is slow: then a fast codec of the same kind, see `getFastCodecOfSameKind`.
-        CompressionCodecPtr fast_codec;
+        /// The total size of the values replaced with empty strings, see `takeBytesSkippedByStringValueFilters`.
+        size_t bytes_skipped = 0;
     };
 
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
     std::unordered_map<String, StringValueFilterForColumn> string_value_filters_by_part_column_name;
-    size_t rows_to_measure_compressed_size_of_string_values_skipped_by_filters = 0;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;

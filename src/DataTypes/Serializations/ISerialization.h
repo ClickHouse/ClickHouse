@@ -58,7 +58,6 @@ struct NameAndTypePair;
 struct MergeTreeSettings;
 
 class StringValueFilter;
-struct StringValuesSkippedByFilter;
 
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
@@ -623,8 +622,8 @@ public:
         /// which is guaranteed to filter out the rows with non-matching values, so the replacement
         /// cannot change the query result. Used only by `SerializationString`.
         std::shared_ptr<const StringValueFilter> string_value_filter;
-        /// If set, the values replaced with empty strings by `string_value_filter` are accounted in it.
-        StringValuesSkippedByFilter * string_values_skipped_by_filter = nullptr;
+        /// If set, the total size of the values replaced with empty strings by `string_value_filter` is added to it.
+        size_t * string_value_filter_bytes_skipped = nullptr;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.

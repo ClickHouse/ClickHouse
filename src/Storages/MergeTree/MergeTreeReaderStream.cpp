@@ -321,6 +321,14 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
+size_t MergeTreeReaderStream::getCompressedBytesOfBlocksRead() const
+{
+    if (!settings.is_compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
+    /// The buffer is created on the first read.
+    return compressed_data_buffer ? compressed_data_buffer->getCompressedBytesOfBlocksRead() : 0;
+}
+
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count

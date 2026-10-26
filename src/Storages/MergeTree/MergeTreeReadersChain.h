@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class RuntimeDataflowStatisticsCacheUpdater;
-
 using RangeReaders = std::vector<MergeTreeRangeReader>;
 
 struct ColumnForPatch
@@ -41,8 +39,9 @@ class MergeTreeReadersChain
     using DataflowCacheUpdateCallback = std::function<void(
         const ColumnsWithTypeAndName & columns,
         const NameSet & partially_read_columns,
-        const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
+        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
         size_t read_bytes,
+        std::optional<size_t> compressed_bytes_read,
         std::optional<bool> & should_continue_sampling)>;
 
 public:
@@ -52,11 +51,9 @@ public:
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
-    /// If `sampling_updater` is set, it decides whether `update_cb` samples the block before a reader that measures
-    /// the string values skipped by filters reads it, see `RuntimeDataflowStatisticsCacheUpdater::takeInputBlockReadFromDisk`.
     ReadResult
     read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
-         RuntimeDataflowStatisticsCacheUpdater * sampling_updater = nullptr, size_t max_block_size_rows = 0);
+         size_t max_block_size_rows = 0);
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;

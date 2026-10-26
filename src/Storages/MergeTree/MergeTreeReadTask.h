@@ -184,8 +184,6 @@ public:
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
         void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
-
-        void setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(const std::function<CompressionCodecPtr(const String &)> & get_codec);
     };
 
     struct BlockSizeParams
@@ -281,8 +279,9 @@ private:
     using DataflowCacheUpdateCallback = std::function<void(
         const ColumnsWithTypeAndName & columns,
         const NameSet & partially_read_columns,
-        const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
+        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
         size_t read_bytes,
+        std::optional<size_t> compressed_bytes_read,
         std::optional<bool> & should_continue_sampling)>;
 
     UInt64 estimateNumRows() const;
@@ -314,8 +313,6 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     DataflowCacheUpdateCallback dataflow_cache_update_cb;
-    /// Decides whether to sample a block before it is read, see `MergeTreeReadersChain::read`.
-    RuntimeDataflowStatisticsCacheUpdater * sampling_updater = nullptr;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
