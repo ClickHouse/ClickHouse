@@ -19,10 +19,11 @@ query="SELECT count(), sum(r.y) FROM (SELECT number AS x FROM numbers(3)) l
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM (EXPLAIN $query) WHERE explain LIKE '%BlockNestedLoopJoin%' SETTINGS $settings"
 
-exec 3>&1
+events_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_events.txt"
 for scheduler in 0 1; do
     echo "enable_adaptive_memory_spill_scheduler = $scheduler"
-    events=$($CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 \
-        --query "$query SETTINGS $settings, enable_adaptive_memory_spill_scheduler = $scheduler" 2>&1 >&3)
-    echo "spilled: $(grep -c '\] ExternalJoinWritePart: [1-9]' <<< "$events")"
+    $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 \
+        --query "$query SETTINGS $settings, enable_adaptive_memory_spill_scheduler = $scheduler" 2> "$events_file"
+    echo "spilled: $(grep -c '\] ExternalJoinWritePart: [1-9]' "$events_file")"
 done
+rm -f "$events_file"
