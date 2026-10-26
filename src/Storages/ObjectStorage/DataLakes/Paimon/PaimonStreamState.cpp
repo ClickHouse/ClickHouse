@@ -11,6 +11,11 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
+
+#include <sstream>
 
 namespace DB
 {
@@ -18,12 +23,112 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int INCORRECT_DATA;
+extern const int INVALID_STATE;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
-
 namespace FailPoints
 {
 extern const char paimon_incremental_read_pause_before_is_active_remove[];
+}
+
+String PaimonSnapshotIdentity::toJSON() const
+{
+    Poco::JSON::Object object;
+    object.set("timeMillis", time_millis);
+    object.set("baseManifestList", base_manifest_list);
+    object.set("deltaManifestList", delta_manifest_list);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(object, oss);
+    return oss.str();
+}
+
+PaimonSnapshotIdentity PaimonSnapshotIdentity::fromJSON(const String & json)
+{
+    Poco::JSON::Parser parser;
+    const auto object = parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+    const auto time_millis = object->get("timeMillis");
+    const auto base_manifest_list = object->get("baseManifestList");
+    const auto delta_manifest_list = object->get("deltaManifestList");
+    if (object->size() != 3 || !time_millis.isInteger() || time_millis.isBoolean() || !base_manifest_list.isString()
+        || !delta_manifest_list.isString())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Expected an object with exactly the fields timeMillis, baseManifestList and deltaManifestList");
+
+    return {time_millis.convert<Int64>(), base_manifest_list.extract<String>(), delta_manifest_list.extract<String>()};
+}
+
+PaimonProcessingLock::PaimonProcessingLock(
+    zkutil::ZooKeeperPtr keeper_,
+    std::filesystem::path path_,
+    String token_,
+    Int64 session_id_,
+    Int32 version_)
+    : keeper(std::move(keeper_))
+    , path(std::move(path_))
+    , token(std::move(token_))
+    , session_id(session_id_)
+    , version(version_)
+{
+}
+
+PaimonProcessingLock::~PaimonProcessingLock()
+{
+    auto component_guard = Coordination::setCurrentComponent("PaimonProcessingLock::~PaimonProcessingLock");
+    auto log = getLogger("PaimonProcessingLock");
+
+    try
+    {
+        if (keeper->expired())
+        {
+            /// There is no live session left to remove it through, and removing it through
+            /// any other session would delete whoever holds the lock now. Keeper drops the
+            /// node itself once it expires the session server-side.
+            LOG_DEBUG(log, "Not releasing the processing lock at {}: the session that acquired it has expired, "
+                "Keeper will drop the node when that session times out", path.string());
+            return;
+        }
+
+        Coordination::Stat stat;
+        String current_token;
+        if (!keeper->tryGet(path.string(), current_token, &stat))
+        {
+            LOG_WARNING(log, "Processing lock at {} is already gone, nothing to release", path.string());
+            return;
+        }
+
+        /// The ephemeral owner is the session id that created the node, so it cannot
+        /// be forged. Refuse to touch a lock somebody else is holding.
+        if (stat.ephemeralOwner != session_id || current_token != token)
+        {
+            LOG_WARNING(log, "Refusing to release the processing lock at {}: it is held by another consumer "
+                "(expected token '{}' owned by session {}, found token '{}' owned by session {})",
+                path.string(), token, session_id, current_token, stat.ephemeralOwner);
+            return;
+        }
+
+        auto code = keeper->tryRemove(path.string(), stat.version);
+        if (code != Coordination::Error::ZOK)
+            LOG_WARNING(log, "Failed to release the processing lock at {}: {}", path.string(), code);
+        else
+            LOG_DEBUG(log, "Released processing lock at {}", path.string());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to release the Paimon processing lock at " + path.string());
+    }
+}
+
+void PaimonProcessingLock::addFenceOps(Coordination::Requests & ops) const
+{
+    /// Losing the lock in the supported lifecycle is a session event: Keeper removes the
+    /// ephemeral when its session expires, and the commit runs through that same pinned
+    /// session. `check_session_valid=true` in `setCommittedSnapshot` therefore rejects the
+    /// commit. The node-version check is additional fail-closed validation for a missing or
+    /// unexpectedly modified node; it is not an epoch. Externally deleting or recreating
+    /// `processing_lock` while its owning session is alive is unsupported.
+    ops.emplace_back(zkutil::makeCheckRequest(path.string(), version));
 }
 
 PaimonStreamState::PaimonStreamState(
@@ -63,43 +168,85 @@ void PaimonStreamState::setKeeper(zkutil::ZooKeeperPtr keeper_)
     is_active = false;
 }
 
-std::optional<Int64> PaimonStreamState::getCommittedSnapshotId() const
+PaimonCommittedSnapshot PaimonStreamState::readCommittedSnapshot(const PaimonProcessingLock & processing_lock) const
 {
-    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::getCommittedSnapshotId");
-    auto value = readFromKeeper(fs_keeper_path / COMMITTED_SNAPSHOT_NODE);
-    if (!value)
-        return std::nullopt;
+    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::readCommittedSnapshot");
 
-    return parse<Int64>(*value);
+    const String committed_path = fs_keeper_path / COMMITTED_SNAPSHOT_NODE;
+    const String identity_path = fs_keeper_path / COMMITTED_SNAPSHOT_IDENTITY_NODE;
+    auto responses = processing_lock.getKeeper().tryGet(std::vector<std::string>{committed_path, identity_path});
+    auto node_exists = [&](size_t index, const String & path)
+    {
+        const auto error = responses[index].error;
+        if (error != Coordination::Error::ZOK && error != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(error, path);
+        return error == Coordination::Error::ZOK;
+    };
+
+    PaimonCommittedSnapshot result;
+    result.identity_node_exists = node_exists(1, identity_path);
+    if (!node_exists(0, committed_path))
+        return result;
+
+    const auto & committed = responses[0];
+    result.snapshot_id = parse<Int64>(committed.data);
+    result.version = committed.stat.version;
+
+    if (result.identity_node_exists && responses[1].stat.mzxid == committed.stat.mzxid)
+    {
+        try
+        {
+            result.snapshot_identity = PaimonSnapshotIdentity::fromJSON(responses[1].data);
+        }
+        catch (...)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_STATE,
+                "Cannot parse the Paimon incremental read state at {}: {}. No data was read and the cursor was not "
+                "modified. Setting {} to its current value makes the next read ignore this node.",
+                identity_path, getCurrentExceptionMessage(/*with_stacktrace=*/false), committed_path);
+        }
+    }
+    return result;
 }
 
-void PaimonStreamState::acquireProcessingLock()
+PaimonProcessingLockPtr PaimonStreamState::acquireProcessingLock()
 {
     auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::acquireProcessingLock");
     std::lock_guard lock(mutex);
 
     const auto processing_lock_path = fs_keeper_path / PROCESSING_LOCK_NODE;
-    try
-    {
-        keeper->create(processing_lock_path, replica_name, zkutil::CreateMode::Ephemeral);
-        LOG_DEBUG(log, "Acquired processing lock at {}", processing_lock_path.string());
-    }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code == Coordination::Error::ZNODEEXISTS)
-            throw Exception(
-                ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
-                "Another incremental read is in progress (processing lock exists at {})",
-                processing_lock_path.string());
-        throw;
-    }
-}
+    /// Pin the session we are acquiring with: the `keeper` member may be replaced by
+    /// a concurrent query, and the lock must stay tied to the session that owns it.
+    auto lock_keeper = keeper;
+    const Int64 session_id = lock_keeper->getClientID();
+    const String token = fmt::format("{}/{}/{}", replica_name, active_node_identifier, session_id);
 
-void PaimonStreamState::releaseProcessingLock()
-{
-    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::releaseProcessingLock");
-    std::lock_guard lock(mutex);
-    removeProcessingLock();
+    /// Create and stamp the node in one transaction so a successful acquisition always has
+    /// the version expected by `addFenceOps`. This also avoids exposing a half-stamped node
+    /// between two round trips. The version is additional validation for in-place mutation;
+    /// it is not an epoch that survives an unsupported external delete and recreate.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(processing_lock_path, token, zkutil::CreateMode::Ephemeral));
+    ops.emplace_back(zkutil::makeSetRequest(processing_lock_path, token, /*version=*/0));
+
+    Coordination::Responses responses;
+    auto code = lock_keeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZNODEEXISTS)
+        throw Exception(
+            ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+            "Another incremental read is in progress (processing lock exists at {})",
+            processing_lock_path.string());
+    if (code != Coordination::Error::ZOK)
+        zkutil::KeeperMultiException::check(code, ops, responses);
+
+    const Int32 version = dynamic_cast<const Coordination::SetResponse &>(*responses[1]).stat.version;
+
+    LOG_DEBUG(log, "Acquired processing lock at {} with token '{}' (version {})",
+        processing_lock_path.string(), token, version);
+
+    return std::make_unique<PaimonProcessingLock>(
+        std::move(lock_keeper), processing_lock_path, token, session_id, version);
 }
 
 void PaimonStreamState::initializeKeeperNodes()
@@ -222,70 +369,91 @@ void PaimonStreamState::deactivate()
     LOG_INFO(log, "Paimon replica {} deactivated", replica_name);
 }
 
-void PaimonStreamState::setCommittedSnapshot(Int64 snapshot_id)
+void PaimonStreamState::setCommittedSnapshot(
+    const PaimonProcessingLock & processing_lock,
+    const PaimonCommittedSnapshot & observed,
+    Int64 snapshot_id,
+    const std::optional<PaimonSnapshotIdentity> & snapshot_identity)
 {
     auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::setCommittedSnapshot");
     std::lock_guard lock(mutex);
 
     LOG_DEBUG(log, "Committing snapshot {} to Keeper", snapshot_id);
 
-    auto committed_path = fs_keeper_path / COMMITTED_SNAPSHOT_NODE;
+    /// Commit through the session that acquired the lock. Using the `keeper` member
+    /// here would let a read whose session died borrow a session established later
+    /// by a concurrent query and commit over another consumer's progress.
+    auto & lock_keeper = processing_lock.getKeeper();
+    const auto committed_path = fs_keeper_path / COMMITTED_SNAPSHOT_NODE;
+
+    /// The batch was computed from `observed`, so anything else is a bug in the caller.
+    if (observed.snapshot_id && snapshot_id <= *observed.snapshot_id)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempted to move the Paimon committed snapshot at {} from {} to {}, which is not forward",
+            committed_path.string(), *observed.snapshot_id, snapshot_id);
 
     Coordination::Requests ops;
+    processing_lock.addFenceOps(ops);
+    const size_t watermark_op = ops.size();
 
-    // Update or create committed snapshot node
-    keeper->checkExistsAndGetCreateAncestorsOps(committed_path, ops);
-    if (keeper->exists(committed_path))
-        ops.emplace_back(zkutil::makeSetRequest(committed_path, toString(snapshot_id), -1));
+    /// Condition the write on the watermark being exactly what this read observed, not on
+    /// whatever it is right now: the only writer besides this lock holder is an operator,
+    /// and a reset made while the read was in flight must win over the read's commit.
+    /// The ancestors exist: the lock node checked above lives under the same parent.
+    if (observed.snapshot_id)
+        ops.emplace_back(zkutil::makeSetRequest(committed_path, toString(snapshot_id), observed.version));
     else
         ops.emplace_back(zkutil::makeCreateRequest(committed_path, toString(snapshot_id), zkutil::CreateMode::Persistent));
 
+    if (snapshot_identity)
+    {
+        const auto identity_path = fs_keeper_path / COMMITTED_SNAPSHOT_IDENTITY_NODE;
+        if (observed.identity_node_exists)
+            ops.emplace_back(zkutil::makeSetRequest(identity_path, snapshot_identity->toJSON(), -1));
+        else
+            ops.emplace_back(zkutil::makeCreateRequest(identity_path, snapshot_identity->toJSON(), zkutil::CreateMode::Persistent));
+    }
+
     Coordination::Responses responses;
-    auto code = keeper->tryMulti(ops, responses);
+    auto code = lock_keeper.tryMulti(ops, responses, /*check_session_valid=*/true);
     if (code != Coordination::Error::ZOK)
+    {
+        if (code == Coordination::Error::ZSESSIONMOVED)
+            throw Exception(
+                ErrorCodes::INVALID_STATE,
+                "Refusing to advance the Paimon committed snapshot to {}: the Keeper session that acquired the "
+                "processing lock at {} is no longer the current one, so this read no longer holds the lock.",
+                snapshot_id, processing_lock.getPath().string());
+
+        if (Coordination::isUserError(code) && !responses.empty())
+        {
+            const size_t failed_op = zkutil::getFailedOpIndex(code, responses);
+            if (failed_op < watermark_op)
+                throw Exception(
+                    ErrorCodes::INVALID_STATE,
+                    "Refusing to advance the Paimon committed snapshot to {}: the processing lock at {} is no longer "
+                    "held by this read (it was removed or taken over by another consumer).",
+                    snapshot_id, processing_lock.getPath().string());
+
+            if (failed_op == watermark_op)
+                throw Exception(
+                    ErrorCodes::INVALID_STATE,
+                    "Refusing to advance the Paimon committed snapshot to {}: the watermark at {} was modified "
+                    "externally while this read was in progress (it was {} when the read started), "
+                    "for example reset by an operator. Nothing was delivered and the watermark was left as set, "
+                    "so the next read resumes from it.",
+                    snapshot_id, committed_path.string(),
+                    observed.snapshot_id ? toString(*observed.snapshot_id) : "absent");
+        }
+
         zkutil::KeeperMultiException::check(code, ops, responses);
+    }
 
     LOG_INFO(log, "Snapshot {} committed successfully", snapshot_id);
-}
-
-void PaimonStreamState::writeToKeeper(const std::filesystem::path & path, const String & value)
-{
-    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::writeToKeeper");
-    Coordination::Requests ops;
-    keeper->checkExistsAndGetCreateAncestorsOps(path, ops);
-
-    if (keeper->exists(path))
-        ops.emplace_back(zkutil::makeSetRequest(path, value, -1));
-    else
-        ops.emplace_back(zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent));
-
-    Coordination::Responses responses;
-    auto code = keeper->tryMulti(ops, responses);
-    if (code != Coordination::Error::ZOK)
-        zkutil::KeeperMultiException::check(code, ops, responses);
-}
-
-std::optional<String> PaimonStreamState::readFromKeeper(const std::filesystem::path & path) const
-{
-    auto component_guard = Coordination::setCurrentComponent("PaimonStreamState::readFromKeeper");
-    std::lock_guard lock(mutex);
-
-    String result;
-    if (!keeper->tryGet(path, result))
-        return std::nullopt;
-
-    return result;
-}
-
-void PaimonStreamState::removeProcessingLock()
-{
-    auto processing_lock_path = fs_keeper_path / PROCESSING_LOCK_NODE;
-    keeper->tryRemove(processing_lock_path, -1);
-    LOG_DEBUG(log, "Released processing lock at {}", processing_lock_path.string());
 }
 
 }
 
 
 #endif
-

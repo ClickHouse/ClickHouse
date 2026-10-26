@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/SharedMutex.h>
 
 namespace DB::Parquet
 {
@@ -24,7 +25,16 @@ struct AtomicBitSet
         return (x & mask) != 0;
     }
 
-    std::optional<size_t> findFirst();
+    bool test(size_t i, std::memory_order memory_order) const
+    {
+        return (a[i >> 6].load(memory_order) >> (i & 63)) & 1;
+    }
+
+    /// First set bit at or after `start`.
+    std::optional<size_t> findNext(size_t start) const;
+    std::optional<size_t> findFirst() const { return findNext(0); }
+    /// First bit at or after `start` that is set here and not in `mask` (of the same size).
+    std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
 };
 
 // I'd like to talk to the manager.
@@ -131,11 +141,25 @@ private:
     };
     TopKAdmission top_k_admission;
 
+    /// Whether readAheadColumnData starts ColumnData prefetches of schedulable row groups ahead of their decoding.
+    bool column_data_read_ahead = false;
+    /// Held shared by ColumnData admission rounds and exclusively by readAheadColumnData, which never overlaps them.
+    SharedMutex column_data_prefetch_mutex;
+    /// Row groups whose current ColumnData prefetches were started by read-ahead and whose decoding
+    /// was not scheduled yet. Modified with column_data_prefetch_mutex locked.
+    AtomicBitSet column_data_read_ahead_row_groups;
+    /// Depth slots held by each such row group; set by readAheadColumnData, zeroed by the admission round that unsets its bit.
+    std::vector<size_t> column_data_read_ahead_run_slots;
+    /// Slots held by all row groups.
+    std::atomic<size_t> column_data_read_ahead_count {0};
+
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
+    /// The estimated memory of the output of the primitive column `column_idx` in the row subgroup.
+    MemoryUsageToken reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
     /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
-    /// reader's memory high watermark minus what the `BloomFilterBlocksOrDictionary` stage already holds
-    /// (the decoded dictionaries and value sets other row groups are holding right now, plus this batch's
+    /// reader's memory high watermark minus what the `Dictionary` stage already holds (the decoded
+    /// dictionaries and value sets other row groups are holding right now, plus this batch's
     /// in-flight `diff`). Both the decoded dictionaries (`Reader::decodeDictionaryPage`) and the value
     /// sets built while evaluating a row-group filter (`Reader::hashDictionaryValues`) reserve through it,
     /// charging the shared stage counter directly, so the pruning memory stays within the watermark
@@ -144,6 +168,8 @@ private:
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
+    void readAheadColumnData();
+    void addColumnDataPrefetches(const Task & task, std::vector<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.

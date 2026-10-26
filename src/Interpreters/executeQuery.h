@@ -8,6 +8,7 @@
 #include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -23,6 +24,7 @@ class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+struct Settings;
 
 struct QueryResultDetails
 {
@@ -108,7 +110,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
 );
 
-void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
+/// Schedules the query on the background query pool. The returned future becomes ready once the query
+/// passes all the checks and starts its execution, or holds the exception thrown before that.
+std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
@@ -127,6 +131,9 @@ void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_
 /// start of processing; also used for generated queries that bypass `executeQuery`, such as in the
 /// `eval` table function.
 void normalizeAnalyzerSettings(ASTPtr ast);
+
+/// Parses the query only to produce text with secrets hidden; returns an empty string if the query does not parse.
+String formatQueryForLogging(const String & query, const Settings & settings);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

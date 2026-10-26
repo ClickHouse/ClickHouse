@@ -155,13 +155,16 @@ SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_
 
 SYSTEM DROP COLUMNS CACHE;
 
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach this query's `query_log` row.
+
 -- Read all parts (populate cache)
 SELECT sum(id), sum(value), count() FROM t_cache_multipart
-SETTINGS use_columns_cache = 1, log_comment = '04074_multipart_before_merge_1';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04074_multipart_before_merge_1';
 
 -- Read again (should hit cache)
 SELECT sum(id), sum(value), count() FROM t_cache_multipart
-SETTINGS use_columns_cache = 1, log_comment = '04074_multipart_before_merge_2';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04074_multipart_before_merge_2';
 
 -- Every source part is cached under its own name.
 SELECT arraySort(groupUniqArray(part))
@@ -175,11 +178,11 @@ OPTIMIZE TABLE t_cache_multipart FINAL;
 
 -- Read after merge (cache should miss for new merged part)
 SELECT sum(id), sum(value), count() FROM t_cache_multipart
-SETTINGS use_columns_cache = 1, log_comment = '04074_multipart_after_merge_1';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04074_multipart_after_merge_1';
 
 -- Read again after merge (should hit cache for new merged part)
 SELECT sum(id), sum(value), count() FROM t_cache_multipart
-SETTINGS use_columns_cache = 1, log_comment = '04074_multipart_after_merge_2';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04074_multipart_after_merge_2';
 
 -- The merged part is cached under its own name. Its miss-then-hit pattern is
 -- asserted at the end of the test through the profile events, so that a merge
