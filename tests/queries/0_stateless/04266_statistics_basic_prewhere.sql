@@ -6,7 +6,7 @@
 -- All checks rely on `extractAll(explain, 'Prewhere filter column: ...')`,
 -- so the test stays robust to EXPLAIN formatting and indentation changes.
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;

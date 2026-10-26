@@ -220,6 +220,14 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
+size_t MergeTreeDataSelectExecutor::getMinMarksToUseStatistics(size_t min_marks_per_part, size_t parts_to_load_statistics)
+{
+    if (parts_to_load_statistics && min_marks_per_part > std::numeric_limits<size_t>::max() / parts_to_load_statistics)
+        return std::numeric_limits<size_t>::max();
+    return min_marks_per_part * parts_to_load_statistics;
+}
+
+
 bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -875,7 +883,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const SelectQueryInfo & query_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ConditionTemplate<KeyCondition>::Ptr & key_condition,
-    size_t min_marks_to_use_statistics,
+    size_t min_marks_per_part_to_use_statistics,
     const ContextPtr & context,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
@@ -914,15 +922,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
-    /// Statistics that are already in memory cost nothing, so the read is bounded only if they would be loaded.
-    auto statistics_in_memory = [&]
-    {
-        return std::ranges::all_of(
-            parts, [&](const RangesInDataPart & part) { return part.data_part->areEstimatesInMemory(required_columns); });
-    };
+    /// Statistics that are already in memory cost nothing, so only the parts whose statistics would be loaded count.
+    const size_t min_marks_to_use_statistics = getMinMarksToUseStatistics(
+        min_marks_per_part_to_use_statistics,
+        std::ranges::count_if(
+            parts, [&](const RangesInDataPart & part) { return !part.data_part->areEstimatesInMemory(required_columns); }));
 
-    if (min_marks_to_use_statistics && !statistics_in_memory()
-        && hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
+    if (hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
     {
         LOG_TRACE(log, "Not pruning parts by statistics, because fewer than {} marks are left to read by the primary key",
             min_marks_to_use_statistics);

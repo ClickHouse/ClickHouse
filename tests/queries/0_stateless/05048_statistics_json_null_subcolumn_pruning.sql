@@ -4,7 +4,7 @@
 -- parent NULL count is 0, and treating `json.null = 1` as the null-map would prune every
 -- part and return a wrong empty result.
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET allow_statistics = 1;
 SET use_statistics_for_part_pruning = 1;
 SET materialize_statistics_on_insert = 1;

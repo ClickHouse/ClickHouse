@@ -8,7 +8,7 @@
 -- and statistics part pruning keep agreeing with a plain read, for a mutation that carries the part's
 -- columns over and for one that rewrites them all, and that a column the part does store keeps both.
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET mutations_sync = 2, alter_sync = 2;
 SET use_statistics_for_part_pruning = 1, use_statistics_for_min_max_aggregation = 1;
 -- An insert must not be allowed to supply a statistic that a mutation below is supposed to supply, or

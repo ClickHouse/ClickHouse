@@ -2,7 +2,7 @@
 -- (The concrete statistics type, column data type and predicate type don't matter)
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;

@@ -2061,7 +2061,7 @@ class SettingsRandomizer:
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         # Tables in tests are small, so with a non-zero threshold statistics are mostly not used.
-        "min_marks_to_use_statistics": lambda: 0 if random.random() < 0.5 else random.choice([1, 16, 1024]),
+        "min_marks_per_part_to_use_statistics": lambda: 0 if random.random() < 0.5 else random.choice([1, 16, 64, 256]),
         # Columns cache settings - randomize with 0.5 probability each
         "use_columns_cache": lambda: random.randint(0, 1),
         "enable_reads_from_columns_cache": lambda: random.randint(0, 1),

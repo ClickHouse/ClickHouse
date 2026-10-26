@@ -2280,19 +2280,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
-    DECLARE(UInt64, min_marks_to_use_statistics, 1024, R"(
-The minimum number of marks left to read after the primary key analysis for column statistics to be used for pruning parts and for ordering the conditions of `PREWHERE`.
+    DECLARE(UInt64, min_marks_per_part_to_use_statistics, 64, R"(
+The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be used for pruning parts and for ordering the conditions of `PREWHERE`.
 
-Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics.
+Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
 
 Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
 
 Possible values:
 
 - 0 — Use statistics regardless of the size of the read.
-- Positive integer — The number of marks.
+- Positive integer — The number of marks per data part.
 )", 0, \
-        {"26.11", 0, 1024, "New setting to skip loading statistics when the primary key leaves only a small read."}) \
+        {"26.11", 0, 64, "New setting to skip loading statistics when the primary key leaves only a small read."}) \
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 

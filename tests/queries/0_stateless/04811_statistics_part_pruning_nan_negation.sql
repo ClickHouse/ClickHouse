@@ -3,7 +3,7 @@
 -- NaN, so the stored range excludes NaN; yet NaN sorts after +inf and satisfies negated predicates
 -- like NOT (f < c), f <> c and f NOT IN (...). The result with pruning on must match pruning off.
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 
 DROP TABLE IF EXISTS t;
 

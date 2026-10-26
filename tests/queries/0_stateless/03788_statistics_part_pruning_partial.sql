@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- This test validates Statistics-based part pruning functionality when some parts have basic statistics
 -- and other parts don't (parts inserted before statistics were added).
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning_partial;

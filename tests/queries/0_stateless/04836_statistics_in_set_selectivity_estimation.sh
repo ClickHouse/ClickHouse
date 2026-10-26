@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Use statistics regardless of the size of the read.
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --min_marks_to_use_statistics 0"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --min_marks_per_part_to_use_statistics 0"
 
 # `ConditionSelectivityEstimator` must bound what it spends on `col IN (set)`: it must not run a
 # subquery to fill a set, and above `statistics_max_set_size_for_exact_selectivity_estimation` it

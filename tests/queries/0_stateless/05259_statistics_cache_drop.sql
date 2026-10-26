@@ -8,7 +8,7 @@ SET materialize_statistics_on_insert = 1;
 -- The statistics are loaded to reorder the PREWHERE conditions.
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1;
 SET automatic_parallel_replicas_mode = 0;
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 
 DROP TABLE IF EXISTS t_05259;
 DROP USER IF EXISTS user_05259;

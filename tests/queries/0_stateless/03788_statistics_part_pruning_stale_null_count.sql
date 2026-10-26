@@ -2,7 +2,7 @@
 -- min/max but no NULL count, so `IS NULL` / `IS NOT NULL` must not prune them.
 
 DROP TABLE IF EXISTS t_stats_stale_null_count;
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET allow_statistics = 1;
 SET use_statistics_for_part_pruning = 1;
 SET materialize_statistics_on_insert = 1;

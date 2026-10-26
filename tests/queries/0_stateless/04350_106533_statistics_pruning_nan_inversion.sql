@@ -3,7 +3,7 @@
 -- [min, max] that hides it. This is a third pruning layer with the same hazard, and it is reached even
 -- with use_skip_indexes = 0.
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET materialize_statistics_on_insert = 1;
 SET allow_experimental_statistics = 1;
 

@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 set optimize_move_to_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;

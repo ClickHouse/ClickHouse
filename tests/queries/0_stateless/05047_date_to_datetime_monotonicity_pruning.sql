@@ -2,7 +2,7 @@
 -- window of day numbers, so key and statistics analysis must not assume order outside it.
 -- `identity` hides the column from analysis and gives the unpruned answer.
 
-SET min_marks_to_use_statistics = 0;
+SET min_marks_per_part_to_use_statistics = 0;
 set session_timezone = 'UTC'; -- these tests are timezone sensitive
 set optimize_use_implicit_projections = 0;
 

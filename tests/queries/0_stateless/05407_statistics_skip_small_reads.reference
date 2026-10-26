@@ -1,6 +1,9 @@
 -- the primary key leaves two marks of two parts: no statistics
 1
 0
+-- the primary key leaves 200 marks of one part: statistics are used
+0
+1
 -- the same read with the threshold disabled: statistics are used
 1
 1
@@ -12,9 +15,10 @@
 1
 -- the same read without statistics
 5000
-05407_query_large	1
-05407_query_small	0
-05407_query_small_no_threshold	1
+05407_query_large	1	1
+05407_query_one_part	0	0
+05407_query_small	0	2
+05407_query_small_no_threshold	1	1
 -- row limits apply to the parts left after pruning by statistics
 45
 45
