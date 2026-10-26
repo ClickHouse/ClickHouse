@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -9,16 +9,15 @@ exports_files([
 
 ch_cc_library(
     name = "aws_c_compression",
-    srcs = glob(["source/*.c"]) + glob(["include/**/private/**/*.h"]),
+    srcs = glob([
+        "source/*.c",
+        "include/**/private/**/*.h",
+    ]),
     hdrs = glob(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],
     ),
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-    ],
+    copts = AWS_CRT_COPTS,
     includes = ["include"],
     language = "C",
     local_defines = AWS_CRT_DEFINES,

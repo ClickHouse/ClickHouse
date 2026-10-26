@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -45,11 +45,7 @@ ch_cc_library(
         ],
     ),
     hdrs = glob(["include/aws/io/*.h"]),
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-    ],
+    copts = AWS_CRT_COPTS,
     implementation_deps = ["@clickhouse_aws_c_cal//:aws_c_cal"],
     includes = ["include"],
     language = "C",
@@ -67,11 +63,7 @@ ch_cc_library(
         "include/aws/io/private/tls_channel_handler_private.h",
         "include/aws/io/private/tls_channel_handler_shared.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-    ],
+    copts = AWS_CRT_COPTS,
     implementation_deps = [
         ":aws_c_io",
         "@clickhouse_aws_c_common//:aws_c_common",

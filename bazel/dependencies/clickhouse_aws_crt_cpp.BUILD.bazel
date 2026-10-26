@@ -41,7 +41,8 @@ ch_cc_library(
     ] + glob([
         "source/http/*.cpp",
         "source/io/*.cpp",
-    ]) + glob(["include/aws/crt/io/private/*.h"]),
+        "include/aws/crt/io/private/*.h",
+    ]),
     hdrs = glob(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],

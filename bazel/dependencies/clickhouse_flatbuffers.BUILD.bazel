@@ -71,7 +71,8 @@ ch_cc_binary(
         "src/idl_gen_swift.cpp",
         "src/idl_gen_ts.cpp",
         "include/codegen/python.cc",
-    ] + glob(["grpc/src/compiler/*.cc"]) + glob([
+    ] + glob([
+        "grpc/src/compiler/*.cc",
         "src/**/*.h",
         "include/codegen/**/*.h",
         "include/flatbuffers/flatc.h",

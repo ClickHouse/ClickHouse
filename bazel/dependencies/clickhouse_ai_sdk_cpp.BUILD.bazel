@@ -20,7 +20,8 @@ _AI_SDK_CPP_HTTP_DEPS = [
 
 ch_cc_library(
     name = "_ai-sdk-cpp-anthropic",
-    srcs = glob(["src/providers/anthropic/*.cpp"]) + glob([
+    srcs = glob([
+        "src/providers/anthropic/*.cpp",
         "src/http/*.h",
         "src/providers/*.h",
         "src/providers/anthropic/*.h",
@@ -99,7 +100,8 @@ ch_cc_library(
 
 ch_cc_library(
     name = "_ai-sdk-cpp-openai",
-    srcs = glob(["src/providers/openai/*.cpp"]) + glob([
+    srcs = glob([
+        "src/providers/openai/*.cpp",
         "src/http/*.h",
         "src/providers/*.h",
         "src/providers/openai/*.h",

@@ -153,6 +153,7 @@ DEPENDENCIES = {
 # Drop direct dependencies unused in both native DWYU reports or already supplied
 # by retained public dependencies before and after them in the declared order.
 _EMBEDDED_UNUSED = {
+    '//base/widechar_width',
     '@clickhouse_aws//:_aws__compile_0', '@clickhouse_azure//:_azure_sdk', '@clickhouse_openssl//:crypto',
     '//base:pcg_random', '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2',
     '@clickhouse_cctz//:_cctz', '@clickhouse_double_conversion//:_double-conversion',
@@ -170,9 +171,8 @@ EMBEDDED_UNUSED = {
     },
     'dbms_embedded': _EMBEDDED_UNUSED | {
         ARRAY_LENGTH,
-        '//base/glibc-compatibility', '//bazel:clickhouse_config_headers', '//src/Common:cow',
+        '//base/glibc-compatibility', '//src/Common:cow',
         '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
-        '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_abseil_cpp//:absl_raw_hash_set', '@clickhouse_abseil_cpp//:absl_strings',
         '@clickhouse_abseil_cpp//:absl_synchronization', '@clickhouse_arrow//:_arrow__compile_0',
         '@clickhouse_aws_c_mqtt//:aws_c_mqtt', '@clickhouse_croaring//:_roaring',
@@ -216,6 +216,15 @@ def embedded_object_edits(build, rule, name, attrs, canonical):
             key = canonical(label)
             if key not in unused:
                 labels.setdefault(key, label)
+        if name == 'dbms_embedded':
+            # Keeper's request handlers include config.h; the embedded client's descriptors use Boost.Iostreams.
+            headers = ['//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl']
+            for header in headers:
+                labels.pop(canonical(header), None)
+            deps = list(labels.values())
+            i = deps.index('//src/Common/ZooKeeper:clickhouse_common_zookeeper_base') + 1
+            deps[i:i] = headers
+            return deps
         return list(labels.values())
     deps = retained(CPUS[0])
     if deps != retained(CPUS[1]):
@@ -461,9 +470,9 @@ def apply(root):
                 omit = {canonical(v) for v in discard}
                 insert_after = None
                 if (package, name, field) == ('src', 'clickhouse_common_io__compile_0', 'implementation_deps'):
-                    # unit_tests_dbms links Minizip before clickhouse_common_config after FrequencyHolder.o.
+                    # Keep widechar_width, Minizip and clickhouse_common_config after FrequencyHolder.o in unit_tests_dbms.
                     anchor = ':clickhouse_common_io_embedded'
-                    following = [MINIZIP, '//src/Common/Config:clickhouse_common_config']
+                    following = ['//base/widechar_width', MINIZIP, '//src/Common/Config:clickhouse_common_config']
                     if not all({canonical(v) for v in [anchor, *following]} <= row for row in values):
                         raise ValueError(f'{name}: expected embedded, Minizip and configuration dependencies')
                     omit.update(canonical(v) for v in following)

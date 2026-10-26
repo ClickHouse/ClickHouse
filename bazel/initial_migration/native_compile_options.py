@@ -73,11 +73,22 @@ def shared_native_compile_options(root, paths):
             old = expand((functions | constants)[symbol], standard)
             patterns.append((symbol, list(map(ast_key, old)), ast.parse(new, mode="eval").body))
 
+    aws_module = "bazel/dependencies/aws_crt_defines.bzl"
+    aws_flags = assignments(Source((root / aws_module).read_text()).module.body)["AWS_CRT_COPTS"]
+    aws_prefix = list(map(ast_key, aws_flags.elts))
     for path in sorted(paths):
         source = Source(path.read_text())
-        edits, imports = [], set()
+        edits, imports = [], {}
         for _, rule in source.rules():
             kind = call_name(rule)
+            if kind == "ch_cc_library" and path.name.startswith(("clickhouse_aws_c_", "clickhouse_aws_checksums.")):
+                attrs = {kw.arg: kw.value for kw in rule.keywords}
+                if getattr(attrs.get("language"), "value", None) == "C" and "copts" in attrs:
+                    for opts in ast.walk(attrs["copts"]):
+                        if isinstance(opts, ast.List) and list(map(ast_key, opts.elts[:len(aws_prefix)])) == aws_prefix:
+                            suffix = opts.elts[len(aws_prefix):]
+                            edits.append((*source.span(opts), "AWS_CRT_COPTS" + (" + " + render(suffix) if suffix else "")))
+                            imports.setdefault("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", set()).add("AWS_CRT_COPTS")
             if kind not in {"cc_binary", "ch_cc_binary", "ch_cc_test", "llvm_runtime_objects"}:
                 continue
             attributes = ("copts",) if kind == "llvm_runtime_objects" else ("copts", "linkopts")
@@ -98,9 +109,10 @@ def shared_native_compile_options(root, paths):
                         start = 0 if name == "native_cxx_tool_copts" and original == match else None
                     if start is not None:
                         atoms[start:start + len(match)] = [replacement]
-                        imports.add(name)
+                        imports.setdefault(LABEL, set()).add(name)
                 if [ast_key(a) for a in atoms] != original:
                     edits.append((*source.span(attr.value), render(atoms)))
         if edits:
-            load = "load(" + ", ".join(repr(v) for v in (LABEL, *sorted(imports))) + ")\n"
+            load = "".join("load(" + ", ".join(map(repr, [label, *sorted(names)])) + ")\n"
+                           for label, names in sorted(imports.items()))
             path.write_text(drop_unused_loads(Source(load + source.rewrite(edits))))

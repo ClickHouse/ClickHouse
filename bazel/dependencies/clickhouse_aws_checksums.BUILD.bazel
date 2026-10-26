@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -17,11 +17,7 @@ ch_cc_library(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],
     ),
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-    ],
+    copts = AWS_CRT_COPTS,
     includes = ["include"],
     language = "C",
     local_defines = AWS_CRT_DEFINES,
@@ -39,10 +35,7 @@ ch_cc_library(
     ],
     copts = select({
         "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "-w",
-            "-std=gnu11",
-            "-g1",
+        "@platforms//cpu:aarch64": AWS_CRT_COPTS + [
             "-march=armv8-a+crc",
         ],
     }),

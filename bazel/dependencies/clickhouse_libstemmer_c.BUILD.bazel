@@ -12,7 +12,6 @@ ch_cc_library(
         "libstemmer/*.c",
         "runtime/*.c",
         "src_c/*.c",
-    ]) + glob([
         "libstemmer/**/*.h",
         "runtime/**/*.h",
         "src_c/stem_UTF_8_*.h",

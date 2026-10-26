@@ -6,9 +6,11 @@ from itertools import pairwise
 from pathlib import Path
 
 from initial_migration.compact_build import Source
+from initial_migration.compact_external_options import SOURCE_SUFFIXES
 from initial_migration.factor_build_selections import CPUS, cpu_choices, list_parts
 from initial_migration.normalize_cpp_builds import CPP_LIBRARIES, call_name
 from initial_migration.prune_inherited_headers import SourceDocument
+from initial_migration.repository_inputs import CC_HEADER_SUFFIXES
 from initial_migration.simplify_globs import _literal_strings
 
 
@@ -118,38 +120,49 @@ def compact_owned_source_globs(root, build_paths):
 
 
 def join_source_globs(text):
-    """Combine adjacent srcs globs only when their prefixes guarantee Bazel's sort order."""
+    """Join adjacent globs that preserve compiled source and private header order."""
     source = Source(text)
     edits = []
 
-    def prefixes(node):
+    def patterns(node):
         if call_name(node) != "glob" or node.keywords or len(node.args) != 1:
             return []
         patterns = _literal_strings(node.args[0]) if isinstance(node.args[0], ast.List) else None
         if not patterns or not all(pattern.isascii() for pattern in patterns):
             return []
-        return [pattern.partition("*")[0] for pattern in patterns]
+        return patterns
 
-    def visit(value):
+    def ordered(left, right, cc_target):
+        a, b = left.partition("*")[0], right.partition("*")[0]
+        if a < b and not b.startswith(a):
+            return True
+        # rules_cc passes sources and private headers to cc_common.compile separately.
+        l, r = Path(left).suffix, Path(right).suffix
+        return cc_target and ((l in SOURCE_SUFFIXES and r in CC_HEADER_SUFFIXES) or
+                              (r in SOURCE_SUFFIXES and l in CC_HEADER_SUFFIXES))
+
+    def visit(value, cc_target):
         parts = list_parts(value)
         for part in parts:
             if call_name(part) == "select" and len(part.args) == 1 and isinstance(part.args[0], ast.Dict):
                 for branch in part.args[0].values:
-                    visit(branch)
+                    visit(branch, cc_target)
+        joined = []
         for left, right in pairwise(parts):
-            a, b = prefixes(left), prefixes(right)
-            # A differing literal before either wildcard orders every possible
-            # match and rules out duplicates. A shared prefix is insufficient.
-            if not a or not b or not all(x < y and not y.startswith(x) for x in a for y in b):
+            # Compare against all patterns in a chain of merges, not just the last glob.
+            a, b = joined or patterns(left), patterns(right)
+            joined = []
+            if not a or not b or not all(ordered(x, y, cc_target) for x in a for y in b):
                 continue
             start = source.span(left.args[0].elts[-1])[1]
             end = source.span(right.args[0].elts[0])[0]
             # Leave comments and parenthesized expressions intact.
             if source.bytes[start:end].translate(None, b", \t\r\n") == b"])+glob([":
                 edits.append((start, end, ",\n"))
+                joined = a + b
 
     for _, rule in source.rules():
         for kw in rule.keywords:
             if kw.arg == "srcs":
-                visit(kw.value)
+                visit(kw.value, call_name(rule) in CPP_LIBRARIES | {"cc_binary", "ch_cc_binary", "llvm_cc_library"})
     return source.rewrite(edits)

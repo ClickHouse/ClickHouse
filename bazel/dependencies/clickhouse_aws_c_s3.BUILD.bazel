@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -17,11 +17,7 @@ ch_cc_library(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],
     ),
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-    ],
+    copts = AWS_CRT_COPTS,
     implementation_deps = [
         "@clickhouse_aws_c_cal//:aws_c_cal",
         "@clickhouse_aws_checksums//:aws_checksums",

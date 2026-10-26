@@ -2828,7 +2828,8 @@ llvm_cc_library(
 
 llvm_cc_library(
     name = "LLVMObjCARCOpts",
-    srcs = glob(["llvm/lib/Transforms/ObjCARC/*.cpp"]) + glob([
+    srcs = glob([
+        "llvm/lib/Transforms/ObjCARC/*.cpp",
         "llvm/lib/Transforms/ObjCARC/*.h",
     ]),
     implementation_deps = [
@@ -3059,7 +3060,8 @@ llvm_cc_library(
 
 llvm_cc_library(
     name = "LLVMRemarks",
-    srcs = glob(["llvm/lib/Remarks/*.cpp"]) + glob([
+    srcs = glob([
+        "llvm/lib/Remarks/*.cpp",
         "llvm/lib/Remarks/*.h",
     ]),
     hdrs = [

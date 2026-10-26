@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -18,16 +18,15 @@ ch_cc_library(
         "source/hkdf.c",
         "source/hmac.c",
         "source/rsa.c",
-    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob(["source/unix/*.c"]) + glob(["include/**/private/**/*.h"]),
+    ] + glob(["source/shared/*.c"]) + ["source/symmetric_cipher.c"] + glob([
+        "source/unix/*.c",
+        "include/**/private/**/*.h",
+    ]),
     hdrs = glob(
         ["include/**/*.h"],
         exclude = ["include/**/private/**/*.h"],
     ),
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-g1",
-    ],
+    copts = AWS_CRT_COPTS,
     implementation_deps = ["@clickhouse_openssl//:crypto"],
     includes = ["include"],
     language = "C",

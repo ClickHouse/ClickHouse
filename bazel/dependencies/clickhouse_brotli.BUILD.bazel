@@ -12,7 +12,6 @@ ch_cc_library(
         "c/common/*.c",
         "c/dec/*.c",
         "c/enc/*.c",
-    ]) + glob([
         "c/common/**/*.h",
         "c/dec/**/*.h",
         "c/enc/**/*.h",

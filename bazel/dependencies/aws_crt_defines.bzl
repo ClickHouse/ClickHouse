@@ -1,6 +1,8 @@
-"""Compiler definitions of the SDK and CRT sources compiled by contrib/aws-cmake."""
+"""Compiler options for the AWS SDK and CRT sources compiled by contrib/aws-cmake."""
 
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES")
+
+AWS_CRT_COPTS = ["-w", "-std=gnu11", "-g1"]
 
 _AWS_DEFINES = CXX_RUNTIME_DEFINES + [
     "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
