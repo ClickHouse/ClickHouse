@@ -116,6 +116,19 @@ class Migration:
             for original in pair.values():
                 self.rename_rules[original] = name
 
+        build = Source((self.root / "bazel/BUILD.bazel").read_text())
+        self.build_constants = data_assignments(build)
+        self.declared_genrules = {}
+        for _, call in build.rules():
+            if isinstance(call.func, ast.Name) and call.func.id == "genrule":
+                fields = attributes(call)
+                name = text_constant(fields["name"])
+                if name and name.startswith("generate_contrib_"):
+                    self.declared_genrules[name] = fields
+        missing = self.declared_genrules.keys() - self.rename_rules.values()
+        if missing:
+            raise ValueError("BUILD genrules missing identical CMake actions on both CPUs: " + str(sorted(missing)))
+
     def value(self, value, owner):
         # Do not rewrite every name below a migrated directory: HDFS also has
         # a gen/x86_64 crc object that belongs to an unrelated unpaired action.
@@ -172,7 +185,14 @@ class Migration:
                 original = Instantiate(cpu).visit(copy.deepcopy(self.templates[output]))
                 if key_for_cpu(original, cpu, MapConstants(self, None)) != key_for_cpu(parsed, cpu):
                     raise ValueError("Generated action changed: " + str((output, cpu)))
-            codegen_fields.append(json.dumps(shared_name) + ": " + rendered)
+            if shared_name in self.declared_genrules:
+                # Keep the BUILD declaration only while CMake specifies the same action.
+                declared = {k: ast.literal_eval(self.build_constants[v.id] if isinstance(v, ast.Name) else v)
+                            for k, v in self.declared_genrules[shared_name].items() if k != "name"}
+                if declared != ast.literal_eval(parsed):
+                    raise ValueError("BUILD genrule differs from CMake: " + shared_name)
+            else:
+                codegen_fields.append(json.dumps(shared_name) + ": " + rendered)
             self.counts["identical_action_pairs"] += 1
         replacements = [
             (*source.span(declarations[SHARED]), "{\n" + ",\n".join(template_fields) + ",\n}"),
@@ -188,7 +208,8 @@ class Migration:
                 if key_for_cpu(node, cpu, MapConstants(self, None)) != key_for_cpu(rules[name], cpu):
                     raise ValueError("Unrelated generator changed: " + name)
             self.counts["other_generators_preserved"] += 1
-        if set(rules) != (set(self.original) - set(self.rename_rules)) | set(self.rename_rules.values()):
+        expected = (set(self.original) - set(self.rename_rules)) | set(self.rename_rules.values())
+        if set(rules) != expected - self.declared_genrules.keys():
             raise ValueError("Unexpected CODEGEN_RULES names after migration")
         return result
 

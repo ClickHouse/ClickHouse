@@ -476,23 +476,6 @@ HDFS3_PROTO_IMPORTS = {
 }
 
 CODEGEN_RULES = {
-    "generate_contrib_flatbuffers_generated_File_generated_h": {
-        "srcs": [
-            "@clickhouse_arrow//:ipc_metadata_schemas",
-        ],
-        "outs": [
-            "gen/contrib/flatbuffers/generated/File_generated.h",
-            "gen/contrib/flatbuffers/generated/Message_generated.h",
-            "gen/contrib/flatbuffers/generated/Schema_generated.h",
-            "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
-            "gen/contrib/flatbuffers/generated/Tensor_generated.h",
-            "gen/contrib/flatbuffers/generated/feather_generated.h",
-        ],
-        "tools": [
-            "@clickhouse_flatbuffers//:flatc",
-        ],
-        "cmd": "\"$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$(RULEDIR)/gen/contrib/flatbuffers/generated\" $(SRCS)",
-    },
     "generate_contrib_openldap_cmake_lber_version_c": {
         "srcs": [
             "@clickhouse_openldap//:build/mkversion",

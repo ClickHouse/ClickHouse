@@ -94,16 +94,26 @@ cc_library(
     strip_include_prefix = "gen/includes/configs",
 )
 
+_ARROW_IPC_HEADERS = [
+    "gen/contrib/flatbuffers/generated/File_generated.h",
+    "gen/contrib/flatbuffers/generated/Message_generated.h",
+    "gen/contrib/flatbuffers/generated/Schema_generated.h",
+    "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
+    "gen/contrib/flatbuffers/generated/Tensor_generated.h",
+    "gen/contrib/flatbuffers/generated/feather_generated.h",
+]
+
+genrule(
+    name = "generate_contrib_flatbuffers_generated_File_generated_h",
+    srcs = ["@clickhouse_arrow//:ipc_metadata_schemas"],
+    outs = _ARROW_IPC_HEADERS,
+    cmd = "\"$(execpath @clickhouse_flatbuffers//:flatc)\" --cpp --cpp-std c++11 --no-warnings -o \"$(RULEDIR)/gen/contrib/flatbuffers/generated\" $(SRCS)",
+    tools = ["@clickhouse_flatbuffers//:flatc"],
+)
+
 cc_library(
     name = "arrow_flatbuffer_headers",
-    hdrs = [
-        "gen/contrib/flatbuffers/generated/File_generated.h",
-        "gen/contrib/flatbuffers/generated/Message_generated.h",
-        "gen/contrib/flatbuffers/generated/Schema_generated.h",
-        "gen/contrib/flatbuffers/generated/SparseTensor_generated.h",
-        "gen/contrib/flatbuffers/generated/Tensor_generated.h",
-        "gen/contrib/flatbuffers/generated/feather_generated.h",
-    ],
+    hdrs = _ARROW_IPC_HEADERS,
     includes = ["gen/contrib/flatbuffers"],
     deps = ["@clickhouse_flatbuffers//:_flatbuffers"],
 )
@@ -303,6 +313,7 @@ build_options(
             ":generate_native_ClickStack",
             ":build_options",
             "@clickhouse_krb5//:generate_contrib_krb5_cmake_include_krb5_krb5_h",
+            ":generate_contrib_flatbuffers_generated_File_generated_h",
         ] + [
             ":" + name
             for name in CODEGEN_RULES
