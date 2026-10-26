@@ -4,8 +4,6 @@
 -- causing the FilterStep's filter_column_name to become inconsistent with the DAG.
 -- This triggered a LOGICAL_ERROR in applyOrder.
 
-SET enable_analyzer = 1;
-
 SELECT 'Case 1: Map column with text index on mapValues (original reproduction case)';
 
 DROP TABLE IF EXISTS tab;
