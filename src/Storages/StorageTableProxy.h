@@ -143,8 +143,15 @@ public:
     }
 
     /// `RestorerFromBackup` calls it on the same object it restored the data into, after the data of all
-    /// tables has been restored, e.g. `EmbeddedRocksDB` reopens its read-only handles here.
-    void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
+    /// tables has been restored, e.g. `EmbeddedRocksDB` reopens its read-only handles here. It is called even when
+    /// no data was restored (`structure_only`, `restore_table_data = 0`), so an untouched table is not materialized
+    /// for it: a data restore has materialized it already in `restoreDataFromBackup`, and a storage materialized
+    /// later is constructed by a regular attach, which needs no finalization.
+    void finalizeRestoreFromBackup() override
+    {
+        if (auto storage = tryGetNested())
+            storage->finalizeRestoreFromBackup();
+    }
 
     StoragePtr getNested() const override
     {

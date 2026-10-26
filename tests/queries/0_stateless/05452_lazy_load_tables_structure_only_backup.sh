@@ -28,6 +28,10 @@ $CLICKHOUSE_CLIENT --query "
 BACKUP TABLE $DB.fuzz TO Memory('${CLICKHOUSE_DATABASE}_fuzz') SETTINGS structure_only = 1 FORMAT Null;
 BACKUP DATABASE $DB TO Memory('${CLICKHOUSE_DATABASE}_db') SETTINGS structure_only = 1 FORMAT Null;
 SELECT name, engine FROM system.tables WHERE database = '$DB' ORDER BY name;
+-- Nor must a \`RESTORE\` with \`structure_only\` into the existing tables, which restores no data either.
+RESTORE TABLE $DB.fuzz FROM Memory('${CLICKHOUSE_DATABASE}_fuzz') SETTINGS structure_only = 1 FORMAT Null;
+RESTORE DATABASE $DB FROM Memory('${CLICKHOUSE_DATABASE}_db') SETTINGS structure_only = 1 FORMAT Null;
+SELECT name, engine FROM system.tables WHERE database = '$DB' ORDER BY name;
 "
 
 # A backup with data still materializes the table and backs up its data.

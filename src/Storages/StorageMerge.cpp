@@ -336,7 +336,15 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
 
         /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query,
         /// and a lazy stand-in that is not loaded yet reports the columns of its `CREATE` query.
-        resolveStorageProxyLoading(t)->updateExternalDynamicMetadataIfExists(query_context);
+        auto resolved = resolveStorageProxyLoading(t);
+        /// An `Alias` forwards the refresh only to a target that is already materialized, and inference reads the
+        /// target's schema, so materialize the target as well.
+        if (const auto * resolved_alias = typeid_cast<const StorageAlias *>(resolved.get()))
+        {
+            if (auto target = resolved_alias->tryGetTargetTable())
+                resolveStorageProxyLoading(target);
+        }
+        resolved->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         if (source_metadata && table_metadata->datalake_table_state)
             source_metadata->emplace(storage_id, InferredSourceMetadata{t, table_metadata});
