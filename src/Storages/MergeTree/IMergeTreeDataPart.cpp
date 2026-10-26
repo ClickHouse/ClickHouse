@@ -1129,8 +1129,7 @@ bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
 {
     /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
     /// keyed by the UUID of the table and the name of the part, see `getColumnsCachePartName`.
-    return getType() == MergeTreeDataPartType::Wide
-        && canUseColumnsCacheForPart(storage.getStorageID().uuid);
+    return canUseColumnsCacheForPart(storage.getStorageID().uuid);
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const

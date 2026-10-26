@@ -694,19 +694,23 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
         ),
     )
 
-    def get_s3_requests():
-        node.query("SYSTEM FLUSH LOGS")
+    # Counts only the INSERT's own requests: the server also writes to S3 in the background
+    # (e.g. the metadata snapshot of a `plain_rewritable` database disk).
+    def insert_and_get_s3_requests(values):
+        query_id = uuid.uuid4().hex
+        node.query("INSERT INTO s3_test VALUES {}".format(values), query_id=query_id)
+        node.query("SYSTEM FLUSH LOGS query_log")
         return int(
             node.query(
-                "SELECT value FROM system.events WHERE event='S3WriteRequestsCount'"
+                "SELECT ProfileEvents['S3WriteRequestsCount'] FROM system.query_log"
+                f" WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
             )
         )
 
-    s3_requests_before = get_s3_requests()
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    s3_requests_to_write_partition = insert_and_get_s3_requests(
+        generate_values("2020-01-03", 4096)
     )
-    s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
+    assert s3_requests_to_write_partition > 0
 
     # Force multi-part upload mode.
     replace_config(
@@ -718,13 +722,11 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     node.query("SYSTEM RELOAD CONFIG")
 
     try:
-        s3_requests_before = get_s3_requests()
-        node.query(
-            "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
+        s3_requests_multi_part = insert_and_get_s3_requests(
+            generate_values("2020-01-04", 4096, -1)
         )
-
         # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
-        assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
+        assert s3_requests_multi_part == s3_requests_to_write_partition * 3
 
         check_no_objects_after_drop(cluster)
 

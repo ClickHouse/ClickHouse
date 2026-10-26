@@ -100,6 +100,9 @@ SET enable_cascades_optimizer = 1;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
 -- aggregations local.  Pin it to 0 so distributed two-phase aggregation is exercised.
 SET max_rows_to_group_by = 0;
+-- It also sets `max_rows_in_distinct` and `max_bytes_in_distinct`, which keep a `DISTINCT` on one node.
+SET max_rows_in_distinct = 0;
+SET max_bytes_in_distinct = 0;
 -- `IN (subquery)` runs as a set built on the initiator (the default): the set values ship with
 -- the worker tasks and filter at the reads. `rewrite_in_to_join` stays off; the explicit
 -- rewrite is covered by 04653 and by the per-query variants below.
