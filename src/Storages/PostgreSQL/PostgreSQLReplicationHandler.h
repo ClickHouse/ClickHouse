@@ -211,6 +211,12 @@ private:
     /// that the existing publication publishes.
     void assertPublicationPublishesReplicatedTables(pqxx::nontransaction & tx);
 
+    /// Coordinated mode: records at `<keeper_path>/source_relations` the schema-qualified relations that the replicated
+    /// tables resolve to for the replica that first creates the shared publication, and throws unless they resolve to
+    /// the same relations for this replica. Unlike the checks above, it does not depend on the publication, so it also
+    /// covers a publication that a replica has to recreate.
+    void ensureCoordinatedSourceRelationsCompatible(pqxx::nontransaction & tx);
+
     void dropPublication(pqxx::nontransaction & ntx);
 
     void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);

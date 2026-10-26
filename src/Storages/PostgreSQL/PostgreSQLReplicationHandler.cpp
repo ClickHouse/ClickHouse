@@ -3385,6 +3385,7 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
     {
         remove_checked(coordination_keeper_path + "/naming");
         remove_checked(coordination_keeper_path + "/table_set");
+        remove_checked(coordination_keeper_path + "/source_relations");
     }
     /// The <keeper_path>/source_system_identifier node stays until the end of the teardown in shutdownFinal:
     /// the by-name drops of the shared slot and publication check their target cluster against it.
@@ -3542,6 +3543,12 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         if (publication_tables_list.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
+        /// A recreated shared publication is built from this replica's own resolution of the table names, so check it
+        /// against the relations of the original setup: otherwise a replica whose role has a different `search_path`
+        /// would publish other relations and mix their changes into the shared nested tables.
+        if (coordination_enabled)
+            ensureCoordinatedSourceRelationsCompatible(tx);
+
         /// 'ONLY' means just a table, without descendants.
         std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), publication_tables_list);
         try
@@ -3567,6 +3574,9 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             assertPublicationPublishesOnlyTable(tx, tables_list);
         else if (coordination_enabled)
             assertPublicationPublishesReplicatedTables(tx);
+
+        if (coordination_enabled)
+            ensureCoordinatedSourceRelationsCompatible(tx);
 
         LOG_DEBUG(log, "Using existing publication ({}) version", doubleQuoteString(publication_name));
     }
@@ -3631,6 +3641,69 @@ void PostgreSQLReplicationHandler::assertPublicationPublishesReplicatedTables(pq
             "externally. Refusing to adopt it; specify the schema explicitly (`materialized_postgresql_schema`) or make "
             "the publication publish these tables",
             doubleQuoteString(publication_name), unpublished_tables);
+}
+
+
+void PostgreSQLReplicationHandler::ensureCoordinatedSourceRelationsCompatible(pqxx::nontransaction & tx)
+{
+    /// The shared nested tables hold the data of the relations the first replica resolved the table names to. The
+    /// publication-based checks in `createPublicationIfNeeded` cannot protect a publication that has to be recreated:
+    /// it is built from this replica's own resolution. So the resolved relations of the original setup are recorded
+    /// in Keeper, independently of the publication, and every replica that creates or adopts the publication must
+    /// resolve the table names to the same relations.
+    if (materialized_storages.empty())
+        return;
+
+    std::set<String> table_names;
+    for (const auto & [table_name, _] : materialized_storages)
+        table_names.insert(table_name);
+
+    String tables_array;
+    for (const auto & table_name : table_names)
+    {
+        if (!tables_array.empty())
+            tables_array += ", ";
+        tables_array += quoteStringPostgreSQL(doubleQuoteWithSchema(table_name));
+    }
+
+    std::string query_str = fmt::format(
+        "SELECT n, (SELECT format('%I.%I', ns.nspname, c.relname) FROM pg_class AS c "
+        "JOIN pg_namespace AS ns ON ns.oid = c.relnamespace WHERE c.oid = to_regclass(n)) "
+        "FROM unnest(ARRAY[{}]::text[]) WITH ORDINALITY AS t(n, i) ORDER BY i",
+        tables_array);
+    pqxx::result result{tx.exec(query_str)};
+
+    String local_relations;
+    for (const auto & row : result)
+    {
+        if (row[1].is_null())
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "The table {} of the coordinated MaterializedPostgreSQL setup does not resolve to any relation for this "
+                "replica, so it cannot be checked against the relations of the shared setup",
+                row[0].as<std::string>());
+        local_relations += fmt::format("{} -> {}\n", row[0].as<std::string>(), row[1].as<std::string>());
+    }
+
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedSourceRelationsCompatible");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String path = coordination_keeper_path + "/source_relations";
+    zookeeper->createAncestors(path);
+    auto code = zookeeper->tryCreate(path, local_relations, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZOK)
+        return;
+    if (code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, path);
+
+    const String published_relations = zookeeper->get(path);
+    if (published_relations != local_relations)
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "The tables of the coordinated MaterializedPostgreSQL setup at Keeper path '{}' resolve to different "
+            "PostgreSQL relations for this replica than for the replica that created the shared publication. The "
+            "replicas most likely resolve the table names to different schemas (for example, the PostgreSQL roles have "
+            "different `search_path`). Refusing to use the shared publication; specify the schema explicitly "
+            "(`materialized_postgresql_schema`).\nExisting setup:\n{}This replica:\n{}",
+            coordination_keeper_path, published_relations, local_relations);
 }
 
 

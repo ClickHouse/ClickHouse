@@ -4401,11 +4401,17 @@ def test_standby_exposes_table_only_after_initial_snapshot(started_cluster):
     )
 
 
-def test_takeover_is_refused_when_table_resolves_to_another_relation(started_cluster):
+@pytest.mark.parametrize("drop_publication", [False, True])
+def test_takeover_is_refused_when_table_resolves_to_another_relation(
+    started_cluster, drop_publication
+):
     # The table set of an adopted publication is compared by name, without a schema. Two replicas whose
     # PostgreSQL roles have different `search_path` resolve the same unqualified table name to different
     # relations. A replica taking over must refuse to adopt the publication instead of loading its snapshot
     # from one relation while consuming the changes of another one through the shared publication.
+    # With `drop_publication`, the shared publication is missing at the takeover, so the new leader would
+    # recreate it from its own resolution of the table name. It must refuse that too: the relations of the
+    # original setup are recorded in Keeper, independently of the publication.
     pg_query("CREATE SCHEMA sp_a")
     pg_query("CREATE SCHEMA sp_b")
     for schema, rows in (("sp_a", 100), ("sp_b", 10)):
@@ -4440,17 +4446,26 @@ def test_takeover_is_refused_when_table_resolves_to_another_relation(started_clu
             instance2, "SELECT count() FROM test_database.sp_t", "100", retry_count=90
         )
 
+        if drop_publication:
+            for (pubname,) in pg_query("SELECT pubname FROM pg_publication"):
+                pg_query(f'DROP PUBLICATION "{pubname}"')
+            refusal_message = "resolve to different PostgreSQL relations for this replica"
+        else:
+            refusal_message = "does not publish the relations that the tables"
+
         instance.stop_clickhouse()
         for _ in range(90):
-            if instance2.contains_in_log(
-                "does not publish the relations that the tables"
-            ):
+            if instance2.contains_in_log(refusal_message):
                 break
             time.sleep(1)
         else:
             raise AssertionError(
                 "The replica resolving the table to another relation did not refuse the takeover"
             )
+
+        # The publication is not recreated for `sp_b.sp_t`.
+        if drop_publication:
+            assert not publication_exists()
 
         # The data replicated from `sp_a.sp_t` is not replaced with a snapshot of `sp_b.sp_t`.
         assert int(instance2.query("SELECT count() FROM test_database.sp_t")) == 100
