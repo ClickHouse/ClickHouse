@@ -18,8 +18,6 @@ INSERT INTO m0 VALUES (1, 5, 11), (2, 6, 21);
 INSERT INTO p0 (x, e) VALUES (1, 10), (2, 20);
 INSERT INTO p1 (y, e) VALUES (3, 30);
 
-SET enable_analyzer = 1;
-
 -- An `EPHEMERAL` column cannot be read, so it is not a `NATURAL JOIN` key, on either side, whether that
 -- side is spelled as a table or as a table function.
 SELECT * FROM e0 NATURAL JOIN e1 ORDER BY ALL;
