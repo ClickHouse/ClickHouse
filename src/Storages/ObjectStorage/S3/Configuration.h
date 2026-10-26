@@ -172,10 +172,10 @@ protected:
 
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
+
 private:
     void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
-
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
 };
 }
 

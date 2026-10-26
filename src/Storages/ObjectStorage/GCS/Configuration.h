@@ -46,8 +46,15 @@ protected:
     /// most of which named collections do carry.
     /// Read them on top of it, so that the bare-URL form authenticates the same way.
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
 
 private:
+    /// The inherited `S3::URI` parser does not know the virtual-hosted form of the GCS host: with the default
+    /// `s3_uri_style = AUTO` it splits `https://bucket-a.storage.googleapis.com/bucket-b/file` as path-style,
+    /// taking `bucket-b` as the bucket. The native client always talks to `storage.googleapis.com`, so take the
+    /// bucket from the host and the key from the whole path, as `parseGCSEndpoint` does for a disk.
+    void applyGCSVirtualHostedStyle();
+
     /// Set only by `fromDisk`: the settings of the disk that backs this configuration. They already
     /// carry the endpoint and the credentials, so `createObjectStorage` uses them as they are instead
     /// of translating the `s3(...)` argument grammar.
