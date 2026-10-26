@@ -108,7 +108,9 @@ public:
 
     /// For a reader that knows how many bytes it read from disk as they are stored, compressed: returns what it read
     /// since the previous call, see `CompressedBytesRead`. A compact part has no per-column sizes to estimate it from.
+    /// Only after `countCompressedBytesRead`, so that a reader whose caller does not take it does not collect it.
     virtual std::optional<CompressedBytesRead> takeCompressedBytesRead() { return std::nullopt; }
+    void countCompressedBytesRead() { count_compressed_bytes_read = true; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -171,6 +173,9 @@ protected:
     void setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings);
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `countCompressedBytesRead`.
+    bool count_compressed_bytes_read = false;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

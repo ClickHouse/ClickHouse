@@ -44,6 +44,8 @@ catch (...)
 
 std::optional<CompressedBytesRead> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
+    if (!count_compressed_bytes_read)
+        return std::nullopt;
     const size_t total = stream ? stream->getCompressedBytesOfBlocksRead() : 0;
     return CompressedBytesRead{
         .bytes = total - std::exchange(compressed_bytes_taken, total),

@@ -730,7 +730,8 @@ void MergeTreeReaderCompact::serveRowsFromColumnsCache(
     const ColumnsCacheEntry & entry, size_t pos, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns)
 {
     serveRowsFromColumnsCacheEntry(entry, pos, row_begin, rows, res_columns, shared_columns);
-    rows_from_columns_cache.push_back(
+    if (count_compressed_bytes_read)
+        rows_from_columns_cache.push_back(
         {.column = {entry.column, columns_to_read[pos].type, columns_to_read[pos].name}, .offset = row_begin - entry.row_begin, .rows = rows});
 }
 

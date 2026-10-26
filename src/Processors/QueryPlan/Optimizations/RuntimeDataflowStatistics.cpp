@@ -429,7 +429,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         size_t compressed_bytes = 0;
         for (const auto & [column, offset, rows] : compressed_bytes_read->rows_from_columns_cache)
         {
-            bytes_from_cache += column.column->byteSize() * rows / column.column->size();
+            /// The rows are sized as they are represented, as they are sampled: not by the average size of the rows of the entry,
+            /// since the values of `String` vary in size, and not row by row, since a `LowCardinality` or a sparse column stores
+            /// a value for many rows.
+            const ColumnPtr served = offset == 0 && rows == column.column->size() ? column.column : column.column->cut(offset, rows);
+            bytes_from_cache += served->byteSize();
 
             if (!should_continue_sampling.has_value())
                 should_continue_sampling = shouldSampleBlock(statistics, rows);
@@ -437,7 +441,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             {
                 const auto codec_it = column_codecs.find(column.name);
                 const auto [sample, compressed] = estimateCompressedColumnSize(
-                    {column.column->cut(offset, rows), column.type, column.name},
+                    {served, column.type, column.name},
                     codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
                 sample_bytes += sample;
                 compressed_bytes += compressed;

@@ -13,6 +13,10 @@ SET use_columns_cache=0;
 -- The query condition cache would skip the granules without matches on the second run.
 SET use_query_condition_cache=0;
 
+-- The injection reads some ranges twice, so one query reads more than another one with the same data, and the estimates
+-- of the reads served from a cache are compared with what another query reads.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0;
+
 SET apply_string_filters_during_scan=1, optimize_move_to_prewhere=1;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
@@ -29,6 +33,9 @@ DROP TABLE IF EXISTS t_compact_compressible_first_values_inline_sizes;
 DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_small_blocks;
 DROP TABLE IF EXISTS t_compact_cached_column;
+DROP TABLE IF EXISTS t_compact_cached_short_rows;
+DROP TABLE IF EXISTS t_compact_cached_low_cardinality;
+DROP TABLE IF EXISTS t_compact_cached_sparse;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate is taken differently for the two.
@@ -118,6 +125,46 @@ SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=1, enable_read
 SELECT count() FROM t_compact_cached_column WHERE s LIKE '%needle%' AND cityHash64(a) != 0
 SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=0, log_comment='cached_column_0';
 
+-- Only the first granule of the entry of a stripe of the cache is read, and its values are much shorter than those of the
+-- other granules of the stripe.
+CREATE TABLE t_compact_cached_short_rows(id UInt64, a String, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    compress_per_column_in_compact_parts=1;
+INSERT INTO t_compact_cached_short_rows SELECT number, if(number < 8192, hex(number), repeat(hex(cityHash64(number)), 16)),
+    concat(if(number % 100 = 0, 'needle', ''), hex(cityHash64(number, 1)), hex(cityHash64(number, 2))) FROM numbers(65536);
+SELECT max(a) FROM t_compact_cached_short_rows SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SELECT count() FROM t_compact_cached_short_rows WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_short_rows_1';
+SELECT count() FROM t_compact_cached_short_rows WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=0, log_comment='cached_short_rows_0';
+
+-- The same with a column of the cache whose rows share values: of the dictionary of `LowCardinality`, or the default
+-- values of a sparse column. The rows served are sized as they are represented, not row by row.
+CREATE TABLE t_compact_cached_low_cardinality(id UInt64, a LowCardinality(String), s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    compress_per_column_in_compact_parts=1;
+INSERT INTO t_compact_cached_low_cardinality SELECT number, toString(number % 16),
+    concat(if(number % 100 = 0, 'needle', ''), hex(cityHash64(number, 1)), hex(cityHash64(number, 2))) FROM numbers(65536);
+SELECT max(a) FROM t_compact_cached_low_cardinality SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SELECT count() FROM t_compact_cached_low_cardinality WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_low_cardinality_1';
+SELECT count() FROM t_compact_cached_low_cardinality WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=0, log_comment='cached_low_cardinality_0';
+
+CREATE TABLE t_compact_cached_sparse(id UInt64, a String, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    compress_per_column_in_compact_parts=1, ratio_of_defaults_for_sparse_serialization=0.5;
+INSERT INTO t_compact_cached_sparse SELECT number, if(number % 32 = 0, hex(cityHash64(number)), ''),
+    concat(if(number % 100 = 0, 'needle', ''), hex(cityHash64(number, 1)), hex(cityHash64(number, 2))) FROM numbers(65536);
+SELECT max(a) FROM t_compact_cached_sparse SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SELECT count() FROM t_compact_cached_sparse WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_sparse_1';
+SELECT count() FROM t_compact_cached_sparse WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=0, log_comment='cached_sparse_0';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -175,6 +222,48 @@ FROM (
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cached_column_%') AND (type = 'QueryFinish')
 );
 
+SELECT
+    filter_applied,
+    hits > 0,
+    greatest(estimate, read) / least(estimate, read) < 1.3
+FROM (
+    SELECT
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cached_short_rows_1') AS estimate,
+        sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cached_short_rows_0') AS read,
+        sumIf(ProfileEvents['ColumnsCacheHits'], log_comment = 'cached_short_rows_1') AS hits,
+        sumIf(ProfileEvents['StringValueFilterValuesReplaced'], log_comment = 'cached_short_rows_1') > 0 AS filter_applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cached_short_rows_%') AND (type = 'QueryFinish')
+);
+
+SELECT
+    filter_applied,
+    hits > 0,
+    greatest(estimate, read) / least(estimate, read) < 1.3
+FROM (
+    SELECT
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cached_low_cardinality_1') AS estimate,
+        sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cached_low_cardinality_0') AS read,
+        sumIf(ProfileEvents['ColumnsCacheHits'], log_comment = 'cached_low_cardinality_1') AS hits,
+        sumIf(ProfileEvents['StringValueFilterValuesReplaced'], log_comment = 'cached_low_cardinality_1') > 0 AS filter_applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cached_low_cardinality_%') AND (type = 'QueryFinish')
+);
+
+SELECT
+    filter_applied,
+    hits > 0,
+    greatest(estimate, read) / least(estimate, read) < 1.3
+FROM (
+    SELECT
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cached_sparse_1') AS estimate,
+        sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cached_sparse_0') AS read,
+        sumIf(ProfileEvents['ColumnsCacheHits'], log_comment = 'cached_sparse_1') AS hits,
+        sumIf(ProfileEvents['StringValueFilterValuesReplaced'], log_comment = 'cached_sparse_1') > 0 AS filter_applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cached_sparse_%') AND (type = 'QueryFinish')
+);
+
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_compact_unread_compressible;
@@ -184,3 +273,6 @@ DROP TABLE t_compact_compressible_first_values_inline_sizes;
 DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_small_blocks;
 DROP TABLE t_compact_cached_column;
+DROP TABLE t_compact_cached_short_rows;
+DROP TABLE t_compact_cached_low_cardinality;
+DROP TABLE t_compact_cached_sparse;
