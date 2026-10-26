@@ -5,6 +5,7 @@ import ast
 import json
 from pathlib import Path
 import re
+import shlex
 
 from initial_migration import llvm_targets
 from initial_migration.compact_build import compact
@@ -133,9 +134,11 @@ def has_clickhouse_code_flags(group):
     return any(flags[i:i + len(prefix)] == prefix for i in range(len(flags)))
 
 
-def remove_global_compile_options(flags, language):
+def remove_global_compile_options(flags, language, only=None):
     """Omit flags from .bazelrc, including CMake's split -D definitions."""
     options = GLOBAL_COMPILE_OPTIONS[language]
+    if only is not None:
+        options = options & only
     result = []
     position = 0
     while position < len(flags):
@@ -149,6 +152,27 @@ def remove_global_compile_options(flags, language):
             result.append(flag)
             position += 1
     return result
+
+
+def split_local_defines(flags, declared):
+    """Move independent CMake -D options into local_defines, preserving ordered overrides."""
+    if (not any(flag.startswith('-D') for flag in flags) or
+            any(flag.startswith(('-U', '-X', '-Wa,', '-Wp,', '@')) for flag in flags)):
+        return flags, []
+    names = {shlex.split(value)[0].partition('=')[0] for value in declared}
+    options, defines = [], []
+    args = iter(flags)
+    for flag in args:
+        if not flag.startswith('-D'):
+            options.append(flag)
+            continue
+        value = flag[2:] or next(args, '')
+        name = value.partition('=')[0]
+        if not re.fullmatch(r'[A-Za-z_]\w*(?:=\w+)?', value, re.ASCII) or name in names:
+            return flags, []
+        names.add(name)
+        defines.append(value)
+    return options, defines
 
 
 @dataclass
@@ -1171,6 +1195,7 @@ class BuildFile:
             )
             system_includes = {}
             native_includes = {}
+            compile_defines = {}
             postgres = self.owner == 'contrib/postgres' and name == '_libpq'
             nuraft = self.owner == 'contrib/NuRaft' and name == '_nuraft'
             implementation_deps = {'@platforms//cpu:' + arch: list(group['implementation_deps'])
@@ -1248,6 +1273,8 @@ class BuildFile:
                                 if value[:len(prefix)] != prefix:
                                     raise ValueError(f'{name} {arch}: ch_cc_library {language} flags are not the expected prefix')
                                 value = value[len(prefix):]
+                            if language != 'ASM' or all(src.endswith('.S') for src in group['srcs']):
+                                value, compile_defines[arch] = split_local_defines(value, group.get('local_defines', []))
                             if self.owner:
                                 prefix = '--embed-dir=' + self.owner + '/'
                                 value = [PackageEmbedDirectory(name, flag.removeprefix(prefix))
@@ -1257,6 +1284,11 @@ class BuildFile:
                                 end = start + len(CLICKHOUSE_WARNINGS)
                                 if value[start:end] == CLICKHOUSE_WARNINGS:
                                     value = CMakeWarnings(value[:start], value[end:])
+                        elif name == 'unit_tests_dbms' and language == 'CXX':
+                            # Its other driver flags are shared with linkopts in DBMS_TEST_DRIVER_COPTS.
+                            value = remove_global_compile_options(value, language, only={'-DOS_LINUX'})
+                    if field == 'local_defines':
+                        value = compile_defines.get(arch, []) + value
                     if self.owner == 'contrib/libhdfs3' and name == '_hdfs3' and field in {
                         'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs',
                     }:

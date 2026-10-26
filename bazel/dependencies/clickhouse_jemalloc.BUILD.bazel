@@ -226,16 +226,12 @@ ch_cc_library(
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc.h",
         "@clickhouse//contrib/jemalloc-cmake:include/jemalloc/jemalloc_defs.h",
     ],
-    copts = [
-        "-w",
-        "-std=gnu11",
-        "-D_GNU_SOURCE",
-    ],
     implementation_deps = [
         "@llvm-project//libunwind:headers",
     ],
     language = "C",
     local_defines = [
+        "_GNU_SOURCE",
         "JEMALLOC_NO_PRIVATE_NAMESPACE",
         "JEMALLOC_PROF=1",
         "JEMALLOC_PROF_LIBUNWIND=1",

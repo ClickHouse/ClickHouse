@@ -305,7 +305,6 @@ ch_cc_library(
         "contrib/libhdfs3-cmake/absl_log_undef.h",
         "-include",
         "google/protobuf/stubs/port.h",
-        "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1",
     ],
     implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_die_if_null",
@@ -314,7 +313,9 @@ ch_cc_library(
         "@clickhouse_libgsasl//:_gsasl",
         ":hdfs3_proto_headers",
     ],
-    local_defines = _HDFS3_LOCAL_DEFINES,
+    local_defines = [
+        "BOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1",
+    ] + _HDFS3_LOCAL_DEFINES,
     local_includes = [
         "src",
         "src/common",

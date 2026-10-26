@@ -69,19 +69,15 @@ ch_cc_library(
         ] + glob(["include/simdjson/arm64/**/*.h"]),
     }),
     hdrs = ["include/simdjson.h"],
-    copts = [
-        "-w",
-        "-std=c++23",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "-DSIMDJSON_IMPLEMENTATION_FALLBACK=1",
-        ],
-    }),
     includes = [
         "include",
     ],
-    local_defines = [
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "SIMDJSON_IMPLEMENTATION_FALLBACK=1",
+        ],
+    }) + [
         "SIMDJSON_UTF8VALIDATION=0",
     ] + CXX_RUNTIME_DEFINES,
     local_includes = [

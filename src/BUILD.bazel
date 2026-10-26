@@ -3177,8 +3177,6 @@ cc_test(
     ] + _UNIT_TEST_HEADERS,
     copts = DBMS_TEST_DRIVER_COPTS + [
         "-std=c++23",
-        "-D",
-        "OS_LINUX",
         "-gz=zlib",
         "-Wno-sign-compare",
         "-Werror",

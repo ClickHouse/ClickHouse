@@ -202,12 +202,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-D",
-        "HAVE_COMPRESS",
-        "-D",
-        "LIBMARIADB",
-        "-D",
-        "THREAD",
         "-Wno-incompatible-pointer-types",
     ],
     implementation_deps = [
@@ -221,7 +215,11 @@ ch_cc_library(
         "config/contrib/mariadb-connector-c-cmake/include-public",
     ],
     language = "C",
-    local_defines = select({
+    local_defines = [
+        "HAVE_COMPRESS",
+        "LIBMARIADB",
+        "THREAD",
+    ] + select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [
             "ARM_ACLE",

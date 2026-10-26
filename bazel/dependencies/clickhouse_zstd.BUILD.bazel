@@ -42,8 +42,6 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=gnu11",
-        "-D",
-        "ZSTD_LEGACY_SUPPORT=1",
         "-fno-sanitize=undefined",
     ],
     implementation_deps = [":_zstd__compile_1"],
@@ -51,7 +49,9 @@ ch_cc_library(
         "lib",
     ],
     language = "C",
-    local_defines = CXX_RUNTIME_DEFINES,
+    local_defines = [
+        "ZSTD_LEGACY_SUPPORT=1",
+    ] + CXX_RUNTIME_DEFINES,
     local_includes = [
         "lib/legacy",
         "lib/common",
@@ -62,13 +62,11 @@ ch_cc_library(
     name = "_zstd__compile_1",
     srcs = ["lib/decompress/huf_decompress_amd64.S"],
     hdrs = ["lib/common/portability_macros.h"],
-    copts = [
-        "-D",
-        "ZSTD_LEGACY_SUPPORT=1",
-        "-fno-sanitize=undefined",
-    ],
+    copts = ["-fno-sanitize=undefined"],
     language = "ASM",
-    local_defines = CXX_RUNTIME_DEFINES,
+    local_defines = [
+        "ZSTD_LEGACY_SUPPORT=1",
+    ] + CXX_RUNTIME_DEFINES,
     local_includes = [
         "lib",
         "lib/legacy",
