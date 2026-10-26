@@ -733,7 +733,7 @@ void MergeTreeReaderCompact::serveRowsFromColumnsCache(
     serveRowsFromColumnsCacheEntry(entry, pos, index_granularity.getMarkStartingRow(first_mark),
         index_granularity.getRowsCountInRange(first_mark, end_mark), res_columns, shared_columns);
 
-    if (count_compressed_bytes_of_columns_cache_hits)
+    if (count_compressed_bytes_read)
         for (size_t mark = first_mark; mark < end_mark; ++mark)
             granules_from_columns_cache.emplace_back(pos, mark);
 }
@@ -899,7 +899,7 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
         if (any_from_disk)
             readGranule(mark, granule_rows, res_columns, &columns_mask);
 
-        if (count_compressed_bytes_of_columns_cache_hits && any_from_disk
+        if (count_compressed_bytes_read && any_from_disk
             && (served_columns || std::ranges::any_of(all_served, [](bool served) { return served; })))
         {
             auto & read_from_part = columns_read_from_part_in_granules[mark];

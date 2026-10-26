@@ -725,7 +725,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
                     ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
                 /// Counted on the first piece of the granule: when rows are skipped, it may never be served to its end.
-                if (count_compressed_bytes_of_columns_cache_hits)
+                if (count_compressed_bytes_read)
                     addCompressedBytesOfColumnsCacheHit(segments[i].mark, from_disk);
             }
         }

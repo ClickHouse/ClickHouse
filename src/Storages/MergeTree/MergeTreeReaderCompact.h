@@ -43,8 +43,6 @@ public:
 
     bool canReadWholeColumnsCacheStripe(size_t mark) override;
 
-    void countCompressedBytesOfColumnsCacheHits() override { count_compressed_bytes_of_columns_cache_hits = true; }
-
 protected:
     /// Fills the positions of the columns in the part, and decides which of them can use the columns cache.
     void fillColumnPositions();
@@ -60,8 +58,7 @@ protected:
     virtual void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) = 0;
 
     /// The granules served from the columns cache, by the position of the column in `columns_to_read`, since
-    /// `takeCompressedBytesRead` was called. Only with `countCompressedBytesOfColumnsCacheHits`.
-    bool count_compressed_bytes_of_columns_cache_hits = false;
+    /// `takeCompressedBytesRead` was called. Only with `countCompressedBytesRead`.
     std::vector<std::pair<size_t, size_t>> granules_from_columns_cache;
     /// The columns read from the part in the granules that also have columns served from the cache, by granule.
     std::unordered_map<size_t, std::vector<size_t>> columns_read_from_part_in_granules;

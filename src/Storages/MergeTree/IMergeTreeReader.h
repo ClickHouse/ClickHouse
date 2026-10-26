@@ -104,9 +104,10 @@ public:
     /// served from the uncompressed cache included. `nullopt` if the reader cannot tell.
     virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
 
-    /// Makes `takeCompressedBytesRead` count the rows served from the columns cache as well, as the compressed size
-    /// of the data reading them from the part would load. Costs loading the marks of the columns served.
-    virtual void countCompressedBytesOfColumnsCacheHits() {}
+    /// For a caller that takes `takeCompressedBytesRead`: makes it count the granules served from the columns cache as well,
+    /// as the compressed size of the data reading them from the part would load. Costs loading the marks of the columns
+    /// served, and keeping the granules until they are taken, so a reader whose caller does not take them does not count them.
+    virtual void countCompressedBytesRead() { count_compressed_bytes_read = true; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -168,6 +169,9 @@ protected:
     StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `countCompressedBytesRead`.
+    bool count_compressed_bytes_read = false;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

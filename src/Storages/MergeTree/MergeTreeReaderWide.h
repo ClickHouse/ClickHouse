@@ -63,7 +63,6 @@ public:
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
     std::optional<size_t> takeCompressedBytesRead() override;
-    void countCompressedBytesOfColumnsCacheHits() override { count_compressed_bytes_of_columns_cache_hits = true; }
 
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
@@ -102,8 +101,7 @@ private:
     FileStreams streams;
     /// The part of `streams.getCompressedBytesOfBlocksRead` that `takeCompressedBytesRead` returned.
     size_t compressed_bytes_taken = 0;
-    /// See `countCompressedBytesOfColumnsCacheHits`.
-    bool count_compressed_bytes_of_columns_cache_hits = false;
+    /// See `countCompressedBytesRead`.
     size_t compressed_bytes_of_columns_cache_hits = 0;
     /// The last granule counted for each column, which is served from the cache in pieces when rows are skipped.
     std::vector<std::optional<size_t>> last_counted_columns_cache_hits;
