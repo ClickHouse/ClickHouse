@@ -958,13 +958,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             prefix_matches_cte_name
                 = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
         }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        /// An explicit alias (or the CTE name) is tried before the table name, which may cover more parts (the table
+        /// `a.b` aliased `a`: `a.b.c` is the subcolumn `b.c` qualified with the alias first, as before hierarchical names).
+        if (prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
-                prefix_matches_table_name ? table_name_parts_compat : 1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+                1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
             if (alias_prefix_result.resolved_identifier)
                 return alias_prefix_result;
+        }
+        if (prefix_matches_table_name && !((prefix_matches_alias || prefix_matches_cte_name) && table_name_parts_compat == 1))
+        {
+            auto table_name_prefix_result = tryResolveIdentifierFromStorage(
+                identifier_lookup, table_expression_node, table_expression_data, scope,
+                table_name_parts_compat /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+            if (table_name_prefix_result.resolved_identifier)
+                return table_name_prefix_result;
         }
     }
 
@@ -1036,12 +1046,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return false;
     };
 
-    /// The table name (hierarchical, possibly covering several parts) or the alias qualifies the column.
+    /// The table name (hierarchical, possibly covering several parts) or the alias qualifies the column. An explicit alias
+    /// is tried first: for the table `a.b` aliased `a`, `a.b.c` is the subcolumn `b.c` qualified with the alias, as before
+    /// hierarchical names, rather than the column `c` qualified with the longer table name.
     const size_t table_name_parts = table_expression_data.matchTableName(identifier, scope.context);
     const bool alias_matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
     if (table_name_parts > 0 || alias_matches)
     {
-        const size_t qualifier_parts = table_name_parts > 0 ? table_name_parts : 1;
+        const size_t qualifier_parts = alias_matches ? 1 : table_name_parts;
         auto lookup_result = tryResolveIdentifierFromStorage(
             identifier_lookup,
             table_expression_node,
@@ -1053,14 +1065,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         if (lookup_result.resolved_identifier)
             return lookup_result;
 
-        if (alias_matches && qualifier_parts != 1)
+        if (alias_matches && table_name_parts > 1)
         {
             lookup_result = tryResolveIdentifierFromStorage(
                 identifier_lookup,
                 table_expression_node,
                 table_expression_data,
                 scope,
-                1 /*identifier_column_qualifier_parts*/,
+                table_name_parts,
                 true /*can_be_not_found*/);
 
             if (lookup_result.resolved_identifier)
