@@ -12,10 +12,17 @@ URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&outp
 URL="${URL}&framing_output_format=JSONEachPacketString&query_result_previews=1&query_result_previews_min_interval_ms=0"
 URL="${URL}&max_threads=2&max_block_size=1000"
 
+# The final result can be split into several `data` packets depending on the randomized settings
+# (e.g. two-level aggregation), so the payloads of all of them are printed together.
 run()
 {
     RESPONSE=$(${CLICKHOUSE_CURL} -sS "${URL}" -d "$1 FORMAT JSONCompactEachRow")
-    echo "${RESPONSE}" | grep -E '"packet":"data"|Exception'
+    echo "${RESPONSE}" | grep 'Exception'
+    echo "${RESPONSE}" | grep '"packet":"data"' | python3 -c "
+import json, sys
+print(''.join(json.loads(line)['data'] for line in sys.stdin), end='')
+"
+    echo '---'
 }
 
 run "SELECT toString(number % 3) AS k, uniqExactOrNull(number % NULL) AS u FROM numbers_mt(100000) GROUP BY k ORDER BY k"
