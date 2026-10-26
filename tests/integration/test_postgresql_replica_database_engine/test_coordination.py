@@ -4399,3 +4399,67 @@ def test_standby_exposes_table_only_after_initial_snapshot(started_cluster):
         )
         == 100
     )
+
+
+def test_takeover_is_refused_when_table_resolves_to_another_relation(started_cluster):
+    # The table set of an adopted publication is compared by name, without a schema. Two replicas whose
+    # PostgreSQL roles have different `search_path` resolve the same unqualified table name to different
+    # relations. A replica taking over must refuse to adopt the publication instead of loading its snapshot
+    # from one relation while consuming the changes of another one through the shared publication.
+    pg_query("CREATE SCHEMA sp_a")
+    pg_query("CREATE SCHEMA sp_b")
+    for schema, rows in (("sp_a", 100), ("sp_b", 10)):
+        pg_query(f"CREATE TABLE {schema}.sp_t (key integer PRIMARY KEY, value integer)")
+        pg_query(
+            f"INSERT INTO {schema}.sp_t SELECT i, i FROM generate_series(1, {rows}) AS i"
+        )
+        role = f"{schema}_role"
+        pg_query(f"CREATE ROLE {role} WITH LOGIN SUPERUSER PASSWORD '{pg_pass}'")
+        pg_query(f"ALTER ROLE {role} SET search_path = {schema}")
+
+    try:
+        settings = COORDINATION_SETTINGS + ["materialized_postgresql_tables_list = 'sp_t'"]
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=settings,
+            user="sp_a_role",
+        )
+        assert wait_for_leader(instance) == "coord_instance1"
+        assert_eq_with_retry(
+            instance, "SELECT count() FROM test_database.sp_t", "100", retry_count=90
+        )
+
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=settings,
+            user="sp_b_role",
+        )
+        assert_eq_with_retry(
+            instance2, "SELECT count() FROM test_database.sp_t", "100", retry_count=90
+        )
+
+        instance.stop_clickhouse()
+        for _ in range(90):
+            if instance2.contains_in_log(
+                "does not publish the relations that the tables"
+            ):
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError(
+                "The replica resolving the table to another relation did not refuse the takeover"
+            )
+
+        # The data replicated from `sp_a.sp_t` is not replaced with a snapshot of `sp_b.sp_t`.
+        assert int(instance2.query("SELECT count() FROM test_database.sp_t")) == 100
+    finally:
+        if not instance.get_process_pid("clickhouse"):
+            instance.start_clickhouse()
+        pg_manager.drop_materialized_db()
+        pg_manager2.drop_materialized_db()
+        for schema in ("sp_a", "sp_b"):
+            pg_query(f"DROP OWNED BY {schema}_role")
+            pg_query(f"DROP ROLE {schema}_role")
+            pg_query(f"DROP SCHEMA IF EXISTS {schema} CASCADE")

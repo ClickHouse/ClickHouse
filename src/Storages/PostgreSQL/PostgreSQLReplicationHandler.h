@@ -207,6 +207,10 @@ private:
     /// Coordinated single-table engine: throws unless the existing publication publishes exactly `table_name`.
     void assertPublicationPublishesOnlyTable(pqxx::nontransaction & tx, const String & table_name);
 
+    /// Coordinated database engine: throws unless every replicated table resolves (for this connection) to a relation
+    /// that the existing publication publishes.
+    void assertPublicationPublishesReplicatedTables(pqxx::nontransaction & tx);
+
     void dropPublication(pqxx::nontransaction & ntx);
 
     void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);

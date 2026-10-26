@@ -3557,6 +3557,8 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         /// so replication resumes once the publication is repaired (e.g. with `ALTER PUBLICATION`).
         if (coordination_enabled && !is_materialized_postgresql_database)
             assertPublicationPublishesOnlyTable(tx, tables_list);
+        else if (coordination_enabled)
+            assertPublicationPublishesReplicatedTables(tx);
 
         LOG_DEBUG(log, "Using existing publication ({}) version", doubleQuoteString(publication_name));
     }
@@ -3583,6 +3585,44 @@ void PostgreSQLReplicationHandler::assertPublicationPublishesOnlyTable(pqxx::non
             "replicated table {} (it publishes: [{}]). It was most likely altered externally. Refusing to adopt it; "
             "make it publish only this table again (e.g. with ALTER PUBLICATION ... SET TABLE ONLY ...)",
             doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name), result[0][2].as<std::string>());
+}
+
+
+void PostgreSQLReplicationHandler::assertPublicationPublishesReplicatedTables(pqxx::nontransaction & tx)
+{
+    /// `fetchRequiredTables` compares the table set of the adopted publication by name, and without a schema
+    /// unless `schema_as_a_part_of_table_name`. A replica whose connection resolves an unqualified table name to
+    /// another schema (a different `search_path`) would pass that comparison, but read its snapshot from a different
+    /// relation than the one the shared publication streams. Compare relations by OID, as PostgreSQL resolves them
+    /// for this connection, before anything is truncated or loaded.
+    if (materialized_storages.empty())
+        return;
+
+    String tables_array;
+    for (const auto & [table_name, _] : materialized_storages)
+    {
+        if (!tables_array.empty())
+            tables_array += ", ";
+        tables_array += quoteStringPostgreSQL(doubleQuoteWithSchema(table_name));
+    }
+
+    std::string query_str = fmt::format(
+        "SELECT coalesce(string_agg(n, ', '), '') FROM unnest(ARRAY[{}]::text[]) AS n "
+        "WHERE to_regclass(n) IS NULL OR NOT EXISTS (SELECT 1 FROM pg_publication_tables "
+        "WHERE pubname = {} AND to_regclass(format('%I.%I', schemaname, tablename)) = to_regclass(n))",
+        tables_array, quoteStringPostgreSQL(publication_name));
+    pqxx::result result{tx.exec(query_str)};
+    chassert(!result.empty());
+
+    auto unpublished_tables = result[0][0].as<std::string>();
+    if (!unpublished_tables.empty())
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "The shared publication {} of the coordinated MaterializedPostgreSQL database does not publish the relations "
+            "that the tables {} resolve to for this replica. The replicas most likely resolve the table names to different "
+            "schemas (for example, the PostgreSQL roles have different `search_path`), or the publication was altered "
+            "externally. Refusing to adopt it; specify the schema explicitly (`materialized_postgresql_schema`) or make "
+            "the publication publish these tables",
+            doubleQuoteString(publication_name), unpublished_tables);
 }
 
 
