@@ -131,8 +131,13 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
     if (!low_cardinality_type)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
 
+    /// A block can carry a dictionary much larger than itself; then only the keys its rows use are evaluated.
+    const size_t block_rows = low_cardinality_column->size();
+    const bool dictionary_is_much_larger_than_block
+        = block_rows != 0 && low_cardinality_column->getDictionary().size() > 16 * block_rows;
+
     ColumnPtr indexes;
-    if (can_be_executed_on_default_arguments)
+    if (can_be_executed_on_default_arguments && !dictionary_is_much_larger_than_block)
     {
         /// Normal case, when function can be executed on values' default.
         indexes = low_cardinality_column->getIndexesPtr();
@@ -140,9 +145,9 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
     }
     else
     {
-        /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+        /// Large dictionary, or default value can't be used. Example: 1 % LowCardinality(Int).
         /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
-        auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+        auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, block_rows);
         indexes = dict_encoded.indexes;
         column.column = dict_encoded.dictionary;
     }
