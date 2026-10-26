@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
@@ -301,7 +300,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
     const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
-    RuntimeDataflowStatisticsCacheUpdater * sampling_updater,
     size_t max_block_size_rows)
 {
     if (max_rows == 0)
@@ -320,26 +318,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
                 num_attributed_readers = i + 1;
 
-    /// The compressed size of the string values that are skipped while reading is measured in the blocks that are
-    /// sampled, so whether the block is sampled is decided before the first reader that measures it reads it. Not
-    /// earlier: a block that turns out to have no rows (e.g. all its granules are dropped by the index reader in front)
-    /// would use up the decision. A block can have more rows than requested, since a compact part is read in whole
-    /// granules, so the rows actually measured are reported.
-    std::optional<bool> should_continue_sampling;
-    bool sampling_decided_before_reading = false;
-    auto measure_string_values_skipped_by_filters = [&](const MergeTreeRangeReader & range_reader)
-    {
-        auto * reader = range_reader.getReader();
-        if (sampling_updater && !should_continue_sampling && reader->canMeasureCompressedSizeOfStringValuesSkippedByFilters())
-        {
-            should_continue_sampling = sampling_updater->takeInputBlockReadFromDisk();
-            sampling_decided_before_reading = true;
-        }
-        reader->measureCompressedSizeOfStringValuesSkippedByFilters(
-            should_continue_sampling.value_or(false) ? RuntimeDataflowStatisticsCacheUpdater::maxRowsToSample(max_rows) : 0);
-    };
-    measure_string_values_skipped_by_filters(first_reader);
-
     try
     {
         read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
@@ -351,6 +329,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         throw;
     }
 
+    std::optional<bool> should_continue_sampling;
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
@@ -360,8 +339,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
                 first_reader.getReader()->getPartiallyReadColumns(),
-                first_reader.getReader()->takeStringValuesSkippedByFilters(),
+                first_reader.getReader()->takeBytesSkippedByStringValueFilters(),
                 read_result.num_bytes_read,
+                first_reader.getReader()->takeCompressedBytesRead(),
                 should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
@@ -373,20 +353,11 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         if (num_attributed_readers != 0)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
-    else if (sampling_decided_before_reading)
-    {
-        sampling_updater->giveBackInputBlockReadFromDisk(*should_continue_sampling);
-    }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
         const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
-        /// A block with no rows left is not read further.
-        if (read_result.num_rows != 0)
-            measure_string_values_skipped_by_filters(range_readers[i]);
-        else
-            range_readers[i].getReader()->measureCompressedSizeOfStringValuesSkippedByFilters(0);
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
@@ -412,8 +383,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 dataflow_cache_update_cb(
                     toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
                     range_readers[i].getReader()->getPartiallyReadColumns(),
-                    range_readers[i].getReader()->takeStringValuesSkippedByFilters(),
+                    range_readers[i].getReader()->takeBytesSkippedByStringValueFilters(),
                     read_result.num_bytes_read - num_bytes_read_so_far,
+                    range_readers[i].getReader()->takeCompressedBytesRead(),
                     should_continue_sampling);
             }
 

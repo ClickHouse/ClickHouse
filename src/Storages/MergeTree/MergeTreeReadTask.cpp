@@ -122,6 +122,13 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::countCompressedBytesRead()
+{
+    main->countCompressedBytesRead();
+    for (auto & reader : prewhere)
+        reader->countCompressedBytesRead();
+}
+
 void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
 {
     main->updateReadRequestMap(request_map);
@@ -134,14 +141,6 @@ void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & requ
 
     for (size_t i = 0; i < patch_request_maps.size(); ++i)
         patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
-}
-
-void MergeTreeReadTask::Readers::setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(
-    const std::function<CompressionCodecPtr(const String &)> & get_codec)
-{
-    main->setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(get_codec);
-    for (auto & reader : prewhere)
-        reader->setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(get_codec);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -162,6 +161,9 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
+        /// The compressed bytes read are taken by `dataflow_cache_update_cb`.
+        readers.countCompressedBytesRead();
+
         /// Resolved once rather than per block, and taken from the table metadata because a part does
         /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
         /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
@@ -217,21 +219,6 @@ MergeTreeReadTask::MergeTreeReadTask(
         for (const auto & reader : readers.prewhere)
             resolve_for_reader(*reader);
 
-        /// Without the sizes of the columns of the part, the compression ratio is taken from a sample of the read
-        /// blocks, which misses the values replaced with empty strings by a string value filter, so the reader
-        /// measures how they compress while the blocks may still be sampled.
-        const auto part_column_sizes = info->data_part_info->getColumnSizes();
-        if (!part_column_sizes || part_column_sizes->empty())
-        {
-            readers.setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(
-                [&](const String & name)
-                {
-                    const auto it = resolved_codecs.find(name);
-                    return it == resolved_codecs.end() ? default_codec : it->second.generic;
-                });
-            sampling_updater = updater.get();
-        }
-
         /// Owned by the part, which outlives the task.
         const auto * part_columns = &readers.main->getPartColumnsDescription();
         dataflow_cache_update_cb = [this,
@@ -240,8 +227,9 @@ MergeTreeReadTask::MergeTreeReadTask(
                                     column_codecs = std::move(resolved_codecs),
                                     streams_bytes = std::move(resolved_streams_bytes)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
-                                                           const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
+                                                           const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
                                                            size_t read_bytes,
+                                                           std::optional<size_t> compressed_bytes_read,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
@@ -251,13 +239,14 @@ MergeTreeReadTask::MergeTreeReadTask(
             updater->recordInputColumns(
                 columns,
                 partially_read_columns,
-                string_values_skipped_by_filters,
+                bytes_skipped_by_string_value_filters,
                 *part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
                 streams_bytes,
                 column_codecs,
                 default_codec,
                 read_bytes,
+                compressed_bytes_read,
                 should_continue_sampling);
         };
     }
@@ -598,8 +587,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    auto read_result = readers_chain.read(
-        rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, sampling_updater, block_size_params.max_block_size_rows);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)

@@ -782,6 +782,8 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
             const size_t chunk_end = std::min(end_mark, stripes.endMark(stripes.stripeOf(mark), index_granularity.getMarksCountWithoutFinal()));
             serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, mark), pos,
                 index_granularity.getMarkStartingRow(mark), index_granularity.getRowsCountInRange(mark, chunk_end), res_columns, shared_columns);
+            if (count_compressed_bytes_read)
+                addGranulesServedFromColumnsCache(pos, mark, chunk_end);
             mark = chunk_end;
         }
         ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, end_mark - from_mark);
@@ -820,6 +822,8 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
             if (column_cacheable[pos] && isGranuleColumnCached(pos, mark))
             {
                 serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, mark), pos, granule_row_begin, granule_rows, res_columns, shared_columns);
+                if (count_compressed_bytes_read)
+                    addGranulesServedFromColumnsCache(pos, mark, mark + 1);
                 ++served_columns;
                 continue;
             }

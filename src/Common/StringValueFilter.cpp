@@ -3,8 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringSearcher.h>
-#include <IO/WriteHelpers.h>
-#include <base/unaligned.h>
 
 #include <cstring>
 
@@ -206,69 +204,6 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
     if (total_checked_individually >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
         && total_bytes_skipped < total_checked_individually * MIN_AVG_BYTES_SKIPPED_PER_VALUE)
         disabled.store(true, std::memory_order_relaxed);
-}
-
-void StringValueSample::add(const char * prefix, size_t prefix_size, const char * value, size_t size)
-{
-    const size_t index = num_values++;
-    total_bytes += prefix_size + size;
-    if (index % stride)
-        return;
-
-    const size_t sampled_size = std::min(size, max_bytes - prefix_size);
-    while (!ends.empty() && data.size() + prefix_size + sampled_size > max_bytes)
-    {
-        halve();
-        if (index % stride)
-            return;
-    }
-
-    if (prefix_size)
-        data.append(prefix, prefix_size);
-    data.append(value, sampled_size);
-    ends.push_back(data.size());
-}
-
-void StringValueSample::halve()
-{
-    /// The sampled values are those with the indices divisible by `stride`, so every other of them stays.
-    stride *= 2;
-    size_t size = 0;
-    size_t num_kept = 0;
-    size_t begin = 0;
-    for (size_t i = 0; i < ends.size(); ++i)
-    {
-        const size_t end = ends[i];
-        if (i % 2 == 0)
-        {
-            memmove(data.data() + size, data.data() + begin, end - begin);
-            size += end - begin;
-            ends[num_kept++] = size;
-        }
-        begin = end;
-    }
-    data.resize(size);
-    ends.resize(num_kept);
-}
-
-void StringValuesSkippedByFilter::addToSamples(const char * data, size_t size, bool size_is_inline)
-{
-    measured_bytes += size;
-
-    auto & values = size > MAX_SHORT_VALUE_SIZE ? samples->long_values : samples->short_values;
-    if (size_is_inline)
-    {
-        char size_buf[10];
-        const size_t size_of_size = writeVarUInt(size, size_buf) - size_buf;
-        values.add(size_buf, size_of_size, data, size);
-    }
-    else
-    {
-        char size_buf[sizeof(UInt64)];
-        unalignedStoreLittleEndian<UInt64>(size_buf, size);
-        samples->sizes.add(nullptr, 0, size_buf, sizeof(size_buf));
-        values.add(nullptr, 0, data, size);
-    }
 }
 
 }
