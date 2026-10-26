@@ -133,3 +133,23 @@ INSERT INTO t_alter_previous_commands_renamed VALUES (1, 42, 5);
 ALTER TABLE t_alter_previous_commands_renamed RENAME COLUMN q TO r, RENAME COLUMN p TO q, DROP COLUMN q SETTINGS alter_sync = 2;
 SELECT * FROM t_alter_previous_commands_renamed;
 DROP TABLE t_alter_previous_commands_renamed;
+
+-- The check that a part keeps a column follows the renames of the ALTER: the drop of `r` removes the only stored column.
+CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN r UInt32 DEFAULT 7 SETTINGS alter_sync = 2; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_alter_previous_commands_single;
+DROP TABLE t_alter_previous_commands_single;
+
+CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN r UInt32 DEFAULT 7 SETTINGS alter_sync = 2; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_alter_previous_commands_single;
+DROP TABLE t_alter_previous_commands_single;
+
+-- The drop of `q` added by the statement removes no stored column: the data stays as `r`.
+CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, ADD COLUMN q UInt32 DEFAULT 7, DROP COLUMN q SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_single;
+DROP TABLE t_alter_previous_commands_single;

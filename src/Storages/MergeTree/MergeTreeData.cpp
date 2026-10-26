@@ -5783,6 +5783,75 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     return {};
 }
 
+/// The column each column was renamed from; a column the ALTER adds has none.
+using ColumnOldNames = std::unordered_map<String, std::optional<String>>;
+
+ColumnOldNames getColumnOldNames(const ColumnsDescription & columns)
+{
+    ColumnOldNames old_names;
+    for (const auto & column : columns)
+        old_names.emplace(column.name, column.name);
+    return old_names;
+}
+
+void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & command)
+{
+    if (command.ignore)
+        return;
+    if (command.type == AlterCommand::ADD_COLUMN)
+    {
+        old_names.try_emplace(command.column_name, std::nullopt);
+        if (command.data_type)
+        {
+            ColumnsDescription added;
+            added.add(ColumnDescription(command.column_name, command.data_type));
+            added.flattenNested();
+            for (const auto & column : added)
+                old_names.try_emplace(column.name, std::nullopt);
+        }
+    }
+    else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+        old_names.erase(command.column_name);
+    else if (command.type == AlterCommand::RENAME_COLUMN)
+    {
+        if (auto node = old_names.extract(command.column_name))
+        {
+            node.key() = command.rename_to;
+            old_names.insert(std::move(node));
+        }
+    }
+}
+
+/// The columns of `old_columns` whose data the commands drop or clear.
+NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDescription & old_columns)
+{
+    NameSet dropped_columns;
+    auto old_names = getColumnOldNames(old_columns);
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            auto it = old_names.find(command.column_name);
+            if (!command.ignore && !command.clear && !command.partition && it != old_names.end())
+            {
+                if (it->second)
+                    dropped_columns.emplace(*it->second);
+            }
+            else if (old_columns.has(command.column_name))
+            {
+                dropped_columns.emplace(command.column_name);
+            }
+            else
+            {
+                for (const auto & nested_column : old_columns.getNested(command.column_name))
+                    dropped_columns.emplace(nested_column.name);
+            }
+        }
+        advanceColumnOldNames(old_names, command);
+    }
+    return dropped_columns;
+}
+
 }
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -6131,27 +6200,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
             check(old_metadata.table_ttl.definition_ast, new_metadata.table_ttl.definition_ast, "TTL");
 
-            /// The column each column was renamed from; a column the ALTER adds has none.
-            std::unordered_map<String, std::optional<String>> old_names;
-            for (const auto & column : old_metadata.columns)
-                old_names.emplace(column.name, column.name);
+            auto old_names = getColumnOldNames(old_metadata.columns);
             for (const auto & command : commands)
-            {
-                if (command.ignore)
-                    continue;
-                if (command.type == AlterCommand::ADD_COLUMN)
-                    old_names.try_emplace(command.column_name, std::nullopt);
-                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
-                    old_names.erase(command.column_name);
-                else if (command.type == AlterCommand::RENAME_COLUMN)
-                {
-                    if (auto node = old_names.extract(command.column_name))
-                    {
-                        node.key() = command.rename_to;
-                        old_names.insert(std::move(node));
-                    }
-                }
-            }
+                advanceColumnOldNames(old_names, command);
 
             for (const auto & index : new_metadata.secondary_indices)
             {
@@ -6446,7 +6497,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             columns_in_projections.emplace(col, projection.name);
     }
 
-    NameSet dropped_columns;
+    const NameSet dropped_columns = getColumnsDroppedByAlter(commands, old_metadata.columns);
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
@@ -6622,17 +6673,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             it->second);
                     }
                 }
-            }
-
-            if (old_metadata.columns.has(command.column_name))
-            {
-                dropped_columns.emplace(command.column_name);
-            }
-            else
-            {
-                const auto & nested = old_metadata.columns.getNested(command.column_name);
-                for (const auto & nested_column : nested)
-                    dropped_columns.emplace(nested_column.name);
             }
         }
         else if (command.type == AlterCommand::RESET_SETTING)
