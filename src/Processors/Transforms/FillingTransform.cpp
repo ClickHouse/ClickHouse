@@ -138,15 +138,25 @@ static std::optional<Int64> calendarStepOutOfStorageType(T value, Int64 delta, c
   * (`toDateTime64(..., 2) + INTERVAL 1 MILLISECOND` is a `DateTime64(3)`), which the filling would store back with
   * the scale of the column, so such a step is converted to whole ticks of the column instead, and a step that is
   * not a whole number of ticks is rejected: the column cannot hold the values it would generate.
+  *
+  * The step of `STALENESS` (`exclusive_bound`) is never materialized: it only marks an exclusive bound after a data
+  * value, and the values before it are whole ticks of the column. Such a step is rounded away from zero to whole
+  * ticks instead, which keeps exactly the same values before the bound (`STALENESS INTERVAL 1 MILLISECOND` over
+  * `DateTime64(0)` keeps only the data value itself, like a one-second staleness).
   */
-static std::optional<std::pair<Int64, Int64>> fixedLengthStep(IntervalKind::Kind kind, Int64 step, UInt32 scale)
+static std::optional<std::pair<Int64, Int64>> fixedLengthStep(IntervalKind::Kind kind, Int64 step, UInt32 scale, bool exclusive_bound)
 {
-    auto ticks = [kind, step, scale](Int64 seconds_per_unit, UInt32 unit_scale) -> std::pair<Int64, Int64>
+    auto ticks = [kind, step, scale, exclusive_bound](Int64 seconds_per_unit, UInt32 unit_scale) -> std::pair<Int64, Int64>
     {
         if (unit_scale <= scale)
             return {step, seconds_per_unit * DecimalUtils::scaleMultiplier<Int64>(scale - unit_scale)};
 
         const Int64 units_per_tick = DecimalUtils::scaleMultiplier<Int64>(unit_scale - scale);
+        if (exclusive_bound)
+        {
+            const auto whole = std::div(step, units_per_tick);
+            return {whole.quot + (whole.rem > 0) - (whole.rem < 0), 1};
+        }
         if (step % units_per_tick != 0)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP INTERVAL {} {} is not a whole number of ticks of the ORDER BY column type DateTime64({})",
@@ -230,7 +240,8 @@ static FillColumnDescription::StepFunction getStepFunction(
     }
 }
 
-static FillColumnDescription::StepFunction getStepFunction(const Field & step, const std::optional<IntervalKind> & step_kind, const DataTypePtr & type)
+static FillColumnDescription::StepFunction getStepFunction(
+    const Field & step, const std::optional<IntervalKind> & step_kind, const DataTypePtr & type, bool exclusive_bound)
 {
     WhichDataType which(type);
 
@@ -297,7 +308,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             /// of a fixed-length step exactly instead (see `dateTime64StepResult`): a value past the range of the
             /// column shortens the jump, and a single such step is rejected as a value the column cannot hold or
             /// stops the filling at its border.
-            if (const auto fixed_length_step = fixedLengthStep(step_kind->getKind(), converted_step, date_time64->getScale()))
+            if (const auto fixed_length_step = fixedLengthStep(step_kind->getKind(), converted_step, date_time64->getScale(), exclusive_bound))
             {
                 return [step_units = fixed_length_step->first, step_ticks = fixed_length_step->second](Field & field, Int64 jumps_count)
                 {
@@ -456,8 +467,8 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     if (!descr.fill_staleness.isNull())
         descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
 
-    descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
-    descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
+    descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type, /*exclusive_bound=*/false);
+    descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type, /*exclusive_bound=*/true);
 
     return true;
 }
