@@ -1348,14 +1348,59 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 return getColumnToReadInsteadOfSubcolumn(column_name, child_columns, merge_columns);
             };
 
+            /// Whether reading the column from the child needs any column of the child. An `ALIAS`
+            /// column whose expression reads no column of the child (`y ALIAS 1`) does not: once it is
+            /// expanded, nothing is left to read, as for a column the child does not have at all.
+            const auto & child_columns_with_defaults = storage_metadata_snapshot->getColumns();
+            std::function<bool(const String &, NameSet &)> reads_child_column = [&](const String & column_name, NameSet & visited_aliases)
+            {
+                auto name_in_child = resolve_column_in_child(column_name);
+                if (!name_in_child)
+                    return false;
+
+                const auto column_default = child_columns_with_defaults.getDefault(*name_in_child);
+                if (!column_default || column_default->kind != ColumnDefaultKind::Alias || !column_default->expression)
+                    return true;
+
+                /// A cyclic alias is rejected elsewhere; do not decide it here.
+                if (!visited_aliases.insert(*name_in_child).second)
+                    return true;
+
+                for (const auto * identifier : IdentifiersCollector::collect(column_default->expression))
+                    if (reads_child_column(identifier->name(), visited_aliases))
+                        return true;
+
+                return false;
+            };
+
             /// Query-tree rewriting turns the Merge virtual columns into constants. Request a
             /// physical column before constructing a plan as well, otherwise a delegating child
             /// can receive `SELECT` with an empty projection after that rewriting. The same holds
-            /// when none of the requested columns exists in the child: the substitute has to be
-            /// known here to become part of the child's projection, e.g. of a joined read.
-            if (std::ranges::none_of(real_column_names, [&](const String & column_name) { return resolve_column_in_child(column_name).has_value(); }))
+            /// when none of the requested columns exists in the child, or when all of them are
+            /// constant `ALIAS` columns: the substitute has to be known here to become part of the
+            /// child's projection and of the snapshot the query tree is resolved against, e.g. of a
+            /// joined read.
+            if (std::ranges::none_of(real_column_names, [&](const String & column_name)
+                {
+                    NameSet visited_aliases;
+                    return reads_child_column(column_name, visited_aliases);
+                }))
             {
-                real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
+                /// A child that reads its own rows at `FetchColumns` reports its own name as its `_table`
+                /// virtual column, which is the value the Merge puts there anyway, so that column is the
+                /// substitute, as it was when the Merge requested `_database`/`_table` from its children.
+                /// It needs no data, which keeps the reads that only count rows cheap: a file-like child
+                /// reads only the metadata of its files when no physical column is requested.
+                const bool can_read_own_table_virtual_column = (has_database_virtual_column || has_table_virtual_column)
+                    && common_processed_stage == QueryProcessingStage::FetchColumns
+                    && !storage->readsFromOtherTables()
+                    && !storage_metadata_snapshot->getColumns().has("_table")
+                    && storage_metadata_snapshot->virtuals.has("_table");
+
+                if (can_read_own_table_virtual_column)
+                    real_column_names.push_back("_table");
+                else
+                    real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
                 is_smallest_column_requested = true;
             }
 
@@ -1389,8 +1434,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 && !std::dynamic_pointer_cast<StorageMerge>(storage)
                 && !std::dynamic_pointer_cast<StorageDistributed>(storage)
                 && !storage->isView();
+            /// The substitute read for a query over nothing but virtual columns depends on the storage,
+            /// not only on its columns, see above.
             auto structure_key = can_cache
-                ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
+                ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false)
+                    + (is_smallest_column_requested ? "\nsubstitute: " + real_column_names.back() : String{}))
                 : String{};
             auto cache_it = can_cache ? query_info_cache.find(structure_key) : query_info_cache.end();
 
