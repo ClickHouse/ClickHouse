@@ -147,10 +147,12 @@ KeeperMoveResult moveChangelogBetweenDisks(
     return move_result;
 }
 
-/// Move a changelog to `disk_to` before appending to it. When the move fails after the destination
-/// may have been copied, the writer continues on the source, so the copy must not survive: restart
-/// would select it, either because it matches its move marker or by disk precedence, and lose the
-/// entries appended to the source. Throws if the copy cannot be removed.
+/// Move a changelog to `disk_to` before appending to it. When the move fails, the writer continues on
+/// the source, so no file at the destination may survive: restart would select it, either because it
+/// matches its move marker or by disk precedence, and lose the entries appended to the source. This
+/// includes a destination that existed before the move (for example, a retained recovery copy): a
+/// move that failed to synchronize its marker may still have published a marker it matches. Throws if
+/// the destination cannot be removed.
 /// With `force_sync`, throws if the source disk cannot make appended entries durable (it is not
 /// local): the configured `latest_log_disk` is checked to be local, but the source is not.
 void moveChangelogBetweenDisksForAppend(
@@ -165,25 +167,23 @@ void moveChangelogBetweenDisksForAppend(
     if (move_result)
         return;
 
-    bool copy_may_exist = false;
     switch (move_result.error())
     {
-        case KeeperMoveError::FailedBeforeMarkerPublication:
-            /// Nothing was copied.
-            break;
         case KeeperMoveError::DestinationPublishedSourceRemovalFailed:
             /// The description already points to the destination, which wins on restart.
             return;
+        case KeeperMoveError::FailedBeforeMarkerPublication:
+            /// Nothing was copied, but a preexisting destination may match a marker that was written
+            /// before its synchronization failed.
         case KeeperMoveError::MarkerPublishedCopyNotCompleted:
         case KeeperMoveError::CopyCompletedDestinationValidationFailed:
         case KeeperMoveError::MarkerRemovalFailed:
         case KeeperMoveError::CallbackRejectedOrThrew:
-            copy_may_exist = true;
             break;
     }
 
     chassert(description->disk != disk_to);
-    if (copy_may_exist)
+    if (disk_to->existsFile(path_to))
     {
         LOG_WARNING(
             getLogger("Changelog"),
@@ -192,9 +192,9 @@ void moveChangelogBetweenDisksForAppend(
             description->path,
             disk_to->getName(),
             description->disk->getName());
-        /// A leftover move marker without its destination is an orphan that startup removes.
-        removeKeeperFileIfExists(disk_to, path_to);
     }
+    /// A leftover move marker without its destination is an orphan that startup removes.
+    removeKeeperFileIfExists(disk_to, path_to);
 
     /// For example, an append to object storage publishes its metadata only on finalization, so
     /// `sync` does not make the appended entries durable, while the writer reports them as durable.
