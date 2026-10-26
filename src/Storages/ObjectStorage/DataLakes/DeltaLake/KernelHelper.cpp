@@ -336,6 +336,10 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
             if (!name.empty())
                 set_option("azure_storage_account_name", name);
 
+            /// The server's identity is restricted for this storage: forward nothing, the request is unsigned below.
+            if (drop_credentials)
+                break;
+
             /// The object_store builder does not read the workload identity environment variables on its own.
             auto env_value = [](const char * env_var) -> const char *
             {

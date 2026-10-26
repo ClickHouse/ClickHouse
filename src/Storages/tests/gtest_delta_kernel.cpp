@@ -351,6 +351,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsEnvironment)
     params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
     params.endpoint.container_name = "testcontainer";
     params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    params.forbid_implicit_credentials = false;
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     const auto options = DeltaLake::getAzureBuilderOptions(params);
@@ -391,6 +392,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForNonDefaultHost)
     params.endpoint.storage_account_url = "https://testaccount.blob.core.usgovcloudapi.net";
     params.endpoint.container_name = "testcontainer";
     params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    params.forbid_implicit_credentials = false;
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     const auto options = DeltaLake::getAzureBuilderOptions(params);
@@ -412,7 +414,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
     ScopedEnv env_client("AZURE_CLIENT_ID", "99999999-9999-9999-9999-999999999999");
     ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token");
 
-    const auto params = DB::getAzureConnectionParams(
+    auto params = DB::getAzureConnectionParams(
         "https://testaccount.blob.core.windows.net",
         "testcontainer",
         /*account_name*/ std::nullopt,
@@ -420,6 +422,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityForwardsExplicitIds)
         "22222222-2222-2222-2222-222222222222",
         "11111111-1111-1111-1111-111111111111",
         getContext().context);
+    params.forbid_implicit_credentials = false;
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     const auto options = DeltaLake::getAzureBuilderOptions(params);
@@ -459,6 +462,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityExplicitIdsSurviveReattach)
     /// Parse the same args again, as on attach.
     DB::AzureStorageParsedArguments attached;
     attached.fromAST(engine_args, getContext().context, /*with_structure=*/ false);
+    attached.connection_params.forbid_implicit_credentials = false;
     ASSERT_EQ(attached.connection_params.auth_method.index(), 3u);
 
     const auto options = DeltaLake::getAzureBuilderOptions(attached.connection_params);
@@ -484,6 +488,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresConfiguration)
     params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
     params.endpoint.container_name = "testcontainer";
     params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    params.forbid_implicit_credentials = false;
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     try
@@ -505,7 +510,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitId
     ScopedEnv env_client("AZURE_CLIENT_ID", nullptr);
     ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", nullptr);
 
-    const auto params = DB::getAzureConnectionParams(
+    auto params = DB::getAzureConnectionParams(
         "https://testaccount.blob.core.windows.net",
         "testcontainer",
         /*account_name*/ std::nullopt,
@@ -513,6 +518,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitId
         "22222222-2222-2222-2222-222222222222",
         "11111111-1111-1111-1111-111111111111",
         getContext().context);
+    params.forbid_implicit_credentials = false;
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     try
@@ -527,6 +533,34 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityRequiresTokenFileWithExplicitId
     }
 }
 
+/// With the server's identity restricted and the anonymous fallback allowed, nothing is forwarded
+/// and the request is unsigned, even when the workload identity environment is missing.
+TEST(DeltaLakeAzureKernelHelper, WorkloadIdentityDroppedWhenRestricted)
+{
+    ScopedEnv env_tenant("AZURE_TENANT_ID", nullptr);
+    ScopedEnv env_client("AZURE_CLIENT_ID", nullptr);
+    ScopedEnv env_token_file("AZURE_FEDERATED_TOKEN_FILE", nullptr);
+
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    params.workload_identity_client_id = "22222222-2222-2222-2222-222222222222";
+    params.workload_identity_tenant_id = "11111111-1111-1111-1111-111111111111";
+    params.forbid_implicit_credentials = true;
+    params.anonymous_fallback_for_server_credentials = true;
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    ASSERT_FALSE(findBuilderOption(options, "azure_tenant_id").has_value());
+    ASSERT_FALSE(findBuilderOption(options, "azure_client_id").has_value());
+    ASSERT_FALSE(findBuilderOption(options, "azure_federated_token_file").has_value());
+
+    const auto skip_signature = findBuilderOption(options, "azure_skip_signature");
+    ASSERT_TRUE(skip_signature.has_value());
+    ASSERT_EQ(*skip_signature, "true");
+}
+
 /// Private-link hosts end with .blob.core.windows.net but are not the URL the builder
 /// derives from the account name, so azure_endpoint must still be forwarded.
 TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForPrivateLinkHost)
@@ -539,6 +573,7 @@ TEST(DeltaLakeAzureKernelHelper, WorkloadIdentitySetsEndpointForPrivateLinkHost)
     params.endpoint.storage_account_url = "https://testaccount.privatelink.blob.core.windows.net";
     params.endpoint.container_name = "testcontainer";
     params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
+    params.forbid_implicit_credentials = false;
     ASSERT_EQ(params.auth_method.index(), 3u);
 
     const auto options = DeltaLake::getAzureBuilderOptions(params);
