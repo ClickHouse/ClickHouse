@@ -309,7 +309,9 @@ public:
         {
             return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
         };
+        /// A bare `NULL` has no nested values to compare, so it takes the generic path below.
         if (common_type && common_type->isNullable()
+            && !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull()
             && !recursiveRemoveLowCardinality(left_nested_type)->equals(*recursiveRemoveLowCardinality(right_nested_type))
             && (has_fixed_string(left_nested_type) || has_fixed_string(right_nested_type)))
         {
