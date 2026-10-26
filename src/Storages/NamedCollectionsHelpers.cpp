@@ -3,6 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -437,7 +438,10 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
     return collection_name;
 }
 
-void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const StorageID & dependent_table_id)
+namespace
+{
+
+void collectNestedTableFunctionNamedCollections(const ASTPtr & ast, std::vector<String> & collection_names)
 {
     if (!ast)
         return;
@@ -452,12 +456,44 @@ void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const
         if (auto table_function = TableFunctionFactory::instance().tryGet(function->name, nullptr))
         {
             if (auto collection_name = table_function->getNamedCollectionReferencedByArguments(function->arguments->children))
-                NamedCollectionFactory::instance().addDependency(*collection_name, dependent_table_id);
+                collection_names.push_back(std::move(*collection_name));
         }
     }
 
     for (const auto & child : ast->children)
-        addNestedTableFunctionNamedCollectionDependencies(child, dependent_table_id);
+        collectNestedTableFunctionNamedCollections(child, collection_names);
+}
+
+}
+
+void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const StorageID & dependent_table_id)
+{
+    std::vector<String> collection_names;
+    collectNestedTableFunctionNamedCollections(ast, collection_names);
+    for (const auto & collection_name : collection_names)
+        NamedCollectionFactory::instance().addDependency(collection_name, dependent_table_id);
+}
+
+std::vector<String> getNamedCollectionsReferencedByTableDefinition(const ASTCreateQuery & create)
+{
+    std::vector<String> collection_names;
+
+    if (create.storage && create.storage->engine && create.storage->engine->arguments)
+    {
+        const auto & engine_name = create.storage->engine->name;
+        if (auto collection_name = tryGetUsedNamedCollectionName(engine_name, create.storage->engine->arguments->children))
+            collection_names.push_back(std::move(*collection_name));
+
+        /// The table function target of a `Remote` table can reference collections of its own, see
+        /// `registerStorageRemote`.
+        if (engine_name == "Remote" || engine_name == "RemoteSecure")
+            collectNestedTableFunctionNamedCollections(create.storage->engine->arguments, collection_names);
+    }
+
+    if (create.as_table_function)
+        collectNestedTableFunctionNamedCollections(create.as_table_function->ptr(), collection_names);
+
+    return collection_names;
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(

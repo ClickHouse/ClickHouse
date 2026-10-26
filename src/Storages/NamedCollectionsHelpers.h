@@ -18,6 +18,7 @@
 namespace DB
 {
 
+class ASTCreateQuery;
 class ASTSetQuery;
 
 namespace ErrorCodes
@@ -83,6 +84,12 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
 /// name for `merge`), the reference is decided by `tryGetUsedNamedCollectionName` for the storage engine
 /// of the table function, independently of whether a collection with that name exists right now.
 void addNestedTableFunctionNamedCollectionDependencies(const ASTPtr & ast, const StorageID & dependent_table_id);
+
+/// The named collections a stored table definition references: through the engine arguments (see
+/// `tryGetUsedNamedCollectionName`), through the table function target of a `Remote` table, and through
+/// the table function of `CREATE TABLE ... AS table_function(...)`. Decided from the AST alone, without
+/// building the storage and independently of whether the collections exist right now.
+std::vector<String> getNamedCollectionsReferencedByTableDefinition(const ASTCreateQuery & create);
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have the collection name as the `name` argument of their configuration.

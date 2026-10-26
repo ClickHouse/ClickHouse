@@ -847,6 +847,14 @@ std::vector<StorageID> NamedCollectionFactory::getDetachedDependents(const Strin
     return result;
 }
 
+void NamedCollectionFactory::addDetachedDependency(const String & collection_name, const String & database_name, const String & table_name)
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(log, "Adding dependency of a detached table: collection={}, dependent={}.{}",
+        collection_name, backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
+    detached_dependencies.insert({collection_name, database_name, table_name});
+}
+
 void NamedCollectionFactory::removeDetachedDependencies(const StorageID & table_id)
 {
     std::lock_guard lock(mutex);
