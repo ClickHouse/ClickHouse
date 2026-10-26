@@ -21,6 +21,9 @@ FFFF3CD92912211FFFFF3CD92912211FFFFF3CD92912211FFFFF3CD92912211FFFFF3CD92912211F
 63488
 63488
 63488
+8192
+8192
+8192
 query_wide	1
 query_compact	1
 query_wide_two_columns	1
@@ -37,3 +40,4 @@ cached_column	1	1	1
 cached_shared_blocks	0	1	1
 cached_short_rows	1	1	1
 cached_sparse_null_map	0	1	1
+1	1

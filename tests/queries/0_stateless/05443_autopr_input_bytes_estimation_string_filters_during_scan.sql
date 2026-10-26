@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS t_compact_cached_column;
 DROP TABLE IF EXISTS t_compact_cached_short_rows;
 DROP TABLE IF EXISTS t_compact_cached_shared_blocks;
 DROP TABLE IF EXISTS t_compact_cached_sparse_null_map;
+DROP TABLE IF EXISTS t_compact_cached_subcolumn_prefix;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate is taken differently for the two.
@@ -167,6 +168,19 @@ SELECT sum(s.null) FROM t_compact_cached_sparse_null_map
 SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_sparse_null_map_1';
 SELECT sum(s.null) FROM t_compact_cached_sparse_null_map SETTINGS use_columns_cache=0, log_comment='cached_sparse_null_map_0';
 
+-- A subcolumn served from the cache is counted with all the substreams it is read from, also its prefix (the keys of
+-- the dictionary of `LowCardinality`), which is written before the data of the column. The block that the prefix shares
+-- with the data of the sibling is taken up to the next mark, so the estimate is an upper bound here.
+CREATE TABLE t_compact_cached_subcolumn_prefix(id UInt64, t Tuple(payload String, k LowCardinality(String))) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='100Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_cached_subcolumn_prefix SELECT number,
+    (arrayStringConcat(arrayMap(i -> reinterpretAsString(cityHash64(number, i)), range(128))), toString(number % 16)) FROM numbers(8192);
+SELECT count() FROM t_compact_cached_subcolumn_prefix WHERE t.k != '' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1,
+    enable_writes_to_columns_cache=1, columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0;
+SELECT count() FROM t_compact_cached_subcolumn_prefix WHERE t.k != ''
+SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='bound_subcolumn_prefix_1';
+SELECT count() FROM t_compact_cached_subcolumn_prefix WHERE t.k != '' SETTINGS use_columns_cache=0, log_comment='bound_subcolumn_prefix_0';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -226,6 +240,14 @@ FROM (
 )
 ORDER BY name;
 
+-- A read from the cache that is counted with an upper bound is not estimated lower than the same read from the part.
+SELECT
+    sumIf(ProfileEvents['ColumnsCacheHits'], log_comment = 'bound_subcolumn_prefix_1') > 0,
+    sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'bound_subcolumn_prefix_1')
+        >= sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'bound_subcolumn_prefix_0')
+FROM system.query_log
+WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'bound_%') AND (type = 'QueryFinish');
+
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_compact_unread_compressible;
@@ -238,3 +260,4 @@ DROP TABLE t_compact_cached_column;
 DROP TABLE t_compact_cached_short_rows;
 DROP TABLE t_compact_cached_shared_blocks;
 DROP TABLE t_compact_cached_sparse_null_map;
+DROP TABLE t_compact_cached_subcolumn_prefix;

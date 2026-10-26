@@ -66,8 +66,12 @@ void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_
     }
     else if (column.isSubcolumn() && !column.getTypeInStorage()->hasDynamicSubcolumns())
     {
+        /// The streams as the reader reads them, with the prefixes in streams of their own, see `initSubcolumnsDeserializationOrder`.
+        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
+        enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         bool all_found = true;
-        serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        serializations[pos]->enumerateStreams(enumerate_settings, [&](const ISerialization::SubstreamPath & substream_path)
         {
             if (needSkipStream(pos, substream_path))
                 return;
@@ -75,7 +79,7 @@ void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_
                 positions.push_back(*position);
             else
                 all_found = false;
-        });
+        }, ISerialization::SubstreamData(serializations[pos]).withType(column.type));
         if (!all_found)
             positions.clear();
     }
