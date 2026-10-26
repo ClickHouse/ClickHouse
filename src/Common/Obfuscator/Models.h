@@ -548,6 +548,23 @@ public:
 };
 
 
+/// The wall-clock time `hour:minute:second` on the local day of `time`, never on a neighbouring day.
+/// `DateLUTImpl::makeDateTime` resolves a wall-clock time in the gap of a DST transition with the offset after
+/// the gap, moving it back by the length of the gap. On a day when DST starts at midnight, e.g. `2016-03-13` in
+/// 'America/Havana' that begins at 01:00, this moves a time from 00:00 to 00:59 to the previous day. Resolve
+/// such a time with the offset before the gap instead, which is the same time of day counted from the start of
+/// the day, e.g. 00:30 becomes 01:30. It does not need the offset change of the day, which the date lookup table
+/// does not provide outside of its range, e.g. for `DateTime64` values in the year 2300.
+static Int64 makeDateTimeOnDayOf(const DateLUTImpl & date_lut, Int64 time, UInt8 hour, UInt8 minute, UInt8 second)
+{
+    const auto values = date_lut.getValues(time);
+    const Int64 res = date_lut.makeDateTime(static_cast<Int16>(values.year), values.month, values.day_of_month, hour, minute, second);
+    if (res < values.date)
+        return values.date + hour * 3600 + minute * 60 + second;
+    return res;
+}
+
+
 /// Leave date part as is and apply pseudorandom permutation to time difference with previous value within the same log2 class.
 class DateTimeModel : public IModel
 {
@@ -587,10 +604,9 @@ public:
             /// time of `new_datetime` keeps it inside the source local day even across DST transitions,
             /// where day lengths differ from 24 hours and a raw "seconds since midnight" offset added to
             /// the source midnight could otherwise spill onto a neighbouring displayed date.
-            res_data[i] = static_cast<UInt32>(date_lut.makeDateTime(
-                date_lut.toYear(src_datetime),
-                date_lut.toMonth(src_datetime),
-                date_lut.toDayOfMonth(src_datetime),
+            res_data[i] = static_cast<UInt32>(makeDateTimeOnDayOf(
+                date_lut,
+                src_datetime,
                 static_cast<UInt8>(date_lut.toHour(new_datetime)),
                 static_cast<UInt8>(date_lut.toMinute(new_datetime)),
                 static_cast<UInt8>(date_lut.toSecond(new_datetime))));
@@ -660,14 +676,9 @@ public:
             const Int64 res_diff = transformSigned(src_diff, seed);
             const Int64 new_datetime = static_cast<Int64>(static_cast<UInt64>(res_prev_value) + static_cast<UInt64>(res_diff));
 
-            const auto year = date_lut.toYear(src_whole);
-            const auto month = date_lut.toMonth(src_whole);
-            const auto day_of_month = date_lut.toDayOfMonth(src_whole);
-
-            Int64 res_whole = date_lut.makeDateTime(
-                year,
-                month,
-                day_of_month,
+            Int64 res_whole = makeDateTimeOnDayOf(
+                date_lut,
+                src_whole,
                 static_cast<UInt8>(date_lut.toHour(new_datetime)),
                 static_cast<UInt8>(date_lut.toMinute(new_datetime)),
                 static_cast<UInt8>(date_lut.toSecond(new_datetime)));
@@ -686,8 +697,8 @@ public:
             /// outside of the date lookup table.
             if (res_value < std::numeric_limits<Int64>::min() || res_value > std::numeric_limits<Int64>::max())
             {
-                Int128 day_begin = Int128(date_lut.makeDateTime(year, month, day_of_month, 0, 0, 0)) * scale_multiplier;
-                Int128 day_end = (Int128(date_lut.makeDateTime(year, month, day_of_month, 23, 59, 59)) + 1) * scale_multiplier - 1;
+                Int128 day_begin = Int128(makeDateTimeOnDayOf(date_lut, src_whole, 0, 0, 0)) * scale_multiplier;
+                Int128 day_end = (Int128(makeDateTimeOnDayOf(date_lut, src_whole, 23, 59, 59)) + 1) * scale_multiplier - 1;
 
                 Int128 range_begin = std::min<Int128>(std::max<Int128>(day_begin, std::numeric_limits<Int64>::min()), src_value);
                 Int128 range_end = std::max<Int128>(std::min<Int128>(day_end, std::numeric_limits<Int64>::max()), src_value);
