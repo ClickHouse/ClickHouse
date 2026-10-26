@@ -99,20 +99,18 @@ struct RadixUniqExactEntry
     [[nodiscard]] bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
     {
         auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
-        return num_streams != new_entry.num_streams || differs(num_distinct, new_entry.num_distinct)
-            || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys)
-            || streams_ended_in_set != new_entry.streams_ended_in_set;
+        return differs(num_streams, new_entry.num_streams) || differs(num_distinct, new_entry.num_distinct)
+            || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys);
     }
 
     [[nodiscard]] std::string dump() const
     {
         return fmt::format(
-            "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}, streams_ended_in_set={}",
+            "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}",
             num_distinct,
             stream_distinct,
             stream_keys,
-            num_streams,
-            streams_ended_in_set);
+            num_streams);
     }
 
     /// The result.
@@ -122,8 +120,6 @@ struct RadixUniqExactEntry
     /// The median over the streams of the number of keys of a stream, without NULLs and consecutive duplicates.
     size_t stream_keys = 0;
     size_t num_streams = 0;
-    /// Whether most streams ended inserting their keys into a local set rather than routing them.
-    bool streams_ended_in_set = false;
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.

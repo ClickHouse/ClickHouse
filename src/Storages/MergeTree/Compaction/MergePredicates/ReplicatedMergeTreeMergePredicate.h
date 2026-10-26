@@ -14,7 +14,7 @@ public:
 
     [[nodiscard]] std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
     [[nodiscard]] std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
-    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
+    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(PartsRangeView range) const override;
 
 protected:
     const ReplicatedMergeTreeQueue & queue;

@@ -1982,7 +1982,7 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 )", 0, \
         {"25.2", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"}) \
 DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
-Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark, the data substream of the `SHARED` typed paths included. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
 )", 0, \
         {"26.8", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."}) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
@@ -10747,6 +10747,10 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_gdeflate_codec, false, R"(
+Enables the `GDeflate` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \

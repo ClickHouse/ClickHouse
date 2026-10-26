@@ -183,7 +183,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override
+    [[nodiscard]] PartsRange getPatchesToApplyOnMerge(PartsRangeView range) const override
     {
         if (range.empty())
             return {};
