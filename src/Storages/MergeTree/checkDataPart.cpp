@@ -155,6 +155,27 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+bool isIOErrorException(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const ErrnoException & e)
+    {
+        return e.getErrno() == EIO;
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        return e.code() == std::errc::io_error;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is not an I/O error.
+        return false;
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -217,6 +238,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
+            if (isIOErrorException(std::current_exception()))
+                throw;
+
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",
