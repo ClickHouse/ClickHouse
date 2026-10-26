@@ -987,7 +987,10 @@ def test_kill_foreground_optimize_stops_s3_retries(s3_cancellation, broken_s3):
         assert node.query(f"SELECT count(), sum(key) FROM {table}").strip() == "2000\t1999000"
     finally:
         broken_s3.reset()
-        node.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC", timeout=30)
+        node.query(
+            f"KILL QUERY WHERE query_id='{query_id}' SYNC SETTINGS kill_throw_if_noop = false",
+            timeout=30,
+        )
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree('/cancel_teardown', 'r1')"])
@@ -1073,7 +1076,9 @@ def test_cancelled_merge_teardown_retries_multipart_abort(
     finally:
         # A replicated `OPTIMIZE` waits for queue completion even after its current merge was cancelled.
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        node.query(f"KILL QUERY WHERE query_id='{optimize_query_id}' SYNC")
+        node.query(
+            f"KILL QUERY WHERE query_id='{optimize_query_id}' SYNC SETTINGS kill_throw_if_noop = false"
+        )
         broken_s3.reset()
         for upload in outstanding_uploads():
             s3.abort_multipart_upload(
