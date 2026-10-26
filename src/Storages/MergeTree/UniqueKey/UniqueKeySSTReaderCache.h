@@ -41,10 +41,9 @@ struct UniqueKeySSTReaderWeightFunction
     }
 };
 
-/// Cache key: part identity (UUID, or `disk:path` fallback - see
-/// `IMergeTreeDataPart::getDeleteBitmapCacheIdentity`) plus the SST's content checksum
-/// from `checksums.txt`. A rebuilt SST gets a new hash, so a stale entry can never alias
-/// rebuilt content; leftovers are just LRU pollution, bounded by the size cap.
+/// Cache key: the part's physical location (`disk:path` - a background move
+/// preserves the UUID but not the location) plus the SST's content checksum.
+/// A rebuilt SST gets a new hash, so stale entries are unreachable LRU garbage.
 struct UniqueKeySSTReaderCacheKey
 {
     String part_id;
@@ -67,6 +66,36 @@ struct UniqueKeySSTReaderCacheKeyHash
         return hash.get64();
     }
 };
+
+/// Whether a caller with `caller` settings may use a cached reader opened with
+/// the `shared` (server-level) settings. Compares every `ReadSettings` field a
+/// shared reader cannot honor per caller (throttling, cache toggles and quotas,
+/// read cancellation); buffer sizes and read-method knobs are fixed by the
+/// loader and skipped. `remote_disk`: only remote parts use `remote_throttler`,
+/// but they may also read through the local fs cache.
+inline bool canShareSSTReaderSettings(const ReadSettings & caller, const ReadSettings & shared, bool remote_disk)
+{
+    if (caller.local_throttler != shared.local_throttler
+        || (remote_disk && caller.remote_throttler != shared.remote_throttler))
+        return false;
+
+    if (caller.enable_filesystem_cache != shared.enable_filesystem_cache
+        || caller.filesystem_cache_settings.read_if_exists_otherwise_bypass != shared.filesystem_cache_settings.read_if_exists_otherwise_bypass
+        || caller.filesystem_cache_settings.allow_background_download != shared.filesystem_cache_settings.allow_background_download
+        || caller.filesystem_cache_settings.max_download_size_per_query != shared.filesystem_cache_settings.max_download_size_per_query
+        || caller.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit != shared.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit)
+        return false;
+
+    if (caller.use_page_cache_for_disks_without_file_cache != shared.use_page_cache_for_disks_without_file_cache
+        || caller.use_page_cache_with_distributed_cache != shared.use_page_cache_with_distributed_cache
+        || caller.use_page_cache_for_local_disks != shared.use_page_cache_for_local_disks
+        || caller.use_page_cache_for_object_storage != shared.use_page_cache_for_object_storage
+        || caller.page_cache_settings.read_if_exists_otherwise_bypass != shared.page_cache_settings.read_if_exists_otherwise_bypass)
+        return false;
+
+    return caller.read_through_distributed_cache == shared.read_through_distributed_cache
+        && caller.remote_fs_settings.interruptible_reads == shared.remote_fs_settings.interruptible_reads;
+}
 
 /// Process-wide cache of opened UNIQUE KEY SST readers, keyed by part identity ⊕ SST checksum.
 class UniqueKeySSTReaderCache
