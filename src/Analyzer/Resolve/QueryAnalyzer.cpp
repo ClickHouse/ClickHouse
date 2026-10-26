@@ -8333,9 +8333,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 if (const auto * replace_transformer = node->as<ReplaceColumnTransformerNode>())
                     replaced_column_names.insert(replace_transformer->getReplacementsNames().begin(), replace_transformer->getReplacementsNames().end());
 
+                /// The `REPLACE` transformers of a subquery do not rewrite the `GROUP BY` of this query.
                 for (const auto & child : node->getChildren())
                 {
-                    if (child)
+                    if (child && !child->as<QueryNode>() && !child->as<UnionNode>())
                         nodes_to_process.push_back(child.get());
                 }
             }
@@ -8526,18 +8527,30 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * clauses (`QUALIFY`, `ORDER BY`, `LIMIT BY`) resolves to the same expression as the projection item.
       * The snapshots are taken by the first expansion even if the projection has no matchers, when a matcher
       * of another named window rewrites the referenced one. The other aliases are kept as they are.
+      * The copies of the expressions with duplicated aliases are compared with the alias definition after the
+      * projection is resolved, so the copies equal to a projection item take its snapshots too: identical
+      * definitions of the alias must stay identical.
       */
     std::unordered_set<std::string> visited_alias_names;
     std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
     {
-        if (node->hasAlias() && visited_alias_names.insert(node->getAlias()).second)
+        if (node->hasAlias())
         {
-            auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
-            if (it != scope.aliases.alias_name_to_expression_node.end())
+            if (visited_alias_names.insert(node->getAlias()).second)
             {
-                auto cloned_node = node->clone();
-                if (copyNamedWindowSnapshots(node, cloned_node))
-                    it->second = std::move(cloned_node);
+                auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
+                if (it != scope.aliases.alias_name_to_expression_node.end())
+                {
+                    auto cloned_node = node->clone();
+                    if (copyNamedWindowSnapshots(node, cloned_node))
+                        it->second = std::move(cloned_node);
+                }
+            }
+
+            for (const auto & duplicated_node : scope.aliases.nodes_with_duplicated_aliases)
+            {
+                if (duplicated_node->getAlias() == node->getAlias() && duplicated_node->isEqual(*node))
+                    copyNamedWindowSnapshots(node, duplicated_node);
             }
         }
 
