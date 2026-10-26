@@ -18,11 +18,18 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool auto_statistics_assume_floats_distinct;
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -75,7 +82,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"statistics",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The statistics of the column."},
         {"estimates.min",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated minimum value of the column."},
         {"estimates.max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated maximum value of the column."},
-        {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
+        {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column. "
+            "For a column without a uniq statistic whose values are assumed to be distinct (see the MergeTree setting `auto_statistics_assume_floats_distinct`), the assumed cardinality."},
         {"estimates.null_count",                       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of NULL values in the column."},
         {"estimates.default_count",                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of rows equal to the column's storage default value (NULL for Nullable columns, 0 / '' / [] / ... for non-Nullable). NULL when no basic statistic is available."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
@@ -127,6 +135,14 @@ void StorageSystemPartsColumns::processNextStorage(
 
         columns_info[column.name] = column_info;
     }
+
+    /// The same policy as in the estimator, see `ConditionSelectivityEstimatorBuilder::setCardinalityPolicy`.
+    const bool assume_floats_distinct = (*info.data->getSettings())[MergeTreeSetting::auto_statistics_assume_floats_distinct];
+    auto assumes_all_distinct = [&](const String & column_name)
+    {
+        const auto * column = metadata_snapshot->getColumns().tryGet(column_name);
+        return column && shouldAssumeAllDistinct(*column, assume_floats_distinct);
+    };
 
     /// Go through the list of parts.
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -353,8 +369,18 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+                std::optional<UInt64> cardinality;
+                if (estimate_it != estimates->end())
+                {
+                    cardinality = estimate_it->second.estimated_cardinality;
+                    /// Without a sketch, show the cardinality the optimizer assumes, if it does. It is derived from
+                    /// the estimate on request, not stored with it: every part keeps an estimate per column.
+                    if (!cardinality && assumes_all_distinct(column.name))
+                        cardinality = estimate_it->second.estimateAssumedDistinctCardinality(column.type);
+                }
+
+                if (cardinality)
+                    columns[res_index++]->insert(*cardinality);
                 else
                     columns[res_index++]->insertDefault();
             }

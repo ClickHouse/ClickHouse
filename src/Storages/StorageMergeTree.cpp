@@ -601,8 +601,9 @@ void StorageMergeTree::alter(
     commands.apply(
         new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
-    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+    auto implicit_statistics = getNewImplicitStatisticsSettings(new_metadata, *old_storage_settings);
+    addImplicitStatistics(new_metadata.columns, implicit_statistics.types, implicit_statistics.assume_floats_distinct);
+    const bool statistics_changed = implicit_statistics.changed;
 
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);

@@ -64,12 +64,12 @@ SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS test_basic_auto;
 CREATE TABLE test_basic_auto (
     a Nullable(Int64) STATISTICS(tdigest),     -- explicit tdigest, auto adds basic + uniq
-    b Nullable(Float64),                       -- only auto types, gets basic + uniq
+    b Nullable(Float64),                       -- only auto types, gets basic (no uniq for Float, see auto_statistics_assume_floats_distinct)
     c Int64,                                   -- non-Nullable numeric, gets basic + uniq
     d LowCardinality(Nullable(Int64)),         -- LC(Nullable), gets basic + uniq
     s String                                   -- String, gets basic + uniq
 ) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS auto_statistics_types = 'uniq, basic';
+SETTINGS auto_statistics_types = 'uniq, basic', auto_statistics_assume_floats_distinct = 1;
 
 INSERT INTO test_basic_auto SELECT
     if(number % 2 = 0, NULL, number),

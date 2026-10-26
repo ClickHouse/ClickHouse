@@ -662,9 +662,32 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     /// estimator still works with the compatible parts instead of crashing.
 }
 
+void ConditionSelectivityEstimatorBuilder::setCardinalityPolicy(StorageMetadataPtr metadata, bool assume_floats_distinct)
+{
+    policy_metadata = std::move(metadata);
+    policy_assume_floats_distinct = assume_floats_distinct;
+}
+
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+
+    /// `column_estimator.stats` is the estimator's own copy (see `addStatistics`), not an object shared through
+    /// the statistics cache, so the flag doesn't leak into other users of the part's statistics. The policy is
+    /// applied on every build, so a change of the setting or of the declared statistics takes effect at once.
+    for (auto & [column_name, column_estimator] : estimator->column_estimators)
+    {
+        bool assume_all_distinct = false;
+        if (policy_metadata)
+        {
+            if (const auto * column = policy_metadata->getColumns().tryGet(column_name))
+                assume_all_distinct = shouldAssumeAllDistinct(*column, policy_assume_floats_distinct);
+        }
+        column_estimator.stats->setAssumeAllDistinct(assume_all_distinct);
+    }
+
+    return estimator;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
@@ -763,9 +786,9 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     /// Second upper bound: at most `set_size` of the column's distinct values can match, and the
     /// estimator assumes every distinct value carries the same share of rows, so at most
     /// `set_size / cardinality` of them do. Only when the cardinality is measured - without a uniq
-    /// sketch `estimateCardinality` returns a fixed fraction of the row count, and dividing by that
-    /// guess would make the condition look arbitrarily selective and promote it into PREWHERE on no
-    /// evidence.
+    /// sketch `estimateCardinality` returns a fixed fraction of the row count or an assumed value
+    /// (`ColumnStatistics::CardinalitySource`), and dividing by that guess would make the condition
+    /// look arbitrarily selective and promote it into PREWHERE on no evidence.
     const UInt64 cardinality = it->second.estimateCardinality();
     if (cardinality && it->second.stats->hasCardinality())
         selectivity.true_sel

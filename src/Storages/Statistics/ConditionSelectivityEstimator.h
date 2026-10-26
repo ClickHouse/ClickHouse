@@ -185,11 +185,17 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
+    /// Decides for which columns without a uniq sketch all non-NULL values are assumed to be distinct,
+    /// see `shouldAssumeAllDistinct`. `assume_floats_distinct` is the MergeTree setting
+    /// `auto_statistics_assume_floats_distinct`. Without a policy, nothing is assumed.
+    void setCardinalityPolicy(StorageMetadataPtr metadata, bool assume_floats_distinct);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    StorageMetadataPtr policy_metadata;
+    bool policy_assume_floats_distinct = false;
 };
 
 }
