@@ -1,0 +1,6 @@
+Atomic
+10	45
+{'a':'CODEC(Delta(8), ZSTD(1))'}
+Replicated
+10	45
+{'a':'CODEC(Delta(8), ZSTD(1))'}

@@ -819,6 +819,12 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
         refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
 
+        /// The subcolumn codecs of the inner table are not new declarations. Only set when there are any: the setting is sent with
+        /// the DDL entry to the other replicas of a `Replicated` database, and older versions do not know it.
+        if (create_query->columns_list && create_query->columns_list->codec_declarations
+            && !create_query->columns_list->codec_declarations->children.empty())
+            refresh_context->setSetting("enable_subcolumn_codecs", Field(UInt64{1}));
+
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
         /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
