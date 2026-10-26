@@ -223,6 +223,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
@@ -278,14 +283,16 @@ public:
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
-        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        /// An empty array adds nothing and needs no nested states.
+        if (begin == end)
+            return;
 
-        char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = begin; i < end; ++i)
-        {
-            nested_func->add(nested_state, nested.data(), i, arena);
-            nested_state += nested_size_of_data;
-        }
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        /// For a single element the direct call is cheaper than the batch call.
+        if (end - begin >= 2)
+            nested_func->addBatchConsecutivePlaces(begin, end, state.array_of_aggregate_datas, nested_size_of_data, nested.data(), arena);
+        else
+            nested_func->add(state.array_of_aggregate_datas, nested.data(), begin, arena);
     }
 
     /// The row-at-a-time `add` rejects a row whose array arguments do not share boundaries. The
@@ -323,14 +330,14 @@ public:
         size_t begin = offsets[row - 1];
         size_t end = offsets[row];
         assertArraySizesMatch(trailing_offsets, row, begin, end);
-        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        if (begin == end)
+            return;
 
-        char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = begin; i < end; ++i)
-        {
-            nested_func->add(nested_state, nested, i, arena);
-            nested_state += nested_size_of_data;
-        }
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        if (end - begin >= 2)
+            nested_func->addBatchConsecutivePlaces(begin, end, state.array_of_aggregate_datas, nested_size_of_data, nested, arena);
+        else
+            nested_func->add(state.array_of_aggregate_datas, nested, begin, arena);
     }
 
     /// Optimized batch aggregation for rows belonging to the same place.
@@ -473,7 +480,114 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    /// The parallel merge is forwarded to the nested function element by element.
+    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        if (nested_size_of_data == 0)
+            return false;
+
+        /// The whole state with all its elements is deferred as one unit (the deferred pointers are later passed
+        /// to `parallelizeMergeMulti` of this function), so it is large as soon as one element pair is.
+        /// Elements past the end of `place` are merged into freshly created empty states, which is never large.
+        const AggregateFunctionForEachData & state = data(place);
+        const AggregateFunctionForEachData & rhs_state = data(rhs);
+        const size_t common_size = std::min(state.dynamic_array_size, rhs_state.dynamic_array_size);
+        for (size_t i = 0; i < common_size; ++i)
+            if (nested_func->isLargeMergePair(
+                    state.array_of_aggregate_datas + i * nested_size_of_data,
+                    rhs_state.array_of_aggregate_datas + i * nested_size_of_data))
+                return true;
+        return false;
+    }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        if (nested_size_of_data == 0)
+            return;
+
+        size_t max_size = 0;
+        for (auto * place : places)
+            max_size = std::max(max_size, data(place).dynamic_array_size);
+
+        AggregateDataPtrs nested_places;
+        nested_places.reserve(places.size());
+        for (size_t i = 0; i < max_size; ++i)
+        {
+            nested_places.clear();
+            for (auto * place : places)
+            {
+                const AggregateFunctionForEachData & state = data(place);
+                if (i < state.dynamic_array_size)
+                    nested_places.push_back(state.array_of_aggregate_datas + i * nested_size_of_data);
+            }
+            nested_func->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
+        }
+    }
+
+    void mergeImpl(
+        AggregateDataPtr __restrict place,
+        ConstAggregateDataPtr rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        const AggregateFunctionForEachData & rhs_state = data(rhs);
+        AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
+
+        /// See the serial `mergeImpl`.
+        if (nested_size_of_data == 0)
+            return;
+
+        for (size_t i = 0; i < rhs_state.dynamic_array_size; ++i)
+            nested_func->merge(
+                state.array_of_aggregate_datas + i * nested_size_of_data,
+                rhs_state.array_of_aggregate_datas + i * nested_size_of_data,
+                thread_pool,
+                is_cancelled,
+                arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if (places.empty())
+            return;
+
+        size_t max_size = 0;
+        for (auto * place : places)
+            max_size = std::max(max_size, data(place).dynamic_array_size);
+
+        /// `places[0]` is the destination: it has to hold all elements of the sources before they are merged into it.
+        const AggregateFunctionForEachData & state = ensureAggregateData(places[0], max_size, *arena);
+
+        /// See the serial `mergeImpl`.
+        if (nested_size_of_data == 0)
+            return;
+
+        AggregateDataPtrs nested_places;
+        nested_places.reserve(places.size());
+        for (size_t i = 0; i < max_size; ++i)
+        {
+            if (is_cancelled.load(std::memory_order_seq_cst))
+                return;
+
+            nested_places.clear();
+            nested_places.push_back(state.array_of_aggregate_datas + i * nested_size_of_data);
+            for (size_t p = 1; p < places.size(); ++p)
+            {
+                const AggregateFunctionForEachData & rhs_state = data(places[p]);
+                if (i < rhs_state.dynamic_array_size)
+                    nested_places.push_back(rhs_state.array_of_aggregate_datas + i * nested_size_of_data);
+            }
+
+            if (nested_places.size() > 1)
+                nested_func->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
+        }
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinaryLittleEndian(state.dynamic_array_size, buf);
@@ -481,7 +595,10 @@ public:
         const char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->serialize(nested_state, buf);
+            /// `isVersioned` and `getDefaultVersion` forward to the nested function, so the version
+            /// is in the nested function's terms already. `deserialize` forwards it, so dropping it
+            /// here would desynchronize the written payload from the later read.
+            nested_func->serialize(nested_state, buf, version);
             nested_state += nested_size_of_data;
         }
     }

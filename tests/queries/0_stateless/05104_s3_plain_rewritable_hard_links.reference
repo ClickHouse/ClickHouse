@@ -1,0 +1,15 @@
+200	19900
+-- update (mutation, unchanged columns are hard-linked)
+200	100
+2
+-- add a materialized column, drop a column, rename a column
+200	19900	39800
+-- a readonly reader on the same endpoint sees the mutated data
+200	19900	39800
+0
+0
+-- merge after the mutations
+200	19900	39800
+1
+-- dropping the tables removes all the objects
+0

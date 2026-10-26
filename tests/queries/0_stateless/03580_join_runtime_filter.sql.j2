@@ -18,7 +18,6 @@ INSERT INTO customer SELECT number, 202 FROM numbers(2);
 
 INSERT INTO orders SELECT number, number/10000, number%1000 FROM numbers(1000000);
 
-SET enable_analyzer=1;
 SET enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
 SET enable_parallel_replicas=0;
 SET query_plan_optimize_join_order_algorithm='greedy';

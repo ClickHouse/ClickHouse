@@ -22,6 +22,10 @@ struct RelationStats
     String table_name;
     bool imprecise_estimate = false;
 
+    /// `table_name` is a chain of sub-joins that already shows their estimates, so `EXPLAIN` renders
+    /// the chain on its own instead of appending one more estimate to it.
+    bool composite = false;
+
     /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
     /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
     RowEstimateSource source = RowEstimateSource::NoSource;
@@ -42,6 +46,10 @@ void updateJoinKeyDistinctCounts(
     ColumnStats & right_stats,
     JoinKind kind,
     JoinStrictness strictness);
+
+/// Converts a row or distinct-value estimate to `UInt64`. Estimates can exceed the `UInt64` range (a cross
+/// product of large inputs), so the result saturates at the maximum; NaN and non-positive values give 0.
+UInt64 toUInt64Saturating(Float64 estimate);
 
 }
 
