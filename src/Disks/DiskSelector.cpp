@@ -52,7 +52,7 @@ struct StorageNamespace
     String zookeeper_name;
     String path;
 
-    auto operator<=>(const StorageNamespace &) const = default;
+    bool operator==(const StorageNamespace &) const = default;
 };
 
 /// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
