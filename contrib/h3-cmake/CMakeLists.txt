@@ -10,14 +10,14 @@ set(H3_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/h3/src/h3lib")
 
 set(SRCS
     "${H3_SOURCE_DIR}/lib/algos.c"
-    "${H3_SOURCE_DIR}/lib/coordijk.c"
+    "${H3_SOURCE_DIR}/lib/area.c"
+    "${H3_SOURCE_DIR}/lib/cellsToMultiPoly.c"
     "${H3_SOURCE_DIR}/lib/bbox.c"
     "${H3_SOURCE_DIR}/lib/polygon.c"
     "${H3_SOURCE_DIR}/lib/polyfill.c"
     "${H3_SOURCE_DIR}/lib/h3Index.c"
     "${H3_SOURCE_DIR}/lib/h3Assert.c"
     "${H3_SOURCE_DIR}/lib/vec2d.c"
-    "${H3_SOURCE_DIR}/lib/vec3d.c"
     "${H3_SOURCE_DIR}/lib/vertex.c"
     "${H3_SOURCE_DIR}/lib/linkedGeo.c"
     "${H3_SOURCE_DIR}/lib/localij.c"
@@ -25,7 +25,6 @@ set(SRCS
     "${H3_SOURCE_DIR}/lib/directedEdge.c"
     "${H3_SOURCE_DIR}/lib/mathExtensions.c"
     "${H3_SOURCE_DIR}/lib/iterators.c"
-    "${H3_SOURCE_DIR}/lib/vertexGraph.c"
     "${H3_SOURCE_DIR}/lib/faceijk.c"
     "${H3_SOURCE_DIR}/lib/baseCells.c"
 )

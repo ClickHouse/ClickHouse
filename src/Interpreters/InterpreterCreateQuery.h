@@ -16,6 +16,7 @@ namespace DB
 {
 
 class ASTCreateQuery;
+class ASTColumns;
 class ASTColumnDeclaration;
 class ASTExpressionList;
 class ASTStorage;
@@ -39,6 +40,8 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
+    /// `CODEC name (...)` entries for the subcolumn codecs of the columns.
+    static ASTPtr formatCodecDeclarations(const ColumnsDescription & columns);
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);
@@ -79,18 +82,21 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
-    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, LoadingStrictnessLevel mode, bool make_columns_nullable);
+    static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, bool make_columns_nullable, bool pin_current_state_version);
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     /// check_defaults_over_virtual_columns rejects DEFAULT/MATERIALIZED expressions over virtual columns;
     /// pass false for objects that never evaluate their own column defaults over an insert block
     /// (ordinary views and external-target materialized views).
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
+    /// The codecs declared with `CODEC name (...)` in the list are applied to the columns. `columns_list.columns` must not be null.
+    static ColumnsDescription getColumnsDescription(const ASTColumns & columns_list, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
+
+    static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 

@@ -37,8 +37,10 @@
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <base/range.h>
+#    include <base/scope_guard.h>
 #    include <base/sort.h>
 #    include <Common/PODArray.h>
+#    include <Common/checkStackSize.h>
 #    include <Common/logger_useful.h>
 #    include <Common/quoteString.h>
 
@@ -65,6 +67,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -73,6 +76,11 @@ namespace
     using MessageDescriptor = google::protobuf::Descriptor;
     using FieldTypeId = google::protobuf::FieldDescriptor::Type;
     using OneofDescriptor = google::protobuf::OneofDescriptor;
+
+    /// The maximum nesting depth of messages we process. The schema is provided by the user,
+    /// and a chain of distinct messages, each having a field of the type of the next one, is not limited
+    /// by the protobuf library, while the functions below process it recursively.
+    constexpr size_t MAX_PROTOBUF_MESSAGE_NESTING_DEPTH = 1000;
 
 
     /// Compares column's name with protobuf field's name.
@@ -3456,6 +3464,18 @@ namespace
             bool columns_are_reordered_outside,
             bool check_nested_while_filling_missing_columns)
         {
+            checkStackSize();
+
+            if (message_nesting_depth >= MAX_PROTOBUF_MESSAGE_NESTING_DEPTH)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Protobuf messages are nested too deeply (more than {} levels) at the message {}",
+                    MAX_PROTOBUF_MESSAGE_NESTING_DEPTH,
+                    quoteString(message_descriptor.full_name()));
+
+            ++message_nesting_depth;
+            SCOPE_EXIT({ --message_nesting_depth; });
+
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
 
@@ -4159,6 +4179,9 @@ namespace
         const ProtobufReaderOrWriter reader_or_writer;
         std::function<String(size_t)> get_root_desc_function;
         std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
+
+        /// The current depth of recursion of `buildMessageSerializerImpl`.
+        size_t message_nesting_depth = 0;
     };
 
     template <typename Type>
@@ -4182,7 +4205,18 @@ namespace
         bool allow_repeat,
         std::unordered_set<const google::protobuf::FieldDescriptor *> & unresolved_descriptors)
     {
+        checkStackSize();
+
         chassert(unresolved_descriptors.contains(field_descriptor));
+
+        /// `unresolved_descriptors` contains the chain of fields of nested messages leading to the current field.
+        /// It protects only from recursive types, but not from long chains of distinct messages.
+        if (unresolved_descriptors.size() > MAX_PROTOBUF_MESSAGE_NESTING_DEPTH)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Protobuf messages are nested too deeply (more than {} levels) at the field {}",
+                MAX_PROTOBUF_MESSAGE_NESTING_DEPTH,
+                quoteString(field_descriptor->full_name()));
         if (allow_repeat && field_descriptor->is_map())
         {
             /// We don't add the same unresolved descriptor again since we are trying to re-resolve and put in under a Tuple
@@ -4191,6 +4225,9 @@ namespace
             if (!name_and_type)
                 return std::nullopt;
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type->type.get());
+            /// The key or the value of the map entry was skipped as unsupported, so the map is skipped as a whole.
+            if (tuple_type->getElements().size() != 2)
+                return std::nullopt;
             return NameAndTypePair{name_and_type->name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
         }
 
@@ -4273,11 +4310,14 @@ namespace
                             nested_field_descriptor->full_name());
                     }
 
+                    /// Remove the descriptor on every exit, including skipping an unsupported field,
+                    /// so that `unresolved_descriptors` contains only the chain of fields leading to the current one.
+                    SCOPE_EXIT({ unresolved_descriptors.erase(nested_field_descriptor); });
+
                     auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
                         nested_field_descriptor, skip_unsupported_fields, true, unresolved_descriptors);
                     if (!nested_name_and_type)
                         return std::nullopt;
-                    unresolved_descriptors.erase(nested_field_descriptor);
                     return NameAndTypePair{fmt::format("{}_{}", field_descriptor->name(), nested_name_and_type->name), nested_name_and_type->type};
                 }
 
@@ -4294,11 +4334,12 @@ namespace
                             "ClickHouse doesn't support type recursion ({})",
                             message_descriptor->field(i)->full_name());
                     }
+                    SCOPE_EXIT({ unresolved_descriptors.erase(message_descriptor->field(i)); });
+
                     auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
                         message_descriptor->field(i), skip_unsupported_fields, true, unresolved_descriptors);
                     if (!nested_name_and_type)
                         continue;
-                    unresolved_descriptors.erase(message_descriptor->field(i));
                     nested_types.push_back(nested_name_and_type->type);
                     nested_names.push_back(nested_name_and_type->name);
                 }
