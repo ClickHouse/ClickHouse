@@ -1717,7 +1717,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                 {
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
                     {
-                        sendData(state, block);
+                        if (block.info.is_preview)
+                            sendPreviewData(state, block);
+                        else
+                            sendData(state, block);
                         out->sync();
                     }
                     continue;

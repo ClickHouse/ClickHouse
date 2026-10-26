@@ -3033,6 +3033,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
             || *packet_type == Protocol::Server::ProfileEvents
             || *packet_type == Protocol::Server::TimezoneUpdate
             || *packet_type == Protocol::Server::Data
+            || *packet_type == Protocol::Server::PreviewData
             || *packet_type == Protocol::Server::Totals
             || *packet_type == Protocol::Server::Extremes
             || *packet_type == Protocol::Server::ProfileInfo
@@ -3055,6 +3056,10 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
         {
             case Protocol::Server::Data:
                 onData(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::PreviewData:
+                onPreviewData(packet.block);
                 break;
 
             case Protocol::Server::Totals:
@@ -3098,7 +3103,7 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, Totals, Extremes or ProfileInfo. Got {})",
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, PreviewData, Totals, Extremes or ProfileInfo. Got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
