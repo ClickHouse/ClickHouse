@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS mv_05407;
-    CREATE MATERIALIZED VIEW mv_05407 REFRESH EVERY 1 YEAR ENGINE = Memory EMPTY AS SELECT 1 AS x;
+    CREATE MATERIALIZED VIEW mv_05407 REFRESH EVERY 1 YEAR ENGINE = MergeTree ORDER BY x EMPTY AS SELECT 1 AS x;
 "
 
 # The new schedule is applied by the refresh task's background scheduling, so wait for it.
