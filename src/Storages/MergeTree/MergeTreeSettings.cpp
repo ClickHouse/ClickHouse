@@ -876,10 +876,17 @@ Can be overridden by explicit `dictionary_block_size` index argument.
 )", 0, \
         {"26.6", 512, 512, "New setting"}) \
     DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
-Default front-coding compression for text index dictionary blocks.
-Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
+Obsolete, use `text_index_dictionary_block_encoding` instead. Used only if `text_index_dictionary_block_encoding` is not set explicitly.
+`1` means `frontcoding_v1`, `0` means `none`.
 )", 0, \
         {"26.6", true, true, "New setting"}) \
+    DECLARE(TextIndexDictionaryBlockEncoding, text_index_dictionary_block_encoding, TextIndexDictionaryBlockEncoding::FrontCodingV1, R"(
+Default token layout of text index dictionary blocks. One of `none`, `frontcoding_v1`, `frontcoding_v2`.
+`frontcoding_v2` stores the prefix and suffix lengths as bit-packed columns, which is smaller and faster to decode,
+but parts written with it cannot be read by versions before 26.10.
+Can be overridden by explicit `dictionary_block_encoding` index argument.
+)", 0, \
+        {"26.10", "frontcoding_v1", "frontcoding_v1", "New setting"}) \
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
 Default posting list block size for text indexes (rows).
 Can be overridden by explicit `posting_list_block_size` index argument.

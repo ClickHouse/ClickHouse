@@ -2087,8 +2087,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                idef->add_params()->set_unescaped_sval(
-                    "dictionary_block_frontcoding_compression = " + std::to_string(rg.nextBool() ? 1 : 0));
+                static const DB::Strings dictionary_block_encodings = {"'none'", "'frontcoding_v1'", "'frontcoding_v2'"};
+                idef->add_params()->set_unescaped_sval("dictionary_block_encoding = " + rg.pickRandomly(dictionary_block_encodings));
             }
             if (rg.nextBool())
             {

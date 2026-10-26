@@ -64,7 +64,7 @@ namespace DB
   * - A binary serialized ColumnVector with offsets to dictionary blocks (see SerializationNumber::serializeBinaryBulk)
   *
   * Dictionary file consists of blocks. The format of dictionary block:
-  * - Format of tokens (VarUInt). Currently raw and front-coded string formats are supported.
+  * - Format of tokens (VarUInt). Currently raw and two front-coded string formats are supported (see TokensFormat).
   * - Number of tokens (VarUInt) in block.
   * - A binary serialized ColumnString with tokens.
   * - Information about posting lists for each token:
@@ -87,7 +87,7 @@ using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1;
+    TextIndexDictionaryBlockEncoding dictionary_block_encoding = TextIndexDictionaryBlockEncoding::FrontCodingV1;
     size_t posting_list_block_size = 1024 * 1024;
     bool enable_positions = false;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
@@ -338,8 +338,12 @@ struct TextIndexSerialization
     enum class TokensFormat : UInt64
     {
         RawStrings = 0,
-        FrontCodedStrings = 1
+        FrontCodedStrings = 1,
+        /// Front coding with the prefix and suffix lengths stored as two bit-packed columns.
+        FrontCodedStringsV2 = 2,
     };
+
+    static TokensFormat getTokensFormat(TextIndexDictionaryBlockEncoding encoding);
 
     static void serializePostingsAndTokenInfo(
         PostingListBuilder && postings,

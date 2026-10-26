@@ -681,6 +681,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"table_disk", trueOrFalseSetting},
     {"table_readonly", trueOrFalseSetting},
     {"temporary_directories_lifetime", highRangeSetting},
+    {"text_index_dictionary_block_encoding",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'none'", "'frontcoding_v1'", "'frontcoding_v2'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"text_index_dictionary_block_frontcoding_compression", trueOrFalseSetting},
     {"text_index_dictionary_block_size", highRangeNonZeroSetting},
     {"text_index_max_memory_usage_before_flush", bytesRangeNonZeroSetting},
