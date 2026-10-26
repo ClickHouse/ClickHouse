@@ -201,42 +201,12 @@ bool equals(const T & first, const T & second)
 
 bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping);
 
-/// Canonicalize spacing in an Iceberg primitive type string by removing ASCII whitespace that is
-/// only optional formatting around the delimiters '(', ')', '[', ']', ',' (and at the string edges).
-/// Whitespace embedded inside a token (e.g. between the digits of "decimal(2 0,0)") is preserved so
-/// that malformed spellings remain malformed and are still rejected by the parser.
-String canonicalizeTypeSpacing(const String & s)
-{
-    auto is_delimiter = [](char c) { return c == '(' || c == ')' || c == '[' || c == ']' || c == ','; };
-    String result;
-    result.reserve(s.size());
-    for (size_t i = 0; i < s.size(); ++i)
-    {
-        if (!isWhitespaceASCII(s[i]))
-        {
-            result.push_back(s[i]);
-            continue;
-        }
-        const char prev = result.empty() ? '\0' : result.back();
-        size_t j = i + 1;
-        while (j < s.size() && isWhitespaceASCII(s[j]))
-            ++j;
-        const char next = j < s.size() ? s[j] : '\0';
-        /// Drop whitespace only when it is next to a delimiter or at the start/end of the string;
-        /// keep it when it sits between two token characters.
-        const bool drop = prev == '\0' || next == '\0' || is_delimiter(prev) || is_delimiter(next);
-        if (!drop)
-            result.push_back(s[i]);
-    }
-    return result;
-}
-
-/// canonicalizeTypeSpacing, then resolve the names catalogs report instead of the spec ones: AWS Glue
+/// `Iceberg::canonicalizeTypeSpacing`, then resolve the names catalogs report instead of the spec ones: AWS Glue
 /// reports `binary` as the Redshift `varbyte` / `varbyte(N)` (a maximum length, no ClickHouse
 /// counterpart), and Hive 3 reports `timestamptz` as `timestamp with local time zone`.
 String canonicalizeTypeName(const String & s)
 {
-    String result = canonicalizeTypeSpacing(s);
+    String result = Iceberg::canonicalizeTypeSpacing(s);
     if (result == f_varbyte || (result.starts_with("varbyte(") && result.ends_with(')')))
         return f_binary;
     if (result == f_timestamp_with_local_time_zone)
@@ -323,7 +293,7 @@ bool typesAreStructurallyIdentical(
     /// Primitive type strings: e.g. both "decimal(20,0)" and "decimal(20, 0)" denote the same
     /// type. Different writers emit different spacing, so ignore ASCII whitespace.
     if (first.isString() && second.isString())
-        return canonicalizeTypeSpacing(first.toString()) == canonicalizeTypeSpacing(second.toString());
+        return Iceberg::canonicalizeTypeSpacing(first.toString()) == Iceberg::canonicalizeTypeSpacing(second.toString());
 
     const bool both_objects
         = first.type() == typeid(Poco::JSON::Object::Ptr) && second.type() == typeid(Poco::JSON::Object::Ptr);
@@ -441,6 +411,32 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
 
 namespace Iceberg
 {
+
+String canonicalizeTypeSpacing(const String & type_name)
+{
+    auto is_delimiter = [](char c) { return c == '(' || c == ')' || c == '[' || c == ']' || c == ','; };
+    String result;
+    result.reserve(type_name.size());
+    for (size_t i = 0; i < type_name.size(); ++i)
+    {
+        if (!isWhitespaceASCII(type_name[i]))
+        {
+            result.push_back(type_name[i]);
+            continue;
+        }
+        const char prev = result.empty() ? '\0' : result.back();
+        size_t j = i + 1;
+        while (j < type_name.size() && isWhitespaceASCII(type_name[j]))
+            ++j;
+        const char next = j < type_name.size() ? type_name[j] : '\0';
+        /// Drop whitespace only when it is next to a delimiter or at the start/end of the string;
+        /// keep it when it sits between two token characters.
+        const bool drop = prev == '\0' || next == '\0' || is_delimiter(prev) || is_delimiter(next);
+        if (!drop)
+            result.push_back(type_name[i]);
+    }
+    return result;
+}
 
 std::string IcebergSchemaProcessor::default_link{};
 
