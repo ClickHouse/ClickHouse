@@ -4,6 +4,7 @@
 #include <Interpreters/FileCache/FileCacheSettings.h>
 
 #include <boost/noncopyable.hpp>
+#include <condition_variable>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
@@ -80,6 +81,21 @@ public:
     void clear();
 
 private:
+    /// The caches removed by `removeUnusedNamesOfReleasedDisks`, destroyed after `mutex` is unlocked.
+    struct RemovedCaches
+    {
+        explicit RemovedCaches(FileCacheFactory & factory_) : factory(factory_) {}
+        ~RemovedCaches() { destroy(); }
+
+        /// Destroys the caches, then lets the new caches for their paths be created. Called without `mutex` locked.
+        void destroy();
+
+        FileCacheFactory & factory;
+        std::vector<FileCacheDataPtr> caches;
+        /// The paths of the caches in `caches` that are destroyed with them, see `paths_of_caches_being_destroyed`.
+        std::vector<std::string> paths;
+    };
+
     std::mutex mutex;
     CacheByName caches_by_name;
     /// The names in `caches_by_name` added by custom cache disks.
@@ -87,10 +103,16 @@ private:
     /// The names in `names_of_custom_disks` whose disks were released, but whose caches were still used by something
     /// else at that moment, see `removeNameOfReleasedDisk`.
     std::unordered_set<std::string> names_of_released_disks;
+    /// The paths of the caches removed by `removeUnusedNamesOfReleasedDisks` and not destroyed yet. A cache holds the lock
+    /// of its directory until it is destroyed, so a new cache for the same path is not created until then.
+    std::unordered_multiset<std::string> paths_of_caches_being_destroyed;
+    std::condition_variable cache_destroyed_cv;
 
     /// Removes the names in `names_of_released_disks` whose caches are not used anymore. The removed caches are moved
     /// to `removed`, to be destroyed by the caller after unlocking `mutex`.
-    void removeUnusedNamesOfReleasedDisks(std::vector<FileCacheDataPtr> & removed);
+    void removeUnusedNamesOfReleasedDisks(RemovedCaches & removed);
+    /// Waits until no cache with the path `path` is being destroyed, destroying the caches in `removed` first.
+    void waitForCacheDestroyed(std::unique_lock<std::mutex> & lock, const std::string & path, RemovedCaches & removed);
 };
 
 /// Get default path prefix for non-disk caches.

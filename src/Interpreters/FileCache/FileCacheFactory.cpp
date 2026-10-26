@@ -48,7 +48,7 @@ FileCacheFactory & FileCacheFactory::instance()
 
 FileCacheFactory::CacheByName FileCacheFactory::getAll()
 {
-    std::vector<FileCacheDataPtr> removed;
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
     removeUnusedNamesOfReleasedDisks(removed);
     return caches_by_name;
@@ -56,7 +56,7 @@ FileCacheFactory::CacheByName FileCacheFactory::getAll()
 
 FileCacheFactory::Caches FileCacheFactory::getUniqueInstances()
 {
-    std::vector<FileCacheDataPtr> removed;
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
     removeUnusedNamesOfReleasedDisks(removed);
     Caches caches;
@@ -67,7 +67,7 @@ FileCacheFactory::Caches FileCacheFactory::getUniqueInstances()
 
 FileCachePtr FileCacheFactory::get(const std::string & cache_name)
 {
-    std::vector<FileCacheDataPtr> removed;
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
     removeUnusedNamesOfReleasedDisks(removed);
 
@@ -83,9 +83,9 @@ FileCachePtr FileCacheFactory::getOrCreate(
     const std::string & config_path,
     bool is_custom_disk)
 {
-    std::vector<FileCacheDataPtr> removed;
-    std::lock_guard lock(mutex);
-    removeUnusedNamesOfReleasedDisks(removed);
+    RemovedCaches removed(*this);
+    std::unique_lock lock(mutex);
+    waitForCacheDestroyed(lock, file_cache_settings[FileCacheSetting::path].value, removed);
 
     auto it = std::find_if(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
     {
@@ -134,9 +134,9 @@ FileCachePtr FileCacheFactory::create(
     const FileCacheSettings & file_cache_settings,
     const std::string & config_path)
 {
-    std::vector<FileCacheDataPtr> removed;
-    std::lock_guard lock(mutex);
-    removeUnusedNamesOfReleasedDisks(removed);
+    RemovedCaches removed(*this);
+    std::unique_lock lock(mutex);
+    waitForCacheDestroyed(lock, file_cache_settings[FileCacheSetting::path].value, removed);
 
     auto it = caches_by_name.find(cache_name);
 
@@ -172,7 +172,7 @@ FileCachePtr FileCacheFactory::create(
 
 FileCacheFactory::FileCacheDataPtr FileCacheFactory::getByName(const std::string & cache_name)
 {
-    std::vector<FileCacheDataPtr> removed;
+    RemovedCaches removed(*this);
     std::lock_guard lock(mutex);
     removeUnusedNamesOfReleasedDisks(removed);
 
@@ -263,7 +263,7 @@ void FileCacheFactory::remove(FileCachePtr cache)
 void FileCacheFactory::removeNameOfReleasedDisk(const std::string & cache_name)
 {
     /// Destroying the cache stops its background operations, which is not done under `mutex`.
-    std::vector<FileCacheDataPtr> removed;
+    RemovedCaches removed(*this);
 
     std::lock_guard lock(mutex);
     if (!names_of_custom_disks.contains(cache_name))
@@ -274,7 +274,42 @@ void FileCacheFactory::removeNameOfReleasedDisk(const std::string & cache_name)
     removeUnusedNamesOfReleasedDisks(removed);
 }
 
-void FileCacheFactory::removeUnusedNamesOfReleasedDisks(std::vector<FileCacheDataPtr> & removed)
+void FileCacheFactory::RemovedCaches::destroy()
+{
+    caches.clear();
+    if (paths.empty())
+        return;
+
+    std::lock_guard lock(factory.mutex);
+    for (const auto & path : paths)
+        factory.paths_of_caches_being_destroyed.erase(factory.paths_of_caches_being_destroyed.find(path));
+    paths.clear();
+    factory.cache_destroyed_cv.notify_all();
+}
+
+void FileCacheFactory::waitForCacheDestroyed(std::unique_lock<std::mutex> & lock, const std::string & path, RemovedCaches & removed)
+{
+    while (true)
+    {
+        removeUnusedNamesOfReleasedDisks(removed);
+        if (!paths_of_caches_being_destroyed.contains(path))
+            return;
+
+        if (removed.caches.empty())
+        {
+            /// Another thread is destroying the cache.
+            cache_destroyed_cv.wait(lock);
+        }
+        else
+        {
+            lock.unlock();
+            removed.destroy();
+            lock.lock();
+        }
+    }
+}
+
+void FileCacheFactory::removeUnusedNamesOfReleasedDisks(RemovedCaches & removed)
 {
     for (auto name_it = names_of_released_disks.begin(); name_it != names_of_released_disks.end();)
     {
@@ -309,7 +344,13 @@ void FileCacheFactory::removeUnusedNamesOfReleasedDisks(std::vector<FileCacheDat
             }
         }
 
-        removed.push_back(std::move(it->second));
+        if (!has_other_names)
+        {
+            auto path = it->second->getSettings()[FileCacheSetting::path].value;
+            paths_of_caches_being_destroyed.insert(path);
+            removed.paths.push_back(std::move(path));
+        }
+        removed.caches.push_back(std::move(it->second));
         caches_by_name.erase(it);
         names_of_custom_disks.erase(cache_name);
         name_it = names_of_released_disks.erase(name_it);
