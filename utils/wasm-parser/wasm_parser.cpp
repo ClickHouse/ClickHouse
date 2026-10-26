@@ -40,7 +40,11 @@
 /// (column in bytes), all omitted when unknown (an error reported by throwing has no token);
 /// "expected" lists what the parser would have accepted there, omitted when there is nothing to
 /// say. "highlights" covers what parsed before the error, so an editor can keep coloring while
-/// the user types. All highlight offsets are byte offsets, end-exclusive; the types are the
+/// the user types. A statement that failed after its keyword committed also reports, after
+/// "error", the tree it built so far as "partial_ast", with an `Error` node in the slot that failed
+/// (see `Parsers/PartialASTCapture.h`); only a build with formatting has it, it is never present
+/// together with "ast", and `ch_format_json` rejects it. All highlight offsets are byte offsets,
+/// end-exclusive; the types are the
 /// visible names of `enum Highlight` (`keyword`, `identifier`, `function`, `alias`,
 /// `substitution`, `number`, `string`, `string_escape`, `string_metacharacter`).
 
@@ -55,6 +59,13 @@
 
 #if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
 #include <Parsers/ASTToJSON.h>
+#endif
+
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+#include <Parsers/ASTError.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/PartialASTCapture.h>
+#include <vector>
 #endif
 
 #include <wasm_sjlj.h>
@@ -230,7 +241,8 @@ size_t jsonNestingDepth(const char * json, size_t size)
 /// Every AST JSON document this module reads passes through here, `serializeBody` included: it is
 /// what "the limits of `ch_format_json`" means, in one place, so that the producer can be held to
 /// them by running them rather than by restating them.
-DB::ASTPtr readASTJSON(const char * json, size_t size)
+/// The limits of an AST JSON document as text, before any of it is parsed.
+void checkASTJSONDocument(const char * json, size_t size)
 {
     /// `createFromJSON` bounds the AST it builds, but `Poco::JSON::Parser` materializes the whole
     /// document first, so the raw text is bounded up front, as `formatQueryFromJSON` does on the
@@ -239,6 +251,11 @@ DB::ASTPtr readASTJSON(const char * json, size_t size)
         throw DB::Exception(DB::ErrorCodes::TOO_BIG_AST, "AST JSON is too big. Maximum: {}", MAX_QUERY_SIZE);
     if (jsonNestingDepth(json, size) > MAX_AST_JSON_NESTING)
         throw DB::Exception(DB::ErrorCodes::TOO_DEEP_AST, "AST JSON is nested too deeply. Maximum: {}", MAX_AST_JSON_NESTING);
+}
+
+DB::ASTPtr readASTJSON(const char * json, size_t size)
+{
+    checkASTJSONDocument(json, size);
 
     /// Deserialization throws for anything wrong with the document - malformed JSON, an unknown
     /// node type, a field of the wrong shape, a tree past the depth or element limits - and the
@@ -319,6 +336,26 @@ extern "C" int serializeBody(void * argument)
     return 1;
 }
 
+static_assert(DB::PARTIAL_AST_MAX_DEPTH == MAX_PARSER_DEPTH && DB::PARTIAL_AST_MAX_ELEMENTS == MAX_AST_ELEMENTS,
+    "A partial tree is captured within the node limits of an `ast`");
+
+/// The "partial_ast" of a failed parse. Not read back: it contains an `Error` node, which
+/// `ch_format_json` rejects by design, and without it the tree is still not one the reader accepts -
+/// a `SELECT` with no select list, an `INSERT` with no table. So it is held to what can be checked
+/// without the reader: the node limits that `serializeBody` checks first - the capture measured the
+/// tree before its `Error` was added - and the limits of the document as text. Not to the element
+/// budget of the reader, which also counts what is not a node - the values of structured `Field`s,
+/// the parts of compound identifiers and more - by rules that live in the `readJSON` of each node.
+extern "C" int serializePartialBody(void * argument)
+{
+    const auto & request = *static_cast<const SerializeRequest *>(argument);
+    request.ast->checkDepth(MAX_PARSER_DEPTH);
+    request.ast->checkSize(MAX_AST_ELEMENTS);
+    *request.json = DB::serializeASTToJSON(*request.ast);
+    checkASTJSONDocument(request.json->data(), request.json->size());
+    return 1;
+}
+
 /// Turns the boundary's `CH_PARSER_THREW` into the same answer a parse error gets, with the
 /// message of the exception that ended the call.
 int finish(int protected_call_result)
@@ -387,8 +424,14 @@ int ch_format_json(const char * json, uint32_t size, int one_line)
 
 int ch_parse(const char * query, uint32_t size)
 {
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    DB::PartialASTState partial_ast_state;
+#endif
     DB::ParserDiagnostics diagnostics;
     diagnostics.expected.enable_highlighting = true;
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    diagnostics.expected.partial_ast = &partial_ast_state;
+#endif
 
     std::string error;
     DB::ASTPtr ast;
@@ -450,6 +493,53 @@ int ch_parse(const char * query, uint32_t size)
         }
 
         out << "},";
+
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+        /// The tree built before the failure. Not for a throw, which did not return through the
+        /// parser: what was captured before it is not the failure the message names. Nor for an
+        /// `INSERT`, `CREATE` or `ALTER` captured where the parser recovered and went on, if the
+        /// parse then got further. A `SELECT` is reported as it was captured either way: an
+        /// `INSERT ... SELECT 1 +` that recovers past it still failed in it.
+        const DB::ASTPtr & partial_ast = partial_ast_state.tree;
+        if (parsed == 0 && partial_ast
+            && (partial_ast->as<DB::ASTSelectQuery>() || partial_ast_state.pos == diagnostics.expected.max_parsed_pos))
+        {
+
+            /// The `Error` is a child of the root, or the last element of a list that it ends.
+            std::vector<DB::IAST *> nodes{partial_ast.get()};
+            while (!nodes.empty())
+            {
+                DB::IAST * current = nodes.back();
+                nodes.pop_back();
+                if (auto * error_node = current->as<DB::ASTError>())
+                {
+                    error_node->setOffsets(query);
+                    /// At the position the parse ended at, the list is the one in "error", which may
+                    /// have grown since the capture. A `SELECT` captured before the parse went on keeps
+                    /// what was expected where it failed.
+                    if (error_node->begin_pos == diagnostics.expected.max_parsed_pos)
+                        error_node->expected.assign(diagnostics.expected.variants.begin(), diagnostics.expected.variants.end());
+                }
+                for (const auto & child : current->children)
+                    nodes.push_back(child.get());
+            }
+
+            out << "\"partial_ast\":";
+
+            std::string partial_ast_json;
+            SerializeRequest serialize_request{partial_ast.get(), &partial_ast_json};
+            if (chParserProtectedCall(serializePartialBody, &serialize_request) == 1)
+            {
+                out << partial_ast_json;
+            }
+            else
+            {
+                out << "null,\"partial_ast_error\":";
+                writeJSONText(chParserRecoveryMessage(), out);
+            }
+            out << ',';
+        }
+#endif
     }
 
     writeHighlights(diagnostics, query, out);

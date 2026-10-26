@@ -95,6 +95,123 @@ and for one that does not (`SELECT 1 +`):
   reported by throwing (see below) carries only the message and, when known, the rightmost
   position the parser reached.
 
+When a statement fails after its keyword has committed, `ch_parse` also reports the tree it built
+so far, as `partial_ast`, right after `error` (`SELECT a FROM`):
+
+```json
+{"error": {"message": "...", "begin": 13, "end": 13, "line": 1, "column": 14, "expected": ["..."]},
+ "partial_ast": {"type": "SelectQuery",
+                 "select": {"type": "ExpressionList", "children": [{"type": "Identifier", "name": "a"}]},
+                 "tables": {"type": "Error", "begin": 13, "end": 13, "expected": ["..."]}},
+ "highlights": [...]}
+```
+
+* It appears only together with `error`, so never together with `ast`: a query that parses has
+  no `partial_ast`. It is also absent when no statement keyword committed (`SELEC`), when the
+  error was reported by throwing, and in a `-DENABLE_FORMATTING=OFF` build. These statements
+  capture:
+  * `SELECT` (in its `FROM`-first form too): its select list, `FROM` (with the column alias list
+    that can follow the tables, `FROM t FINAL (a, b)`), `PREWHERE`, `WHERE`,
+    `GROUP BY` (with the `WITH ROLLUP`, `WITH CUBE` and `WITH TOTALS` after it, in `group_by` even
+    when there is no `GROUP BY`), `HAVING`, `WINDOW`, `QUALIFY`, `ORDER BY`, `LIMIT` (with its
+    `OFFSET` and `BY`), `OFFSET` on its own, `FETCH` (in `limit_length`, which it is in `ast`)
+    and `SETTINGS`;
+  * `INSERT`: the table or table function, `PARTITION BY`, the column list, `FROM INFILE`,
+    `COMPRESSION`, `SETTINGS`, `FORMAT`, and a missing data source (`INSERT INTO t`), which is an
+    `Error` in `select`, the one source that `ast` has as a tree;
+  * `CREATE TABLE`: the table name, `TO INNER UUID` (in `targets`), the path of `ATTACH ... FROM`
+    (`attach_from_path`) and `ATTACH ... AS [NOT] REPLICATED` (`attach_as_replicated`),
+    `ON CLUSTER`, the column list, the storage definition (each clause in its own key of
+    `storage`: `engine`, `partition_by`, `primary_key`, `order_by`, `unique_key`, `sample_by`,
+    `ttl_table`, `settings`), `SQL SECURITY`, `COMMENT`, `AS SELECT`, an `AS` table function and
+    `AS [db.]table` (`as_table`; with nothing after `AS`, or after `EMPTY` or `CLONE`, the slot
+    is `select`);
+  * `CREATE VIEW` and `CREATE MATERIALIZED VIEW`: the name, `ON CLUSTER`, `REFRESH` (in
+    `refresh_strategy`, each of its parts in its own key: `period`, `offset`, `spread`,
+    `dependencies`, `settings`), `TO` and `TO INNER UUID` (in `targets`), the column list and the
+    column aliases, the storage definition (in `targets`, as the `inner_engine` of the `To` target,
+    where `ast` has it), `DEFINER` and `SQL SECURITY`, `COMMENT` and `AS SELECT`;
+  * `CREATE DICTIONARY`: the name, `ON CLUSTER`, the list of attributes, each clause of the
+    definition in its own key of `dictionary` (`primary_key`, `source`, `lifetime`, `layout`,
+    `range`, `dict_settings`) and `COMMENT`. A clause whose `)` is missing is an `Error` in its key,
+    except `PRIMARY KEY (a, b`, a list, which has the `Error` as its last element;
+  * `ALTER`: the database or table name, `ON CLUSTER` and the list of commands. `command_list`
+    has the commands that parsed, then the one that failed, with its `command_type`, its flags
+    (`part`, `detach`, `clear_column` and the like) and what parsed of it, and the `Error` in the
+    key of the part that failed: `ALTER TABLE t DROP COLUMN a, MODIFY COLUMN b REMOVE` reports
+    `remove_property`, `ALTER TABLE t ATTACH PARTITION 1 FROM` reports `from_table`,
+    `ALTER TABLE t MODIFY REFRESH EVERY` reports `refresh.period`. A command that does not start
+    with a command keyword is an `Error` after the ones before it (`ALTER TABLE t DROP COLUMN a,`),
+    or `command_list` as a whole when there are none (`ALTER TABLE t`). A field that only a later
+    keyword decides has its default value: `ALTER TABLE t MOVE PARTITION 1 TO` reports
+    `move_destination_type: "DISK"`, as the keyword after `TO` is what is missing.
+* Its root is the deepest statement node that captured: the one whose failure got furthest into
+  the query, and of statements nested in each other that failed at the same place, the innermost.
+  `SELECT * FROM (SELECT a FROM` reports the subquery, `INSERT INTO t SELECT a FROM` the
+  `SelectQuery`, with no `SelectWithUnionQuery`, enclosing `SelectQuery` or `InsertQuery` around
+  it.
+* The clauses that parsed before the failure are there as in `ast`, `DISTINCT ON (a)` as
+  `LIMIT 1 BY a`. A `PRIMARY KEY` declared in the column list of a `CREATE` is in the storage
+  definition (in a materialized view, the `inner_engine` of its `To` target), which is made for it
+  if there is none, also when the storage definition is the part that failed - unless it failed
+  in its own `PRIMARY KEY`, or is an `Error` as a whole. `TO INNER UUID` is in `targets`. The
+  `SETTINGS` of the `SELECT` of an `INSERT ... SELECT` are also in those of the `INSERT`.
+  A `WITH` written before `INSERT` is in a `SELECT` reported from inside the `INSERT` as in
+  `ast`: in each `SELECT` of the union of the `INSERT`, parenthesized or not, and not in a
+  `SELECT` nested in one of them (`WITH c AS (SELECT 1) INSERT INTO t SELECT * FROM c WHERE`
+  reports the `SelectQuery` with `with`, `... SELECT * FROM (SELECT a FROM` the subquery without).
+* The slot that failed holds an `Error` node instead of a clause: `begin` and `end` are byte
+  offsets of where the parser stopped, the rightmost position it recorded what it `expected`
+  there - the same list as in `error`. A broken expression is one `Error` in its clause. That
+  position can precede `error.begin`: for `SELECT 1 +`, the `Error` covers the `+`, while the
+  error token is the end of the input.
+* A `SELECT` that failed inside a statement that then went on past it keeps the `Error` and the
+  list of where it failed, because `error` is further on: in `INSERT INTO t SELECT 1 +`, the
+  `INSERT` goes on after its `SELECT`, and in `SELECT 1 UNION ALL SELECT 2 +`, the union goes on
+  after its second branch, so `error` expects `end of query` and the `Error` an operator.
+* For `INSERT`, `CREATE` and `ALTER`, the slot is the key the statement's `ast` would have
+  there, even where `ast` holds a string or a structure of its own: `INSERT INTO t FORMAT` reports
+  `"format": {"type": "Error", ...}`, `CREATE TABLE t (a UInt8) ENGINE =` reports `"storage": {"type":
+  "Storage", "engine": {"type": "Error", ...}}`. A
+  column list that parsed and lacks its `)` has the `Error` as its last element:
+  `INSERT INTO t (a,`, `CREATE VIEW v (a,` (the column aliases), `CREATE DICTIONARY d (a UInt8,`,
+  and `CREATE TABLE t (a UInt8,`. The list of a `CREATE` keeps its columns, indices, constraints
+  and projections apart, and the `Error` goes after the element written last, in its list:
+  `CREATE TABLE t (a UInt8, INDEX i a TYPE minmax GRANULARITY 1` reports
+  `columns_list.indices.children[1]`. When that element is a `PRIMARY KEY`, which is in none of
+  them, or a foreign key, which is not kept, the `Error` is `columns_list` as a whole.
+* The column list of `INSERT`, the storage definition of `CREATE TABLE` and of a materialized
+  view, `DEFINER`, `SQL SECURITY` and `COMMENT` of a `CREATE`, and the table function of
+  `CREATE TABLE ... AS`, which the table name is tried after, are optional, and the parser goes on
+  when they fail. They are reported only when nothing after them got further, and all but the
+  column list only when their parser itself got past its first token (the table function: past
+  the table name): `CREATE TABLE t (a UInt8) BLAH` has no `partial_ast`, and neither has
+  `CREATE TABLE t AS remote(`, where the `(` is all that is left after `AS remote`.
+  `CREATE TABLE t (a UInt8) SETTINGS` is reported in `storage.settings`, although the query-level
+  `SETTINGS` fails on the same token.
+* Not captured, because there is no slot for what failed, or nothing failed in the statement: an
+  `ALTER` command in parentheses that lacks only its `)` (in `ALTER TABLE t (DROP COLUMN a`, the
+  `Error` takes the place of that command, here of `command_list` as it is the first), a `CREATE TABLE` that parsed in full and is rejected for
+  combining `SQL SECURITY` with `AS [db.]table` or a table function, and input after a statement
+  that parsed (`CREATE TABLE t (a UInt8) COMMENT 'x' ENGINE =`). A `WITH` at the start of a
+  statement does not commit it to `SELECT` or `INSERT`, so a failure in it is not captured either.
+* A partial tree is held to the node limits of an `ast`, 1000 levels and 50000 nodes. One past
+  them is not reported at all, and neither is a statement around it that failed at the same
+  place - `SELECT 1 + 1 + ... FROM` with a few thousand terms has no `partial_ast`, and neither
+  has `SELECT * FROM (SELECT 1 + 1 + ... FROM` - because copying it could exhaust the engine's
+  stack. One that fits until its
+  `Error` is added, or whose JSON runs into the stack check, is `"partial_ast": null` with
+  `partial_ast_error`, and so is one whose JSON is larger than 1 MiB or nested more than 2000
+  levels deep, the limits of a document `ch_format_json` reads. It is not held to the element
+  budget of the reader, which is not a count of nodes (see `ast` above): checking that takes
+  reading the tree back, and a partial tree is not one the reader accepts even without its
+  `Error` - a `SELECT` with no select list, an `INSERT` with no table. So a tree of fewer than
+  50000 nodes with many identifiers or literal values is reported, while the same tree in a
+  query that parses is a `null` `ast`.
+* `ch_format_json` rejects a `partial_ast` (`Unknown AST node type in JSON: 'Error'`): `Error` has
+  no SQL form, and the document is not an `ast`. A tree that cannot be serialized is reported as
+  `"partial_ast": null` with `partial_ast_error` saying why, the way `ast_error` does.
+
 `ch_format_json` is the reverse half: it takes an `ast` document - from `ch_parse` here, or from
 `parseQueryToJSON` on a server - and formats it as SQL, one-line or multi-line. Anything wrong
 with the document (malformed JSON, an unknown node type, a field of the wrong shape, brackets
@@ -149,15 +266,19 @@ a shim in a browser.
 
 ## What it costs
 
-Stripped, 359 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
+Stripped, 367 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
 with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 2052426 | 632776 | 467840 | 496186 |
-| `-DENABLE_DCL=OFF` | 1850746 | 565398 | 418495 | 443946 |
-| `-DENABLE_FORMATTING=OFF` | 985486 | 318608 | 244854 | 261874 |
-| both off | 809522 | 259966 | 201885 | 216148 |
+| everything | 2165295 | 662555 | 487368 | 518518 |
+| `-DENABLE_DCL=OFF` | 1956209 | 594869 | 437894 | 466120 |
+| `-DENABLE_FORMATTING=OFF` | 1110884 | 364433 | 279158 | 299371 |
+| both off | 892194 | 285446 | 219447 | 235417 |
+
+The builds without formatting do not report `partial_ast`, but still carry the capture code of
+the parsers, about 49 KB raw and 9 KB brotli: capture is switched on at run time, by
+`Expected::partial_ast`, so LTO cannot drop it.
 
 Formatting builds carry the AST JSON machinery, which is most of their weight: `writeJSON` and
 `readJSON` for every node, `Poco::JSON` and `Poco::Dynamic::Var` cost about 715 KB raw and
@@ -166,7 +287,8 @@ the latter is in every build and the former goes with `-DENABLE_FORMATTING=OFF`.
 
 Brotli is what a browser will actually get, and it is 25% better than gzip here.
 
-`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling about 8% above each of these, which the
+`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling above each of these, set about 8% over when last
+raised, which the
 `parser-size` test asserts. Raise the ceiling and update this table in the same change as any
 growth that is meant to happen.
 
