@@ -1,8 +1,9 @@
 #!/usr/bin/expect -f
 # Tags: no-fasttest
 
-# Ctrl+C during `\fg` stops the replay and keeps both the client and the job. A foreground query does not need the
-# spools of a detachable one: without a usable temporary directory it runs as an ordinary query.
+# Ctrl+C during `\fg` stops the replay and keeps both the client and the job. So does a replay that fails, for
+# example on `EPIPE` from a pager that exits early. A foreground query does not need the spools of a detachable one:
+# without a usable temporary directory it runs as an ordinary query.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -96,6 +97,45 @@ expect -ex {alive-diagnostics-05446}
 expect ":) "
 submit {\cancel 2}
 expect -ex {Discarded background job 2}
+expect ":) "
+
+# A replay that fails keeps the job. The result is much larger than a pipe buffer, so writing it to a pager that reads
+# a single byte and exits fails with `EPIPE`.
+submit {\bg SELECT number FROM numbers(1000000) FORMAT TabSeparatedRaw}
+expect -ex {Background job 3 started}
+expect ":) "
+wait_for_final_state 3
+
+submit {pager head -c 1 >/dev/null}
+expect -ex {PAGER set to 'head -c 1 >/dev/null'}
+expect ":) "
+submit {\fg 3}
+expect {
+    -ex {CANNOT_WRITE_TO_FILE_DESCRIPTOR} {}
+    -ex {Background job 3 succeeded} { exit 1 }
+}
+expect ":) "
+submit {nopager}
+expect -ex {PAGER set to stdout}
+expect ":) "
+
+submit {\jobs}
+expect -re {(?i)\[3\][^\r\n]*succeeded}
+expect ":) "
+
+# The whole result is replayed again: the numbers from 0 to 999999 with a newline after each take 6888890 bytes.
+submit {pager wc -c}
+expect -ex {PAGER set to 'wc -c'}
+expect ":) "
+submit {\fg 3}
+expect -ex {6888890}
+expect -ex {Background job 3 succeeded}
+expect ":) "
+submit {nopager}
+expect -ex {PAGER set to stdout}
+expect ":) "
+submit {\jobs}
+expect -ex {No background jobs.}
 expect ":) "
 send -- "\4"
 expect eof

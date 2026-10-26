@@ -1509,15 +1509,27 @@ BackgroundQueryManager::ForegroundResult BackgroundQueryManager::foreground(
         impl->jobs.erase(it);
     }
 
-    if (job->worker.joinable())
-        job->worker.join();
-
-    bool replayed = job->output.replayTo(output, is_cancelled);
-    output.next();
-    if (replayed)
+    bool replayed = false;
+    try
     {
-        replayed = job->diagnostics.replayTo(diagnostics, is_cancelled);
-        diagnostics.next();
+        if (job->worker.joinable())
+            job->worker.join();
+
+        replayed = job->output.replayTo(output, is_cancelled);
+        output.next();
+        if (replayed)
+        {
+            replayed = job->diagnostics.replayTo(diagnostics, is_cancelled);
+            diagnostics.next();
+        }
+    }
+    catch (...)
+    {
+        /// A failed replay, e.g. `EPIPE` from a pager that exits early, must not destroy the
+        /// spools: put the job back so that it can be replayed again, and let the error propagate.
+        std::lock_guard lock(impl->mutex);
+        impl->jobs.emplace(id, job);
+        throw;
     }
 
     if (!replayed)

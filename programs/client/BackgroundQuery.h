@@ -222,7 +222,7 @@ public:
 
     /// Never waits for an active query. For a terminal query, replays its
     /// result and diagnostic spools and then removes it from the manager.
-    /// A replay stopped by `is_cancelled` keeps the job, so it can be replayed again.
+    /// A replay stopped by `is_cancelled` or by an exception keeps the job, so it can be replayed again.
     ForegroundResult foreground(
         JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output = false,
         const std::function<bool()> & is_cancelled = {});
