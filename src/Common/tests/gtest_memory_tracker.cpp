@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <future>
 #include <memory>
 #include <thread>
@@ -674,4 +675,119 @@ TEST(MemoryTracker, UserSettlesToZeroWhenItsLastQueryEnds)
     runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
 }
 
+}
+
+/// `MemoryCredits` must not wrap for large amounts of memory held for long intervals, and the sub-second parts of
+/// many short intervals must add up instead of being truncated away.
+TEST(MemoryTracker, MemoryCreditsConversionDoesNotOverflow)
+{
+    static constexpr UInt64 gibibyte = 1ULL << 30;
+    static constexpr UInt64 hour_us = 3600ULL * 1'000'000;
+
+    std::atomic<UInt64> remainder{0};
+
+    /// 1 TiB held for an hour is far beyond 2^64 byte-microseconds.
+    EXPECT_EQ(MemoryTracker::convertMemoryCreditsToByteSeconds(1024 * gibibyte, hour_us, remainder), 1024 * gibibyte * 3600);
+    EXPECT_EQ(remainder.load(), 0u);
+
+    /// 64 GiB held for a day.
+    EXPECT_EQ(MemoryTracker::convertMemoryCreditsToByteSeconds(64 * gibibyte, 24 * hour_us, remainder), 64 * gibibyte * 3600 * 24);
+
+    /// One byte held for a million intervals of one microsecond is exactly one byte-second.
+    std::atomic<UInt64> small_remainder{0};
+    UInt64 total = 0;
+    for (size_t i = 0; i < 1'000'000; ++i)
+        total += MemoryTracker::convertMemoryCreditsToByteSeconds(1, 1, small_remainder);
+    EXPECT_EQ(total, 1u);
+
+    /// The result saturates instead of wrapping for absurd values.
+    std::atomic<UInt64> absurd_remainder{0};
+    EXPECT_EQ(
+        MemoryTracker::convertMemoryCreditsToByteSeconds(std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), absurd_remainder),
+        std::numeric_limits<UInt64>::max());
+}
+
+/// A caller that read the clock and was descheduled before updating the timestamp must neither move it backward
+/// nor charge anything: the interval up to its reading has already been charged by the thread that advanced it.
+TEST(MemoryTracker, MemoryCreditsTimestampIsMonotonic)
+{
+    static constexpr UInt64 second_us = 1'000'000;
+
+    std::atomic<UInt64> last_update_us{0};
+
+    /// The first update only seeds the timestamp.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 1 * second_us), 0u);
+
+    /// Thread A reads 2 s and pauses; thread B reads 3 s and updates.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 3 * second_us), 2 * second_us);
+
+    /// Thread A resumes with its stale reading.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 2 * second_us), 0u);
+    EXPECT_EQ(last_update_us.load(), 3 * second_us);
+
+    /// The next update charges only the interval from 3 s, so 3 s are charged in total, each exactly once.
+    EXPECT_EQ(MemoryTracker::advanceMemoryCreditsTimestamp(last_update_us, 4 * second_us), second_us);
+}
+
+namespace
+{
+
+/// Calls `on_pick` while the allocation that has reached the overcommit tracker is still in flight,
+/// and picks no query, so that the allocation fails afterwards.
+struct UserOvercommitTrackerWithCallback : UserOvercommitTracker
+{
+    using UserOvercommitTracker::UserOvercommitTracker;
+
+    std::function<void()> on_pick;
+
+protected:
+    void pickQueryToExcludeImpl() override
+    {
+        on_pick();
+        picked_tracker = nullptr;
+    }
+};
+
+}
+
+/// The bytes of an allocation waiting in the overcommit tracker of a parent are already in the `amount` of the query tracker,
+/// but they are not held yet, and the allocation may still fail: a snapshot of `MemoryCredits` taken meanwhile
+/// (`system.processes`, the query metric log) must not integrate them.
+TEST(MemoryTracker, MemoryCreditsExcludeAllocationPendingInParent)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.user.setHardLimit(LIMIT);
+    hierarchy.process.setOvercommitWaitingTime(1'000'000);
+
+    DB::ProcessList process_list;
+    DB::ProcessListForUser user_process_list(&process_list);
+    UserOvercommitTrackerWithCallback overcommit_tracker(&process_list, &user_process_list);
+    hierarchy.user.setOvercommitTracker(&overcommit_tracker);
+
+    Int64 amount_while_pending = 0;
+    Int64 held_while_pending = 0;
+    overcommit_tracker.on_pick = [&]
+    {
+        amount_while_pending = hierarchy.process.get();
+        held_while_pending = hierarchy.process.getMemoryCreditsHeldAmount();
+    };
+
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(10 * MB);
+        expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), hierarchy.process.get());
+
+        expectMemoryLimitExceeded(OVER_LIMIT);
+
+        /// The query tracker has already counted the pending allocation, but it is not held.
+        expectNear(amount_while_pending, 10 * MB + OVER_LIMIT);
+        expectNear(held_while_pending, 10 * MB);
+
+        /// After the rollback both agree again.
+        expectNear(hierarchy.process.get(), 10 * MB);
+        expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), hierarchy.process.get());
+
+        std::ignore = CurrentMemoryTracker::free(10 * MB);
+        expectNear(hierarchy.process.getMemoryCreditsHeldAmount(), 0);
+    });
 }
