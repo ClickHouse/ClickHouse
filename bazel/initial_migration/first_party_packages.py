@@ -26,7 +26,7 @@ from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES
 from initial_migration.simplify_globs import GlobFiles, simplify_globs
 
 CPUS = ('x86_64', 'aarch64')
-COMPILERS = {'ch_cc_library', 'ch_cc_test', 'cc_library', 'cc_test', 'cc_binary'}
+COMPILERS = {'ch_cc_library', 'cc_library', 'cc_test', 'cc_binary'}
 TUS = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM')
 TEXTUAL = ('.inc', '.inl', '.ipp', '.tpp', '.icc', '.def', '.defs', '.th', '.td',
            '.tbl', '.tbi', '.ixx', '.cuh', '.msh', '.txx')

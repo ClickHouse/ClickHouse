@@ -19,7 +19,7 @@ cc_library(
     srcs = ["resource.c"],
 )
 
-# ch_cc_library disables llvm_system_c_headers and selects ClickHouse's sysroot.
+# ch_cc_library must also resolve libc headers through the configured toolchain.
 ch_cc_library(
     name = "clickhouse_libc",
     srcs = ["libc.c"],

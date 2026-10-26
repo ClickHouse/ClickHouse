@@ -1,0 +1,26 @@
+diff --git a/src/error.cpp b/src/error.cpp
+index 139c96fdf8e89ae10fb1d96b6617cf95fee6b15b..36dd6d938cc63a8a767827eb755ca8a675fc429c 100644
+--- a/src/error.cpp
++++ b/src/error.cpp
+@@ -28,7 +28,7 @@
+  */
+ 
+ #include <iostream>
+-#include "error.h"
++#include "cppkafka/error.h"
+ 
+ using std::string;
+ using std::ostream;
+diff --git a/src/metadata.cpp b/src/metadata.cpp
+index e7faf06ea5399819364497b752ce522b6c2d6016..e2bf3ebbfc95c9b7a2d184035d69aee3eb32fd60 100644
+--- a/src/metadata.cpp
++++ b/src/metadata.cpp
+@@ -29,7 +29,7 @@
+ 
+ #include <assert.h>
+ #include "metadata.h"
+-#include "error.h"
++#include "cppkafka/error.h"
+ 
+ using std::string;
+ using std::vector;

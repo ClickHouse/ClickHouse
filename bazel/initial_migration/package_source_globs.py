@@ -164,5 +164,5 @@ def join_source_globs(text):
     for _, rule in source.rules():
         for kw in rule.keywords:
             if kw.arg == "srcs":
-                visit(kw.value, call_name(rule) in CPP_LIBRARIES | {"cc_binary", "ch_cc_binary", "llvm_cc_library"})
+                visit(kw.value, call_name(rule) in CPP_LIBRARIES | {"cc_binary", "llvm_cc_library"})
     return source.rewrite(edits)

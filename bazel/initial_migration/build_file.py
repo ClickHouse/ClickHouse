@@ -297,25 +297,19 @@ def starlark(value, indent=0, paths=False, step=2):
         return (starlark(value.flags, indent, paths, step) + ' + cmake_prefix_maps('
                 + json.dumps(value.arches) + ')')
     if isinstance(value, CMakeNativeCopts):
-        # Executables and NASM retain their own flags; ch_cc_library supplies
-        # these flags to native libraries in BuildFile.rule().
         choices = {'//conditions:default': []}
         for arch, group in value.groups.items():
             options = []
-            if group['language'] in GLOBAL_COMPILE_OPTIONS:
-                gcc_root = 'contrib/sysroot/linux-' + arch
-                options = ['--sysroot=' + gcc_root + '/' + arch + '-linux-gnu/libc',
-                           '--gcc-toolchain=' + gcc_root]
-            if group['language'] == 'CXX':
-                options.append('-nostdinc++')
             for flag, origin, directory in group['includes']:
                 root = llvm_targets.PREFIX
                 if origin == 'generated':
                     root = '$(GENDIR)/' + root + '/gen/' + arch
                 options.extend([flag, root + '/' + directory])
             choices['@platforms//cpu:' + arch] = options
-        return (starlark(value.flags, indent, paths, step) + ' + '
-                + starlark(Select(choices), indent, 'cmake_runtime', step))
+        flags = starlark(value.flags, indent, paths, step)
+        if not any(choices.values()):
+            return flags
+        return flags + ' + ' + starlark(Select(choices), indent, 'cmake_runtime', step)
     if isinstance(value, CMakeWarnings):
         return (starlark(value.before, indent, paths, step) + ' + CLICKHOUSE_WARNINGS + '
                 + starlark(value.after, indent, paths, step))
@@ -909,8 +903,7 @@ class BuildFile:
             for v in inherited:
                 if not header(v) and (not isinstance(v, str) or Path(v).suffix):
                     raise ValueError(f'{name} {arch}: unexpected CMake compile input in srcs: {v}')
-            declared = [v for v in values('hdrs') if v != '@clickhouse_sysroot//:linux_native_headers']
-            declared.extend(values('textual_hdrs'))
+            declared = values('hdrs') + values('textual_hdrs')
             private_sources[key] = self.label_inputs(
                 embedded + [v for v in inherited + declared if header(v)], source_files=True)
             # An extensionless generator or filegroup may supply a header.
@@ -962,7 +955,7 @@ class BuildFile:
                 # retain that select instead of applying the macro's default.
                 attrs['map_source_files'] = False
             attrs['copts'] = flags
-            defaults = {'-fortify_source', '-default_compile_flags', '-llvm_system_c_headers'}
+            defaults = {'-fortify_source', '-default_compile_flags'}
             features = attrs.get('features', [])
             if isinstance(features, Select):
                 attrs['features'] = select({key: [flag for flag in value if flag not in defaults]
@@ -1243,15 +1236,15 @@ class BuildFile:
                                 # source and generated directories together.
                                 preserve_base_includes=self.owner is None and name == 'common')
                             system_includes[arch] = includes + system_includes[arch]
+                        if language == 'CXX':
+                            # LLVM supplies libc++ for native libraries and executables.
+                            value = [flag for flag in value if flag != '-nostdinc++']
                         if native_library and language in GLOBAL_COMPILE_OPTIONS:
                             # These original CMake C groups have no -Werror.
                             if language == 'C' and name in {'glibc-compatibility', 'harmful'}:
                                 value = value + ['-Wno-error']
                             value = remove_global_compile_options(value, language)
                             value = [flag for flag in value if flag not in CLICKHOUSE_TARGET_FLAGS[arch]]
-                            if language == 'CXX':
-                                # ch_cc_library adds this after the native sysroot options.
-                                value = [flag for flag in value if flag != '-nostdinc++']
                             if clickhouse_code:
                                 prefix = clickhouse_code_flags(language)
                                 if value[:len(prefix)] != prefix:
@@ -1281,17 +1274,12 @@ class BuildFile:
                                  for item in value if not isinstance(item, str) or not (
                                      item.endswith('.h') and source_path(item).startswith(package))]
                         implementation_deps.setdefault('@platforms//cpu:' + arch, []).append('//src/AggregateFunctions:headers')
-                    if group.get('language') in {'C', 'CXX', 'ASM'}:
-                        if field == 'hdrs' and not native_library:
-                            value = value + ['@clickhouse_sysroot//:linux_native_headers']
-                        if field == 'additional_compiler_inputs':
-                            if not native_library:
-                                value = value + ['@clickhouse_sysroot//:linux_compile_files']
-                            if group.get('native_cxx_includes'):
-                                value += [
-                                    '@clickhouse_llvm_project//:runtime_source_inputs',
-                                    '@clickhouse_llvm_project//:runtime_generated_headers',
-                                ]
+                    if (field == 'additional_compiler_inputs' and group.get('language') in GLOBAL_COMPILE_OPTIONS
+                            and group.get('native_cxx_includes')):
+                        value += [
+                            '@clickhouse_llvm_project//:runtime_source_inputs',
+                            '@clickhouse_llvm_project//:runtime_generated_headers',
+                        ]
                     if self.owner in {'contrib/krb5', 'contrib/libhdfs3'}:
                         public = ('contrib/krb5-cmake/include/com_err.h', 'contrib/krb5-cmake/include/krb5/krb5.h')
                         if field in {'hdrs', 'textual_hdrs', 'additional_compiler_inputs'}:
@@ -1402,7 +1390,7 @@ class BuildFile:
                     del binary_attrs['hdrs'], binary_attrs['textual_hdrs']
                 # A binary and its first compile group share these features.
                 binary_attrs['features'] = (
-                    ['-static_link_cpp_runtimes', '-fortify_source', '-llvm_system_c_headers'] +
+                    ['-static_link_cpp_runtimes', '-fortify_source'] +
                     (['-default_compile_flags'] if name == 'clickhouse' else [])
                 )
                 continue
@@ -1441,11 +1429,7 @@ class BuildFile:
                 **attrs,
                 # These copts already contain the CMake compile group's flags.
                 # The LLVM toolchain otherwise forces frame pointers in Release.
-                'features': select({
-                    '@platforms//cpu:' + arch: ['-fortify_source', '-default_compile_flags'] +
-                    (['-llvm_system_c_headers'] if arch in native else [])
-                    for arch in attribute_arches
-                }),
+                'features': ['-fortify_source', '-default_compile_flags'],
                 'target_compatible_with': rule_compatible,
                 'alwayslink': select({'@platforms//cpu:' + arch: v['alwayslink'] for arch, v in variants.items()}),
             }
@@ -1560,17 +1544,11 @@ def dependency_inputs(builds, owners):
         build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_compile_files', {
             'srcs': Glob([directory + '/**'], (directory + '/**/share/**',)),
         })
-        build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_native_headers', {
-            'srcs': Glob([directory + '/' + arch + '-linux-gnu/libc/usr/include/**/*.h']),
-        })
     build('contrib/sysroot').rule('filegroup', 'linux_compile_files', {
         'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_compile_files'] for arch in ARCHES}),
     })
     build('contrib/sysroot').rule('filegroup', 'linux_link_files', {
         'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_link_files'] for arch in ARCHES}),
-    })
-    build('contrib/sysroot').rule('filegroup', 'linux_native_headers', {
-        'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_native_headers'] for arch in ARCHES}),
     })
     build('contrib/sysroot').rule('filegroup', 'linux_math_library', {
         'srcs': select({

@@ -1,7 +1,7 @@
 module(name = "clickhouse")
 
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
-bazel_dep(name = "llvm", version = "0.8.24")
+bazel_dep(name = "llvm", version = "0.8.26")
 bazel_dep(name = "lz4", version = "1.10.0.bcr.2")
 bazel_dep(name = "nasm", version = "2.16.03.bcr.4")
 bazel_dep(name = "platforms", version = "1.1.0")

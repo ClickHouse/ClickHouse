@@ -89,7 +89,7 @@ def shared_native_compile_options(root, paths):
                             suffix = opts.elts[len(aws_prefix):]
                             edits.append((*source.span(opts), "AWS_CRT_COPTS" + (" + " + render(suffix) if suffix else "")))
                             imports.setdefault("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", set()).add("AWS_CRT_COPTS")
-            if kind not in {"cc_binary", "ch_cc_binary", "ch_cc_test", "llvm_runtime_objects"}:
+            if kind not in {"cc_binary", "cc_test", "llvm_runtime_objects"}:
                 continue
             attributes = ("copts",) if kind == "llvm_runtime_objects" else ("copts", "linkopts")
             for attr in rule.keywords:
@@ -98,7 +98,7 @@ def shared_native_compile_options(root, paths):
                 atoms = option_atoms(attr.value)
                 original = list(map(ast_key, atoms))
                 for name, match, replacement in patterns:
-                    if kind == "ch_cc_test":
+                    if kind == "cc_test":
                         start = 0 if name == "DBMS_TEST_DRIVER_COPTS" and original[:len(match)] == match else None
                     elif attr.arg == "linkopts":
                         start = 0 if name == "NATIVE_TOOL_LINKOPTS" and original[:len(match)] == match else None

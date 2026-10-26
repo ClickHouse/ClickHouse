@@ -37,7 +37,6 @@ common --verbose_failures
 common --@rules_rust//rust/toolchain/channel=nightly
 common --@rules_python//python/config_settings:bootstrap_impl=script
 common --@llvm//toolchain:bootstrap_stage=stage1_from_source
-common --@llvm//toolchain:sysroot_compile_files=@clickhouse_sysroot//:linux_compile_files
 # Match contrib/llvm-project-cmake/config/llvm-config.h.in. ClickHouse links
 # its own compression libraries; the compiler retains its compression support.
 common --@llvm-project//third-party:llvm_enable_zlib=false
@@ -47,7 +46,7 @@ common --@llvm-project//third-party:llvm_enable_zstd=false
 common:clickhouse_runtime --@bazel_tools//tools/cpp:link_extra_libs=//bazel:clickhouse_link_runtime
 common:clickhouse_runtime --//bazel:clickhouse_link_runtime=@clickhouse_llvm_project//:clang_rt_builtins
 
-common:x86_64 --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+common:x86_64 --platforms=//bazel:linux_x86_64
 common:x86_64 --config=clickhouse_runtime
 common:x86_64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=x86-64-v3,-mpclmul,-mbranches-within-32B-boundaries,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 # Match CMake's code-generation flags for the LLVM libraries in ClickHouse.
@@ -57,12 +56,12 @@ common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.](
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]cpp$@-fstrict-vtable-pointers
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix[.]S$@-mavx512f,-mavx512vl
-common:aarch64 --platforms=@rules_rs//rs/platforms:aarch64-unknown-linux-gnu
+common:aarch64 --platforms=//bazel:linux_aarch64
 common:aarch64 --config=clickhouse_runtime
 common:aarch64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 
 # Use LLVM's Linux x86-64 execution platform for C++, Rust, and code generators.
-common:remote --extra_execution_platforms=//bazel:buildbuddy_linux_x86_64
+common:remote --extra_execution_platforms=//bazel:buildbuddy_linux_x86_64,//bazel:linux_x86_64
 common:remote --remote_executor=grpcs://remote.buildbuddy.io
 common:remote --remote_cache=grpcs://remote.buildbuddy.io
 common:remote --bes_backend=grpcs://remote.buildbuddy.io
@@ -81,7 +80,7 @@ common:cmake_match --//bazel:cmake_metadata
 
 # Compile and run the ARM64 comparison on native ARM64 workers.
 common:cmake_match_aarch64 --config=remote
-common:cmake_match_aarch64 --extra_execution_platforms=//bazel:buildbuddy_linux_aarch64,//bazel:buildbuddy_linux_aarch64_test,//bazel:buildbuddy_linux_x86_64
+common:cmake_match_aarch64 --extra_execution_platforms=//bazel:buildbuddy_linux_aarch64,//bazel:linux_aarch64,//bazel:buildbuddy_linux_x86_64
 common:cmake_match_aarch64 --config=aarch64
 common:cmake_match_aarch64 --//bazel:cmake_metadata
 

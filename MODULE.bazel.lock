@@ -248,10 +248,12 @@
     "https://bcr.bazel.build/modules/libxml2/2.15.3/MODULE.bazel": "a6bffafd8aa8b0c13eaa4bf25d55be188ec8548549395f03e98c39bab264adaa",
     "https://bcr.bazel.build/modules/libxml2/2.15.3/source.json": "fd7c420cb14981416c9fadd0db555bd1e249355e0e5b63b2ce15b92996b5fbfb",
     "https://bcr.bazel.build/modules/llvm/0.8.18/MODULE.bazel": "56d507d49c02498731fa5a95fa48a778368f2d23c0f6184a578d057e58830458",
-    "https://bcr.bazel.build/modules/llvm/0.8.24/MODULE.bazel": "e03e030b1d0b44bb05c52665c2f43de9260af9152f666262e11e25f6c072aae3",
-    "https://bcr.bazel.build/modules/llvm/0.8.24/source.json": "924ed48858c1c081698f1992c7b489434375de901c47b7046e203459840cb544",
+    "https://bcr.bazel.build/modules/llvm/0.8.26/MODULE.bazel": "633a1076b1f20d4e6be387fa22f0b99a1b7e7d94d07b60a70c67f4f91f369423",
+    "https://bcr.bazel.build/modules/llvm/0.8.26/source.json": "2d6d463638dfec25acfcc8cefc56f8ad8fb215b7b1e699b3c2840590ce328fc1",
     "https://bcr.bazel.build/modules/lz4/1.10.0.bcr.2/MODULE.bazel": "bf2d9ac92dd3b792e514ca412965d78863ba3a05344c77f4109b4daa8dd81dab",
     "https://bcr.bazel.build/modules/lz4/1.10.0.bcr.2/source.json": "df2bfdef9a81a69eb2fc597ad5e311f6538beee714b51e137d4a8cbaeb6ecbe1",
+    "https://bcr.bazel.build/modules/mimalloc/3.5.3/MODULE.bazel": "d4555726ceff5240bef25b0ec38b1c80c68337eec2b4b5df20cf611df1383e6a",
+    "https://bcr.bazel.build/modules/mimalloc/3.5.3/source.json": "e94e4baf53f881236b86b16c436c6ab4a338b37135e370154802a7111c0dda28",
     "https://bcr.bazel.build/modules/nasm/2.16.03.bcr.4/MODULE.bazel": "4e89a6d0071afc7a5234d162dbf4f6425de7f0093679eb514dcd69cda4cce38e",
     "https://bcr.bazel.build/modules/nasm/2.16.03.bcr.4/source.json": "2ef28bda674dd88c49f66da7dbe792d1bcb05a5379ac9115389415d3d69c3989",
     "https://bcr.bazel.build/modules/nlohmann_json/3.12.0.bcr.1/MODULE.bazel": "a1c8bb07b5b91d971727c635f449d05623ac9608f6fe4f5f04254ea12f08e349",
@@ -458,11 +460,21 @@
   "moduleExtensions": {
     "//bazel/rules:repositories.bzl%contrib": {
       "general": {
-        "bzlTransitiveDigest": "/akvYjQ64lTFY+qkmE/WqmqHWjQk7lghhhsU/xOsvHw=",
+        "bzlTransitiveDigest": "TH4p/Sd7SbJB7DgPHi34nxfDQYoataIpmaDvrNRrGeQ=",
         "usagesDigest": "6S+kXqXczKx7BpC0Cgovu9SKSai+Y21UUXnbzjcA2Zs=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
           "FILE:@@//bazel/rules/contrib_repositories.json 313d7876ca26d82c5f4e1fcb7aacd0e701e01f8e2aff301e9999c98eea2c5747",
+          "FILE:@@//contrib/openssl-cmake/common/include DIR",
+          "DIRENTS:@@//contrib/openssl-cmake/common/include 955c637f84aaaacf487ebc493dfb5f5f828e90d01f7a7005f30a1bfaa7341714",
+          "FILE:@@//contrib/openssl-cmake/common/include/prov DIR",
+          "DIRENTS:@@//contrib/openssl-cmake/common/include/prov 2fdcce5ea6d21a6dbfaecdf3b4ba2f8749e6bfdecf6802d1a94c56654cb3c381",
+          "FILE:@@//contrib/openssl-cmake/common/include/crypto DIR",
+          "DIRENTS:@@//contrib/openssl-cmake/common/include/crypto 3749082e5c23ed9b19a1bb262730455ee0390461a4598c0a2b86b987420bb0a1",
+          "FILE:@@//contrib/openssl-cmake/common/include/internal DIR",
+          "DIRENTS:@@//contrib/openssl-cmake/common/include/internal c3906a2adfa9155b8897dc6910fb57591ebe6c702e69a4c4af57d26ef31321a4",
+          "FILE:@@//contrib/openssl-cmake/common/include/openssl DIR",
+          "DIRENTS:@@//contrib/openssl-cmake/common/include/openssl 26419b3340173dee1953b0e7634a16e10fe3956d1150cfbe0f4a68e046992b42",
           "REPO_MAPPING:,clickhouse_delta_kernel_rs +contrib+clickhouse_delta_kernel_rs",
           "REPO_MAPPING:,clickhouse_chdig +contrib+clickhouse_chdig",
           "REPO_MAPPING:,clickhouse_pcodec +contrib+clickhouse_pcodec",
@@ -479,6 +491,7 @@
               "strip_prefix": "AMQP-CPP-4fccd7f84318fe3a022c63a5b621a831c99e3a32",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_amqp_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -498,6 +511,7 @@
               "strip_prefix": "FP16-0a92994d729ff76a58f692d3028ca1b64b145d91",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_fp16.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -517,6 +531,7 @@
               "strip_prefix": "Jieba-CPP-6b1d1776f0c09a17a6fd4d2e1efcb876f1bf7834",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_jieba_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -536,6 +551,9 @@
               "strip_prefix": "mecab-61b90ba6e669dc2d7d533d4a80d206f3b31d52b1",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_mecab.BUILD.bazel",
+              "files": {
+                "configured/private/config.h": "@@//contrib/MeCab-cmake:config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -555,6 +573,7 @@
               "strip_prefix": "NuRaft-884294e9dbee183b53601bbe2c8c5753cec1a3db",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_nuraft.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -574,6 +593,7 @@
               "strip_prefix": "SHA3IUF-fc8504750a5c2174a1874094dd05e6a0d8797753",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sha3iuf.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -593,6 +613,7 @@
               "strip_prefix": "SimSIMD-e81e1c2de244061a476eaa7ac4db9ca01df4feed",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_simsimd.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -612,6 +633,7 @@
               "strip_prefix": "StringZilla-15c292ec71db5c0e3d05f3bd693a6b5ec9429db8",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_stringzilla.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -631,6 +653,7 @@
               "strip_prefix": "abseil-cpp-2065f4ded0558c6f89fee67c8e5228feb4eb960e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_abseil_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -650,6 +673,7 @@
               "strip_prefix": "ai-sdk-cpp-ab06ef70baba81ba4ecf1ece038bbae96e74d4af",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_ai_sdk_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -669,6 +693,7 @@
               "strip_prefix": "antlr4-b91cecf6d06600433a12a12271a7985d2845d7aa",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_antlr4_cpp_runtime.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -688,6 +713,7 @@
               "strip_prefix": "arrow-363af92ec194c0fb8c8536c8e1570e4ec6e9cb40",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_arrow.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -707,6 +733,7 @@
               "strip_prefix": "avro-d8ff6d9c9fe465277723aa359bae53dd49258263",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_avro.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -726,6 +753,7 @@
               "strip_prefix": "aws-sdk-cpp-e235f91d162cd4048bc73002cc3243ba6cec8afa",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -745,6 +773,7 @@
               "strip_prefix": "aws-c-auth-4b5d524bf1a511b05e0fffe5bdc51800770b9427",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_auth.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -764,6 +793,7 @@
               "strip_prefix": "aws-c-cal-8aa2a48a09f93c65d4cf06388e143a6584de6321",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_cal.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -783,6 +813,7 @@
               "strip_prefix": "aws-c-common-d06a38e88b3afef2a5cc0445d0b68d9d4e349fbc",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_common.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -802,6 +833,7 @@
               "strip_prefix": "aws-c-compression-d8264e64f698341eb03039b96b4f44702a9b3f83",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_compression.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -821,6 +853,7 @@
               "strip_prefix": "aws-c-event-stream-51bef3c44e1058b1689751539170b2e0f589ccdb",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_event_stream.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -840,6 +873,7 @@
               "strip_prefix": "aws-c-http-8aefd899fc3210bfd0e3fd414011a3cb708bf6e4",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_http.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -859,6 +893,7 @@
               "strip_prefix": "aws-c-io-ad2b310237ca87b67b1d0f6c9bc4b865d44cf45c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_io.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -878,6 +913,7 @@
               "strip_prefix": "aws-c-mqtt-e35b9ca3f9fcbf1a972c831c5e79046ce56959d1",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_mqtt.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -897,6 +933,7 @@
               "strip_prefix": "aws-c-s3-226c3e6937e3d5f7db9e10651f7bd20575e98187",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_s3.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -916,6 +953,7 @@
               "strip_prefix": "aws-c-sdkutils-a1cc19f53b63658f1b1400b36f199eafeeb895a6",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_c_sdkutils.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -935,6 +973,7 @@
               "strip_prefix": "aws-checksums-1d5f2f1f3e5d013aae8810878ceb5b3f6f258c4e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_checksums.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -954,6 +993,7 @@
               "strip_prefix": "aws-crt-cpp-fb9638dc096ae5b472947adee958ac2b9bd75ba1",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_aws_crt_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -973,6 +1013,7 @@
               "strip_prefix": "azure-sdk-for-cpp-20f8b46b878718b4536a88888a182f60f665465a",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_azure.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -992,6 +1033,7 @@
               "strip_prefix": "boost-540de0d10f9f48297c43da9e23c0fa043a694b6a",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_boost.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1011,6 +1053,7 @@
               "strip_prefix": "brotli-ab806c802731217df5914e6be4828d9e267d78f8",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_brotli.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1030,6 +1073,7 @@
               "strip_prefix": "thread-pool-097aa718f25d44315cadb80b407144ad455ee4f9",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_bs_thread_pool.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1049,6 +1093,7 @@
               "strip_prefix": "bzip2-bf905ea2251191ff9911ae7ec0cfc35d41f9f7f6",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_bzip2.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1068,6 +1113,10 @@
               "strip_prefix": "c-ares-c7a3138dcfe3bb0eaaf10c0c24c36dc66dc790ab",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_c_ares.BUILD.bazel",
+              "files": {
+                "include/ares_build.h": "@@//contrib/c-ares-cmake:linux/ares_build.h",
+                "src/lib/include/ares_config.h": "@@//contrib/c-ares-cmake:linux/ares_config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1087,6 +1136,7 @@
               "strip_prefix": "capnproto-7fababf324f50e6a68be9415294ec2a4c3543208",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_capnproto.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1106,6 +1156,7 @@
               "strip_prefix": "cpp-driver-f4a31e92a25c34c02c7291ff97c7813bc83b0e09",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cassandra.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1125,6 +1176,7 @@
               "strip_prefix": "cccl-9d65c77f9763cfec20452e4071128d3f0bd2625b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cccl.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1144,6 +1196,7 @@
               "strip_prefix": "cctz-fa5fe114a87a34c055853adf54dde305979acea0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cctz.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1163,6 +1216,7 @@
               "strip_prefix": "chdig-a28e1072f6e2aeb98116ae6f6ecda06d57e877ff",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_chdig.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1182,6 +1236,7 @@
               "strip_prefix": "cld2-b19c9d5bee6622c1b1efd33264ccca6a76fb0430",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cld2.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1201,6 +1256,7 @@
               "strip_prefix": "clickhouse-clickstack-f5232dc36db0f151c6a19a770710fbeebfd9051b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_clickstack.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1220,6 +1276,7 @@
               "strip_prefix": "corrosion-c4840742d23d1c1a187152e2c5ae65886b9c9007",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_corrosion.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1239,7 +1296,10 @@
               "strip_prefix": "cppkafka-01ea85530b2c156db2dcadb4117f30e1faf93b09",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cppkafka.BUILD.bazel",
-              "patches": [],
+              "files": {},
+              "patches": [
+                "@@//bazel/patches:cppkafka-error-include.patch"
+              ],
               "patch_args": [
                 "-p1"
               ],
@@ -1258,6 +1318,7 @@
               "strip_prefix": "crc32-s390x-30980583bf9ed3fa193abb83a1849705ff457f70",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_crc32_s390x.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1277,6 +1338,7 @@
               "strip_prefix": "crc32-vpmsum-452155439389311fc7d143621eaf56a258e02476",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_crc32_vpmsum.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1296,6 +1358,10 @@
               "strip_prefix": "crc32c-8e39af2c7f8b23d1a0c2a6367b3313149c20b520",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_crc32c.BUILD.bazel",
+              "files": {
+                "configured/x86_64/crc32c/crc32c_config.h": "@@//contrib/crc32c-cmake:x86_64/sse42/crc32c/crc32c_config.h",
+                "configured/aarch64/crc32c/crc32c_config.h": "@@//contrib/crc32c-cmake:aarch64/crc32c/crc32c_config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1315,6 +1381,7 @@
               "strip_prefix": "CRoaring-f2b1a55bcfa49ec986539b05b603e26a3adcc95c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_croaring.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1334,6 +1401,7 @@
               "strip_prefix": "cuCollections-0883368d39296f3bef3a058033141bcc642c5c54",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cucollections.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1353,6 +1421,7 @@
               "strip_prefix": "cuCascade-a37c33b95d032224587dc0f253236b78fdb1d07b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cucascade.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1372,6 +1441,7 @@
               "strip_prefix": "cudf-ee6d3d2564869c910f8efa93c6668cf0f50ae5bb",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cudf.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1391,6 +1461,9 @@
               "strip_prefix": "cyrus-sasl-e6466edfd638cc5073debe941c53345b18a09512",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_cyrus_sasl.BUILD.bazel",
+              "files": {
+                "configured/private/config.h": "@@//contrib/cyrus-sasl-cmake:config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1410,6 +1483,7 @@
               "strip_prefix": "darts-clone-87b71afd6cf784953e3c08f24c64203397f3b724",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_darts_clone.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1429,6 +1503,7 @@
               "strip_prefix": "datasketches-cpp-4e91777839ba01c43f0da7d049f15478301726d3",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_datasketches_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1448,6 +1523,7 @@
               "strip_prefix": "delta-kernel-rs-88ff5a947478215d285783b42aafe6f3d04aca58",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_delta_kernel_rs.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1467,6 +1543,7 @@
               "strip_prefix": "dlpack-365b823cedb281cd0240ca601aba9b78771f91a3",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_dlpack.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1486,6 +1563,7 @@
               "strip_prefix": "dmlc-core-4baa84e627849e675a3f99c92990ef9c39e4269e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_dmlc_core.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1505,6 +1583,7 @@
               "strip_prefix": "double-conversion-9dd6227ee3e29807183e56877f0282aeb40b8b1e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_double_conversion.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1524,6 +1603,7 @@
               "strip_prefix": "fast_float-236eba4d6b11852e16bd5b0166a0319d65496e0a",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_fast_float.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1543,6 +1623,7 @@
               "strip_prefix": "fastops-e2fbb015ae99e031eaf0223cd2d5d09ca63cfedb",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_fastops.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1562,6 +1643,7 @@
               "strip_prefix": "flatbuffers-7e163021e59cca4f8e1e35a7c828b5c6b7915953",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_flatbuffers.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1581,6 +1663,7 @@
               "strip_prefix": "fmt-4d9c4a8580235ba0b22fc6dbf70bcd29eb3ca84c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_fmtlib.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1600,6 +1683,7 @@
               "strip_prefix": "benchmark-192ef10025eb2c4cdd392bc502f0c852196baa48",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_google_benchmark.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1619,6 +1703,7 @@
               "strip_prefix": "google-cloud-cpp-499787a71646ee5f7d9a845aee79a1b0663c947d",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_google_cloud_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1638,6 +1723,7 @@
               "strip_prefix": "protobuf-f377bfefc5e2cfab68b816903c25b23e091c439d",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_google_protobuf.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1657,6 +1743,7 @@
               "strip_prefix": "googletest-063de7e9578f82b369302001269680b4b1553359",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_googletest.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1676,6 +1763,7 @@
               "strip_prefix": "grpc-a703d1f9448ff77deca3beb36dfc7d337a209d3e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_grpc.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1695,6 +1783,7 @@
               "strip_prefix": "h3-a5625fa52dab112e1e190635c8d74e8c9c7a0f19",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_h3.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1714,6 +1803,7 @@
               "strip_prefix": "heks-ec14498a6ec2c8f00a3b76cf57e9e26c1ad7362c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_heks.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1733,6 +1823,7 @@
               "strip_prefix": "hive-metastore-809a77d435ce218d9b000733f19489c606fc567b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_hive_metastore.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1752,6 +1843,7 @@
               "strip_prefix": "icu-b29faa6d4e46f10d230b93a3c33885e7ec71bd41",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_icu.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1771,6 +1863,7 @@
               "strip_prefix": "icudata-e3ae5bcb2b24f17cd9336c4f1b25f36ed636d839",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_icudata.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1790,6 +1883,7 @@
               "strip_prefix": "idna-262e46f3865975151683f0f60d3d6228cbe9dcb5",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_idna.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1809,6 +1903,7 @@
               "strip_prefix": "ipcrypt2-07fd2e1ef3bf6e7d689b6d1c46ff48f67df20888",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_ipcrypt2.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1828,6 +1923,7 @@
               "strip_prefix": "isa-l-9f2b68f05752097f0f16632fc4a9a86950831efd",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_isa_l.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1847,6 +1943,7 @@
               "strip_prefix": "jemalloc-5f864d8bd4c4fa7a99cb47c374d5c6465a160578",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_jemalloc.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1866,6 +1963,7 @@
               "strip_prefix": "jwt-cpp-b0ea29a58fc852a67d4e896d266880c2c63b0c4c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_jwt_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1885,6 +1983,7 @@
               "strip_prefix": "krb5-857c2d1edd7a4218b84594768587aa53fd63da9e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_krb5.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1904,6 +2003,7 @@
               "strip_prefix": "kvikio-5a77056e8fd91affe2cee1c5a395f7e3edffd9af",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_kvikio.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1923,6 +2023,7 @@
               "strip_prefix": "lemmagen-c-59537bdcf57bbed17913292cb4502d15657231f1",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_lemmagen_c.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1942,6 +2043,9 @@
               "strip_prefix": "libarchive-27cbc7827172698143e440801fc0ba39ccb4f1f5",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libarchive.BUILD.bazel",
+              "files": {
+                "configured/private/config.h": "@@//contrib/libarchive-cmake:config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1961,6 +2065,7 @@
               "strip_prefix": "libbcrypt-8aa32ad94ebe06b76853b0767c910c9fbf7ccef4",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libbcrypt.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1980,6 +2085,7 @@
               "strip_prefix": "libcotp-2ffa6281ff4219636354df08b12c1a5aadd12ab4",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libcotp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -1999,6 +2105,7 @@
               "strip_prefix": "libcpuid-7ac123e3c13013ff6cd2d8c4ec1881177d71357f",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libcpuid.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2018,6 +2125,7 @@
               "strip_prefix": "libdeflate-65d215e89ba0cd536f6585834cf507d816cb1a2f",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libdeflate.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2037,6 +2145,9 @@
               "strip_prefix": "libdivide-ea0fb1ad79a116cd561595c930bcaf33147b3e6c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libdivide.BUILD.bazel",
+              "files": {
+                "libdivide-config.h": "@@//contrib/libdivide-cmake:libdivide-config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2056,6 +2167,7 @@
               "strip_prefix": "libfiu-74bc382193df83d829f9e5b99d7f17a841c5cf74",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libfiu.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2075,6 +2187,9 @@
               "strip_prefix": "libgsasl-2d16b4e0d9435bec4546875ef07d36383bb993a5",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libgsasl.BUILD.bazel",
+              "files": {
+                "configured/private/config.h": "@@//contrib/libgsasl-cmake:linux_x86_64/include/config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2094,6 +2209,7 @@
               "strip_prefix": "libhdfs3-ceb428c52e6b4362a35ec18b69206d9bb94edce3",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libhdfs3.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2113,6 +2229,7 @@
               "strip_prefix": "libpqxx-24a31c3f3a9317131b1326c7b87f42053a5f4489",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libpqxx.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2132,6 +2249,7 @@
               "strip_prefix": "libprotobuf-mutator-dc4ced337a9fb4047e2dc727268fbac55ca82f73",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libprotobuf_mutator.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2151,6 +2269,7 @@
               "strip_prefix": "librdkafka-c58ce6331fb871bfb4b15758cfd3283dd0a512fd",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_librdkafka.BUILD.bazel",
+              "files": {},
               "patches": [
                 "@@//bazel/patches:librdkafka-config-include.patch"
               ],
@@ -2172,6 +2291,7 @@
               "strip_prefix": "librseq-2ca6d3775a750b180b5c82b999aa5b46f3fea1a7",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_librseq.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2191,6 +2311,7 @@
               "strip_prefix": "librtcx-a9f63f8cdd4b0b41a2d88a9f705576a61b4222ec",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_librtcx.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2210,6 +2331,7 @@
               "strip_prefix": "libssh-c0083428b0c7f97f7b6a9c212d630c49b72a2d7a",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libssh.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2229,6 +2351,7 @@
               "strip_prefix": "libstemmer_c-e138ee768ef8935d1957769e73850ca8c795efde",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libstemmer_c.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2248,6 +2371,7 @@
               "strip_prefix": "libucontext-49e671dd52ff6791295d8161ad3b6da7dc5f6f9d",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libucontext.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2267,6 +2391,7 @@
               "strip_prefix": "liburing-d41bf9220ec39277ff235379e9089d9e0fd6c2a5",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_liburing.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2286,6 +2411,7 @@
               "strip_prefix": "libuv-2804fb04ea7e97eae3999ff323371549d13ecd58",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libuv.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2305,6 +2431,7 @@
               "strip_prefix": "libxml2-96498992efa48d52b0e8b83058bd88dbdaf153c1",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_libxml2.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2335,6 +2462,7 @@
               "strip_prefix": "lz4-ebb370ca83af193212df4dcbadcc5d87bc0de2f0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_lz4.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2354,6 +2482,7 @@
               "strip_prefix": "magic_enum-1384769c66bd16ec9bb1353f45fe8ec8ccc12dbd",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_magic_enum.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2373,6 +2502,7 @@
               "strip_prefix": "geometry.hpp-12ac5412bf85571852ad1cd7c30456faef8d6464",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_mapbox_geometry.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2392,6 +2522,7 @@
               "strip_prefix": "mariadb-connector-c-b3c09ab333c2ef9277291e721871a2bafca6e8bf",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_mariadb_connector_c.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2411,6 +2542,7 @@
               "strip_prefix": "miniselect-44d09dcb4dc2583e36f14602020fe8c58ff69129",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_miniselect.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2430,6 +2562,9 @@
               "strip_prefix": "minizip-ng-7b2387161c542fa9f427352dcdef76097d0d692b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_minizip_ng.BUILD.bazel",
+              "files": {
+                "mz_config.h": "@@//contrib/minizip-ng-cmake:mz_config.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2449,6 +2584,7 @@
               "strip_prefix": "mongo-c-driver-781854a79e47b4b4636d222c8d1fc4ff265128b4",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_mongo_c_driver.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2468,7 +2604,10 @@
               "strip_prefix": "mongo-cxx-driver-fa9ee6ed008e84b9562a7a55d70681de8a6bc1c6",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_mongo_cxx_driver.BUILD.bazel",
-              "patches": [],
+              "files": {},
+              "patches": [
+                "@@//bazel/patches:mongo-bsoncxx-enum-compatibility.patch"
+              ],
               "patch_args": [
                 "-p1"
               ],
@@ -2487,6 +2626,7 @@
               "strip_prefix": "morton-nd-3795491a4aa3cdc916c8583094683f0d68df5bc0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_morton_nd.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2506,7 +2646,10 @@
               "strip_prefix": "msgpack-c-6b0d778ae059cfb77e26f2a011e99b17a8563c23",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_msgpack_c.BUILD.bazel",
-              "patches": [],
+              "files": {},
+              "patches": [
+                "@@//bazel/patches:msgpack-version-include.patch"
+              ],
               "patch_args": [
                 "-p1"
               ],
@@ -2525,6 +2668,7 @@
               "strip_prefix": "musl-ceb269596b20528273116fe1eefa488f83221ff8",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_musl.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2544,6 +2688,7 @@
               "strip_prefix": "arrow-nanoarrow-a579fbf5d192e85b6249935e117de7d02a6dc4e9",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_nanoarrow.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2563,6 +2708,7 @@
               "strip_prefix": "nats.c-b88704dfeb55e0f1dee165b9c1daccb90d5816d4",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_nats_io.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2582,6 +2728,7 @@
               "strip_prefix": "json-4438a2a0cda77bf4cd74652423e03363e003a0cc",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_nlohmann_json.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2601,6 +2748,7 @@
               "strip_prefix": "nlp-data-5591f91f5e748cba8fb9ef81564176feae774853",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_nlp_data.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2620,6 +2768,7 @@
               "strip_prefix": "NVTX-69c9949150ac1c310758a304082228a36d5e4758",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_nvtx.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2639,7 +2788,10 @@
               "strip_prefix": "openldap-a81b431bfc28f994a7ff8ea37f1e1c087436a56d",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_openldap.BUILD.bazel",
-              "patches": [],
+              "files": {},
+              "patches": [
+                "@@//bazel/patches:openldap-lber-debug-include.patch"
+              ],
               "patch_args": [
                 "-p1"
               ],
@@ -2658,6 +2810,50 @@
               "strip_prefix": "openssl-e20d8f40abcba2d733450a5c426490246f636368",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_openssl.BUILD.bazel",
+              "files": {
+                "include/prov/der_ecx.h": "@@//contrib/openssl-cmake:common/include/prov/der_ecx.h",
+                "include/prov/der_slh_dsa.h": "@@//contrib/openssl-cmake:common/include/prov/der_slh_dsa.h",
+                "include/prov/der_wrap.h": "@@//contrib/openssl-cmake:common/include/prov/der_wrap.h",
+                "include/prov/der_rsa.h": "@@//contrib/openssl-cmake:common/include/prov/der_rsa.h",
+                "include/prov/der_dsa.h": "@@//contrib/openssl-cmake:common/include/prov/der_dsa.h",
+                "include/prov/der_ec.h": "@@//contrib/openssl-cmake:common/include/prov/der_ec.h",
+                "include/prov/der_sm2.h": "@@//contrib/openssl-cmake:common/include/prov/der_sm2.h",
+                "include/prov/der_ml_dsa.h": "@@//contrib/openssl-cmake:common/include/prov/der_ml_dsa.h",
+                "include/prov/der_digests.h": "@@//contrib/openssl-cmake:common/include/prov/der_digests.h",
+                "include/crypto/bn_conf.h": "@@//contrib/openssl-cmake:common/include/crypto/bn_conf.h",
+                "include/crypto/dso_conf.h": "@@//contrib/openssl-cmake:common/include/crypto/dso_conf.h",
+                "include/internal/param_names.h": "@@//contrib/openssl-cmake:common/include/internal/param_names.h",
+                "include/openssl/err.h": "@@//contrib/openssl-cmake:common/include/openssl/err.h",
+                "include/openssl/cms.h": "@@//contrib/openssl-cmake:common/include/openssl/cms.h",
+                "include/openssl/x509.h": "@@//contrib/openssl-cmake:common/include/openssl/x509.h",
+                "include/openssl/ui.h": "@@//contrib/openssl-cmake:common/include/openssl/ui.h",
+                "include/openssl/asn1.h": "@@//contrib/openssl-cmake:common/include/openssl/asn1.h",
+                "include/openssl/bio.h": "@@//contrib/openssl-cmake:common/include/openssl/bio.h",
+                "include/openssl/x509v3.h": "@@//contrib/openssl-cmake:common/include/openssl/x509v3.h",
+                "include/openssl/conf.h": "@@//contrib/openssl-cmake:common/include/openssl/conf.h",
+                "include/openssl/x509_vfy.h": "@@//contrib/openssl-cmake:common/include/openssl/x509_vfy.h",
+                "include/openssl/cmp.h": "@@//contrib/openssl-cmake:common/include/openssl/cmp.h",
+                "include/openssl/safestack.h": "@@//contrib/openssl-cmake:common/include/openssl/safestack.h",
+                "include/openssl/configuration.h": "@@//contrib/openssl-cmake:common/include/openssl/configuration.h",
+                "include/openssl/fipskey.h": "@@//contrib/openssl-cmake:common/include/openssl/fipskey.h",
+                "include/openssl/x509_acert.h": "@@//contrib/openssl-cmake:common/include/openssl/x509_acert.h",
+                "include/openssl/pkcs12.h": "@@//contrib/openssl-cmake:common/include/openssl/pkcs12.h",
+                "include/openssl/crypto.h": "@@//contrib/openssl-cmake:common/include/openssl/crypto.h",
+                "include/openssl/crmf.h": "@@//contrib/openssl-cmake:common/include/openssl/crmf.h",
+                "include/openssl/opensslv.h": "@@//contrib/openssl-cmake:common/include/openssl/opensslv.h",
+                "include/openssl/pkcs7.h": "@@//contrib/openssl-cmake:common/include/openssl/pkcs7.h",
+                "include/openssl/ct.h": "@@//contrib/openssl-cmake:common/include/openssl/ct.h",
+                "include/openssl/ssl.h": "@@//contrib/openssl-cmake:common/include/openssl/ssl.h",
+                "include/openssl/srp.h": "@@//contrib/openssl-cmake:common/include/openssl/srp.h",
+                "include/openssl/core_names.h": "@@//contrib/openssl-cmake:common/include/openssl/core_names.h",
+                "include/openssl/comp.h": "@@//contrib/openssl-cmake:common/include/openssl/comp.h",
+                "include/openssl/ocsp.h": "@@//contrib/openssl-cmake:common/include/openssl/ocsp.h",
+                "include/openssl/asn1t.h": "@@//contrib/openssl-cmake:common/include/openssl/asn1t.h",
+                "include/openssl/lhash.h": "@@//contrib/openssl-cmake:common/include/openssl/lhash.h",
+                "include/openssl/ess.h": "@@//contrib/openssl-cmake:common/include/openssl/ess.h",
+                "configured/linux_x86_64/include_private/buildinf.h": "@@//contrib/openssl-cmake:linux_x86_64/include_private/buildinf.h",
+                "configured/linux_aarch64/include_private/buildinf.h": "@@//contrib/openssl-cmake:linux_aarch64/include_private/buildinf.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2677,6 +2873,7 @@
               "strip_prefix": "orc-21955610d9776dd74a36d52f30ce95db3a5b2ec2",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_orc.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2696,6 +2893,7 @@
               "strip_prefix": "parquet-testing-56653c437c8092f704a092d0d1d4e600124cd49f",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_parquet_testing.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2715,6 +2913,7 @@
               "strip_prefix": "pcodec-35424f0fc3aa61328940774c1b915e1356092a5a",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_pcodec.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2734,6 +2933,7 @@
               "strip_prefix": "pocketfft-f4c1aa8aa9ce79ad39e80f2c9c41b92ead90fda3",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_pocketfft.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2753,6 +2953,11 @@
               "strip_prefix": "postgres-c7649becd213231466df7e679154e8ac0f744788",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_postgres.BUILD.bazel",
+              "files": {
+                "configured/private/pg_config.h": "@@//contrib/postgres-cmake:pg_config.h",
+                "configured/private/pg_config_os.h": "@@//contrib/postgres-cmake:pg_config_os.h",
+                "configured/private/pg_config_paths.h": "@@//contrib/postgres-cmake:pg_config_paths.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2772,6 +2977,7 @@
               "strip_prefix": "rapidjson-04dc6714905247b4529310e0cf73a03a3b8148df",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_rapidjson.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2791,6 +2997,7 @@
               "strip_prefix": "rapids-logger-1124de618517654cce3636d69d022ee76e9df4b0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_rapids_logger.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2810,6 +3017,7 @@
               "strip_prefix": "re2-1f24555c97150767d65aa77fde8ddd029d2bb97c",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_re2.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2829,6 +3037,7 @@
               "strip_prefix": "replxx-00cd994b363c3fc32f80d9d266e4d2acb4159abf",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_replxx.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2848,6 +3057,7 @@
               "strip_prefix": "rmm-42d059f127b4a2aef21367930a0491de3a01bfc7",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_rmm.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2867,6 +3077,7 @@
               "strip_prefix": "rocksdb-7d4d9327af02f4d3ac0a028817d11e4a8a0cce90",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_rocksdb.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2886,6 +3097,7 @@
               "strip_prefix": "rust_vendor-1e3f50523beac7359194d52665e013b155f1ec94",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_rust_vendor.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2942,6 +3154,7 @@
               "strip_prefix": "s2geometry-5409e159ec6e0334022395ed33ed24e60c69b6ae",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_s2geometry.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2961,6 +3174,7 @@
               "strip_prefix": "silk-78aab9d603d43247fa8f05f86c34ecdfe2ab4095",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_silk.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2980,6 +3194,7 @@
               "strip_prefix": "simdcomp-009c67807670d16f8984c0534aef0e630e5465a4",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_simdcomp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -2999,6 +3214,7 @@
               "strip_prefix": "simdjson-47b97cc5dcfbf0caac51f0e5bbf7709484a041d8",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_simdjson.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3018,6 +3234,7 @@
               "strip_prefix": "simdutf-fdca8627a15f3772921b2304ef927bd65728bbfa",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_simdutf.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3037,6 +3254,7 @@
               "strip_prefix": "snappy-ce10ba11ed531da1a7df911924f45ae14f13c8b0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_snappy.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3056,6 +3274,7 @@
               "strip_prefix": "sparsehash-c11-edd6f1180156e76facc1c0449da245208ab39503",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sparsehash_c11.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3075,6 +3294,7 @@
               "strip_prefix": "spdlog-27cb4c76708608465c413f6d0e6b8d99a4d84302",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_spdlog.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3094,6 +3314,7 @@
               "strip_prefix": "sqids-cpp-a471f53672e98d49223f598528a533b07b085c61",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sqids_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3113,6 +3334,7 @@
               "strip_prefix": "clickhouse-sql-console-e8dadc688cc690adc09a46d384bb70f0c53b19f7",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sql_console.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3132,6 +3354,7 @@
               "strip_prefix": "sqlite-amalgamation-23c7b76929611997c5f0315b3149372b1bee1d41",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sqlite_amalgamation.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3151,6 +3374,7 @@
               "strip_prefix": "substrait-de9e6328f4f94abc0809977f57dfde7262a7258b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_substrait.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3170,6 +3394,7 @@
               "strip_prefix": "sysroot-6dd29c222896e54de24e7af1b191c92e4cf2e229",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sysroot.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3189,6 +3414,9 @@
               "strip_prefix": "SZ3-f36e8b064fdde4bac260988ea459786964bbb492",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_sz3.BUILD.bazel",
+              "files": {
+                "include/SZ3/version.hpp": "@@//contrib/sz3-cmake:SZ3/version.hpp"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3208,6 +3436,7 @@
               "strip_prefix": "thrift-26bf3f0c3cade6f2c9fac82d4962751466282c23",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_thrift.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3227,6 +3456,7 @@
               "strip_prefix": "ulid-c-c433b6783cf918b8f996dacd014cb2b68c7de419",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_ulid_c.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3246,6 +3476,7 @@
               "strip_prefix": "usearch-6bd13d4c69a1baef1f668e652c3ca26028970f12",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_usearch.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3265,6 +3496,11 @@
               "strip_prefix": "vectorscan-4f863adbc2aa1129d473483d1a70134da07b5074",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_vectorscan.BUILD.bazel",
+              "files": {
+                "configured/amd64/config.h": "@@//contrib/vectorscan-cmake:amd64/config.h",
+                "configured/aarch64/config.h": "@@//contrib/vectorscan-cmake:aarch64/config.h",
+                "src/hs_version.h": "@@//contrib/vectorscan-cmake:common/hs_version.h"
+              },
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3284,6 +3520,7 @@
               "strip_prefix": "wagyu-22ce25812c98e42dc277805941ab8e6577ba729b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_wagyu.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3303,6 +3540,7 @@
               "strip_prefix": "wasmtime-561b224fd0589a02fc9e7bcef1aeb70d886d33c0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_wasmtime.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3322,6 +3560,7 @@
               "strip_prefix": "wordnet-blast-1d16ac28036e19fe8da7ba72c16a307fbdf8c87e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_wordnet_blast.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3341,6 +3580,7 @@
               "strip_prefix": "wyhash-991aa3dab624e50b066f7a02ccc9f6935cc740ec",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_wyhash.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3360,6 +3600,7 @@
               "strip_prefix": "xgboost-665fa8355e455a3b9fc7acbfd68e6788337a45f8",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_xgboost.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3379,6 +3620,7 @@
               "strip_prefix": "xsimd-f795779ccfad12832ea47bfc02d02a65fd7f3576",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_xsimd.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3398,6 +3640,7 @@
               "strip_prefix": "xxHash-c87183a77d67f7d37e3d2d1b7eaac5e7c695e4f0",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_xxhash.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3417,6 +3660,7 @@
               "strip_prefix": "xz-d3e650e63c110e830fd5391e7f8b45df0b91d3da",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_xz.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3436,6 +3680,7 @@
               "strip_prefix": "yaml-cpp-acf418672e8aae00fa0de9ada9753e9001a6d57e",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_yaml_cpp.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3455,6 +3700,7 @@
               "strip_prefix": "zlib-ng-a2fbeffdc30a8b0ce6d54ee31208e2688eac4c9f",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_zlib_ng.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3474,6 +3720,7 @@
               "strip_prefix": "zmij-b490231ab0cd976b8e3a6e3b442c7eeee22fe05d",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_zmij.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3493,6 +3740,7 @@
               "strip_prefix": "zstd-5b3e9e8fd2779260101a07e6cc7b34fd8764617f",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_zstd.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"
@@ -3512,6 +3760,7 @@
               "strip_prefix": "zxc-e568d1967309fd5d160f45f2fdabcbff6ab3f058",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_zxc.BUILD.bazel",
+              "files": {},
               "patches": [],
               "patch_args": [
                 "-p1"

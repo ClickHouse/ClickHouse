@@ -152,6 +152,7 @@ def _contrib_impl(module_ctx):
             build_file = Label("//bazel/dependencies:" + repository["name"] + ".BUILD.bazel"),
             files = _openssl_configured_files(module_ctx) if repository["name"] == "clickhouse_openssl" else _CONFIGURED_FILES.get(repository["name"], {}),
             patches = {
+                "clickhouse_cppkafka": [Label("//bazel/patches:cppkafka-error-include.patch")],
                 "clickhouse_librdkafka": [Label("//bazel/patches:librdkafka-config-include.patch")],
                 "clickhouse_mongo_cxx_driver": [Label("//bazel/patches:mongo-bsoncxx-enum-compatibility.patch")],
                 "clickhouse_msgpack_c": [Label("//bazel/patches:msgpack-version-include.patch")],

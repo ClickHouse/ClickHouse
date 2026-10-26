@@ -3,7 +3,7 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@protobuf//bazel/toolchains:proto_lang_toolchain.bzl", "proto_lang_toolchain")
 load("@protobuf//bazel/toolchains:proto_toolchain.bzl", "proto_toolchain")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_rs//rs/platforms:triples.bzl", "triple_to_constraint_set")
+load("@rules_rs//rs/platforms:triples.bzl", "triple_to_rust_constraint_set")
 load("//bazel/initial_migration:cmake_metadata.bzl", "CMAKE_METADATA")
 load("//bazel/initial_migration:cmake_toolchain.bzl", "cmake_toolchain")
 load("//bazel/initial_migration:native_cmake_reference.bzl", "native_cmake_reference")
@@ -128,11 +128,23 @@ platform(
     parents = ["@llvm//:rbe_linux_aarch64"],
 )
 
+# Match the glibc releases and Linux header series in ClickHouse's CMake sysroots.
+# Register these target platforms as executors for tests that run on each CPU.
 platform(
-    name = "buildbuddy_linux_aarch64_test",
-    constraint_values = triple_to_constraint_set("aarch64-unknown-linux-gnu"),
-    # Bazel tests require the target's full constraint set. Keep LLVM's
-    # gnu.2.28 compiler platform separate from rules_rs's unconstrained libc.
+    name = "linux_x86_64",
+    constraint_values = triple_to_rust_constraint_set("x86_64-unknown-linux-gnu") + [
+        "@llvm//constraints/kernel/linux:4.15",
+        "@llvm//constraints/libc:gnu.2.27",
+    ],
+    parents = [":buildbuddy_linux_x86_64"],
+)
+
+platform(
+    name = "linux_aarch64",
+    constraint_values = triple_to_rust_constraint_set("aarch64-unknown-linux-gnu") + [
+        "@llvm//constraints/kernel/linux:4.19",
+        "@llvm//constraints/libc:gnu.2.28",
+    ],
     parents = [":buildbuddy_linux_aarch64"],
 )
 

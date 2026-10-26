@@ -201,7 +201,7 @@ def prune_llvm_link_deps(graph):
         result = {}
         for target, (doc, kind, attrs) in graph.rules.items():
             deps = attrs.get('deps')
-            if doc.repo != '@clickhouse' or kind not in NATIVE | ({'ch_cc_test'} if not public_only else set()):
+            if doc.repo != '@clickhouse' or kind not in NATIVE | ({'cc_test'} if not public_only else set()):
                 continue
             if not explicit_list(deps, doc):
                 continue

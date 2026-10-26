@@ -16,19 +16,24 @@ from audit_full_dwyu import (
 # that contract before trusting other DWYU, rules_cc or toolchain definitions.
 SOURCE_SHA256 = {
     ".bazelversion": "14ebdd5f5d8dfccb0fc574ea9aabecc07d7cdd99d53e4fc01e58f9c3d23d18ef",
-    "MODULE.bazel": "a6ccee15f48a4977fae32285ca9b759a50d06470b6a540404d839f56d12f8de1",
+    "MODULE.bazel": "c245afe44ad810752a8a88788705c86de336ca05021af884dbe3da0d9f8d85c1",
     "bazel/rules/dwyu.bzl": "d9bcd9782eb753ca8287bbb7698216bfd56251fc0c35adebb05edaf3d9b1637f",
     "bazel/rules/dwyu_tool.bzl": "9fbe5b5759ed86eb74c46f2bf753dd922cbf767fadb6fc52b9ca7e09ce38260f",
     "bazel/rules/BUILD.bazel": "5419adcf5cedb4752e8a4303bb5b413115b96c3bdd234b2cf11302d3ea457b81",
     "bazel/patches/dwyu-compiler-preprocessing.patch": "8287705125854596985b4d03fec14254f35a3a8748273a49e46f868ae1bd2de1",
     "bazel/patches/rules_cc-implementation-deps-local-includes.patch": "1e8f54793cf1989dc11017982e75bd18f22bd09fc89d077c7749edcc146b6714",
-    "bazel/patches/llvm-clickhouse-runtime.patch": "ffc1537fb817152a7651ea8ef1007c3799b46b496c8dcc8f6c05eac2836a1a48",
+    "bazel/llvm.MODULE.bazel": "4a1be85a7c180609bb4bd91d4b5e6841f74c267d095c416d6f9cc36fb55d108f",
+    "bazel/patches/glibc-2.28-aarch64-hwcap2-madvise.patch": "33b4986b047c9268b4e9807f573d83f0959e95d9585c932597d923dbc4e25b28",
+    "bazel/patches/glibc-string-cxx-prototypes.patch": "923f6d373c8cef9908e01ea12f30befb8348c4182b78a1ca34c1ac55c1acfda2",
+    "bazel/patches/linux-4.15.18-x86-seccomp-spec-allow.patch": "57b4373d1a16af2c91dcbb860fafb84c92fa1b20bad1ad5f2a3d6d24d75f49b8",
+    "bazel/patches/linux-4.19.325-arm64-hwcap2-madvise.patch": "5eaad065f66693c88f279c3cdd0b52f51af6924ad931f77920802533c721f073",
+    "bazel/patches/llvm-clickhouse-runtime.patch": "0a020c5995c468fbd2fc7120a41379f1c76d057e76a44c36b5df6e462cbeec68",
 }
 REGISTRY_SHA256 = {
     "depend_on_what_you_use/1.1.2/MODULE.bazel": "dc739111b70e715d10ca13fdd69c5da30af8f64a61e6dce0887be5e9a0d70cf9",
     "depend_on_what_you_use/1.1.2/source.json": "5dad1b12896af1ef9ab5ecb86c31ac2c6fbb6d03871652eeb3a2c1afef382c2f",
-    "llvm/0.8.24/MODULE.bazel": "e03e030b1d0b44bb05c52665c2f43de9260af9152f666262e11e25f6c072aae3",
-    "llvm/0.8.24/source.json": "924ed48858c1c081698f1992c7b489434375de901c47b7046e203459840cb544",
+    "llvm/0.8.26/MODULE.bazel": "633a1076b1f20d4e6be387fa22f0b99a1b7e7d94d07b60a70c67f4f91f369423",
+    "llvm/0.8.26/source.json": "2d6d463638dfec25acfcc8cefc56f8ad8fb215b7b1e699b3c2840590ce328fc1",
     "rules_cc/0.2.26/MODULE.bazel": "a9f7b7f4a52747910965bddb1f58fc1fef50604ed1980ebdd16ea6f446d92249",
     "rules_cc/0.2.26/source.json": "bf9ff315da6055c1e374d627012cc51947a05b3560674af7d69fbedbb4fde6ef",
 }

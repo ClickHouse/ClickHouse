@@ -1,4 +1,5 @@
 diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
+index 7aaccd3..b356763 100644
 --- a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
 @@ -1,7 +1,6 @@
@@ -9,7 +10,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
  load("@llvm//3rd_party/llvm-project/21.x/libcxx:libcxx_headers.bzl", "LIBCXX_HEADERS_FILES_21")
  load("@llvm//3rd_party/llvm-project/22.x/libcxx:libcxx_headers.bzl", "LIBCXX_HEADERS_FILES_22")
  load("@llvm//3rd_party/llvm-project/23.x/libcxx:libcxx_headers.bzl", "LIBCXX_HEADERS_FILES_23")
-@@ -41,102 +40,6 @@
+@@ -41,102 +40,6 @@ filegroup(
      visibility = ["//visibility:public"],
  )
  
@@ -112,7 +113,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
  selects.config_setting_group(
      name = "windows_static",
      match_all = [
-@@ -169,41 +72,17 @@
+@@ -169,41 +72,17 @@ selects.config_setting_group(
      ],
  )
  
@@ -145,14 +146,11 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 -                  "//conditions:default": _CONFIG_SITE_THREAD_API_PTHREAD_LINES,
 -              }) +
 -              _CONFIG_SITE_POSTAMBLE_LINES,
--    visibility = ["//visibility:public"],
--)
--
--copy_file(
 +    srcs = ["include/__config_site"],
-+    visibility = ["//visibility:public"],
-+)
-+
+     visibility = ["//visibility:public"],
+ )
+ 
+-copy_file(
 +filegroup(
      name = "__assertion_handler",
 -    src = "vendor/llvm/default_assertion_handler.in",
@@ -163,7 +161,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
  )
  
  copy_to_directory(
-@@ -227,21 +106,46 @@
+@@ -227,21 +106,46 @@ cc_library(
          ":__config_site",
          ":libcxx_headers_files",
      ],
@@ -172,16 +170,6 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 -        "include",
 -        "src",
 -    ],
--    visibility = ["//visibility:public"],
--)
--
--filegroup(
--    name = "textual_hdrs",
--    srcs = glob([
--        "src/**/*.h",
--        "src/**/*.ipp",
--    ]),
--    visibility = ["//visibility:public"],
 +    # The complete Linux toolchain owns public C++ headers. Searching both
 +    # copies makes include_next find another C++ wrapper instead of libc.
 +    # Bootstrap runtimes still need their source and generated headers.
@@ -193,13 +181,20 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
 +            "src",
 +        ],
 +    }),
-+    visibility = ["//visibility:public"],
+     visibility = ["//visibility:public"],
 +    deps = select({
 +        "@llvm//platforms/config:gnu": ["@glibc//:gnu_libc_headers"],
 +        "//conditions:default": [],
 +    }),
-+)
-+
+ )
+ 
+-filegroup(
+-    name = "textual_hdrs",
+-    srcs = glob([
+-        "src/**/*.h",
+-        "src/**/*.ipp",
+-    ]),
+-    visibility = ["//visibility:public"],
 +_ABI_SUPPORT_HEADERS = [
 +    "src/include/aligned_alloc.h",
 +    "src/include/atomic_support.h",
@@ -225,7 +220,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
  )
  
  cc_library(
-@@ -263,9 +167,7 @@
+@@ -263,9 +167,7 @@ cc_library(
          "src/filesystem/path.cpp",
          "src/functional.cpp",
          "src/hash.cpp",
@@ -235,7 +230,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
          "src/include/ryu/common.h",
          "src/include/ryu/d2fixed.h",
          "src/include/ryu/d2fixed_full_table.h",
-@@ -432,6 +334,7 @@
+@@ -432,6 +334,7 @@ cc_library(
      implementation_deps = [
          # Order matter. Search path should have C++ headers before any lib C headers.
          "@llvm-project//libcxx:headers",
@@ -243,7 +238,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
      ] + select({
          ":windows_msvc": [],
          "//conditions:default": ["@llvm-project//libcxxabi:headers"],
-@@ -467,10 +370,13 @@
+@@ -467,10 +370,13 @@ cc_library(
          ],
          "//conditions:default": [],
      }),
@@ -261,7 +256,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
      # The MSVC route exposes only the purpose-built static libc++ archive.
      # Generic routes retain the cc_library default so the shared-runtime rule
      # can preserve the pre-MSVC implementation graph.
-@@ -479,7 +385,7 @@
+@@ -479,7 +385,7 @@ cc_library(
          "//conditions:default": False,
      }),
      local_defines = [
@@ -270,7 +265,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
          "_LIBCPP_BUILDING_LIBRARY",
          "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
          "_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER",
-@@ -506,11 +412,11 @@
+@@ -508,11 +414,11 @@ cc_library(
      textual_hdrs = glob([
          "src/**/*.h",
          "src/**/*.ipp",
@@ -285,17 +280,18 @@ diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/ll
  
  cc_runtime_stage0_asan_static_library(
 diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
+index a197ba5..6a48d2b 100644
 --- a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
-@@ -5,6 +5,7 @@
-
+@@ -6,6 +6,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
+ 
  cc_library(
      name = "headers",
 +    features = ["external_include_paths"],
      hdrs = glob([
          "include/**",
      ]),
-@@ -66,6 +67,7 @@
+@@ -67,6 +68,7 @@ cc_library(
      #     "src/*.h"
      # ]),
      srcs = [
@@ -303,7 +299,7 @@ diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_pa
          "src/libunwind.cpp",
          "src/Unwind-EHABI.cpp",
          "src/Unwind-seh.cpp",
-@@ -148,6 +150,8 @@
+@@ -149,6 +151,8 @@ cc_library(
          # build for the target specified by compiler defines. Since we pass -target the compiler
          # defines will be correct.
          "_LIBUNWIND_IS_NATIVE_ONLY",
@@ -313,21 +309,20 @@ diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_pa
          # "_LIBUNWIND_HAS_NO_THREADS", # ANY_NON_SINGLE_THREADED
          # "_DCOMPILER_RT_ARMHF_TARGET", # ARM
 diff --git a/toolchain/features/BUILD.bazel b/toolchain/features/BUILD.bazel
+index 1ee927e..dc258ab 100644
 --- a/toolchain/features/BUILD.bazel
 +++ b/toolchain/features/BUILD.bazel
-@@ -5,6 +5,10 @@
- load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_args_list")
-
- package(default_visibility = ["//visibility:public"])
-+
+@@ -14,6 +14,8 @@ cc_feature(
+     feature_name = "gcc_quoting_for_param_files",
+ )
+ 
 +cc_feature(name = "fortify_source", feature_name = "fortify_source")
-+cc_feature(name = "llvm_system_c_headers", feature_name = "llvm_system_c_headers")
-+cc_feature(name = "skip_virtual_includes", feature_name = "skip_virtual_includes")
-
++
  _DEBUG_INFO_COMPILE_ACTIONS = [
      "@rules_cc//cc/toolchains/actions:c_compile",
-@@ -229,6 +233,7 @@
-
+     "@rules_cc//cc/toolchains/actions:cpp_compile",
+@@ -266,6 +268,7 @@ cc_args(
+ 
  cc_args(
      name = "opt_fortify",
 +    requires_any_of = [":fortify_source"],
@@ -335,23 +330,25 @@ diff --git a/toolchain/features/BUILD.bazel b/toolchain/features/BUILD.bazel
      args = select({
          # VCRuntime provides its own checked-runtime policy; _FORTIFY_SOURCE is
 diff --git a/toolchain/cc_toolchain.bzl b/toolchain/cc_toolchain.bzl
+index b589760..c9a36d2 100644
 --- a/toolchain/cc_toolchain.bzl
 +++ b/toolchain/cc_toolchain.bzl
-@@ -314,8 +314,8 @@
+@@ -340,8 +340,8 @@ def cc_toolchain(
              ],
              "//conditions:default": [],
          }),
 -        known_features = [name + "_selected_known_features"],
 -        enabled_features = [name + "_selected_enabled_features"],
-+        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers", "@llvm//toolchain/features:skip_virtual_includes"],
-+        enabled_features = [name + "_selected_enabled_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers"],
++        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source"],
++        enabled_features = [name + "_selected_enabled_features", "@llvm//toolchain/features:fortify_source"],
          tool_map = tool_map,
          module_map = module_map,
          static_runtime_lib = name + "_static_runtime_lib",
 diff --git a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel b/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
+index e7ac85a..a338dfd 100644
 --- a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel
-@@ -143,13 +143,15 @@
+@@ -143,13 +143,15 @@ cc_library(
              "src/__support/wctype_utils.h",
          ] if int(LLVM_VERSION_MAJOR) >= 22 else []
      ),
@@ -371,7 +368,7 @@ diff --git a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel b/3rd_party/llvm-p
  )
  
  cc_library(
-@@ -164,3 +166,139 @@
+@@ -164,3 +166,139 @@ cc_library(
      includes = ["."],
      visibility = ["//visibility:public"],
  )
@@ -512,36 +509,63 @@ diff --git a/3rd_party/llvm-project/x.x/libc/libc.BUILD.bazel b/3rd_party/llvm-p
 +    ],
 +)
 diff --git a/private/llvm_project_common.bzl b/private/llvm_project_common.bzl
+index 097b680..a517b0e 100644
 --- a/private/llvm_project_common.bzl
 +++ b/private/llvm_project_common.bzl
-@@ -89,6 +89,8 @@
+@@ -2,6 +2,24 @@ LLVM_PROJECT_OVERLAY = "utils/bazel/llvm-project-overlay"
+ 
+ _MAX_OVERLAY_DIRECTORIES = 1000000
+ 
++LLVM_PROJECT_OVERLAY_FILES = {
++    "compiler-rt/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/compiler-rt:compiler-rt.BUILD.bazel"),
++    "libc/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libc:libc.BUILD.bazel"),
++    "libcxx/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxx:libcxx.BUILD.bazel"),
++    "libcxxabi/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxxabi:libcxxabi.BUILD.bazel"),
++    "libunwind/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libunwind:libunwind.BUILD.bazel"),
++    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
++}
++
++def copy_llvm_project_files(rctx):
++    files = dict(rctx.attr.overlay_files)
++    files.update(rctx.attr.files)
++    for path, label in files.items():
++        source = rctx.path(label)
++        if not source.exists:
++            fail("Input {} does not exist".format(label))
++        rctx.file(path, rctx.read(source), executable = False)
++
+ def _extract_cmake_settings(rctx, path):
+     settings = {
+         "CMAKE_CXX_STANDARD": None,
+@@ -89,6 +107,8 @@ def write_llvm_project_files(rctx):
      rctx.file("BUILD.bazel", """\
  load("@bazel_lib//:bzl_library.bzl", "bzl_library")
-
+ 
 +exports_files(["LICENSE.TXT"])
 +
  bzl_library(
      name = "version",
      srcs = ["vars.bzl"],
 diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
+index 0fa0744..9ef1403 100644
 --- a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
-@@ -63,6 +63,14 @@
- filegroup(
-     name = "msan_ignorelist",
-     srcs = ["lib/msan/msan_ignorelist.txt"],
-+    visibility = ["//visibility:public"],
-+)
-+
+@@ -66,6 +66,14 @@ filegroup(
+     visibility = ["//visibility:public"],
+ )
+ 
 +cc_library(
 +    name = "headers",
 +    features = ["external_include_paths"],
 +    hdrs = glob(["include/**/*.h", "include/**/*.inc"]),
 +    includes = ["include"],
-     visibility = ["//visibility:public"],
- )
- 
-@@ -107,6 +115,7 @@
++    visibility = ["//visibility:public"],
++)
++
+ ###
+ ### compiler-rt/lib/builtins/CMakeLists.txt.
+ ###
+@@ -107,6 +115,7 @@ BUILTINS_GENERIC_SRCS = [
      "lib/builtins/divsi3.c",
      "lib/builtins/divti3.c",
      "lib/builtins/extendsfdf2.c",
@@ -549,7 +573,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
      "lib/builtins/extendhfsf2.c",
      "lib/builtins/ffsdi2.c",
      "lib/builtins/ffssi2.c",
-@@ -287,6 +296,7 @@
+@@ -288,6 +297,7 @@ filegroup(
      name = "builtins_x86_80_bit_sources",
      srcs = [
          "lib/builtins/divxc3.c",
@@ -557,7 +581,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
          "lib/builtins/extendxftf2.c",
          "lib/builtins/fixunsxfdi.c",
          "lib/builtins/fixunsxfsi.c",
-@@ -300,6 +310,7 @@
+@@ -301,6 +311,7 @@ filegroup(
          "lib/builtins/mulxc3.c",
          "lib/builtins/powixf2.c",
          "lib/builtins/trunctfxf2.c",
@@ -565,7 +589,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
      ],
  )
  
-@@ -564,6 +575,7 @@
+@@ -572,6 +583,7 @@ CF_PROTECTION_COPTS = select({
  
  cc_library(
      name = "builtins",
@@ -573,7 +597,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
      srcs = select(
          {
              "@platforms//cpu:x86_64": [":builtins_x86_64_sources"],
-@@ -597,6 +609,7 @@
+@@ -605,6 +617,7 @@ cc_library(
          ],
          "@platforms//cpu:armv7": [
              "lib/builtins/arm/sync-ops.h",
@@ -581,7 +605,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
          ],
          "@platforms//cpu:riscv64": [
              "lib/builtins/cpu_model/riscv.h",
-@@ -615,6 +628,54 @@
+@@ -623,6 +636,54 @@ cc_library(
              ":builtins_bf16_sources",
          ],
          "//conditions:default": [],
@@ -636,7 +660,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
      }),
      copts = select({
          ":windows_msvc": [
-@@ -687,7 +748,8 @@
+@@ -701,7 +762,8 @@ cc_library(
      }),
      includes = ["lib/builtins"],
      linkstatic = True,
@@ -646,7 +670,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
          (
              # The following additional architectures support float16:
              # - aarch64_be
-@@ -707,62 +769,13 @@
+@@ -721,62 +783,13 @@ cc_library(
          ],
          "//conditions:default": [],
      }),
@@ -710,7 +734,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
  )
  
  cc_runtime_stage0_static_library(
-@@ -880,6 +893,7 @@
+@@ -894,6 +907,7 @@ cc_runtime_stage0_static_library(
  
  cc_library(
      name = "sanitizers_interface_headers",
@@ -718,7 +742,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
      hdrs = glob(["include/sanitizer/*.h"]),
      includes = ["include"],
      visibility = ["//visibility:public"],
-@@ -2908,6 +2922,7 @@
+@@ -2934,6 +2948,7 @@ XRAY_DEFINES = [
  cc_library(
      name = "xray",
      srcs = [
@@ -726,7 +750,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
          ":xray_arch_sources",
          ":xray_headers",
          ":xray_sources",
-@@ -2929,6 +2944,7 @@
+@@ -2955,6 +2970,7 @@ cc_library(
          ":sanitizer_common_libc",
      ],
      alwayslink = True,
@@ -734,7 +758,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
  )
  
  cc_library(
-@@ -3059,6 +3075,7 @@
+@@ -3085,6 +3101,7 @@ cc_library(
      ],
      linkstatic = True,
      alwayslink = True,
@@ -742,7 +766,7 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
  )
  
  cc_library(
-@@ -3076,6 +3093,7 @@
+@@ -3102,6 +3119,7 @@ cc_library(
      ],
      linkstatic = True,
      alwayslink = True,
@@ -751,9 +775,10 @@ diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3r
  
  cc_library(
 diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
+index 8a53081..1841a6f 100644
 --- a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
 +++ b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
-@@ -36,13 +36,17 @@
+@@ -37,13 +37,17 @@ filegroup(
  
  cc_library(
      name = "headers",
@@ -778,7 +803,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
      visibility = ["//visibility:public"],
  )
  
-@@ -86,10 +90,8 @@
+@@ -87,10 +91,8 @@ cc_library(
      ] + [
          # LIBCXXABI_ENABLE_THREADS
          "src/cxa_thread_atexit.cpp",
@@ -791,7 +816,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
      copts = [
          "-std=c++23",
          "-fstrict-aliasing",
-@@ -117,48 +119,30 @@
+@@ -121,48 +123,30 @@ cc_library(
          "//conditions:default": [],
      }),
      implementation_deps = [
@@ -802,7 +827,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
          # On ARM EHABI targets, this pulls in unwind_arm_ehabi.h which declares
          # __gnu_unwind_frame used by cxa_personality.cpp.
          "@llvm-project//libunwind:headers",
-     ] + select({
+-    ] + select({
 -        "@platforms//os:macos": [],
 -        "@platforms//os:windows": [],
 -        "@platforms//os:linux": [
@@ -815,7 +840,7 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
 -        # See project hand-in-hand.
 -        # https://discourse.llvm.org/t/rfc-project-hand-in-hand-llvm-libc-libc-code-sharing/77701
 -        "@llvm-project//libc:libc_headers",
--    ] + select({
+     ] + select({
          "@llvm//platforms/config:musl": [
              "@musl_libc//:musl_libc_headers",
          ],
@@ -852,77 +877,42 @@ diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_pa
  
  cc_runtime_stage0_static_library(
 diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/bootstrap_binary.bzl
+index ce94927..26a93a7 100644
 --- a/toolchain/bootstrap/bootstrap_binary.bzl
 +++ b/toolchain/bootstrap/bootstrap_binary.bzl
-@@ -42,2 +42,5 @@
+@@ -40,6 +40,9 @@ def _bootstrap_transition_impl(settings, attr):
+         "//command_line_option:features": _append_unique(features, _LLVM_TOOL_FEATURES + ["thin_lto"]) if source_backed else features,
+         "//command_line_option:fdo_profile": fdo_profile,
          "@llvm-project//llvm:driver-tools": LLVM_TOOLS,
 +        # Compiler capabilities must not inherit the application LLVM settings.
 +        "@llvm-project//third-party:llvm_enable_zlib": True,
 +        "@llvm-project//third-party:llvm_enable_zstd": True,
      }
-@@ -70,2 +73,4 @@
+ 
+     disable_sanitizers(transition_settings)
+@@ -68,6 +71,8 @@ bootstrap_transition = transition(
+         "//toolchain:runtime_stage",
+         "//toolchain:bootstrap_stage",
          "@llvm-project//llvm:driver-tools",
 +        "@llvm-project//third-party:llvm_enable_zlib",
 +        "@llvm-project//third-party:llvm_enable_zstd",
      ] + SANITIZER_FLAGS,
-diff --git a/toolchain/args/BUILD.bazel b/toolchain/args/BUILD.bazel
---- a/toolchain/args/BUILD.bazel
-+++ b/toolchain/args/BUILD.bazel
-@@ -926,5 +926,6 @@
- cc_args(
-     name = "hermetic_compile_flags",
-+    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
-     actions = [
-         "@rules_cc//cc/toolchains/actions:clif_match",
-         "@rules_cc//cc/toolchains/actions:cpp_compile",
-diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
---- a/toolchain/args/linux/BUILD.bazel
-+++ b/toolchain/args/linux/BUILD.bazel
-@@ -32,5 +32,6 @@
- cc_args(
-     name = "kernel_headers_include_search_paths",
-+    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
-     actions = [
-         "//toolchain:source_compile_actions",
-     ],
-@@ -53,5 +54,6 @@
- cc_args(
-     name = "glibc_headers_include_search_paths",
-+    requires_any_of = ["//toolchain/features:llvm_system_c_headers"],
-     actions = [
-         "//toolchain:source_compile_actions",
-     ],
-diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_stage0_object.bzl
---- a/toolchain/runtimes/cc_stage0_object.bzl
-+++ b/toolchain/runtimes/cc_stage0_object.bzl
-@@ -6,6 +6,9 @@
- bootstrap_transition = transition(
-     implementation = lambda settings, attr: {
-         # we are compiling runtimes without any kind of other dependencies
-+        # Compiler-rt startup objects must not inherit application C flags.
-+        "//command_line_option:copt": [],
-+        "//command_line_option:conlyopt": [],
-         "//toolchain:runtime_stage": "stage0",
-         # Stage0 objects must never be built with sanitizers enabled.
-         "//config:asan": False,
-@@ -36,6 +39,8 @@
-     },
-     inputs = [],
-     outputs = [
-+        "//command_line_option:copt",
-+        "//command_line_option:conlyopt",
-         "//toolchain:runtime_stage",
-         "//config:asan",
-         "//config:msan",
+ )
+ 
 diff --git a/runtimes/glibc/extension/glibc-headers.BUILD.bazel b/runtimes/glibc/extension/glibc-headers.BUILD.bazel
+index af71d17..8df7f56 100644
 --- a/runtimes/glibc/extension/glibc-headers.BUILD.bazel
 +++ b/runtimes/glibc/extension/glibc-headers.BUILD.bazel
-@@ -3,12 +3,17 @@
+@@ -3,7 +3,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
  
  cc_library(
      name = "gnu_libc_headers",
 -    hdrs = ["include"],
 +    hdrs = glob(["include/**/*.h"]),
+     # Stage 0 runtime libraries consume this CcInfo directly rather than the
+     # final toolchain's glibc_headers_include_search_paths argument set.
+     defines = select({
+@@ -17,8 +17,13 @@ cc_library(
      # user code should always get glibc headers as -isystem
      # but it seems glibc itself includes as <...>
      features = ["system_include_paths"],
@@ -938,9 +928,10 @@ diff --git a/runtimes/glibc/extension/glibc-headers.BUILD.bazel b/runtimes/glibc
  
  headers_directory(
 diff --git a/kernel/extension/kernel-headers.BUILD.bazel b/kernel/extension/kernel-headers.BUILD.bazel
+index 52137ff..3360993 100644
 --- a/kernel/extension/kernel-headers.BUILD.bazel
 +++ b/kernel/extension/kernel-headers.BUILD.bazel
-@@ -3,10 +3,13 @@
+@@ -3,10 +3,13 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
  
  cc_library(
      name = "kernel_headers",
@@ -956,182 +947,11 @@ diff --git a/kernel/extension/kernel-headers.BUILD.bazel b/kernel/extension/kern
      visibility = ["//visibility:public"],
  )
  
-diff --git a/toolchain/BUILD.bazel b/toolchain/BUILD.bazel
---- a/toolchain/BUILD.bazel
-+++ b/toolchain/BUILD.bazel
-@@ -8,6 +8,14 @@
- load(":declare_toolchains.bzl", "declare_toolchains")
- 
- package(default_visibility = ["//toolchain:__subpackages__"])
-+
-+# Extra target sysroot files, separate from compiler and runtime construction.
-+label_flag(
-+    name = "sysroot_compile_files",
-+    build_setting_default = "//runtimes:none",
-+    scope = "universal",
-+    visibility = ["//visibility:public"],
-+)
- 
- # TODO(cerisier): Find a better name ?
- # This should be the semantic for "what are we building ?"
-@@ -304,6 +312,7 @@
-         "//platforms/config:gnu": [
-             "//toolchain/args/linux:kernel_headers_include_search_paths",
-             "//toolchain/args/linux:glibc_headers_include_search_paths",
-+            "//toolchain/args/linux:sysroot_compile_files",
-         ],
-         "//conditions:default": [],
-     }) + select({
-diff --git a/toolchain/args/linux/BUILD.bazel b/toolchain/args/linux/BUILD.bazel
---- a/toolchain/args/linux/BUILD.bazel
-+++ b/toolchain/args/linux/BUILD.bazel
-@@ -4,6 +4,20 @@
- 
- # Extracted from rules_cc unix_cc_configure.bzl
- # TODO(cerisier): Extract those into proper semantic args list.
-+# Sysroot files follow the target CPU; LLVM tool binaries follow the exec CPU.
-+cc_args(
-+    name = "sysroot_compile_files",
-+    actions = [
-+        "//toolchain:source_compile_actions",
-+        "@rules_cc//cc/toolchains/actions:assembly_actions",
-+    ],
-+    data = select({
-+        "@platforms//cpu:x86_64": ["//toolchain:sysroot_compile_files"],
-+        "@platforms//cpu:aarch64": ["//toolchain:sysroot_compile_files"],
-+        "//conditions:default": [],
-+    }),
-+)
-+
- cc_args(
-     name = "default_link_flags",
-     actions = [
-diff --git a/toolchain/bootstrap/bootstrap_binary.bzl b/toolchain/bootstrap/bootstrap_binary.bzl
---- a/toolchain/bootstrap/bootstrap_binary.bzl
-+++ b/toolchain/bootstrap/bootstrap_binary.bzl
-@@ -33,6 +33,7 @@
-         bootstrap_stage = "stage0_prebuilt_seed"
- 
-     transition_settings = {
-+        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
-         # we are compiling final programs, so we want all runtimes.
-         "//toolchain:runtime_stage": "complete",
-         "//toolchain:bootstrap_stage": bootstrap_stage,
-@@ -64,6 +65,7 @@
-         "//command_line_option:platforms",
-     ],
-     outputs = [
-+        "//toolchain:sysroot_compile_files",
-         "//command_line_option:compilation_mode",
-         "//command_line_option:fdo_profile",
-         "//command_line_option:features",
-diff --git a/toolchain/bootstrap/fdo_profile.bzl b/toolchain/bootstrap/fdo_profile.bzl
---- a/toolchain/bootstrap/fdo_profile.bzl
-+++ b/toolchain/bootstrap/fdo_profile.bzl
-@@ -49,6 +49,7 @@
- 
- def _profile_generation_transition_impl(_settings, attr):
-     transition_settings = {
-+        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
-         "//command_line_option:fdo_profile": None,
-         "//command_line_option:platforms": str(attr.target_platform),
-         "//toolchain:runtime_stage": "complete",
-@@ -64,6 +65,7 @@
-     implementation = _profile_generation_transition_impl,
-     inputs = [],
-     outputs = [
-+        "//toolchain:sysroot_compile_files",
-         "//command_line_option:fdo_profile",
-         "//command_line_option:platforms",
-         "//toolchain:runtime_stage",
-@@ -74,6 +76,7 @@
- 
- def _profile_merge_transition_impl(_settings, _attr):
-     return {
-+        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
-         "//command_line_option:fdo_profile": None,
-         "//toolchain:bootstrap_stage": "stage1_from_source",
-     }
-@@ -82,6 +85,7 @@
-     implementation = _profile_merge_transition_impl,
-     inputs = [],
-     outputs = [
-+        "//toolchain:sysroot_compile_files",
-         "//command_line_option:fdo_profile",
-         "//toolchain:bootstrap_stage",
-     ],
-diff --git a/toolchain/runtimes/cc_unsanitized_library.bzl b/toolchain/runtimes/cc_unsanitized_library.bzl
---- a/toolchain/runtimes/cc_unsanitized_library.bzl
-+++ b/toolchain/runtimes/cc_unsanitized_library.bzl
-@@ -4,6 +4,7 @@
- 
- def _reset_sanitizers_impl(settings, attr):
-     return {
-+        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
-         "//command_line_option:copt": settings["//command_line_option:copt"] + attr.copts,
-         "//command_line_option:cxxopt": settings["//command_line_option:cxxopt"] + attr.cxxopts,
-         "//command_line_option:platforms": str(attr.platform) if attr.platform else settings["//command_line_option:platforms"],
-@@ -47,6 +48,7 @@
-         "@llvm-project//third-party:llvm_enable_zstd",
-     ],
-     outputs = [
-+        "//toolchain:sysroot_compile_files",
-         "//command_line_option:copt",
-         "//command_line_option:cxxopt",
-         "//command_line_option:platforms",
-diff --git a/toolchain/runtimes/cc_internal_symbolizer_object.bzl b/toolchain/runtimes/cc_internal_symbolizer_object.bzl
---- a/toolchain/runtimes/cc_internal_symbolizer_object.bzl
-+++ b/toolchain/runtimes/cc_internal_symbolizer_object.bzl
-@@ -5,6 +5,7 @@
- 
- def _internal_symbolizer_libcxx_transition_impl(settings, attr):
-     return {
-+        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
-         "//command_line_option:copt": settings["//command_line_option:copt"] + attr.copts,
-         "//command_line_option:cxxopt": settings["//command_line_option:cxxopt"] + attr.cxxopts,
-         "//command_line_option:platforms": str(attr.platform),
-@@ -18,6 +19,7 @@
-         "//command_line_option:platforms",
-     ],
-     outputs = [
-+        "//toolchain:sysroot_compile_files",
-         "//command_line_option:copt",
-         "//command_line_option:cxxopt",
-         "//command_line_option:platforms",
-diff --git a/toolchain/runtimes/cc_stage0_object.bzl b/toolchain/runtimes/cc_stage0_object.bzl
---- a/toolchain/runtimes/cc_stage0_object.bzl
-+++ b/toolchain/runtimes/cc_stage0_object.bzl
-@@ -5,6 +5,7 @@
- #TODO(cerisier): use a single shared transition
- bootstrap_transition = transition(
-     implementation = lambda settings, attr: {
-+        "//toolchain:sysroot_compile_files": str(Label("//runtimes:none")),
-         # we are compiling runtimes without any kind of other dependencies
-         # Compiler-rt startup objects must not inherit application C flags.
-         "//command_line_option:copt": [],
-@@ -38,6 +39,7 @@
-     },
-     inputs = [],
-     outputs = [
-+        "//toolchain:sysroot_compile_files",
-         "//command_line_option:copt",
-         "//command_line_option:conlyopt",
-         "//toolchain:runtime_stage",
-diff --git a/toolchain/runtimes/with_cfg_runtimes_common.bzl b/toolchain/runtimes/with_cfg_runtimes_common.bzl
---- a/toolchain/runtimes/with_cfg_runtimes_common.bzl
-+++ b/toolchain/runtimes/with_cfg_runtimes_common.bzl
-@@ -3,6 +3,7 @@
-     # a specific set of flags and compilation mode. It is not safe to let the user
-     # interfere with them using default command line flags.
-     # TODO: Expose a build setting to extend those flags.
-+    builder.set(Label("//toolchain:sysroot_compile_files"), str(Label("//runtimes:none")))
-     builder.set("copt", [])
-     builder.set("cxxopt", [])
-     builder.set("conlyopt", [])
 diff --git a/private/llvm_project_archive.bzl b/private/llvm_project_archive.bzl
+index 0620a6e..0151439 100644
 --- a/private/llvm_project_archive.bzl
 +++ b/private/llvm_project_archive.bzl
-@@ -12,16 +12,7 @@
+@@ -12,16 +12,7 @@ load(
      "update_attrs",
  )
  load("//:http_bsdtar_archive.bzl", "download_remote_files")
@@ -1146,13 +966,13 @@ diff --git a/private/llvm_project_archive.bzl b/private/llvm_project_archive.bzl
 -    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
 -}
 +load(":llvm_project_common.bzl", "LLVM_PROJECT_OVERLAY", "LLVM_PROJECT_OVERLAY_FILES", "copy_llvm_project_files", "write_llvm_project_files")
-
+ 
  def _default_excludes():
      excludes = [
-@@ -133,15 +124,6 @@
+@@ -133,15 +124,6 @@ def _extract_source_and_overlay(rctx, archive):
          overlay_prefix.count("/") + 1,
      )
-
+ 
 -def _copy_files(rctx):
 -    files = dict(rctx.attr.overlay_files)
 -    files.update(rctx.attr.files)
@@ -1165,16 +985,16 @@ diff --git a/private/llvm_project_archive.bzl b/private/llvm_project_archive.bzl
  def _update_integrity_attrs(rctx, archive_info, remote_files_info, remote_patches_info):
      overrides = {}
      if not rctx.attr.sha256 and not rctx.attr.integrity:
-@@ -179,7 +161,7 @@
-
+@@ -179,7 +161,7 @@ def _llvm_project_archive_impl(rctx):
+ 
      remote_files_info = download_remote_files(rctx)
      remote_patches_info = patch(rctx)
 -    _copy_files(rctx)
 +    copy_llvm_project_files(rctx)
      write_llvm_project_files(rctx)
-
+ 
      return _update_integrity_attrs(rctx, archive_info, remote_files_info, remote_patches_info)
-@@ -194,7 +176,7 @@
+@@ -194,7 +176,7 @@ _llvm_project_archive_attrs = {
      "canonical_id": attr.string(),
      "strip_prefix": attr.string(),
      "files": attr.string_keyed_label_dict(default = {}),
@@ -1183,38 +1003,11 @@ diff --git a/private/llvm_project_archive.bzl b/private/llvm_project_archive.bzl
      "type": attr.string(),
      "patches": attr.label_list(default = []),
      "remote_file_urls": attr.string_list_dict(default = {}),
-diff --git a/private/llvm_project_common.bzl b/private/llvm_project_common.bzl
---- a/private/llvm_project_common.bzl
-+++ b/private/llvm_project_common.bzl
-@@ -1,6 +1,24 @@
- LLVM_PROJECT_OVERLAY = "utils/bazel/llvm-project-overlay"
-
- _MAX_OVERLAY_DIRECTORIES = 1000000
-+
-+LLVM_PROJECT_OVERLAY_FILES = {
-+    "compiler-rt/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/compiler-rt:compiler-rt.BUILD.bazel"),
-+    "libc/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libc:libc.BUILD.bazel"),
-+    "libcxx/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxx:libcxx.BUILD.bazel"),
-+    "libcxxabi/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libcxxabi:libcxxabi.BUILD.bazel"),
-+    "libunwind/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/libunwind:libunwind.BUILD.bazel"),
-+    "openmp/BUILD.bazel": Label("//3rd_party/llvm-project/x.x/openmp:openmp.BUILD.bazel"),
-+}
-+
-+def copy_llvm_project_files(rctx):
-+    files = dict(rctx.attr.overlay_files)
-+    files.update(rctx.attr.files)
-+    for path, label in files.items():
-+        source = rctx.path(label)
-+        if not source.exists:
-+            fail("Input {} does not exist".format(label))
-+        rctx.file(path, rctx.read(source), executable = False)
-
- def _extract_cmake_settings(rctx, path):
-     settings = {
 diff --git a/private/llvm_project_from_git.bzl b/private/llvm_project_from_git.bzl
+index 4509837..69e318e 100644
 --- a/private/llvm_project_from_git.bzl
 +++ b/private/llvm_project_from_git.bzl
-@@ -3,6 +3,9 @@
+@@ -3,6 +3,9 @@ load("@bazel_tools//tools/build_defs/repo:git_worker.bzl", "git_repo")
  load("@bazel_tools//tools/build_defs/repo:utils.bzl", "patch")
  load(
      ":llvm_project_common.bzl",
@@ -1224,24 +1017,24 @@ diff --git a/private/llvm_project_from_git.bzl b/private/llvm_project_from_git.b
      "copy_overlay",
      "write_llvm_project_files",
  )
-@@ -23,12 +26,14 @@
+@@ -23,12 +26,14 @@ def _llvm_project_from_git_impl(rctx):
          for entry in source_root.readdir():
              rctx.symlink(entry, entry.basename)
-
-+    copy_overlay(rctx, source_root)
+ 
+-    patch(rctx)
+     copy_overlay(rctx, source_root)
 +    rctx.delete(source_root.get_child(LLVM_PROJECT_OVERLAY))
-     patch(rctx)
--    copy_overlay(rctx, source_root)
++    patch(rctx)
 +    copy_llvm_project_files(rctx)
      rctx.delete(git_root.get_child(".git"))
      write_llvm_project_files(rctx)
-
+ 
 -    return rctx.repo_metadata(reproducible = False)
 +    return rctx.repo_metadata(reproducible = bool(rctx.attr.commit))
-
+ 
  llvm_project_from_git = repository_rule(
      implementation = _llvm_project_from_git_impl,
-@@ -41,6 +46,9 @@
+@@ -41,6 +46,9 @@ llvm_project_from_git = repository_rule(
          "init_submodules": attr.bool(default = False),
          "recursive_init_submodules": attr.bool(default = False),
          "strip_prefix": attr.string(),
@@ -1252,9 +1045,10 @@ diff --git a/private/llvm_project_from_git.bzl b/private/llvm_project_from_git.b
          "patch_args": attr.string_list(default = []),
          "patch_cmds": attr.string_list(default = []),
 diff --git a/extensions/llvm.bzl b/extensions/llvm.bzl
+index 3e2f3a2..65907f9 100644
 --- a/extensions/llvm.bzl
 +++ b/extensions/llvm.bzl
-@@ -265,6 +265,8 @@
+@@ -268,6 +268,8 @@ _from_git_tag = tag_class(
          "init_submodules": attr.bool(default = False),
          "recursive_init_submodules": attr.bool(default = False),
          "strip_prefix": attr.string(default = ""),
@@ -1263,3 +1057,181 @@ diff --git a/extensions/llvm.bzl b/extensions/llvm.bzl
          "patches": attr.label_list(default = []),
          "patch_args": attr.string_list(default = ["-p0"]),
          "patch_cmds": attr.string_list(default = []),
+diff --git a/kernel/extension/BUILD.bazel b/kernel/extension/BUILD.bazel
+index 9cc966e..0183e8c 100644
+--- a/kernel/extension/BUILD.bazel
++++ b/kernel/extension/BUILD.bazel
+@@ -10,6 +10,7 @@ bzl_library(
+     srcs = ["kernel_headers.bzl"],
+     visibility = ["//visibility:public"],
+     deps = [
++        "//private:header_archive_patches",
+         "@bazel_features//:features",
+         "@bazel_tools//tools/build_defs/repo:cache.bzl",
+         "@bazel_tools//tools/build_defs/repo:http.bzl",
+diff --git a/kernel/extension/kernel_headers.bzl b/kernel/extension/kernel_headers.bzl
+index 402cde8..37bfaa3 100644
+--- a/kernel/extension/kernel_headers.bzl
++++ b/kernel/extension/kernel_headers.bzl
+@@ -1,5 +1,6 @@
+ load("@bazel_features//:features.bzl", "bazel_features")
+ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
++load("//private:header_archive_patches.bzl", "header_archive_patches", "header_patch")
+ 
+ def _kernel_headers_trampoline_repository_impl(repository_ctx):
+     repository_ctx.template("BUILD.bazel", repository_ctx.attr._build_file)
+@@ -84,6 +85,7 @@ def _linux_kernel_version_map_content(decoded_index):
+ def _kernel_headers_impl(module_ctx):
+     """Kernel headers extension."""
+ 
++    patches = header_archive_patches(module_ctx)
+     decoded_index = {}
+     for mod in module_ctx.modules:
+         for index_tag in mod.tags.index:
+@@ -102,8 +104,12 @@ def _kernel_headers_impl(module_ctx):
+                 sha256 = index_entry.get("sha256"),
+                 strip_prefix = kernel_arch,
+                 build_file = ":kernel-headers.BUILD.bazel",
++                **patches.pop(repo, {})
+             )
+ 
++    if patches:
++        fail("Unknown header archives: " + ", ".join(sorted(patches)))
++
+     _kernel_headers_trampoline_repository(
+         name = "kernel_headers",
+         version_map = _linux_kernel_version_map_content(decoded_index),
+@@ -137,6 +143,7 @@ kernel_headers_index = tag_class(
+ kernel_headers = module_extension(
+     implementation = _kernel_headers_impl,
+     tag_classes = {
++        "patch": header_patch,
+         "index": kernel_headers_index,
+     },
+ )
+diff --git a/private/BUILD.bazel b/private/BUILD.bazel
+index 4e70eeb..8452313 100644
+--- a/private/BUILD.bazel
++++ b/private/BUILD.bazel
+@@ -1,5 +1,11 @@
+ load("@bazel_lib//:bzl_library.bzl", "bzl_library")
+ 
++bzl_library(
++    name = "header_archive_patches",
++    srcs = ["header_archive_patches.bzl"],
++    visibility = ["//:__subpackages__"],
++)
++
+ bzl_library(
+     name = "llvm_project_common",
+     srcs = ["llvm_project_common.bzl"],
+diff --git a/private/header_archive_patches.bzl b/private/header_archive_patches.bzl
+new file mode 100644
+index 0000000..3ff843e
+--- /dev/null
++++ b/private/header_archive_patches.bzl
+@@ -0,0 +1,23 @@
++"""Patches to the headers installed for one glibc or Linux release."""
++
++header_patch = tag_class(
++    attrs = {
++        "patches": attr.label_list(mandatory = True, doc = "Patches applied with -p1."),
++        "repository": attr.string(mandatory = True, doc = "The generated header archive to patch."),
++    },
++)
++
++def header_archive_patches(module_ctx):
++    """Collect the root module's patches by generated header archive."""
++    result = {}
++    for mod in module_ctx.modules:
++        for tag in mod.tags.patch:
++            if not mod.is_root:
++                fail("Only the root module can patch installed headers")
++            if tag.repository in result:
++                fail("Duplicate header archive: " + tag.repository)
++            result[tag.repository] = {
++                "patch_strip": 1,
++                "patches": tag.patches,
++            }
++    return result
+diff --git a/runtimes/glibc/extension/BUILD.bazel b/runtimes/glibc/extension/BUILD.bazel
+index 9a124bc..6853894 100644
+--- a/runtimes/glibc/extension/BUILD.bazel
++++ b/runtimes/glibc/extension/BUILD.bazel
+@@ -12,6 +12,7 @@ bzl_library(
+     deps = [
+         "//constraints/libc:libc_versions",
+         "//platforms:common",
++        "//private:header_archive_patches",
+         "@bazel_features//:features",
+         "@bazel_tools//tools/build_defs/repo:cache.bzl",
+         "@bazel_tools//tools/build_defs/repo:http.bzl",
+diff --git a/runtimes/glibc/extension/glibc.bzl b/runtimes/glibc/extension/glibc.bzl
+index 697fa0a..3c08a22 100644
+--- a/runtimes/glibc/extension/glibc.bzl
++++ b/runtimes/glibc/extension/glibc.bzl
+@@ -2,6 +2,7 @@ load("@bazel_features//:features.bzl", "bazel_features")
+ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+ load("//constraints/libc:libc_versions.bzl", "GLIBC_VERSIONS", "glibc_supported")
+ load("//platforms:common.bzl", "LIBC_SUPPORTED_TARGETS")
++load("//private:header_archive_patches.bzl", "header_archive_patches", "header_patch")
+ 
+ # glibc's source/header triples do not always match our (os, arch) names.
+ # For arches whose canonical glibc triple differs, list the override here.
+@@ -115,6 +116,7 @@ _glibc_trampoline_repository = repository_rule(
+ def _glibc_impl(module_ctx):
+     """glibc sources and headers extension."""
+ 
++    patches = header_archive_patches(module_ctx)
+     index = {}
+     for mod in module_ctx.modules:
+         for index in mod.tags.index:
+@@ -174,8 +176,12 @@ def _glibc_impl(module_ctx):
+                 sha256 = index_entry.get("sha256"),
+                 strip_prefix = target,
+                 build_file = ":glibc-headers.BUILD.bazel",
++                **patches.pop(repo, {})
+             )
+ 
++    if patches:
++        fail("Unknown header archives: " + ", ".join(sorted(patches)))
++
+     _glibc_trampoline_repository(
+         name = "glibc",
+     )
+@@ -208,6 +214,7 @@ glibc_index = tag_class(
+ glibc = module_extension(
+     implementation = _glibc_impl,
+     tag_classes = {
++        "patch": header_patch,
+         "index": glibc_index,
+     },
+ )
+diff --git a/toolchain/BUILD.bazel b/toolchain/BUILD.bazel
+index 9d2fa99..cd0b697 100644
+--- a/toolchain/BUILD.bazel
++++ b/toolchain/BUILD.bazel
+@@ -237,6 +237,9 @@
+         "//conditions:default": [
+             "//toolchain/args:hermetic_compile_flags",
+         ],
++    }) + select({
++        "//constraints/libc:musl": ["//toolchain/args:clickhouse_libcxx_musl"],
++        "//conditions:default": [],
+     }),
+ )
+ 
+diff --git a/toolchain/args/BUILD.bazel b/toolchain/args/BUILD.bazel
+index d29c0aa..931280e 100644
+--- a/toolchain/args/BUILD.bazel
++++ b/toolchain/args/BUILD.bazel
+@@ -1179,3 +1179,9 @@
+     srcs = ["llvm_target_triple.bzl"],
+     deps = ["//constraints/windows/abi:abis"],
+ )
++
++cc_args(
++    name = "clickhouse_libcxx_musl",
++    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
++    args = ["-D_LIBCPP_HAS_MUSL_LIBC=1"],
++)

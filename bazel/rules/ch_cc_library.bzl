@@ -1,9 +1,7 @@
 """CMake native libraries compiled for the ClickHouse target platform."""
 
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load(":repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "repository_path")
+load(":repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps")
 
 # Public compile definitions of the ClickHouse libc++, libc++abi, and libunwind.
 CXX_RUNTIME_DEFINES = [
@@ -104,38 +102,7 @@ def ch_cc_library(
         name = name,
         hdrs = hdrs,
         copts = cpu_flags + code_flags + copts +
-                (cmake_prefix_maps(arches) if map_source_files else []) + _sysroot_copts(arches, language),
-        features = ["-fortify_source", "-default_compile_flags", "-llvm_system_c_headers"] + features,
-        **kwargs
-    )
-
-def _sysroot_copts(arches, language):
-    native_options = {"//conditions:default": []}
-    for arch in arches:
-        cpu = str(Label("@platforms//cpu:" + arch))
-        gcc_root = repository_path("contrib/sysroot") + "/linux-" + arch
-        options = [
-            "--sysroot=" + gcc_root + "/" + arch + "-linux-gnu/libc",
-            "--gcc-toolchain=" + gcc_root,
-        ]
-        if language == "CXX":
-            # GCC's sysroot must not supply a second C++ standard library.
-            options.append("-nostdinc++")
-        native_options[cpu] = options
-    return select(native_options)
-
-def ch_cc_binary(name, copts = [], **kwargs):
-    """Build a C++ tool with the same sysroot as ch_cc_library."""
-    cc_binary(
-        name = name,
-        copts = copts + _sysroot_copts(["x86_64", "aarch64"], "CXX"),
-        **kwargs
-    )
-
-def ch_cc_test(name, copts = [], **kwargs):
-    """Build a C++ test with the same sysroot as ch_cc_library."""
-    cc_test(
-        name = name,
-        copts = copts + _sysroot_copts(["x86_64", "aarch64"], "CXX"),
+                (cmake_prefix_maps(arches) if map_source_files else []),
+        features = ["-fortify_source", "-default_compile_flags"] + features,
         **kwargs
     )

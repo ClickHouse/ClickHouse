@@ -1,5 +1,6 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_TOOL_LINKOPTS", "native_cxx_tool_copts")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -39,7 +40,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
 )
 
-ch_cc_binary(
+cc_binary(
     name = "flatc",
     srcs = [
         "src/annotated_binary_text_gen.cpp",
@@ -78,7 +79,6 @@ ch_cc_binary(
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
-        "-llvm_system_c_headers",
     ],
     linkopts = NATIVE_TOOL_LINKOPTS,
     local_defines = _GENERATED_LOCAL_DEFINES_0,

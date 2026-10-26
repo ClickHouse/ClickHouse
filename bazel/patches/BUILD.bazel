@@ -1,5 +1,10 @@
 exports_files([
+    "cppkafka-error-include.patch",
     "dwyu-compiler-preprocessing.patch",
+    "glibc-2.28-aarch64-hwcap2-madvise.patch",
+    "glibc-string-cxx-prototypes.patch",
+    "linux-4.15.18-x86-seccomp-spec-allow.patch",
+    "linux-4.19.325-arm64-hwcap2-madvise.patch",
     "llvm-clickhouse-clang-tidy-multicall.patch",
     "llvm-clickhouse-embed-dependency-paths.patch",
     "llvm-clickhouse-exception-abi.patch",

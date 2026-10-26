@@ -94,7 +94,4 @@ def native_release_copts(standard = None):
 
 def native_cxx_tool_copts(standard):
     """Return the complete copts for flatc, protoc, grpc_cpp_plugin and the Parquet tools."""
-    return _NATIVE_TOOL_DRIVER_FLAGS + native_release_copts(standard) + [
-        "-Werror",
-        "-nostdinc++",
-    ] + cmake_prefix_maps(["aarch64", "x86_64"])
+    return _NATIVE_TOOL_DRIVER_FLAGS + native_release_copts(standard) + ["-Werror"] + cmake_prefix_maps(["aarch64", "x86_64"])

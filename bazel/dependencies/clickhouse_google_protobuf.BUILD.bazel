@@ -1,6 +1,7 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_TOOL_LINKOPTS", "native_cxx_tool_copts")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -842,7 +843,7 @@ cc_library(
     ],
 )
 
-ch_cc_binary(
+cc_binary(
     name = "protoc",
     srcs = [
         "src/google/protobuf/compiler/main.cc",
@@ -851,7 +852,6 @@ ch_cc_binary(
     features = [
         "-static_link_cpp_runtimes",
         "-fortify_source",
-        "-llvm_system_c_headers",
     ],
     linkopts = NATIVE_TOOL_LINKOPTS + [
         "-lpthread",

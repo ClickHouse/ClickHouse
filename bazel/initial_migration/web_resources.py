@@ -8,7 +8,7 @@ import posixpath
 from pathlib import Path
 import sys
 
-RULES = {'ch_cc_library', 'ch_cc_binary', 'ch_cc_test', 'cc_library', 'cc_binary', 'cc_test'}
+RULES = {'ch_cc_library', 'cc_library', 'cc_binary', 'cc_test'}
 CPUS = ('x86_64', 'aarch64')
 GROUP = '//bazel:web_ui_resources'
 ASSETS = '//bazel:web_ui_embedded_assets'
