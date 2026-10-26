@@ -94,6 +94,15 @@ struct QueryConsumedObjectSets
     /// Whether any read of `table_uuid` in this query pruned the object set.
     bool isPruned(const UUID & table_uuid) const;
 
+    /// Called by the planner when the analyzed query evaluates a function that is not deterministic only
+    /// after its overload is resolved, which the check of the query text cannot see: an aggregate function
+    /// such as `groupArraySample` without a seed, or `arrayReduce` of such an aggregate. The result can
+    /// then change while every table it reads stays the same, so `computeQueryReferencedTablesModificationHash`
+    /// fails closed for the rest of the query, and the result is neither cached nor certified at finalization.
+    void markNonDeterministic();
+
+    bool isNonDeterministic() const;
+
     /// The objects consumed for `table_uuid`, or nullopt if no read of it installed a capture (e.g. the
     /// table was not read, or this is the pre-read check that runs before the plan was built). A read
     /// that consumed no object returns an empty set, not nullopt - see `beginCapture`.
@@ -109,6 +118,7 @@ private:
     /// One consumed set per read of the table, in the order the reads installed their capture.
     std::map<UUID, std::vector<ObjectSet>> objects_by_table;
     std::set<UUID> pruned_tables;
+    bool non_deterministic = false;
 };
 
 using QueryConsumedObjectSetsPtr = std::shared_ptr<QueryConsumedObjectSets>;

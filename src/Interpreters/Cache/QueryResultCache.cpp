@@ -7,6 +7,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/misc.h>
@@ -972,6 +973,12 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     /// divergence as above - a cache entry created outside a transaction could be served to a query that
     /// would have read a different snapshot - so fail closed as if the transaction had already begun.
     if (context->getSettingsRef()[Setting::implicit_transaction])
+        return {};
+
+    /// The planner found a function in the analyzed query whose result can change while every referenced
+    /// table stays the same (see `QueryConsumedObjectSets::markNonDeterministic`). This makes the check at
+    /// finalization fail, so the result is not stored.
+    if (auto consumed_object_sets = context->getQueryConsumedObjectSets(); consumed_object_sets && consumed_object_sets->isNonDeterministic())
         return {};
 
     /// Only the `additional_table_filters` entries that can apply to a table the query reads take part,

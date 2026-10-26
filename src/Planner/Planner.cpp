@@ -2476,6 +2476,31 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 {
 }
 
+/// Whether the analyzed query evaluates an ordinary, aggregate or window function that is not deterministic.
+static bool queryTreeHasNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+        if (auto aggregate_function = function_node->getAggregateFunction(); aggregate_function && !aggregate_function->isDeterministic())
+            return true;
+    }
+    else if (const auto * constant_node = node->as<ConstantNode>(); constant_node && !constant_node->isDeterministic())
+    {
+        return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (queryTreeHasNonDeterministicFunction(child))
+            return true;
+
+    return false;
+}
+
 void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
@@ -2502,6 +2527,14 @@ void Planner::buildQueryPlanIfNeeded()
         buildPlanForUnionNode();
     else
         buildPlanForQueryNode();
+
+    /// The consistency check of the query result cache (or of `REFRESH ... IF CHANGED`) looks for
+    /// non-deterministic functions in the query text, where the determinism of some functions is not known
+    /// yet: `groupArraySample(1)(x)` or `arrayReduce('groupArraySample(1)', ...)` are deterministic only with
+    /// a seed. Check the resolved functions, after a subquery-level cache may have installed the capture.
+    if (auto consumed_object_sets = planner_context->getQueryContext()->getQueryConsumedObjectSets();
+        consumed_object_sets && queryTreeHasNonDeterministicFunction(query_tree))
+        consumed_object_sets->markNonDeterministic();
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }

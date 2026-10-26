@@ -32,6 +32,18 @@ bool QueryConsumedObjectSets::isPruned(const UUID & table_uuid) const
     return pruned_tables.contains(table_uuid);
 }
 
+void QueryConsumedObjectSets::markNonDeterministic()
+{
+    std::lock_guard lock(mutex);
+    non_deterministic = true;
+}
+
+bool QueryConsumedObjectSets::isNonDeterministic() const
+{
+    std::lock_guard lock(mutex);
+    return non_deterministic;
+}
+
 std::optional<QueryConsumedObjectSets::ConsumedObjects> QueryConsumedObjectSets::get(const UUID & table_uuid) const
 {
     std::vector<ObjectSet> reads;
