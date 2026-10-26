@@ -103,18 +103,20 @@ SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
 
 SELECT '11. An ALIAS column hiding a privileged function is denied.';
 
--- The stored transform is the expanded alias, so that is what has to be authorized.
+-- Its own table: a column may carry only one text index, and that is checked before permissions are.
 SET allow_introspection_functions = 1;
-ALTER TABLE tab ADD COLUMN mangled String ALIAS demangle(val2);
+CREATE TABLE tab_alias (id UInt64, val String, mangled String ALIAS demangle(val)) ENGINE = MergeTree ORDER BY id;
 SET allow_introspection_functions = 0;
 
-ALTER TABLE tab ADD INDEX idx_alias(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+ALTER TABLE tab_alias ADD INDEX idx_alias(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '12. So is an alias renamed by an earlier command of the same ALTER.';
 
--- The rename is applied before the index is added, so `renamed` is what expands to `demangle(val2)`.
-ALTER TABLE tab RENAME COLUMN mangled TO renamed,
-                ADD INDEX idx_renamed(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+-- The rename is applied before the index is added, so `renamed` is what expands to `demangle(val)`.
+ALTER TABLE tab_alias RENAME COLUMN mangled TO renamed,
+                      ADD INDEX idx_renamed(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
+DROP TABLE tab_alias;
 
 SELECT '13. Redeclaring with a privileged function is denied.';
 
