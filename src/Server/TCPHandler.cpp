@@ -953,16 +953,24 @@ void TCPHandler::runImpl()
                 query_state->query_context->setInteractiveCancelCallback(
                     [this, &query_state]()
                     {
-                        std::lock_guard lock(*callback_mutex);
+                        try
+                        {
+                            std::lock_guard lock(*callback_mutex);
 
-                        if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
-                            receivePacketsExpectCancel(*query_state);
+                            if (!query_state->need_receive_data_for_input && !query_state->need_receive_data_for_insert)
+                                receivePacketsExpectCancel(*query_state);
 
-                        if (query_state->stop_read_return_partial_result)
-                            return true;
+                            if (query_state->stop_read_return_partial_result)
+                                return true;
 
-                        sendInteractiveUpdates(*query_state);
-                        return false;
+                            sendInteractiveUpdates(*query_state);
+                            return false;
+                        }
+                        catch (...)
+                        {
+                            killQueryIfStoppedByClient(*query_state);
+                            throw;
+                        }
                     });
             }
 
@@ -1005,15 +1013,7 @@ void TCPHandler::runImpl()
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
                     }
 
-                    try
-                    {
-                        executor.execute();
-                    }
-                    catch (...)
-                    {
-                        killQueryIfStoppedByClient(*query_state);
-                        throw;
-                    }
+                    executor.execute();
                 }
 
                 query_state->io.onFinish();

@@ -55,4 +55,18 @@ wait_for_query "query_id = '$query_id'"
 kill -INT $client_pid
 wait_until_gone "insert select" "query_id = '$query_id'"
 
+# A completed pipeline that runs inside the query: CREATE TABLE ... AS SELECT in an Atomic database fills the table
+# before publishing it. The database is created here, so that a Replicated one does not replay the query under another query id.
+ctas_database="${CLICKHOUSE_DATABASE}_ctas"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE $ctas_database ENGINE = Atomic"
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_ctas"
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "
+    CREATE TABLE $ctas_database.t ENGINE = Memory AS SELECT sleepEachRow(3) AS x FROM numbers(100)
+    SETTINGS $settings" >/dev/null 2>&1 &
+client_pid=$!
+wait_for_query "query_id = '$query_id'"
+kill -INT $client_pid
+wait_until_gone "create as select" "query_id = '$query_id'"
+
 wait
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $ctas_database"

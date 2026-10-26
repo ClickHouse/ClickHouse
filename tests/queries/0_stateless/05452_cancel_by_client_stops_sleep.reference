@@ -1,2 +1,3 @@
 remote: stopped
 insert select: stopped
+create as select: stopped
