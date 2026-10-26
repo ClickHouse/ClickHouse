@@ -176,8 +176,19 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     /// `_path` is materialized by the worker that reads the file, and its value depends on the configuration of that
     /// worker: the root of a plain local `user_files_policy` disk, a disk-relative path on other disks, or the absolute
     /// path without a policy. This server cannot know it, so the files are not filtered here by a predicate on `_path`:
-    /// the workers materialize `_path` and the query filters by it. Other predicates, e.g. on `_file`, still prune.
-    const bool path_depends_on_server = predicate && predicateUsesColumn(predicate, "_path");
+    /// the workers materialize `_path` and the query filters by it. The same holds for the Hive partition columns,
+    /// which are parsed from the path the worker sees: with a `user_files_policy` volume it is the path sent below,
+    /// resolved against the root of the disk of the worker, which can contain other `key=value` directories than the
+    /// root of this server. Without a policy the worker sees the same absolute path as this server, so the Hive
+    /// partition columns still prune then. Other predicates, e.g. on `_file`, still prune too.
+    bool path_depends_on_server = false;
+    if (predicate)
+    {
+        path_depends_on_server = predicateUsesColumn(predicate, "_path");
+        if (user_files_volume)
+            for (const auto & hive_column : hive_partition_columns_to_read_from_file_path)
+                path_depends_on_server = path_depends_on_server || predicateUsesColumn(predicate, hive_column.name);
+    }
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, path_depends_on_server ? nullptr : predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
         /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, user_files_volume);
     auto next_callback = [iter = std::move(iterator), volume = user_files_volume](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
