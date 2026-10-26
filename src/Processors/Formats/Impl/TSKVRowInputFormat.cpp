@@ -333,10 +333,9 @@ static void transformIPTypes(DataTypes & data_types, TypeIndexesSet & type_index
         {
             if (isIPv4(type) || isIPv6(type))
                 type = std::make_shared<DataTypeString>();
-            else if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+            else if (typeid_cast<const DataTypeVariant *>(type.get()) && hasIPType(type))
             {
-                if (hasIPType(type))
-                    type = replaceIPTypesWithString(type);
+                type = replaceIPTypesWithString(type);
             }
         }
         type_indexes.erase(TypeIndex::IPv4);
