@@ -155,12 +155,25 @@ MergeTreeDataPartChecksum recompressBinFile(
     UInt64 source_position = 0;
     UInt64 new_position = 0;
 
+    /// A source block may be larger than a block the current writer produces (older writers did not
+    /// cap the compressed block size), and with a weaker codec its compressed size could exceed the
+    /// limit of the reader. Split such blocks into chunks of whole values bounded by the size limit of
+    /// the writer; the marks are remapped through positions, so changed block boundaries are fine.
+    const size_t max_block_size = std::max(
+        value_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE - MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE % value_size);
+
     auto emit_block = [&](const char * data, size_t size)
     {
-        positions.new_block_starts.emplace_back(new_position, bin_hashing.count());
-        new_position += size;
-        writeCompressedBlock(bin_hashing, new_codec, data, static_cast<UInt32>(size), scratch);
-        ProfileEvents::increment(ProfileEvents::MutationRecompressedBlocks);
+        while (size > 0)
+        {
+            const size_t chunk_size = std::min(size, max_block_size);
+            positions.new_block_starts.emplace_back(new_position, bin_hashing.count());
+            new_position += chunk_size;
+            writeCompressedBlock(bin_hashing, new_codec, data, static_cast<UInt32>(chunk_size), scratch);
+            ProfileEvents::increment(ProfileEvents::MutationRecompressedBlocks);
+            data += chunk_size;
+            size -= chunk_size;
+        }
     };
 
     while (true)
