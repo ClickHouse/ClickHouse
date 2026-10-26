@@ -2034,6 +2034,20 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     }
 }
 
+namespace
+{
+
+[[noreturn]] void throwCannotRenameDatabase(std::string_view engine_name, const StorageID & table_id, const String & new_database_name)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
+        "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
+        "and the table would process every file again",
+        engine_name, table_id.getNameForLogs(), backQuoteIfNeed(new_database_name));
+}
+
+}
+
 void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
 {
     /// Compared against the name the path was expanded with, not against the current one: the last step of
@@ -2042,11 +2056,40 @@ void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const Str
     if (!keeper_path_database_name || *keeper_path_database_name == new_database_name)
         return;
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
-        "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
-        "and the table would process every file again",
-        configuration->getEngineName(), getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
+    throwCannotRenameDatabase(configuration->getEngineName(), getStorageID(), new_database_name);
+}
+
+void StorageObjectStorageQueue::checkCreateQueryCanBeRenamedByDatabaseRename(
+    const ASTCreateQuery & query,
+    const StorageID & table_id,
+    UUID database_uuid,
+    const String & new_database_name,
+    const ContextPtr & context_)
+{
+    if (query.isView() || query.is_dictionary || query.as_table_function || !query.storage || !query.storage->engine)
+        return;
+
+    std::string_view engine_name = query.storage->engine->name;
+    if (!std::ranges::any_of(engine_names, [&](std::string_view name) { return name == engine_name; }))
+        return;
+
+    if (table_id.database_name == new_database_name)
+        return;
+
+    ObjectStorageQueueSettings queue_settings;
+    if (query.storage->settings)
+    {
+        auto storage = query.storage->clone();
+        queue_settings.loadFromQuery(storage->as<ASTStorage &>(), /* is_attach */ true, table_id);
+    }
+
+    Macros::MacroExpansionInfo macro_info;
+    chooseZooKeeperPath(context_, table_id, context_->getSettingsRef(), queue_settings, database_uuid, nullptr, &macro_info);
+    if (!macro_info.expanded_database)
+        return;
+
+    engine_name.remove_suffix(std::string_view("Queue").size());
+    throwCannotRenameDatabase(engine_name, table_id, new_database_name);
 }
 
 String StorageObjectStorageQueue::chooseZooKeeperPath(

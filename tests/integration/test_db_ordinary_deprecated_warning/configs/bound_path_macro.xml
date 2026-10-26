@@ -1,0 +1,5 @@
+<clickhouse>
+    <macros>
+        <bound_path>/clickhouse/tables/{database}/</bound_path>
+    </macros>
+</clickhouse>

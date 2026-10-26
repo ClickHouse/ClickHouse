@@ -16,9 +16,14 @@ namespace DB
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    StorageTableProxy(
+        const StorageID & table_id_,
+        std::function<StoragePtr()> get_nested_,
+        ColumnsDescription cached_columns,
+        std::function<void(const String &)> check_database_rename_ = {})
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
+        , check_database_rename(std::move(check_database_rename_))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -83,6 +88,7 @@ public:
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
+        check_database_rename = {};
         return nested;
     }
 
@@ -177,12 +183,14 @@ public:
             nested->renameInMemory(new_table_id);
     }
 
-    /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
+    /// A table that is still a stand-in is not loaded to answer: the check built from its `CREATE` query answers.
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
             nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+        else if (check_database_rename)
+            check_database_rename(new_database_name);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override
@@ -228,8 +236,9 @@ public:
     }
 
 private:
-    mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
+    mutable std::recursive_mutex nested_mutex; /// Guards `get_nested`, `check_database_rename` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
+    mutable std::function<void(const String &)> check_database_rename; /// Answers the rename check until `nested` is set.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };

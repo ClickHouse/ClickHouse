@@ -35,6 +35,7 @@
 #include <Parsers/isDiskFunction.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
@@ -721,8 +722,23 @@ void DatabaseOrdinary::loadTableLazy(
         return table;
     };
 
+    std::function<void(const String &)> check_database_rename;
+    if (query.storage && query.storage->engine
+        && std::ranges::any_of(
+            StorageObjectStorageQueue::engine_names, [&](std::string_view engine) { return engine == query.storage->engine->name; }))
+    {
+        check_database_rename = [create_ast = ast->clone(),
+                                 table_id,
+                                 database_uuid = getUUID(),
+                                 global_context = local_context->getGlobalContext()](const String & new_database_name)
+        {
+            StorageObjectStorageQueue::checkCreateQueryCanBeRenamedByDatabaseRename(
+                create_ast->as<const ASTCreateQuery &>(), table_id, database_uuid, new_database_name, global_context);
+        };
+    }
+
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns));
+        table_id, std::move(get_nested), std::move(columns), std::move(check_database_rename));
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }
