@@ -26,7 +26,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
 * 计算资源与存储分离的自动扩缩容
 * 基于对象存储的低成本、近乎无限的数据保留
-* 能够使用仓库独立隔离读写工作负载
+* 能够使用仓库[独立隔离读写工作负载](/zh/clickstack/managing/isolating-read-write)
 * 集成式身份验证
 * 自动化备份
 * 安全与合规功能
@@ -137,7 +137,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             如果你还没有正在运行的 collector，请按以下步骤启动一个。如果你已有现成的 collector，也提供了一个 configuration 示例。
 
-            ### 启动 collector
+### 启动 collector
 
             以下内容假定你采用推荐方式：使用 **ClickStack 发行版的 OpenTelemetry Collector**。它包含额外的处理能力，并专门针对 ClickHouse Cloud 进行了优化。如果你想使用自己的 OpenTelemetry Collector，请参阅[“配置现有 collector。”](#configure-existing-collectors-existing)
 
@@ -155,7 +155,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             运行这一条命令即可启动 ClickStack collector，并在 4317 (gRPC) 和 4318 (HTTP) 端口上暴露 OTLP 端点。如果你已经有 OpenTelemetry instrumentation 和 agent，便可立即开始将 telemetry data 发送到这些端点。
 
-            ### 配置现有 collector
+### 配置现有 collector
 
             你也可以配置自己现有的 OpenTelemetry Collectors，或使用你自己的 collector 发行版。
 
@@ -173,7 +173,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             有关配置 OpenTelemetry collector 的更多详细信息，请参阅[“使用 OpenTelemetry 进行摄取。”](/zh/clickstack/ingesting-data/opentelemetry)
 
-            ### 开始摄取 (可选)
+### 开始摄取 (可选)
 
             如果你已有要使用 OpenTelemetry 进行 instrument 的应用程序或基础设施，请前往“连接应用程序”中的相关指南。
 
@@ -197,7 +197,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             以下内容假设你已经运行了一个 Vector 实例，并且已预先配置好摄取管道来传送数据。
 
-            ### 创建数据库和表
+### 创建数据库和表
 
             Vector 要求在开始数据摄取之前，先定义好表和 schema。
 
@@ -289,9 +289,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
   ## 其他任务
 </div>
 
-<div id="configure-access">
-  ### 授予对托管 ClickStack 的访问权限
-</div>
+### 授予对托管 ClickStack 的访问权限 {#configure-access}
 
 1. 在 ClickHouse Cloud 控制台中打开您的服务
 2. 前往 **设置** → **SQL 控制台访问**
@@ -338,6 +336,10 @@ ClickStack UI 始终连接到它在 ClickHouse Cloud 控制台中启动时所在
 3. 在左侧导航菜单中启动 ClickStack。
 
 启动后，ClickStack UI 会自动绑定到该只读服务。
+
+请注意，仪表盘、保存的搜索、告警和数据源的作用范围仅限于启动 ClickStack 的那个服务，因此保存在仓库中其他服务上的内容在此处不可用，必须重新创建。使用标准 OpenTelemetry schema 的数据源会被自动检测，因此可以立即对这些数据进行搜索——而自定义或手动配置的数据源则不会，必须重新设置。
+
+关于完整的拓扑结构——包括应将摄取指向何处、应对哪个服务执行 DDL，以及告警的行为方式——请参阅 [“隔离读写工作负载”](/zh/clickstack/managing/isolating-read-write)。
 
 <div id="adding-data-sources">
   ### 添加更多数据源

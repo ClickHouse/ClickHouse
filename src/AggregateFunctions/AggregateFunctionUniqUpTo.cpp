@@ -139,6 +139,9 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
+        if (count > threshold)
+            return;
+
         /// Keep in mind that calculations are approximate.
         auto value = column.getDataAt(row_num);
         insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()), threshold);
@@ -151,6 +154,9 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
+        if (count > threshold)
+            return;
+
         UInt128 value = assert_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
         insert(sipHash64(value), threshold);
     }
@@ -162,6 +168,9 @@ struct AggregateFunctionUniqUpToData<UInt256> : AggregateFunctionUniqUpToData<UI
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
+        if (count > threshold)
+            return;
+
         UInt256 value = assert_cast<const ColumnVector<UInt256> &>(column).getData()[row_num];
         insert(sipHash64(value), threshold);
     }
@@ -173,6 +182,9 @@ struct AggregateFunctionUniqUpToData<Int256> : AggregateFunctionUniqUpToData<UIn
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
+        if (count > threshold)
+            return;
+
         Int256 value = assert_cast<const ColumnVector<Int256> &>(column).getData()[row_num];
         insert(sipHash64(value), threshold);
     }
@@ -263,7 +275,11 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
+        auto & state = this->data(place);
+        if (state.count > threshold)
+            return;
+
+        state.insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -353,7 +369,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {.description = R"DOC(Calculates the number of distinct values of the argument, but only up to the specified threshold; if the number of distinct values exceeds the threshold, it returns 0.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {true}});
+    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {.description = R"DOC(Calculates the number of distinct values of the argument, but only up to the specified threshold; if the number of distinct values exceeds the threshold, it returns threshold + 1.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {true}});
 }
 
 }

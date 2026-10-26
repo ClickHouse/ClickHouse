@@ -17,7 +17,7 @@ NEW_DB_NAME="${CLICKHOUSE_DATABASE}_03913_DATALAKE"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_NAME};"
 $CLICKHOUSE_CLIENT -q "
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 CREATE DATABASE ${NEW_DB_NAME}
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
 SETTINGS
@@ -37,7 +37,7 @@ NEW_DB_FORBIDDEN="${CLICKHOUSE_DATABASE}_03913_FORBIDDEN"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_FORBIDDEN};"
 $CLICKHOUSE_CLIENT -q "
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 CREATE DATABASE ${NEW_DB_FORBIDDEN}
 ENGINE = DataLakeCatalog('http://localhost:8181/v1')
 SETTINGS

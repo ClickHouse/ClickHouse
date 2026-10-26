@@ -107,7 +107,7 @@ bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAn
     size_t start = max_block_size * read_block_index;
     size_t end = max_block_size * (read_block_index + 1);
 
-    size_t keys_size = key_columns_with_type[0].column->size();
+    size_t keys_size = getKeysSize();
 
     if (start >= keys_size)
         return false;
@@ -116,9 +116,32 @@ bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAn
     size_t length = end - start;
 
     key_columns = cutColumns(key_columns_with_type, start, length);
+    if (has_serialized_keys)
+    {
+        auto deserialized_key_columns = deserializeColumnsWithTypeAndNameFromKeys(dictionary->getStructure(), serialized_keys, start, end);
+        key_columns.insert(
+            key_columns.begin(),
+            std::make_move_iterator(deserialized_key_columns.begin()),
+            std::make_move_iterator(deserialized_key_columns.end()));
+    }
+
     data_columns = cutColumns(data_columns_with_type, start, length);
 
     return true;
+}
+
+void DictionarySourceCoordinator::setSerializedKeys(PaddedPODArray<std::string_view> && serialized_keys_)
+{
+    serialized_keys = std::move(serialized_keys_);
+    has_serialized_keys = true;
+}
+
+size_t DictionarySourceCoordinator::getKeysSize() const
+{
+    if (has_serialized_keys)
+        return serialized_keys.size();
+
+    return key_columns_with_type.empty() ? 0 : key_columns_with_type[0].column->size();
 }
 
 void DictionarySourceCoordinator::initialize(const Names & column_names)
@@ -206,9 +229,9 @@ Pipe DictionarySourceCoordinator::read(size_t num_streams)
 {
     /// Limit the number of streams to the number of data blocks,
     /// because creating more streams is useless and may cause excessive memory usage.
-    if (!key_columns_with_type.empty() && max_block_size > 0)
+    if ((has_serialized_keys || !key_columns_with_type.empty()) && max_block_size > 0)
     {
-        size_t keys_size = key_columns_with_type[0].column->size();
+        size_t keys_size = getKeysSize();
         size_t num_blocks = (keys_size + max_block_size - 1) / max_block_size;
         num_streams = std::min(num_streams, std::max<size_t>(1, num_blocks));
     }
