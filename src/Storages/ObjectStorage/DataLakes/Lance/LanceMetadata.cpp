@@ -1375,16 +1375,40 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
         const auto & auth_settings = s3_configuration->getAuthSettings();
         options.uri = fmt::format("s3://{}/{}", s3_configuration->url.bucket, s3_configuration->url.key);
         options.use_s3 = true;
-        options.s3_endpoint = s3_configuration->url.endpoint;
-        options.s3_region = auth_settings[S3AuthSetting::region].value;
+        /// `S3::URI` moves the bucket of a virtual-hosted-style URL out of its endpoint, but the `Lance`
+        /// object store uses the endpoint of a virtual-hosted-style request unchanged, so it must keep
+        /// the bucket: pass the authority of the original URL.
+        if (s3_configuration->url.is_virtual_hosted_style)
+            options.s3_endpoint = s3_configuration->url.uri.getScheme() + "://" + s3_configuration->url.uri.getAuthority();
+        else
+            options.s3_endpoint = s3_configuration->url.endpoint;
+
+        if (!object_storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No object storage for `Lance` metadata");
+        const auto s3_client = object_storage->getS3StorageClient();
+
+        /// The `Lance` object store does not infer the region from the endpoint and signs the requests
+        /// for `us-east-1` without one. Pass it the region of the bucket, resolved the same way as for
+        /// `DeltaLake` (see `S3KernelHelper`). The region is bound to the bucket, so it is resolved once.
+        {
+            std::lock_guard lock(s3_region_mutex);
+            if (!s3_region)
+            {
+                String region = auth_settings[S3AuthSetting::region].value;
+                if (region.empty())
+                    region = s3_client->getRegion();
+                if (region.empty() || region == Aws::Region::AWS_GLOBAL)
+                    region = s3_client->getRegionForBucket(s3_configuration->url.bucket, /* force_detect */ true);
+                s3_region = std::move(region);
+            }
+            options.s3_region = *s3_region;
+        }
 
         /// The `Lance` object store is a separate client, which would resolve ambient credentials by itself
         /// (environment, IRSA, instance metadata) and cannot assume a role. Pass it the credentials resolved
         /// by the S3 client of the storage instead: that client applies `s3_allow_server_credentials_in_user_queries`
         /// and assumes `role_arn`. Without resolved credentials, the requests are not signed.
-        if (!object_storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No object storage for `Lance` metadata");
-        const auto credentials = object_storage->getS3StorageClient()->getCredentials();
+        const auto credentials = s3_client->getCredentials();
         options.s3_access_key_id = credentials.GetAWSAccessKeyId();
         options.s3_secret_access_key = credentials.GetAWSSecretKey();
         options.s3_session_token = credentials.GetSessionToken();

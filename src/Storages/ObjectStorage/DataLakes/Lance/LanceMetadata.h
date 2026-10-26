@@ -10,6 +10,9 @@
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
+#include <mutex>
+#include <optional>
+
 namespace DB
 {
 
@@ -114,6 +117,10 @@ private:
     /// The S3 client of the storage resolves the credentials of the `Lance` object store, see `getDatasetOptions`.
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationWeakPtr configuration;
+
+    /// The region of the S3 bucket for the `Lance` object store, resolved once by `getDatasetOptions`.
+    mutable std::mutex s3_region_mutex;
+    mutable std::optional<String> s3_region;
 };
 
 }
