@@ -594,11 +594,13 @@ def test_timestamp_ntz(started_cluster, use_delta_kernel, use_v2):
         "-", "_"
     )
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
-    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    create_query = f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
+    insert_query = f"INSERT OVERWRITE {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    # Every statement is idempotent, so the retry replay converges to the same single row.
     execute_multiple_spark_queries(
         node1,
-        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+        [f"CREATE SCHEMA IF NOT EXISTS {schema_name}", create_query, insert_query],
+        retry_on_timeout=True,
     )
 
     node1.query(

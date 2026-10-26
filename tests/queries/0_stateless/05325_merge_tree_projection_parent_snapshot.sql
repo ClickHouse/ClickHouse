@@ -15,5 +15,8 @@ INSERT INTO t (a, b) VALUES (1, 10), (2, 20);
 
 SELECT a, b, c FROM (SELECT a, b, 0 AS c FROM mergeTreeProjection(currentDatabase(), t, p) UNION ALL SELECT a, b, c FROM t) ORDER BY a, c;
 
+-- The same through `merge`, with the table written before `mergeTreeProjection`.
+SELECT count(), sum(l.c) FROM merge(currentDatabase(), '^t$') AS l JOIN mergeTreeProjection(currentDatabase(), t, p) AS r ON l.a = r.a;
+
 DROP TABLE test;
 DROP TABLE t;
