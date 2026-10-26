@@ -247,6 +247,12 @@ ColumnPtr tryGetScalarSubqueryPayload(const ActionsDAG::Node * node, const DataT
     return node->column;
 }
 
+void updateHashWithString(SipHash & hash_state, std::string_view value)
+{
+    hash_state.update(value.size());
+    hash_state.update(value);
+}
+
 }
 
 ActionsDAG::ActionsDAG() = default;
@@ -332,18 +338,18 @@ void ActionsDAG::Node::updateHash(
     if (!result_name.empty() && (!build_independent || type == ActionType::INPUT))
     {
         const bool normalize = build_independent && !(type == ActionType::INPUT && !input_header);
-        hash_state.update(normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
+        updateHashWithString(hash_state, normalize ? normalizeGeneratedTableQualifiers(result_name) : result_name);
     }
 
     if (build_independent && type == ActionType::INPUT && input_header)
         hash_state.update(input_header->has(result_name) ? input_header->getPositionByName(result_name) : input_header->columns());
 
     if (result_type)
-        hash_state.update(result_type->getName());
+        updateHashWithString(hash_state, result_type->getName());
 
     if (function_base)
     {
-        hash_state.update(function_base->getName());
+        updateHashWithString(hash_state, function_base->getName());
         /// The name says nothing about the settings a function captured when it was built (a
         /// conversion captures how it parses), and two expressions that differ only in those are not
         /// the same expression.
@@ -351,7 +357,7 @@ void ActionsDAG::Node::updateHash(
     }
 
     if (function)
-        hash_state.update(function->getName());
+        updateHashWithString(hash_state, function->getName());
 
     /// A lambda's body is not in this node: `function_base->getName()` is only `FunctionCapture`, and the
     /// composed `result_name` that does carry it - `arrayExists(lambda(tuple(v), greater(v, 5)), a)` -
@@ -363,17 +369,19 @@ void ActionsDAG::Node::updateHash(
     {
         const auto hash_capture = [&](const LambdaCapture & capture, const ActionsDAG & lambda_dag)
         {
-            hash_state.update(normalizeGeneratedTableQualifiers(capture.return_name));
-            hash_state.update(capture.return_type->getName());
+            updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(capture.return_name));
+            updateHashWithString(hash_state, capture.return_type->getName());
+            hash_state.update(capture.captured_names.size());
             for (const auto & captured_name : capture.captured_names)
-                hash_state.update(normalizeGeneratedTableQualifiers(captured_name));
+                updateHashWithString(hash_state, normalizeGeneratedTableQualifiers(captured_name));
             for (const auto & captured_type : capture.captured_types)
-                hash_state.update(captured_type->getName());
+                updateHashWithString(hash_state, captured_type->getName());
             /// The lambda's own argument names are written by the user, so they are the same in every build.
+            hash_state.update(capture.lambda_arguments.size());
             for (const auto & argument : capture.lambda_arguments)
             {
-                hash_state.update(argument.name);
-                hash_state.update(argument.type->getName());
+                updateHashWithString(hash_state, argument.name);
+                updateHashWithString(hash_state, argument.type->getName());
             }
             lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
         };
@@ -400,7 +408,7 @@ void ActionsDAG::Node::updateHash(
 
     if (column)
     {
-        hash_state.update(column->getName());
+        updateHashWithString(hash_state, column->getName());
 
         /// We must also hash the actual constant value, not just the column type name.
         /// Otherwise, two different constants with the same type and the same expression-based
@@ -442,6 +450,7 @@ void ActionsDAG::Node::updateHash(
         }
     }
 
+    hash_state.update(children.size());
     for (const auto & child : children)
         child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
 }
