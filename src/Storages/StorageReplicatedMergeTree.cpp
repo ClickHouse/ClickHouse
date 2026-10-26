@@ -5,7 +5,7 @@
 #include <ranges>
 #include <chrono>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/interpolate.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>
@@ -46,6 +46,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
@@ -268,10 +269,12 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_restore_replica_pause_before_metadata_version_raise[];
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char check_table_inject_shutdown_abort[];
 }
 
 namespace ErrorCodes
@@ -3442,6 +3445,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(part_desc->src_table_part->info),
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPart(
                 part_desc->src_table_part,
@@ -4558,15 +4562,18 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (select_merge_result.has_value())
             {
                 chassert(select_merge_result.value().size() == 1);
-                future_merged_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
-                if (!future_merged_part)
+                auto constructed_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                 {
                     LOG_DEBUG(log,
-                        "Can't construct future part from source parts. "
-                        "Probably there was a drop part/partition user query or another replica has already executed merge.");
+                        "Can't construct future part from source parts ({}). "
+                        "Probably there was a drop part/partition user query or another replica has already executed merge.",
+                        constructed_part.error().text);
 
                     return AttemptStatus::NeedRetry;
                 }
+
+                future_merged_part = std::move(*constructed_part);
 
                 bool cleanup = future_merged_part->final
                     && (*storage_settings_ptr)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
@@ -5690,6 +5697,7 @@ bool StorageReplicatedMergeTree::fetchPart(
             {
                 .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
                 .keep_metadata_version = true,
+                .temporary_data = getContext()->getTempDataOnDisk(),
             };
 
             auto [cloned_part, lock] = cloneAndLoadDataPart(
@@ -5803,6 +5811,9 @@ bool StorageReplicatedMergeTree::fetchPart(
 
             if (prewarm_caches.primary_index_cache)
                 part->loadIndexToCache(*prewarm_caches.primary_index_cache);
+
+            if (prewarm_caches.statistics_cache)
+                part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
             write_part_log({});
         }
@@ -5958,7 +5969,29 @@ void StorageReplicatedMergeTree::startup()
     LOG_TRACE(log, "Starting up table");
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
-    startStatisticsCache();
+
+    /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
+    /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
+    /// we observe it here — after arming — we must deactivate the tasks we just re-armed; otherwise a
+    /// logically shut-down table would keep doing periodic work until some later `shutdown()` stops it.
+    /// Also stop right here: continuing into `attach_thread->start()` / `startupImpl` would pointlessly
+    /// re-arm the attach/restarting threads that `flushAndPrepareForShutdown()` has already shut down.
+    /// The same applies when only `flushAndPrepareForShutdown()` has run so far (server or database
+    /// shutdown calls it for all tables before `shutdown()`): it has already stopped the attach and
+    /// restarting threads, and a late startup must not restart background work after that.
+    /// Neither `shutdown_called` nor `shutdown_prepared_called` is ever reset, so this storage object is
+    /// only going to be shut down and destroyed — there is nothing to start up. This check is best-effort
+    /// (the flags can flip right after it); whatever a startup that slipped past it re-arms is torn down
+    /// again by the `already_called` branch of `shutdown`, either via the cleanup path of `startupImpl` or
+    /// at the latest by the destructor.
+    if (shutdown_called.load() || shutdown_prepared_called.load())
+    {
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        return;
+    }
+
     if (attach_thread)
     {
         attach_thread->start();
@@ -5984,19 +6017,26 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
     try
     {
         auto zookeeper = getZooKeeper();
-        InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
-        [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
-        chassert(prev_ptr == nullptr);
 
-        /// The endpoint id:
-        ///     old format: DataPartsExchange:/clickhouse/tables/default/t1/{shard}/{replica}
-        ///     new format: DataPartsExchange:{zookeeper_name}:/clickhouse/tables/default/t1/{shard}/{replica}
-        /// Notice:
-        ///     They are incompatible and the default is the old format.
-        ///     If you want to use the new format, please ensure that 'enable_the_endpoint_id_with_zookeeper_name_prefix' of all nodes is true .
-        ///
-        getContext()->getInterserverIOHandler().addEndpoint(
-            data_parts_exchange_ptr->getId(getEndpointName()), data_parts_exchange_ptr);
+        /// A failed previous attempt of the attach thread leaves the endpoint registered (see the cleanup below),
+        /// so a retry reuses it. The endpoint is published only after it has been registered successfully.
+        if (!std::atomic_load(&data_parts_exchange_endpoint))
+        {
+            InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
+
+            /// The endpoint id:
+            ///     old format: DataPartsExchange:/clickhouse/tables/default/t1/{shard}/{replica}
+            ///     new format: DataPartsExchange:{zookeeper_name}:/clickhouse/tables/default/t1/{shard}/{replica}
+            /// Notice:
+            ///     They are incompatible and the default is the old format.
+            ///     If you want to use the new format, please ensure that 'enable_the_endpoint_id_with_zookeeper_name_prefix' of all nodes is true .
+            ///
+            getContext()->getInterserverIOHandler().addEndpoint(
+                data_parts_exchange_ptr->getId(getEndpointName()), data_parts_exchange_ptr);
+
+            [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
+            chassert(prev_ptr == nullptr);
+        }
 
         startBeingLeader(zookeeper_retries_info);
 
@@ -6054,15 +6094,10 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             {
                 restarting_thread.shutdown(/* part_of_full_shutdown */false);
 
-                auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
-                if (data_parts_exchange_ptr)
-                {
-                    getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
-                    /// Ask all parts exchange handlers to finish asap. New ones will fail to start
-                    data_parts_exchange_ptr->blocker.cancelForever();
-                    /// Wait for all of them
-                    std::lock_guard lock(data_parts_exchange_ptr->rwlock);
-                }
+                /// Leave the interserver parts exchange endpoint registered: its teardown belongs to `shutdown` only.
+                /// Removing it here would race with a concurrent full `shutdown`, which may already be waiting for this
+                /// thread in `flushAndPrepareForShutdown` and then still needs the endpoint to serve fetches from other
+                /// replicas in `waitForUniquePartsToBeFetchedByOtherReplicas`. A retry of the attach thread reuses it.
             }
             else
             {
@@ -6151,17 +6186,81 @@ void StorageReplicatedMergeTree::partialShutdown()
 
 void StorageReplicatedMergeTree::shutdown(bool)
 {
-    if (shutdown_called.exchange(true))
+    /// Serialize concurrent calls entirely, including the choice of the branch below. The lock must be
+    /// taken *before* consulting `shutdown_called`: otherwise two first-time callers would split into the
+    /// full-shutdown and `already_called` paths before either takes the lock, and the `already_called`
+    /// cleanup could then win the lock and tear down the interserver parts exchange endpoint (via
+    /// `partialShutdown` and the endpoint reset below) while the full shutdown still relies on it for
+    /// `waitForUniquePartsToBeFetchedByOtherReplicas`. The lock also protects the non-atomic members both
+    /// branches touch (`session_expired_callback_handler`, `replica_is_active_node`) from the failure path
+    /// of `startupImpl` racing with the first shutdown. Holding it across the full shutdown is safe: the
+    /// threads the full shutdown joins (the attach and restarting threads) never call `shutdown` themselves.
+    std::lock_guard shutdown_guard{shutdown_mutex};
+
+    /// Publish the shutdown intent *before* deactivating the periodic tasks below. This, together with
+    /// the matching re-check at the end of `startup()`, closes a `startup()`/`shutdown()` race (e.g. when a
+    /// table is detached while its async startup is still in flight): whatever the interleaving, the tasks
+    /// end up deactivated. If `startup()` arms them before this deactivate runs, this deactivate stops them;
+    /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
+    const bool already_called = shutdown_called.exchange(true);
+
+    /// Deactivate the periodic refresh task unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would take the `already_called` branch and could leave the task running
+    /// concurrently with `~MergeTreeData`. Deactivation is idempotent.
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+
+    if (already_called)
+    {
+        /// A racing `startup()` can pass its `shutdown_called` check just before the first (full) shutdown
+        /// runs, and then re-arm what that shutdown has already stopped. The late `shutdown_called` check in
+        /// `startupImpl` routes its cleanup into `shutdown(false)` — this branch — and the destructor's
+        /// `shutdown(false)` takes this branch too. So stop everything a second startup could have armed
+        /// after the first shutdown:
+        ///   - the outdated/unexpected data parts loading tasks (their holders are destroyed after
+        ///     `outdated_unloaded_data_parts` and `unexpected_data_parts`, so an armed task could fire while
+        ///     `~MergeTreeData` destroys the state its callback touches),
+        ///   - the attach and restarting threads, leader election, and everything the restarting thread
+        ///     activates (via `partialShutdown`),
+        ///   - the session-expired callback, the part moves orchestrator and background moves,
+        ///   - the interserver parts exchange endpoint.
+        /// All of these stops are idempotent, so this is safe after a complete first shutdown as well.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+        if (attach_thread)
+            attach_thread->shutdown();
+
+        restarting_thread.shutdown(/* part_of_full_shutdown */ true);
+        stopBeingLeader();
+        session_expired_callback_handler.reset();
+
+        /// Needed only if a second startup's restarting thread actually re-activated the replica —
+        /// that is the only path that resets `partial_shutdown_called` (and it does so before arming
+        /// the queue tasks, so the flag still set means nothing is armed). The restarting thread is
+        /// already stopped above, so the flag is stable here. The check also keeps the
+        /// `ReplicaPartialShutdown` profile event meaningful for the common destructor call after a
+        /// complete first shutdown.
+        if (!partial_shutdown_called)
+            partialShutdown();
+
+        part_moves_between_shards_orchestrator.shutdown();
+        background_moves_assignee.finish();
+
+        auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+        if (data_parts_exchange_ptr)
+        {
+            getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
+            /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+            data_parts_exchange_ptr->blocker.cancelForever();
+            /// Wait for all of them
+            std::lock_guard lock(data_parts_exchange_ptr->rwlock);
+        }
         return;
+    }
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::shutdown");
 
     LOG_TRACE(log, "Shutdown started");
-
-    if (refresh_parts_task)
-        refresh_parts_task->deactivate();
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
 
     flushAndPrepareForShutdown();
 
@@ -6605,7 +6704,8 @@ bool StorageReplicatedMergeTree::optimize(
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
+                            /*storage_id_=*/getStorageID(),
+                            /*merge_forced_horizontal_=*/deduplicate || cleanup
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
@@ -6626,13 +6726,14 @@ bool StorageReplicatedMergeTree::optimize(
                 chassert(choices.size() == 1);
                 MergeSelectorChoice choice = std::move(choices[0]);
 
-                auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
-                if (!future_part)
+                auto constructed_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+                        .explanation = PreformattedMessage::create("Can't construct future part from source parts ({}). Probably there was a drop part/partition user query.", constructed_part.error().text),
                     });
 
+                auto future_part = std::move(*constructed_part);
                 if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
                     future_part->uuid = UUIDHelpers::generateV4();
 
@@ -7559,6 +7660,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         createReplica(metadata_snapshot, zookeeper_retries_info);
 
     createNewZooKeeperNodes(zookeeper_retries_info);
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_restore_replica_pause_before_metadata_version_raise);
 
     /// Bump the /metadata ZNode version to match the max parts metadata version.
     /// The table's in-memory metadata_version is derived from the /metadata ZNode stat.version
@@ -7566,12 +7668,41 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     if (max_parts_metadata_version > 0)
     {
         auto zookeeper = getZooKeeper();
-        String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        for (int32_t i = 0; i < max_parts_metadata_version; ++i)
-            zookeeper->set(zookeeper_path + "/metadata", metadata_str);
-        zookeeper->set(replica_path + "/metadata_version", std::to_string(max_parts_metadata_version));
+        /// Each batch logs an ALTER_METADATA entry of the version it reaches, so a replica that cloned an earlier one catches up.
+        Coordination::Stat metadata_stat;
+        Coordination::Stat columns_stat;
+        String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+        String columns_str = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        while (metadata_stat.version < max_parts_metadata_version)
+        {
+            const auto target = static_cast<int32_t>(std::min<Int64>(
+                max_parts_metadata_version, Int64{metadata_stat.version} + static_cast<Int64>(zkutil::MULTI_BATCH_SIZE)));
 
-        LOG_INFO(log, "Bumped metadata version to {} to match parts", max_parts_metadata_version);
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/columns", columns_stat.version));
+            for (int32_t version = metadata_stat.version; version < target; ++version)
+                ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata", version + 1 == target ? metadata_str : "", version));
+
+            ReplicatedMergeTreeLogEntryData entry;
+            entry.type = LogEntry::ALTER_METADATA;
+            entry.source_replica = replica_name;
+            entry.metadata_str = metadata_str;
+            entry.columns_str = columns_str;
+            entry.alter_version = target;
+            entry.create_time = time(nullptr);
+            entry.have_mutation = false;
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+            Coordination::Responses responses;
+            const Coordination::Error code = zookeeper->tryMulti(ops, responses);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
+                zkutil::KeeperMultiException::check(code, ops, responses);
+
+            metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+            columns_str = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        }
+
+        LOG_INFO(log, "Raised metadata version to {} to match parts", metadata_stat.version);
     }
 
     LOG_INFO(log, "Created ZK nodes for table");
@@ -9429,7 +9560,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
+        /// Patch parts cannot be copied to another table. Partitions with unapplied patches are rejected by `replacePartitionFromImpl`.
         partitions = src_data.getAllPartitionIds();
+        std::erase_if(partitions, isPatchPartitionId);
     }
     else
     {
@@ -9614,6 +9747,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 .copy_instead_of_hardlink = always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             if (replace)
             {
@@ -9915,6 +10049,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = (*storage_settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks] || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion(),
                 .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
+                .temporary_data = query_context->getTempDataOnDisk(),
             };
             auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,
@@ -10625,20 +10760,25 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
-    if (shutdown_called || partial_shutdown_called)
-        throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
-
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::checkDataNext");
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
+        /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown.
+        /// Only when there is a part left to check: once every part has been checked, the final call that
+        /// reports the end of the list must not turn a completed check into a failure.
+        bool aborted_by_shutdown = shutdown_called || partial_shutdown_called;
+        fiu_do_on(FailPoints::check_table_inject_shutdown_abort, { aborted_by_shutdown = true; });
+        if (aborted_by_shutdown)
+            throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
         try
         {
             fiu_do_on(FailPoints::check_table_inject_retryable_zk_error,
             {
                 throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected retryable ZooKeeper error for the check_table_inject_retryable_zk_error failpoint");
             });
-            return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
+            return part_check_thread.checkPartAndFix(
+                part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true, /* throw_if_cancelled */true);
         }
         catch (const Exception & ex)
         {
@@ -11679,7 +11819,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         {
             const auto & source_part = *parts_in_partition.begin();
             partition = source_part->partition;
-            metadata_snapshot = source_part->getMetadataSnapshot();
+            metadata_snapshot = getMetadataSnapshotForEmptyPart(*source_part);
 
             if (source_part->info.isPatch())
                 patch_part_index = source_part->getPatchPartIndex().cloneEmpty();
@@ -12052,6 +12192,16 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         auto zookeeper = getZooKeeper();
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
         auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+
+        /// Comment ALTERs are not replicated through ZooKeeper, so the backup keeps the comments this replica has
+        /// applied, except for columns it does not have yet or has with another type than the snapshot.
+        for (const auto & column : current_metadata->columns)
+        {
+            const auto * entry_column = columns_from_entry.tryGet(column.name);
+            if (entry_column && entry_column->comment != column.comment && entry_column->type->equals(*column.type))
+                columns_from_entry.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+        }
+
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
             zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
             current_metadata->add_minmax_index_for_numeric_columns,
@@ -12217,7 +12367,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 }
 
 void StorageReplicatedMergeTree::attachRestoredParts(
-    MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
+    MutableDataPartsVector && parts, const ContextPtr & /* query_context */, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachRestoredParts");
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);

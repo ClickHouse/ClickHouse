@@ -117,6 +117,7 @@ public:
 
     bool isParallelizeMergePrepareNeeded() const override;
     bool isAbleToParallelizeMerge() const override;
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override;
     bool canOptimizeEqualKeysRanges() const override;
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override;
     void mergeImpl(
@@ -158,7 +159,6 @@ public:
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override;
     DataTypePtr getNormalizedStateType() const override;
 
-    bool shouldPrintParametersWithTypes() const override;
     bool isOnlyWindowFunction() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;

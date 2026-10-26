@@ -317,11 +317,13 @@ Valeur par défaut : 0.
 
 ### show_named_collections_secrets
 
-Ce paramètre active ou désactive le privilège `SHOW NAMED COLLECTIONS SECRETS` pour l&#39;utilisateur, ce qui lui permet de voir les valeurs stockées dans les [named collections](/fr/concepts/features/configuration/server-config/named-collections), par exemple dans la table [`system.named_collections`](/fr/reference/system-tables/named_collections).
+Ce paramètre active ou désactive le privilège `SHOW NAMED COLLECTIONS SECRETS` pour l&#39;utilisateur, ce qui lui permet de voir les valeurs stockées dans les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections), par exemple dans la table [`system.named_collections`](/fr/reference/system-tables/named_collections).
 
-Il est désactivé par défaut : pouvoir gérer les named collections ne signifie pas pouvoir relire les identifiants qui y sont déjà stockés.
+Il est également nécessaire pour redéfinir une clé stockée dans une collection nommée lors de l&#39;utilisation de celle-ci, par exemple `url` dans `s3(my_collection, url = '...')`, dans une clause `SETTINGS` d&#39;un table engine ou pour une clé d&#39;une source de dictionnaire. L&#39;ajout d&#39;une clé absente de la collection ne le requiert pas.
 
-Ce paramètre n&#39;a d&#39;effet qu&#39;en combinaison avec `named_collection_control`, car lorsque `named_collection_control` est désactivé, tous les privilèges relatifs aux named collections, y compris `SHOW NAMED COLLECTIONS SECRETS`, sont de toute façon révoqués.
+Il est désactivé par défaut : pouvoir gérer les collections nommées ne signifie pas pouvoir relire les identifiants qui y sont déjà stockés.
+
+Ce paramètre n&#39;a d&#39;effet qu&#39;en combinaison avec `named_collection_control`, car lorsque `named_collection_control` est désactivé, tous les privilèges relatifs aux collections nommées, y compris `SHOW NAMED COLLECTIONS SECRETS`, sont de toute façon révoqués.
 
 Valeurs possibles :
 

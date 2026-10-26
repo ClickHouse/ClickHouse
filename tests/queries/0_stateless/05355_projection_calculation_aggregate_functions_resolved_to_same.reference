@@ -1,0 +1,10 @@
+0	4	4
+1	3	3
+2	3	3
+b
+count()
+count() IGNORE NULLS
+uniqExact(a)
+0	4	4
+1	3	3
+2	3	3
