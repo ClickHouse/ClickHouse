@@ -5,6 +5,7 @@ Delta	146	0	0	0	0	Production	Preprocessor (should be followed by some compressio
 DoubleDelta	148	1	0	0	0	Production	Stores difference between neighboring delta values; suitable for time series data.
 FPC	152	1	0	0	1	Production	High Throughput Compression of Double-Precision Floating-Point Data.
 GCD	154	0	0	0	0	Production	Preprocessor. Greatest common divisor compression; divides values by a common divisor; effective for divisible integer sequences.
+GDeflate	161	1	1	0	0	Experimental	GDeflate, a Deflate that a GPU can expand in parallel, in chunks of 64 KiB. Levels 1..12.
 Gorilla	149	1	0	0	1	Production	Calculates XOR between current and previous value; suitable for slowly changing numbers.
 LZ4	130	1	1	0	0	Production	Extremely fast; good compression; balanced speed and efficiency.
 LZ4HC	130	1	1	0	0	Production	LZ4 High Compression algorithm with configurable level; slower but better compression than LZ4, but decompression is still fast.
@@ -14,7 +15,7 @@ PCO	160	1	0	0	0	Beta	Lossless compression of numeric sequences (pcodec); excelle
 Quantized	158	0	0	0	0	Experimental	Stores a compact quantized companion stream of a dense vector column for fast nearest-neighbour search; the full-precision data is stored uncompressed.
 SZ3	157	1	0	0	1	Experimental	SZ3 is a lossy compressor for floating-point data with error bounds.
 T64	147	1	0	0	0	Production	Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.
-Wallaby	161	1	0	0	1	Experimental	Adaptive floating-point codec that picks per block between integerization with delta or frame-of-reference packing and windowed XOR; suitable for time series data.
+Wallaby	162	1	0	0	1	Experimental	Adaptive floating-point codec that picks per block between integerization with delta or frame-of-reference packing and windowed XOR; suitable for time series data.
 ZSTD	144	1	1	0	0	Production	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.
 ZXC	159	1	1	0	0	Experimental	Asymmetric LZ codec (zxc): slow compression, very fast decompression, ratio between LZ4 and ZSTD. Levels 1..7.
 19
