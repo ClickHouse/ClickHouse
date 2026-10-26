@@ -2701,3 +2701,28 @@ The other 25 x86-64 targets and all 27 ARM64 targets were ungraded. Both precedi
 The glibc provider comparison used focused linked fixtures containing imports from native ClickHouse.
 The LLVM 0.8.26 stubs bound 12 of 519 x86-64 imports and 6 of 521 ARM64 imports, including
 `pthread_self`, to `libpthread.so.0` instead of native CMake’s `libc.so.6`.
+
+## 9ee3644c7
+
+At [9ee3644c7](https://github.com/dzbarsky/clickhouse/commit/9ee3644c77322e4d75ae2589ff2da690018d1dbe), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/5d0f29e2cac2fc7a284f97a41468c6565c3098ec).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/c4213fcb-e894-4a91-af4f-43038ad10198) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/c4213fcb-e894-4a91-af4f-43038ad10198) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/c4213fcb-e894-4a91-af4f-43038ad10198) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/239a94eb-b5c7-4ab8-a0f9-c6974d5eaba5) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/239a94eb-b5c7-4ab8-a0f9-c6974d5eaba5) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/239a94eb-b5c7-4ab8-a0f9-c6974d5eaba5) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Matches previous Bazel |
+
+Both native builds produced all 12 requested targets. Both CPUs passed all 17 named runtime checks.
+
+x86-64 [DWYU](https://app.buildbuddy.io/invocation/34e19bf0-3253-44f9-967d-04b622557fdf): 2 clean (`//src/Functions:wasm_udf_api`, `//src:external_dictionaries_loader`); 1 ungraded (`//src/AggregateFunctions:clickhouse_aggregate_functions__compile_1`). Reports with unresolved inputs: `//src/AggregateFunctions:clickhouse_aggregate_functions__compile_1`.
+
+ARM64 [DWYU](https://app.buildbuddy.io/invocation/560b3c55-062b-46e6-839e-62b25b501348): 2 clean (`//src/Functions:wasm_udf_api`, `//src:external_dictionaries_loader`).
+
+On x86-64 the AggregateFunctions report no longer lists the five dependencies that DWYU recommended moving to `implementation_deps` in the [preceding build](#5d0f29e2c). The analyzer reported no actionable findings, but it could not verify the same 21 link dependencies. It exited with status 1, so this target remains ungraded.
+
+The AggregateFunctions compile target now keeps its private dependencies in `implementation_deps`. `//src/Parsers:clickhouse_parsers` exports `ASTCreateWasmFunctionQuery.h` and gets `UserDefinedWebAssembly.h` from `//src/Functions:wasm_udf_api`. The Functions headers get `ExternalDictionariesLoader.h` from `//src:external_dictionaries_loader`; five libraries that use it only from C++ source files declare it in `implementation_deps`. The Arrow IPC rule lists its six generated headers in the same BUILD file as the library that exports them.
+
+The ICU common library moved five break-iterator headers from `hdrs` to `srcs`. On both CPUs, the shipping ClickHouse binary ran the [Chinese word-break query](../../tests/queries/0_stateless/04509_icu_tokenizer.sql#L16) and returned `['北京','欢迎','你']`, matching the [expected output](../../tests/queries/0_stateless/04509_icu_tokenizer.reference#L16). Both unit-test binaries also passed `CrossTabPhiSquaredWindowData.SerializeDeserializeRoundTrip`.
