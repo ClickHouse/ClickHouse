@@ -9,6 +9,7 @@ use lance::dataset::ReadParams;
 use lance::io::{ObjectStoreParams, RecordBatchStream};
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+use object_store::client::{HttpClient, HttpConnector};
 use object_store::{ClientOptions, DynObjectStore, RetryConfig};
 use sha2::{Digest, Sha256};
 use std::any::Any;
@@ -1444,6 +1445,45 @@ async fn checkout_exact_snapshot(
     Ok(checked_out)
 }
 
+/// Creates the HTTP client of the `Lance` object store with redirects disabled.
+///
+/// The URL of a dataset is checked against the `remote_host_filter` of the server before it gets
+/// here, but this client is separate from the S3 client of ClickHouse, which checks every redirect
+/// destination as well. The default `object_store` client follows redirects without checking them,
+/// so an allowed endpoint could make the server contact any host. A redirect response is returned
+/// to `object_store` instead, which fails the request.
+#[derive(Debug)]
+struct NoRedirectConnector {
+    timeout: Option<Duration>,
+    connect_timeout: Option<Duration>,
+    allow_http: bool,
+}
+
+impl HttpConnector for NoRedirectConnector {
+    fn connect(&self, _options: &ClientOptions) -> object_store::Result<HttpClient> {
+        let mut builder = reqwest::Client::builder()
+            .user_agent(concat!("ClickHouse-Lance/", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::none())
+            // The same as `object_store`: compression interferes with the `Content-Length` of objects.
+            .no_gzip()
+            .no_brotli()
+            .no_zstd()
+            .no_deflate()
+            .https_only(!self.allow_http);
+        if let Some(timeout) = self.timeout {
+            builder = builder.timeout(timeout);
+        }
+        if let Some(connect_timeout) = self.connect_timeout {
+            builder = builder.connect_timeout(connect_timeout);
+        }
+        let client = builder.build().map_err(|err| object_store::Error::Generic {
+            store: "S3",
+            source: Box::new(err),
+        })?;
+        Ok(HttpClient::new(client))
+    }
+}
+
 fn build_s3_store(
     uri: &str,
     storage_options: &HashMap<String, String>,
@@ -1487,6 +1527,24 @@ fn build_s3_store(
     if has_client_options {
         builder = builder.with_client_options(client_options);
     }
+
+    let parse_optional_timeout = |key: &str| -> FfiResult<Option<Duration>> {
+        storage_options
+            .get(key)
+            .map(|value| {
+                parse_timeout_duration(value).map_err(|err| {
+                    FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3)
+                })
+            })
+            .transpose()
+    };
+    builder = builder.with_http_connector(NoRedirectConnector {
+        timeout: parse_optional_timeout("timeout")?,
+        connect_timeout: parse_optional_timeout("connect_timeout")?,
+        allow_http: storage_options
+            .get("aws_allow_http")
+            .is_some_and(|value| value == "true"),
+    });
 
     // Cap overall retry budget so a flaky/hanging endpoint cannot retry for minutes.
     // object_store defaults: max_retries=10, retry_timeout=180s.
