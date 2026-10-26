@@ -429,44 +429,35 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     {
         if (!column_sizes.empty())
         {
-            /// A stream several columns of the block read is charged once. Those priced through `column_sizes` are
-            /// charged whole, so their streams are taken before any other column: a full `single_stream` `s` read
-            /// next to `s.size` shares its only stream with it.
+            /// A stream several columns of the block read is charged once: a full `single_stream` `s` and `s.size` share
+            /// the only stream of `s`, the arrays of a `Nested` their offsets.
             std::unordered_set<std::string_view> charged_streams;
             for (const auto & column : input_columns)
             {
-                if (!column_sizes.contains(column.name))
-                    continue;
                 if (const auto streams_it = streams_bytes_per_row.find(column.name); streams_it != streams_bytes_per_row.end())
-                    for (const auto & [stream_name, _] : streams_it->second)
-                        charged_streams.insert(stream_name);
-            }
-
-            for (const auto & column : input_columns)
-            {
-                if (column_sizes.contains(column.name))
+                {
+                    for (const auto & [stream_name, bytes_per_row] : streams_it->second)
+                        if (charged_streams.insert(stream_name).second)
+                            compressed_bytes += static_cast<size_t>(bytes_per_row * static_cast<double>(column.column->size()));
+                }
+                /// A column whose streams are not known, e.g. one of a dynamic structure, shares none with the others.
+                else if (column_sizes.contains(column.name))
                 {
                     const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
                         ? (static_cast<double>(column_sizes.at(column.name).data_compressed)
                            / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
                         : 1.0;
-                    sample_bytes += column.column->byteSize();
                     compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
                 }
-                else if (const auto streams_it = streams_bytes_per_row.find(column.name); streams_it != streams_bytes_per_row.end())
-                {
-                    /// The in-memory bytes of every column count, as they do in `read_bytes`, but a stream is read once.
-                    sample_bytes += column.column->byteSize();
-                    for (const auto & [stream_name, bytes_per_row] : streams_it->second)
-                        if (charged_streams.insert(stream_name).second)
-                            compressed_bytes += static_cast<size_t>(bytes_per_row * static_cast<double>(column.column->size()));
-                }
-                /// Virtual columns and columns missing from the part are read from no stream, so they add nothing
-                /// to `read_bytes`. Any other column does, and its bytes would silently take the compression ratio
-                /// of the columns found here.
+                /// Virtual columns and columns missing from the part are read from no stream and cost nothing. Any other
+                /// column does cost, and leaving it out would understate the read.
                 else if (part_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
                     markUnsupportedCase();
             }
+
+            /// Every column read from disk is priced in full here, so `compressed_bytes` is the cost of the whole read
+            /// rather than of a sample to scale up to `read_bytes`.
+            sample_bytes = read_bytes;
         }
         else if (std::ranges::any_of(
                      input_columns, [&](const auto & column) { return partially_read_columns.contains(column.name); }))
