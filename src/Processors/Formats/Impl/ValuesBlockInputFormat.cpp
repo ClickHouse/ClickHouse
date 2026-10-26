@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -582,6 +583,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (rollback_on_exception)
             column.popBack(1);
     }
+
+    normalizeDivision(*ast, context);
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 
