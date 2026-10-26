@@ -5502,6 +5502,75 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto & scope_context = scope.context;
 
+    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
+    /// The execution context is used for the actual table function execution and its settings
+    /// are incorporated into the cache key (so identical settings still reuse the cache,
+    /// while different settings get separate entries).
+    /// The same execution context is used to infer the structure of a parameterized view, because the view
+    /// is read with the settings of its scope.
+    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
+    /// context (which has accumulated settings applied). We only consider subqueries
+    /// (not the outermost query) because the outermost query's SETTINGS are already on
+    /// the query context, and switching to the QueryNode's own context copy could change
+    /// non-settings state (e.g. isDistributed) and break table function execution
+    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
+    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
+    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
+    /// built from the union's context, so the nearest query scope below it already carries the settings.
+    /// An operand of a set operation is not a subquery, but it customizes its settings as well when it has
+    /// a `SETTINGS` clause of its own: `SELECT ... UNION ALL (SELECT ... FROM view(...) SETTINGS x = 1)`.
+    /// The clause of the parenthesized operand applies only to it (see `ParserUnionQueryElement`), so it is
+    /// not on the query context even when the set operation is the outermost query. The only clause an operand
+    /// shares with the set operation is the trailing clause of the last operand, which `QueryTreeBuilder`
+    /// appends to the clauses of the set operation, so that one is a suffix of them.
+    auto has_own_settings = [](const auto & node, const UnionNode & parent_union)
+    {
+        auto is_suffix = [](const auto & suffix, const auto & whole)
+        {
+            return suffix.size() <= whole.size() && std::equal(suffix.begin(), suffix.end(), whole.end() - suffix.size());
+        };
+
+        const auto & operands = parent_union.getQueries().getNodes();
+        bool is_last_operand = !operands.empty() && operands.back().get() == &node;
+        return !(is_last_operand
+            && is_suffix(node.getSettingsChanges(), parent_union.getSettingsChanges())
+            && is_suffix(node.getDefaultSettings(), parent_union.getDefaultSettings())
+            && is_suffix(node.getQueryParameters(), parent_union.getQueryParameters()));
+    };
+
+    auto scope_customizes_settings = [&](const IdentifierResolveScope & scope_to_check) -> bool
+    {
+        const auto * parent_union = scope_to_check.parent_scope && scope_to_check.parent_scope->scope_node
+            ? scope_to_check.parent_scope->scope_node->as<UnionNode>()
+            : nullptr;
+        if (const auto * query_node = scope_to_check.scope_node->as<QueryNode>())
+            return query_node->hasSettingsChanges()
+                && (query_node->isSubquery() || (parent_union && has_own_settings(*query_node, *parent_union)));
+        if (const auto * union_node = scope_to_check.scope_node->as<UnionNode>())
+            return union_node->hasSettingsChanges()
+                && (union_node->isSubquery() || (parent_union && has_own_settings(*union_node, *parent_union)));
+        return false;
+    };
+
+    ContextPtr execution_context = scope_context->getQueryContext();
+    {
+        const IdentifierResolveScope * scope_to_check = &scope;
+        while (scope_to_check != nullptr)
+        {
+            if (scope_customizes_settings(*scope_to_check))
+            {
+                auto * nearest_query_scope = scope.getNearestQueryScope();
+                if (nearest_query_scope)
+                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
+                break;
+            }
+            scope_to_check = scope_to_check->parent_scope;
+        }
+    }
+
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
@@ -5543,8 +5612,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
         }
 
-        auto context = scope_context->getQueryContext();
-        auto parameterized_view_storage = context->buildParameterizedViewStorage(
+        auto parameterized_view_storage = execution_context->buildParameterizedViewStorage(
             database_name,
             table_name,
             view_params);
@@ -5872,72 +5940,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
 
-    /// Always use getQueryContext() for table function result caching (shared across all subqueries).
-    /// The execution context is used for the actual table function execution and its settings
-    /// are incorporated into the cache key (so identical settings still reuse the cache,
-    /// while different settings get separate entries).
-    /// If a parent *subquery* has per-subquery SETTINGS, use the nearest query scope's
-    /// context (which has accumulated settings applied). We only consider subqueries
-    /// (not the outermost query) because the outermost query's SETTINGS are already on
-    /// the query context, and switching to the QueryNode's own context copy could change
-    /// non-settings state (e.g. isDistributed) and break table function execution
-    /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
-    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
-    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
-    /// query tree through cloning and conversion back to AST for distributed execution.
-    /// A subquery customizes its settings when it is a `QueryNode` with its own `SETTINGS` clause, or a
-    /// `UnionNode` with a query-level `SETTINGS` clause of the union. In the latter case every arm was
-    /// built from the union's context, so the nearest query scope below it already carries the settings.
-    /// An operand of a set operation is not a subquery, but it customizes its settings as well when it has
-    /// a `SETTINGS` clause of its own: `SELECT ... UNION ALL (SELECT ... FROM view(...) SETTINGS x = 1)`.
-    /// The clause of the parenthesized operand applies only to it (see `ParserUnionQueryElement`), so it is
-    /// not on the query context even when the set operation is the outermost query. The only clause an operand
-    /// shares with the set operation is the trailing clause of the last operand, which `QueryTreeBuilder`
-    /// appends to the clauses of the set operation, so that one is a suffix of them.
-    auto has_own_settings = [](const auto & node, const UnionNode & parent_union)
-    {
-        auto is_suffix = [](const auto & suffix, const auto & whole)
-        {
-            return suffix.size() <= whole.size() && std::equal(suffix.begin(), suffix.end(), whole.end() - suffix.size());
-        };
-
-        const auto & operands = parent_union.getQueries().getNodes();
-        bool is_last_operand = !operands.empty() && operands.back().get() == &node;
-        return !(is_last_operand
-            && is_suffix(node.getSettingsChanges(), parent_union.getSettingsChanges())
-            && is_suffix(node.getDefaultSettings(), parent_union.getDefaultSettings())
-            && is_suffix(node.getQueryParameters(), parent_union.getQueryParameters()));
-    };
-
-    auto scope_customizes_settings = [&](const IdentifierResolveScope & scope_to_check) -> bool
-    {
-        const auto * parent_union = scope_to_check.parent_scope && scope_to_check.parent_scope->scope_node
-            ? scope_to_check.parent_scope->scope_node->as<UnionNode>()
-            : nullptr;
-        if (const auto * query_node = scope_to_check.scope_node->as<QueryNode>())
-            return query_node->hasSettingsChanges()
-                && (query_node->isSubquery() || (parent_union && has_own_settings(*query_node, *parent_union)));
-        if (const auto * union_node = scope_to_check.scope_node->as<UnionNode>())
-            return union_node->hasSettingsChanges()
-                && (union_node->isSubquery() || (parent_union && has_own_settings(*union_node, *parent_union)));
-        return false;
-    };
-
-    ContextPtr execution_context = scope_context->getQueryContext();
-    {
-        const IdentifierResolveScope * scope_to_check = &scope;
-        while (scope_to_check != nullptr)
-        {
-            if (scope_customizes_settings(*scope_to_check))
-            {
-                auto * nearest_query_scope = scope.getNearestQueryScope();
-                if (nearest_query_scope)
-                    execution_context = nearest_query_scope->scope_node->as<QueryNode &>().getMutableContext();
-                break;
-            }
-            scope_to_check = scope_to_check->parent_scope;
-        }
-    }
 
     /// The `parallel_replicas_for_cluster_engines` setting may have been disabled on
     /// a query node's local context (in resolveQuery, when cluster alternatives are
