@@ -112,6 +112,7 @@ namespace ProfileEvents
     extern const Event EngineFileLikeReadFiles;
     extern const Event QueryConditionCacheHits;
     extern const Event QueryConditionCacheMisses;
+    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace fs = std::filesystem;
@@ -3108,6 +3109,11 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                     matching_marks->size(),
                     format_filter_info->filter_actions_dag->dumpNames(),
                     path);
+
+                /// The readers of the buckets count as pruned only the row groups of their own buckets. When the
+                /// file is not split, the row groups dropped here count as pruned too, by its only reader.
+                /// Only Parquet has a splitter.
+                ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, matching_marks->size() - matching_row_groups.size());
 
                 /// Fewer buckets (or none at all) may be left, and they are still read as a split file.
                 std::vector<FileBucketInfoPtr> buckets;
