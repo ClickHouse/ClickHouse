@@ -217,6 +217,7 @@ struct MergeTreeWriterSettings
     size_t adaptive_write_buffer_initial_size{};
     float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
+    bool compress_per_substream_in_compact_parts{};
     bool apply_adaptive_codec = false;
 };
 
