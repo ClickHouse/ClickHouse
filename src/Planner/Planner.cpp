@@ -332,19 +332,34 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// disable parallel replicas to collect filters
+    /// Disable parallel replicas to collect filters.
+    /// Also do not let `join_algorithm = 'direct'` reach this plan: the tables are replaced with dummy ones,
+    /// so a direct join with a `MergeTree` right table cannot be built here (`ReadFromDummy` is not
+    /// `ReadFromMergeTree`) and choosing the join algorithm throws `NOT_IMPLEMENTED`. The plan is never
+    /// executed, and the algorithm does not affect which filters are pushed down to the tables.
+    /// Every nested query and union has its own context, so all of them are adjusted (the tree is a clone).
+    auto make_context_for_filter_collection = [](const ContextPtr & context)
     {
-        if (auto * query_node = updated_query_tree->as<QueryNode>())
+        auto new_context = Context::createCopy(context);
+        new_context->setSetting("enable_parallel_replicas", false);
+        new_context->setSetting("join_algorithm", String{"hash"});
+        return new_context;
+    };
+    {
+        std::vector<IQueryTreeNode *> nodes_to_adjust{updated_query_tree.get()};
+        while (!nodes_to_adjust.empty())
         {
-            auto new_context = Context::createCopy(query_node->getMutableContext());
-            new_context->setSetting("enable_parallel_replicas", false);
-            query_node->getMutableContext() = new_context;
-        }
-        else if (auto * union_node = updated_query_tree->as<UnionNode>())
-        {
-            auto new_context = Context::createCopy(union_node->getMutableContext());
-            new_context->setSetting("enable_parallel_replicas", false);
-            union_node->getMutableContext() = new_context;
+            auto * node = nodes_to_adjust.back();
+            nodes_to_adjust.pop_back();
+
+            if (auto * query_node = node->as<QueryNode>())
+                query_node->getMutableContext() = make_context_for_filter_collection(query_node->getMutableContext());
+            else if (auto * union_node = node->as<UnionNode>())
+                union_node->getMutableContext() = make_context_for_filter_collection(union_node->getMutableContext());
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    nodes_to_adjust.push_back(child.get());
         }
     }
 
