@@ -27,11 +27,10 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
             group_by_min_ttl = info.min;
 
     return PartProperties::GeneralTTLInfo{
-        .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
         .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
         .has_any_non_finished_column_ttls = part->ttl_infos.hasAnyNonFinishedColumnTTLs(),
         .part_min_ttl = part->ttl_infos.part_min_ttl,
-        .part_max_ttl = part->ttl_infos.part_max_ttl,
+        .part_drop_ttl = part->ttl_infos.getTTLForPartDropMerge(),
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
         .group_by_min_ttl = group_by_min_ttl,
     };
