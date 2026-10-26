@@ -412,6 +412,18 @@ def apply(root):
         for _, rule in source.rules():
             attrs = {k.arg: k.value for k in rule.keywords}
             name = getattr(attrs.get('name'), 'value', None)
+            if (package, name) == ('src/Storages/System', 'clickhouse_storages_system_information_schema'):
+                # attachInformationSchemaTables.h includes only Interpreters/Context_fwd.h.
+                for field, owners in (
+                        ('deps', ['//src:with_context']),
+                        ('implementation_deps', [
+                            '//src/Common', '@clickhouse_icu//:_icuuc', '//src:clickhouse_common_io__compile_0',
+                            '//base/poco/Foundation:_poco_foundation',
+                            '//src/Common/ZooKeeper:clickhouse_common_zookeeper_base', '//src/Parsers:headers',
+                            '//src:headers', '//src/Parsers:parser_api',
+                        ])):
+                    edits.append((*source.span(attrs[field]), json.dumps(owners)))
+                continue
             if package == 'src' and name in EMBEDDED_OBJECTS:
                 edits.extend(embedded_object_edits(build, rule, name, attrs, canonical))
                 embedded.add(name)
