@@ -1982,7 +1982,7 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 )", 0, \
         {"25.2", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"}) \
 DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
-Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark, the data substream of the `SHARED` typed paths included. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
 )", 0, \
         {"26.8", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."}) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
@@ -7067,26 +7067,6 @@ Find the latest metadata file of an Iceberg table read by path on S3 or Azure by
 Enable it only for tables whose metadata files are all named `v<N>...` (as ClickHouse and Hadoop catalogs name them): in a directory that also holds `<N>-<uuid>.metadata.json` files, those files are never candidates, so the commits of their writer are not seen.
 )", 0, \
         {"26.11", false, false, "New setting to list only the `metadata/v` key prefix when looking for the latest metadata file of an Iceberg table read by path."}) \
-    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 16, R"(
-Maximum number of Iceberg manifest files decoded concurrently while reading a table.
-
-Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
-
-Higher values raise peak memory when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
-
-Must be greater than zero; `1` decodes the manifests one at a time.
-)", 0, iceberg_delete_manifest_decode_concurrency, \
-        {"26.11", 4, 16, "Raise the default number of Iceberg manifest files decoded concurrently from 4 to 16 to overlap more object storage round-trips on tables with many manifests."}, \
-        {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
-        {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
-    DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
-Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
-
-The decode tasks pause once the queue is full and the query is not consuming, so this also bounds the read-ahead.
-
-Must be greater than zero.
-)", 0, \
-        {"26.9", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."}) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
@@ -10785,6 +10765,10 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_gdeflate_codec, false, R"(
+Enables the `GDeflate` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
@@ -11696,7 +11680,16 @@ Enable experimental table function `eval`.
         {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"}) \
     MAKE_OBSOLETE(M, Bool, use_compact_format_in_distributed_parts_names, true, \
         {"26.10", true, true, "Obsolete setting. The non-compact directory format for the async `INSERT` queue of a `Distributed` table has been removed. The setting was 1 by default since version 21.1. Switch to `1` and let the queue drain before upgrading."}, \
-        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"})
+        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"}) \
+    MAKE_OBSOLETE(M, NonZeroUInt64, iceberg_manifest_decode_concurrency, 16, \
+        {"26.11", 4, 16, "Obsolete setting: Iceberg manifest files are read on the IO thread pool and parsed by the threads reading the table."}, \
+        {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
+        {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
+    MAKE_OBSOLETE(M, NonZeroUInt64, iceberg_delete_manifest_decode_concurrency, 16, \
+        {"26.11", 4, 16, "Obsolete setting, formerly an alias of `iceberg_manifest_decode_concurrency`."}) \
+    MAKE_OBSOLETE(M, NonZeroUInt64, iceberg_file_entries_queue_size, 100, \
+        {"26.11", 100, 100, "Obsolete setting: there is no queue between Iceberg manifest parsing and the query any more."}, \
+        {"26.9", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
