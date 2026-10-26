@@ -1356,7 +1356,15 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 bool TCPHandler::receivePacketsExpectDataConcurrentWithExecutor(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
-    return receivePacketsExpectData(state);
+    try
+    {
+        return receivePacketsExpectData(state);
+    }
+    catch (...)
+    {
+        state.stop_query = true;
+        throw;
+    }
 }
 
 bool TCPHandler::receivePacketsExpectData(QueryState & state)
@@ -1593,6 +1601,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         }
         catch (...)
         {
+            killQueryIfStoppedByClient(state);
             executor.cancel();
             throw;
         }

@@ -1,3 +1,5 @@
 remote: stopped
 insert select: stopped
+streamed insert: stopped
+streamed insert, client killed: stopped
 create as select: stopped
