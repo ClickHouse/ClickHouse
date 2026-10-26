@@ -941,6 +941,13 @@ void MutationsInterpreter::prepare(bool dry_run)
         !updated_columns.empty() || !patch_updated_columns.empty() || !clear_column_names.empty();
     if (need_materialized_analysis)
     {
+        /// Metadata loading tolerates stored expressions that predate the alias-lambda capture rule,
+        /// and analysing such an expression throws. Leave these columns out of the graph, so that a
+        /// mutation unrelated to them does not fail; the ones a mutation would have to recompute are
+        /// rejected below (for `CLEAR COLUMN`, by the clear-specific closure further down).
+        const auto legacy_capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(columns_desc);
+        NameSet legacy_capture_columns;
+
         for (const auto & column : columns_desc)
         {
             /// Restricted to the columns this task reads, because the recompute stages below can
@@ -948,6 +955,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// on-fly read over the same graph, so a chain hop is never missing from it.
             if (!available_columns_set.contains(column.name))
                 continue;
+
+            if (legacy_capture_violations.contains(column.name))
+            {
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+                    legacy_capture_columns.insert(column.name);
+                continue;
+            }
 
             const auto * materialized = materialized_dependencies.findNode(column.name);
             if (!materialized)
@@ -997,6 +1011,30 @@ void MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
             }
+        }
+
+        if (!legacy_capture_columns.empty() && (!updated_columns.empty() || !patch_updated_columns.empty()))
+        {
+            NameSet changed_columns = updated_columns;
+            changed_columns.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+            for (const auto & [_, affected_list] : column_to_affected_materialized)
+                changed_columns.insert(affected_list.begin(), affected_list.end());
+
+            auto materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(columns_desc, context);
+            NameSet stale_legacy_columns;
+            for (const auto & name : legacy_capture_columns)
+            {
+                auto it = materialized_column_inputs.by_column.find(name);
+                if (it != materialized_column_inputs.by_column.end()
+                    && std::ranges::any_of(it->second, [&](const auto & input) { return changed_columns.contains(input); }))
+                    stale_legacy_columns.insert(name);
+            }
+
+            if (auto unsafe_column = materialized_column_inputs.findFirstUnsafeColumn(stale_legacy_columns))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot update the requested column(s): the MATERIALIZED column {} has to be recalculated, but its "
+                    "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
+                    backQuote(*unsafe_column));
         }
 
         if (!updated_columns.empty())

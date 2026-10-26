@@ -45,4 +45,14 @@ sed -i 's/`y` UInt8/`y` UInt8 ALIAS `x` + 1/' "${WORK_DIR}/metadata/db/drop_rena
 local_query "ALTER TABLE db.drop_rename DROP COLUMN c, RENAME COLUMN m TO c, ADD COLUMN b UInt64 DEFAULT a + 1000 SETTINGS mutations_sync = 2"
 local_query "SELECT a, b, c FROM db.drop_rename"
 
+# `CLEAR COLUMN` of a column stored in an existing part runs the mutation on that part, which must
+# not analyse the unrelated legacy expression either. The same holds for an unrelated `UPDATE`.
+local_query "CREATE TABLE db.legacy_clear (x UInt8, arr Array(UInt8), y UInt8, z UInt8, m Array(UInt8) MATERIALIZED arrayMap(x -> y, arr)) ENGINE = MergeTree ORDER BY tuple()"
+local_query "INSERT INTO db.legacy_clear (x, arr, y, z) VALUES (1, [1], 2, 5)"
+sed -i 's/`y` UInt8/`y` UInt8 ALIAS `x` + 1/' "${WORK_DIR}/metadata/db/legacy_clear.sql"
+local_query "ALTER TABLE db.legacy_clear CLEAR COLUMN z SETTINGS mutations_sync = 2"
+local_query "SELECT x, z, m FROM db.legacy_clear"
+local_query "ALTER TABLE db.legacy_clear UPDATE z = 7 WHERE 1 SETTINGS mutations_sync = 2"
+local_query "SELECT x, z, m FROM db.legacy_clear"
+
 rm -rf "${WORK_DIR}"
