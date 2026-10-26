@@ -584,7 +584,8 @@ void ReplxxLineReader::recomputeCurswant(int pos, std::u32string & text)
     int prev_newline = std::min(pos, length);
     while (prev_newline > 0 && !is_newline(prev_newline))
         --prev_newline;
-    curswant = std::max(!is_newline(prev_newline) || pos == 0 ? pos + rx.prompt_indentation() + 1 : pos - prev_newline, 1);
+    /* The column is relative to the input text: continuation lines are not indented by the prompt width. */
+    curswant = std::max(!is_newline(prev_newline) || pos == 0 ? pos + 1 : pos - prev_newline, 1);
 }
 
 void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char motion)
@@ -671,6 +672,9 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
     int reps = vimReps();
 
     int cls = pos < length ? charClass(text, pos, bigword) : -1;
+    /* For `aw` an empty line is whitespace, as in Vim. */
+    if (cls == -1 && around && pos < length && (pos == 0 || text[pos - 1] == '\n'))
+        cls = 0;
     if (cls == -1)
     {
         resetVim(&pos, &text);
@@ -689,7 +693,12 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
         /* On whitespace aw takes the whitespace and the following word. On a word it
          * takes the trailing whitespace, or the leading whitespace if there is none. */
         if (cls == 0)
+        {
+            /* The whitespace continues across line breaks, up to the following word or empty line. */
+            while (end + 1 < length && chunkClass(text, end + 1, bigword) == 0)
+                end++;
             extendChunk(text, end, bigword);
+        }
         else if (end + 1 < length && (reps > 1 ? chunkClass(text, end + 1, bigword) : charClass(text, end + 1, bigword)) == 0)
             extendChunk(text, end, bigword);
         else
@@ -1261,7 +1270,7 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                     {
                         int no_newline = text[i] != '\n';
                         if (no_newline)
-                            offset = std::max(offset - (rx.prompt_indentation() + 1), 0);
+                            offset = std::max(offset - 1, 0);
                         for (pos = no_newline ? 0 : i + 1; pos < length - 1 && pos < i + offset; pos++)
                             if (text[pos] == '\n' || text[pos + 1] == '\n')
                                 break;

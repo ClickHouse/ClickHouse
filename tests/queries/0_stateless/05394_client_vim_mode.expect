@@ -426,5 +426,38 @@ submit
 expect "4302"
 expect ":) "
 
+# `j` and `k` keep the column relative to the input text, which does not include the prompt.
+send -- "SELECT 4400\r+ 234"
+escape
+send -- "ggji+1 -- "
+escape
+submit
+expect "4401"
+expect ":) "
+
+send -- "SELECT 4500\r+ 234"
+escape
+send -- "gg7ljkx"
+submit
+expect "734"
+expect ":) "
+
+# `aw` on trailing whitespace takes the line break and the word on the next line.
+send -- "SELECT 4600  \r- 234"
+escape
+send -- "gg\$caw- "
+escape
+submit
+expect "4366"
+expect ":) "
+
+# `aw` on an empty line takes it and the following word.
+send -- "SELECT 4700 +\r\r- 234"
+escape
+send -- "ggjdaw"
+submit
+expect "4934"
+expect ":) "
+
 send -- "\4"
 expect eof
