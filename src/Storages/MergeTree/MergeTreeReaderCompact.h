@@ -57,8 +57,12 @@ protected:
     /// the columns `columns_mask` selects, or all of them that are in the part if it is null.
     virtual void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) = 0;
 
-    /// The rows served from the columns cache, not read from the part, since `takeCompressedBytesRead` was called.
-    std::vector<CompressedBytesRead::RowsFromColumnsCache> rows_from_columns_cache;
+    /// The compressed size in the part of the granules of columns that are served from the columns cache instead of being read
+    /// from it, since `takeCompressedBytesRead` was called: they are counted as the part has them, as if they were read.
+    size_t compressed_bytes_served_from_columns_cache = 0;
+
+    /// The compressed size of the granules [from_mark, to_mark) of the column at `pos` in the part.
+    virtual size_t getCompressedBytesInPart(size_t pos, size_t from_mark, size_t to_mark) = 0;
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 
@@ -169,10 +173,6 @@ private:
     bool isGranuleColumnCached(size_t pos, size_t mark) const;
 
     size_t readGranulesWithColumnsCache(size_t from_mark, size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns);
-
-    /// `serveRowsFromColumnsCacheEntry`, which also remembers the rows, see `rows_from_columns_cache`.
-    void serveRowsFromColumnsCache(
-        const ColumnsCacheEntry & entry, size_t pos, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns);
 
     /// Copy the `rows` rows of granule `mark` of the column at `pos`, which start at `offset` of
     /// `column`, for the cache.

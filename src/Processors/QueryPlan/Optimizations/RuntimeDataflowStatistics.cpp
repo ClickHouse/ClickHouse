@@ -412,7 +412,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnCodecByName & column_codecs,
     const CompressionCodecPtr & default_codec,
     size_t read_bytes,
-    const std::optional<CompressedBytesRead> & compressed_bytes_read,
+    std::optional<size_t> compressed_bytes_read,
     std::optional<bool> & should_continue_sampling)
 {
     Stopwatch watch;
@@ -420,42 +420,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     if (compressed_bytes_read)
     {
         auto & statistics = (duplicated ? block->duplicated_bytes_statistics : block->input_bytes_statistics)[InputStatisticsType::WithByteHint];
-
-        /// The rows taken from the columns cache were not read, so they are estimated the same way as the columns of a part
-        /// without per-column sizes: by their size in memory, and by compressing a sample of them in the blocks to sample.
-        /// They are entries of the cache, which hold the values as they are in the part.
-        size_t bytes_from_cache = 0;
-        size_t sample_bytes = 0;
-        size_t compressed_bytes = 0;
-        for (const auto & [column, offset, rows] : compressed_bytes_read->rows_from_columns_cache)
-        {
-            /// The rows are sized as they are represented, as they are sampled: not by the average size of the rows of the entry,
-            /// since the values of `String` vary in size, and not row by row, since a `LowCardinality` or a sparse column stores
-            /// a value for many rows.
-            const ColumnPtr served = offset == 0 && rows == column.column->size() ? column.column : column.column->cut(offset, rows);
-            bytes_from_cache += served->byteSize();
-
-            if (!should_continue_sampling.has_value())
-                should_continue_sampling = shouldSampleBlock(statistics, rows);
-            if (*should_continue_sampling)
-            {
-                const auto codec_it = column_codecs.find(column.name);
-                const auto [sample, compressed] = estimateCompressedColumnSize(
-                    {served, column.type, column.name},
-                    codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
-                sample_bytes += sample;
-                compressed_bytes += compressed;
-            }
-        }
-
         std::lock_guard lock(statistics.mutex);
-        statistics.compressed_bytes_read += compressed_bytes_read->bytes;
-        statistics.bytes += bytes_from_cache;
-        if (compressed_bytes)
-        {
-            statistics.sample_bytes += sample_bytes;
-            statistics.compressed_bytes += compressed_bytes;
-        }
+        statistics.compressed_bytes_read += *compressed_bytes_read;
         const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
         statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
         ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);

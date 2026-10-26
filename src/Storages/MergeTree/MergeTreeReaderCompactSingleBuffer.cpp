@@ -42,14 +42,23 @@ catch (...)
     throw;
 }
 
-std::optional<CompressedBytesRead> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
+std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
     if (!count_compressed_bytes_read)
         return std::nullopt;
     const size_t total = stream ? stream->getCompressedBytesOfBlocksRead() : 0;
-    return CompressedBytesRead{
-        .bytes = total - std::exchange(compressed_bytes_taken, total),
-        .rows_from_columns_cache = std::exchange(rows_from_columns_cache, {})};
+    return total - std::exchange(compressed_bytes_taken, total) + std::exchange(compressed_bytes_served_from_columns_cache, 0);
+}
+
+size_t MergeTreeReaderCompactSingleBuffer::getCompressedBytesInPart(size_t pos, size_t from_mark, size_t to_mark)
+{
+    init();
+    /// With marks of substreams, a column is all of its substreams, which may share compressed blocks.
+    const size_t position = *column_positions[pos];
+    if (!has_substream_marks)
+        return stream->getCompressedBytesOfColumn(from_mark, to_mark, position, position);
+    return stream->getCompressedBytesOfColumn(
+        from_mark, to_mark, columns_substreams.getFirstSubstreamPosition(position), columns_substreams.getLastSubstreamPosition(position));
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(

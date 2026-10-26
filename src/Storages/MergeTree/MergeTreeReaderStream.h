@@ -156,6 +156,11 @@ public:
     {
     }
 
+    /// The compressed size of the column at the positions [first_position, last_position] (its substreams, if they have
+    /// marks) in the granules [from_mark, to_mark): from its first mark in each granule to the next mark after its last one
+    /// in the file at a later offset. A compressed block shared with other columns is counted for each of them.
+    size_t getCompressedBytesOfColumn(size_t from_mark, size_t to_mark, size_t first_position, size_t last_position);
+
 protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);
     std::optional<size_t> getLeftOffsetOneColumn(size_t mark, size_t column_position);

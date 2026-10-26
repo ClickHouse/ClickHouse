@@ -184,7 +184,7 @@ MergeTreeReadTask::MergeTreeReadTask(
                                                            const NameSet & partially_read_columns,
                                                            const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
                                                            size_t read_bytes,
-                                                           std::optional<CompressedBytesRead> compressed_bytes_read,
+                                                           std::optional<size_t> compressed_bytes_read,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);

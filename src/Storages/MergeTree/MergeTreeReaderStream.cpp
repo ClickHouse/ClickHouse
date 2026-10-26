@@ -605,6 +605,35 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     return {max_range_bytes, sum_range_bytes};
 }
 
+size_t MergeTreeReaderStreamMultipleColumns::getCompressedBytesOfColumn(size_t from_mark, size_t to_mark, size_t first_position, size_t last_position)
+{
+    loadMarks();
+    const size_t num_columns = marks_getter->getNumColumns();
+
+    /// The granules are written one after another, and the columns of a granule in the order of their positions.
+    auto get_end = [&](size_t mark, size_t begin)
+    {
+        for (size_t next_column = last_position + 1; mark < marks_count; ++mark, next_column = 0)
+        {
+            for (; next_column < num_columns; ++next_column)
+            {
+                const size_t offset = marks_getter->getMark(mark, next_column).offset_in_compressed_file;
+                if (offset > begin)
+                    return offset;
+            }
+        }
+        return file_size;
+    };
+
+    size_t bytes = 0;
+    for (size_t mark = from_mark; mark < to_mark; ++mark)
+    {
+        const size_t begin = marks_getter->getMark(mark, first_position).offset_in_compressed_file;
+        bytes += get_end(mark, begin) - begin;
+    }
+    return bytes;
+}
+
 MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position)
 {
     loadMarks();

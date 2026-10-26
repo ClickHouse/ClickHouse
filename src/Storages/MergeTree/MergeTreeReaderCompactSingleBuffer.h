@@ -24,7 +24,8 @@ public:
                     bool continue_reading, size_t max_rows_to_read,
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
-    std::optional<CompressedBytesRead> takeCompressedBytesRead() override;
+    std::optional<size_t> takeCompressedBytesRead() override;
+    size_t getCompressedBytesInPart(size_t pos, size_t from_mark, size_t to_mark) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override
     {
@@ -39,7 +40,7 @@ private:
     void init();
 
     bool initialized = false;
-    std::unique_ptr<MergeTreeReaderStream> stream;
+    std::unique_ptr<MergeTreeReaderStreamAllOfMultipleColumns> stream;
     /// The compressed bytes read by `stream` that `takeCompressedBytesRead` returned.
     size_t compressed_bytes_taken = 0;
 };
