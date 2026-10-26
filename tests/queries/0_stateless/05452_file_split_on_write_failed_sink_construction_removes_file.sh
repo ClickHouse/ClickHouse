@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # opened - here, the compressing wrapper rejects `output_format_compression_zstd_window_log = 1` - the empty file is
 # removed: otherwise a glob pattern over the directory would read it.
 
-DIR="${CLICKHOUSE_TMP}/05448_split_on_write_failed_sink_construction"
+DIR="${CLICKHOUSE_TMP}/05452_split_on_write_failed_sink_construction"
 rm -rf "${DIR}"
 mkdir -p "${DIR}"
 
