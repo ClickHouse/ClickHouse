@@ -6,8 +6,6 @@
 -- even though another operand is a comparison over a directly-Nullable expression. That operand then
 -- reached the pruning path and hit `chassert(!raw_type->isNullable())`.
 
-SET enable_analyzer = 1;
-
 -- 1) No logical error. These queries are otherwise invalid (a `Nothing`-typed value cannot be
 --    materialized), so they must fail with a normal handled exception, never a logical error.
 --    optimize_and_compare_chain path (chassert reached via the seed loop of tryOptimizeAndCompareChain):
@@ -128,4 +126,10 @@ SELECT count() = 3 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join
 --    so the query must report that handled exception instead of aborting.
 SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError NOT_IMPLEMENTED }
 SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0; -- { serverError NOT_IMPLEMENTED }
+-- 8) A contradiction among the convertible comparisons folds the AND to `false`, but a `Nothing`-typed
+--    operand (here from `ARRAY JOIN []`) collapses the AND's own result type to `Nothing`, which cannot
+--    hold that constant. Such an AND must be left untouched instead, so the query stays valid and its
+--    result does not depend on the setting. https://github.com/ClickHouse/ClickHouse/issues/117443
+SELECT count() FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (t2.c0 = 1) AND (t2.c0 != 1) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
+SELECT count() FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join AS t2 ON (t2.c0 = a0) AND (t2.c0 = 1) AND (t2.c0 != 1) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0;
 DROP TABLE t_and_chain_array_join;
