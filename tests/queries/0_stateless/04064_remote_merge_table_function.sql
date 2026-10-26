@@ -19,8 +19,7 @@ SELECT sum(x) FROM remote('127.0.0.1', merge(currentDatabase(), '^test_t'));
 -- currentDatabase() into a CONSTANT node (with an EXPRESSION subtree preserving
 -- the original function). With the fix, merge() arguments are left unresolved,
 -- so no constant folding occurs and no EXPRESSION subtree appears.
-SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT sum(x) FROM remote('127.0.0.1', merge(currentDatabase(), '^test_t'))) WHERE explain LIKE '%EXPRESSION%'
-SETTINGS enable_analyzer = 1;
+SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT sum(x) FROM remote('127.0.0.1', merge(currentDatabase(), '^test_t'))) WHERE explain LIKE '%EXPRESSION%';
 
 DROP TABLE test_t1;
 DROP TABLE test_t2;

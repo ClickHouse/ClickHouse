@@ -1,7 +1,6 @@
 -- Tags: no-replicated-database
 -- The `EXPLAIN` output contains database-specific identifiers.
 
-SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 SET optimize_rewrite_like_perfect_affix = 0;
 SET allow_suspicious_low_cardinality_types = 1;
