@@ -16941,15 +16941,28 @@ async function replayConnectionUser(server_address, user, implicit_user, passwor
 /// `storeCredentials`). Runs of the server wait for the probe (`admitRunQuery`), so it is aborted once
 /// it takes longer than `IMPLICIT_USER_PROBE_TIMEOUT_MS`: a stalled probe must not hold the queries of
 /// the user back. The time spent waiting for admission does not count.
+///
+/// Concurrent calls for the same probe request (the same address without the session and the same
+/// password) share one probe instead of sending another: a Run of an implicit login queues one from
+/// `rememberAuthenticationOutcome` when its response arrives, and `storeCredentials` asks again once
+/// the Run has settled, while the first one may still be waiting for admission or in flight. With
+/// `max_concurrent_queries_for_user = 1` the second probe would be rejected with
+/// `TOO_MANY_SIMULTANEOUS_QUERIES`, and the login would not be offered to the password manager.
 const IMPLICIT_USER_PROBE_TIMEOUT_MS = 5000;
 async function learnImplicitUser(server_address, password) {
     const probe_address = serverAddressWithoutSession(server_address);
     if (!probe_address) return '';
-    const json = await admitImplicitUserProbe(server_address, () => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
-        return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
-    });
+    const pending = learnImplicitUser.pending ??= new Map();
+    const key = JSON.stringify([probe_address, password]);
+    if (!pending.has(key)) {
+        const probe = admitImplicitUserProbe(server_address, () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), IMPLICIT_USER_PROBE_TIMEOUT_MS);
+            return getServerStatus(probe_address, '', password, controller.signal).finally(() => clearTimeout(timer));
+        }).finally(() => pending.delete(key));
+        pending.set(key, probe);
+    }
+    const json = await pending.get(key);
     if (!json || !json.u) return '';
     rememberImplicitUser(server_address, json.u);
     return json.u;

@@ -97,6 +97,7 @@ def test_play_credentials_store(started_cluster, nodejs_container):
         "userinfo-nothing-stored",
         "probe-outside-of-session",
         "probe-after-run-completes",
+        "run-and-store-share-one-probe",
         "refill-after-passwordless-login",
         "refill-after-passwordless-query",
         "no-password-credential-api-skips",

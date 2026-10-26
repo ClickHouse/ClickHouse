@@ -583,6 +583,65 @@ scenario('probe-after-run-completes', async js => {
     }
 });
 
+/// A Run of an implicit login queues a probe when its response arrives (`rememberAuthenticationOutcome`),
+/// which is sent once the Run releases its admission, and `storeCredentials` asks again once the Run has
+/// settled. With `max_concurrent_queries_for_user = 1` a second probe sent while the first one is in
+/// flight is rejected with `TOO_MANY_SIMULTANEOUS_QUERIES`, so the two must share one probe, and the login
+/// must still be offered to the password manager.
+scenario('run-and-store-share-one-probe', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.url_elem.value = 'http://host:8123/';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    ctx.server = ctx.url_elem.value;
+    /// A server with a single query slot for the user: a query arriving while another one is in flight
+    /// is rejected.
+    const fetch = ctx.fetch;
+    let in_flight = 0;
+    let rejected = 0;
+    let release_probe;
+    const probe_held = new Promise(resolve => { release_probe = resolve; });
+    ctx.fetch = async (url, options) => {
+        if (in_flight) {
+            ++rejected;
+            ctx.fetched.push({ url, options });
+            return { ok: false, status: 500, headers: { get: () => '202' }, json: async () => ({}), text: async () => 'TOO_MANY_SIMULTANEOUS_QUERIES' };
+        }
+        ++in_flight;
+        try {
+            const response = await fetch(url, options);
+            if (String(options.body).includes('currentUser()')) await probe_held;
+            return response;
+        } finally {
+            --in_flight;
+        }
+    };
+    let release_run;
+    const run_held = new Promise(resolve => { release_run = resolve; });
+    ctx.runQuery = async () => {
+        const response = await ctx.fetch(ctx.server, { method: 'POST', body: 'SELECT 1' });
+        vm.runInContext("rememberAuthenticationOutcome(response, server, '', 'secret')", Object.assign(ctx, { response }));
+        await run_held;
+    };
+    const run = vm.runInContext('admitRunQuery(server, new AbortController().signal, runQuery)', ctx);
+    ctx.run = run;
+    const stored = vm.runInContext('storeCredentials(run)', ctx);
+    await settle();
+    assertEqual(ctx.fetched.length, 1, 'only the query of the Run is sent while it is in flight');
+    release_run();
+    await run;
+    await settle();
+    assertEqual(ctx.fetched.length, 2, 'one probe is sent once the Run has released its admission');
+    release_probe();
+    await stored;
+    assertEqual(rejected, 0, 'no query is rejected for the single slot');
+    assertEqual(ctx.fetched.filter(f => String(f.options.body).includes('currentUser()')).length, 1, 'the probes are coalesced');
+    assertEqual(ctx.stored.length, 1, 'the login is offered to the password manager');
+    assertEqual(ctx.stored[0].id, 'alice', 'remembered under the implicit user');
+});
+
 /// A Download and a database-panel query (`auxiliaryQuery`) are queries of the user too, so with
 /// `max_concurrent_queries_for_user = 1` an implicit-user probe in flight would make the server reject
 /// them. Both must be sent only after the probe has settled.
