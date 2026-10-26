@@ -4,7 +4,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -49,6 +49,9 @@ void createTimeSeriesInnerTable(
     ContextPtr context)
 {
     auto create_context = Context::createCopy(context);
+    /// The default samples and recent samples codecs use `ALP` independently of the query setting.
+    if ((inner_table_kind == ViewTarget::Samples) || (inner_table_kind == ViewTarget::RecentSamples))
+        create_context->setSetting("enable_alp_codec", true);
 
     auto manual_create_query = getInnerTableCreateQuery(
         inner_table_kind, inner_table_uuid, inner_columns,

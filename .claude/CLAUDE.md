@@ -146,6 +146,18 @@ When writing tests in tests/queries, prefer adding a new test instead of extendi
 
 When removing a feature, do not write tests asserting that the feature no longer exists (for example, a test checking that a removed function or setting now throws an error). Instead, delete the tests of the removed feature. Such tests only pin down the absence of something and become noise.
 
+Integration tests (`tests/integration/`) are the most expensive part of CI: about 40% of its cost, and the suite barely fits in its timeout. Add an integration test only when a stateless `.sql`/`.sh` test cannot cover the behavior, for example when it needs several servers, restarts, a real external service, or a special server configuration. Stateless tests already have ZooKeeper, local clusters (`remote('127.0.0.{1,2}')`, `test_cluster_one_shard_three_replicas_localhost`), failpoints, and S3 via MinIO. Keep integration tests small: reuse one module-scoped cluster, reuse existing test modules and their clusters where possible, cover a few core cases rather than a matrix of every combination, and never wait with a fixed `time.sleep`. Do not add integration tests of these kinds:
+- Rare corner cases that real users are not going to hit: hand-corrupted parts or metadata, contrived combinations of legacy formats and obsolete settings.
+- Tests of the test infrastructure (`helpers/cluster.py`, Python helpers, the CI image), or of developer tools, rather than of the server.
+- Tests of malformed or absurd configurations: the server refuses to start or reports a config error.
+- Trivia: a metric, profile event, log line, warning, or setting exists, has some value, or is re-read on config reload.
+- A dedicated cluster only to check that a disabled feature flag rejects a request.
+- Reproductions of an internal race that rebuild internals with failpoints and log-line assertions, probabilistic stress loops, and wall-clock timing assertions.
+- Duplicates of existing stateless tests, or tests that run existing stateless tests again with a setting changed.
+- Tests that are skipped as a whole or never run in CI.
+
+These categories do not cover tests of interoperability with external systems, such as data lakes (Iceberg, Delta Lake, Paimon), catalogs, and Spark. Such tests are valuable, including those for compatibility with files written by other implementations.
+
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.

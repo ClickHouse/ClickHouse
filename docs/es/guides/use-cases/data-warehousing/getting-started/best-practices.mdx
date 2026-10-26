@@ -84,7 +84,7 @@ Muchas integraciones requieren activar una flag de función antes del primer uso
 
 En las conexiones a catálogos, cada tipo de catálogo tiene su propia flag. Consulta [Conexión a catálogos](/es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) para obtener una visión general y la [referencia de DataLakeCatalog](/es/reference/engines/database-engines/datalake) para ver los detalles de configuración. La configuración específica de cada catálogo se encuentra en las [guías de catálogos](/es/guides/use-cases/data-warehousing/reference).
 
-Para las operaciones de escritura, Iceberg requiere [allow&#95;insert&#95;into&#95;iceberg](/es/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta desde 26.2). Consulta [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake requiere [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). La [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) indica qué flags se aplican a cada formato y operación.
+Para las operaciones de escritura, Iceberg requiere [allow&#95;insert&#95;into&#95;iceberg](/es/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta desde 26.2). Consulta [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data). Delta Lake requiere [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+). La [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) indica qué flags se aplican a cada formato y operación.
 
 <div id="query-performance">
   ## Mejorar el rendimiento de las consultas
@@ -133,6 +133,12 @@ Pase el nombre de su clúster como primer argumento (`'default'` en ClickHouse C
 | Paimon     | [paimonS3Cluster()](/es/reference/functions/table-functions/paimonCluster)                                                                                       |
 
 Puede combinar las lecturas en clúster con otros ajustes de rendimiento.
+
+### Funciones de clúster y On-Demand Compute {#cluster-functions-and-on-demand-compute}
+
+Las variantes de clúster como [`icebergS3Cluster`](/es/reference/functions/table-functions/icebergCluster) y [`deltaLakeCluster`](/es/reference/functions/table-functions/deltalakeCluster) distribuyen las lecturas de archivos entre los nodos de tu clúster existente. La función de clúster en sí no añade compute. On-Demand Compute es una capability de ClickHouse Cloud que asigna temporalmente workers adicionales desde un grupo administrado a las consultas elegibles, a través de tu service y endpoint existentes.
+
+Durante la private preview, On-Demand Compute solo admite consultas `SELECT` elegibles sobre datos compatibles de Apache Iceberg y Delta Lake. Consulta la [documentación de On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute) para conocer los requisitos de elegibilidad y las limitaciones.
 
 <div id="snapshot-bounds">
   ### Limite las lecturas por lotes a instantáneas
@@ -270,14 +276,12 @@ SETTINGS
 
 Almacene la versión final después de cada carga exitosa y pásela como versión inicial en la siguiente ejecución. El resultado incluye columnas de CDF (`_change_type`, `_commit_version`, `_commit_timestamp`). Procese estas columnas antes de cargarlas en su tabla de destino. Para el patrón general de instantáneas, consulte [Acotar las lecturas por lotes a instantáneas](#snapshot-bounds).
 
-<div id="delta-write-settings">
-  #### Escrituras en Delta Lake
-</div>
+#### Escrituras en Delta Lake {#delta-write-settings}
 
-Además de [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), controle el tamaño del archivo de salida al insertar:
+Además de [allow&#95;delta&#95;lake&#95;writes](/es/reference/settings/session-settings/allow#allow_delta_lake_writes) (25.9+), controle el tamaño del archivo de salida al insertar:
 
-| Configuración                                                                                                                                                    | Desde | Propósito                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------- |
+| Configuración                                                                                                                                                       | Desde | Propósito                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------- |
 | [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/es/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9  | Límite de filas por archivo de datos de salida |
 | [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/es/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9  | Límite de bytes por archivo de datos de salida |
 
@@ -332,9 +336,7 @@ GROUP BY _path
 ORDER BY rows DESC;
 ```
 
-<div id="debug-query-log">
-  ### Comprobar el volumen de escaneo
-</div>
+### Comprobar el volumen de escaneo {#debug-query-log}
 
 Compare `read_rows` y `read_bytes` en [`system.query_log`](/es/reference/system-tables/query_log) antes y después de añadir filtros o ajustar la configuración. `ProfileEvents` como `ReadBufferFromS3Bytes` y `CachedReadBufferReadFromCacheBytes` muestran cuántos datos provinieron del almacenamiento de objetos frente a la caché local. Consulte [Diagnosticar consultas lentas](/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) para obtener una guía completa sobre `query_log` y `EXPLAIN`.
 
@@ -371,9 +373,7 @@ Los niveles de log detallados de Iceberg deshabilitan la caché de metadatos par
 
 Consulta las páginas de referencia de [iceberg&#95;metadata&#95;log](/es/reference/system-tables/iceberg_metadata_log) y [delta&#95;lake&#95;metadata&#95;log](/es/reference/system-tables/delta_metadata_log) para ver los detalles de las columnas y las opciones de verbosidad.
 
-<div id="next-steps">
-  ## Próximos pasos
-</div>
+## Próximos pasos {#next-steps}
 
 * [Primeros pasos](/es/guides/use-cases/data-warehousing/getting-started/overview) — Guía completa, desde las consultas directas hasta la escritura de datos
 * [Consultas directas](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) — Funciones de tabla, motores y variantes de clúster para los cuatro formatos

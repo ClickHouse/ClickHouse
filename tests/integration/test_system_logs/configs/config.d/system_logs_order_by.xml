@@ -5,4 +5,10 @@
     <query_thread_log>
         <order_by>event_date, event_time, query_id</order_by>
     </query_thread_log>
+    <!-- 'finish_date' is an alias of 'event_date', it should be replaced in the keys -->
+    <opentelemetry_span_log>
+        <partition_by>toYYYYMM(finish_date)</partition_by>
+        <order_by>finish_date, finish_time_us</order_by>
+        <ttl>finish_date + INTERVAL 30 DAY GROUP BY finish_date SET finish_date = max(finish_date)</ttl>
+    </opentelemetry_span_log>
 </clickhouse>

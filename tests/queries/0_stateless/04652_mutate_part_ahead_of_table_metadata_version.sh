@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # Tag no-parallel: replicated_queue_fail_next_entry is a server-global ONCE failpoint, so a
 #                  concurrent copy of this test would consume it instead of our ALTER_METADATA
 # Tag no-shared-merge-tree: tests ReplicatedMergeTree queue behaviour with failpoints
@@ -13,6 +13,10 @@ set -e
 
 function restore_failpoints()
 {
+    # Unconditionally: nothing above guarantees the ONCE failpoint was consumed, and a fail point
+    # left armed is server-global state that fires in whatever test runs next.
+    $CLICKHOUSE_CLIENT -q "system disable failpoint replicated_queue_fail_next_entry" ||:
+
     if [ -z "${held_replica:-}" ]; then
         return
     fi
