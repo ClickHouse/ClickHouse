@@ -938,9 +938,8 @@ bool SerializationTuple::supportsPooling() const
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
 {
-    /// Wrap each element in place by its own serialization (element serializations are SerializationNamed
-    /// wrappers that forward to the real element serialization, so kinds compose). `column` is the freshly
-    /// created base column, so its elements are not shared.
+    /// Element serializations are `SerializationNamed` wrappers that forward to the real element serialization,
+    /// so kinds compose. `column` is freshly created, so its elements are not shared and can be wrapped in place.
     auto & tuple = assert_cast<ColumnTuple &>(*column);
     for (size_t i = 0; i != elems.size(); ++i)
     {
