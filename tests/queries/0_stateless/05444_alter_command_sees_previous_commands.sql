@@ -158,3 +158,12 @@ INSERT INTO t_alter_previous_commands_single VALUES (42);
 ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, ADD COLUMN q UInt32 DEFAULT 7, DROP COLUMN q SETTINGS alter_sync = 2;
 SELECT * FROM t_alter_previous_commands_single;
 DROP TABLE t_alter_previous_commands_single;
+
+-- https://github.com/ClickHouse/ClickHouse/issues/117824: ADD COLUMN IF NOT EXISTS adds back the column that DROP COLUMN
+-- IF EXISTS of the same statement drops.
+CREATE TABLE t_alter_previous_commands_if (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_alter_previous_commands_if VALUES (1, 42);
+ALTER TABLE t_alter_previous_commands_if DROP COLUMN IF EXISTS x, ADD COLUMN IF NOT EXISTS x String SETTINGS alter_sync = 2;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_if' ORDER BY position;
+SELECT * FROM t_alter_previous_commands_if;
+DROP TABLE t_alter_previous_commands_if;

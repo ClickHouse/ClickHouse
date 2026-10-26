@@ -32,3 +32,6 @@ r	UInt32
 42
 42
 42
+k	UInt64
+x	String
+1	
