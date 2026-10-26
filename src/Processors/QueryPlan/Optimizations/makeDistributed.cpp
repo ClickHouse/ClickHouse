@@ -19,7 +19,6 @@
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
@@ -351,10 +350,6 @@ std::optional<PreformattedMessage> getReasonCascadesCannotDistribute(const IQuer
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
         sorting_step && sorting_step->getType() != SortingStep::Type::Full)
         return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer supports only full sorting steps");
-
-    /// `WITH FILL` is not supported yet.
-    if (typeid_cast<const FillingStep *>(&step))
-        return PreformattedMessage::create("make_distributed_plan with enable_cascades_optimizer does not support WITH FILL");
 
     return std::nullopt;
 }
@@ -742,6 +737,49 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 /// here surfaces as an exception even with `distributed_plan_fallback_to_local_execution = 1`. New
 /// rejections go to `getReasonAggregationCannotBeDistributed` and the other pre-optimization
 /// checks, which is where the former `max_rows_to_group_by` throw from this function moved.
+/// Adds a partial copy of `aggregating_step` over an "any" scatter of `source`, so it runs where the
+/// data is read, and returns its node.
+static QueryPlan::Node & addPartialAggregation(
+    const AggregatingStep & aggregating_step, QueryPlan::Node * source, QueryPlan::Nodes & nodes, size_t bucket_count,
+    bool produce_results_in_bucket_order)
+{
+    auto & exchange_scatter_node = nodes.emplace_back();
+    exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), Names{}, bucket_count);
+    exchange_scatter_node.step->setStepDescription("any");
+    exchange_scatter_node.children = {source};
+
+    auto & partial_aggregation_node = nodes.emplace_back();
+    partial_aggregation_node.step = aggregating_step.clone();
+    auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
+    partial_aggregation_step->setFinal(false);
+    partial_aggregation_step->setProduceResultsInBucketOrder(produce_results_in_bucket_order);
+    partial_aggregation_node.step->setStepDescription("partial");
+    partial_aggregation_node.children = {&exchange_scatter_node};
+    return partial_aggregation_node;
+}
+
+/// The step that merges the partial states of `aggregating_step` into its results.
+static QueryPlanStepPtr makeMergeOfPartialStates(
+    const AggregatingStep & aggregating_step, const SharedHeader & input_header, bool memory_efficient_merge,
+    bool produce_results_in_bucket_order, bool memory_bound_merging)
+{
+    Aggregator::Params aggregator_params = aggregating_step.getParams();
+    aggregator_params.only_merge = true;
+    auto merge_step = std::make_unique<MergingAggregatedStep>(
+        input_header,
+        aggregator_params,
+        aggregating_step.getGroupingSetsParamsList(),
+        /* final */ aggregating_step.getFinal(),
+        memory_efficient_merge,
+        aggregating_step.getTemporaryDataMergeThreads(),
+        produce_results_in_bucket_order,
+        aggregating_step.getMaxBlockSize(),
+        aggregating_step.getMaxBlockSizeForAggregationInOrder(),
+        memory_bound_merging);
+    merge_step->setStepDescription("merge");
+    return merge_step;
+}
+
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this an aggregating step?
@@ -758,9 +796,14 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     enum AggregationStrategy
     {
-        PartialAggregation, /// Do partial aggregation and then merge aggregation states
-        Shuffle,            /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
+        PartialAggregation,   /// Do partial aggregation and then merge aggregation states
+        Shuffle,              /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
+        ShufflePartialStates, /// Do partial aggregation, partition the states by aggregation keys and merge them in disjoint buckets, then unite the results
     } strategy = PartialAggregation;
+
+    /// True when column statistics show fewer than two input rows per group, so partial aggregation
+    /// would cost a hash table pass without making the shuffled data smaller.
+    bool partial_aggregation_reduces_little = false;
 
     /// Choose Shuffle when the estimated number of groups is high.
     if (!aggregation_keys.empty())
@@ -775,6 +818,9 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
             if (it != input_stats.column_stats.end() && it->second.num_distinct_values > 0)
                 estimated_groups = std::max(estimated_groups.value_or(0), it->second.num_distinct_values);
         }
+
+        if (estimated_groups && input_stats.estimated_rows && *estimated_groups * 2 > *input_stats.estimated_rows)
+            partial_aggregation_reduces_little = true;
 
         /// Fall back to input row count as an upper bound when NDV is unavailable.
         if (!estimated_groups && input_stats.estimated_rows)
@@ -819,41 +865,33 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         strategy = PartialAggregation;
     }
 
+    /// A shuffle of input rows sends every row over the network, even when each node sees each key
+    /// many times. Shuffling partial states sends at most one row per group from each node instead.
+    /// `distributed_plan_force_shuffle_aggregation` asks for the shuffle of input rows without a partial
+    /// aggregation, the same as in the Cascades optimizer.
+    if (strategy == Shuffle && optimization_settings.distributed_plan_partial_aggregation_before_shuffle
+        && !optimization_settings.distributed_plan_force_shuffle_aggregation
+        && can_use_partial_aggregation && !aggregating_step->getParams().overflow_row && !partial_aggregation_reduces_little)
+        strategy = ShufflePartialStates;
+
+    const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
+
     if (strategy == PartialAggregation)
     {
-        const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
-
-        /// Add any-scatter
-        auto & exchange_scatter_node = nodes.emplace_back();
-        exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), Names{}, bucket_count);
-        exchange_scatter_node.step->setStepDescription("any");
-        exchange_scatter_node.children = {source};
-
-        /// Params will be used by merge step
-        Aggregator::Params aggregator_params = aggregating_step->getParams();
-        GroupingSetsParamsList grouping_sets_params = aggregating_step->getGroupingSetsParamsList();
-        const bool has_grouping_sets = !grouping_sets_params.empty();
-
         const bool should_produce_results_in_order_of_bucket_number = aggregating_step->shouldProduceResultsInBucketOrder();
-        const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
-        const bool original_step_was_final = aggregating_step->getFinal();   /// Save whether the original AggregatingStep was final or partial
 
         /// The memory-efficient merge does not support grouping sets.
-        const bool use_memory_efficient_merge = optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets;
+        const bool use_memory_efficient_merge
+            = optimization_settings.distributed_aggregation_memory_efficient && !aggregating_step->isGroupingSets();
 
         /// The memory-efficient merge consumes each input as a stream of buckets in ascending
         /// order, so the partial aggregation must produce its result in bucket order; without
         /// that its multi-stream output would reach the exchange in arbitrary order and the
         /// merge would emit duplicated groups for buckets that arrive late.
-        auto & partial_aggregation_node = nodes.emplace_back();
-        partial_aggregation_node.step = aggregating_step->clone();
-        auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
-        partial_aggregation_step->setFinal(false);
         /// Keep the bucket order when the original step already promised it to its consumer.
-        partial_aggregation_step->setProduceResultsInBucketOrder(
+        auto & partial_aggregation_node = addPartialAggregation(
+            *aggregating_step, source, nodes, bucket_count,
             should_produce_results_in_order_of_bucket_number || use_memory_efficient_merge);
-        partial_aggregation_node.step->setStepDescription("partial");
-        partial_aggregation_node.children = {&exchange_scatter_node};
 
         /// Add gather
         auto & gather_node = nodes.emplace_back();
@@ -861,27 +899,47 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         gather_node.children = {&partial_aggregation_node};
 
         /// Replace original aggregation step with MergingAggregated step
-        aggregator_params.only_merge = true; /// Merge partial aggregation results
-        QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
-            gather_node.step->getOutputHeader(),
-            aggregator_params,
-            grouping_sets_params,
-            /* final */ original_step_was_final,
-            use_memory_efficient_merge,
-            aggregating_step->getTemporaryDataMergeThreads(),
-            should_produce_results_in_order_of_bucket_number,
-            aggregating_step->getMaxBlockSize(),
-            aggregating_step->getMaxBlockSizeForAggregationInOrder(),
-            memory_bound_merging_of_aggregation_results_enabled);
-
-        final_aggregation_step->setStepDescription("merge");
-        node.step = std::move(final_aggregation_step);
+        node.step = makeMergeOfPartialStates(
+            *aggregating_step, gather_node.step->getOutputHeader(), use_memory_efficient_merge,
+            should_produce_results_in_order_of_bucket_number, aggregating_step->usingMemoryBoundMerging());
         node.children = {&gather_node};
+    }
+    else if (strategy == ShufflePartialStates)
+    {
+        /// Gather + keyed scatter become one shuffle, and the gather + "any" scatter under the partial
+        /// aggregation disappear, in `optimizeExchanges`:
+        ///
+        ///   GatherExchange
+        ///     MergingAggregated (merge)
+        ///       ShuffleExchange (by hash(keys))
+        ///         Aggregating (partial)
+        ///           <source>
+        auto & partial_aggregation_node = addPartialAggregation(*aggregating_step, source, nodes, bucket_count, /*produce_results_in_bucket_order=*/false);
+
+        auto & partial_gather_node = nodes.emplace_back();
+        partial_gather_node.step = std::make_unique<GatherExchangeStep>(partial_aggregation_node.step->getOutputHeader(), bucket_count);
+        partial_gather_node.children = {&partial_aggregation_node};
+
+        auto & exchange_scatter_node = nodes.emplace_back();
+        exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(partial_gather_node.step->getOutputHeader(), aggregation_keys, bucket_count);
+        exchange_scatter_node.step->setStepDescription(fmt::format("by hash([{}])", fmt::join(aggregation_keys, ", ")), optimization_settings.max_step_description_length);
+        exchange_scatter_node.children = {&partial_gather_node};
+
+        /// Each bucket receives the states of its keys from every sender in no particular bucket order,
+        /// which the memory-efficient merge cannot consume.
+        auto & merge_node = nodes.emplace_back();
+        merge_node.step = makeMergeOfPartialStates(
+            *aggregating_step, exchange_scatter_node.step->getOutputHeader(), /*memory_efficient_merge=*/false,
+            /*produce_results_in_bucket_order=*/false, /*memory_bound_merging=*/false);
+        merge_node.children = {&exchange_scatter_node};
+
+        QueryPlan::Node gather_node;
+        gather_node.step = std::make_unique<GatherExchangeStep>(merge_node.step->getOutputHeader(), bucket_count);
+        gather_node.children = {&merge_node};
+        node = std::move(gather_node);
     }
     else if (strategy == Shuffle)
     {
-        const size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;    /// TODO: estimate number of buckets based on statistics and available nodes and memory
-
         /// Add scatter exchange step above source
         auto & exchange_scatter_node = nodes.emplace_back();
         exchange_scatter_node.step = std::make_unique<ScatterExchangeStep>(source->step->getOutputHeader(), aggregation_keys, bucket_count);
@@ -1448,7 +1506,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     DistributedQueryTask main_task;
 
     QueryPlan plan_fragment;
-    std::unordered_map<String, String> main_stage_depends_on;
+    StageDependencies main_stage_depends_on;
 
     {
         struct Frame
@@ -1457,7 +1515,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             size_t next_child = 0;
             std::vector<std::unique_ptr<QueryPlan>> child_plans{};
             std::unordered_map<String, DistributedQueryTask> list_of_shards{};
-            std::unordered_map<String, String> depends_on_stages{};
+            StageDependencies depends_on_stages{};
             /// True if the tasks in list_of_shards produce copies of the same data (the case right
             /// after a BroadcastExchange) rather than a partition of it.
             bool shards_are_copies = false;
@@ -1468,7 +1526,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
         std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
         std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
-        std::unordered_map<String, String> current_stage_depends_on;
+        StageDependencies current_stage_depends_on;
         bool current_shards_are_copies = false;
 
         while (!stack.empty())
@@ -1568,7 +1626,13 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 }
 
                 frame.child_plans.emplace_back(std::move(current_plan));
-                frame.depends_on_stages.insert(current_stage_depends_on.begin(), current_stage_depends_on.end());
+                /// A join reads no probe rows until its build side is complete, so the stages that feed the
+                /// build side start before those that feed the probe side.
+                const size_t child_index = frame.next_child - 1;
+                const bool build_side = typeid_cast<const JoinStepLogical *>(frame.node->step.get())
+                    && child_index == JoinStepLogical::getInputIndex(JoinStepLogical::getBuildSide());
+                frame.depends_on_stages.insert(build_side ? frame.depends_on_stages.begin() : frame.depends_on_stages.end(),
+                    current_stage_depends_on.begin(), current_stage_depends_on.end());
                 current_stage_depends_on.clear();
             }
 
@@ -1609,11 +1673,18 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     const String stage_name = "stage_" + std::to_string(exchange_id);
                     ExchangeDescription exchange_description;
                     exchange_description.name = "exchange_" + std::to_string(exchange_id);
+                    exchange_description.id = static_cast<UInt32>(exchange_id);
                     ++exchange_id;
                     exchange_description.kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ?
                         ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming;
                     exchange_description.source_bucket_count = frame.list_of_shards.size();
                     exchange_description.destination_bucket_count = exchange_step->getResultBucketCount();
+                    exchange_description.exchange_step_name = exchange_step->getName();
+                    if (const auto * shuffle_step = typeid_cast<const ShuffleExchangeStep *>(exchange_step))
+                        exchange_description.keys = shuffle_step->getKeys();
+                    else if (const auto * scatter_step = typeid_cast<const ScatterExchangeStep *>(exchange_step))
+                        exchange_description.keys = scatter_step->getKeys();
+                    exchange_description.sort_description = exchange_step->getMaintainSortDescription();
 
                     distributed_plan.exchange_descriptions[exchange_description.name] = exchange_description;
 
@@ -1635,6 +1706,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// Create stage with the current plan fragment
                     {
                         DistributedQueryStage stage;
+                        stage.id = exchange_description.id;
 
                         /// Create a task for each of the current shards
                         for (auto & [source_shard, source_task] : frame.list_of_shards)
@@ -1671,7 +1743,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     }
 
                     /// Add previous stage to the current list of dependencies
-                    frame.depends_on_stages.insert({stage_name, exchange_description.name});
+                    frame.depends_on_stages.push_back({stage_name, exchange_description.name});
 
                     /// And start a new plan fragment with exchange source
                     current_plan = std::make_unique<QueryPlan>();
@@ -1751,6 +1823,10 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 }
             }
 
+            /// The rebuilt node has no estimate, so carry over the one of the original node. For an exchange the
+            /// root is the receive step: it outputs the rows of the exchange.
+            current_plan->getRootNode()->cost_estimation = frame.node->cost_estimation;
+
             current_stage_depends_on = std::move(frame.depends_on_stages);
             current_list_of_shards = std::move(frame.list_of_shards);
             current_shards_are_copies = frame.shards_are_copies;
@@ -1776,6 +1852,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// Add last plan fragment as the main stage
     {
         DistributedQueryStage stage;
+        /// The initiator stage takes the number after the last worker stage.
+        stage.id = static_cast<UInt32>(exchange_id);
         stage.query_plan_fragment = std::move(plan_fragment);
 
         main_task.task_id = "main";

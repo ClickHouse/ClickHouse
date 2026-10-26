@@ -416,7 +416,7 @@ Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges
 and supports `INSERT` operations.
 Replication of tables is not supported.
 [Mutations](/reference/statements/alter/index#mutations) and `ALTER` operations
-are supported only if the disk is configured with `enable_hard_links`, see below.
+are supported unless hard links are disabled with `enable_hard_links`, see below.
 
 A use case for this disk type is for non-replicated `MergeTree` tables. Although 
 the `s3` disk type is suitable for non-replicated `MergeTree` tables, you may opt
@@ -448,27 +448,108 @@ is equal to
 Starting from `24.5` it is possible to configure any object storage disk 
 (`s3`, `azure`, `local`) using the `plain_rewritable` metadata type.
 
-#### Hard links on plain rewritable disks {#plain-rewritable-hard-links}
+#### Metadata snapshot {#plain-rewritable-metadata-snapshot}
 
-`ALTER` operations and mutations of a `MergeTree` table share the unchanged files
-between a part and its mutated successor with hard links, instead of copying
-them. The `enable_hard_links` setting (`0` by default) allows a disk with the
-`plain_rewritable` metadata to create real hard links, which unlocks these
-operations:
+The metadata of a `plain_rewritable` disk is stored in the object storage as a
+`prefix.path` object per directory. Building the in-memory state from these
+objects requires listing the metadata directory, reading every `prefix.path`
+and listing every directory, which is tens of thousands of requests even for a
+disk with a single table.
+
+To speed this up, the disk that writes the data also writes a compact
+snapshot of the whole state to `__meta/snapshot.bin` (a versioned binary
+format compressed with `ZSTD`) for read-only disks pointing to the same
+location (`readonly` set to `true`, or a disk attached with `read_only` set
+to `true`).
+
+A read-only disk loads the whole state from the snapshot in a single request,
+and its periodic refreshes (see the `MergeTree` setting `refresh_parts_interval`)
+check the snapshot and read it again only if it was rewritten. It does not list
+the metadata directory or read `prefix.path` at all: the only listing is of the
+markers of unfinished operations, which is a single request, so that a file
+that the writer is replacing right now is read from its backup. A read-only disk works on a
+delayed state anyway, relying on the lifetime of the old parts of `MergeTree`
+tables, and the snapshot is a delayed state of the same kind: the changes of
+the writer become visible to the readers when the writer rewrites the snapshot.
+This includes the files that the writer replaced or rewrote in place: until
+the snapshot is rewritten, a reader sees them with their previous size and
+blob, which may already be overwritten or removed, exactly as a reader that
+lists the object storage sees them until its next refresh. The snapshot only
+extends this window by at most `metadata_snapshot_write_delay_ms`.
+Only if there is no snapshot (for example, the writer has it disabled or runs
+an older version) or it cannot be read, the read-only disk lists the object
+storage.
+
+The writer has to have the latest and precise state, so it never reads the
+snapshot: it lists the object storage on startup as usual, and writes the
+snapshot after it. A writer with `metadata_snapshot_enabled` set to `false`
+removes a snapshot left from before on startup, so that the read-only disks do
+not keep using a stale state. If a snapshot cannot be read, or there is a
+malformed marker of an unfinished operation, the read-only disk lists the
+object storage, and does not use that snapshot until it is rewritten.
+
+The snapshot is used only on object storages that replace an object
+atomically, so that a read-only disk never sees a partially written snapshot:
+`S3`, Azure Blob Storage and local. On `HDFS` and on Azure Data Lake Storage
+Gen2 endpoints (such as OneLake) the snapshot is neither written nor read, and
+the disks list the object storage as without the snapshot; a snapshot left
+there from before is removed by the writer on startup.
+
+| Setting                             | Description                                                                                                                                                                                                                  | Default |
+|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `metadata_snapshot_enabled`         | Write the snapshot after modifications (if the object storage is writable), or load the state from it instead of listing the object storage (if the object storage is read-only).                                            | `true`  |
+| `metadata_snapshot_write_delay_ms`  | The snapshot is rewritten in the background, not more often than the given number of milliseconds, as long as there were modifications. `0` rewrites it right after every modification, in the committing thread, which makes every commit as expensive as serializing the metadata of the whole disk. The snapshot is also written on server shutdown, and removed right away when the disk becomes empty. | `1000`  |
+
+Both settings are read only when the disk is created: a change takes effect
+after a restart of the server, `SYSTEM RELOAD CONFIG` does not apply it. The
+same holds for the role of the disk: whether it writes or reads the snapshot is
+decided by `readonly` when the disk is created, so changing `readonly` requires
+a restart of the server as well.
+
+Older versions ignore `__meta/snapshot.bin`: they neither read it nor rewrite or
+remove it. So when the writer is downgraded to a version without snapshots
+while the read-only disks keep running a newer version, the snapshot left by
+the writer must be retired, otherwise the read-only disks keep using it and do
+not see the changes made after the downgrade. Either remove
+`__meta/snapshot.bin` after stopping the newer writer and before starting the
+older one, or set `metadata_snapshot_enabled` to `false` on the read-only disks
+and restart them, so that they list the object storage.
 
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
     <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
     <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
+    <metadata_snapshot_write_delay_ms>10000</metadata_snapshot_write_delay_ms>
+</s3_plain_rewritable>
+```
+
+The events `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotWritten`
+and `DiskPlainRewritableSnapshotWriteFailed` in
+[system.events](/reference/system-tables/events) show how the snapshot is used.
+
+#### Hard links on plain rewritable disks {#plain-rewritable-hard-links}
+
+`ALTER` operations and mutations of a `MergeTree` table share the unchanged files
+between a part and its mutated successor with hard links, instead of copying
+them. The `enable_hard_links` setting (`1` by default) allows a disk with the
+`plain_rewritable` metadata to create real hard links, which unlocks these
+operations. Set it to `0` to keep the disk readable by servers older than `26.10`;
+then the hard links are emulated by copies, and `ALTER` operations that modify
+data and mutations are not supported:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <enable_hard_links>0</enable_hard_links>
 </s3_plain_rewritable>
 ```
 
 A hard link makes the metadata of a directory list its files explicitly, together
 with the keys of the objects storing them, so that a file can refer to an object
-stored under the prefix of another directory. Consider the following before
-enabling it:
+stored under the prefix of another directory. Consider the following:
 
 - A server that does not have the `enable_hard_links` setting cannot read a
   directory in this form - it reads the whole metadata of the directory as its
@@ -739,7 +820,7 @@ These settings should be defined in the disk configuration section. This table l
 | `cache_hits_threshold`                | Integer | `0`        | Deprecated; has no effect.                                                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Skips cache for large read ranges.                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Read range size that triggers cache bypass (requires `enable_bypass_cache_with_threshold`).                                                                                                  |
-| `max_file_segment_size`               | Size    | `32Mi`     | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
+| `max_file_segment_size`               | Size    | `32Mi`     | Maximum size of a single cache file in bytes or readable format. For `SLRU` / `SLRU_OVERCOMMIT`, must not exceed the size of each SLRU queue, `max_size * min(slru_size_ratio, 1 - slru_size_ratio)` (of each part with `use_split_cache`); a larger value is rejected. |
 | `boundary_alignment`                  | Size    | `4Mi`      | Alignment of file segment boundaries in the cache. Must not exceed `max_file_segment_size` (startup rejects a larger value).                                                                 |
 | `max_elements`                        | Integer | `10000000` | Maximum number of cache files.                                                                                                                                                               |
 | `load_metadata_threads`               | Integer | `16`       | Number of threads for loading cache metadata at startup.                                                                                                                                     |

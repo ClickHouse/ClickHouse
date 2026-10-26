@@ -5,6 +5,10 @@
 -- as a worker for another node's query, a parallel replicas participant or a cluster table function
 -- worker: a fuzzed copy would take part in the initiator's read a second time. The initiator is fuzzed.
 
+-- The parallel replicas arms are pinned to the query-based implementation: the skip is counted on a worker
+-- that parses the statement it was sent, while a plan-based worker receives a plan fragment, has no AST to
+-- fuzz, and so never reaches the skip.
+
 -- Only the statements that set `ast_fuzzer_runs` themselves are fuzzed, never the measurements.
 SET ast_fuzzer_runs = 0;
 SET ast_fuzzer_any_query = 0;
@@ -83,7 +87,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
          parallel_replicas_insert_select_local_pipeline = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -193,7 +197,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_rep
          parallel_distributed_insert_select = 2,
          parallel_replicas_local_plan = 0,
          parallel_replicas_insert_select_local_pipeline = 0,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -333,7 +337,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          parallel_replicas_for_non_replicated_merge_tree = 1,
          parallel_replicas_local_plan = 0,
          parallel_replicas_allow_view_over_mergetree = 1,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks',
+         automatic_parallel_replicas_mode = 0, parallel_replicas_mode = 'read_tasks', parallel_replicas_plan_based = 0,
          ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
