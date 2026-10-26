@@ -29,7 +29,7 @@ for depth in 1000 2000 4000; do
     # 4000 levels exceed the coroutine stack on every build, so this one is always rejected.
     must_throw=$([[ $depth == 4000 ]] && echo 1 || echo 0)
     check "send $depth" "$must_throw" "SELECT CAST(unhex($(state $depth)), 'AggregateFunction(any, Dynamic)') FROM remote('127.0.0.2', system.one)"
-    check "receive $depth" 0 "SELECT CAST(unhex(materialize($(state $depth))), 'AggregateFunction(any, Dynamic)') FROM remote('127.0.0.2', system.one)"
+    check "receive $depth" "$must_throw" "SELECT CAST(unhex(materialize($(state $depth))), 'AggregateFunction(any, Dynamic)') FROM remote('127.0.0.2', system.one)"
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM remote('127.0.0.2', system.one)"
