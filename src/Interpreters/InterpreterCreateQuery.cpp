@@ -2350,9 +2350,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
-    /// A definition from a backup is user input too, so it is checked under the restoring user
-    /// (`RestorerFromBackup` sets `setUnderRestore`; a replay on other replicas is not under restore).
-    if (isFreshTableDefinition(mode, create.attach_short_syntax) || getContext()->isUnderRestore())
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
         checkExportAccess(create);
 
     /// The definition persisted below must not depend on the session setting, because reloads and
@@ -4262,8 +4260,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
-    /// Except `RESTORE`: it creates tables with internal queries, but the definitions come from the backup.
-    if (internal && !getContext()->isUnderRestore())
+    if (internal)
         return;
 
     getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
