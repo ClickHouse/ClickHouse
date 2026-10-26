@@ -1156,6 +1156,22 @@ void ClientBase::armResponsiveOutput(WriteBufferFromFileDescriptor & buf)
 }
 
 
+void ClientBase::armDecorativeOutput(WriteBufferFromFileDescriptor & buf)
+{
+    /// Unlike the result output, the progress indication has nothing that must survive a stage-one
+    /// interrupt, so these predicates do not use `output_teardown_signal_baseline`. That baseline
+    /// is advanced by onEndOfStream() and resetOutput() while a progress clear may still be running
+    /// in the parallel-formatting collector (the flush callback of `std_out_wrapper`) and holding
+    /// `tty_mutex`: with the shared predicates, that in-flight clear would stop recognizing the first
+    /// Ctrl+C and wait for a stuck terminal, while the main thread waits for `tty_mutex` to install
+    /// the bounded flush budget. With these, any progress write gives up on a terminal with no room
+    /// as soon as the query is interrupted, and drops the buffered bytes once it is cancelled.
+    buf.setCancellationHook(
+        [this]() { return query_interrupt_handler.cancelledWhileRunning(); },
+        [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
+}
+
+
 bool ClientBase::outputCancelledWhileRunning() const
 {
     const Int32 signals_before_teardown = output_teardown_signal_baseline.load();
@@ -2264,7 +2280,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// hook shares std_out's lifetime discipline: re-pointed and finally cleared in
             /// resetOutput().
             if (tty_buf)
-                armResponsiveOutput(*tty_buf);
+                armDecorativeOutput(*tty_buf);
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -2869,12 +2885,12 @@ void ClientBase::resetOutput(std::optional<Int32> signals_before_teardown)
     /// The same treatment is needed while the handler is still armed but a stage-one interrupt
     /// has already been counted before this teardown started - the exceptional teardown paths
     /// (onReceiveExceptionFromServer() and the receiveResult() cleanup catch) reach here in
-    /// exactly that state with `partial_result_on_first_cancel`. The baseline taken above
-    /// deliberately does not latch that earlier signal (the partial result it asked for still has
-    /// to be published through std_out), so the responsive hook on tty_buf stays quiet for it and
-    /// a stuck terminal could hold the decorative clears until a second Ctrl+C. onEndOfStream()
-    /// bounds its own progress clear for this very reason; there is nothing to lose here either,
-    /// because tty_buf only ever carries the progress indication, never result data.
+    /// exactly that state with `partial_result_on_first_cancel`. The hook on tty_buf (see
+    /// armDecorativeOutput) already stops waiting for a terminal with no room in that state, but
+    /// it does not drop the buffered bytes before the query is cancelled, so a terminal that
+    /// accepts data slowly could still hold the decorative clears. onEndOfStream() bounds its own
+    /// progress clear for the same reason; there is nothing to lose here either, because tty_buf
+    /// only ever carries the progress indication, never result data.
     const bool bound_teardown_tty_writes
         = tty_buf && (!query_interrupt_handler.isRunning() || query_interrupt_handler.interruptedWhileRunning());
     /// onEndOfStream() may have installed a budget already and still needs it after this call
@@ -3191,7 +3207,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     /// Progress for an INSERT (e.g. reading an INFILE) is rendered through `tty_buf` as well -
     /// keep it responsive to cancellation, for the same reason as in processOrdinaryQuery.
     if (tty_buf)
-        armResponsiveOutput(*tty_buf);
+        armDecorativeOutput(*tty_buf);
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.

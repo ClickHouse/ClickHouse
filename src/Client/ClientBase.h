@@ -350,6 +350,10 @@ private:
     /// WriteBufferFromFileDescriptor::setCancellationHook.
     void armResponsiveOutput(WriteBufferFromFileDescriptor & buf);
 
+    /// Arm `tty_buf`, which only carries the decorative progress indication, so that its writes
+    /// give up on a stuck terminal as soon as the query is interrupted, see armDecorativeOutput.
+    void armDecorativeOutput(WriteBufferFromFileDescriptor & buf);
+
     bool outputCancelledWhileRunning() const;
     bool outputInterruptedWhileRunning() const;
 
