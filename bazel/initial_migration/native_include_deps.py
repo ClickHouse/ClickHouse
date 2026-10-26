@@ -29,6 +29,29 @@ from initial_migration.prune_inherited_headers import CC_COMPILERS, CC_PROVIDERS
 CPUS = ('x86_64','aarch64','default')
 LLVM_DIRS = ('contrib/llvm-project/', 'external/llvm')
 
+def declare_nats_and_mongoc_includes(root):
+    """Keep NATS adapters relative to src and libmongoc's vendor headers private."""
+    from initial_migration.base_cpp_dependencies import attrs, replace_attrs
+
+    for repo, target, public, private, unused in (
+        ("nats_io", "_nats_io", ["src"], [], ["src/adapters", "src/include"]),
+        ("mongo_c_driver", "_libmongoc", [], ["src/utf8proc-2.11.3", "src/uthash"], []),
+    ):
+        path = root / "bazel/dependencies" / ("clickhouse_" + repo + ".BUILD.bazel")
+        text = path.read_text()
+        rule, = (rule for _, rule in Source(text).rules() if ast.literal_eval(attrs(rule)["name"]) == target)
+        fields = attrs(rule)
+        change = {}
+        for field, add, omit in (("includes", public, unused + private), ("local_includes", private, unused + public)):
+            old = ast.literal_eval(fields[field]) if field in fields else []
+            dirs = [d for d in old if d not in omit]
+            dirs.extend(d for d in add if d not in dirs)
+            if dirs != old:
+                change[field] = json.dumps(dirs, indent=4 if len(dirs) > 1 else None)
+        if change:
+            path.write_text(replace_attrs(text, {target: change}))
+
+
 def rejects_cpu(node, doc, cpu, seen=()):
     """A CPU select must fail here, outside any opaque function argument."""
     if isinstance(node, ast.Name) and node.id in doc.constants and node.id not in seen:

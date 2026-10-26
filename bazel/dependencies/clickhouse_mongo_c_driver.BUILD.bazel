@@ -208,8 +208,6 @@ ch_cc_library(
     includes = [
         "src/libmongoc/src",
         "src/libmongoc/src/mongoc",
-        "src/utf8proc-2.11.3",
-        "src/uthash",
         "config/contrib/mongo-c-driver/src/libmongoc/src/mongoc",
         "config/contrib/mongo-c-driver/src/libmongoc/src",
     ],
@@ -217,6 +215,10 @@ ch_cc_library(
     local_defines = [
         "MONGOC_COMPILATION",
     ] + CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "src/utf8proc-2.11.3",
+        "src/uthash",
+    ],
     private_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
     private_textual_srcs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
     deps = [

@@ -1849,6 +1849,8 @@ def main():
     declare_openldap(ROOT, {arch: graph.targets for arch, graph in graphs.items()})
     from initial_migration.mongo_c import declare_mongo_c_headers
     declare_mongo_c_headers(ROOT / 'bazel/dependencies/clickhouse_mongo_c_driver.BUILD.bazel')
+    from initial_migration.native_include_deps import declare_nats_and_mongoc_includes
+    declare_nats_and_mongoc_includes(ROOT)
     declare_first_party_header_deps(ROOT)
     from initial_migration.object_storage_headers import apply as declare_object_storage_headers
     declare_object_storage_headers(ROOT)

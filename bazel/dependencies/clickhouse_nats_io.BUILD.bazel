@@ -76,11 +76,7 @@ ch_cc_library(
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
     ],
-    includes = [
-        "src",
-        "src/adapters",
-        "src/include",
-    ],
+    includes = ["src"],
     language = "C",
     local_defines = [
         "NATS_HAS_TLS",
