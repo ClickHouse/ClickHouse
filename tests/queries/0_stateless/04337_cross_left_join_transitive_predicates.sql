@@ -10,7 +10,6 @@ INSERT INTO a SELECT number AS id, number % 5 AS x FROM numbers(10);
 INSERT INTO b SELECT number FROM numbers(10);
 INSERT INTO c SELECT number % 5 AS x FROM numbers(10);
 
-SET enable_analyzer = 1;
 SET enable_join_transitive_predicates = 1;
 
 SET query_plan_optimize_join_order_randomize = 1;

@@ -9,6 +9,7 @@ namespace DB
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
+    M(AI_REQUEST, "AIRequest") \
     M(ARROW_FILE, "ArrowFile") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
@@ -73,7 +74,6 @@ namespace DB
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
-    M(ICEBERG_DELETE_DECODE, "IcebergDelDec") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
