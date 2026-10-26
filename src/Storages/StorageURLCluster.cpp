@@ -113,7 +113,8 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -123,12 +124,13 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
-    TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+    if (add_structure_and_format)
+        TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
+            table_function,
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+            format_name,
+            context
+        );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode
     /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
