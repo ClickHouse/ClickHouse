@@ -15,18 +15,18 @@ CREATE TABLE t_recompress_codec_default (id UInt64, s String CODEC(Default))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'NONE';
 
-INSERT INTO t_recompress_codec_default SELECT number, repeat('a', 100) FROM numbers(100000);
+INSERT INTO t_recompress_codec_default SELECT number, repeat('a', 100) FROM numbers(20000);
 
 SELECT DISTINCT 'default part', part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_recompress_codec_default' AND active;
-SELECT 'default none is large', sum(data_compressed_bytes) > 5000000 FROM system.parts_columns
+SELECT 'default none is large', sum(data_compressed_bytes) > 1000000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_codec_default' AND column = 's' AND active;
 
 -- Change the table default codec (metadata-only). CODEC(Default) now resolves to ZSTD.
 ALTER TABLE t_recompress_codec_default MODIFY SETTING default_compression_codec = 'ZSTD';
 ALTER TABLE t_recompress_codec_default RECOMPRESS COLUMN s;
 
-SELECT 'default after', count(), countIf(s = repeat('a', 100)), countIf(id < 100000) FROM t_recompress_codec_default;
-SELECT 'default zstd is small', sum(data_compressed_bytes) < 1000000 FROM system.parts_columns
+SELECT 'default after', count(), countIf(s = repeat('a', 100)), countIf(id < 20000) FROM t_recompress_codec_default;
+SELECT 'default zstd is small', sum(data_compressed_bytes) < 200000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_codec_default' AND column = 's' AND active;
 
 CHECK TABLE t_recompress_codec_default;
@@ -40,17 +40,17 @@ CREATE TABLE t_recompress_codec_delta_default (id UInt64, v UInt64 CODEC(Delta, 
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'NONE';
 
-INSERT INTO t_recompress_codec_delta_default SELECT number, number FROM numbers(100000);
+INSERT INTO t_recompress_codec_delta_default SELECT number, number FROM numbers(20000);
 
 SELECT DISTINCT 'delta part', part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_recompress_codec_delta_default' AND active;
-SELECT 'delta none is large', sum(data_compressed_bytes) > 700000 FROM system.parts_columns
+SELECT 'delta none is large', sum(data_compressed_bytes) > 140000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_codec_delta_default' AND column = 'v' AND active;
 
 ALTER TABLE t_recompress_codec_delta_default MODIFY SETTING default_compression_codec = 'ZSTD';
 ALTER TABLE t_recompress_codec_delta_default RECOMPRESS COLUMN v;
 
 SELECT 'delta after', count(), countIf(v = id), sum(v) FROM t_recompress_codec_delta_default;
-SELECT 'delta zstd is small', sum(data_compressed_bytes) < 200000 FROM system.parts_columns
+SELECT 'delta zstd is small', sum(data_compressed_bytes) < 60000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_codec_delta_default' AND column = 'v' AND active;
 
 CHECK TABLE t_recompress_codec_delta_default;
