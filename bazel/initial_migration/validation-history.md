@@ -2537,3 +2537,28 @@ x86-64 DWYU as of 2026-10-26T10:50:09Z: no product. Clean: none. Findings: none.
 [ARM64](https://app.buildbuddy.io/invocation/35877238-c7e3-4ffb-9b74-cbaa82fe7ff6): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,701 operands; its response file was `9990128afeaf4bb413e7634485fda5228c8489227c9d9283529ae795bfe889c1`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
 
 ARM64 DWYU as of 2026-10-26T10:50:09Z: no product. Clean: none. Findings: none. Ungraded: `//base/glibc-rseq:glibc-rseq`, `//base/readpassphrase:readpassphrase`. Bazel stopped before running DWYU because MODULE.bazel.lock lacks the depend_on_what_you_use non_module_dependencies extension.
+
+## 01c19369d
+
+At [01c19369d](https://github.com/dzbarsky/clickhouse/commit/01c19369db768600825b9fa3cc0077000626b595), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/31e40b4ec9efff68a482785621496cea42a4c30d).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993) | `//src:unit_tests_dbms` | `cbddafbc30eb8e8e271682053d21a4cf09713ecdf8ed5c3e4c6f1814b02cd242` | 811964120 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd) | `//src:unit_tests_dbms` | `572fa9d4284c05fe573e2ea592d5c596a2373f821a0c7995e20a068d1e22cddf` | 795059408 | Differs from previous Bazel |
+
+[x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,788 operands; its response file was `db63f4e119bfa1644a1874bb2c2c78a58c549567ace42387bbd007362f32e500`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+x86-64 DWYU as of 2026-10-26T11:14:59Z: not collected. Clean: none. Findings: none. Ungraded: `//programs/check-marks:clickhouse-check-marks-lib`, `//src/Common:interval_tree`, `//src/Storages/System:clickhouse_storages_system_information_schema`, `//src:clickhouse_common_io_embedded`.
+
+[ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,701 operands; its response file was `985f116f04b95a0751d965a9f8af7a2deefe3401e18d07aac3ad5d233d3b0db3`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+ARM64 DWYU as of 2026-10-26T11:14:59Z: not collected. Clean: none. Findings: none. Ungraded: `//programs/check-marks:clickhouse-check-marks-lib`, `//src/Common:interval_tree`, `//src/Storages/System:clickhouse_storages_system_information_schema`, `//src:clickhouse_common_io_embedded`.
+
+On both CPUs, `ZooKeeperTest.ListRequestWireRoundTrip` passed. The lower- and uppercase `SHOW TABLES FROM information_schema` queries each returned the 20 rows in [01161_information_schema.reference](../../tests/queries/0_stateless/01161_information_schema.reference). Both ClickHouse local invocations from [05316_local_sync_logger_without_channels](../../tests/queries/0_stateless/05316_local_sync_logger_without_channels.sh) passed with `--logger.async=0`; the trace run logged `SELECT 1`.
+
+On x86-64 and ARM64, the DWYU query succeeded. The report planner could not identify the action that creates `bazel/rules/dwyu_analyze_includes.runfiles`, so it selected none of the four targets. No report build ran.
