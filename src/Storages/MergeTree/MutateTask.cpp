@@ -617,8 +617,12 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
+                /// A missing-column marker stands for stored values, which `MATERIALIZE COLUMN` keeps for an
+                /// ordinary column like it keeps the physically stored ones (see below). A `MATERIALIZED`
+                /// column is recomputed whether its values are physically stored or not.
                 auto marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                if (part->getSerializationInfos().isMissingColumn(marker_name)
+                    && table_columns.getOrdinary().tryGetByName(command.column_name))
                 {
                     auto materialize_frozen = command;
                     materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
@@ -947,8 +951,12 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
+                /// A missing-column marker stands for stored values, which `MATERIALIZE COLUMN` keeps for an
+                /// ordinary column like it keeps the physically stored ones (see below). A `MATERIALIZED`
+                /// column is recomputed whether its values are physically stored or not.
                 auto marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                if (part->getSerializationInfos().isMissingColumn(marker_name)
+                    && table_columns.getOrdinary().tryGetByName(command.column_name))
                 {
                     auto materialize_frozen = command;
                     materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
