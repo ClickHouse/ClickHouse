@@ -1,10 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <IO/ReadBuffer.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
+#include <base/scope_guard.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
@@ -92,6 +95,7 @@ public:
         size_t idx_,
         const LoggerPtr & log_,
         size_t num_consumers_,
+        std::shared_ptr<std::atomic<bool>> replica_holds_tmp_lock_,
         UInt64 partition_shard_num_ = 0,
         UInt64 shard_count_ = 0);
 
@@ -149,6 +153,8 @@ private:
 
     struct LockedTopicPartitionInfo
     {
+        /// Gives back the temporary lock of the replica. Declared before `lock`, so it runs after the lock node is removed.
+        scope_guard release_replica_tmp_lock;
         zkutil::EphemeralNodeHolderPtr lock;
         std::optional<int64_t> committed_offset;
         std::optional<uint64_t> intent_size;
@@ -164,6 +170,8 @@ private:
     {
         UInt64 active_replica_count{0};
         bool has_replica_without_locks{false};
+        /// The fewest locks held by an active replica that holds some.
+        size_t min_locks_of_replica_with_locks{std::numeric_limits<size_t>::max()};
     };
 
     std::filesystem::path keeper_path;
@@ -173,6 +181,10 @@ private:
     /// Consumers configured on this node (`kafka_num_consumers`). Fixed for the lifetime of
     /// the storage; used to split the node's lock quota. See `computeConsumerQuota`.
     const size_t num_consumers;
+
+    /// Shared by the consumers of the storage on this replica, so the replica holds at most one temporary lock while every
+    /// active replica holds locks.
+    const std::shared_ptr<std::atomic<bool>> replica_holds_tmp_lock;
 
     /// Partition affinity settings (enabled when shard_count > 0)
     UInt64 partition_shard_num = 0;
@@ -193,6 +205,8 @@ private:
 
     // Quota, how many temporary locks can be taken in current round
     size_t tmp_locks_quota{};
+    // Consecutive rounds in which an active replica was below its permanent quota
+    size_t rounds_with_replica_below_quota{};
 
     std::atomic<UInt64> last_poll_timestamp = 0;
     std::atomic<UInt64> last_commit_timestamp = 0;
@@ -206,13 +220,13 @@ private:
     size_t computeConsumerQuota(size_t node_quota) const;
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
-    ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock);
+    ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_map<String, size_t> & lock_count_by_replica);
     std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitionOffsets & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(const TopicPartition & partition_to_lock);
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks, bool has_replica_below_quota) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.
