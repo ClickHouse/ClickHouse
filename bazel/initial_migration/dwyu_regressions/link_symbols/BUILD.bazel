@@ -212,6 +212,21 @@ cc_library(
 )
 
 cc_library(
+    name = "api_with_provider",
+    hdrs = ["api.h"],
+    implementation_deps = [":provider"],
+)
+
+cc_library(
+    name = "private_direct_and_api_bridge",
+    srcs = ["consumer.cpp"],
+    implementation_deps = [
+        ":api_with_provider",
+        ":provider",
+    ],
+)
+
+cc_library(
     name = "duplicate_provider",
     srcs = [
         "duplicate_provider.cpp",

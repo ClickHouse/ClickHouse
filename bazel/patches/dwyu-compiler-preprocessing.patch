@@ -1752,7 +1752,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,361 @@
+@@ -71,6 +82,369 @@
      return options;
  }
  
@@ -1879,7 +1879,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +// Prove a requirement of a configured caller object, not that a final linker
 +// must extract the object. Header ownership is independent.
 +LinkEvidence useOwnedSymbols(const std::string& manifest, SystemUnderInspection& system,
-+                             const std::vector<std::string>& wrapped_inputs) {
++                             const std::vector<std::string>& wrapped_inputs, bool has_raw_assembly) {
 +    LinkEvidence result;
 +    std::ifstream input{manifest};
 +    if (!input) abortWithError("Cannot read DWYU link manifest ", manifest);
@@ -2041,9 +2041,17 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +        if (!own_undefined.count(symbol) && !own_weak_undefined.count(symbol)) continue;
 +        const auto& provider = *providers.begin();
 +        const auto& direct = routes.at(provider);
-+        if (opaque || archive_veto.count(symbol) || alwayslink_objects.count(provider) ||
-+            own_weak_undefined.count(symbol) || providers.size() != 1 || direct.size() != 1 ||
-+            !symbols_by_file.at(provider.second).strong_definitions.count(symbol)) {
++        const bool unique_strong = !opaque && !archive_veto.count(symbol) && !alwayslink_objects.count(provider) &&
++            !own_weak_undefined.count(symbol) && providers.size() == 1 &&
++            symbols_by_file.at(provider.second).strong_definitions.count(symbol);
++        if (!unique_strong || direct.size() != 1) {
++            // Other direct deps may forward the same File. They do not change
++            // which LinkerInput owns the symbol or prove which route is needed.
++            if (unique_strong && !incomplete_executable && !has_raw_assembly && wrapped_inputs.empty() &&
++                std::count_if(direct.begin(), direct.end(), [&](auto route) {
++                    return direct_deps.at(route) == provider.first;
++                }) == 1)
++                proven[provider.first].push_back(symbol);
 +            std::vector<std::string> causes;
 +            if (opaque) causes.push_back("opaque_input");
 +            if (archive_veto.count(symbol)) causes.push_back("archive_veto");
@@ -2114,7 +2122,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +457,89 @@
+@@ -91,21 +465,90 @@
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
@@ -2155,7 +2163,8 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +
 +    LinkEvidence link_evidence;
 +    if (!options.owned_symbols.empty())
-+        link_evidence = useOwnedSymbols(options.owned_symbols, system_under_inspection, unchecked_link_inputs);
++        link_evidence = useOwnedSymbols(options.owned_symbols, system_under_inspection, unchecked_link_inputs,
++                                        !raw_link_candidates.empty());
 +    auto result =
          evaluateIncludes(public_includes, private_includes, system_under_inspection, options.report_missing_direct_deps,
                           options.report_unused_deps, options.ignored_unused_deps, options.optimize_implementation_deps);
