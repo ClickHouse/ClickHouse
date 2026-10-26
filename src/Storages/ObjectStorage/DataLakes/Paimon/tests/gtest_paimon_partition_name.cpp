@@ -90,6 +90,25 @@ TEST(PaimonPartitionName, DateTimeCastToString)
     EXPECT_EQ(formatTimestampCastToString(whole, 6, DateLUT::instance("Asia/Shanghai")), "2024-01-15 19:30:00.000000");
 }
 
+/// A one-field BinaryRow: big-endian arity, the null bitset, then the 8-byte little-endian slot.
+static String singleFieldRow(UInt64 slot)
+{
+    String row("\0\0\0\x01", 4);
+    row.append(8, '\0');
+    for (size_t i = 0; i < 8; ++i)
+        row.push_back(static_cast<char>((slot >> (i * 8)) & 0xFF));
+    return row;
+}
+
+static String bucketPathOf(const String & field_type, const String & row, const String & options)
+{
+    const String json = R"({"version": 3, "id": 0, "highestFieldId": 0, "timeMillis": 0, "partitionKeys": ["p"],
+        "primaryKeys": [], "fields": [{"id": 0, "name": "p", "type": ")"
+        + field_type + R"("}], "options": {)" + options + "}}";
+    const PaimonTableSchema schema(Poco::JSON::Parser().parse(json).extract<Poco::JSON::Object::Ptr>());
+    return getBucketPath(row, 0, schema, "__DEFAULT_PARTITION__");
+}
+
 /// The option is read from the schema, and a local time zone timestamp is rendered in the server time zone.
 TEST(PaimonPartitionName, BucketPathOfLocalTimeZoneTimestamp)
 {
@@ -97,21 +116,9 @@ TEST(PaimonPartitionName, BucketPathOfLocalTimeZoneTimestamp)
     DateLUT::setDefaultTimezone("Asia/Shanghai");
     SCOPE_EXIT({ DateLUT::setDefaultTimezone(previous_time_zone); });
 
-    /// A one-field BinaryRow: big-endian arity, the null bitset, then the 8-byte little-endian slot holding
-    /// the millisecond of a compact timestamp, 2024-01-15 11:30:00 UTC.
-    String row("\0\0\0\x01", 4);
-    row.append(8, '\0');
-    for (size_t i = 0; i < 8; ++i)
-        row.push_back(static_cast<char>((1705318200000ULL >> (i * 8)) & 0xFF));
-
-    auto bucket_path = [&](const String & options)
-    {
-        const String json = R"({"version": 3, "id": 0, "highestFieldId": 0, "timeMillis": 0, "partitionKeys": ["p"],
-            "primaryKeys": [], "fields": [{"id": 0, "name": "p", "type": "TIMESTAMP(3) WITH LOCAL TIME ZONE"}], "options": {)"
-            + options + "}}";
-        const PaimonTableSchema schema(Poco::JSON::Parser().parse(json).extract<Poco::JSON::Object::Ptr>());
-        return getBucketPath(row, 0, schema, "__DEFAULT_PARTITION__");
-    };
+    /// The millisecond of a compact timestamp, 2024-01-15 11:30:00 UTC.
+    const String row = singleFieldRow(1705318200000ULL);
+    auto bucket_path = [&](const String & options) { return bucketPathOf("TIMESTAMP(3) WITH LOCAL TIME ZONE", row, options); };
 
     EXPECT_EQ(bucket_path(""), "p=2024-01-15T11%3A30/bucket-0");
     EXPECT_EQ(bucket_path(R"("partition.legacy-name": "FALSE")"), "p=2024-01-15 19%3A30%3A00.000/bucket-0");
@@ -124,4 +131,12 @@ TEST(PaimonPartitionName, BucketPathOfLocalTimeZoneTimestamp)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::BAD_ARGUMENTS);
     }
+}
+
+TEST(PaimonPartitionName, BucketPathOfTime)
+{
+    /// A TIME value is the 4-byte millisecond of the day, 10:30:00.120.
+    const String row = singleFieldRow(37800120);
+    EXPECT_EQ(bucketPathOf("TIME(3)", row, ""), "p=37800120/bucket-0");
+    EXPECT_EQ(bucketPathOf("TIME(3)", row, R"("partition.legacy-name": "false")"), "p=10%3A30%3A00.12/bucket-0");
 }

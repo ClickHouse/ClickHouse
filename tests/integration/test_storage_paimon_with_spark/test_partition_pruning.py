@@ -4,12 +4,15 @@ import pytest
 
 from helpers.paimon_utils import (
     PAIMON_WAREHOUSE,
+    create_paimon_table,
     create_spark_paimon_table,
+    drop_tables_at_exit,
     get_creation_expression,
     get_uuid_str,
     query_profile_events,
     spark_table,
     upload_paimon_table,
+    wait_until_query_result,
 )
 
 
@@ -254,3 +257,35 @@ def test_partition_directory_names(
         )
         == expected
     )
+
+
+def test_partition_default_name_after_alter(started_cluster_paimon_with_spark):
+    """A `Paimon*` table names the default partition with the snapshot's `partition.default-name`."""
+    started_cluster = started_cluster_paimon_with_spark
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = "test_partition_default_name_alter_" + get_uuid_str()
+
+    create_spark_paimon_table(
+        spark, table_name, "id INT NOT NULL, part STRING", partitioned_by="part"
+    )
+    spark.sql(f"INSERT INTO {spark_table(table_name)} VALUES (1, 'a')")
+    upload_paimon_table(started_cluster, "s3", table_name)
+
+    create_paimon_table("s3", instance, table_name, started_cluster)
+    with drop_tables_at_exit(instance, table_name):
+        assert (
+            instance.query(f"SELECT id, part FROM {table_name} ORDER BY id") == "1\ta\n"
+        )
+
+        spark.sql(
+            f"ALTER TABLE {spark_table(table_name)} SET TBLPROPERTIES ('partition.default-name' = 'EMPTY')"
+        )
+        spark.sql(f"INSERT INTO {spark_table(table_name)} VALUES (2, ''), (3, NULL)")
+        assert _partition_directories(table_name) == {"part=a", "part=EMPTY"}
+        upload_paimon_table(started_cluster, "s3", table_name)
+        wait_until_query_result(
+            instance,
+            f"SELECT id, part FROM {table_name} ORDER BY id",
+            "1\ta\n2\t\n3\t\\N\n",
+        )

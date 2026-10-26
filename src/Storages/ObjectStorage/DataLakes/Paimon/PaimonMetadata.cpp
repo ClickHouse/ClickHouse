@@ -158,12 +158,6 @@ DataLakeMetadataPtr PaimonMetadata::create(
     auto schema_processor = std::make_shared<PaimonSchemaProcessor>();
     auto schema = schema_processor->addSchema(schema_json);
 
-    /// Get partition default name from options
-    String partition_default_name = PARTITION_DEFAULT_VALUE;
-    auto it = schema->options.find(PAIMON_DEFAULT_PARTITION_NAME);
-    if (it != schema->options.end())
-        partition_default_name = it->second;
-
     /// Check if incremental read is enabled
     const auto data_lake_settings = configuration_ptr->getDataLakeSettings();
     bool incremental_read_enabled = (*data_lake_settings)[DataLakeStorageSetting::paimon_incremental_read].value;
@@ -236,7 +230,6 @@ DataLakeMetadataPtr PaimonMetadata::create(
         configuration_ptr->getPathForRead().path,
         table_path,
         table_cache_key_prefix,
-        partition_default_name,
         incremental_read_enabled,
         metadata_refresh_interval_sec,
         schema0_time_millis);
@@ -525,12 +518,16 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", schema_id);
 
+    String partition_default_name = PARTITION_DEFAULT_VALUE;
+    auto it = schema->options.find(PAIMON_DEFAULT_PARTITION_NAME);
+    if (it != schema->options.end())
+        partition_default_name = it->second;
+
     if (persistent_components.isMetadataCacheActive())
     {
         String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_path + ":" + toString(schema_id));
         auto log_ptr = log;
         auto client = table_client;
-        auto partition_default_name = persistent_components.partition_default_name;
         auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
         {
             LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
@@ -541,7 +538,7 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
 
     LOG_TRACE(log, "Loading manifest (no cache): {}", manifest_path);
     return std::make_shared<const PaimonManifest>(
-        table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name));
+        table_client->getDataManifest(manifest_path, *schema, partition_default_name));
 }
 
 PaimonIndexManifest PaimonMetadata::getIndexManifest(const String & index_manifest_path) const
