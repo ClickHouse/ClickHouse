@@ -82,6 +82,7 @@ ch_cc_library(
         "//src/Functions:headers",
         "//src/Access/Common:headers",
         "//src/Parsers:headers",
+        "//src:external_dictionaries_loader",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,

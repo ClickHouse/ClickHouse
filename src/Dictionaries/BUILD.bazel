@@ -70,12 +70,9 @@ _PUBLIC_HEADERS = [
     "DictionaryHelpers.h",
     "DictionarySource.h",
     "DictionarySourceFactory.h",
-    "DictionaryStructure.h",
     "ExternalQueryBuilder.h",
     "HierarchyDictionariesUtils.h",
     "ICacheDictionaryStorage.h",
-    "IDictionary.h",
-    "IDictionarySource.h",
     "NaiveBayesDictionary.h",
     "NaiveBayesModel.h",
     "SSDCacheDictionaryStorage.h",
@@ -140,6 +137,7 @@ ch_cc_library(
         "//src:with_context",
         "//src/Parsers:parser_api",
         "//src:column_types",
+        ":dictionary_api",
     ],
 )
 
@@ -235,6 +233,7 @@ ch_cc_library(
         "//src/Common:memory_tracking_api",
         "//src/Parsers:parser_api",
         "//src:column_types",
+        ":dictionary_api",
     ],
 )
 
@@ -293,6 +292,7 @@ ch_cc_library(
         "//src:with_context",
         "//src/Parsers:parser_api",
         "//src:column_types",
+        ":dictionary_api",
     ],
 )
 
@@ -490,6 +490,7 @@ cc_library(
         "//contrib/cityhash102:_cityhash",
         "//bazel:clickhouse_config_headers",
         "@clickhouse_boost//:boost_headers_no_openssl",
+        ":dictionary_api",
     ],
 )
 
@@ -498,4 +499,23 @@ filegroup(
     testonly = True,
     srcs = glob(["tests/gtest*.cpp"]),
     visibility = ["//src:__pkg__"],
+)
+
+cc_library(
+    name = "dictionary_api",
+    hdrs = [
+        "DictionaryStructure.h",
+        "IDictionary.h",
+        "IDictionarySource.h",
+    ],
+    deps = [
+        "//base:common",
+        "//base/poco/Util:_poco_util",
+        "//src:column_types",
+        "//src:core_types",
+        "//src:headers",
+        "//src:io_string_buffers",
+        "//src/Common:memory_tracking_api",
+        "//src/Common",
+    ],
 )

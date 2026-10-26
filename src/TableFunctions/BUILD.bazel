@@ -111,6 +111,7 @@ ch_cc_library(
         "//src:column_types",
         "//src:headers",
         "//src/Access/Common:headers",
+        "//src:external_dictionaries_loader",
     ],
     link_runtime = True,
     local_defines = DBMS_CONSUMER_DEFINES,

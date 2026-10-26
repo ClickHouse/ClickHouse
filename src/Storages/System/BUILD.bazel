@@ -253,6 +253,7 @@ ch_cc_library(
         "//src:column_types",
         "//src/AggregateFunctions:aggregate_api",
         "//src/Access/Common:headers",
+        "//src:external_dictionaries_loader",
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     source_headers = True,

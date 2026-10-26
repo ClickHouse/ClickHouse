@@ -2665,6 +2665,7 @@ ch_cc_library(
         "//src/Common:int_exp",
         "//src/Common:throttler_interface",
         "//src/Common:once_and_atomic",
+        ":external_dictionaries_loader",
     ],
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
     local_defines = DBMS_USEARCH_LOCAL_DEFINES,
@@ -3679,7 +3680,7 @@ ch_cc_library(
         ] + _IO_STRING_BUFFER_HEADERS + _COLUMN_TYPE_HEADERS + _UNIT_TEST_HEADERS + _SERVER_FACTORY_HEADERS + _DBMS_EMBEDDED_PRIVATE_HEADERS + [
             "Storages/StorageGenerateRandom.h",
             "Client/ClientApplicationBaseParser.h",
-        ] + _OBJECT_STORAGE_CONFIGURATION_HEADERS,
+        ] + _OBJECT_STORAGE_CONFIGURATION_HEADERS + ["Interpreters/ExternalDictionariesLoader.h"],
     ) + select({
         "@platforms//cpu:x86_64": ["Storages/StorageGenerateRandom.h"],
         "@platforms//cpu:aarch64": [],
@@ -3759,5 +3760,16 @@ cc_library(
         "//src/Common:parser_support_api",
         "//src/Parsers:parser_api",
         "@clickhouse_fmtlib//:_fmt",
+    ],
+)
+
+cc_library(
+    name = "external_dictionaries_loader",
+    hdrs = ["Interpreters/ExternalDictionariesLoader.h"],
+    deps = [
+        ":headers",
+        ":with_context",
+        "//src/Common:parser_support_api",
+        "//src/Dictionaries:dictionary_api",
     ],
 )

@@ -707,7 +707,8 @@ def declare_compiled_parser_headers(path):
         "ASTAlterQuery.h", "ASTAssignment.h", "ASTAsterisk.h", "ASTCheckDatabaseQuery.h",
         "ASTCheckQuery.h", "ASTColumnsMatcher.h",
         "ASTColumnsTransformers.h", "ASTConstraintDeclaration.h", "ASTCreateFunctionWithDriverQuery.h",
-        "ASTCreateHandlerQuery.h", "ASTCreateIndexQuery.h", "ASTDatabaseOrNone.h", "ASTDeleteQuery.h",
+        "ASTCreateHandlerQuery.h", "ASTCreateIndexQuery.h", "ASTCreateWasmFunctionQuery.h",
+        "ASTDatabaseOrNone.h", "ASTDeleteQuery.h",
         "ASTDropFunctionQuery.h", "ASTDropHandlerQuery.h", "ASTDropIndexQuery.h", "ASTDropQuery.h",
         "ASTDropResourceQuery.h", "ASTDropWorkloadQuery.h", "ASTEnumDataType.h",
         "ASTFromJSON.h", "ASTHypotheticalObjectQuery.h", "ASTIndexDeclaration.h", "ASTInsertQuery.h",
@@ -1854,6 +1855,8 @@ def main():
     declare_first_party_header_deps(ROOT)
     from initial_migration.object_storage_headers import apply as declare_object_storage_headers
     declare_object_storage_headers(ROOT)
+    from initial_migration.wasm_dictionary_headers import apply as declare_wasm_dictionary_headers
+    declare_wasm_dictionary_headers(ROOT)
     declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import omit_compile_defaults, share_local_defines
     # Fold remaining CPU choices only when target_compatible_with fixes the CPU.

@@ -312,6 +312,7 @@ ch_cc_library(
         "//src/Functions/GatherUtils:headers",
         "//src:dbms__compile_0",
         "//src/Common:int_exp",
+        "//src:external_dictionaries_loader",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     deps = [
@@ -705,6 +706,7 @@ cc_library(
             "CastOverloadResolver.h",
             "registerFunctions.h",
             "PolygonUtils.h",
+            "UserDefined/UserDefinedWebAssembly.h",
         ],
     ),
     deps = [
@@ -718,6 +720,8 @@ cc_library(
         "//src/AggregateFunctions:headers",
         "//src/Access/Common:clickhouse_common_access",
         "@clickhouse_vectorscan//:_vectorscan__compile_0",
+        ":wasm_udf_api",
+        "//src:external_dictionaries_loader",
         "//src/Common/ZooKeeper:headers",
         "@clickhouse_abseil_cpp//:absl_raw_hash_set",
         ":cast_api",
@@ -743,4 +747,17 @@ filegroup(
     testonly = True,
     srcs = glob(["tests/gtest*.cpp"]),
     visibility = ["//src:__pkg__"],
+)
+
+cc_library(
+    name = "wasm_udf_api",
+    hdrs = ["UserDefined/UserDefinedWebAssembly.h"],
+    deps = [
+        "//src:headers",
+        "//src:with_context",
+        "//src/Parsers:parser_api",
+        "//src/Common:shared_mutex",
+        "//src/Common:memory_tracking_api",
+        "//src/Common",
+    ],
 )
