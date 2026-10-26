@@ -59,8 +59,15 @@ public:
     /// function (`url`, `s3`, ...) that `parallel_replicas_for_cluster_engines` converted into this cluster
     /// storage into its `*Cluster` variant with the cluster name argument, so that the nodes take their read
     /// tasks from the initiator instead of reading every file on their own. Called by `read` and by the
-    /// distributed `INSERT ... SELECT` in `InterpreterInsertQuery`, which forwards the query the same way.
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    /// distributed `INSERT ... SELECT` in `InterpreterInsertQuery`.
+    /// A `SELECT` needs the structure and format so all nodes produce the initiator's header. For a forwarded
+    /// `INSERT ... SELECT`, leave the arguments as written: an omitted or `'auto'` structure then takes the
+    /// destination table's columns and `DEFAULT` expressions on each node.
+    virtual void updateQueryToSendIfNeeded(
+        ASTPtr & /*query*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const ContextPtr & /*context*/,
+        bool /*add_structure_and_format*/) {}
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
