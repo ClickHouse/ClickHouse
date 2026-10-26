@@ -1,0 +1,35 @@
+<test>
+    <substitutions>
+        <!-- Match rate determines the join selectivity -->
+        <substitution>
+            <name>match_rate</name>
+            <values>
+                <value>0.9</value>
+                <value>0.6</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Short strings, all stored inline -->
+    <create_query>CREATE TABLE rss_right_short_10m (k UInt64, s1 String, s2 String, s3 String, s4 String, s5 String, s6 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <!-- Lengths from 0 to 28 bytes, about 45% of the values stored out of line -->
+    <create_query>CREATE TABLE rss_right_var_10m (k UInt64, s1 String, s2 String, s3 String, s4 String, s5 String, s6 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rss_right_nullable_10m (k UInt64, s1 Nullable(String), s2 Nullable(String), s3 Nullable(String), s4 Nullable(String), s5 Nullable(String), s6 Nullable(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <create_query>CREATE TABLE rss_probe_100m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO rss_right_short_10m SELECT number, substring(hex(cityHash64(number, 1)), 1, 4 + cityHash64(number, 1, 1) % 4), substring(hex(cityHash64(number, 2)), 1, 4 + cityHash64(number, 2, 1) % 4), substring(hex(cityHash64(number, 3)), 1, 4 + cityHash64(number, 3, 1) % 4), substring(hex(cityHash64(number, 4)), 1, 4 + cityHash64(number, 4, 1) % 4), substring(hex(cityHash64(number, 5)), 1, 4 + cityHash64(number, 5, 1) % 4), substring(hex(cityHash64(number, 6)), 1, 4 + cityHash64(number, 6, 1) % 4) FROM numbers(10000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rss_right_var_10m SELECT number, substring(repeat(hex(cityHash64(number, 1)), 2), 1, cityHash64(number, 1, 1) % 29), substring(repeat(hex(cityHash64(number, 2)), 2), 1, cityHash64(number, 2, 1) % 29), substring(repeat(hex(cityHash64(number, 3)), 2), 1, cityHash64(number, 3, 1) % 29), substring(repeat(hex(cityHash64(number, 4)), 2), 1, cityHash64(number, 4, 1) % 29), substring(repeat(hex(cityHash64(number, 5)), 2), 1, cityHash64(number, 5, 1) % 29), substring(repeat(hex(cityHash64(number, 6)), 2), 1, cityHash64(number, 6, 1) % 29) FROM numbers(10000000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO rss_right_nullable_10m SELECT number, if(cityHash64(number, 1, 2) % 7 = 0, NULL, substring(hex(cityHash64(number, 1)), 1, 4 + cityHash64(number, 1, 1) % 4)), if(cityHash64(number, 2, 2) % 7 = 0, NULL, substring(hex(cityHash64(number, 2)), 1, 4 + cityHash64(number, 2, 1) % 4)), if(cityHash64(number, 3, 2) % 7 = 0, NULL, substring(hex(cityHash64(number, 3)), 1, 4 + cityHash64(number, 3, 1) % 4)), if(cityHash64(number, 4, 2) % 7 = 0, NULL, substring(hex(cityHash64(number, 4)), 1, 4 + cityHash64(number, 4, 1) % 4)), if(cityHash64(number, 5, 2) % 7 = 0, NULL, substring(hex(cityHash64(number, 5)), 1, 4 + cityHash64(number, 5, 1) % 4)), if(cityHash64(number, 6, 2) % 7 = 0, NULL, substring(hex(cityHash64(number, 6)), 1, 4 + cityHash64(number, 6, 1) % 4)) FROM numbers(10000000) ORDER BY rand()</fill_query>
+
+    <fill_query>INSERT INTO rss_probe_100m SELECT rand64() FROM numbers(100000000)</fill_query>
+
+    <query>SELECT * FROM rss_probe_100m l JOIN rss_right_short_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rss_probe_100m l JOIN rss_right_var_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rss_probe_100m l JOIN rss_right_nullable_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS rss_probe_100m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rss_right_short_10m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rss_right_var_10m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rss_right_nullable_10m</drop_query>
+</test>

@@ -164,6 +164,8 @@ public:
     UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
+    /// Average byte size of a non-NULL `String` or `FixedString` value when `Basic` statistics are present.
+    std::optional<Float64> getAvgStringBytes() const;
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;

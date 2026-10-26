@@ -203,7 +203,10 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                     total_byte_size += left_sizes[left_idx];
 
                     if (row_store_row_length)
-                        total_byte_size += *row_store_row_length;
+                    {
+                        const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
+                        total_byte_size += block->row_store->byteSizeAt(refWordRowNo(ref_word));
+                    }
 
                     if (has_columns)
                     {

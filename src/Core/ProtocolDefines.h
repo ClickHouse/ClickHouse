@@ -140,6 +140,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
+/// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -232,6 +233,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First query-plan serialization version that knows `min_string_column_bytes_for_hash_join_row_store`. Below it, the
+/// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
+/// no effect there.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

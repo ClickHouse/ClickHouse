@@ -1,0 +1,18 @@
+7	7	0	0
+7	7	dup	\N
+8	8	1	1
+9	9	2	2
+7	7	aaaaaaaaaaaaaaaaaaaa	0
+8	8	1	1
+9	9	aaaaaaaaaaaaaaaaaaaa	2
+7	7	zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	wwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+8	8	zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	wwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+9	9	zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	wwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+7	7	0	0
+7	7	dup	\N
+8	8	1	1
+9	9	2	2
+rs_short_strings	1
+rs_mixed_strings	1
+rs_long_strings	0
+rs_gated_strings	0

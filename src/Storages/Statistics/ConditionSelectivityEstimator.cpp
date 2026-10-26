@@ -139,6 +139,8 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     result.max_value = std::move(estimate.estimated_max);
     if (estimate.estimated_null_count && estimate.rows_count)
         result.null_fraction = std::min(1.0, static_cast<Float64>(*estimate.estimated_null_count) / static_cast<Float64>(estimate.rows_count));
+    if (auto avg_string_bytes = stats->getAvgStringBytes())
+        result.avg_bytes = *avg_string_bytes;
     return result;
 }
 
