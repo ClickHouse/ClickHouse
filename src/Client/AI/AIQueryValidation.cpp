@@ -11,7 +11,9 @@
 #include <Parsers/ASTDescribeCacheQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -35,6 +37,7 @@
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
 #include <Poco/String.h>
@@ -226,6 +229,84 @@ bool isAllowedTableFunction(const String & name)
     return allowed.contains(Poco::toLower(name));
 }
 
+/// The allowed table functions that take the structure of the table they generate as a string:
+/// `values('x UInt8, y UInt64 ALIAS ...', 1)`, `generateRandom('x UInt8 ...')` and
+/// `format(JSONEachRow, 'x UInt8 DEFAULT ...', '{}')`. A column declaration there can carry an
+/// expression - `DEFAULT`, `MATERIALIZED`, `ALIAS`, `EPHEMERAL`, `TTL` - that the server parses out of
+/// the string and evaluates when the table is read, after this validation, which sees only a string.
+/// So every string argument that parses as a list of column declarations must declare nothing but the
+/// names and the types. The parser is the one the server uses for these arguments; a string too deep
+/// for its default limits fails the validation with the error of the parser rather than being taken
+/// for something else.
+///
+/// `format` and `generateRandom` also evaluate an argument that is an expression and use the string it
+/// computes as the structure, and they take an identifier for its name, so only literals and
+/// identifiers are accepted as their arguments. `values` takes the structure only from a literal; the
+/// other arguments are values, and the rest of this validation judges them.
+void checkStructureArgumentsOfTableFunction(const ASTFunction & function)
+{
+    const String lowercase_name = Poco::toLower(function.name);
+    const bool is_values = lowercase_name == "values";
+    if ((!is_values && lowercase_name != "generaterandom" && lowercase_name != "format") || !function.arguments)
+        return;
+
+    for (const auto & argument : function.arguments->children)
+    {
+        /// `SETTINGS k = v` of the table function, which `checkNoProtectedSettingChanges` sees.
+        if (argument->as<ASTSetQuery>())
+            continue;
+
+        String text;
+        if (const auto * literal = argument->as<ASTLiteral>())
+        {
+            if (literal->value.getType() != Field::Types::String)
+                continue;
+            text = literal->value.safeGet<String>();
+        }
+        else if (is_values)
+        {
+            continue;
+        }
+        else if (const auto * identifier = argument->as<ASTIdentifier>())
+        {
+            text = identifier->name();
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "An argument of the table function `{}` is an expression, which the server evaluates into the structure "
+                "of the table, so the read-only tool cannot see the columns it declares. Write the arguments as "
+                "literals, or use the run_query tool for this query",
+                function.name);
+        }
+
+        ParserColumnDeclarationList parser(true, true);
+        const char * begin = text.data();
+        const char * end = text.data() + text.size();
+        String error;
+        const ASTPtr columns = tryParseQuery(
+            parser, begin, end, error, false, "columns declaration list", false,
+            /*max_query_size=*/ 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
+        if (!columns)
+            continue;
+
+        for (const auto & column : columns->children)
+        {
+            const auto * declaration = column->as<ASTColumnDeclaration>();
+            if (declaration && !declaration->getDefaultExpression() && !declaration->getTTL())
+                continue;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The structure passed to the table function `{}` declares a column with an expression (`DEFAULT`, "
+                "`MATERIALIZED`, `ALIAS`, `EPHEMERAL` or `TTL`), which the server evaluates after the read-only tool "
+                "has validated the query. Declare only the names and the types of the columns, or use the run_query "
+                "tool for this query",
+                function.name);
+        }
+    }
+}
+
 /// The few scalar (non-table) functions that read external resources by a path from the query,
 /// and the AI functions: they send the query data to an external AI provider and incur cost,
 /// which must not happen without the user's confirmation.
@@ -313,6 +394,7 @@ void checkNoTableAccessInSetExpression(const IAST & ast, bool allow_system_table
                 "outside of the tables of the current server, so it is not allowed for the read-only tool. "
                 "Use the run_query tool for this query",
                 function->name);
+        checkStructureArgumentsOfTableFunction(*function);
     }
 }
 
@@ -368,6 +450,7 @@ void checkNoExternalAccess(const IAST & ast)
                     "The table function `{}` may reach resources outside of the tables of the current server, "
                     "so it is not allowed for the read-only tool. Use the run_query tool for this query",
                     function.name);
+            checkStructureArgumentsOfTableFunction(function);
         }
         /// A plain table name is not judged here: what reading it does depends on what it
         /// resolves to on the server. `collectNamedTablesForAIAgent` gathers those names and the

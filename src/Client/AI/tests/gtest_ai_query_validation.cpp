@@ -764,6 +764,33 @@ TEST(AIQueryValidation, RejectsParallelReplicasSettings)
     EXPECT_FALSE(isAllowed("SELECT * FROM (SELECT x FROM t SETTINGS cluster_for_parallel_replicas = 'remote_cluster')"));
 }
 
+TEST(AIQueryValidation, RejectsExpressionsInTheStructureOfTableFunctions)
+{
+    /// The structure of `values`, `generateRandom` and `format` is a string the server parses after
+    /// the validation, and a column of it can carry an expression the server evaluates on read.
+    EXPECT_FALSE(isAllowed("SELECT y FROM values('x UInt8, y UInt64 ALIAS generateSerialID(''ai-counter'')', 1)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM values('x UInt8 DEFAULT getServerSetting(''max_connections'')', 1)"));
+    EXPECT_FALSE(isAllowed("SELECT y FROM generateRandom('x UInt8, y UInt64 ALIAS generateSerialID(''ai-counter'')') LIMIT 1"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM generateRandom('x UInt8 MATERIALIZED 1') LIMIT 1"));
+    EXPECT_FALSE(isAllowed(
+        R"(SELECT * FROM format(JSONEachRow, 'x UInt8, y UInt64 DEFAULT generateSerialID(''ai-counter'')', '{"x":1}'))"));
+    EXPECT_FALSE(isAllowed(R"(SELECT * FROM format(JSONEachRow, 'x UInt8 EPHEMERAL 1, y UInt8', '{"y":1}'))"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN values('x UInt8, y UInt64 ALIAS generateSerialID(''ai-counter'')', 1)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM VALUES('x UInt8, y UInt64 ALIAS 1', 1)"));
+
+    /// `format` and `generateRandom` evaluate an expression or take an identifier for the structure.
+    EXPECT_FALSE(isAllowed(
+        "SELECT * FROM generateRandom(concat('x UInt8, y UInt64 ALIAS generateSerialID(', '''ai-counter'')')) LIMIT 1"));
+    EXPECT_FALSE(isAllowed(R"(SELECT * FROM format(JSONEachRow, `x UInt8, y UInt64 ALIAS 1`, '{"x":1}'))"));
+
+    /// A structure of names and types is fine, and so are the values.
+    EXPECT_TRUE(isAllowed("SELECT * FROM values('x UInt8, y String', (1, 'a'), (2, 'b'))"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM values(1 + 1, 2)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM generateRandom('x UInt8, y Nullable(String)', 1, 10, 2) LIMIT 1"));
+    EXPECT_TRUE(isAllowed(R"(SELECT * FROM format(JSONEachRow, 'x UInt8', '{"x":1}'))"));
+    EXPECT_TRUE(isAllowed(R"(SELECT * FROM format(JSONEachRow, '{"x":1}'))"));
+}
+
 #endif
 
 TEST(AIQueryValidation, RejectsGetServerSetting)
