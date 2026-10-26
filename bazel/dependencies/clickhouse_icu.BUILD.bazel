@@ -15,6 +15,7 @@ _ICUUC_PRIVATE_HEADERS = glob(
         "icu4c/source/common/rbbi*.h",
         "icu4c/source/common/ruleiter.h",
         "icu4c/source/common/ubidiimp.h",
+        "icu4c/source/common/ucnv*.h",
         "icu4c/source/common/ucptrie_impl.h",
         "icu4c/source/common/uniquecharstr.h",
         "icu4c/source/common/unisetspan.h",
