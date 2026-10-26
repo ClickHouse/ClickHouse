@@ -25,8 +25,9 @@ TARGETS_WITH_DIRECT_SOURCE_HEADERS = {
     'clickhouse-benchmark-lib', 'clickhouse-client-lib', 'clickhouse-format-lib',
     'clickhouse-install-lib', 'clickhouse-keeper-lib', 'clickhouse-keeper-utils-lib',
     'clickhouse-local-lib', 'clickhouse-server-lib', 'clickhouse_common_zookeeper',
-    'clickhouse_functions_array__compile_1', 'clickhouse_functions_array__compile_2',
-    'clickhouse_functions_array__compile_3',
+    'clickhouse_functions_array__compile_0', 'clickhouse_functions_array__compile_1',
+    'clickhouse_functions_array__compile_2', 'clickhouse_functions_array__compile_3',
+    'clickhouse_functions_gatherutils',
     'clickhouse_functions_time_series', 'clickhouse_functions_uniqtheta', 'dbms_embedded',
 }
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}

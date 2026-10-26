@@ -522,11 +522,12 @@ def declare_dbms_private_headers(rows, files):
         "Storages/StorageTableProxy.h",
     ]))
     declare_compiled_headers(rows, files, "dbms__compile_0", dbms_headers, field="srcs")
-    declare_compiled_headers(rows, files, ("dbms__compile_0", "dbms__compile_2"), list_expr([
+    dbms_0_2_headers = ast.BinOp(left=expr('glob(["Processors/Transforms/Window/*.h"])'), op=ast.Add(), right=list_expr([
         "Columns/ColumnCompressed.h", "Interpreters/AggregationUtils.h",
         "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h", "Processors/QueryPlan/QueryPlanFormat.h",
         "Processors/Transforms/WindowTransform.h", "WindowFunctions/IWindowFunction.h",
-    ]), field="srcs")
+    ]))
+    declare_compiled_headers(rows, files, ("dbms__compile_0", "dbms__compile_2"), dbms_0_2_headers, field="srcs")
     declare_compiled_headers(rows, files, "unit_tests_dbms", expr('glob(["**/tests/*.h"])'), field="srcs")
 
 

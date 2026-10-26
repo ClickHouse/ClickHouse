@@ -162,7 +162,6 @@ ch_cc_library(
         "//src/Functions/GatherUtils:headers",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    source_headers = True,
     deps = [
         "//base/glibc-compatibility",
         "//src/Functions:clickhouse_functions_obj__compile_0",

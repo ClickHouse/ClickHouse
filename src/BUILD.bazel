@@ -454,7 +454,7 @@ _DBMS_EMBEDDED_PRIVATE_HEADERS = glob(["Server/ClientEmbedded/*.h"]) + [
     "Server/WebUIRequestHandler.h",
 ]
 
-_DBMS_0_2_PRIVATE_HEADERS = [
+_DBMS_0_2_PRIVATE_HEADERS = glob(["Processors/Transforms/Window/*.h"]) + [
     "Columns/ColumnCompressed.h",
     "Interpreters/AggregationUtils.h",
     "Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h",
@@ -1474,6 +1474,7 @@ _IO_0_COMPILE_ATTRIBUTES = dict(
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",
         "//base/poco/NetSSL_OpenSSL:_poco_net_ssl",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "//contrib/cityhash102:_cityhash",
         "//src/Common",
         "@clickhouse_aws//:_aws",
@@ -1548,7 +1549,6 @@ ch_cc_library(
         "//src/Common:shared_mutex",
         "@clickhouse_boost//:pfr",
         "//src/Common:target_specific",
-        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
         "//src:column_types",
         "//src/Parsers:parser_api",
         "//src/Common:int_exp",
@@ -1581,7 +1581,6 @@ ch_cc_library(
     implementation_deps = [
         "//src/Common:memory_tracking_api",
         ":core_types",
-        ":headers",
         "//src/Functions:headers",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Net:_poco_net",

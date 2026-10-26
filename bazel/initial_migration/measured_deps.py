@@ -93,6 +93,8 @@ DEPENDENCIES = {
         '@clickhouse_llvm_project//:LLVMBitReader', '@clickhouse_llvm_project//:LLVMBitstreamReader',
         '@clickhouse_llvm_project//:LLVMSupport', GLIBC_COMPATIBILITY,
     ], [], []),
+    **{('src/Common', name): (['//src:headers'], [], [])
+       for name in ('clickhouse_malloc', 'clickhouse_new_delete')},
     ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
     ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
     ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt', '@clickhouse_boost//:_boost_context'], [], []),
@@ -162,7 +164,7 @@ _EMBEDDED_UNUSED = {
 }
 EMBEDDED_UNUSED = {
     'clickhouse_common_io_embedded': _EMBEDDED_UNUSED | {
-        MINIZIP,
+        '//src:headers', MINIZIP,
         '@clickhouse_libssh//:_ssh', '@clickhouse_silk//:_silk_fibers',
         '//bazel:clickhouse_config_headers', '@clickhouse_abseil_cpp//:absl_base_config',
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_crc32c//:_crc32c',
@@ -276,14 +278,26 @@ for group in range(3):
 
 
 def editable_dependency_lists(build, node, drop, canonical, replacements=None, *, insert_after=None):
-    """Remove labels at their declaration if every changed list has one consumer."""
+    """Keep list constants shared when every reader drops the same dependencies."""
     uses = Counter(n.id for n in ast.walk(build.source.module) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load))
     subscripts = [n for n in ast.walk(build.source.module) if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name)]
     edits = []
 
+    def all_readers_drop(name):
+        if not drop or replacements or insert_after:
+            return False
+        readers = 0
+        for _, rule in build.source.rules():
+            attrs = attributes(rule)
+            unused = DEPENDENCIES.get((build.package, attrs['name'].value), ([], [], []))[0]
+            if drop <= {canonical(label) for label in unused}:
+                readers += sum(ref.id == name for field in ('deps', 'implementation_deps') if field in attrs
+                               for ref in ast.walk(attrs[field]) if isinstance(ref, ast.Name))
+        return readers == uses[name]
+
     def visit(n, writable):
         if isinstance(n, ast.Name) and n.id in build.constants:
-            return visit(build.constants[n.id], writable and uses[n.id] == 1)
+            return visit(build.constants[n.id], writable and (uses[n.id] == 1 or all_readers_drop(n.id)))
         if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name):
             value = constant_dict_field(n, build.constants)
             if value is None:
@@ -572,6 +586,6 @@ def apply(root):
         if found != {n for pkg, n in DEPENDENCIES if pkg == package}:
             raise ValueError(f'{package}: missing measured dependency target')
         if edits:
-            path.write_text(source.rewrite(edits))
+            path.write_text(source.rewrite(dict.fromkeys(edits)))
 
     usearch_implementation_dep(root)

@@ -31,7 +31,6 @@ exports_files([
 
 _ALLOCATOR_IMPLEMENTATION_DEPS = [
     ":Common",
-    "//src:headers",
     "//base:common",
     "//bazel:clickhouse_config_headers",
     "@clickhouse_jemalloc//:_jemalloc",

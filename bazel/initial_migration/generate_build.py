@@ -61,6 +61,9 @@ FIRST_PARTY_HEADER_DEPS = {
         ("//src/AggregateFunctions:aggregate_api", "//src/AggregateFunctions:headers"),
         ("//src/Common:cache_policy", "//src/Common"),
     ],
+    ("src", "clickhouse_common_io__compile_0", "deps"): [
+        ("//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0", "//base/poco/NetSSL_OpenSSL:_poco_net_ssl"),
+    ],
     ("src", "clickhouse_common_io__compile_0", "implementation_deps"): [
         "//src/Parsers:parser_api", "//src/Parsers:clickhouse_parsers",
     ],
@@ -648,6 +651,13 @@ def declare_first_party_header_deps(root):
                 start = doc.source.span(dbms)[0]
                 path.write_text(doc.source.rewrite([(start, start, json.dumps(missing[0]) + ", ")]))
                 continue
+        if len(missing) == 1 and missing[0] in after:
+            dep = missing[0]
+            edits = editable_dependency_lists(doc, node, set(), doc.reference, insert_after=(after[dep], [dep]))
+            if not edits:
+                raise ValueError(f"//{package}:{target} cannot insert {dep} after {after[dep]} in {field}")
+            path.write_text(doc.source.rewrite(edits))
+            continue
         if after.keys() & set(missing):
             if literal is None:
                 raise ValueError(f"//{package}:{target} has no common list for the ordered {field}")
