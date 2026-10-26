@@ -1075,8 +1075,31 @@ std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
 
     std::lock_guard lock(ranges_read_mutex);
     size_t bytes = 0;
-    for (auto & [_, ranges] : ranges_read)
-        bytes += takeBytesOfCompressedBlockRanges(ranges);
+    for (auto & [stream_name, ranges] : ranges_read)
+    {
+        /// Only the bytes of a range that are not counted already, merging it into the counted ones.
+        auto & counted = counted_ranges[stream_name];
+        for (const auto & [range_begin, range_end] : ranges)
+        {
+            size_t begin = range_begin;
+            size_t end = range_end;
+            size_t covered = 0;
+            auto it = counted.upper_bound(begin);
+            if (it != counted.begin() && std::prev(it)->second >= begin)
+                --it;
+            while (it != counted.end() && it->first <= range_end)
+            {
+                if (it->second > range_begin && it->first < range_end)
+                    covered += std::min(range_end, it->second) - std::max(range_begin, it->first);
+                begin = std::min(begin, it->first);
+                end = std::max(end, it->second);
+                it = counted.erase(it);
+            }
+            bytes += range_end - range_begin - covered;
+            counted.emplace(begin, end);
+        }
+        ranges.clear();
+    }
     return bytes;
 }
 
@@ -1097,12 +1120,9 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
             if (!stream)
                 return;
 
-            /// A block that holds the granule is counted once for the reader. A block read, or shared with another column, in
-            /// the same read step is counted once by `takeCompressedBytesRead`.
-            CompressedBlockRanges range;
-            stream->addRangeOfPosition(mark, 0, range);
-            if (!range.empty() && counted_columns_cache_blocks[*stream_name].insert(range.front().first).second)
-                getRangesRead(*stream_name).push_back(range.front());
+            /// A block that holds the granule is counted once for the reader by `takeCompressedBytesRead`, also when it is read,
+            /// or holds other granules or columns served from the cache.
+            stream->addRangeOfPosition(mark, 0, getRangesRead(*stream_name));
         });
     }
 }
