@@ -108,6 +108,7 @@ ch_cc_library(
             "lib/cpp/src/thrift/transport/TZlibTransport.h",
             "lib/cpp/src/thrift/transport/TPipe.h",
             "lib/cpp/src/thrift/transport/TPipeServer.h",
+            "lib/cpp/src/thrift/transport/TSSLServerSocket.h",
         ],
     ),
     includes = [

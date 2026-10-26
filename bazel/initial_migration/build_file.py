@@ -647,6 +647,18 @@ class BuildFile:
                     public = (headers & package_source_files(self.owner)) | {'mz.h', 'mz_config.h', 'mz_strm_os.h'}
                     fields['hdrs'].extend([Glob(['compat/*.h']), *sorted(public)])
                     continue
+                if (old_field == 'hdrs' and owner == self.owner == 'contrib/thrift' and name == '_thrift'
+                        and directory == 'contrib/thrift/lib/cpp/src'):
+                    # contrib/thrift-cmake omits TSSLServerSocket.cpp; TSSLSocket.h also defines AccessManager.
+                    excluded = ['lib/cpp/src/thrift/' + path for path in (
+                        'windows/**', 'qt/**', 'async/TEvhttp*.h', 'server/TNonblockingServer.h',
+                        'transport/TNonblockingSSLServerSocket.h', 'transport/TNonblockingServerSocket.h',
+                        'transport/TNonblockingServerTransport.h', 'protocol/THeaderProtocol.h',
+                        'transport/THeaderTransport.h', 'transport/TZlibTransport.h', 'transport/TPipe.h',
+                        'transport/TPipeServer.h', 'transport/TSSLServerSocket.h',
+                    )]
+                    fields['hdrs'].append(Glob(['lib/cpp/src/**/*.h', 'lib/cpp/src/**/*.tcc'], excluded))
+                    continue
                 if (old_field == 'hdrs' and owner == self.owner == 'contrib/icu' and name == '_icuuc'
                         and directory == 'contrib/icu/icu4c/source/common'):
                     # ICU installs unicode/*.h. Its genbrk tool also includes rbbidata.h.
