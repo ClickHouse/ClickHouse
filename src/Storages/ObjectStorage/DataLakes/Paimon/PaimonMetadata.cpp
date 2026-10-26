@@ -952,7 +952,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         last_scanned_snapshot_id = snapshot_id;
         last_scanned_state = state;
 
-        /// Only APPEND snapshots add rows: COMPACT and OVERWRITE ones rewrite existing rows, ANALYZE ones add none.
+        /// Deliver APPEND snapshots only, like Paimon's streaming read: COMPACT and OVERWRITE ones rewrite or replace data files, ANALYZE ones add none.
         if (append_only && !state->isAppend())
         {
             if (!state->isCompact() && state->commit_kind != "OVERWRITE" && state->commit_kind != "ANALYZE")
@@ -1074,7 +1074,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
 
         /// In Paimon, each snapshot's delta_manifest_list contains the changes in that snapshot.
         /// We need to read all delta manifests from snapshots between committed+1 and current.
-        /// Only APPEND snapshots add new rows, like Paimon's streaming read of an append table.
+        /// Deliver APPEND snapshots only, like Paimon's streaming read of an append table.
         std::optional<Int64> last_scanned_snapshot_id;
         PaimonTableStatePtr last_scanned_state;
         auto snapshots = getSnapshotsBetween(
