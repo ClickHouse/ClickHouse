@@ -3,6 +3,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IProcessor.h>
 
@@ -35,8 +36,8 @@ class IDataType;
 /// 1. Routing fills the rows. The route transform of stream `s` reads the blocks of the stream, hashes each key, and
 ///    appends it to buffer `(s, bucket of the hash)`. A stream writes only its own row, so the streams need no locks.
 /// 2. Building reads the columns. Once every stream is finished, each build thread takes a bucket `b` that nobody
-///    has taken yet, inserts the buffers `(0, b)`, `(1, b)`, ..., `(S-1, b)` into one hash set, and adds its size to its
-///    count. The buckets are disjoint, so the result is the sum of the counts.
+///    has taken yet, inserts the buffers `(0, b)`, `(1, b)`, ..., `(S-1, b)` and the keys of `b` on disk into one hash set,
+///    and adds its size to its count. The buckets are disjoint, so the result is the sum of the counts.
 ///
 /// A bucket holds `1/P` of the distinct keys, so its set stays in the CPU caches while it is built. The per-thread
 /// sets of the ordinary aggregation outgrow the caches, and are then merged into one big set on top of that.
@@ -60,16 +61,29 @@ class IDataType;
 ///   `MAX_UNBOUNDED_SET_BYTES`, the buffered keys are moved back into `local_set` and the stream switches to
 ///   `UnboundedSet`.
 /// - `UnboundedSet`: the key is inserted into `local_set`, which now grows without a limit.
-/// When a stream finishes, the keys of `local_set` are moved into its buffers, so the build reads only the grid.
+/// When a stream finishes, the keys of `local_set` are moved into its buffers, so the build does not read the sets.
+///
+/// The copies of a few frequent keys would pile up in their buffers until the stream exceeds its budget, so such a buffer
+/// is deduplicated on its own.
+///
+/// With `max_bytes_before_external_group_by`, once the query is over the threshold, as in `Aggregator`, a growing stream
+/// drops the repeated keys of its buffers and writes them to a file of its own, so that spills take no lock. The build of a bucket reads its frames from the files of all
+/// the streams (see `TemporaryFileFrameReader`). A key may be written by several spills.
 ///
 /// After a query, `RadixUniqExactEntry` keeps in the statistics of hash tables: the result, the medians over the streams
-/// of the number of keys and of distinct keys of a stream, and whether most streams ended in a set. The distinct keys of
+/// of the number of keys and of distinct keys of a stream, and the number of streams. The distinct keys of
 /// a stream that ended in `Routing` are estimated: its buffers hold repeated keys, so a sample of buffers is deduplicated and
-/// its count is scaled to all of them. When the same query runs again with as many streams:
-/// - The number of buckets and the sizes of the bucket sets follow from the result.
-/// - A stream starts in `UnboundedSet`, allocated for its distinct keys, if most streams of the previous run ended in a
-///   set or if the set fits into `MAX_UNBOUNDED_SET_BYTES`, and in `Routing` otherwise. Only the majority is kept,
-///   because which stream reads which rows depends on the source.
+/// its count is scaled to all of them. A run that spilled keeps nothing, since its streams do not know their distinct keys.
+/// When the same query runs again, with up to twice or half as many streams (the numbers of a stream are scaled to them,
+/// because the number of streams of a source varies between the runs):
+/// - The sizes of the bucket sets follow from the result, and so does the number of buckets, so that each bucket set
+///   fits into half of the L2 cache, unless the buffer of a stream would hold less than two pages of keys: with many
+///   streams, the build would walk many tiny scattered buffers and miss the TLB.
+/// - A stream starts in `UnboundedSet`, allocated for its distinct keys, if each of its keys was routed at least 8 times
+///   and the set fits into `MAX_UNBOUNDED_SET_BYTES`. Otherwise it starts in `BoundedSet` if its distinct keys fit there,
+///   and in `Routing` if not. A set from the start costs inserts that miss the cache, which pay only for keys repeated
+///   many times, and the bound is far from the one of the switch during the routing, so that the estimate of the
+///   distinct keys does not move the streams between the modes from run to run.
 /// - A stream in `Routing` is not deduplicated if its keys are at most twice its budget, because a deduplication late in
 ///   the stream costs a pass over its keys that the build repeats anyway. For example, with 700000 distinct keys the
 ///   budget is 5.6 million keys: a stream of 6 million keys is not deduplicated, and one of 20 million is first
@@ -117,9 +131,22 @@ private:
 
 using RadixUniqExactStatePtr = std::shared_ptr<IRadixUniqExactState>;
 
+/// The keys are spilled only if `max_bytes` is set and there is a temporary data scope.
+struct RadixUniqExactSpillParams
+{
+    size_t max_bytes = 0;
+    /// The minimum memory of a stream before it spills, as `min_bytes_before_external_group_by` for a thread.
+    size_t min_bytes = 0;
+    size_t min_free_disk_space = 0;
+    TemporaryDataOnDiskScopePtr tmp_data_scope;
+};
+
 /// The argument of `uniqExact` may be `Nullable` and `LowCardinality`: NULLs are skipped as `uniqExact` does.
 RadixUniqExactStatePtr createRadixUniqExactState(
-    const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params);
+    const IDataType & argument_type,
+    size_t num_streams,
+    const StatsCollectingParams & stats_collecting_params,
+    const RadixUniqExactSpillParams & spill_params);
 
 
 class RadixUniqExactRouteTransform final : public IProcessor

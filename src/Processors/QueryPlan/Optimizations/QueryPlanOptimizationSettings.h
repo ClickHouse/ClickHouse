@@ -190,6 +190,7 @@ struct QueryPlanOptimizationSettings
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_read_in_order = false; /// Allow read-in-order for ORDER BY in a distributed plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
+    bool distributed_plan_partial_aggregation_before_shuffle = true; /// Shuffle partial aggregation states instead of input rows
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
     bool distributed_plan_join_runtime_filters = false; /// Send join runtime filters between stages of a distributed query plan
@@ -245,6 +246,7 @@ struct QueryPlanOptimizationSettings
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
     bool use_top_k_dynamic_filtering_for_variable_length_types;
+    bool use_top_k_dynamic_filtering_for_single_string_sort_column;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 

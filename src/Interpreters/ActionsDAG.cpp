@@ -4263,20 +4263,26 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
     }
 
-    NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
-    NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
+    auto conjunction_atoms = extractConjunctionAtoms(predicate);
+    std::ranges::reverse(conjunction_atoms);
 
-    std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
-    std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
-
-    for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
+    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions)
     {
-        if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        std::unordered_set<const Node *> remaining(side_allowed_conjunctions.begin(), side_allowed_conjunctions.end());
+        remaining.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
 
-        if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
-    }
+        NodeRawConstPtrs ordered;
+        ordered.reserve(remaining.size());
+        for (const auto * atom : conjunction_atoms)
+            if (remaining.erase(atom) != 0)
+                ordered.push_back(atom);
+        chassert(remaining.empty());
+        return ordered;
+    };
+
+    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(left_stream_push_down_conjunctions.allowed);
+    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(right_stream_push_down_conjunctions.allowed);
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
@@ -4289,7 +4295,13 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     for (const auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
-    NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
+    const size_t rejected_count = rejected_conjunctions_set.size();
+    NodeRawConstPtrs rejected_conjunctions;
+    rejected_conjunctions.reserve(rejected_count);
+    for (const auto * atom : conjunction_atoms)
+        if (rejected_conjunctions_set.erase(atom) != 0)
+            rejected_conjunctions.push_back(atom);
+    chassert(rejected_conjunctions.size() == rejected_count);
 
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
