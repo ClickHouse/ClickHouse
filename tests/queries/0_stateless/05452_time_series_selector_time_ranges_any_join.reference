@@ -1,0 +1,9 @@
+-- rows of the time ranges table
+6
+-- join of the time ranges table
+ANY LEFT JOIN (SELECT id, 1 AS matched
+-- selected samples
+1970-01-01 00:01:40.000	1
+1970-01-01 00:03:20.000	2
+1970-01-01 00:05:00.000	3
+6	66
