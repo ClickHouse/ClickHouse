@@ -69,7 +69,8 @@ namespace
 
 void syncLocalPath(const fs::path & path, int open_flags, bool is_directory)
 {
-    int fd = ::open(path.c_str(), open_flags);
+    /// `O_CLOEXEC` keeps the descriptor from leaking into processes spawned concurrently, which would pin unlinked files.
+    int fd = ::open(path.c_str(), open_flags | O_CLOEXEC);
     if (fd == -1)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open {} {}", is_directory ? "directory" : "file", path);
 
