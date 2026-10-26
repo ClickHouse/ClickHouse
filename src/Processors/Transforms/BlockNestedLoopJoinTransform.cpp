@@ -955,7 +955,9 @@ static ColumnPtr totalsColumnAt(const Block & source, size_t position, const Dat
     if (position >= source.columns())
         return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-    auto column = source.getByPosition(position).column->convertToFullColumnIfConst();
+    /// A totals row can also carry a non-native LowCardinality column (automatic LowCardinality
+    /// serialization), which does not match the full column of the output header.
+    auto column = recursiveRemoveNonNativeLowCardinality(source.getByPosition(position).column->convertToFullColumnIfConst());
     if (column->size() != 1)
         column = column->cloneResized(1);
     return column;
