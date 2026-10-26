@@ -1301,6 +1301,10 @@ SnapshotFileInfoPtr KeeperSnapshotManager::rewriteSnapshotAfterRecovery(const Ke
     /// From this point the repaired file must survive any subsequent failure. Restart will prefer
     /// it and finish archiving old copies, so never retire it as an unpublished write.
     auto & old_copies = retained_duplicate_snapshots[log_idx];
+    /// A move of the registered snapshot can land on the path of a retained copy (see `detachSnapshotForRemoval`).
+    /// Archive that file once: archiving the alias after the original would read an already removed path.
+    std::erase_if(
+        old_copies, [&](const SnapshotFileInfoPtr & copy) { return copy->disk == original->disk && copy->path == original->path; });
     old_copies.push_back(original);
     existing_snapshots.at(log_idx) = repaired;
     while (!old_copies.empty())

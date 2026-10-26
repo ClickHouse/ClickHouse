@@ -3146,6 +3146,46 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesSameIndexDuplicates
     }
 }
 
+/// Startup can retain a same-index copy on the latest disk (its move marker has an unknown version) while
+/// it registers the copy on the regular disk. `finishSnapshotRecovery` then moves the registered snapshot
+/// onto the path of the retained copy, so both refer to one file, which orphan recovery must archive once.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesMovedOntoRetainedCopyOnce)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest latest_snapshots("./latest_snapshots");
+    ChangelogDirTest logs("./logs");
+    auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+    const auto name = snapshotFilesForIdx("./snapshots", 2).at(0);
+    fs::copy_file(fs::path("./snapshots") / name, fs::path("./latest_snapshots") / name);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./latest_snapshots");
+    {
+        auto marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(latest_disk, name));
+        marker_contents[8] = 2;
+        auto marker = latest_disk->writeFile("tmp_" + name);
+        marker->write(marker_contents.data(), marker_contents.size());
+        marker->finalize();
+    }
+    ctx->setLatestSnapshotDisk(latest_disk);
+
+    DB::SnapshotsQueue queue{1};
+    {
+        DB::KeeperStateMachine state_machine(nullptr, queue, ctx, nullptr);
+        state_machine.init();
+        state_machine.finishSnapshotRecovery();
+        ASSERT_FALSE(state_machine.findOrphanConflictInLogTail(3, 3).has_value());
+    }
+
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+    ASSERT_NO_THROW(restarted.init());
+    EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+}
+
 TEST_P(CoordinationTestWithCompression, OrphanRemovalRewriteFailurePreservesOriginal)
 {
     if (GetParam().use_lsmt_storage)
