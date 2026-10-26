@@ -2949,6 +2949,18 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
 </Note>
 
+### GDeflate {#gdeflate}
+
+<ExperimentalBadge/>
+
+`GDeflate[(level)]` — [GDeflate](https://github.com/NVIDIA/libdeflate/tree/gdeflate), a variant of Deflate whose bit stream is split into 32 interleaved sub-streams, with configurable `level`. Possible levels: \[1, 12\]. Default level: 6.
+
+A block is compressed in independent chunks of 64 KiB, each a GDeflate page, the format that nvcomp and DirectStorage expand on a GPU, many chunks in parallel. On the CPU, it compresses and decompresses about as fast as Deflate, slower than `LZ4` and `ZSTD`. For columns of integers (`Int*`, `UInt*`, `Decimal32`, `Decimal64`, `Date`, `Date32`, `DateTime`, `DateTime64`), a chunk whose values lie close together is bit-packed before it is compressed, each value as its difference from the least value of the chunk, where that makes the chunk smaller.
+
+<Note>
+This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
+</Note>
+
 ### Obsolete: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge/>

@@ -32,6 +32,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -1799,11 +1800,9 @@ static NameToNameVector collectFilesForRenames(
 
     auto remove_column_streams = [&](const String & column_name)
     {
-        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        /// Delete files if they are no longer shared with another column.
+        auto remove_stream = [&](const std::optional<String> & stream_name)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
-
-            /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)
             {
                 add_rename(*stream_name + ".bin", "");
@@ -1811,8 +1810,23 @@ static NameToNameVector collectFilesForRenames(
             }
         };
 
-        if (auto serialization = try_get_serialization_of_stored_column(column_name))
-            serialization->enumerateStreams(callback);
+        /// columns_substreams.txt is the ground truth of the streams on disk, as in getStreamCounts: a state-less
+        /// enumerateStreams misses the data-dependent streams of a column with dynamic subcolumns, which would stay
+        /// in the part.
+        const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(column_name);
+        if (substreams && !(substreams->size() == 1 && (*substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
+        {
+            for (const auto & substream : *substreams)
+                remove_stream(IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part->checksums));
+        }
+        else if (auto serialization = try_get_serialization_of_stored_column(column_name))
+        {
+            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            {
+                remove_stream(IMergeTreeDataPart::getStreamNameForColumn(
+                    column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings()));
+            });
+        }
     };
     NameSet columns_renamed_to_not_stored;
 
@@ -2778,6 +2792,14 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
+    /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
+    /// mutation is background work running next to the queries the server is there for, so bound them by
+    /// the memory limit exactly like the insert path does.
+    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
+    const size_t num_simultaneous_squashes = ctx->projections_to_build.size() + 1;
+    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
+        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
+
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume
     /// the same source blocks. This drastically reduces the number of temporary
@@ -2790,7 +2812,7 @@ void PartMergerWriter::prepare()
         pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+            min_block_size_bytes);
 
         /// Collect the union of columns required by all projections. Only these columns
         /// (plus `_row_exists` when present in the source block) are pushed into the
@@ -2807,7 +2829,7 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(
             std::make_shared<const Block>(ctx->updated_header),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+            min_block_size_bytes);
     }
 
     {

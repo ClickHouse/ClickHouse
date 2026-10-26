@@ -1,0 +1,157 @@
+-- ranges starting and ending inside the part, to the end, two ranges in one task, scattered rows
+r [json] WHERE x >= 5 AND x < 12	1	1	1	7
+r [(json.a, json.c)] max_block_size = 4 WHERE x >= 5 AND x < 12	1	1	1	7
+r [json.b] max_block_size = 3 WHERE x >= 5 AND x < 12	1	1	1	7
+r [(json.c.size0, json)] max_block_size = 5 WHERE x >= 5 AND x < 12	1	1	1	7
+granules r WHERE x >= 5 AND x < 12	Parts: 1 | Granules: 2
+granules r WHERE x >= 5 AND x < 12	Granules: 2/15
+r [json] WHERE x >= 9 AND x < 16	1	1	1	7
+r [(json.a, json.c)] max_block_size = 4 WHERE x >= 9 AND x < 16	1	1	1	7
+r [json.b] max_block_size = 3 WHERE x >= 9 AND x < 16	1	1	1	7
+r [(json.c.size0, json)] max_block_size = 5 WHERE x >= 9 AND x < 16	1	1	1	7
+granules r WHERE x >= 9 AND x < 16	Parts: 1 | Granules: 2
+granules r WHERE x >= 9 AND x < 16	Granules: 2/15
+r [json] WHERE x >= 13 AND x < 50	1	1	1	37
+r [(json.a, json.c)] max_block_size = 4 WHERE x >= 13 AND x < 50	1	1	1	37
+r [json.b] max_block_size = 3 WHERE x >= 13 AND x < 50	1	1	1	37
+r [(json.c.size0, json)] max_block_size = 5 WHERE x >= 13 AND x < 50	1	1	1	37
+granules r WHERE x >= 13 AND x < 50	Parts: 1 | Granules: 10
+granules r WHERE x >= 13 AND x < 50	Granules: 10/15
+r [json] WHERE x >= 50	1	1	1	10
+r [(json.a, json.c)] max_block_size = 4 WHERE x >= 50	1	1	1	10
+r [json.b] max_block_size = 3 WHERE x >= 50	1	1	1	10
+r [(json.c.size0, json)] max_block_size = 5 WHERE x >= 50	1	1	1	10
+granules r WHERE x >= 50	Parts: 1 | Granules: 3
+granules r WHERE x >= 50	Granules: 3/15
+r [json] WHERE x < 8 OR (x >= 12 AND x < 24)	1	1	1	20
+r [(json.a, json.c)] max_block_size = 4 WHERE x < 8 OR (x >= 12 AND x < 24)	1	1	1	20
+r [json.b] max_block_size = 3 WHERE x < 8 OR (x >= 12 AND x < 24)	1	1	1	20
+r [(json.c.size0, json)] max_block_size = 5 WHERE x < 8 OR (x >= 12 AND x < 24)	1	1	1	20
+granules r WHERE x < 8 OR (x >= 12 AND x < 24)	Parts: 1 | Granules: 6
+granules r WHERE x < 8 OR (x >= 12 AND x < 24)	Granules: 6/15
+r [json] WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+r [(json.a, json.c)] max_block_size = 4 WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+r [json.b] max_block_size = 3 WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+r [(json.c.size0, json)] max_block_size = 5 WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+granules r WHERE x < 4 OR (x >= 8 AND x < 12)	Parts: 1 | Granules: 3
+granules r WHERE x < 4 OR (x >= 8 AND x < 12)	Granules: 3/15
+r [json] WHERE x IN (1, 7, 13, 22, 38, 59)	1	1	1	6
+r [(json.a, json.c)] max_block_size = 4 WHERE x IN (1, 7, 13, 22, 38, 59)	1	1	1	6
+r [json.b] max_block_size = 3 WHERE x IN (1, 7, 13, 22, 38, 59)	1	1	1	6
+r [(json.c.size0, json)] max_block_size = 5 WHERE x IN (1, 7, 13, 22, 38, 59)	1	1	1	6
+granules r WHERE x IN (1, 7, 13, 22, 38, 59)	Parts: 1 | Granules: 6
+granules r WHERE x IN (1, 7, 13, 22, 38, 59)	Granules: 6/15
+-- a skip index on a sibling column selecting every other granule
+r [json.a] WHERE y = 1	1	1	1	28
+r [(json.b, json)] max_block_size = 5 WHERE y = 1	1	1	1	28
+granules r WHERE y = 1	Parts: 1 | Granules: 7
+granules r WHERE y = 1	Granules: 15/15
+granules r WHERE y = 1	Granules: 7/15
+r [json.a] WHERE y = 0	1	1	1	32
+r [(json.b, json)] max_block_size = 5 WHERE y = 0	1	1	1	32
+granules r WHERE y = 0	Parts: 1 | Granules: 8
+granules r WHERE y = 0	Granules: 15/15
+granules r WHERE y = 0	Granules: 8/15
+r [json.a] WHERE y = 1 AND x < 20	1	1	1	8
+r [(json.b, json)] max_block_size = 5 WHERE y = 1 AND x < 20	1	1	1	8
+granules r WHERE y = 1 AND x < 20	Parts: 1 | Granules: 2
+granules r WHERE y = 1 AND x < 20	Granules: 5/15
+granules r WHERE y = 1 AND x < 20	Granules: 2/5
+r [json.a] WHERE y = 0 AND x >= 9	1	1	1	27
+r [(json.b, json)] max_block_size = 5 WHERE y = 0 AND x >= 9	1	1	1	27
+granules r WHERE y = 0 AND x >= 9	Parts: 1 | Granules: 7
+granules r WHERE y = 0 AND x >= 9	Granules: 13/15
+granules r WHERE y = 0 AND x >= 9	Granules: 7/13
+-- PREWHERE on a SHARED path, moved and explicit, one and several steps
+r [json] optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 1, max_block_size = 5 PREWHERE json.a % 20 = 0	1	1	1	30
+r [(json.c, json.b)] optimize_move_to_prewhere = 1 PREWHERE json.a % 20 = 0	1	1	1	30
+r [json] optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 1, max_block_size = 5 PREWHERE json.b != \'\'	1	1	1	51
+r [(json.c, json.b)] optimize_move_to_prewhere = 1 PREWHERE json.b != \'\'	1	1	1	51
+r [json] optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 1, max_block_size = 5 WHERE json.a % 30 = 0 AND json.c.size0 > 0	1	1	1	15
+r [(json.c, json.b)] optimize_move_to_prewhere = 1 WHERE json.a % 30 = 0 AND json.c.size0 > 0	1	1	1	15
+r [json] optimize_move_to_prewhere = 1, enable_multiple_prewhere_read_steps = 1, max_block_size = 5 PREWHERE json.a > 100 AND json.b = \'\'	1	1	1	7
+r [(json.c, json.b)] optimize_move_to_prewhere = 1 PREWHERE json.a > 100 AND json.b = \'\'	1	1	1	7
+-- reading in order, in reverse, lazily materialized, with several threads
+r [(json, json.a)] optimize_read_in_order = 1, max_block_size = 5 ORDER BY x LIMIT 7	1	1	1	60
+r [(json, json.a)] optimize_read_in_order = 1 ORDER BY x DESC LIMIT 7	1	1	1	60
+r [json.b] optimize_read_in_order = 1, max_block_size = 5 WHERE x >= 10 ORDER BY x DESC LIMIT 9	1	1	1	50
+r [json] query_plan_optimize_lazy_materialization = 1 ORDER BY x LIMIT 3	1	1	1	60
+r [(json.a, json)] query_plan_optimize_lazy_materialization = 1, max_block_size = 5 WHERE x >= 20 ORDER BY x LIMIT 3	1	1	1	40
+r [json] max_threads = 4, max_block_size = 5	1	1	1	60
+r [(json.a, json.c.size0)] max_threads = 4, max_block_size = 7 WHERE x >= 9	1	1	1	51
+-- subcolumns read from disk over ranges
+s [(json.arr.size0, json.t.q)] WHERE x >= 5 AND x < 12	1	1	1	7
+s [(json.t.p, json.d.:Int64)] max_block_size = 5 WHERE x >= 5 AND x < 12	1	1	1	7
+s [(json.arr.size0, json)] max_block_size = 3 WHERE x >= 5 AND x < 12	1	1	1	7
+s [(json.arr.size0, json.t.q)] WHERE x >= 13	1	1	1	27
+s [(json.t.p, json.d.:Int64)] max_block_size = 5 WHERE x >= 13	1	1	1	27
+s [(json.arr.size0, json)] max_block_size = 3 WHERE x >= 13	1	1	1	27
+s [(json.arr.size0, json.t.q)] WHERE x < 8	1	1	1	8
+s [(json.t.p, json.d.:Int64)] max_block_size = 5 WHERE x < 8	1	1	1	8
+s [(json.arr.size0, json)] max_block_size = 3 WHERE x < 8	1	1	1	8
+s [(json.arr.size0, json.t.q)] WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+s [(json.t.p, json.d.:Int64)] max_block_size = 5 WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+s [(json.arr.size0, json)] max_block_size = 3 WHERE x < 4 OR (x >= 8 AND x < 12)	1	1	1	8
+-- skip indexes on the SHARED paths
+r [json] WHERE json.a = 130	1	1	1	1
+r [(json.a, json.c)] max_block_size = 5 WHERE json.a = 130	1	1	1	1
+granules r WHERE json.a = 130	Parts: 1 | Granules: 1
+granules r WHERE json.a = 130	Granules: 15/15
+granules r WHERE json.a = 130	Granules: 1/15
+r [json] WHERE json.a BETWEEN 200 AND 260	1	1	1	7
+r [(json.a, json.c)] max_block_size = 5 WHERE json.a BETWEEN 200 AND 260	1	1	1	7
+granules r WHERE json.a BETWEEN 200 AND 260	Parts: 1 | Granules: 2
+granules r WHERE json.a BETWEEN 200 AND 260	Granules: 15/15
+granules r WHERE json.a BETWEEN 200 AND 260	Granules: 2/15
+r [json] WHERE json.b = \'xxx\'	1	1	1	9
+r [(json.a, json.c)] max_block_size = 5 WHERE json.b = \'xxx\'	1	1	1	9
+granules r WHERE json.b = \'xxx\'	Parts: 1 | Granules: 9
+granules r WHERE json.b = \'xxx\'	Granules: 15/15
+granules r WHERE json.b = \'xxx\'	Granules: 9/15
+r [json] WHERE json.c.size0 = 3	1	1	1	15
+r [(json.a, json.c)] max_block_size = 5 WHERE json.c.size0 = 3	1	1	1	15
+granules r WHERE json.c.size0 = 3	Parts: 1 | Granules: 15
+granules r WHERE json.c.size0 = 3	Granules: 15/15
+granules r WHERE json.c.size0 = 3	Granules: 15/15
+r [json] WHERE json.a > 500 AND json.c.size0 = 0	1	1	1	2
+r [(json.a, json.c)] max_block_size = 5 WHERE json.a > 500 AND json.c.size0 = 0	1	1	1	2
+granules r WHERE json.a > 500 AND json.c.size0 = 0	Parts: 1 | Granules: 3
+-- a mutation of a packed part reads a path subcolumn before the whole column
+r_pk [json] after the mutation	1
+r_pk [json] after the update	1	0
+-- sorting and partition keys from SHARED paths
+k [json] WHERE json.a = 130	1	1	1	1
+k [(json.a, json.b)] max_block_size = 5 WHERE json.a = 130	1	1	1	1
+granules k WHERE json.a = 130	Parts: 1 | Granules: 1
+granules k WHERE json.a = 130	Granules: 8/16
+granules k WHERE json.a = 130	Granules: 8/8
+granules k WHERE json.a = 130	Granules: 1/8
+k [json] WHERE json.a BETWEEN 100 AND 200	1	1	1	11
+k [(json.a, json.b)] max_block_size = 5 WHERE json.a BETWEEN 100 AND 200	1	1	1	11
+granules k WHERE json.a BETWEEN 100 AND 200	Parts: 1 | Granules: 4
+granules k WHERE json.a BETWEEN 100 AND 200	Granules: 8/16
+granules k WHERE json.a BETWEEN 100 AND 200	Granules: 8/8
+granules k WHERE json.a BETWEEN 100 AND 200	Granules: 4/8
+k [json] WHERE json.a >= 400 AND x < 50	1	1	1	10
+k [(json.a, json.b)] max_block_size = 5 WHERE json.a >= 400 AND x < 50	1	1	1	10
+granules k WHERE json.a >= 400 AND x < 50	Parts: 1 | Granules: 6
+granules k WHERE json.a >= 400 AND x < 50	Granules: 8/16
+granules k WHERE json.a >= 400 AND x < 50	Granules: 8/8
+granules k WHERE json.a >= 400 AND x < 50	Granules: 6/8
+k [json] WHERE json.a % 2 = 0	1	1	1	60
+k [(json.a, json.b)] max_block_size = 5 WHERE json.a % 2 = 0	1	1	1	60
+granules k WHERE json.a % 2 = 0	Parts: 2 | Granules: 16
+granules k WHERE json.a % 2 = 0	Granules: 16/16
+granules k WHERE json.a % 2 = 0	Granules: 16/16
+granules k WHERE json.a % 2 = 0	Granules: 16/16
+k [(json.a, json)] optimize_read_in_order = 1 ORDER BY json.a LIMIT 5	1	1	1	60
+k [json.b] optimize_read_in_order = 1, max_block_size = 5 ORDER BY json.a, x DESC LIMIT 8	1	1	1	60
+k parts after optimize	k_cm	1	60
+k parts after optimize	k_cn	1	60
+k parts after optimize	k_w	1	60
+k [(json, json.a)] max_block_size = 7 WHERE json.a BETWEEN 100 AND 300	1	1	1	21
+k order after merge	1
+-- parallel replicas over the localhost cluster
+p [json] enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = \'test_cluster_one_shard_three_replicas_localhost\', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1	1	1	1	60
+p [(json.a, json.c.size0)] enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = \'test_cluster_one_shard_three_replicas_localhost\', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, max_block_size = 5	1	1	1	60
+p [json.b] enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = \'test_cluster_one_shard_three_replicas_localhost\', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1 WHERE x >= 9 AND x < 50	1	1	1	41
