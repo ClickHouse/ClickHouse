@@ -128,6 +128,7 @@
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
@@ -3912,7 +3913,9 @@ std::optional<String> MergeTreeData::getPartSharedStorageIncarnation(const IMerg
     if (!disk)
         return std::nullopt;
 
-    auto objects = disk->getStorageObjectsIfExist(fs::path(part_storage.getRelativePath()) / "checksums.txt");
+    /// A `Packed` part keeps `checksums.txt` inside its archive, so the archive itself identifies the directory.
+    String identity_file = isPackedPartStorage(part_storage) ? DataPartStorageOnDiskPacked::DATA_FILE_NAME : "checksums.txt";
+    auto objects = disk->getStorageObjectsIfExist(fs::path(part_storage.getRelativePath()) / identity_file);
     if (!objects || objects->empty())
         return std::nullopt;
 
@@ -5309,7 +5312,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 
             /// First remove all covered parts, then remove covering empty part
             /// Avoids resurrection of old parts for MergeTree and issues with unexpected parts for Replicated
-            if (part->rows_count == 0 && !getCoveredOutdatedParts(part, parts_lock).empty())
+            if (part->rows_count == 0 && hasCoveredRetiredParts(part, parts_lock))
             {
                 part->removal_state.store(DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
@@ -5958,7 +5961,7 @@ size_t MergeTreeData::clearEmptyParts()
             auto part = getPartIfExistsUnlocked(name, {DataPartState::Active}, parts_lock);
             if (!part)
                 continue;
-            if (!getCoveredOutdatedParts(part, parts_lock).empty())
+            if (hasCoveredRetiredParts(part, parts_lock))
             {
                 LOG_TRACE(log, "Not dropping empty part {}: it still covers outdated parts that were not removed yet", name);
                 continue;
@@ -8450,6 +8453,22 @@ MergeTreeData::DataPartsVector MergeTreeData::getCoveredOutdatedParts(
     return hierarchy.covered_parts;
 }
 
+bool MergeTreeData::hasCoveredRetiredParts(const DataPartPtr & part, DataPartsLock & data_parts_lock) const
+{
+    if (!getCoveredOutdatedParts(part, data_parts_lock).empty())
+        return true;
+
+    /// Under `leader_election` the parts grabbed by a cleanup round (`Deleting`) still count: the round may
+    /// pause after `grabOldParts` and then lose the lease, and its freshness check keeps their files on the
+    /// shared storage. If the covering empty part were removed in the meantime, the next leader would load
+    /// them again. Without `leader_election` such parts are removed or rolled back to `Outdated` by the
+    /// same round, as before.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return false;
+
+    return !getPartHierarchy(part->info, DataPartState::Deleting, data_parts_lock).covered_parts.empty();
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     const MergeTreePartInfo & new_part_info,
     const String & new_part_name,
@@ -8501,7 +8520,10 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
 void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock &, bool need_rename, bool rename_in_transaction)
 {
     /// Record the identity of the directory of the part that becomes active (a rename does not change it).
-    if ((*getSettings())[MergeTreeSetting::leader_election])
+    /// A part loaded from the shared storage keeps the identity recorded by `loadDataPart` before its
+    /// metadata was read: looking it up again here could label the loaded metadata with the identity of a
+    /// same-name replacement that appeared on the storage in the meantime, and then it would never be reloaded.
+    if ((*getSettings())[MergeTreeSetting::leader_election] && !part->shared_storage_incarnation)
         part->shared_storage_incarnation = getPartSharedStorageIncarnation(*part);
 
     part->is_temp = false;

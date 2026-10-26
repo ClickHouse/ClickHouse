@@ -2384,6 +2384,11 @@ protected:
         const DataPartPtr & part,
         DataPartsLock & data_parts_lock) const;
 
+    /// Whether the empty part `part` still covers parts that are not removed from the storage yet, so it
+    /// must be kept as the retirement marker for them: `Outdated` parts, and under `leader_election` also
+    /// `Deleting` ones.
+    bool hasCoveredRetiredParts(const DataPartPtr & part, DataPartsLock & data_parts_lock) const;
+
     struct PartHierarchy
     {
         DataPartPtr duplicate_part;
