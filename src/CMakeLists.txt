@@ -400,6 +400,7 @@ add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
+add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -583,6 +584,9 @@ if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
 
+# Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
+add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/Impl/Vortex)
+
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
 endif()
@@ -655,6 +659,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::gdeflate
             ch_contrib::zxc
             ch_contrib::roaring
 )
@@ -1013,6 +1018,14 @@ if (TARGET ch_rust::delta_kernel_rs)
     # Without it some symbols for lz4/zstd can be used from crates instead of our contrib.
     target_link_libraries(clickhouse_common_io PRIVATE ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
+endif ()
+
+if (TARGET ch_rust::vortex)
+    # Last in the link line for the same reason as delta_kernel_rs above: the crate carries its own
+    # zstd and our contrib has to win.
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::vortex,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::vortex)
+    target_link_libraries(dbms PRIVATE ch_rust::vortex)
 endif ()
 
 if (TARGET ch_contrib::sha3iuf)

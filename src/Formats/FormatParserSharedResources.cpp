@@ -49,12 +49,22 @@ size_t FormatParserSharedResources::getIOThreadsPerReader() const
 
 void FormatParserSharedResources::initOnce(std::function<void()> f)
 {
+    callOnce(init_flag, init_exception, f);
+}
+
+void FormatParserSharedResources::initOpaqueOnce(std::function<void()> f)
+{
+    callOnce(opaque_init_flag, opaque_init_exception, f);
+}
+
+void FormatParserSharedResources::callOnce(std::once_flag & flag, std::exception_ptr & exception, const std::function<void()> & f)
+{
     std::call_once(
-        init_flag,
+        flag,
         [&]
         {
-            if (init_exception)
-                std::rethrow_exception(copyMutableException(init_exception));
+            if (exception)
+                std::rethrow_exception(copyMutableException(exception));
 
             try
             {
@@ -65,8 +75,8 @@ void FormatParserSharedResources::initOnce(std::function<void()> f)
                 /// See `FormatFilterInfo::initKeyConditionOnce`: keep the stored exception
                 /// an immutable template and hand each caller (including this one) a
                 /// private copy, so concurrent `addMessage` up the stack cannot race.
-                init_exception = std::current_exception();
-                std::rethrow_exception(copyMutableException(init_exception));
+                exception = std::current_exception();
+                std::rethrow_exception(copyMutableException(exception));
             }
         });
 }

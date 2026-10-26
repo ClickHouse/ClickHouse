@@ -1982,7 +1982,7 @@ Enables usage of the thread pool for parallel prefixes reading in Wide parts in 
 )", 0, \
         {"25.2", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"}) \
 DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
-Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark, the data substream of the `SHARED` typed paths included. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
 )", 0, \
         {"26.8", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."}) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
@@ -5186,9 +5186,9 @@ When enabled and aggregation in order is active, pushes LIMIT into the aggregati
 )", 0, \
         {"26.7", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."}) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
-Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys (or `adaptive_aggregator_freeze_threshold_bytes` of memory), then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or `adaptive_aggregator_freeze_threshold_bytes` of memory, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
-The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold the backlogs are drained early into the shared table, and if that is not enough to get back under it, the shared table spills to disk through the ordinary external aggregation.
+The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold a thread writes its staged records to disk and frees them, and the merge reads them back bucket by bucket. A table that has not frozen yet is written to disk as in the ordinary external aggregation once it holds enough memory, and a frozen one once its aggregate states, such as those of `uniqExact` or `groupArray`, grow enough; the thread then starts filling a new table.
 )", 0, \
         {"26.8", false, true, "New setting to enable adaptive `GROUP BY` aggregation that freezes each thread's local hash table once it reaches `adaptive_aggregator_freeze_threshold` keys, so frequent keys keep aggregating in the small local tables while rare keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge; this stores and processes rare keys once instead of once per thread."}) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 16384, R"(
@@ -5196,9 +5196,15 @@ The number of keys at which the adaptive aggregator freezes a thread's local has
 )", 0, \
         {"26.8", 16384, 16384, "New setting to set the number of keys at which the adaptive aggregator (`enable_adaptive_aggregator`) freezes a thread's local hash table."}) \
     DECLARE(UInt64, adaptive_aggregator_freeze_threshold_bytes, 4_MiB, R"(
-The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own allocated bytes (its hash-table buffer plus its arenas), checked between blocks. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold alone decides.
+The memory size at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). A table freezes at whichever of this and `adaptive_aggregator_freeze_threshold` is reached first. The size is the local table's own tracked memory, checked between blocks: its hash-table buffer, its arenas and the memory that its aggregation states own, such as the sets of `uniqExact`. The byte bound matters when the keys or the aggregation states are wide: the key-count threshold alone would let such tables outgrow the CPU caches, and a few groups with growing states would never freeze. At the default, tables of ordinary key and state widths keep freezing by the key count. 0 disables the byte bound, so the key-count threshold decides.
 )", 0, \
         {"26.9", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."}) \
+    DECLARE(Bool, adaptive_aggregator_disable_thaw, false, R"(
+Disables the per-thread thaw guard of the adaptive aggregator (see `enable_adaptive_aggregator`). By default, a thread whose staged records keep repeating the same keys can thaw its table and resume ordinary aggregation. When at least half of the frozen threads have repeat-dominated staged streams, the verdict is remembered in the hash-table statistics (`collect_hash_table_stats_during_aggregation`), so that later runs of the query do not use the adaptive aggregator.
+
+With this setting, repeated staged keys do not thaw a table, and a remembered verdict is ignored. Aggregations with descending top-K pruning already keep their tables frozen independently of this setting. The external aggregation settings still allow a growing frozen table to be written to disk and replaced with a new learning table.
+)", 0, \
+        {"26.11", false, false, "New setting to keep the adaptive aggregator's local tables frozen whatever the repeats of the staged keys, ignoring a thaw verdict remembered in the hash-table statistics."}) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
@@ -7067,26 +7073,6 @@ Find the latest metadata file of an Iceberg table read by path on S3 or Azure by
 Enable it only for tables whose metadata files are all named `v<N>...` (as ClickHouse and Hadoop catalogs name them): in a directory that also holds `<N>-<uuid>.metadata.json` files, those files are never candidates, so the commits of their writer are not seen.
 )", 0, \
         {"26.11", false, false, "New setting to list only the `metadata/v` key prefix when looking for the latest metadata file of an Iceberg table read by path."}) \
-    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 16, R"(
-Maximum number of Iceberg manifest files decoded concurrently while reading a table.
-
-Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
-
-Higher values raise peak memory when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
-
-Must be greater than zero; `1` decodes the manifests one at a time.
-)", 0, iceberg_delete_manifest_decode_concurrency, \
-        {"26.11", 4, 16, "Raise the default number of Iceberg manifest files decoded concurrently from 4 to 16 to overlap more object storage round-trips on tables with many manifests."}, \
-        {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
-        {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
-    DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
-Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
-
-The decode tasks pause once the queue is full and the query is not consuming, so this also bounds the read-ahead.
-
-Must be greater than zero.
-)", 0, \
-        {"26.9", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."}) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
@@ -8167,11 +8153,11 @@ Use query plan for lazy materialization optimization.
 )", 0, \
         {"25.4", false, true, "Added new setting to use query plan for lazy materialization optimisation"}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
-Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization optimization for reading Parquet and Vortex files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."}) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_file, true, R"(
-Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization optimization for reading local Parquet and Vortex files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
     DECLARE(Bool, query_plan_lazy_materialization_for_join, true, R"(
@@ -10767,6 +10753,10 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_gdeflate_codec, false, R"(
+Enables the `GDeflate` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
@@ -11678,7 +11668,16 @@ Enable experimental table function `eval`.
         {"26.6", 0.2, 0.2, "New setting for lazy posting list density threshold"}) \
     MAKE_OBSOLETE(M, Bool, use_compact_format_in_distributed_parts_names, true, \
         {"26.10", true, true, "Obsolete setting. The non-compact directory format for the async `INSERT` queue of a `Distributed` table has been removed. The setting was 1 by default since version 21.1. Switch to `1` and let the queue drain before upgrading."}, \
-        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"})
+        {"21.1", false, true, "Use compact format for async INSERT into Distributed tables by default"}) \
+    MAKE_OBSOLETE(M, NonZeroUInt64, iceberg_manifest_decode_concurrency, 16, \
+        {"26.11", 4, 16, "Obsolete setting: Iceberg manifest files are read on the IO thread pool and parsed by the threads reading the table."}, \
+        {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
+        {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
+    MAKE_OBSOLETE(M, NonZeroUInt64, iceberg_delete_manifest_decode_concurrency, 16, \
+        {"26.11", 4, 16, "Obsolete setting, formerly an alias of `iceberg_manifest_decode_concurrency`."}) \
+    MAKE_OBSOLETE(M, NonZeroUInt64, iceberg_file_entries_queue_size, 100, \
+        {"26.11", 100, 100, "Obsolete setting: there is no queue between Iceberg manifest parsing and the query any more."}, \
+        {"26.9", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
