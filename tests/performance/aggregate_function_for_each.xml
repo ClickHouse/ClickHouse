@@ -25,6 +25,20 @@
     <query>SELECT sumForEach(arr) FROM for_each_bench_short FORMAT Null</query>
     <query>SELECT k, sumForEach(arr) FROM for_each_bench_short GROUP BY k FORMAT Null</query>
 
+    <!-- Nullable elements, as in PromQL grids: a NULL at every 8th position, and no NULLs at all -->
+    <create_query>CREATE TABLE for_each_bench_nullable (k UInt32, arr Array(Nullable(Float64)), full Array(Nullable(Float64))) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO for_each_bench_nullable
+                SELECT number % 1000,
+                       arrayMap(i -> if((i + number) % 8 = 0, NULL, toFloat64(i + number)), range(32)),
+                       arrayMap(i -> toNullable(toFloat64(i + number)), range(32))
+                FROM numbers(2000000)
+    </fill_query>
+    <query>SELECT sumForEach(arr) FROM for_each_bench_nullable FORMAT Null</query>
+    <query>SELECT maxForEach(arr) FROM for_each_bench_nullable FORMAT Null</query>
+    <query>SELECT k, sumForEach(arr) FROM for_each_bench_nullable GROUP BY k FORMAT Null</query>
+    <query>SELECT k, avgForEach(full) FROM for_each_bench_nullable GROUP BY k FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS for_each_bench</drop_query>
     <drop_query>DROP TABLE IF EXISTS for_each_bench_short</drop_query>
+    <drop_query>DROP TABLE IF EXISTS for_each_bench_nullable</drop_query>
 </test>
