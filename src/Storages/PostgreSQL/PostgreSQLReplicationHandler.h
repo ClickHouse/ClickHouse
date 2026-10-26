@@ -567,6 +567,10 @@ private:
     bool coordinated_teardown_was_last = false;
     /// One of "ReplacingMergeTree" / "ReplicatedReplacingMergeTree" / "SharedReplacingMergeTree".
     String nested_engine_name;
+    /// The Keeper client of the session that owns `leader_node`. `EphemeralNodeHolder` keeps only a raw
+    /// reference to it and dereferences it in its destructor, so it is declared before `leader_node`:
+    /// members are destroyed in reverse order, and the client must outlive the holder.
+    zkutil::ZooKeeperPtr coordination_zookeeper;
     /// The ephemeral Keeper node marking this replica as the active worker. Non-null only while leader.
     /// Together with `coordination_zookeeper` (which keeps the referenced session alive), these are
     /// only ever mutated from `coordination_task`, so they need no extra locking. The `/leader` node is
@@ -576,7 +580,6 @@ private:
     zkutil::EphemeralNodeHolderPtr leader_node;
     /// `czxid` of `leader_node`: identifies the election term that created it.
     Int64 leader_node_czxid = 0;
-    zkutil::ZooKeeperPtr coordination_zookeeper;
     /// Mirror of "this handler currently holds the leader node", read by `consumerFunc` (which runs on a
     /// different task) to decide whether it may consume. Only written by `coordination_task`.
     std::atomic<bool> is_active_worker = false;

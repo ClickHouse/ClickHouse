@@ -1402,8 +1402,12 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 /// Without coordination the database engine tolerates a per-table failure: the remaining
                 /// tables still get a consumer and the failed one can be repaired later with `ATTACH TABLE`.
                 /// The single-table engine has exactly one table, so when its snapshot failed there is
-                /// nothing useful a consumer could do, and `throw_on_error` decides between failing the
-                /// query and the startup-task retry.
+                /// nothing useful a consumer could do: it always rethrows, independently of `throw_on_error`.
+                /// The caller then either fails the query or, on the retrying startup-task path, schedules
+                /// another attempt. Swallowing the error would start a consumer with no nested table, which
+                /// skips the table's changes while still acknowledging WAL - for example, after
+                /// `restartReplicationAfterFailedDrop` switched to a create-style start because the nested
+                /// table was already gone, a transient snapshot failure would lose its data for good.
                 ///
                 /// In coordinated mode any snapshot failure must abort the whole attempt for both engines:
                 /// proceeding would construct a consumer that marks the missing tables as skipped while
@@ -1417,7 +1421,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 /// The repair of a partially applied `DROP DATABASE` must not tolerate a per-table failure either
                 /// (see `requireCompleteInitialSnapshot`): the failed table has just been cleared, and after the
                 /// repair is recorded as complete a restart would resume from the slot without its historical rows.
-                if (coordination_enabled || require_complete_initial_snapshot || (throw_on_error && !is_materialized_postgresql_database))
+                if (coordination_enabled || require_complete_initial_snapshot || !is_materialized_postgresql_database)
                     throw;
             }
         }
@@ -1455,6 +1459,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             if (!storage->as<StorageMaterializedPostgreSQL>()->tryGetNested())
             {
                 LOG_WARNING(log, "The nested table of {} does not exist. Recreating it from a new snapshot", table_name);
+                /// `checkConnectionAndStart` retries on error only in attach mode or with `retry_startup_on_error`.
+                /// This runs on the background startup task, which must keep retrying (a task cannot throw), so
+                /// keep the handler in the retrying mode before leaving the attach mode.
+                retry_startup_on_error.store(true);
                 is_attach = false;
             }
         }

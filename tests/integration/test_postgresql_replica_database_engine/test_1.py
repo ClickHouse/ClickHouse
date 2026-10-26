@@ -590,6 +590,63 @@ def test_merge_table_over_materialized_postgresql(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
+def test_attach_without_nested_table_retries_failed_snapshot(started_cluster):
+    # An attached single-table engine whose nested table is gone switches to a create-style start, which
+    # recreates the nested table from a new snapshot. A failure of that snapshot must keep the background
+    # startup task retrying (instead of throwing out of it), and the retried start must not swallow a repeated
+    # failure and start a consumer without the table: once the failure is gone, both the historical rows and
+    # the later changes must be replicated.
+    table_name = "pg_attach_no_nested"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table_name}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+
+    try:
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+
+        uuid = instance.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table_name}'"
+        ).strip()
+        instance.query(f"DETACH TABLE {table_name}")
+        instance.query(
+            f"DROP TABLE default.`{uuid}_nested` SYNC SETTINGS check_table_dependencies = 0"
+        )
+
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_load_from_snapshot"
+        )
+        try:
+            instance.query(f"ATTACH TABLE {table_name}")
+            instance.wait_for_log_line(
+                f"while loading table `postgres_database`.`{table_name}`"
+            )
+        finally:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_load_from_snapshot"
+            )
+
+        instance.query(
+            f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+        )
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+        assert int(instance.query(f"SELECT count() FROM {table_name}")) == 100
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def test_rename_and_exchange_table_are_rejected(started_cluster):
     # The names of the tables of a MaterializedPostgreSQL database mirror the PostgreSQL tables they
     # replicate. A generic RENAME / EXCHANGE would rename only the local nested table, while the wrapper
