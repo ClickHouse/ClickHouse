@@ -42,7 +42,9 @@ send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --query 'CREATE TABL
 expect "created"
 expect "bash) "
 
-send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 2 --max_local_read_bandwidth 1000000 --query 'SELECT count() FROM t WHERE NOT ignore(n)' >/dev/null 2>&1\r"
+# The data was just written and is in the OS page cache: the `read` method cannot tell such reads
+# from the device reads, so the throttler accounts every one of them.
+send "\$CLICKHOUSE_LOCAL --path \"\$CLICKHOUSE_LOCAL_PATH\" --progress --max_threads 2 --max_local_read_bandwidth 1000000 --local_filesystem_read_method read --query 'SELECT count() FROM t WHERE NOT ignore(n)' >/dev/null 2>&1\r"
 
 # The progress bar is rendered right after the counters (") " or ". ") and starts with a full
 # block, either green (working) or yellow (stalled), so no already-filled prefix is dropped.

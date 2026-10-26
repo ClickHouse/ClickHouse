@@ -2,8 +2,6 @@
 -- outermost type, so they have to reach the type wherever a container can hide it: an `Array`
 -- element, a `Tuple` element, a `Map` key, a `Map` value, and at any depth of nesting.
 
-DROP TABLE IF EXISTS t_nested_key;
-DROP TABLE IF EXISTS t_map_state_version;
 SET allow_suspicious_types_in_group_by = 0, allow_suspicious_types_in_order_by = 0;
 
 SELECT count() FROM numbers(2) GROUP BY CAST([number], 'Array(Variant(UInt64, String))'); -- { serverError ILLEGAL_COLUMN }
