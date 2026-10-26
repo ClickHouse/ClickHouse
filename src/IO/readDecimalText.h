@@ -3,6 +3,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/intExp.h>
 
+#include <algorithm>
 #include <limits>
 
 namespace DB
@@ -59,6 +60,71 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         const char & byte = *buf.position();
         if (has_digits && byte >= '0' && byte <= '9')
             *has_digits = true;
+
+        if constexpr (sizeof(typename T::NativeType) > 16)
+        {
+            /// Amortize `Decimal256` arithmetic over machine-word chunks. Smaller types keep
+            /// their scalar path, which is faster for short inputs. Deferred fractional zeroes
+            /// and precision boundaries are handled by the scalar cases below.
+            if (places == 0 && max_digits - digits >= 2 && buf.available() >= 2
+                && byte >= '0' && byte <= '9' && (!leading_zeroes || byte != '0')
+                && buf.position()[1] >= '0' && buf.position()[1] <= '9')
+            {
+                auto read_chunks = [&]<bool fractional>()
+                {
+                    /// Stay in the integer or fractional phase until a buffer or precision
+                    /// boundary, punctuation, or deferred zeroes require the scalar path.
+                    const char * end = buf.position() + std::min<size_t>(buf.available(), max_digits - digits);
+                    uint32_t n;
+                    do
+                    {
+                        const char * begin = buf.position();
+                        size_t limit = std::min<size_t>(18, end - begin);
+                        UInt64 chunk = 0;
+                        n = 0;
+                        while (n < limit && begin[n] >= '0' && begin[n] <= '9')
+                        {
+                            chunk = chunk * 10 + (begin[n] - '0');
+                            ++n;
+                        }
+                        buf.position() += n;
+
+                        if constexpr (fractional)
+                        {
+                            uint32_t kept = n;
+                            while (kept && begin[kept - 1] == '0')
+                                --kept;
+                            places = n - kept;
+                            if (places)
+                            {
+                                chunk /= intExp10OfSize<UInt64>(places);
+                                n = kept;
+                            }
+                            exponent -= n;
+                        }
+                        if (n)
+                        {
+                            if (digits == 0)
+                                x = typename T::NativeType(chunk);
+                            else
+                            {
+                                x *= intExp10OfSize<typename T::NativeType>(n);
+                                x += typename T::NativeType(chunk);
+                            }
+                            digits += n;
+                        }
+                    }
+                    while (n == 18 && buf.position() < end);
+                };
+                if (after_point)
+                    read_chunks.template operator()<true>();
+                else
+                    read_chunks.template operator()<false>();
+                leading_zeroes = false;
+                continue;
+            }
+        }
+
         switch (byte)
         {
             case '.':

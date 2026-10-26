@@ -1,3 +1,34 @@
 <test>
+    <!-- Precompute strings so the focused queries measure parsing rather than string construction. -->
+    <create_query>
+        CREATE TABLE decimal_parse_strings
+        (d32 String, d64 String, i128 String, f128 String, i256 String, f256 String, z256 String)
+        ENGINE = Memory
+    </create_query>
+    <create_query>
+        INSERT INTO decimal_parse_strings
+        WITH if(number % 2, '-', '') AS sign, leftPad(toString(number), 9, '0') AS suffix
+        SELECT
+            concat(sign, toString(number), '.123'),
+            concat(sign, '123456789.', suffix),
+            concat(sign, repeat('1234567890', 2), '123456789', suffix),
+            concat(sign, '12345678901234567890.123456789', suffix),
+            concat(sign, repeat('1234567890', 6), '1234567', suffix),
+            concat(sign, repeat('1234567890', 3), '12345678.', repeat('1234567890', 2), '123456789', suffix),
+            concat(sign, '1.', repeat('0', 30), suffix)
+        FROM numbers(100000)
+    </create_query>
+
     <query>SELECT count() FROM zeros(3000000) WHERE NOT ignore(toDecimal32OrZero(toString(rand() % 10000), 5))</query>
+
+    <query>SELECT toDecimal32(d32, 3) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal64(d64, 9) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal128(i128, 0) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal128(f128, 18) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal256(i256, 0) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal256(f256, 38) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal256(d32, 3) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT toDecimal256(z256, 38) FROM loop(decimal_parse_strings) LIMIT 1000000 SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE decimal_parse_strings</drop_query>
 </test>
