@@ -4995,9 +4995,11 @@ bool MutateTask::prepare()
         ctx->recalculate_ttl_only = false;
 
     if (ctx->recalculate_ttl_only)
+    {
         ctx->for_interpreter = ctx->commands_for_part;
+    }
     else
-        bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+    {
         MutationHelpers::splitAndModifyMutationCommands(
             ctx->source_part,
             ctx->metadata_snapshot,
@@ -5008,6 +5010,7 @@ bool MutateTask::prepare()
             ctx->future_part->part_format.storage_type,
             ctx->num_for_file_renames_from_commands,
             ctx->log);
+    }
 
     if (commands_for_execution != &ctx->commands_for_part)
     {
