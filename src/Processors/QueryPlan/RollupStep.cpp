@@ -18,7 +18,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
@@ -119,12 +119,12 @@ void RollupStep::serialize(Serialization & ctx) const
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        ctx.writeColumnName(key);
+        writeStringBinary(key, ctx.out);
 
     /// The planner builds the rollup aggregates without argument names (the transform only merges
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
-    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
+    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
 }
 
 QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)

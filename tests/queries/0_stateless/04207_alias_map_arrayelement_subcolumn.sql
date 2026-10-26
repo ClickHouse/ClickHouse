@@ -8,6 +8,7 @@
 -- only the matching key subcolumn, so the alias path was orders of magnitude slower.
 
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_alias_map;

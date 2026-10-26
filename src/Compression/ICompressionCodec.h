@@ -101,10 +101,6 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
-    /// If the codec needs the column data type to compress (e.g. `PCO`). An instance created without a type
-    /// can still decompress.
-    virtual bool requiresColumnTypeToCompress() const { return false; }
-
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
@@ -127,9 +123,6 @@ protected:
 
     /// Build a description for `getCodecDescription` from a codec name and optional arguments.
     static ASTPtr makeCodecDescription(const String & name, const ASTs & arguments = {});
-
-    /// Writes the block header in front of `body_size` bytes of compressed data already at `dest + getHeaderSize()`. Returns the block size.
-    UInt32 writeHeader(char * dest, UInt32 body_size, UInt32 uncompressed_size) const;
 
     int decompression_error_code = ErrorCodes::CORRUPTED_DATA;
 };

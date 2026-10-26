@@ -169,19 +169,6 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
-inline bool isLambdaBodyExpensive(const ExpressionActions & expression_actions)
-{
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isExpensive(); });
-}
-
-/// A lambda has observable side effects if any function in its body has them. Without this, a higher-order
-/// function like `arrayExists(x -> sleepEachRow(0.001) = 0, arr)` looks free of side effects, and the
-/// reordering of short-circuit arguments evaluates `sleepEachRow` on fewer rows than in the written order.
-inline bool isLambdaBodyWithObservableSideEffects(const ExpressionActions & expression_actions)
-{
-    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.hasObservableSideEffects(); });
-}
-
 /// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
 /// Every function in the body has to allow constant folding, and it also has to keep the same value for the
 /// whole query: a folded lambda becomes a constant `ColumnFunction`, which makes the higher-order function
@@ -264,24 +251,11 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
-    /// ExecutableFunctionCapture builds a new FunctionExpression per chunk; identity is the shared
-    /// LambdaCapture + ExpressionActions, not the FunctionExpression object itself.
-    bool isEqual(const IFunctionBase & rhs) const override
-    {
-        const auto * other = typeid_cast<const FunctionExpression *>(&rhs);
-        if (!other)
-            return false;
-        return capture.get() == other->capture.get()
-            && expression_actions.get() == other->expression_actions.get();
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
     bool isSuitableForConstantFolding() const override { return isLambdaBodySuitableForConstantFolding(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -413,9 +387,6 @@ public:
     bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
     bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
     bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
-    bool hasObservableSideEffects() const override { return isLambdaBodyWithObservableSideEffects(*expression_actions); }
-
-    bool isExpensive() const override { return isLambdaBodyExpensive(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

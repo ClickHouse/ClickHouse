@@ -6,7 +6,6 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/SecretArgumentsSpec.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -129,7 +128,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    virtual std::function<void(WriteBuffer &)> getReadPOSTDataCallback(
+    virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
         const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
@@ -213,7 +212,6 @@ public:
 
         String next();
         size_t size();
-        size_t sizeForStreams(size_t requested);
     private:
         class Impl;
         /// shared_ptr to have copy constructor
@@ -227,7 +225,7 @@ public:
         const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
         const std::string & http_method,
-        std::function<void(WriteBuffer &)> callback,
+        std::function<void(std::ostream &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         String name_,
@@ -247,36 +245,26 @@ public:
 
     String getName() const override { return name; }
 
-    Status prepare() override;
-
     Chunk generate() override;
 
     void onFinish() override;
 
-    void cancel(CancelReason reason) noexcept override;
-
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
-    /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
-    /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
         ContextPtr context,
         const URIParams & params,
         const String & http_method,
-        std::function<void(WriteBuffer &)> callback,
+        std::function<void(std::ostream &)> callback,
         const ConnectionTimeouts & timeouts,
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization,
-        ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
+        bool delay_initialization);
 
 private:
-    /// Release the reader, the format and the HTTP buffer - see the definition.
-    void releaseReader();
-
     void addNumRowsToCache(const String & uri, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time);
 
@@ -293,41 +281,17 @@ private:
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
     std::optional<time_t> current_file_last_modified;
-    /// The `Date` of the response that reported `current_file_last_modified`, by the clock of the same server.
-    std::optional<time_t> current_file_response_date;
-    /// The URI of the current file after following the redirects of its metadata request.
-    Poco::URI current_file_resolved_uri;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
-    /// A hash of the request headers of the table, which are a part of the query condition cache key,
-    /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
-    UInt128 request_headers_hash;
     bool need_only_count;
     StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
-    /// The query condition cache is used only for a plain `GET`, whose response depends on the URL alone.
-    bool allow_query_condition_cache = false;
-    /// The query condition cache key (`part_name`) of the file being read: its URL and version, see
-    /// `makeQueryConditionCacheFileKey`. Unset if the file cannot use the cache.
-    std::optional<String> current_query_condition_cache_file_key;
-
-    std::optional<String> makeQueryConditionCacheFileKey() const;
-    /// Records in the query condition cache the row groups of the file just read which hold no row the
-    /// condition needs.
-    void writeQueryConditionCacheEntry() const;
-
     Poco::Net::HTTPBasicCredentials credentials;
-
-    /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel. Also
-    /// remembers whether the cancellation is one after which the query must still succeed - a soft
-    /// `max_execution_time` with the `break` overflow mode, or a consumer that has enough data - so
-    /// that generate then discards the failure of the interrupted read instead of failing the query.
-    ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
     Map http_response_headers;
     bool http_response_headers_initialized = false;
@@ -393,8 +357,7 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
-        bool distributed_processing_ = false,
-        bool is_replayed_definition_ = false);
+        bool distributed_processing_ = false);
 
     String getName() const override
     {
@@ -414,8 +377,6 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
-    bool supportsTruncate() const override { return false; }
-
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
@@ -428,11 +389,10 @@ public:
         std::string addresses_expr;
     };
 
-    static Configuration getConfiguration(
-        ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr, bool is_replayed_definition = false);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If `headers(...)` argument is present, parses it and moves it before the key-value arguments (to the array end if there are none).
+    /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
     /// Returns number of arguments excluding `headers(...)`.
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
@@ -451,19 +411,11 @@ public:
     /// `base_setting_name` is the name of the setting the base came from, used in error messages.
     static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
 
-    /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
-    static bool isAbsoluteURL(const String & url);
-
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.
     /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,
     /// to avoid leaking them through the persisted CREATE TABLE AST.
-    static void overrideURLInEngineArgs(
-        ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo, bool is_replayed_definition = false);
-
-private:
-    /// See `StorageObjectStorageConfiguration::is_replayed_definition`.
-    const bool is_replayed_definition;
+    static void overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo);
 };
 
 
@@ -494,9 +446,4 @@ public:
 private:
     std::vector<String> uri_options;
 };
-
-/// The `SecretArgumentsSpec` of `url`, `urlCluster` and the `URL` table and database engines: the url is at
-/// `url_offset`, a `url` override of a named collection and `headers(...)` can carry credentials.
-SecretArgumentsSpec urlSecretArguments(size_t url_offset);
-
 }

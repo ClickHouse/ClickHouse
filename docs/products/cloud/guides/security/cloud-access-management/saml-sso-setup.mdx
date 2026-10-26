@@ -36,9 +36,7 @@ The rest of this guide covers the one-time configuration.
 
 ## How to configure your IdP {#how-to-configure-your-idp}
 
-If SAML is already enabled and you need admin access, see [Configure your admin user](#configure-your-admin-user) or [Troubleshooting](#troubleshooting).
-
-<Steps titleSize="h3">
+<Steps>
 <Step title="Access Organization settings" id="access-organization-settings">
 
 Click on your organization name in the lower left corner and select Organization details.
@@ -282,19 +280,6 @@ You will set up one application integration with a separate sign-on URL for each
 ## Troubleshooting {#troubleshooting}
 
 <AccordionGroup>
-
-<Accordion title="Admin permissions are missing after SAML sign-in">
-
-**Cause:** your new SAML account receives the configured default SAML role. If that role isn't **Admin**, the account won't have admin permissions, even if your original account has the **Admin** role. ClickHouse Cloud doesn't automatically link SAML and non-SAML accounts.
-
-**Fix:** sign in through SAML once so the new user appears in ClickHouse Cloud. Then log out and sign in with your original admin account to assign the **Admin** role to the SAML user:
-
-- For email-and-password accounts, use [the email sign-in link](https://console.clickhouse.cloud/?with=email) to bypass the automatic SAML redirect. The `email` in `?with=email` is a literal value, not a placeholder for your email address.
-- For Google or Microsoft accounts, select **Continue with Google** or **Continue with Microsoft**.
-
-Log out and sign in through SAML again to verify admin access before removing your original admin account. See [Configure your admin user](#configure-your-admin-user) for the full procedure.
-
-</Accordion>
 
 <Accordion title="There could be a misconfiguration in the system or a service outage">
 

@@ -76,7 +76,6 @@ public:
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return data->isFixedAndContiguous(); }
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
 
@@ -100,10 +99,8 @@ public:
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override;
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -191,7 +188,6 @@ public:
         data->forEachMutableSubcolumnRecursively(callback);
     }
 
-    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);

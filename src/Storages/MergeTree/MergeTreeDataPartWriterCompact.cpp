@@ -6,7 +6,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
-#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 
@@ -77,8 +76,9 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
 {
+    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -88,7 +88,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
@@ -309,8 +309,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
-        CurrentThread::checkIfNotCancelled();
-
         /// Tricky part, because we share compressed streams between different columns substreams.
         /// Compressed streams write data to the single file, but with different compression codecs.
         /// So we flush each stream (using next()) before using new one, because otherwise we will override
@@ -490,13 +488,46 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
     marks_file = nullptr;
 }
 
+static void fillIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity,
+    size_t index_offset,
+    size_t index_granularity_for_block,
+    size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+    {
+        size_t rows_left_in_block = rows_in_block - current_row;
+
+        /// Try to extend last granule if block is large enough
+        ///  or it isn't first in granule (index_offset != 0).
+        if (rows_left_in_block < index_granularity_for_block &&
+            (rows_in_block >= index_granularity_for_block || index_offset != 0))
+        {
+            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
+            // So, real size of granule differs from index_granularity_for_block not more than 50%.
+            if (rows_left_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_left_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_left_in_block);
+        }
+        else
+        {
+            index_granularity.appendMark(index_granularity_for_block);
+        }
+    }
+}
+
 void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     size_t index_offset = 0;
     if (index_granularity->getMarksCount() > getCurrentMark())
         index_offset = index_granularity->getMarkRows(getCurrentMark()) - columns_buffer.size();
 
-    fillIndexGranularityForCompactPart(*index_granularity, index_offset, index_granularity_for_block, rows_in_block);
+    fillIndexGranularityImpl(
+        *index_granularity,
+        index_offset,
+        index_granularity_for_block,
+        rows_in_block);
 }
 
 void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums & checksums)

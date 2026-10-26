@@ -14,7 +14,9 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir da [fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## group_by_overflow_mode {#group_by_overflow_mode}
+<div id="group_by_overflow_mode">
+  ## group_by_overflow_mode
+</div>
 
 <SettingsInfoBlock type="OverflowModeGroupBy" default_value="throw" />
 
@@ -27,7 +29,9 @@ Define o que acontece quando o número de chaves únicas para agregação excede
 Usar o valor `any` permite executar uma aproximação de GROUP BY. A qualidade dessa
 aproximação depende da natureza estatística dos dados.
 
-## group_by_top_k_optimization_observation_rows {#group_by_top_k_optimization_observation_rows}
+<div id="group_by_top_k_optimization_observation_rows">
+  ## group_by_top_k_optimization_observation_rows
+</div>
 
 <ExperimentalBadge />
 
@@ -41,32 +45,25 @@ A janela efetiva é de pelo menos o dobro do tamanho reservado do heap, para que
 
 Isso não tem efeito em consultas `GROUP BY keys LIMIT K` sem `ORDER BY`, nas quais o congelamento está sempre desabilitado: o plano desse formato contém uma ordenação gerada automaticamente que só compensa enquanto o heap limita a tabela hash; portanto, congelar o heap deixaria o plano mais lento do que o plano sem otimização.
 
-## group_by_top_k_optimization_shared_boundary {#group_by_top_k_optimization_shared_boundary}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: compartilha a fronteira de descarte top-K mais restritiva entre as threads de agregação, para que threads cujas chaves locais estejam mal classificadas possam descartar linhas com base em uma fronteira publicada por outra thread. previous_value=false, para que `compatibility` com versões anteriores à 26.10 restaure as fronteiras por thread."}]}]} />
-
-Para `enable_group_by_top_k_optimization`: compartilha a fronteira de descarte mais restritiva entre as threads de agregação. Cada thread publica a fronteira do seu próprio conjunto top-K uma vez por bloco processado, sempre que ela se torna mais restritiva, e todas as threads descartam linhas com base na melhor fronteira publicada, e não apenas na sua própria. Um conjunto de `K` chaves estritamente melhores que uma linha comprova que essa linha não pode chegar ao resultado final, independentemente de qual thread detenha essas chaves; portanto, o compartilhamento não altera o resultado. Ele apenas permite que threads cujas chaves locais estejam mal classificadas (por exemplo, quando os valores de chave estão agrupados ao longo da tabela) descartem linhas que, caso contrário, agregariam à toa.
-
-Valores possíveis:
-
-* 0 — Desabilitado.
-* 1 — Habilitado.
-
-## group_by_two_level_threshold {#group_by_two_level_threshold}
+<div id="group_by_two_level_threshold">
+  ## group_by_two_level_threshold
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 Número de chaves a partir do qual uma agregação em dois níveis é iniciada. 0 - o limiar não está definido.
 
-## group_by_two_level_threshold_bytes {#group_by_two_level_threshold_bytes}
+<div id="group_by_two_level_threshold_bytes">
+  ## group_by_two_level_threshold_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="50000000" />
 
 A partir de qual tamanho, em bytes, do estado de agregação, passa-se a usar a agregação em dois níveis. 0 - o limiar não está definido. A agregação em dois níveis é usada quando pelo menos um dos limiares é atingido.
 
-## group_by_use_nulls {#group_by_use_nulls}
+<div id="group_by_use_nulls">
+  ## group_by_use_nulls
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

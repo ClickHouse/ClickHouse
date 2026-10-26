@@ -69,22 +69,6 @@ RuntimeFilterConfig makeRuntimeFilterConfig()
                                /*blocks_to_skip_before_reenabling=*/30};
 }
 
-/// `bytes_limit` sets both the exact-phase byte budget and the bloom filter size, as for a locally
-/// built filter. `gtest_runtime_filter_serialization` covers geometries where the two differ.
-RuntimeFilterGeometry makeGeometry(
-    UInt64 bytes_limit, UInt64 exact_values_limit, UInt64 bloom_filter_hash_functions, Float64 max_ratio_of_set_bits_in_bloom_filter)
-{
-    return RuntimeFilterGeometry{
-        .exact_values_limit = exact_values_limit,
-        .exact_bytes_limit = bytes_limit,
-        .bloom_filter_bytes = bytes_limit,
-        .bloom_filter_hash_functions = bloom_filter_hash_functions,
-        .pass_ratio_threshold_for_disabling = 1.0,
-        .blocks_to_skip_before_reenabling = 30,
-        .max_ratio_of_set_bits_in_bloom_filter = max_ratio_of_set_bits_in_bloom_filter,
-    };
-}
-
 }
 
 TEST(RuntimeFilterLookup, ExactContainsQueriesSet)
@@ -135,7 +119,10 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            makeGeometry(1_MiB, 1, 3, 1.0),
+            /*bytes_limit_=*/1_MiB,
+            /*exact_values_limit_=*/1,
+            /*bloom_filter_hash_functions_=*/3,
+            /*max_ratio_of_set_bits_in_bloom_filter_=*/1.0,
             /*distinct_keys_hint=*/std::nullopt,
             /*distinct_keys_hint_matches_filter_key_=*/false));
 
@@ -164,7 +151,10 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            makeGeometry(1_KiB, 1, 3, 0.05),
+            /*bytes_limit_=*/1_KiB,
+            /*exact_values_limit_=*/1,
+            /*bloom_filter_hash_functions_=*/3,
+            /*max_ratio_of_set_bits_in_bloom_filter_=*/0.05,
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     destination.enableIndexAnalysis();
@@ -175,7 +165,10 @@ TEST(RuntimeFilterLookup, PredictedBloomSaturationDropsKeySetAndPreservesMergedR
         makeRuntimeFilterConfig(),
         RuntimeFilter::Adaptive(
             type,
-            makeGeometry(1_KiB, 1, 3, 0.05),
+            /*bytes_limit_=*/1_KiB,
+            /*exact_values_limit_=*/1,
+            /*bloom_filter_hash_functions_=*/3,
+            /*max_ratio_of_set_bits_in_bloom_filter_=*/0.05,
             /*distinct_keys_hint_=*/2'000'000,
             /*distinct_keys_hint_matches_filter_key_=*/true));
     source.enableIndexAnalysis();
@@ -479,14 +472,14 @@ TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
     RuntimeFilter destination(
         /*filters_to_merge_=*/1,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
     destination.enableIndexAnalysis();
     destination.insert(makeUInt64Column({3, 7}));
 
     RuntimeFilter source(
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
-        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 100, 3, 1.0), std::nullopt, false));
+        RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt, false));
     source.enableIndexAnalysis();
     source.insert(makeUInt64Column({1, 9}));
     source.finishInsert();

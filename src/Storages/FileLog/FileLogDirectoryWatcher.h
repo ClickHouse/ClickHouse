@@ -6,8 +6,6 @@
 
 #include <memory>
 #include <mutex>
-#include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -24,7 +22,6 @@ public:
     {
         DirectoryWatcherBase::DirectoryEventType type;
         std::string callback;
-        uint64_t cookie = 0;
     };
 
     /// Events are accumulated as a flat chronologically-ordered sequence so that
@@ -41,10 +38,7 @@ public:
         std::string error_msg = {};
     };
 
-    /// `read_files_` maps the inodes of the files the table reads when the watcher is created to the names it reads them
-    /// under, including the names that the globs of the path exclude.
-    FileLogDirectoryWatcher(
-        const std::string & path_, StorageFileLog & storage_, std::unordered_map<uint64_t, std::string> read_files_, ContextPtr context_);
+    FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_);
     ~FileLogDirectoryWatcher() = default;
 
     Events getEventsAndReset();
@@ -62,15 +56,10 @@ private:
     void onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev);
     void onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev);
     void onError(Exception);
-    /// Hands the events of one watcher pass to `getEventsAndReset` together.
-    void commitEvents();
 
     const std::string path;
 
     StorageFileLog & storage;
-
-    /// Used only by the watcher thread on macOS, which watches only the files the table may read.
-    const std::unordered_map<uint64_t, std::string> read_files;
 
     /// Note, in order to avoid data race found by fuzzer, put events before dw,
     /// such that when this class destruction, dw will be destructed before events.
@@ -80,8 +69,6 @@ private:
     /// And we should put other members before dw as well, because all of them can be
     /// accessed in thread created by dw.
     Events events;
-    /// Events of the current watcher pass, used only by the watcher thread.
-    Events pending;
 
     /// Dedup state for repeated `DW_ITEM_MODIFIED` events within a single
     /// batch. The original aggregation stored this per-name in `FileEvents`;

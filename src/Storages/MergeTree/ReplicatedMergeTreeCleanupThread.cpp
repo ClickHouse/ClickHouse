@@ -93,11 +93,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_part_like += storage.clearUnusedPatchParts();
     }
 
-    {
-        /// Rebuilds each outdated part's cache keys from its root path, which changes during rename.
-        auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-        cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
-    }
+    cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.

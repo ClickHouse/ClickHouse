@@ -4,7 +4,6 @@
 #include <Interpreters/SelectQueryOptions.h>
 
 #include <Planner/Planner.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -74,12 +73,11 @@ public:
 
     QueryPipelineBuilder buildQueryPipeline();
 
-    /// Registers the interpreter context as a distributed-plan decision context of the built plan and
-    /// runs `applyDistributedPlanFallbackToLocal` on it. When the fallback applies, the plan writes
-    /// `make_distributed_plan = false` into every registered context: this one and the query tree node
-    /// contexts the planners registered. Second-pass index analysis reads the setting live from the
-    /// contexts the plan steps captured when it builds `IN`-subquery sets. Must run before
-    /// `QueryPlanOptimizationSettings` is constructed from the context. Idempotent.
+    /// Runs `applyDistributedPlanFallbackToLocal` on the built plan and, when the fallback
+    /// applies, propagates `make_distributed_plan = false` to the interpreter context and to
+    /// every query tree node context in place. Second-pass index analysis reads the setting
+    /// live from the contexts the plan steps captured when it builds `IN`-subquery sets. Must
+    /// run before `QueryPlanOptimizationSettings` is constructed from the context. Idempotent.
     void applyDistributedPlanFallbackIfNeeded();
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
@@ -96,7 +94,7 @@ public:
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
-    const QueryPlanWithParallelReplicasBuilder & getQueryPlanWithParallelReplicasBuilder() const
+    const std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> & getQueryPlanWithParallelReplicasBuilder() const
     {
         return query_plan_with_parallel_replicas_builder;
     }
@@ -108,7 +106,7 @@ private:
     QueryTreeNodePtr query_tree;
     Planner planner;
 
-    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);

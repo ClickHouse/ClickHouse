@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS m0;
 DROP TABLE IF EXISTS m1;

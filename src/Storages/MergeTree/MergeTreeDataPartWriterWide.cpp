@@ -12,13 +12,11 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Common/MemoryTracker.h>
 #include <Common/FailPoint.h>
 #include <IO/NullWriteBuffer.h>
 
@@ -44,28 +42,6 @@ namespace
 
 namespace
 {
-
-/// Every stream of a wide part preallocates two buffers of `max_compress_block_size`: the file buffer and
-/// the compressor's block buffer. With one stream per column that is already `2 * max_compress_block_size`
-/// per column reserved before a single byte is written, and every concurrent merge reserves it again. On a
-/// large server that is noise; on a small one it is a large share of `max_server_memory_usage` and can be
-/// what makes an `INSERT` fail with `MEMORY_LIMIT_EXCEEDED`. In that case write through adaptive buffers
-/// instead: they start at `adaptive_write_buffer_initial_size` and double up to `max_compress_block_size`,
-/// so only the streams that really write that much end up paying for it.
-bool writeBuffersWouldTakeSignificantMemory(size_t num_streams, size_t max_compress_block_size, const MergeTreeWriterSettings & settings)
-{
-    const double ratio = static_cast<double>(settings.max_memory_ratio_to_activate_adaptive_write_buffer);
-    if (ratio <= 0)
-        return false;
-
-    const Int64 memory_limit = total_memory_tracker.getHardLimit();
-    if (memory_limit <= 0)
-        return false;
-
-    /// What this writer reserves: two buffers per stream.
-    const double preallocated = static_cast<double>(num_streams) * 2 * static_cast<double>(max_compress_block_size);
-    return preallocated >= static_cast<double>(memory_limit) * ratio;
-}
 
 /// Get granules for block using index_granularity
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, size_t rows_written_in_last_mark)
@@ -212,8 +188,11 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
     streams_to_open_in_part = stream_names.size();
 }
 
-void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_type)
+void MergeTreeDataPartWriterWide::addStreams(
+    const NameAndTypePair & name_and_type,
+    const ASTPtr & effective_codec_desc)
 {
+    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -245,9 +224,11 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
-        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
+        ParserCodec codec_parser;
+        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
 
@@ -267,26 +248,13 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
             (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
-            || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()))
-            || writeBuffersWouldTakeSignificantMemory(*streams_to_open_in_part, max_compress_block_size, settings);
+            || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
-
-        /// Otherwise bytes of a single value will be split across two blocks and won't compress well.
-        if (const auto & type = substream_path.back().data.type)
-        {
-            max_compress_block_size = roundCompressBlockSizeToWholeValues(max_compress_block_size, *type);
-            query_write_settings.adaptive_write_buffer_initial_size
-                = roundCompressBlockSizeToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, *type);
-        }
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
         });
-
-        if (settings.stream_base_manifest && claim_column_stream_bases)
-            settings.stream_base_manifest->registerStreamBase(
-                stream_name, {StreamBaseManifest::Kind::Column, name_and_type.name});
 
         column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream>(
             stream_name,
@@ -677,8 +645,6 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     for (const auto & granule : granules)
     {
-        CurrentThread::checkIfNotCancelled();
-
         data_written = true;
 
         if (granule.mark_on_start)
@@ -865,7 +831,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
-    claim_column_stream_bases = streams_initialized;
     initStreamsAndSubstreamsIfNeeded();
 
     auto serialize_settings = getSerializationSettings();
@@ -1005,6 +970,16 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
+static void fillIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity,
+    size_t index_offset,
+    size_t index_granularity_for_block,
+    size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+        index_granularity.appendMark(index_granularity_for_block);
+}
+
 void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     if (getCurrentMark() < index_granularity->getMarksCount() && getCurrentMark() != index_granularity->getMarksCount() - 1)
@@ -1015,7 +990,11 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
     if (rows_written_in_last_mark != 0)
         index_offset = index_granularity->getLastMarkRows() - rows_written_in_last_mark;
 
-    fillIndexGranularityForWidePart(*index_granularity, index_offset, index_granularity_for_block, rows_in_block);
+    fillIndexGranularityImpl(
+        *index_granularity,
+        index_offset,
+        index_granularity_for_block,
+        rows_in_block);
 }
 
 

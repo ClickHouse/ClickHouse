@@ -1,6 +1,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/40976
 -- Test that OR conditions in JOIN ON and IS NOT DISTINCT FROM work correctly.
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 

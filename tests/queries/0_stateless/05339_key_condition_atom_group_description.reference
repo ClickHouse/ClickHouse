@@ -1,6 +1,0 @@
-x	63	63	Condition: and((negate(x) not in [0, 0]), (x not in [0, 0])) | Granules: 16/16
-NOT x	1	1	Condition: and(not((plus(x, 1) not in [1, 1])), and(not((negate(x) not in [0, 0])), not((x not in [0, 0])))) | Granules: 1/16
-NOT NOT x	63	63	Condition: and((negate(x) not in [0, 0]), (x not in [0, 0])) | Granules: 16/16
-NOT x OR x = 9	2	2	Condition: or(and((plus(x, 1) in [10, 10]), and((negate(x) in [-9, -9]), (x in [9, 9]))), and(not((plus(x, 1) not in [1, 1])), and(not((negate(x) not in [0, 0])), not((x not in [0, 0]))))) | Granules: 2/16
-NOT x AND x < 8	1	1	Condition: and((x in (-Inf, 7]), and(not((plus(x, 1) not in [1, 1])), and(not((negate(x) not in [0, 0])), not((x not in [0, 0]))))) | Granules: 1/16
-NOT x	1	1	Condition: not((x not in [0, 0])) | Granules: 1/16

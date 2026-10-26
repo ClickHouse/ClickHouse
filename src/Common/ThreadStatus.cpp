@@ -271,7 +271,6 @@ void ThreadStatus::flushUntrackedMemory()
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     untracked_memory.store(0);
-    untracked_memory_flushed_unchecked = std::max<Int64>(0, untracked_memory_flushed_unchecked + current_untracked_memory);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
@@ -281,29 +280,9 @@ void ThreadStatus::publishUntrackedMemory()
         flushUntrackedMemory();
 }
 
-namespace
-{
-thread_local bool query_cancellation_blocked = false;
-}
-
-ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
-    : previous(std::exchange(query_cancellation_blocked, true))
-{
-}
-
-ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
-{
-    query_cancellation_blocked = previous;
-}
-
-bool ThreadStatus::QueryCancellationBlocker::isActive()
-{
-    return query_cancellation_blocked;
-}
-
 bool ThreadStatus::isQueryCanceled() const
 {
-    if (!thread_group || query_cancellation_blocked)
+    if (!thread_group)
         return false;
 
     if (local_data.query_is_canceled_predicate)
@@ -313,7 +292,7 @@ bool ThreadStatus::isQueryCanceled() const
 
 void ThreadStatus::throwIfQueryCanceled() const
 {
-    if (!thread_group || query_cancellation_blocked)
+    if (!thread_group)
         return;
 
     if (local_data.throw_if_query_canceled_predicate)

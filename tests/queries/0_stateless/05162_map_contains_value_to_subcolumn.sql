@@ -1,5 +1,6 @@
 -- Test that mapContainsValue() is rewritten to the Map values subcolumn.
 
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_contains_value_subcolumn;

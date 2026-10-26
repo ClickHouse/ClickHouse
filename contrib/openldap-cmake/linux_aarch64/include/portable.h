@@ -98,9 +98,7 @@
 #define HAVE_BCOPY 1
 
 /* Define to 1 if you have the <bits/types.h> header file. */
-#if !defined(USE_MUSL)
-    #define HAVE_BITS_TYPES_H 1
-#endif
+#define HAVE_BITS_TYPES_H 1
 
 /* Define to 1 if you have the `chroot' function. */
 #define HAVE_CHROOT 1

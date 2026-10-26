@@ -1,5 +1,0 @@
-Cannot read all data of type FixedString. Bytes read:5. String size:16: While executing Native. (CANNOT_READ_ALL_DATA
-Cannot read all data of type FixedString. Bytes read:21. String size:16: While executing Native. (CANNOT_READ_ALL_DATA
-Cannot read all array values: read just 1 of 2: While executing Native. (CANNOT_READ_ALL_DATA
-AAAA
-BBBB

@@ -1,3 +1,0 @@
-iceberg_compaction_delay_bias = 20
-iceberg_compaction_commit_batch_size = 20
-1

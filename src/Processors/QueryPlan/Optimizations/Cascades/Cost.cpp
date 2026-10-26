@@ -15,15 +15,12 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/types.h>
-
-#include <algorithm>
 #include <optional>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -171,20 +168,6 @@ static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
     return cost;
 }
 
-/// A `DISTINCT` inserts every input row into a hash set and stores every distinct row. The final one
-/// deduplicates a single stream on each node (`DistinctStep` merges the streams into one), so its inserts are
-/// also sequential there; a preliminary one deduplicates all streams in parallel.
-static Cost distinctCost(const CostInputs & inputs, bool is_final)
-{
-    const Float64 input_rows = inputs.input_physical_rows.value_or(inputStats(inputs, 0).estimated_row_count);
-    Cost cost;
-    cost.work = (input_rows + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row)
-        / inputs.parallelism;
-    if (is_final)
-        cost.sequential = inputs.config.merge_sequential_cost_per_row * input_rows / inputs.parallelism;
-    return cost;
-}
-
 Cost LocalJoinStrategy::estimateOperatorCost(const CostInputs & inputs) const
 {
     return hashJoinCost(inputs, /*is_broadcast=*/false);
@@ -213,16 +196,6 @@ Cost ShuffleAggregationStrategy::estimateOperatorCost(const CostInputs & inputs)
 Cost PartialAggregationStrategy::estimateOperatorCost(const CostInputs & inputs) const
 {
     return aggregationCost(inputs, inputs.parallelism);
-}
-
-Cost LocalDistinctStrategy::estimateOperatorCost(const CostInputs & inputs) const
-{
-    return distinctCost(inputs, /*is_final=*/true);
-}
-
-Cost ShuffleDistinctStrategy::estimateOperatorCost(const CostInputs & inputs) const
-{
-    return distinctCost(inputs, /*is_final=*/true);
 }
 
 Cost ParallelReadStrategy::estimateOperatorCost(const CostInputs & inputs) const
@@ -268,7 +241,7 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
 {
     /// A sorted gather over a partial top-N transfers min(input_rows, L * node_count) rows,
     /// not the group's trimmed L; the caller resolves that override from the memo.
-    const Float64 rows = inputs.input_physical_rows.value_or(inputs.output_stats.estimated_row_count);
+    const Float64 rows = inputs.exchange_rows_override.value_or(inputs.output_stats.estimated_row_count);
     Cost cost;
     /// The network term is wall-clock per node, like the work term. A shuffle (N->N) moves
     /// 1/N of the data per node, all nodes concurrently; without the division one node
@@ -340,13 +313,6 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
         return aggregationCost(inputs, 1.0);
     }
 
-    if (const auto * distinct_step = typeid_cast<const DistinctStep *>(step))
-    {
-        if (const auto * distinct_strategy = dynamic_cast<const IDistinctStrategy *>(strategy))
-            return distinct_strategy->estimateOperatorCost(inputs);
-        return distinctCost(inputs, /*is_final=*/!distinct_step->isPreliminary());
-    }
-
     if (typeid_cast<const MergingAggregatedStep *>(step))
         return mergingAggregatedCost(inputs);
 
@@ -411,27 +377,20 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         selected_inputs.push_back(std::move(best));
     }
 
-    /// A selected input whose physical output differs from its group's logical statistics overrides the
-    /// rows an exchange moves and a final `DISTINCT` inserts. An exchange emits the rows it moves, so it
-    /// records them for its parent.
-    const auto * step = expression->getQueryPlanStep();
-    const bool is_exchange = dynamic_cast<const LogicalExchangeStep *>(step) != nullptr;
-    const auto * final_distinct = typeid_cast<const DistinctStep *>(step);
-    if (final_distinct && final_distinct->isPreliminary())
-        final_distinct = nullptr;
-    std::optional<Float64> input_physical_rows;
-    if ((is_exchange || final_distinct) && !selected_inputs.empty() && selected_inputs[0].expression)
-        input_physical_rows = selected_inputs[0].expression->physical_output_rows;
-    if (is_exchange)
-        expression->physical_output_rows = input_physical_rows;
+    /// A selected child whose physical output differs from the group's logical statistics
+    /// (a partial top-N emits up to L rows per node) overrides the exchange row count.
+    std::optional<Float64> exchange_rows_override;
+    if (dynamic_cast<const LogicalExchangeStep *>(expression->getQueryPlanStep())
+        && !selected_inputs.empty() && selected_inputs[0].expression)
+        exchange_rows_override = selected_inputs[0].expression->physical_output_rows;
 
     CostInputs inputs{
-        .step = step,
+        .step = expression->getQueryPlanStep(),
         .output_stats = *group->statistics,
         .input_stats = {},
         .parallelism = parallelism,
         .node_count = distribution_node_count,
-        .input_physical_rows = input_physical_rows,
+        .exchange_rows_override = exchange_rows_override,
         .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());
@@ -450,27 +409,6 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             expression->physical_output_rows = std::min(
                 inputs.input_stats[0]->estimated_row_count,
                 Float64(sorting_step->getLimit()) * distribution_node_count);
-    }
-
-    /// A preliminary `DISTINCT` on several nodes emits a value once on every node that has it, unless its input
-    /// is split by some of the `DISTINCT` columns, which brings equal rows to one node. The group statistics
-    /// count each value once, so record the rows the exchange above moves.
-    {
-        const auto * distinct_step = typeid_cast<const DistinctStep *>(expression->getQueryPlanStep());
-        if (distinct_step && distinct_step->isPreliminary() && !inputs.input_stats.empty() && inputs.input_stats[0])
-        {
-            const auto & distribution = expression->properties.distribution;
-            const NameSet distinct_columns(distinct_step->getColumnNames().begin(), distinct_step->getColumnNames().end());
-            const bool split_by_distinct_columns = !distribution.columns.empty()
-                && std::ranges::all_of(distribution.columns, [&](const NameSet & equivalent_columns)
-                    {
-                        return std::ranges::any_of(equivalent_columns, [&](const String & name) { return distinct_columns.contains(name); });
-                    });
-            const Float64 copies_per_value = distribution.is_replicated || split_by_distinct_columns ? 1.0 : distribution_node_count;
-            expression->physical_output_rows = std::min(
-                inputs.input_stats[0]->estimated_row_count,
-                inputs.output_stats.estimated_row_count * copies_per_value);
-        }
     }
 
     ExpressionCost total_cost;

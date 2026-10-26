@@ -48,77 +48,20 @@ spec:
 
 Un clúster con `replicas: 3` y `shards: 2` creará 6 pods de ClickHouse en total.
 
-### Integración de Keeper {#keeper-integration}
+<div id="keeper-integration">
+  ### Integración de Keeper
+</div>
 
-Cada cluster de ClickHouse necesita un ensemble de Keeper para la coordinación. Establezca exactamente uno de
-`keeperClusterRef` o `externalKeeper`; se rechaza cualquier cluster que establezca ambos o ninguno.
-
-Haga que `keeperClusterRef` apunte a un KeeperCluster administrado por este operador:
+Cada clúster de ClickHouse debe hacer referencia a un KeeperCluster para coordinarse:
 
 ```yaml
 spec:
   keeperClusterRef:
     name: my-keeper
-    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
+    # namespace: keeper-system  # Opcional, por defecto usa el espacio de nombres de ClickHouseCluster
 ```
 
 Cuando se establece `keeperClusterRef.namespace`, el operador debe observar ambos espacios de nombres. Si `WATCH_NAMESPACE` está configurado, incluya los espacios de nombres de ClickHouse y Keeper en esa lista.
-
-### Keeper gestionado externamente {#external-keeper}
-
-Use `externalKeeper` para ejecutar ClickHouse con un ensemble de Keeper que el operador no gestiona,
-ya sea uno que pertenezca a otro operador, que se ejecute en otro cluster de Kubernetes, en máquinas virtuales o
-en bare metal, o que se comparta entre varios sistemas:
-
-```yaml
-spec:
-  externalKeeper:
-    nodes:
-      - host: keeper-1.example.internal
-        port: 9181
-      - host: keeper-2.example.internal
-        port: 9181
-      - host: keeper-3.example.internal
-        port: 9181
-```
-
-El valor predeterminado de `port` es `9181`. `host` es un nombre DNS o una dirección IP; las direcciones IPv6 deben ir entre corchetes. Establezca `tls: Enabled` para conectarse mediante TLS y asigne a `port` el puerto en el que el ensemble escucha
-las conexiones seguras:
-
-```yaml
-spec:
-  externalKeeper:
-    tls: Enabled
-    nodes:
-      - host: keeper-1.example.internal
-        port: 9281
-```
-
-ClickHouse verifica los certificados de Keeper con el almacén de confianza del sistema, además de cualquier `caBundle`
-que configure. Consulte [Comunicación entre ClickHouse y Keeper mediante TLS](#clickhouse-keeper-communication-over-tls).
-
-Cuando varios clusters de ClickHouse compartan un mismo ensemble, asigne a cada uno su propio znode raíz mediante
-`settings.extraConfig` para que su metadata de replicación, sus usuarios definidos en SQL y sus colecciones con nombre
-no entren en conflicto. Cree el znode antes de iniciar ClickHouse y no lo modifique posteriormente:
-
-```yaml
-spec:
-  settings:
-    extraConfig:
-      zookeeper:
-        root: /clickhouse/production
-```
-
-No coloque `zookeeper.root` en `settings.extraReloadableConfig`: una recarga cambiaría la raíz de un
-cluster en ejecución y dejaría sus tablas replicadas en modo de solo lectura. Si el znode raíz tiene ACL, estas deben permitir
-que la `keeper-identity` del cluster cree znodes hijos.
-
-El operador no modifica estos servidores ni espera a que estén disponibles antes de reconciliar ClickHouse.
-Mantener el ensemble disponible es responsabilidad del usuario.
-
-La autenticación funciona igual que con un Keeper gestionado por el operador: el operador lee la
-clave `keeper-identity` del secreto del cluster y se la pasa a ClickHouse. Consulte
-[Secreto externo](#external-secret) para conocer la estructura del secreto.
 
 <div id="keepercluster-configuration">
   ## Configuración de KeeperCluster
@@ -136,31 +79,6 @@ spec:
       requests:
         storage: 5Gi
 ```
-
-### Traspaso del liderazgo al finalizar {#keeper-leadership-handover}
-
-El contenedor de Keeper incluye un hook `preStop` predeterminado que solicita a la réplica que ceda el liderazgo de Raft
-antes de detenerse y espera a que el traspaso se complete antes de permitir que el
-contenedor finalice. Este hook se ejecuta en cada detención ordenada del contenedor, no solo en
-los rollouts iniciados por el operador: un desalojo del descheduler, un drenaje de nodos o una acción del autoscaler
-activan el mismo hook, ya que se trata de un handler `preStop` a nivel del agente kubelet y no
-de lógica del bucle de reconciliación.
-
-Sin este mecanismo, reiniciar el líder actual deja al ensemble sin líder hasta que
-concluye una nueva elección, lo que puede tardar varios segundos bajo carga y se manifiesta en
-ClickHouse como pérdida de conexión con Keeper y un aumento de la latencia de las consultas. El hook solicita a la
-réplica que ceda el liderazgo (mediante el comando de cuatro letras `ydld` de Keeper, enviado a través del
-puerto `http_control`) y luego sondea el estado de la réplica hasta que deja de ser el
-líder, en lugar de enviar la solicitud y dejar que el contenedor se detenga de inmediato. Una
-solicitud de tipo fire-and-forget todavía puede perder la carrera frente a `SIGTERM` bajo carga de escritura, por lo que
-es precisamente la espera lo que mantiene acotado el intervalo sin líder.
-
-El hook no requiere configuración y se degrada de forma controlada: en versiones de Keeper anteriores a
-26.3, que aún no admiten los comandos de liderazgo utilizados aquí, la solicitud no tiene efecto y
-el contenedor se detiene igual que lo haría sin el hook. Como ejecuta un script de shell, requiere
-`bash` en la imagen; si utiliza una imagen de Keeper distroless o scratch, sobrescríbalo o elimínelo
-mediante `containerTemplate.lifecycle`. Para más información, consulte la
-[Referencia de la API](/es/products/kubernetes-operator/reference/api-reference#containertemplatespec).
 
 <div id="storage-configuration">
   ## Configuración de almacenamiento
@@ -220,7 +138,9 @@ Los nodos de Keeper usan nombres de pods de Kubernetes a través de su Service h
   ## Configuración del pod de Kubernetes
 </div>
 
-### Distribución topológica y afinidad automáticas {#automatic-topology-spread-and-affinity}
+<div id="automatic-topology-spread-and-affinity">
+  ### Dispersión de topología y afinidad automáticas
+</div>
 
 Distribuya los pods entre las zonas de disponibilidad:
 
@@ -233,22 +153,6 @@ spec:
 
 <Note>
   Asegúrese de que su clúster de Kubernetes tenga suficientes nodos en distintas zonas para cumplir las restricciones de distribución.
-</Note>
-
-Con un autoescalador de nodos (Karpenter, Cluster Autoscaler), la restricción de distribución por sí sola no puede
-aprovisionar una zona que aún no tiene nodos: el planificador se conforma con las zonas que puede ver.
-Establezca `topologyMinDomains` en el número de zonas de disponibilidad para forzar la distribución:
-
-```yaml
-spec:
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-    topologyMinDomains: 3   # number of availability zones
-```
-
-<Note>
-  `topologyMinDomains` requiere `topologyZoneKey`. Los pods permanecen en `Pending` mientras haya menos zonas
-  disponibles de las solicitadas, así que manténgalo dentro de las zonas que su clúster pueda proporcionar.
 </Note>
 
 <div id="manual-configuration">
@@ -444,70 +348,6 @@ spec:
   El operador creará un volumen proyectado con todos los montajes especificados.
 </Note>
 
-### Sondas de health {#health-probes}
-
-El operador configura sondas de liveness y de preparación en cada contenedor de ClickHouse y Keeper.
-De forma predeterminada, no se configura ninguna sonda de inicio.
-
-| Recurso             | Sonda     | Comprobación predeterminada                                                                                                  |
-| ------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ClickHouseCluster` | liveness  | HTTP `GET /ping` en el puerto entre servidores `9009`                                                                        |
-| `ClickHouseCluster` | preparación | HTTP `GET /ping` en el puerto HTTP de administración `9002`                                                                  |
-| `KeeperCluster`     | liveness  | Conexión TCP al puerto de Client `2181` (`2281` cuando tanto `settings.tls.enabled` como `settings.tls.required` son `true`) |
-| `KeeperCluster`     | preparación | HTTP `GET /ready` en el puerto `http_control` `9123`                                                                         |
-
-ClickHouse y Keeper usan la misma configuración de tiempos predeterminada:
-
-| Sonda     | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
-| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
-| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
-| preparación | 5                     | 1               | 10               | 5                  | 10                 |
-
-ClickHouse abre el listener entre servidores antes de cargar las tablas, y los listeners de Client, después. Por eso, la sonda de liveness tolera una carga lenta de tablas, mientras que, si la sonda de preparación se supera, la réplica ya está atendiendo consultas.
-
-Puede sobrescribir cualquier sonda mediante `spec.containerTemplate` en cualquiera de los dos recursos. Por ejemplo, para personalizar la sonda de liveness de ClickHouse:
-
-```yaml
-spec:
-  containerTemplate:
-    livenessProbe:
-      httpGet:
-        path: /ping
-        port: 9009
-      initialDelaySeconds: 120
-      periodSeconds: 10
-      timeoutSeconds: 10
-      failureThreshold: 10
-```
-
-<Warning>
-  Una sonda que usted defina reemplaza por completo la predeterminada del operador; no se fusiona campo por campo.
-  Especifique el handler (`httpGet`, `tcpSocket` o `exec`) y todos los campos de temporización que le interesen; los campos omitidos toman los valores predeterminados de Kubernetes (por ejemplo, `timeoutSeconds: 1`, `failureThreshold: 3`), no los valores del operador indicados anteriormente.
-</Warning>
-
-#### Sonda de inicio {#startup-probe}
-
-Use `startupProbe` cuando un contenedor necesite más tiempo para iniciarse del que permite la sonda de liveness: con los valores predeterminados, unos 60 segundos de retraso inicial más 10 comprobaciones fallidas a intervalos de 5 segundos.
-Kubernetes no ejecuta las sondas de liveness y de preparación hasta que la sonda de inicio se completa correctamente, de modo que un inicio lento no provoca un bucle de reinicios.
-Por ejemplo, para dar a una réplica de Keeper que debe reproducir una instantánea de gran tamaño hasta 10 minutos para empezar a aceptar conexiones:
-
-```yaml
-apiVersion: clickhouse.com/v1alpha1
-kind: KeeperCluster
-metadata:
-  name: sample
-spec:
-  replicas: 3
-  containerTemplate:
-    startupProbe:
-      tcpSocket:
-        port: 2181
-      periodSeconds: 10
-      failureThreshold: 60
-```
-
-Una vez que la sonda de inicio se completa correctamente, entran en funcionamiento las sondas habituales de liveness y de preparación.
-
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### Consulta la [referencia de la API](/es/products/kubernetes-operator/reference/api-reference#containertemplatespec) para ver todas las opciones compatibles de la plantilla de contenedor.
 </div>
@@ -545,10 +385,11 @@ Se espera que el Secret contenga el par de claves del server:
   Este formato es compatible con los certificados generados por cert-manager.
 </Note>
 
-### Comunicación de ClickHouse-Keeper mediante TLS {#clickhouse-keeper-communication-over-tls}
+<div id="clickhouse-keeper-communication-over-tls">
+  ### Comunicación de ClickHouse-Keeper mediante TLS
+</div>
 
-Si el KeeperCluster referenciado por `keeperClusterRef` tiene TLS habilitado, ClickHouseCluster usará automáticamente una conexión segura a los nodos de Keeper.
-Con `externalKeeper`, establezca en su lugar `tls: Enabled` y configure el `port` de cada nodo con el puerto de cliente seguro del ensemble de Keeper (por ejemplo, `9281`).
+Si KeeperCluster tiene TLS habilitado, ClickHouseCluster usará automáticamente una conexión segura a los nodos de Keeper.
 
 ClickHouseCluster verifica los certificados de los nodos de Keeper con el almacén de confianza del sistema, además de cualquier `caBundle` que configure.
 
@@ -878,10 +719,10 @@ El nombre del contenedor `version-probe` es el predeterminado del operador: la e
 
 Dos opciones del administrador del operador controlan globalmente el bucle de comprobación de actualizaciones:
 
-| Opción                            | Predeterminado | Efecto                                                                                                                                                                             |
-| --------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`          | Frecuencia con la que el operador vuelve a obtener la lista de versiones del upstream. Debe ser mayor que cero cuando las comprobaciones de actualización de versión están activadas |
-| `--disable-version-update-checks` | `false`        | Desactiva por completo la comprobación de actualizaciones. No se establece la condición `VersionUpgraded` y no se genera tráfico HTTP saliente a `clickhouse.com`                  |
+| Opción                            | Predeterminado | Efecto                                                                                                                                                            |
+| --------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`          | Frecuencia con la que el operador vuelve a obtener la lista de versiones del origen                                                                               |
+| `--disable-version-update-checks` | `false`        | Desactiva por completo la comprobación de actualizaciones. No se establece la condición `VersionUpgraded` y no se genera tráfico HTTP saliente a `clickhouse.com` |
 
 Establece `--disable-version-update-checks=true` en entornos aislados de la red o cuando no se permite la salida a `clickhouse.com`.
 
@@ -992,7 +833,9 @@ spec:
   (`passwordType: password`) en texto plano.
 </Note>
 
-### Usuarios personalizados en la configuración {#custom-users-in-configuration}
+<div id="custom-users-in-configuration">
+  ### Usuarios personalizados en la configuración
+</div>
 
 Configure usuarios adicionales en los archivos de configuración.
 
@@ -1065,9 +908,11 @@ El operador nunca elimina una base de datos `default` no Replicated poblada. Dic
 
 Antes de eliminar una réplica durante una reducción de escala, el operador primero retira de ella el tráfico de clientes, espera hasta que deje de publicarse, replica sus datos restantes en las réplicas supervivientes y solo entonces la elimina.
 
-### Registro del servidor {#server-logging}
+<div id="server-logging">
+  ### Registro del servidor
+</div>
 
-Configure el registro del ClickHouse server mediante `spec.settings.logger`. Todos los campos son opcionales y tienen valores predeterminados seguros, por lo que incluso un cluster que no modifique registrará en `information` tanto en la consola del contenedor como en un archivo rotado en disco.
+Configure el registro del ClickHouse server mediante `spec.settings.logger`. Todos los campos son opcionales y tienen valores predeterminados seguros, por lo que incluso un clúster que no modifique registrará en `trace` tanto en la consola del contenedor como en un archivo rotado en disco.
 
 ```yaml
 spec:
@@ -1075,71 +920,35 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: information # Default: information
-      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
-      count: 10         # Default: 10. Number of rotated files to keep
+      level: trace      # Default: trace
+      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
+      count: 50         # Default: 50. Number of rotated files to keep
 ```
 
 | Campo       | Predeterminado | Descripción                                                                                                                      |
 | ----------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `logToFile` | `true`         | Cuando es `false`, el operador elimina los destinos de archivo y el servidor solo escribe logs en la consola del contenedor.     |
 | `jsonLogs`  | `false`        | Cuando es `true`, el operador añade `formatting.type: json` para que cada línea sea un objeto JSON.                              |
-| `level`     | `information`  | Nivel de detalle de los logs. Uno de `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
-| `size`      | `100M`         | Tamaño máximo de un solo archivo de log antes de la rotación.                                                                    |
-| `count`     | `10`           | Número de archivos de log rotados que conserva el servidor.                                                                      |
+| `level`     | `trace`        | Nivel de detalle de los logs. Uno de `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
+| `size`      | `1000M`        | Tamaño máximo de un solo archivo de log antes de la rotación.                                                                    |
+| `count`     | `50`           | Número de archivos de log rotados que conserva el servidor.                                                                      |
 
-El operador siempre mantiene activado el registro en consola para que `kubectl logs` funcione, y añade el registro en archivo cuando `logToFile` es `true`. Un cluster con los valores predeterminados genera este bloque `logger`:
+El operador siempre mantiene activado el registro en consola para que `kubectl logs` funcione, y añade el registro en archivo cuando `logToFile` es `true`. Un clúster con los valores predeterminados genera este bloque `logger`:
 
 ```yaml
 logger:
   console: true
-  level: information
+  level: trace
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 100M
-  count: 10
+  size: 1000M
+  count: 50
 ```
 
-El mismo bloque `spec.settings.logger` se aplica a un `KeeperCluster`; en ese caso, el operador escribe sus archivos en `/var/log/clickhouse-keeper/` y establece el logger de Raft (`raft_logs_level`) en el mismo `level`.
+El mismo bloque `spec.settings.logger` se aplica a un `KeeperCluster`; en ese caso, el operador escribe sus archivos en `/var/log/clickhouse-keeper/`.
 
 <Note>
   El registro en consola permanece activado independientemente de `logToFile`, por lo que `kubectl logs` sigue funcionando incluso cuando desactivas el registro en archivos. Establece `jsonLogs: true` cuando envíes logs a un almacén de logs estructurados que procesa JSON.
-</Note>
-
-### Tablas de logs del sistema {#system-log-tables}
-
-El operador habilita las tablas del sistema `query_log`, `part_log`, `text_log`, `metric_log` y `asynchronous_metric_log`. Como comparten volumen con los datos, `spec.settings.systemLogsTTLDays` limita su tiempo de conservación mediante una TTL de tabla. Si crea un cluster sin especificar ese campo, el webhook que asigna valores predeterminados establece `30`. Para desactivar explícitamente la TTL, establezca `0`.
-
-```yaml
-spec:
-  settings:
-    systemLogsTTLDays: 14
-```
-
-<Note>
-  El valor predeterminado solo se aplica a los clusters nuevos. Un cluster creado antes de que existiera `systemLogsTTLDays` conserva las tablas de logs del sistema sin límite de retención hasta que configure el campo manualmente.
-</Note>
-
-El TTL entra en vigor tras el siguiente reinicio del servidor. Sobrescriba su valor para cada tabla, ajuste cualquier otra configuración de los logs del sistema o desactive una tabla por completo con el atributo `@remove` — todo mediante `extraConfig`:
-
-```yaml
-spec:
-  settings:
-    extraConfig:
-      text_log:
-        ttl: event_date + INTERVAL 90 DAY DELETE
-      metric_log:
-        collect_interval_milliseconds: 60000
-      part_log:
-        "@remove": "1"
-```
-
-<Note>
-  Una tabla deshabilitada no se elimina: los datos existentes permanecen en el disco hasta que usted elimine la tabla.
-</Note>
-
-<Note>
-  ClickHouse vuelve a crear las tablas del sistema cuyo TTL ha cambiado y conserva los datos anteriores en tablas con otro nombre, como `system.text_log_0`. Elimine esas tablas cuando ya no necesite el historial.
 </Note>
 
 <div id="custom-configuration">
@@ -1167,26 +976,6 @@ spec:
 
 * [Ejemplos de configuración en YAML](/es/concepts/features/configuration/server-config/configuration-files#example-1)
 * [Todos los ajustes del servidor](/es/reference/settings/server-settings/settings)
-
-### Configuración adicional recargable {#reloadable-extra-configuration}
-
-Cualquier cambio en `extraConfig` reinicia los pods de ClickHouse, ya que el operador no puede determinar qué opciones de configuración se aplican en tiempo de ejecución. Para las opciones que ClickHouse recarga sobre la marcha —como `named_collections`, el caso más habitual—, utilice `extraReloadableConfig`. El operador aplica los cambios recargando la configuración, sin reiniciar los pods:
-
-```yaml
-spec:
-  settings:
-    extraReloadableConfig:
-      named_collections:
-        customers:
-          url: "http://my-service.my-ns.svc:5400/Customers"
-          format: "JSONEachRow"
-```
-
-Mantén cada sección de nivel superior en `extraConfig` o en `extraReloadableConfig`, pero no en ambos; el operador emite una advertencia si la misma sección aparece en los dos.
-
-<Note>
-  Al usar `extraReloadableConfig`, confirmas que sus opciones de configuración pueden recargarse de forma segura. Si colocas aquí una opción que requiere un reinicio, no surtirá efecto hasta el siguiente reinicio y no se mostrará ningún error.
-</Note>
 
 <div id="embedded-extra-users-configuration">
   ### Configuración integrada de usuarios adicionales
@@ -1295,29 +1084,4 @@ spec:
       configMap:
         key: password
         name: default-password
-```
-
-## Resincronización periódica {#periodic-resync}
-
-Además de reaccionar a los eventos de Kubernetes, el operador vuelve a reconciliar cada cluster en un intervalo fijo. Esto mantiene actualizadas las condiciones de estado del state que ningún watch puede observar —la health de las réplicas de ClickHouse o el quorum de Keeper— y reintenta acciones de remediación como la limpieza de pods de Kubernetes bloqueados.
-
-El intervalo se controla con la environment variable `RESYNC_PERIOD` del operador (valor predeterminado: `30s`), y se aplica a los recursos `KeeperCluster`, donde `0` deshabilita la resincronización periódica. Los recursos `ClickHouseCluster` consultan mediante poll la tabla `system.warnings` de ClickHouse cada 30 segundos, lo que ya vuelve a activar la reconciliación, de modo que `RESYNC_PERIOD` no tiene actualmente ningún efecto sobre ellos.
-
-```yaml
-# in the operator Deployment spec
-env:
-- name: RESYNC_PERIOD
-  value: "1m"
-```
-
-El operador reconcilia los clusters de forma concurrente; el número de reconciliaciones simultáneas por controlador se configura mediante `MAX_CONCURRENT_RECONCILES` (valor predeterminado: `4`).
-
-## Pausar la reconciliación {#pausing-reconciliation}
-
-Añada la anotación `clickhouse.com/pause-reconciliation: "true"` a un `ClickHouseCluster` o `KeeperCluster` para que el operador deje de reconciliarlo. El operador informa `ReconcileSucceeded=False` con el motivo `ReconciliationPaused` en el recurso pausado y no realiza ninguna otra acción sobre él. Esto resulta útil cuando necesita intervenir manualmente y el operador podría revertir sus cambios. Mientras la reconciliación esté pausada, el operador informa todas las condiciones de estado (incluidas `Ready` y `Healthy`) como `Unknown` con el motivo `ReconciliationPaused`, ya que no observa el cluster. Elimine la anotación para reanudar la reconciliación; los cambios pendientes en la especificación se aplicarán en la siguiente reconciliación.
-
-```bash
-kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
-# ... manual surgery ...
-kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

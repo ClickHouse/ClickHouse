@@ -93,35 +93,6 @@ struct HashJoinMatchEntry
     size_t matches; // number of hash-table matches for a specific hash join.
 };
 
-/// The statistics of the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`).
-struct RadixUniqExactEntry
-{
-    bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
-    {
-        auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
-        return differs(num_streams, new_entry.num_streams) || differs(num_distinct, new_entry.num_distinct)
-            || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys);
-    }
-
-    std::string dump() const
-    {
-        return fmt::format(
-            "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}",
-            num_distinct,
-            stream_distinct,
-            stream_keys,
-            num_streams);
-    }
-
-    /// The result.
-    size_t num_distinct = 0;
-    /// The median over the streams of the number of distinct keys of a stream (estimated for some of them).
-    size_t stream_distinct = 0;
-    /// The median over the streams of the number of keys of a stream, without NULLs and consecutive duplicates.
-    size_t stream_keys = 0;
-    size_t num_streams = 0;
-};
-
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.
   */
 template <typename Entry>

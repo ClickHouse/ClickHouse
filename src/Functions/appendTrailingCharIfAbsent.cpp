@@ -42,9 +42,16 @@ private:
         return 2;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String, const String) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", &isString, nullptr, "String"},
+            {"c", &isString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -246,7 +246,7 @@ addDate(datetime, interval)
 **Arguments**
 
 - `datetime` — The date or date with time to which `interval` is added. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`String`](/reference/data-types/string)
-- `interval` — Interval to add. [`Interval`](/reference/data-types/special-data-types/interval)
+- `interval` — Interval to add. [`Interval`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -395,8 +395,8 @@ addInterval(interval_1, interval_2)
 
 **Arguments**
 
-- `interval_1` — First interval or tuple of intervals. [`Interval`](/reference/data-types/special-data-types/interval) or [`Tuple(Interval)`](/reference/data-types/tuple)
-- `interval_2` — Second interval to be added. [`Interval`](/reference/data-types/special-data-types/interval)
+- `interval_1` — First interval or tuple of intervals. [`Interval`](/reference/data-types/int-uint) or [`Tuple(Interval)`](/reference/data-types/tuple)
+- `interval_2` — Second interval to be added. [`Interval`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -1244,7 +1244,7 @@ For an alternative to `dateDiff`, see function [`age`](#age).
 dateDiff(unit, startdate, enddate[, timezone])
 ```
 
-**Aliases**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `timestamp_diff`, `date_diff`
+**Aliases**: `timestampDiff`, `TIMESTAMP_DIFF`, `DATE_DIFF`, `date_diff`, `timestamp_diff`
 
 **Arguments**
 
@@ -1590,8 +1590,6 @@ Using replacement fields, you can define a pattern for the resulting string.
 ```sql
 formatDateTimeInJodaSyntax(datetime, format[, timezone])
 ```
-
-**Aliases**: `FORMAT_DATETIME`
 
 **Arguments**
 
@@ -1971,7 +1969,7 @@ makeDate(year, day_of_year)
 - `year` — Year number. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `month` — Month number (1-12). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `day` — Day of the month (1-31). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
-- `day_of_year` — Day of the year (1-365, or 366 in leap years). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `day_of_year` — Day of the year (1-365). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 
 **Returned value**
 
@@ -2024,7 +2022,7 @@ makeDate32(year, day_of_year)
 - `year` — Year number. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `month` — Month number (1-12). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 - `day` — Day of the month (1-31). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
-- `day_of_year` — Day of the year (1-365, or 366 in leap years). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `day_of_year` — Day of the year (1-365). [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 
 **Returned value**
 
@@ -2439,7 +2437,7 @@ subDate(datetime, interval)
 **Arguments**
 
 - `datetime` — The date or date with time from which `interval` is subtracted. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
-- `interval` — Interval to subtract. [`Interval`](/reference/data-types/special-data-types/interval)
+- `interval` — Interval to subtract. [`Interval`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -2587,8 +2585,8 @@ subtractInterval(interval_1, interval_2)
 
 **Arguments**
 
-- `interval_1` — First interval or interval of tuples. [`Interval`](/reference/data-types/special-data-types/interval) or [`Tuple(Interval)`](/reference/data-types/tuple)
-- `interval_2` — Second interval to be negated. [`Interval`](/reference/data-types/special-data-types/interval)
+- `interval_1` — First interval or interval of tuples. [`Interval`](/reference/data-types/int-uint) or [`Tuple(Interval)`](/reference/data-types/tuple)
+- `interval_2` — Second interval to be negated. [`Interval`](/reference/data-types/int-uint)
 
 **Returned value**
 
@@ -3365,7 +3363,7 @@ This function is non-deterministic: it can return different results for the same
 timezone()
 ```
 
-**Aliases**: `current_timezone`, `timeZone`
+**Aliases**: `timeZone`
 
 **Arguments**
 
@@ -3481,7 +3479,7 @@ Returns the day of the month (1-31) of a `Date` or `DateTime`.
 toDayOfMonth(datetime)
 ```
 
-**Aliases**: `DAYOFMONTH`, `DAY`, `DAY_OF_MONTH`
+**Aliases**: `DAY`, `DAYOFMONTH`
 
 **Arguments**
 
@@ -3528,7 +3526,7 @@ and whether the return value should be in the range from 0 to 6 or 1 to 7.
 toDayOfWeek(datetime[, mode[, timezone]])
 ```
 
-**Aliases**: `DAYOFWEEK`, `DAY_OF_WEEK`
+**Aliases**: `DAYOFWEEK`
 
 **Arguments**
 
@@ -3570,7 +3568,7 @@ Returns the number of the day within the year (1-366) of a `Date` or `DateTime` 
 toDayOfYear(datetime)
 ```
 
-**Aliases**: `DAYOFYEAR`, `DAY_OF_YEAR`
+**Aliases**: `DAYOFYEAR`
 
 **Arguments**
 
@@ -3729,8 +3727,6 @@ December 29, 2025 returns week 1 because it falls in the first week that contain
 toISOWeek(datetime[, timezone])
 ```
 
-**Aliases**: `WEEK_OF_YEAR`
-
 **Arguments**
 
 - `datetime` — Date or date with time to get the ISO week number from. [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`Date32`](/reference/data-types/date32) or [`DateTime64`](/reference/data-types/datetime64)
@@ -3779,8 +3775,6 @@ Converts a date or date with time to the ISO year number.
 toISOYear(datetime)
 ```
 
-**Aliases**: `YEAR_OF_WEEK`
-
 **Arguments**
 
 - `datetime` — The value with date or date with time. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
@@ -3822,7 +3816,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toLastDayOfMonth(value)
 ```
 
-**Aliases**: `LAST_DAY_OF_MONTH`, `LAST_DAY`
+**Aliases**: `LAST_DAY`
 
 **Arguments**
 
@@ -5751,8 +5745,6 @@ Returns the year component (AD) of a `Date` or `DateTime` value.
 toYear(datetime)
 ```
 
-**Aliases**: `YEAR`
-
 **Arguments**
 
 - `datetime` — Date or date with time to get the year from. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
@@ -5867,7 +5859,7 @@ This function is non-deterministic: it can return different results for the same
 today()
 ```
 
-**Aliases**: `curdate`, `current_date`
+**Aliases**: `current_date`, `curdate`
 
 **Arguments**
 
@@ -5903,6 +5895,59 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 ┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
 │ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
 └────────────┴────────────┴──────────────┘
+```
+
+## year {#year}
+
+Introduced in: v26.9.0
+
+Returns the year component of a `Date` or `DateTime` value.
+
+When called without arguments, returns the current year at the moment of query analysis.
+    
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+year([datetime])
+```
+
+**Arguments**
+
+- `datetime` — Optional. Date or date with time to get the year from. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
+
+**Returned value**
+
+Returns the year of the given (or current) Date or DateTime [`UInt16`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Year of a value**
+
+```sql title=Query
+SELECT year(toDateTime('2023-04-21 10:20:30'))
+```
+
+```response title=Response
+┌─year(toDateTime('2023-04-21 10:20:30'))─┐
+│                                    2023 │
+└─────────────────────────────────────────┘
+```
+
+**Current year**
+
+```sql title=Query
+SELECT year()
+```
+
+```response title=Response
+┌─year()─┐
+│   2026 │
+└────────┘
 ```
 
 ## yesterday {#yesterday}

@@ -40,7 +40,6 @@ private:
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        const String & target_cluster_name,
         bool add_structure_and_format) override;
     void updateBeforeRead(const ContextPtr & context) override;
 
