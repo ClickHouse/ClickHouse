@@ -339,4 +339,25 @@ def prune_aggregate_deps(root, paths):
         if doc in llvm_edits:
             doc.path.write_text(doc.source.rewrite(llvm_edits[doc]))
             doc = Document(doc.path, package=doc.package)
+        private_edits = []
+        for _, rule in doc.source.rules():
+            if getattr(rule.func, 'id', None) not in NATIVE | {'llvm_cc_library', 'poco_cc_library'}:
+                continue
+            attrs = {kw.arg: kw.value for kw in rule.keywords}
+            if not {'deps', 'implementation_deps'} <= attrs.keys():
+                continue
+            private = attrs['implementation_deps']
+            by_cpu = [(doc.labels(attrs['deps'], cpu), doc.labels(private, cpu))
+                      for cpu in (*ARCHES, 'default')]
+            drop = set.union(*(pub & impl for pub, impl in by_cpu))
+            if explicit_list(private, doc):
+                drop -= set.union(*(impl - pub for pub, impl in by_cpu))
+            else:
+                # A shared expression may contain other config settings: only use unconditional public deps.
+                drop &= set.intersection(*(pub for pub, _ in by_cpu))
+            if drop and (changes := editable_dependency_lists(doc, private, drop, doc.reference)):
+                private_edits.extend(changes)
+        if private_edits:
+            doc.path.write_text(doc.source.rewrite(private_edits))
+            doc = Document(doc.path, package=doc.package)
         private_compile_groups(doc)

@@ -447,7 +447,6 @@ ch_cc_library(
             "@clickhouse_libbcrypt//:_bcrypt",
             "@clickhouse_libdeflate//:_libdeflate",
             "@clickhouse_libfiu//:_libfiu",
-            "@clickhouse_libpqxx//:_libpqxx",
             "@clickhouse_librdkafka//:_rdkafka__compile_0",
             "@clickhouse_libstemmer_c//:_stemmer",
             "@clickhouse_mariadb_connector_c//:_mariadbclient",

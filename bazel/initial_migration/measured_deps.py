@@ -132,7 +132,7 @@ DEPENDENCIES = {
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_fmtlib//:_fmt', '@clickhouse_openssl//:crypto',
     ], []),
     ('src', 'dbms__compile_0'): ([
-        '//base/widechar_width',
+        '//base/widechar_width', '@clickhouse_libdeflate//:_libdeflate', '@clickhouse_zmij//:_zmij',
         '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2', '@clickhouse_xz//:_liblzma',
         '@clickhouse_grpc//:address_sorting', '@clickhouse_mongo_c_driver//:_libbson',
     ], [
@@ -143,7 +143,7 @@ DEPENDENCIES = {
         '@clickhouse_libdivide//:libdivide', '@clickhouse_libuv//:_uv',
         '@clickhouse_openssl//:crypto', '@clickhouse_openssl//:ssl', '@clickhouse_sparsehash_c11//:sparsehash_c11',
         '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zstd//:_zstd',
-        '@lz4//:lz4',
+        '@lz4//:lz4', '@lz4//:lz4_frame',
     ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api',
         '@clickhouse_libhdfs3//:_hdfs3', '//src/Common:string_utils']),
     ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
@@ -529,7 +529,10 @@ def apply(root):
                         edits.extend(direct)
                         if missing:
                             start = source.span(original)[0]
-                            edits.append((start, start, json.dumps(missing) + ' + '))
+                            if source.text(original).startswith('[') and not any(a == start for a, _, _ in direct):
+                                edits.append((start, start + 1, json.dumps(missing)[:-1] + ', '))
+                            else:
+                                edits.append((start, start, json.dumps(missing) + ' + '))
                         continue
                 for item in ast.walk(node):
                     if isinstance(item, ast.List):
