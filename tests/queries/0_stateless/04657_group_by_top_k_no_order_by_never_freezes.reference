@@ -1,8 +1,6 @@
-no_order_by: frozen, rejected_many
-0	1
+no_order_by: frozen, rejected_all, no arena
+0	1	1
 with_order_by: freeze still available
-1
-no_order_by uses less memory than the frozen order-by run
 1
 returned groups complete
 5	5

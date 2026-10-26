@@ -1,0 +1,304 @@
+---
+slug: /optimize/optimization-approaches
+sidebarTitle: '최적화 방법 선택'
+sidebar_label: '최적화 방법 선택'
+sidebar_position: 4
+title: '최적화 방법 선택'
+description: '느린 ClickHouse 쿼리에서 얻은 근거를 바탕으로 적절한 최적화 방법을 평가합니다'
+doc_type: 'guide'
+keywords: ['쿼리 최적화', '데이터 타입', '순서 지정 키', 'materialized views', '프로젝션']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
+
+[쿼리 로그](/ko/reference/system-tables/query_log), 통제된 비교, [쿼리 계획](/ko/reference/statements/explain)에서 얻은 근거를 바탕으로 측정된 병목을 해결하는 최적화 방식을 평가합니다.
+
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
+
+재현 가능한 기준선과 병목 지점에 대한 가설을 먼저 마련하십시오. 아직 병목 지점을 파악하지 못했다면 [느린 쿼리 진단](/ko/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) 및 [쿼리 병목 지점 분리](/ko/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks)부터 시작하십시오.
+
+이 가이드의 예시에서는 `nyc_taxi.trips_small_inferred` 테이블을 사용합니다. 예시를 그대로 실행하려면 아직 테이블을 생성하고 로드하지 않은 경우 다음을 수행하십시오.
+
+<Accordion title="예시 데이터셋 설정">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+<div id="choose-an-approach">
+  ## 접근 방식 선택
+</div>
+
+수집한 근거를 바탕으로 어디서부터 시작할지 선택하십시오. 문제를 해결할 수 있는 가장 범용적인 변경부터 적용하는 것이 좋습니다.
+
+| 근거                                       | 우선 적용할 작업                                                  | 예상 효과                      |
+| ---------------------------------------- | ---------------------------------------------------------- | -------------------------- |
+| 쿼리가 넓은 컬럼이나 필요하지 않은 컬럼을 읽음               | [읽는 데이터 줄이기](#reduce-the-data-read)                        | 읽기 바이트 수, 메모리 사용량 및 처리 작업량 |
+| 선택성이 높은 필터인데도 많은 [파트 또는 그래뉼](/ko/parts)을 읽음 | [데이터 레이아웃을 쿼리에 맞추기](#align-the-data-layout-with-the-query) | 읽는 행 및 그래뉼 수               |
+| 반복되는 변환 또는 집계가 쿼리의 대부분을 차지함              | [반복 가능한 작업 사전 계산](#precompute-repeatable-work)             | 쿼리 시점에 수행되는 계산             |
+
+근거가 이러한 카테고리 중 어느 하나에도 해당하지 않으면, 쿼리를 특정 접근 방식에 억지로 맞추기보다 쿼리 계획으로 돌아가십시오.
+
+<div id="reduce-the-data-read">
+  ## 읽는 데이터 줄이기
+</div>
+
+* **사용 시점:** 쿼리가 넓은 컬럼이나 필요하지 않은 컬럼을 읽을 때입니다.
+* **변경:** 쿼리에서 읽는 컬럼의 크기나 개수를 줄입니다.
+* **검증:** 동일한 조건에서 `read_bytes`, 메모리 사용량, 소요 시간을 비교합니다.
+
+ClickHouse는 쿼리에 필요한 컬럼만 읽지만, 선택한 데이터를 읽고 압축 해제하여 처리해야 합니다. 선택한 컬럼과 그 타입을 모두 검토하십시오. [스키마 추론](/ko/concepts/features/interfaces/schema-inference)은 실용적인 출발점이 되지만, 추론된 타입은 프로덕션 데이터에 필요한 것보다 더 넓거나 허용 범위가 클 수 있습니다.
+
+<div id="review-column-types">
+  ### 컬럼 타입 검토
+</div>
+
+<span id="choose-precise-types" />
+
+**정확한 타입 선택**
+
+필요 이상으로 많은 데이터를 저장하지 않으면서 워크로드에 필요한 범위와 정밀도를 보장하는 타입을 선택하십시오. 이러한 값에는 범용 [`String`](/ko/reference/data-types/string) 대신 숫자 및 날짜 타입을 사용하고, 예상 범위를 안전하게 표현할 수 있는 가장 작은 [부호 있는 또는 부호 없는 숫자 타입](/ko/reference/data-types/int-uint)을 선택하십시오. 시간 관련 컬럼에는 [`Date32`](/ko/reference/data-types/date32) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)의 더 넓은 범위나 소수점 이하 정밀도가 필요하지 않은 한 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)를 사용하십시오.
+
+<span id="use-nullable-columns-deliberately" />
+
+**널 허용 컬럼을 신중하게 사용**
+
+[`Nullable`](/ko/reference/data-types/nullable) 컬럼은 값과 별도로 null 마스크를 저장하며, ClickHouse는 이 마스크도 읽고 처리해야 합니다. null 값과 타입의 기본값을 구분하는 것이 중요할 때 사용하십시오. 컬럼에 항상 값이 포함되는 것이 보장된다면 널 비허용 타입을 사용해 이러한 추가 작업을 피할 수 있습니다.
+
+컬럼을 변경하기 전에 관찰된 non-null 데이터가 항상 non-null 상태로 유지된다고 가정하지 말고 소스 데이터와 수집 경로를 확인하십시오. [최적화 예시](/ko/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable)에서는 null 값을 포함하는 컬럼을 식별하고 스키마 변경의 영향을 측정하는 방법을 보여 줍니다.
+
+<span id="use-dictionary-encoding-for-repeated-values" />
+
+**반복되는 값에 딕셔너리 인코딩 사용**
+
+[`LowCardinality`](/ko/reference/data-types/lowcardinality)는 딕셔너리 인코딩을 사용하며, 상태 값, 국가 코드 또는 행 수에 비해 고유 값 수가 현저히 적은 기타 차원과 같은 문자열 컬럼에 효과적인 경우가 많습니다. 약 10,000개의 고유 값은 후보를 식별하는 유용한 시작점일 뿐, 고정된 기준은 아닙니다. 식별자와 대부분의 값이 고유한 기타 컬럼은 피하고, 타입 변경 전후의 측정값을 비교하십시오.
+
+더 자세한 지침은 [데이터 타입 선택](/ko/best-practices/select-data-types)을 참조하십시오.
+
+<div id="read-only-the-required-columns">
+  ### 필요한 컬럼만 읽기
+</div>
+
+ClickHouse는 데이터를 컬럼별로 저장하므로 선택하는 컬럼 수를 줄이면 읽는 데이터 양도 직접 줄어듭니다. 특히 컬럼이 많은 테이블이나 각 행에서 일부 데이터만 반환하는 쿼리에서는 `SELECT *` 대신 필요한 컬럼을 명시하십시오.
+
+[`system.query_log`](/ko/reference/system-tables/query_log)의 `read_bytes`를 사용하여 선택 컬럼을 줄이기 전후의 데이터 읽기 양을 비교하십시오. `read_bytes`가 여전히 높다면 추가 컬럼이 필요한 표현식, 필터, 조인 또는 중첩 쿼리가 있는지 쿼리 계획을 확인하십시오.
+
+예를 들어 대시보드에 픽업 시간, 결제 유형, 총액만 필요하다면 전체 행 대신 해당 컬럼만 선택하십시오:
+
+```sql
+SELECT
+    pickup_datetime,
+    payment_type,
+    total_amount
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+LIMIT 1000;
+```
+
+이 쿼리를 동일한 필터와 제한을 적용한 `SELECT *` 쿼리와 비교하십시오. 반환되는 행 수는 같지만, `read_bytes`에는 더 적은 컬럼을 읽은 결과가 반영되어야 합니다.
+
+<div id="align-the-data-layout-with-the-query">
+  ## 데이터 레이아웃을 쿼리에 맞추기
+</div>
+
+* **사용 시점:** 선택적 필터를 적용해도 많은 파트 또는 그래뉼을 읽는 경우입니다.
+* **변경:** 반복적으로 실행되는 쿼리의 필터에 맞게 물리적 레이아웃을 조정합니다.
+* **검증:** [`EXPLAIN indexes = 1`](/ko/reference/statements/explain)로 선택되는 파트와 그래뉼을 비교한 후 `read_rows`, `read_bytes`, 소요 시간을 확인합니다.
+
+<div id="start-with-the-ordering-key">
+  ### 순서 지정 키부터 시작하기
+</div>
+
+[`MergeTree` 엔진 계열 테이블](/ko/reference/engines/table-engines/mergetree-family/)에서 순서 지정 키는 행이 디스크에 정렬되는 방식을 결정합니다. 기본적으로 이 키는 [희소 프라이머리 인덱스](/ko/primary-indexes)를 정의하는 프라이머리 키 역할도 합니다. OLTP 데이터베이스의 프라이머리 키와 달리 ClickHouse 프라이머리 키는 고유성을 강제하지 않습니다. 대신 쿼리 필터 조건을 충족할 수 없는 그래뉼을 ClickHouse가 건너뛸 수 있도록 하여 성능을 향상합니다.
+
+키 내 컬럼의 순서도 고려하여, 선택성이 높은 필터에 자주 사용되는 컬럼을 우선 배치하십시오. 관련된 값을 함께 그룹화하면 압축률도 향상될 수 있습니다. 쿼리의 그룹화 또는 정렬 순서가 키와 일치하면 ClickHouse는 `GROUP BY` 또는 `ORDER BY`에 순서 기반 최적화를 사용할 수 있습니다.
+
+다른 순서 지정 키를 테스트하기 전후로 `EXPLAIN indexes = 1`에서 선택된 파트와 그래뉼을 비교하십시오. 또한 동일한 조건에서 `read_rows`, `read_bytes`, 소요 시간을 비교하십시오. 자세한 선택 지침은 [프라이머리 키 선택](/ko/best-practices/choosing-a-primary-key)을 참조하십시오.
+
+예시 테이블은 `ORDER BY ()`를 사용하므로, 다음 선택적 날짜 필터에서 그래뉼을 제외할 수 있는 순서 지정 키가 없습니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count()
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  ClickHouse 25.9 이상에서는 이러한 설정을 통해 `EXPLAIN`에서 사용된 인덱스와 제외된 파트 및 그래뉼을 확인할 수 있습니다.
+</Note>
+
+이 출력을 기준선으로 사용하십시오. 비교를 완료하려면 실습 예시의 [순서 지정 키 변경 적용](/ko/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-ordering-key-change)을 따라 `pickup_datetime`를 포함하는 순서 지정 키가 있는 테이블을 만든 후, 동일한 `EXPLAIN`을 실행하십시오. 전체 변경 사항을 평가하기 위해 Duration 또는 메모리 측정값을 사용하기 전에 계획의 프라이머리 키 섹션에서 선택된 그래뉼 수가 더 적게 표시되어야 합니다.
+
+<Tip>
+  [`PREWHERE`](/ko/optimize/prewhere)는 처리되는 행 수를 변경하지 않고 읽는 컬럼 값을 줄일 수 있습니다. 기본적으로 활성화되는 `optimize_move_to_prewhere`가 설정되어 있으면 ClickHouse는 적합한 조건을 `WHERE`에서 `PREWHERE`로 자동 이동합니다. `PREWHERE`를 수동으로 추가하기 전에 계획을 확인하고, 효과를 측정할 때는 `read_rows`뿐 아니라 `read_bytes`도 사용하십시오.
+</Tip>
+
+<div id="evaluate-additional-indexing-and-data-layout-options">
+  ### 추가 인덱싱 및 데이터 레이아웃 옵션 평가
+</div>
+
+순서 지정 키로 중요한 액세스 패턴을 효율적으로 지원할 수 없다면, 아래의 보다 특화된 옵션을 검토하십시오.
+
+<span id="partition-for-data-management-and-pruning" />
+
+**데이터 관리 및 프루닝을 위한 파티션**
+
+[파티셔닝](/ko/best-practices/choosing-a-partitioning-key)은 주로 보존, 이동, 삭제와 같은 작업을 위한 데이터 관리 메커니즘입니다. 필터를 통해 ClickHouse가 전체 파티션을 제외할 수 있다면 쿼리 작업량을 줄일 수 있지만, 쿼리 가속을 위한 첫 번째 수단으로 사용해서는 안 됩니다.
+
+예를 들어 보존 정책도 월 단위로 관리한다면 월별 파티션을 사용하여 해당 월 전체를 삭제할 수 있습니다. 파티션 키가 데이터 수명 주기 요구 사항이나 명확히 파악된 액세스 패턴에 부합할 때만 파티셔닝을 고려하십시오. 카디널리티는 낮게 유지하십시오. 카디널리티가 높은 키는 파티션 간에 병합할 수 없는 많은 파트를 생성하여 성능을 저하시킬 수 있습니다. `EXPLAIN indexes = 1`을 사용하여 쿼리가 실제로 파티션을 프루닝하는지 확인하십시오.
+
+<span id="add-a-data-skipping-index-for-a-localized-filter" />
+
+**국소화된 필터에 데이터 스키핑 인덱스 추가**
+
+[데이터 스키핑 인덱스](/ko/best-practices/use-data-skipping-indices-where-appropriate)는 ClickHouse가 필터와 일치할 수 없는 블록을 읽지 않도록 하는 메타데이터를 저장합니다. 순서 지정 키가 중요한 필터를 지원하지 않고, 일치하는 값이 블록 내에 충분히 국소화되어 있을 때 가장 유용합니다.
+
+예를 들어 대부분의 블록에 검색 대상 값이 포함되지 않는다면 블룸 필터 인덱스가 동등 조회에 도움이 될 수 있습니다. 데이터 타입과 순서 지정 키를 검토한 후 스키핑 인덱스를 사용하십시오. 블록을 거의 제외하지 못하는 인덱스는 작업량을 크게 줄이지 못하면서 스토리지와 평가 오버헤드를 추가합니다. 대표 데이터로 인덱스 유형과 세분화 수준을 테스트한 다음, `EXPLAIN indexes = 1`을 사용하여 선택된 그래뉼을 비교하고 `read_rows`, `read_bytes`, 소요 시간을 확인하십시오.
+
+<span id="use-projections-selectively" />
+
+**프로젝션을 선택적으로 사용**
+
+[프로젝션](/ko/data-modeling/projections)은 테이블과 함께 대체 데이터 레이아웃을 저장합니다. 다른 순서 지정 키나 사전 계산된 결과를 제공할 수 있으며, ClickHouse는 쿼리에서 직접 참조하지 않아도 적용 가능한 프로젝션을 선택할 수 있습니다.
+
+예를 들어 `payment_type`으로 정렬된 프로젝션은 기본 테이블&#39;의 정렬로 지원되지 않는 반복적인 필터를 지원할 수 있습니다. 기본 정렬로 효율적으로 처리할 수 없는 중요한 액세스 패턴에는 소수의 프로젝션을 사용하십시오.
+
+프로젝션은 추가 인덱스 또는 컬럼 데이터를 저장하며, 삽입과 병합 시 작업량을 늘립니다. 전체 컬럼 프로젝션은 저장하는 컬럼을 복제합니다. 프로젝션을 과도하게 사용하면 쿼리 시점에 최적의 프로젝션을 선택하는 데 필요한 작업량도 늘어날 수 있습니다. 서로 다른 액세스 패턴이 많은 대규모 배포에서는 프로젝션 수를 줄이거나 용도별 테이블을 별도로 사용하는 편이 운영하기 쉬운 경우가 많습니다. 이러한 메커니즘 중 하나를 선택할 때는 [materialized view와 프로젝션 비교](/ko/managing-data/materialized-views-versus-projections)를 참조하십시오.
+
+원본 테이블을 계속 쿼리하면서 결제 유형과 픽업 시간으로 필터링하는 쿼리를 위한 대체 정렬을 추가합니다:
+
+```sql
+ALTER TABLE nyc_taxi.trips_small_inferred
+ADD PROJECTION trips_by_payment_type
+(
+    SELECT
+        payment_type,
+        pickup_datetime,
+        trip_distance,
+        total_amount
+    ORDER BY (payment_type, pickup_datetime)
+);
+
+ALTER TABLE nyc_taxi.trips_small_inferred
+MATERIALIZE PROJECTION trips_by_payment_type;
+```
+
+프로젝션을 구체화하면 기존 데이터에 프로젝션이 생성되며, 이후 삽입되는 데이터에는 자동으로 유지됩니다. 원본 테이블에 대해 대표적인 쿼리를 다시 실행하고 `EXPLAIN projections = 1`을 사용하여 ClickHouse가 프로젝션을 선택하는지, 더 적은 행 또는 바이트를 읽는지 확인하십시오. 또한 이 패턴을 광범위하게 적용하기 전에 삽입 및 스토리지 오버헤드를 측정하십시오.
+
+<div id="precompute-repeatable-work">
+  ## 반복 작업 사전 계산
+</div>
+
+* **사용 시점:** 동일한 변환이나 집계가 반복적으로 쿼리 시간의 대부분을 차지할 때입니다.
+* **변경:** 반복되는 계산을 수집 시점, 예약된 갱신 또는 용도에 맞게 설계된 데이터 레이아웃으로 옮깁니다.
+* **검증:** 쿼리가 더 작은 결과를 읽고 쿼리 시점의 계산량이 줄어드는지, 수집 또는 갱신 작업은 허용 가능한 수준인지 확인합니다.
+
+결과의 유지 및 액세스 방식에 따라 선택합니다. 다음 옵션은 상호 배타적이지 않습니다.
+
+| 필요한 사항                         | 먼저 사용할 항목                                               |
+| ------------------------------ | ------------------------------------------------------- |
+| 데이터가 도착할 때마다 업데이트되는 결과         | [증분형 materialized view](#incremental-materialized-view) |
+| 일정 수준의 staleness를 허용하는 주기적 재계산 | [갱신 가능 구체화 뷰](#refreshable-materialized-view)           |
+| 독립적인 스키마, 순서 지정 키 또는 수명 주기     | [용도에 맞게 설계된 테이블](#purpose-built-table)                  |
+
+각 섹션에는 기본 구현 방법, 주요 운영상 절충 관계 및 결과 검증 방법이 포함되어 있습니다.
+
+<div id="incremental-materialized-view">
+  ### 증분형 materialized view
+</div>
+
+반복적으로 적용되는 필터, 변환 또는 집계를 데이터가 들어올 때마다 최신 상태로 유지해야 하는 경우 [증분형 materialized view](/ko/materialized-view/incremental-materialized-view)를 사용합니다. 새로 삽입되는 각 블록을 처리하고 변환된 결과를 대상 테이블에 기록합니다. 대신 추가 수집 작업이 필요하며 대상 테이블을 명시적으로 지정해야 합니다.
+
+예를 들어, 일별 운행 수를 반복적으로 계산하는 대시보드는 요청할 때마다 원본 데이터를 그룹화하는 대신 작은 집계 테이블에서 데이터를 읽을 수 있습니다:
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_day
+(
+    pickup_date Date,
+    trip_count UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY pickup_date;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_day_mv
+TO nyc_taxi.trips_by_day
+AS SELECT
+    toDate(assumeNotNull(pickup_datetime)) AS pickup_date,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime IS NOT NULL
+GROUP BY pickup_date;
+```
+
+대상 테이블을 `pickup_date`로 그룹화하여 `sum(trip_count)`를 쿼리하면 백그라운드 머지를 기다리는 행이 쿼리 시점에 결합됩니다. 이 뷰는 새로 삽입된 데이터만 처리하므로 기존 소스 데이터는 별도로 백필하십시오. 소요 시간과 읽은 행 수를 원래 집계와 비교해 변경 사항을 검증한 후, 추가 삽입 작업이 허용 가능한 수준인지 확인하십시오.
+
+<div id="refreshable-materialized-view">
+  ### 갱신 가능 구체화 뷰
+</div>
+
+결과가 약간 오래되어도 괜찮고 전체 결과를 적절한 간격으로 재계산할 수 있다면 [갱신 가능 구체화 뷰](/ko/materialized-view/refreshable-materialized-view)를 사용하십시오. 이 뷰는 일정에 따라 쿼리를 다시 실행합니다. 그 대가로 결과의 최신성과 각 갱신에 드는 비용을 고려해야 합니다.
+
+예를 들어 보고서에서 결제 유형별 이동 합계를 매시간 재구성할 수 있습니다:
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_payment_type
+(
+    payment_type Int64,
+    trip_count UInt64
+)
+ENGINE = MergeTree
+ORDER BY payment_type;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_payment_type_mv
+REFRESH EVERY 1 HOUR
+TO nyc_taxi.trips_by_payment_type
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+GROUP BY payment_type;
+```
+
+보고서는 사전 계산된 대상을 읽고, ClickHouse는 일정에 따라 전체 결과를 갱신합니다. 원본 집계와 쿼리 소요 시간을 비교하여 변경 사항을 검증한 다음, [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes)를 확인하여 갱신 소요 시간, 상태 및 빈도가 워크로드에 적합한지 확인합니다.
+
+<div id="purpose-built-table">
+  ### 용도에 맞게 설계된 테이블
+</div>
+
+별도의 워크로드에 크게 다른 스키마, 순서 지정 키 또는 수명 주기가 필요한 경우 용도에 맞춘 테이블을 사용하십시오. 물리적 설계를 명시적으로 제어할 수 있으며, 많은 프로젝션을 유지 관리하는 것보다 더 명확할 수 있습니다. 그 대가로 추가 스토리지와 파이프라인 관리가 필요합니다. 소스 데이터와 최신성 요구 사항상 실용적이라면 반복적인 조인이나 변환을 수집 파이프라인으로 옮길 수도 있습니다. 자세한 설계 지침은 [Use materialized views](/ko/best-practices/use-materialized-views) 및 [Denormalizing data](/ko/data-modeling/denormalization)를 참조하십시오.
+
+예를 들어, 결제 유형과 픽업 시간으로 운행을 필터링하는 대시보드에 맞춰 더 적은 열로 구성된 테이블을 만듭니다:
+
+```sql
+CREATE TABLE nyc_taxi.trips_for_payment_dashboard
+ENGINE = MergeTree
+ORDER BY (payment_type, pickup_datetime)
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    assumeNotNull(source.pickup_datetime) AS pickup_datetime,
+    trip_distance,
+    total_amount
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+  AND source.pickup_datetime IS NOT NULL;
+```
+
+이 예시는 null 정렬 키 값을 제외하고 두 대상 컬럼에서 `Nullable`을 제거합니다. 이러한 처리가 워크로드의 데이터 요구 사항에 맞는지 확인하십시오. 대시보드는 이 테이블을 명시적으로 쿼리해야 하며, 수집 파이프라인은 테이블을 최신 상태로 유지해야 합니다. 행 수와 읽은 바이트 수, 메모리 사용량, 소요 시간을 소스 테이블 쿼리와 비교하여 변경 사항을 검증하십시오. 의사 결정 시 추가 스토리지와 파이프라인 유지 관리 비용도 고려하십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+변경 사항을 평가할 때는 유사한 조건에서 기존 측정을 반복하십시오. 변경 사항이 병목 지점을 다른 곳으로 옮기지 않으면서 의도한 작업량을 줄이는지 확인하십시오.
+
+기존 기준선을 바탕으로 스키마와 정렬 키 변경 사항을 측정하는 방법은 [최적화 예시](/ko/guides/clickhouse/performance-and-monitoring/query-optimization-example)를 참조하십시오.

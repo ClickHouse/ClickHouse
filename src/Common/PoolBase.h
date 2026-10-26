@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -11,6 +12,10 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedDuration.h>
@@ -18,6 +23,14 @@
 namespace ProfileEvents
 {
     extern const Event ConnectionPoolIsFullMicroseconds;
+}
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int NO_FREE_CONNECTION;
+    }
 }
 
 /** What is given to the user. */
@@ -102,12 +115,22 @@ private:
     using Objects = std::vector<std::shared_ptr<PooledObject>>;
 
 public:
-    virtual ~PoolBase() = default;
+    virtual ~PoolBase()
+    {
+        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
+        items.clear();
+    }
 
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
     {
         std::unique_lock lock(mutex);
+
+        /// One absolute deadline for the whole call, so a caller that goes round the loop again
+        /// cannot restart its timeout. Clamped because the sum would otherwise wrap into the past.
+        const bool has_deadline = timeout >= 0;
+        const auto max_wait = DB::saturatedMilliseconds(timeout);
+        const auto deadline = std::chrono::steady_clock::now() + max_wait;
 
         while (true)
         {
@@ -122,35 +145,63 @@ public:
                         return makeEntry(*item);
                     }
 
-                    expireObject(item->object);
-                    item->object = allocObject();
+                    {
+                        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
+                        expireObject(item->object);
+                        item->object = allocObject();
+                    }
                     item->is_expired = false;
                     return makeEntry(*item);
                 }
             }
             if (items.size() < max_items)
             {
-                ObjectPtr object = allocObject();
-                auto & item = items.emplace_back(std::make_shared<PooledObject>(object));
+                PooledObject * item = nullptr;
+                {
+                    auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
+                    item = items.emplace_back(std::make_shared<PooledObject>(allocObject())).get();
+                }
                 item->in_use = true;
                 return makeEntry(*item);
             }
 
-            Stopwatch blocked;
-            if (timeout < 0)
-            {
-                LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
-                available.wait(lock);
-            }
+            /// Accounted by an RAII guard, so the time spent blocked is still reported when this
+            /// scope is left by the deadline throw or by a cancellation.
+            DB::ProfileEventTimeIncrement<DB::Time::Microseconds> blocked(ProfileEvents::ConnectionPoolIsFullMicroseconds);
+
+            if (has_deadline)
+                /// A finite wait wakes once per slice, so an unlimited log here floods.
+                LOG_INFO(LogFrequencyLimiter(log, 10), "No free connections in pool. Waiting {} ms.", max_wait.count());
             else
+                LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
+
+            /// Waiting in slices is what makes cancellation observable: `available` is only notified
+            /// when an object is returned, so a caller holding one would otherwise pin this thread
+            /// for the whole wait. checkIfNotCancelled() is a no-op off-query.
+            while (true)
             {
-                auto timeout_ms = DB::saturatedMilliseconds(timeout);
-                /// A finite wait re-enters this loop as soon as it expires, so an unlimited log here
-                /// floods once per timeout per waiter.
-                LOG_INFO(LogFrequencyLimiter(log, 10), "No free connections in pool. Waiting {} ms.", timeout_ms.count());
-                available.wait_for(lock, timeout_ms);
+                DB::CurrentThread::checkIfNotCancelled();
+
+                const auto now = std::chrono::steady_clock::now();
+                auto slice = std::chrono::duration_cast<std::chrono::steady_clock::duration>(wait_slice);
+                if (has_deadline)
+                {
+                    if (now >= deadline)
+                        throw DB::Exception(
+                            DB::ErrorCodes::NO_FREE_CONNECTION,
+                            "No free connection in pool of size {} after waiting {} ms",
+                            max_items,
+                            max_wait.count());
+                    /// Clamped, so the total wait cannot overrun the deadline by up to a slice.
+                    slice = std::min(slice, deadline - now);
+                }
+
+                /// TWaiter is only required to offer the two-argument wait_for(), so the predicate
+                /// is tested here rather than passed in.
+                available.wait_for(lock, slice);
+                if (hasAvailableObjectUnlocked())
+                    break;
             }
-            ProfileEvents::increment(ProfileEvents::ConnectionPoolIsFullMicroseconds, blocked.elapsedMicroseconds());
         }
     }
 
@@ -158,6 +209,7 @@ public:
     {
         std::lock_guard lock(mutex);
 
+        auto blocker = blockQueryTrackingIfPoolOutlivesQuery();
         while (items.size() < count)
             items.emplace_back(std::make_shared<PooledObject>(allocObject()));
     }
@@ -169,14 +221,36 @@ public:
     }
 
 private:
+    /** Length of one wait slice. Bounds how long a queued caller can stay unaware of its own
+      * cancellation; short enough to be prompt, long enough that an idle pool barely wakes.
+      */
+    static constexpr auto wait_slice = std::chrono::seconds(1);
+
+    /** Whether get() could return without waiting. Called under `mutex`. */
+    bool hasAvailableObjectUnlocked() const
+    {
+        if (items.size() < max_items)
+            return true;
+        return std::any_of(items.begin(), items.end(), [](const auto & item) { return !item->in_use; });
+    }
+
+    /// A pooled object lives as long as the pool, so a long-lived pool does not charge it to the query that happens to create it.
+    std::optional<MemoryTrackerBlockerInThread> blockQueryTrackingIfPoolOutlivesQuery() const
+    {
+        if (!pool_outlives_query)
+            return {};
+        return std::optional<MemoryTrackerBlockerInThread>(std::in_place);
+    }
+
     Entry makeEntry(PooledObject & item)
     {
         bool * in_use = &item.in_use;
         return Entry(std::make_shared<typename Entry::PoolEntryHelper>(
             item.object.get(),
             &item.is_expired,
-            [this, in_use]
+            [this, in_use, object = item.object.get()]
             {
+                releaseObject(*object);
                 std::lock_guard lock(mutex);
                 *in_use = false;
                 available.notify_one();
@@ -185,6 +259,8 @@ private:
 
     /** The maximum size of the pool. */
     unsigned max_items;
+
+    const bool pool_outlives_query;
 
     /** Pool. */
     Objects items;
@@ -196,8 +272,8 @@ private:
 protected:
     LoggerPtr log;
 
-    PoolBase(unsigned max_items_, LoggerPtr log_)
-       : max_items(max_items_), log(log_)
+    PoolBase(unsigned max_items_, LoggerPtr log_, bool pool_outlives_query_)
+       : max_items(max_items_), pool_outlives_query(pool_outlives_query_), log(log_)
     {
         items.reserve(max_items);
     }
@@ -205,4 +281,6 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
     virtual void expireObject(ObjectPtr) {}
+    /// Called by the thread that used the object, when it gives it back.
+    virtual void releaseObject(Object &) noexcept {}
 };

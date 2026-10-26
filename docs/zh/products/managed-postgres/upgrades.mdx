@@ -3,15 +3,17 @@ slug: /cloud/managed-postgres/upgrades
 sidebarTitle: '升级'
 title: '升级'
 description: 'ClickHouse Managed Postgres 中 PostgreSQL 版本升级的工作机制'
-keywords: ['Managed Postgres 升级', 'Postgres 版本', '次版本升级', '主版本升级', '维护窗口']
+keywords: ['Managed Postgres 升级', 'Postgres 版本', '次要版本升级', '主版本升级', '维护窗口', '计划升级']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
 
-ClickHouse Managed Postgres 可处理 PostgreSQL 版本升级，帮助您的实例保持安全并及时更新。支持次版本升级和主版本升级，且对业务影响降至最低。
+ClickHouse Managed Postgres 可处理 PostgreSQL 版本升级，帮助您的实例保持安全并及时更新。支持次要版本升级和主版本升级，且对业务影响降至最低。
 
 <div id="maintenance-updates">
   ## 维护更新
@@ -27,14 +29,104 @@ PostgreSQL 实例的常规维护包括以下内容：
 
 对于启用了[standbys](/zh/products/managed-postgres/high-availability)的实例，升级会先应用到待机实例，然后再执行故障转移，以尽量减少停机时间。
 
-<div id="maintenance-windows">
-  ## 维护窗口
+<div id="scheduled-upgrades">
+  ## 计划升级
 </div>
 
-默认维护窗口为周日 UTC 时间 14:00 至 16:00。
-预计在该时间窗口内，停机时间不超过 1 分钟。
+<ScalePlanFeatureBadge feature="计划升级" linking_verb_are="true" />
 
-对于 Enterprise 层级的组织，ClickHouse Managed Postgres 支持维护窗口，可将升级和其他维护操作安排在对工作负载影响最小的时间进行。用于配置维护窗口的 UI 和 API 支持即将推出。在此之前，请联系 [support](https://clickhouse.com/support/program) 为您的实例设置维护窗口。
+默认情况下，新版本准备就绪后，系统会对您的实例执行维护。
+通过**计划升级**，您可以选择一个两小时的 UTC 时间窗口，维护可在此期间执行，
+从而将短暂的故障转移安排在对工作负载影响最小的时段。
+预计该窗口内的停机时间不足 1 分钟。
+
+在 Enterprise 计划中，您还可以将升级限制在特定
+[星期几](#days-of-the-week)。在 Scale 计划中，您只能选择时间段，
+升级可能会在该时段内的任意一天执行。
+
+<div id="configure-a-schedule">
+  ### 配置计划
+</div>
+
+<Steps>
+  <Step title="打开实例设置" id="open-settings">
+    选择您的实例，然后在左侧菜单中选择 **设置**，再滚动到
+    **配置**部分。
+  </Step>
+
+  <Step title="打开计划升级弹出面板" id="open-flyout">
+    在 **计划升级**小节中，选择 **配置计划**。如果已设置计划，
+    将显示当前计划，按钮会显示为 **编辑计划**。
+  </Step>
+
+  <Step title="选择时间段" id="pick-time-period">
+    从 **时间段 (UTC)** 列表提供的 12 个 UTC 两小时时间窗口中选择一个。必须选择一个时间
+    段。
+  </Step>
+
+  <Step title="选择性限制日期" id="pick-days">
+    对于 Enterprise 计划，请在 **星期几**下选择一天或多天。不要选择任何
+    日期，即可允许在该时间段内的任意日期进行升级。
+  </Step>
+
+  <Step title="保存" id="save">
+    选择 **保存**。计划将立即生效，并显示在
+    **计划升级**小节中，例如
+    `计划升级：周六、周日 UTC 00:00 - 02:00`。
+  </Step>
+</Steps>
+
+您需要拥有该实例的 `control-plane:postgres-service:manage` 权限，才能更改
+其计划。实例处于停止状态或仍在预配时，相关控件也会被禁用。
+
+<div id="time-periods">
+  ### 时间段
+</div>
+
+每个时间窗口均为两小时，且始终以 UTC 表示，不支持选择本地时区。
+可用时间窗口如下：
+
+| 当日前半段 (UTC)             | 当日后半段 (UTC)             |
+| ----------------------- | ----------------------- |
+| 12:00 a.m. - 2:00 a.m.  | 12:00 p.m. - 2:00 p.m.  |
+| 2:00 a.m. - 4:00 a.m.   | 2:00 p.m. - 4:00 p.m.   |
+| 4:00 a.m. - 6:00 a.m.   | 4:00 p.m. - 6:00 p.m.   |
+| 6:00 a.m. - 8:00 a.m.   | 6:00 p.m. - 8:00 p.m.   |
+| 8:00 a.m. - 10:00 a.m.  | 8:00 p.m. - 10:00 p.m.  |
+| 10:00 a.m. - 12:00 p.m. | 10:00 p.m. - 12:00 a.m. |
+
+不支持自定义开始时间、自定义窗口时长，或为单个实例设置多个时间窗口。
+
+<div id="days-of-the-week">
+  ### 星期几
+</div>
+
+<EnterprisePlanFeatureBadge feature="将升级限制在一周中的特定日期" />
+
+是否限制日期为可选项：
+
+* **未选择日期** — 可在所选时间段内的任意一天执行升级。
+* **选择一个或多个日期** — 仅会在所选时间段内的这些日期执行升级。选择全部七天等同于不选择任何日期。
+
+<div id="schedule-scope">
+  ### 计划的适用范围
+</div>
+
+计划仅适用于**平台维护**，即[维护更新](#maintenance-updates)中所述的次要版本升级、托管服务功能更新和操作系统补丁。
+
+您自行发起的变更不会延后到维护窗口，而会在您执行后立即生效。这包括对实例进行[扩缩容](/zh/products/managed-postgres/scaling)、调整存储容量，以及更改[配置参数](/zh/products/managed-postgres/settings)。
+
+<Note>
+  计划升级将尽力按计划执行。当维护对实例的健康状况至关重要时 (例如磁盘使用率达到 95%) ，或涉及关键安全补丁和漏洞修复时，可能会在您的维护窗口之外执行。我们会在必要时通知您此类例外情况。
+</Note>
+
+<div id="read-replicas">
+  ### 只读副本
+</div>
+
+[只读副本](/zh/products/managed-postgres/read-replicas) 沿用其
+主节点的升级计划，无法单独设置计划，因此不会显示 **计划升级**
+部分。
 
 <div id="major-version-upgrades">
   ## 主版本升级

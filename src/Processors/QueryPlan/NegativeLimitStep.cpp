@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -52,6 +53,10 @@ void NegativeLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const
         transform->markAsShardLimit();
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void NegativeLimitStep::describeActions(FormatSettings & settings) const
@@ -69,6 +74,11 @@ void NegativeLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Limit", limit);
     map.add("Negative Offset", offset);
     map.add("With Ties", with_ties);
+}
+
+QueryPlanStepPtr NegativeLimitStep::clone() const
+{
+    return std::make_unique<NegativeLimitStep>(*this);
 }
 
 /// Wire format and cross-version compatibility.
@@ -100,7 +110,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
@@ -123,7 +133,7 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 
     SortDescription sort_description;
     if (with_ties_v)
-        deserializeSortDescription(sort_description, ctx.in);
+        deserializeSortDescription(sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     return std::make_unique<NegativeLimitStep>(ctx.input_headers.front(), limit_v, offset_v, with_ties_v, std::move(sort_description));
 }

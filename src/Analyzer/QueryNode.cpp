@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 
 #include <Core/NamesAndTypes.h>
 
@@ -37,13 +38,17 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
 }
 
-QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
+QueryNode::QueryNode(
+    ContextMutablePtr context_, SettingsChanges settings_changes_, std::vector<String> default_settings_, NameToNameVector query_parameters_)
     : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
+    , default_settings(std::move(default_settings_))
+    , query_parameters(std::move(query_parameters_))
 {
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
@@ -165,8 +170,11 @@ DataTypePtr QueryNode::getResultType() const
             return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
         }
         else
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+            /// Reachable from plain SQL: dropping `EXISTS` from `NOT EXISTS (SELECT * FROM t WHERE t.a = o.b)`
+            /// leaves a correlated subquery of several columns where a single value is expected, so describe
+            /// the query rather than the method that could not answer for it.
+            throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "A correlated subquery used as an expression must return exactly one column, but it returns {}",
                 projection_columns.size());
     }
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
@@ -208,6 +216,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (is_limit_by_all)
         buffer << ", is_limit_by_all: " << is_limit_by_all;
+
+    if (is_limit_after_all)
+        buffer << ", is_limit_after_all: " << is_limit_after_all;
 
     std::string group_by_type;
     if (is_group_by_with_rollup)
@@ -332,6 +343,18 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getLimit()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasLimitAfter())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT AFTER\n";
+        getLimitAfter()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasLimitUntil())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT UNTIL\n";
+        getLimitUntil()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasOffset())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
@@ -343,6 +366,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
             buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
+        for (const auto & setting_name : default_settings)
+            buffer << fmt::format(" {}=DEFAULT", setting_name);
+        for (const auto & [name, value] : query_parameters)
+            buffer << fmt::format(" param_{}={}", name, quoteString(value));
     }
 }
 
@@ -362,8 +389,11 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
+        is_limit_after_all == rhs_typed.is_limit_after_all &&
         projection_columns == rhs_typed.projection_columns &&
-        settings_changes == rhs_typed.settings_changes;
+        settings_changes == rhs_typed.settings_changes &&
+        default_settings == rhs_typed.default_settings &&
+        query_parameters == rhs_typed.query_parameters;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
@@ -409,6 +439,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_all);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
+    state.update(is_limit_after_all);
 
     state.update(settings_changes.size());
 
@@ -421,6 +452,22 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         auto setting_change_value_dump = setting_change.value.dump();
         state.update(setting_change_value_dump.size());
         state.update(setting_change_value_dump);
+    }
+
+    state.update(default_settings.size());
+    for (const auto & setting_name : default_settings)
+    {
+        state.update(setting_name.size());
+        state.update(setting_name);
+    }
+
+    state.update(query_parameters.size());
+    for (const auto & [name, value] : query_parameters)
+    {
+        state.update(name.size());
+        state.update(name);
+        state.update(value.size());
+        state.update(value);
     }
 }
 
@@ -441,9 +488,12 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
+    result_query_node->is_limit_after_all = is_limit_after_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
+    result_query_node->default_settings = default_settings;
+    result_query_node->query_parameters = query_parameters;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_query_node;
@@ -463,6 +513,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
     select_query->limit_by_all = is_limit_by_all;
+    select_query->limit_after_all = is_limit_after_all;
 
     if (hasWith())
     {
@@ -573,6 +624,12 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (hasLimit())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST(options));
 
+    if (hasLimitAfter())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, getLimitAfter()->toAST(options));
+
+    if (hasLimitUntil())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, getLimitUntil()->toAST(options));
+
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
 
@@ -580,6 +637,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         auto settings_query = make_intrusive<ASTSetQuery>();
         settings_query->changes = settings_changes;
+        settings_query->default_settings = default_settings;
+        settings_query->query_parameters = query_parameters;
         settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }

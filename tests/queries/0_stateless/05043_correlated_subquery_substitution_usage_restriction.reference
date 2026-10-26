@@ -1,0 +1,45 @@
+-- Case 33: guarded, exact-type sibling member reachable through a cross-type bridge; the co-located intDiv is safe over the outer domain (2 - 1 = 1) but would see the inner value 2 after substitution and throw
+plan: substituted=0
+-- Case 34: guarded, the same channel with an exact-type member and no cross-type edge at all
+plan: substituted=0
+-- Case 36: guarded, the correlated column is used in the subquery projection
+plan: substituted=0
+1
+-- Case 37: guarded, the correlated column is an aggregate argument / a user group key
+plan: substituted=0
+1	1
+3	\N
+plan: substituted=0
+1
+-- Case 35: mixed UNION ALL arms, both orders; only the arm that uses the correlated column beyond the equality keeps the fallback (one ReadFromCommonBuffer), the equality-only arm is substituted; the use-arm carries a throwing canary (inner value 2 makes intDiv(1, 2 - o.x) throw if that arm were wrongly substituted)
+plan: fallback_arms=1
+1
+3
+plan: fallback_arms=1
+1
+3
+-- Case 38: shared ancestor above the union; both arms are guarded by the inherited usage set (two ReadFromCommonBuffer); before the restriction the substituted arms fed the inner value 2 to the ancestor intDiv and threw
+plan: fallback_arms=2
+1
+-- Case 39: an n-ary UNION must decorrelate every arm — the handler previously rebuilt the union from only the first and last child, silently dropping middle arms
+plan: fallback_arms=0
+1
+2
+3
+2
+plan: fallback_arms=1
+1
+3
+-- Case 40: an equality on a union output column recorded above the UNION (u.x = o.x) is translated into each arm (positionally, through pure renames only), so the arms can substitute the correlated column
+plan: fallback_arms=0
+1	10
+2	20
+plan: fallback_arms=2
+1	10
+2	20
+plan: fallback_arms=1
+1	10
+3	30
+plan: fallback_arms=1
+1	10
+2	20

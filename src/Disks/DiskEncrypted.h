@@ -76,11 +76,7 @@ public:
         tx->commit();
     }
 
-    DirectoryIteratorPtr iterateDirectory(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->iterateDirectory(wrapped_path);
-    }
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void createFile(const String & path) override
     {
@@ -276,6 +272,18 @@ public:
         return delegate->getLastChanged(wrapped_path);
     }
 
+    struct stat stat(const String & path) const override
+    {
+        return delegate->stat(wrappedPath(path));
+    }
+
+    void chmod(const String & path, mode_t mode) override
+    {
+        auto tx = createEncryptedTransaction();
+        tx->chmod(path, mode);
+        tx->commit();
+    }
+
     void setReadOnly(const String & path) override
     {
         auto tx = createEncryptedTransaction();
@@ -322,6 +330,7 @@ public:
     bool isBroken() const override { return delegate->isBroken(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
+    bool prefersRecursiveRemoval() const override { return delegate->prefersRecursiveRemoval(); }
     bool supportsStat() const override { return delegate->supportsStat(); }
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }

@@ -105,8 +105,8 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 ```
 
 ```text title="Response"
-┌───────h3EdgeAngle(10)─┐
-│ 0.0005927224846720883 │
+┌─────────────edgeAngle─┐
+│ 0.0006822586214258879 │
 └───────────────────────┘
 ```
 
@@ -136,7 +136,7 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 
 ```text title="Response"
 ┌─edgeLengthM─┐
-│ 0.509713273 │
+│  0.58416863 │
 └─────────────┘
 ```
 
@@ -166,7 +166,7 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 
 ```text title="Response"
 ┌─edgeLengthKm─┐
-│  0.000509713 │
+│  0.000584169 │
 └──────────────┘
 ```
 
@@ -262,9 +262,9 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 ```
 
 ```text title="Response"
-┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─coordinates───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(55.71290022535552,37.79505811173474),(55.71289713485415,37.79506506997184),(55.71289934095484,37.79507312653982),(55.71290463755744,37.79507422487167),(55.71290772805917,37.79506726663346),(55.7129055219579,37.795059210064515)] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## h3kRing {#h3kring}
@@ -304,9 +304,11 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-## h3PolygonToCells
+## h3PolygonToCells {#h3polygontocells}
 
-Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon.
+Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon. A hexagon is contained when the geometry contains its center, which is containment mode `0` of [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+
+Every vertex of the geometry must be on the sphere: longitude in the range `[-180, 180]` and latitude in `[-90, 90]` degrees. The order of the returned cells is not guaranteed, so sort the array when the order matters.
 
 **Syntax**
 
@@ -334,12 +336,12 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ``` text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
@@ -347,6 +349,8 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 ## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
 
 Returns the hexagons (at specified resolution) covering the provided geometry, either ring or (multi-)polygon, using H3 experimental containment modes.
+
+Every vertex of the geometry must be on the sphere: longitude in the range `[-180, 180]` and latitude in `[-90, 90]` degrees. The order of the returned cells is not guaranteed, so sort the array when the order matters.
 
 This function maps `flags` to H3 containment modes:
 
@@ -1073,7 +1077,7 @@ h3GetRes0Indexes()
 **Example**
 
 ```sql title="Query"
-SELECT h3GetRes0Indexes AS indexes ;
+SELECT h3GetRes0Indexes() AS indexes;
 ```
 
 ```text title="Response"

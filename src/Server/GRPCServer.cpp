@@ -36,12 +36,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -310,6 +310,20 @@ namespace
         }
     };
 
+    /// A protobuf map has no order, so `profile` goes first for its constraints to bind the other settings.
+    SettingsChanges settingsChangesFromMap(const google::protobuf::Map<std::string, std::string> & map)
+    {
+        SettingsChanges changes;
+        for (const auto & [key, value] : map)
+        {
+            if (key == "profile")
+                changes.insert(changes.begin(), {key, value});
+            else
+                changes.push_back({key, value});
+        }
+        return changes;
+    }
+
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
     {
@@ -332,19 +346,9 @@ namespace
     String getQueryDescription(const GRPCQueryInfo & query_info)
     {
         String str;
+        /// Not the text: it can contain secrets, and `executeQuery` logs it with them hidden.
         if (!query_info.query().empty())
-        {
-            std::string_view query = query_info.query();
-            constexpr size_t max_query_length_to_log = 64;
-            if (query.length() > max_query_length_to_log)
-                query.remove_suffix(query.length() - max_query_length_to_log);
-            if (size_t format_pos = query.find(" FORMAT "); format_pos != String::npos)
-                query.remove_suffix(query.length() - format_pos - strlen(" FORMAT "));
-            str.append("\"").append(query);
-            if (query != query_info.query())
-                str.append("...");
-            str.append("\"");
-        }
+            str.append("query: ").append(std::to_string(query_info.query().size())).append(" bytes");
         if (!query_info.query_id().empty())
             str.append(str.empty() ? "" : ", ").append("query_id: ").append(query_info.query_id());
         if (!query_info.input_data().empty())
@@ -432,6 +436,9 @@ namespace
             grpc_context.set_compression_algorithm(transport_compression.algorithm);
             grpc_context.set_compression_level(transport_compression.level);
         }
+
+        /// Makes the pending operations of this call complete (with `ok` set to false).
+        void cancel() { grpc_context.TryCancel(); }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -659,7 +666,7 @@ namespace
     class ReadBufferFromCallback : public ReadBuffer
     {
     public:
-        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>(void)> & callback_)
+        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>()> & callback_)
             : ReadBuffer(nullptr, 0), callback(callback_) {}
 
     private:
@@ -674,7 +681,7 @@ namespace
             return true;
         }
 
-        std::function<std::pair<const void *, size_t>(void)> callback;
+        std::function<std::pair<const void *, size_t>()> callback;
     };
 
 
@@ -719,7 +726,7 @@ namespace
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
-        void start(const std::function<void(void)> & on_finish_call_callback);
+        void start(const std::function<void()> & on_finish_call_callback);
 
     private:
         void run();
@@ -830,7 +837,7 @@ namespace
             call_thread.join();
     }
 
-    void Call::start(const std::function<void(void)> & on_finish_call_callback)
+    void Call::start(const std::function<void()> & on_finish_call_callback)
     {
         auto runner_function = [this, on_finish_call_callback]
         {
@@ -942,12 +949,7 @@ namespace
 
         query_context = session->makeQueryContext(std::move(client_info));
 
-        /// Prepare settings.
-        SettingsChanges settings_changes;
-        for (const auto & [key, value] : query_info.settings())
-        {
-            settings_changes.push_back({key, value});
-        }
+        auto settings_changes = settingsChangesFromMap(query_info.settings());
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
 
@@ -1072,13 +1074,12 @@ namespace
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+        query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription &, const Block & header)
         {
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-            initializePipeline(metadata_snapshot->getSampleBlock());
+            initializePipeline(header);
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1274,9 +1275,7 @@ namespace
                     {
                         temp_context = Context::createCopy(query_context);
                         external_table_context = temp_context;
-                        SettingsChanges settings_changes;
-                        for (const auto & [key, value] : external_table.settings())
-                            settings_changes.push_back({key, value});
+                        auto settings_changes = settingsChangesFromMap(external_table.settings());
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
@@ -1308,8 +1307,12 @@ namespace
                         return std::make_shared<EmptySink>(header);
                     });
 
-                    auto executor = cur_pipeline.execute();
-                    executor->execute(1, false);
+                    auto external_table_pipeline = QueryPipelineBuilder::getPipeline(std::move(cur_pipeline));
+                    external_table_pipeline.setNumThreads(1);
+                    external_table_pipeline.setConcurrencyControl(false);
+                    external_table_pipeline.disableReadProgress();
+                    CompletedPipelineExecutor executor(external_table_pipeline);
+                    executor.execute();
                 }
             }
 
@@ -1537,6 +1540,17 @@ namespace
 
     void Call::close()
     {
+        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
+        /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
+        /// owned by the responder, so both have to outlive it.
+        if (reading_query_info.get())
+        {
+            /// If the call has not been finished, nothing would complete that read on its own.
+            if (!responder_finished)
+                responder->cancel();
+            reading_query_info.wait(false);
+        }
+
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;

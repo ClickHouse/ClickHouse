@@ -11,11 +11,11 @@ CREATE TABLE t_adaptive_projection
     PROJECTION p_order (SELECT v, k ORDER BY v)
 )
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_projection_off AS t_adaptive_projection
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 0;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 INSERT INTO t_adaptive_projection SELECT number, 99999 - number FROM numbers(50000);
 INSERT INTO t_adaptive_projection SELECT number, 99999 - number FROM numbers(50000, 50000);
@@ -26,7 +26,7 @@ INSERT INTO t_adaptive_projection_off SELECT number, 99999 - number FROM numbers
 OPTIMIZE TABLE t_adaptive_projection_off FINAL;
 
 -- The parent part went adaptive (T64).
-SELECT column, mapContains(codec_block_counts, 'T64') AS has_t64
+SELECT column, mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_adaptive_projection) ORDER BY column;
 
 -- The projection went adaptive: its columns compress smaller than the same data with the default codec.

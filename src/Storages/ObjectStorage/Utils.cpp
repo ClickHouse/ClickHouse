@@ -13,11 +13,17 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+
+#include "config.h"
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
 
 namespace DB
 {
@@ -146,6 +152,57 @@ void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string
                 lake_name, position);
         ++position;
     }
+}
+
+std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    std::string_view key = path;
+    if (key.starts_with("/"))
+        key.remove_prefix(1);
+    return fs::path(prefix) / key;
+}
+
+std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    return fs::relative(path, prefix).string();
+}
+
+std::string formatObjectPath(
+    const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info)
+{
+    if (configuration.supportsFullyQualifiedPaths())
+    {
+        if (const auto qualified = trySplitFullyQualifiedObjectPath(path))
+        {
+            const std::string object_namespace(qualified->object_namespace);
+            return joinPathUnderPrefix(
+                include_connection_info ? configuration.getDataSourceDescriptionForNamespace(object_namespace) : object_namespace,
+                std::string(qualified->key));
+        }
+    }
+
+    return joinPathUnderPrefix(
+        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(), path);
+}
+
+Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    auto relative_path = relativizePathUnderPrefix(prefix, path);
+    if (prefix.empty() || relative_path.empty() || relative_path.starts_with("/"))
+        return {std::move(relative_path)};
+
+    /// A key that keeps a leading separator renders to the same value as the same key without it,
+    /// so both spellings are possible originals of `path`.
+    Strings candidates;
+    candidates.push_back("/" + relative_path);
+    candidates.push_back(std::move(relative_path));
+    return candidates;
 }
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)
@@ -364,4 +421,14 @@ extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 }
+
+void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (object_storage.getType() == ObjectStorageType::Azure)
+        object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
+            context->shouldRestrictUserQueryS3Credentials());
+#endif
+}
+
 }

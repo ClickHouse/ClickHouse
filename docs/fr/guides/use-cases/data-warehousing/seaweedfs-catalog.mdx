@@ -72,7 +72,7 @@ Pour le développement et les tests en local, vous pouvez exécuter SeaweedFS et
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-La commande `mini` démarre l’ensemble de la stack SeaweedFS dans un seul conteneur. L’option `-tableBucket=analytics` crée à l’avance un bucket S3 Tables nommé `analytics`, qui sert de warehouse Iceberg.
+La commande `mini` démarre l’ensemble de la stack SeaweedFS dans un seul conteneur. L’option `-tableBucket=analytics` crée à l’avance un bucket S3 Tables nommé `analytics`, qui sert de warehouse Iceberg. `-admin.port=12646` maintient le port gRPC d’administration que SeaweedFS en dérive en dessous de la plage des ports éphémères Linux, afin qu’une connexion au démarrage ne puisse pas le réclamer avant lui.
 
 **Étape 3 :** Exécutez la commande suivante pour démarrer les services :
 

@@ -17,7 +17,7 @@ Compressed files are supported. Compression type is detected by the extension of
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 `level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `gzip`, `deflate` and `lz4` types, `1-22` for `zstd` type and `1-9` for other compression types. For `gzip` and `deflate`, levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels `1-9`.
 
@@ -27,7 +27,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 - The query will fail if a file with the same file name already exists.
 - The default [output format](/reference/formats/index) is `TabSeparated` (like in the command-line client batch mode). Use [FORMAT](/reference/statements/select/format) clause to change it.
 - If `AND STDOUT` is mentioned in the query then the output that is written to the file is also displayed on standard output. If used with compression, the plaintext is displayed on standard output.
-- If `APPEND` is mentioned in the query then the output is appended to an existing file. If compression is used, append cannot be used.
+- If `APPEND` is mentioned in the query then the output is appended to an existing file. If compression is used, append cannot be used. Formats that do not support appending, such as `JSON`, `Parquet`, `Arrow`, `ORC` and `Avro`, cannot be appended to a non-empty file: the query fails with `CANNOT_APPEND_TO_FILE`. When appending to a non-empty file, the header of formats such as `CSVWithNames` is not written again.
 - When writing to a file that already exists, `APPEND` or `TRUNCATE` must be used.
 
 **Example**

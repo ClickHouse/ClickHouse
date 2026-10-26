@@ -162,11 +162,17 @@ ClickHouse 通过依次应用一系列剪枝技术来处理该查询，从而避
 
 <br />
 
-① **分区剪枝**：[MinMax 索引](/zh/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) 用于忽略在逻辑上不可能匹配查询过滤条件的整个分区 (即一组 parts) ；这些过滤条件作用于表分区键中使用的列。
+<Steps>
+  <Step title="分区剪枝">
+    [MinMax 索引](/zh/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) 用于忽略在逻辑上不可能匹配查询过滤条件的整个分区 (即一组 数据分区片段) ；这些过滤条件作用于表分区键中使用的列。
+  </Step>
 
-② **粒度剪枝**：对于步骤 ① 之后剩余的数据 parts，会使用其[主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)忽略所有在逻辑上不可能匹配查询过滤条件的[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (由多行组成的块) ；这些过滤条件作用于表主键中使用的列。
+  <Step title="粒度剪枝">
+    对于分区剪枝步骤之后剩余的数据分区片段，会使用其[主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)忽略所有在逻辑上不可能匹配查询过滤条件的[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (由多行组成的块) ；这些过滤条件作用于表主键中使用的列。
+  </Step>
+</Steps>
 
-我们可以通过[查看](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)上面示例查询的物理执行计划，来观察这些数据剪枝步骤，具体可借助 [EXPLAIN](/zh/reference/statements/explain) 子句：
+我们可以通过[查看](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)上面示例查询的物理查询执行计划，来观察这些数据剪枝步骤，具体可借助 [EXPLAIN](/zh/reference/statements/explain) 子句：
 
 ```sql style="fontSize:13px"
 EXPLAIN indexes = 1
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 上面的输出显示：
 
-① 分区剪枝：上面 EXPLAIN 输出的第 7 到 18 行显示，ClickHouse 首先使用 `date` 字段的 [MinMax 索引](/zh/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)，在 436 个现有活动数据 parts 中的 1 个里，识别出 3257 个现有[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (由多行组成的块) 中的 11 个，这些粒度包含与查询 `date` 过滤器匹配的行。
+<Steps>
+  <Step title="分区剪枝">
+    上面 EXPLAIN 输出的第 7 到 18 行显示，ClickHouse 首先使用 `date` 字段的 [MinMax 索引](/zh/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)，在 436 个现有活动数据分区片段中的 1 个里，识别出 3257 个现有[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (由多行组成的块) 中的 11 个，这些粒度包含与查询 `date` 过滤器匹配的行。
+  </Step>
 
-② 粒度剪枝：上面 EXPLAIN 输出的第 19 到 24 行表明，ClickHouse 随后使用步骤 ① 中识别出的数据 parts 的[主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) (基于 `town` 字段创建) ，将粒度数量 (其中的行也可能匹配查询 `town` 过滤器) 从 11 个进一步减少到 1 个。这一点也反映在我们上文打印的该查询的 ClickHouse-client 输出中：
+  <Step title="粒度剪枝">
+    上面 EXPLAIN 输出的第 19 到 24 行表明，ClickHouse 随后使用分区剪枝步骤中识别出的数据分区片段的[主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) (基于 `town` 字段创建) ，将粒度数量 (其中的行也可能匹配查询 `town` 过滤器) 从 11 个进一步减少到 1 个。这一点也反映在我们上文打印的该查询的 ClickHouse client 输出中：
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 这意味着，ClickHouse 在 6 毫秒内扫描并处理了 1 个粒度 (一个由 [8192](/zh/reference/settings/merge-tree-settings/index-granularity#index_granularity) 行组成的块) ，以计算查询结果。
 

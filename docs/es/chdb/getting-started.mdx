@@ -213,11 +213,20 @@ from chdb import session as chs
 
 A continuación, inicializaremos una sesión.
 Si queremos que la sesión se guarde en disco, tenemos que indicar un nombre de directorio.
-Si lo dejamos en blanco, la base de datos estará en memoria y se perderá en cuanto finalicemos el proceso de Python.
+Si lo dejamos en blanco, la sesión será temporal: chDB guarda sus datos en un directorio temporal en disco y los elimina cuando se cierra la sesión, por lo que los datos no persisten.
 
 ```python
 sess = chs.Session("gettingStarted.chdb")
 ```
+
+<Note>
+  chDB ejecuta un único motor embebido por proceso, por lo que el directorio de la base de datos (su ruta) está sujeto a algunas reglas:
+
+  * **Un proceso por ruta**: un directorio de datos de chDB solo puede abrirlo un proceso del sistema operativo a la vez. Un segundo proceso que abra la misma ruta fallará hasta que se cierre el primero.
+  * **Una ruta por proceso**: mientras haya una sesión o conexión abierta, no se podrá abrir otra para una ruta *diferente*; primero cierre las que estén abiertas para evitar el error. Pueden coexistir varias sesiones o conexiones en la *misma* ruta.
+  * **Concurrencia**: las sesiones o conexiones en la misma ruta pueden ejecutar consultas simultáneamente.
+  * **Las sesiones sin ruta se comparten**: sin una ruta, las sesiones usan la base de datos `:memory:` compartida por todo el proceso (por lo que las sesiones en blanco pueden ver las tablas de las demás), y su directorio temporal solo se elimina cuando se cierra la última.
+</Note>
 
 A continuación, crearemos una base de datos:
 

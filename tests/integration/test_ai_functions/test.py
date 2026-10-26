@@ -16,11 +16,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import wait_condition
 
 MOCK_PORT = 18123
-AI_SETTINGS = {"allow_experimental_ai_functions": 1}
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node")
+instance = cluster.add_instance("node", stay_alive=True)
 
 
 def run_mock_server():
@@ -97,6 +96,43 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions', "
             f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        # Endpoint that always replies with plain text, ignoring `response_format`, as a
+        # model/gateway that doesn't support structured output would.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_mock_no_structured_output AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_no_structured_output', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        # Slow endpoints, used to observe how many requests an AI function has in flight at once.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_slow AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_hang AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/hang', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_jitter AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/jitter', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_slow AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_slow', "
             f"api_key = 'test-key'"
         )
         instance.query(
@@ -253,6 +289,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
             f"api_key = 'test-key'"
         )
+        # Endpoint that always replies HTTP 429, as a rate-limited provider would.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_rate_limited AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/rate_limited', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
         # used to test that transient network failures are retried like the url table function.
         instance.query(
@@ -300,7 +344,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
 def test_generate_content_basic(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello world', map('credentials', 'ai_mock'))",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "hello world"
 
@@ -310,7 +353,6 @@ def test_generate_content_multiple_rows(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('row1'), ('row2'), ('row3')")
     result = instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_mock')) FROM test_input ORDER BY x",
-        settings=AI_SETTINGS,
     )
     assert result.strip().split("\n") == ["row1", "row2", "row3"]
 
@@ -323,7 +365,7 @@ def test_generate_uses_text_default_credentials(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('row1'), ('row2')")
     result = instance.query(
         "SELECT aiGenerate(x) FROM test_input ORDER BY x",
-        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+        settings={"ai_function_text_default_credentials": "ai_mock"},
     )
     assert result.strip().split("\n") == ["row1", "row2"]
 
@@ -334,7 +376,6 @@ def test_generate_content_profile_events(started_cluster):
     qid = unique_query_id("gen_content_events")
     instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -352,7 +393,6 @@ def test_generate_content_null_input(started_cluster):
     )
     result = instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_mock')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert lines.count("\\N") == 2
@@ -362,7 +402,6 @@ def test_generate_content_null_input(started_cluster):
 def test_generate_content_error_throw(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_error'))",
-        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
@@ -370,7 +409,6 @@ def test_generate_content_error_throw(started_cluster):
 def test_generate_content_error_sanitizes_control_chars(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_error_control_chars'))",
-        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
     # Control characters in the provider's error message/type are replaced with spaces, so the whole
@@ -384,7 +422,6 @@ def test_generate_content_error_sanitizes_control_chars(started_cluster):
 def test_generate_content_error_nonjson_sanitized(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_error_nonjson'))",
-        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
     # A non-JSON body falls back to the truncated raw body, sanitized to a single readable line.
@@ -395,7 +432,7 @@ def test_generate_content_error_nonjson_sanitized(started_cluster):
 def test_generate_content_error_graceful(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_error'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -405,7 +442,6 @@ def test_generate_truncated_response_throw(started_cluster):
     rejected as truncated rather than silently returning the partial content."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
 
@@ -414,7 +450,7 @@ def test_generate_truncated_response_graceful(started_cluster):
     """With `ai_function_throw_on_error = 0`, a truncated response yields the column default ("")."""
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -434,7 +470,8 @@ def test_generate_truncated_response_counts_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_truncated')) FROM test_input",
         settings={
-            **AI_SETTINGS,
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_throw_on_error": 0,
             "ai_function_max_output_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -457,7 +494,6 @@ def test_generate_truncated_response_records_tokens_when_throwing(started_cluste
     qid = unique_query_id("gen_truncated_throw_events")
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
@@ -472,7 +508,6 @@ def test_generate_content_filter_response_throw(started_cluster):
     """`finish_reason="content_filter"` means the answer was withheld/filtered; reject as incomplete."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_content_filter'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
 
@@ -480,7 +515,7 @@ def test_generate_content_filter_response_throw(started_cluster):
 def test_generate_content_filter_response_graceful(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_content_filter'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -490,7 +525,6 @@ def test_generate_tool_calls_response_throw(started_cluster):
     HTTP 200 carries no final answer. It must be rejected, not returned as empty output."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_tool_calls'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
     assert "tool_calls" in error
@@ -501,7 +535,7 @@ def test_generate_tool_calls_response_throw(started_cluster):
 def test_generate_tool_calls_response_graceful(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_tool_calls'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -511,7 +545,6 @@ def test_generate_anthropic_pause_turn_throw(started_cluster):
     "HTTP 200 but not a final answer" case as OpenAI's `tool_calls`."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_pause_turn'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
     assert "pause_turn" in error
@@ -524,7 +557,6 @@ def test_generate_refusal_response_throw(started_cluster):
     complete empty answer, so the refusal field must be rejected on its own."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_refusal'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
 
@@ -532,7 +564,7 @@ def test_generate_refusal_response_throw(started_cluster):
 def test_generate_refusal_response_graceful(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_refusal'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -542,7 +574,6 @@ def test_generate_unknown_finish_reason_accepted(started_cluster):
     truncation (regression guard against rejecting any non-"stop" value)."""
     result = instance.query(
         "SELECT aiGenerate('hello unknown', map('credentials', 'ai_unknown_reason'))",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "hello unknown"
 
@@ -552,7 +583,6 @@ def test_generate_anthropic_stop_sequence_accepted(started_cluster):
     truncated (this is the exact case the string-comparison catch-all got wrong)."""
     result = instance.query(
         "SELECT aiGenerate('hello anthropic', map('credentials', 'ai_anthropic_stop_sequence'))",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "hello anthropic"
 
@@ -561,7 +591,6 @@ def test_generate_anthropic_max_tokens_throw(started_cluster):
     """Anthropic's `stop_reason="max_tokens"` is truncation and must be rejected."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_max_tokens'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
 
@@ -571,7 +600,6 @@ def test_generate_anthropic_context_window_hint(started_cluster):
     space and makes it worse, so the hint must point at reducing the input instead."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_context_window'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
     assert "model_context_window_exceeded" in error
@@ -586,7 +614,6 @@ def test_generate_anthropic_max_tokens_hint(started_cluster):
     """The output-cap case keeps the max_tokens advice, which is correct only for that case."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_max_tokens'))",
-        settings=AI_SETTINGS,
     )
     assert "output token limit" in error
     assert "Increase max_tokens" in error
@@ -600,7 +627,6 @@ def test_classify_anthropic_structured_output(started_cluster):
     result = instance.query(
         "SELECT aiClassify('I love it', ['positive', 'negative', 'neutral'], "
         "map('credentials', 'ai_anthropic_tool_use'))",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "positive"
 
@@ -612,7 +638,6 @@ def test_generate_anthropic_tool_use_rejected(started_cluster):
     (test_classify_anthropic_structured_output)."""
     error = instance.query_and_get_error(
         "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_tool_use'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
 
@@ -630,7 +655,6 @@ def test_generate_without_api_key(started_cluster):
     provider sends no `Authorization` header (rather than an empty/dummy token)."""
     result = instance.query(
         "SELECT aiGenerate('no key here', map('credentials', 'ai_no_key'))",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "no key here"
     assert "authorization" not in last_request()["headers"]
@@ -640,7 +664,6 @@ def test_generate_with_api_key_sends_auth_header(started_cluster):
     """A keyed collection forwards the key as a `Bearer` `Authorization` header."""
     result = instance.query(
         "SELECT aiGenerate('with key', map('credentials', 'ai_mock'))",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "with key"
     assert last_request()["headers"].get("authorization") == "Bearer test-key"
@@ -651,7 +674,7 @@ def test_generate_model_override_with_default_credentials(started_cluster):
     collection itself is selected via `ai_function_text_default_credentials` rather than the map."""
     instance.query(
         "SELECT aiGenerate('hi', map('model', 'override-model'))",
-        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+        settings={"ai_function_text_default_credentials": "ai_mock"},
     )
     assert json.loads(last_request()["body"])["model"] == "override-model"
 
@@ -661,7 +684,7 @@ def test_embed_model_override_with_default_credentials(started_cluster):
     request, with the collection selected via `ai_function_embedding_default_credentials`."""
     instance.query(
         "SELECT aiEmbed('hi', 'override-embed-model')",
-        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+        settings={"ai_function_embedding_default_credentials": "ai_embed"},
     )
     assert json.loads(last_request()["body"])["model"] == "override-embed-model"
 
@@ -672,7 +695,7 @@ def test_generate_empty_model_override_with_default_credentials(started_cluster)
     pick one), even though the collection selected via the default setting defines `test-model`."""
     instance.query(
         "SELECT aiGenerate('hi', map('model', ''))",
-        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+        settings={"ai_function_text_default_credentials": "ai_mock"},
     )
     assert json.loads(last_request()["body"])["model"] == ""
 
@@ -704,7 +727,7 @@ def test_generate_all_map_params_override_setting(started_cluster):
     `temperature` / `system_prompt` all take effect."""
     instance.query(
         _ALL_PARAMS_QUERY,
-        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_no_key"},
+        settings={"ai_function_text_default_credentials": "ai_no_key"},
     )
     _assert_all_params_applied()
 
@@ -712,7 +735,7 @@ def test_generate_all_map_params_override_setting(started_cluster):
 def test_generate_all_map_params_without_setting(started_cluster):
     """The same map, with no default-credentials setting at all: the map supplies everything,
     including `credentials`, and all keys take effect."""
-    instance.query(_ALL_PARAMS_QUERY, settings=AI_SETTINGS)
+    instance.query(_ALL_PARAMS_QUERY)
     _assert_all_params_applied()
 
 
@@ -728,7 +751,6 @@ def test_classify_basic(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('I love this product!')")
     result = instance.query(
         "SELECT aiClassify(x, ['positive', 'negative', 'neutral'], map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     # Mock returns first enum value; postProcessResponse extracts "category" from JSON
     assert result.strip() == "positive"
@@ -741,7 +763,6 @@ def test_classify_multiple_rows(started_cluster):
     )
     result = instance.query(
         "SELECT aiClassify(x, ['positive', 'negative', 'neutral'], map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     # All rows get the first enum value from the mock
@@ -755,7 +776,6 @@ def test_classify_profile_events(started_cluster):
     qid = unique_query_id("classify_events")
     instance.query(
         "SELECT aiClassify(x, ['cat_a', 'cat_b'], map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -768,7 +788,6 @@ def test_classify_null_input(started_cluster):
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
     result = instance.query(
         "SELECT aiClassify(x, ['a', 'b'], map('credentials', 'ai_mock')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert len(lines) == 2
@@ -782,13 +801,12 @@ def test_classify_null_input(started_cluster):
 
 
 def test_filter_basic(started_cluster):
-    """aiFilter asks the model for a bare true/false response.
+    """aiFilter constrains the model to a JSON-schema boolean `match` field.
     The mock returns true for ordinary messages."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
     result = instance.query(
         "SELECT aiFilter(x, 'the customer is complaining about shipping', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "1"
 
@@ -798,7 +816,6 @@ def test_filter_negative(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('does not match anything')")
     result = instance.query(
         "SELECT aiFilter(x, 'angry about shipping', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "0"
 
@@ -810,10 +827,57 @@ def test_filter_where(started_cluster):
     )
     result = instance.query(
         "SELECT x FROM test_input WHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) ORDER BY x",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert lines == ["also good", "great product"]
+
+
+PREWHERE_SETTINGS = {
+    "enable_analyzer": 1,
+    "optimize_move_to_prewhere": 1,
+    "move_all_conditions_to_prewhere": 1,
+    "allow_reorder_prewhere_conditions": 1,
+}
+
+
+def count_filter_calls(prefix, where):
+    """Runs `SELECT count()` over 16 rows, half of them with `flag = 1`, and returns the number of
+    rows and of AI requests."""
+    instance.query(
+        "CREATE TABLE IF NOT EXISTS prewhere_ai (flag UInt8, text String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    instance.query("TRUNCATE TABLE prewhere_ai")
+    instance.query(
+        "INSERT INTO prewhere_ai SELECT number % 2, 'row ' || toString(number) FROM numbers(16)"
+    )
+    qid = unique_query_id(prefix)
+    rows = instance.query(
+        f"SELECT count() FROM prewhere_ai WHERE {where}",
+        query_id=qid,
+        settings=PREWHERE_SETTINGS,
+    )
+    return int(rows), int(get_profile_events(qid)["api_calls"])
+
+
+def test_filter_prewhere_after_cheap_condition(started_cluster):
+    """The AI condition is moved to PREWHERE after `flag = 1`, so only the rows passing it are sent."""
+    rows, api_calls = count_filter_calls(
+        "filter_prewhere_after_cheap",
+        "aiFilter(text, 'matches', map('credentials', 'ai_mock')) AND flag = 1",
+    )
+    assert rows == 8
+    assert api_calls == 8
+
+
+def test_filter_prewhere_behind_condition_left_in_where(started_cluster):
+    """`length(text) = flag` uses every queried column, so it stays in WHERE. The AI condition
+    stays there too and is evaluated only for the rows passing it, which are none."""
+    rows, api_calls = count_filter_calls(
+        "filter_prewhere_behind_where",
+        "length(text) = flag AND aiFilter(text, 'matches', map('credentials', 'ai_mock'))",
+    )
+    assert rows == 0
+    assert api_calls == 0
 
 
 def test_filter_truncated_response_throw(started_cluster):
@@ -824,7 +888,6 @@ def test_filter_truncated_response_throw(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('some text')")
     error = instance.query_and_get_error(
         "SELECT aiFilter(x, 'is positive', map('credentials', 'ai_truncated')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
 
@@ -836,18 +899,17 @@ def test_filter_truncated_response_graceful(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('some text')")
     result = instance.query(
         "SELECT x FROM test_input WHERE aiFilter(x, 'is positive', map('credentials', 'ai_truncated'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
 
-def test_filter_no_response_format(started_cluster):
-    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
+def test_filter_response_format(started_cluster):
+    """aiFilter sends a JSON-schema response_format constraining the model to a boolean `match` field."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello')")
     instance.query(
         "SELECT aiFilter(x, 'is a greeting', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     last = json.loads(
         instance.exec_in_container(
@@ -855,9 +917,41 @@ def test_filter_no_response_format(started_cluster):
         )
     )
     body = json.loads(last["body"])
-    assert "response_format" not in body
+    assert body["response_format"]["type"] == "json_schema"
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["match"]["type"] == "boolean"
+    assert schema["required"] == ["match"]
     system = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "lowercase text true or false" in system.lower()
+    assert "boolean text filter" in system.lower()
+
+
+def test_filter_no_structured_output(started_cluster):
+    """aiFilter still sends `response_format`, but a provider that ignores it and replies with plain
+    text must still be handled correctly by the fallback in `FunctionAiFilter::postProcessResponse`:
+    a bare `true` matches, `false` doesn't, and an unrecognized reply (neither) fails closed to no
+    match rather than matching."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('gibberish reply')"
+    )
+    result = instance.query(
+        "SELECT x, aiFilter(x, 'positive feedback', map('credentials', 'ai_mock_no_structured_output')) "
+        "FROM test_input ORDER BY x",
+    )
+    lines = result.strip().split("\n")
+    assert lines == [
+        "does not match\t0",
+        "gibberish reply\t0",
+        "great product\t1",
+    ]
+
+    last = json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
+        )
+    )
+    body = json.loads(last["body"])
+    assert body["response_format"]["type"] == "json_schema"
 
 
 def test_filter_null_input(started_cluster):
@@ -865,7 +959,6 @@ def test_filter_null_input(started_cluster):
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
     result = instance.query(
         "SELECT aiFilter(x, 'mentions a bug', map('credentials', 'ai_mock')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert len(lines) == 2
@@ -879,7 +972,6 @@ def test_filter_profile_events(started_cluster):
     qid = unique_query_id("filter_events")
     instance.query(
         "SELECT aiFilter(x, 'is alphabetic', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -898,7 +990,6 @@ def test_filter_prewhere(started_cluster):
         "SELECT x FROM test_filter_mt "
         "PREWHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) "
         "ORDER BY x",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert result.strip().split("\n") == ["also good", "great product"]
@@ -933,7 +1024,6 @@ def test_filter_join_on(started_cluster):
             AND l.id = r.id
         ORDER BY l.x, r.tag
         """,
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert result.strip().split("\n") == [
@@ -971,7 +1061,6 @@ def test_filter_join_on_per_pair(started_cluster):
             )
         ORDER BY l.x, r.tag
         """,
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     # Mock returns false when the user message contains "does not match".
@@ -994,7 +1083,6 @@ def test_extract_simple_instruction(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('The price is $42.99')")
     result = instance.query(
         "SELECT aiExtract(x, 'the price', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     # Mock returns {"result": "<user_message>"}, postProcess extracts the value
     assert result.strip() == "The price is $42.99"
@@ -1007,7 +1095,6 @@ def test_extract_json_schema(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('John is 30 years old')")
     result = instance.query(
         """SELECT aiExtract(x, '{"name": "person name", "age": "person age"}', map('credentials', 'ai_mock')) FROM test_input""",
-        settings=AI_SETTINGS,
     )
     # Mock returns {"name": "<user_msg>", "age": "<user_msg>"}
     # postProcessResponse returns raw JSON since there's no single "result" field
@@ -1022,7 +1109,6 @@ def test_extract_multiple_rows(started_cluster):
     qid = unique_query_id("extract_events")
     instance.query(
         "SELECT aiExtract(x, 'main topic', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -1035,7 +1121,6 @@ def test_extract_null_input(started_cluster):
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('some text')")
     result = instance.query(
         "SELECT aiExtract(x, 'key info', map('credentials', 'ai_mock')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert "\\N" in lines
@@ -1053,7 +1138,6 @@ def test_translate_basic(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('Hello world')")
     result = instance.query(
         "SELECT aiTranslate(x, 'French', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "Hello world"
 
@@ -1063,7 +1147,6 @@ def test_translate_multiple_rows(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('one'), ('two'), ('three')")
     result = instance.query(
         "SELECT aiTranslate(x, 'Spanish', map('credentials', 'ai_mock')) FROM test_input ORDER BY x",
-        settings=AI_SETTINGS,
     )
     assert result.strip().split("\n") == ["one", "three", "two"]
 
@@ -1073,7 +1156,6 @@ def test_translate_with_instructions(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('Hello')")
     result = instance.query(
         "SELECT aiTranslate(x, 'German', map('credentials', 'ai_mock', 'instructions', 'Use formal tone')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "Hello"
 
@@ -1094,7 +1176,6 @@ def test_translate_profile_events(started_cluster):
     qid = unique_query_id("translate_events")
     instance.query(
         "SELECT aiTranslate(x, 'Japanese', map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -1107,7 +1188,6 @@ def test_translate_null_input(started_cluster):
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('hello')")
     result = instance.query(
         "SELECT aiTranslate(x, 'French', map('credentials', 'ai_mock')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert "\\N" in lines
@@ -1127,7 +1207,6 @@ def test_redact_basic(started_cluster):
     )
     result = instance.query(
         "SELECT aiRedact(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "customer John Doe, john@doe.org"
     # The category list is forwarded to the provider in the system prompt.
@@ -1141,7 +1220,6 @@ def test_redact_default_categories_empty_array(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('some text with pii')")
     result = instance.query(
         "SELECT aiRedact(x, [], map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     assert result.strip() == "some text with pii"
     # The mock just echoes the input, so check the documented default category set is what
@@ -1157,7 +1235,6 @@ def test_redact_replacement_forwarded(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('redact me')")
     instance.query(
         "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock', 'replacement', '<<HIDDEN>>')) FROM test_input",
-        settings=AI_SETTINGS,
     )
     body = json.loads(last_request()["body"])
     assert body["messages"][0]["role"] == "system"
@@ -1170,7 +1247,6 @@ def test_redact_multiple_rows(started_cluster):
     qid = unique_query_id("redact_events")
     instance.query(
         "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -1183,7 +1259,6 @@ def test_redact_null_input(started_cluster):
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
     result = instance.query(
         "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
     assert len(lines) == 2
@@ -1195,7 +1270,7 @@ def test_redact_error_graceful(started_cluster):
     """With ai_function_throw_on_error = 0, a provider error yields an empty string."""
     result = instance.query(
         "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -1204,7 +1279,6 @@ def test_redact_error_throw(started_cluster):
     """By default (`ai_function_throw_on_error = 1`) a provider error propagates."""
     error = instance.query_and_get_error(
         "SELECT aiRedact('secret', ['email'], map('credentials', 'ai_error'))",
-        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
@@ -1215,7 +1289,6 @@ def test_redact_truncated_response_throw(started_cluster):
     would leak unredacted content."""
     error = instance.query_and_get_error(
         "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_truncated'))",
-        settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
 
@@ -1225,7 +1298,7 @@ def test_redact_truncated_response_graceful(started_cluster):
     ("") instead of partially redacted text."""
     result = instance.query(
         "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_truncated'))",
-        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+        settings={"ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
 
@@ -1247,7 +1320,6 @@ def test_embed_basic(started_cluster):
     """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
     result = instance.query(
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
     assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
@@ -1260,7 +1332,6 @@ def test_embed_rejects_model_in_named_collection(started_cluster):
     silently ignored."""
     error = instance.query_and_get_error(
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_mock'))",
-        settings=AI_SETTINGS,
     )
     assert "BAD_ARGUMENTS" in error
     assert "defines 'model'" in error
@@ -1272,7 +1343,7 @@ def test_embed_uses_embedding_default_credentials(started_cluster):
     embedding default is applied on the request path, not only for the zero-row fast path."""
     result = instance.query(
         "SELECT aiEmbed('hello', 'test-embed-model')",
-        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+        settings={"ai_function_embedding_default_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
     assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
@@ -1285,7 +1356,6 @@ def test_embed_multiple_rows(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
-        settings=AI_SETTINGS,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
     assert len(rows) == 3
@@ -1298,7 +1368,6 @@ def test_embed_with_dimensions(started_cluster):
     """The `dimensions` argument is forwarded to the provider and honored in the response."""
     result = instance.query(
         "SELECT aiEmbed('hello world', 'test-embed-model', map('credentials', 'ai_embed', 'dimensions', '16'))",
-        settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
     assert len(vec) == 16
@@ -1313,7 +1382,6 @@ def test_embed_null_and_empty_input(started_cluster):
     qid = unique_query_id("embed_null_empty")
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
@@ -1339,7 +1407,6 @@ def test_embed_profile_events_token_accounting(started_cluster):
     qid = unique_query_id("embed_tokens")
     instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -1359,7 +1426,7 @@ def test_embed_batching(started_cluster):
     qid = unique_query_id("embed_batch")
     instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
+        settings={"ai_function_embedding_max_batch_size": 2},
         query_id=qid,
     )
     events = get_profile_events(qid)
@@ -1373,7 +1440,6 @@ def test_embed_error_throw(started_cluster):
     """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
     error = instance.query_and_get_error(
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
@@ -1392,7 +1458,8 @@ def test_embed_quota_throw_records_input_tokens(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS,
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1416,7 +1483,8 @@ def test_embed_quota_throw_records_rows_processed(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS,
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1435,7 +1503,7 @@ def test_embed_malformed_response_records_input_tokens(started_cluster):
     qid = unique_query_id("embed_malformed_tokens")
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -1451,7 +1519,6 @@ def test_generate_malformed_response_records_input_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hi', map('credentials', 'ai_no_choices'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -1472,7 +1539,8 @@ def test_generate_malformed_response_counts_tokens_against_quota(started_cluster
     instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_no_choices')) FROM test_input",
         settings={
-            **AI_SETTINGS,
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_throw_on_error": 0,
             "ai_function_throw_on_quota_exceeded": 0,
             "ai_function_max_retries": 0,
@@ -1493,7 +1561,6 @@ def test_anthropic_malformed_response_records_input_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hi', map('credentials', 'ai_anthropic_no_content'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -1514,7 +1581,8 @@ def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
         "SELECT aiSimilarity(p.1, p.2, 'test-embed-model', map('credentials', 'ai_embed')) "
         "FROM (SELECT arrayJoin([('a', 'b'), ('c', 'd')]) AS p)",
         settings={
-            **AI_SETTINGS,
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 2,
             "ai_function_max_input_tokens_per_query": 2,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1535,7 +1603,7 @@ def test_embed_error_throw_records_api_calls(started_cluster):
     qid = unique_query_id("embed_error_throw_events")
     error = instance.query_and_get_error(
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -1549,7 +1617,7 @@ def test_similarity_error_throw_records_api_calls(started_cluster):
     qid = unique_query_id("similarity_error_throw_events")
     instance.query_and_get_error(
         "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
         query_id=qid,
     )
     events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
@@ -1563,7 +1631,6 @@ def test_embed_error_graceful(started_cluster):
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -1576,7 +1643,7 @@ def test_embed_duplicate_index_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
     assert "duplicates" in error or "duplicate" in error.lower()
@@ -1586,7 +1653,7 @@ def test_embed_wrong_count_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
-        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        settings={"ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
 
@@ -1597,7 +1664,6 @@ def test_embed_empty_input_table(started_cluster):
     qid = unique_query_id("embed_zero_rows")
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert result.strip() == ""
@@ -1618,7 +1684,8 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            **AI_SETTINGS,
+            # One request at a time, so the token quota is seen before the next request.
+            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -1658,7 +1725,6 @@ def test_generate_retries_on_network_error(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('recover me', map('credentials', 'ai_flaky'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 5,
         },
         query_id=qid,
@@ -1670,6 +1736,62 @@ def test_generate_retries_on_network_error(started_cluster):
     assert int(events["rows_processed"]) == 1
 
 
+def _request_outcome_events(query_id):
+    instance.query("SYSTEM FLUSH LOGS")
+    return [
+        int(v)
+        for v in instance.query(
+            f"SELECT ProfileEvents['AIAPICallsRetried'], ProfileEvents['AIAPICallsFailed'], "
+            f"ProfileEvents['AIAPICallsThrottled'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).split()
+    ]
+
+
+def _server_event(name):
+    return int(instance.query(f"SELECT sum(value) FROM system.events WHERE event = '{name}'").strip() or 0)
+
+
+def test_request_outcome_profile_events(started_cluster):
+    """`AIAPICallsRetried`, `AIAPICallsFailed` and `AIAPICallsThrottled` count request outcomes per query
+    and for the whole server, including failures swallowed by `ai_function_throw_on_error = 0`."""
+    settings = {"ai_function_throw_on_error": 0, "ai_function_retry_initial_delay_ms": 1}
+
+    # Two dropped connections, then success: two retries, no failure.
+    set_flaky(2)
+    qid = unique_query_id("outcome_recovered")
+    instance.query(
+        "SELECT aiGenerate('x', map('credentials', 'ai_flaky')) FORMAT Null",
+        settings={**settings, "ai_function_max_retries": 5},
+        query_id=qid,
+    )
+    assert _request_outcome_events(qid) == [2, 0, 0]
+
+    # Every attempt dropped: one retry, then the request fails and the row gets a default value.
+    set_flaky(10)
+    try:
+        qid = unique_query_id("outcome_failed")
+        instance.query(
+            "SELECT aiGenerate('x', map('credentials', 'ai_flaky')) FORMAT Null",
+            settings={**settings, "ai_function_max_retries": 1},
+            query_id=qid,
+        )
+    finally:
+        set_flaky(0)
+    assert _request_outcome_events(qid) == [1, 1, 0]
+
+    # HTTP 429 on both attempts: both are throttled, one is retried, the request fails.
+    throttled_before = _server_event("AIAPICallsThrottled")
+    qid = unique_query_id("outcome_throttled")
+    instance.query(
+        "SELECT aiGenerate('x', map('credentials', 'ai_rate_limited')) FORMAT Null",
+        settings={**settings, "ai_function_max_retries": 1},
+        query_id=qid,
+    )
+    assert _request_outcome_events(qid) == [1, 1, 2]
+    assert _server_event("AIAPICallsThrottled") - throttled_before == 2
+
+
 def test_generate_network_error_not_retried_when_disabled(started_cluster):
     """With `ai_function_max_retries = 0`, a network failure is surfaced rather than retried."""
     set_flaky(10)
@@ -1677,7 +1799,6 @@ def test_generate_network_error_not_retried_when_disabled(started_cluster):
         error = instance.query_and_get_error(
             "SELECT aiGenerate('no retry', map('credentials', 'ai_flaky'))",
             settings={
-                **AI_SETTINGS,
                 "ai_function_max_retries": 0,
             },
         )
@@ -1693,7 +1814,6 @@ def test_embed_retries_on_network_error(started_cluster):
     result = instance.query(
         "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_flaky'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 5,
         },
         query_id=qid,
@@ -1720,7 +1840,6 @@ def test_generate_deterministic_http_error_not_retried(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('bad request', map('credentials', 'ai_bad_request'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 5,
             "ai_function_throw_on_error": 0,
         },
@@ -1740,7 +1859,6 @@ def test_generate_deterministic_http_error_throws(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiGenerate('bad request', map('credentials', 'ai_bad_request'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 5,
         },
     )
@@ -1754,7 +1872,6 @@ def test_generate_server_error_is_retried(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('server error', map('credentials', 'ai_error'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 2,
             "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
             "ai_function_throw_on_error": 0,
@@ -1782,7 +1899,6 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('server error', map('credentials', 'ai_error'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 5,
             "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
             "ai_function_max_api_calls_per_query": 1,
@@ -1822,8 +1938,77 @@ def test_function_name_header(started_cluster):
         ),
     ]
     for name, query in cases:
-        instance.query(query, settings=AI_SETTINGS)
+        instance.query(query)
         assert last_request()["headers"].get("x-clickhouse-ai-function") == name
+
+
+def test_query_id_header(started_cluster):
+    """The OpenAI provider sends the `query_id` of the query that makes the request as the
+    `X-ClickHouse-Query-Id` header and its `initial_query_id` as the `X-ClickHouse-Initial-Query-Id` header:
+    on a remote shard the first is the shard's own query id, the second is the initiator's one.
+    Covers the chat and the embedding paths."""
+    local_cases = [
+        "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))",
+        "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+    ]
+    for i, query in enumerate(local_cases):
+        qid = unique_query_id(f"query_id_header_{i}")
+        instance.query(query, query_id=qid)
+        headers = last_request()["headers"]
+        assert headers.get("x-clickhouse-query-id") == qid
+        assert headers.get("x-clickhouse-initial-query-id") == qid
+
+    remote_cases = [
+        "SELECT aiGenerate(toString(dummy), map('credentials', 'ai_mock')) FROM remote('127.0.0.2', system.one)",
+        "SELECT aiEmbed(toString(dummy), 'test-embed-model', map('credentials', 'ai_embed')) FROM remote('127.0.0.2', system.one)",
+    ]
+    for i, query in enumerate(remote_cases):
+        qid = unique_query_id(f"query_id_header_remote_{i}")
+        instance.query(query, query_id=qid)
+        headers = last_request()["headers"]
+        sent_query_id = headers.get("x-clickhouse-query-id")
+        assert sent_query_id and sent_query_id != qid
+        assert headers.get("x-clickhouse-initial-query-id") == qid
+        instance.query("SYSTEM FLUSH LOGS query_log")
+        assert (
+            instance.query(
+                f"SELECT initial_query_id FROM system.query_log WHERE query_id = '{sent_query_id}' AND NOT is_initial_query AND type = 'QueryFinish'"
+            ).strip()
+            == qid
+        )
+
+    # A background mutation sends the mutation task's own `current_query_id` and has no `initial_query_id`.
+    instance.query("DROP TABLE IF EXISTS query_id_header SYNC")
+    instance.query("CREATE TABLE query_id_header (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
+    instance.query("INSERT INTO query_id_header VALUES (1, 'a')")
+    instance.query(
+        "ALTER TABLE query_id_header UPDATE s = aiGenerate('hi', map('credentials', 'ai_mock')) WHERE 1",
+        settings={"mutations_sync": 2, "allow_nondeterministic_mutations": 1},
+    )
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'query_id_header'").strip()
+    headers = last_request()["headers"]
+    assert headers.get("x-clickhouse-query-id") == f"{table_uuid}::all_1_1_0_2"
+    assert "x-clickhouse-initial-query-id" not in headers
+    instance.query("DROP TABLE query_id_header SYNC")
+
+
+def test_query_id_header_control_characters(started_cluster):
+    """A query id from the native protocol can contain control characters. They are replaced with spaces
+    in the `X-ClickHouse-Query-Id` and `X-ClickHouse-Initial-Query-Id` headers, so no extra header is injected."""
+    suffix = uuid.uuid4().hex[:8]
+    qid = f"query_id_crlf_{suffix}\r\nX-Injected: 1"
+    instance.query("SELECT aiGenerate('hi', map('credentials', 'ai_mock'))", query_id=qid)
+    instance.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.query_log WHERE query_id = 'query_id_crlf_{suffix}\\r\\nX-Injected: 1' AND type = 'QueryFinish'"
+        ).strip()
+        == "1"
+    )
+    headers = last_request()["headers"]
+    assert headers.get("x-clickhouse-query-id") == f"query_id_crlf_{suffix}  X-Injected: 1"
+    assert headers.get("x-clickhouse-initial-query-id") == f"query_id_crlf_{suffix}  X-Injected: 1"
+    assert "x-injected" not in headers
 
 
 def test_embed_retry_respects_api_call_quota(started_cluster):
@@ -1833,7 +2018,6 @@ def test_embed_retry_respects_api_call_quota(started_cluster):
     result = instance.query(
         "SELECT aiEmbed('server error', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_max_retries": 5,
             "ai_function_retry_initial_delay_ms": 1,  # keep the test fast
             "ai_function_max_api_calls_per_query": 1,
@@ -1857,7 +2041,6 @@ def test_embed_const_nullable_operand(started_cluster):
     qid = unique_query_id("embed_const_null")
     null_result = instance.query(
         "SELECT aiEmbed(CAST(NULL AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert parse_embedding(null_result) == []
@@ -1865,7 +2048,6 @@ def test_embed_const_nullable_operand(started_cluster):
     assert int(get_profile_events(qid)["api_calls"]) == 0
     value_result = instance.query(
         "SELECT aiEmbed(CAST('cat' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
     )
     assert len(parse_embedding(value_result)) > 0
 
@@ -1907,7 +2089,6 @@ def test_similarity_identical_is_one(started_cluster):
     qid = unique_query_id("sim_identical")
     result = instance.query(
         "SELECT aiSimilarity('hello', 'hello', 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert parse_nullable_float(result) == pytest.approx(1.0, abs=1e-6)
@@ -1922,7 +2103,6 @@ def test_similarity_matches_cosine_formula(started_cluster):
     qid = unique_query_id("sim_formula")
     result = instance.query(
         "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     score = parse_nullable_float(result)
@@ -1937,7 +2117,7 @@ def test_similarity_uses_embedding_default_credentials(started_cluster):
     """With no `credentials` in the call, the embedding default-credentials setting is used end-to-end."""
     result = instance.query(
         "SELECT aiSimilarity('hello', 'hello', 'test-embed-model')",
-        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+        settings={"ai_function_embedding_default_credentials": "ai_embed"},
     )
     assert parse_nullable_float(result) == pytest.approx(1.0, abs=1e-6)
 
@@ -1950,7 +2130,6 @@ def test_similarity_rows_processed_is_row_level(started_cluster):
     qid = unique_query_id("sim_rows_processed")
     result = instance.query(
         "SELECT aiSimilarity(x, 'q', 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
@@ -1969,7 +2148,6 @@ def test_similarity_null_and_empty_operands(started_cluster):
     qid = unique_query_id("sim_null_empty")
     result = instance.query(
         "SELECT aiSimilarity(x, 'hi', 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
@@ -1987,7 +2165,6 @@ def test_similarity_with_dimensions(started_cluster):
     """`dimensions` is forwarded to the provider; the score is still computed over the larger vectors."""
     result = instance.query(
         "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed', 'dimensions', '16'))",
-        settings=AI_SETTINGS,
     )
     score = parse_nullable_float(result)
     assert score == pytest.approx(expected_similarity("cat", "kitten", dim=16), abs=1e-4)
@@ -2000,7 +2177,6 @@ def test_similarity_error_graceful(started_cluster):
     result = instance.query(
         "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings={
-            **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
@@ -2016,7 +2192,6 @@ def test_similarity_error_throw(started_cluster):
     """By default, a provider embedding error propagates."""
     error = instance.query_and_get_error(
         "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
-        settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
@@ -2030,7 +2205,6 @@ def test_similarity_null_operand_skips_embedding(started_cluster):
     qid = unique_query_id("sim_null_skip")
     result = instance.query(
         "SELECT aiSimilarity(x, 'server error', 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input_nullable",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert parse_nullable_float(result) is None
@@ -2046,7 +2220,6 @@ def test_similarity_empty_input_table(started_cluster):
     qid = unique_query_id("sim_zero_rows")
     result = instance.query(
         "SELECT aiSimilarity(x, x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert result.strip() == ""
@@ -2074,7 +2247,7 @@ def test_similarity_pairs_never_cross_rows(started_cluster):
         "SELECT aiSimilarity(a, b, 'test-embed-model', map('credentials', 'ai_embed')) "
         "FROM test_input_pairs ORDER BY id",
         # 3 rows embed 2 operands each; a batch of 3 splits row 3's operands across two requests.
-        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 3},
+        settings={"ai_function_embedding_max_batch_size": 3},
         query_id=qid,
     )
     scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
@@ -2106,7 +2279,6 @@ def test_similarity_const_nullable_operand(started_cluster):
     qid = unique_query_id("sim_const_null")
     null_result = instance.query(
         "SELECT aiSimilarity(CAST(NULL AS Nullable(String)), 'hi', 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
         query_id=qid,
     )
     assert parse_nullable_float(null_result) is None
@@ -2114,7 +2286,6 @@ def test_similarity_const_nullable_operand(started_cluster):
     assert int(get_profile_events(qid)["api_calls"]) == 0
     value_result = instance.query(
         "SELECT aiSimilarity(CAST('cat' AS Nullable(String)), CAST('kitten' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
-        settings=AI_SETTINGS,
     )
     assert parse_nullable_float(value_result) == pytest.approx(expected_similarity("cat", "kitten"), abs=1e-4)
 
@@ -2163,9 +2334,7 @@ def call_count_tables(started_cluster):
 
 def run_and_count_calls(sql, prefix, extra_settings=None):
     """Run `sql` and return the number of provider requests it issued."""
-    settings = dict(AI_SETTINGS)
-    settings["max_block_size"] = LAZY_BLOCK
-    settings["max_threads"] = 1
+    settings = {"max_block_size": LAZY_BLOCK, "max_threads": 1}
     # `preferred_block_size_bytes` can split a block below `max_block_size` on its own.
     settings["preferred_block_size_bytes"] = 0
     if extra_settings:
@@ -2308,7 +2477,6 @@ def test_api_call_quota_is_per_query(started_cluster):
         instance.query(
             f"SELECT {CHAT_CALL} FROM quota_parts FORMAT Null",
             settings={
-                **AI_SETTINGS,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_max_api_calls_per_query": limit,
                 "ai_function_throw_on_quota_exceeded": 0,
@@ -2334,7 +2502,6 @@ def test_api_call_quota_throws_per_query(started_cluster):
         error = instance.query_and_get_error(
             f"SELECT {CHAT_CALL} FROM quota_throw FORMAT Null",
             settings={
-                **AI_SETTINGS,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_max_api_calls_per_query": 10,
                 "ai_function_throw_on_quota_exceeded": 1,
@@ -2357,7 +2524,8 @@ def test_input_token_quota_is_per_query(started_cluster):
         instance.query(
             f"SELECT {CHAT_CALL} FROM quota_tokens FORMAT Null",
             settings={
-                **AI_SETTINGS,
+                # One request at a time, so the token quota is seen before the next request.
+                "ai_function_max_concurrent_requests_per_thread": 1,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_max_input_tokens_per_query": limit,
                 "ai_function_throw_on_quota_exceeded": 0,
@@ -2391,7 +2559,6 @@ def test_api_call_quota_holds_under_concurrency(started_cluster):
         instance.query(
             f"SELECT {CHAT_CALL} FROM quota_concurrent FORMAT Null",
             settings={
-                **AI_SETTINGS,
                 "max_block_size": 8,
                 "max_threads": 8,
                 "ai_function_max_api_calls_per_query": limit,
@@ -2430,7 +2597,6 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
             f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
             "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
             settings={
-                **AI_SETTINGS,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_max_api_calls_per_query": 20,
                 "ai_function_throw_on_quota_exceeded": 0,
@@ -2439,15 +2605,14 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
         )
         outer_wins = int(get_profile_events(qid)["api_calls"])
 
-        # The quota is set only in the subquery; the outer query leaves it at the default (far
-        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # The quota is set only in the subquery; the outer query leaves it at the default (0 -
+        # no limit). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
         # a quota set only in a subquery has no effect.
         qid = unique_query_id("quota_levels_subquery_only")
         instance.query(
             f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
             "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
             settings={
-                **AI_SETTINGS,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_throw_on_quota_exceeded": 0,
             },
@@ -2464,3 +2629,305 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
     assert subquery_only == 64, (
         f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
+
+
+SLOW_CHAT_CALL = "aiClassify(toString(number), ['positive','negative'], map('credentials', 'ai_slow'))"
+SLOW_EMBED_CALL = "aiEmbed(toString(number), 'test-model', map('credentials', 'ai_embed_slow'))"
+
+
+def _concurrency_stats():
+    return json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/concurrency"]
+        )
+    )
+
+
+def _reset_concurrency():
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/reset-concurrency"]
+    )
+
+
+def _observe_concurrency(call, concurrency, rows, expected_requests, extra_settings=None):
+    """Run `call` over `rows` rows at the given `ai_function_max_concurrent_requests_per_thread` and return
+    the high-water mark of requests the mock saw in flight at the same time."""
+    _reset_concurrency()
+    qid = unique_query_id(f"ai_concurrency_{concurrency}")
+    instance.query(
+        f"SELECT {call} FROM numbers({rows}) FORMAT Null",
+        settings={
+            "ai_function_max_concurrent_requests_per_thread": concurrency,
+            **(extra_settings or {}),
+        },
+        query_id=qid,
+    )
+    stats = _concurrency_stats()
+    assert stats["requests"] == expected_requests, (
+        f"expected {expected_requests} requests, got {stats['requests']} at "
+        f"ai_function_max_concurrent_requests_per_thread={concurrency}"
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == expected_requests
+    return stats["max_concurrency"]
+
+
+def test_max_concurrent_requests_controls_requests_in_flight(started_cluster):
+    """`ai_function_max_concurrent_requests_per_thread` decides how many provider requests a text AI function
+    has in flight, and nothing else does: the same query shape and the same data give one request
+    at a time at 1, and several at 8."""
+    one = _observe_concurrency(SLOW_CHAT_CALL, concurrency=1, rows=16, expected_requests=16)
+    many = _observe_concurrency(SLOW_CHAT_CALL, concurrency=8, rows=16, expected_requests=16)
+
+    assert one == 1, (
+        f"ai_function_max_concurrent_requests_per_thread=1 must issue requests one at a time, saw {one} in flight"
+    )
+    assert 2 <= many <= 8, (
+        f"ai_function_max_concurrent_requests_per_thread=8 must overlap requests without exceeding the "
+        f"limit, saw {many} in flight"
+    )
+
+
+def test_max_concurrent_requests_applies_to_embeddings(started_cluster):
+    """The same setting governs the embedding path, where the unit in flight is a batch of texts
+    rather than a row: 16 rows at a batch size of 2 are 8 requests."""
+    batching = {"ai_function_embedding_max_batch_size": 2}
+    one = _observe_concurrency(
+        SLOW_EMBED_CALL, concurrency=1, rows=16, expected_requests=8, extra_settings=batching
+    )
+    many = _observe_concurrency(
+        SLOW_EMBED_CALL, concurrency=4, rows=16, expected_requests=8, extra_settings=batching
+    )
+
+    assert one == 1, (
+        f"ai_function_max_concurrent_requests_per_thread=1 must issue batches one at a time, saw {one} in flight"
+    )
+    assert 2 <= many <= 4, (
+        f"ai_function_max_concurrent_requests_per_thread=4 must overlap batches without exceeding the "
+        f"limit, saw {many} in flight"
+    )
+
+
+def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
+    """Concurrency must not let the API-call quota drift: a slot is reserved before each request is
+    dispatched, so the cap stays exact no matter how many requests are in flight."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_concurrency_quota")
+    instance.query(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers(64) FORMAT Null",
+        settings={
+            "ai_function_max_concurrent_requests_per_thread": 8,
+            "ai_function_max_api_calls_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    stats = _concurrency_stats()
+    assert stats["requests"] == 5, (
+        f"the provider saw {stats['requests']} requests, but ai_function_max_api_calls_per_query = 5 "
+        "is an exact cap even with concurrent requests"
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == 5
+
+
+def test_concurrent_responses_map_to_their_rows(started_cluster):
+    """With several requests in flight and responses arriving in random order, every row still gets its
+    own response. The mock echoes the prompt after a random delay, so each output must equal its input.
+    Four blocks of 25 rows over two threads also run several function calls at once."""
+    result = instance.query(
+        "SELECT countIf(answer = prompt), count() FROM "
+        "(SELECT concat('row-', toString(number)) AS prompt, "
+        "aiGenerate(prompt, map('credentials', 'ai_jitter')) AS answer FROM numbers_mt(100))",
+        settings={
+            "ai_function_max_concurrent_requests_per_thread": 10,
+            "max_block_size": 25,
+            "max_threads": 2,
+        },
+    ).strip()
+    assert result == "100\t100", f"expected every row to get its own response, got (matching, total) = {result}"
+
+
+MULTI_CALL_QUERY = (
+    "SELECT countIf(a = pa), countIf(b = pb), count(), sum(cityHash64(pa, e)) FROM "
+    "(SELECT concat('a-', toString(number)) AS pa, concat('b-', toString(number)) AS pb, "
+    "aiGenerate(pa, map('credentials', 'ai_jitter')) AS a, "
+    "aiGenerate(pb, map('credentials', 'ai_jitter')) AS b, "
+    "aiEmbed(pa, 'test-embed-model', map('credentials', 'ai_embed')) AS e "
+    "FROM numbers_mt(100))"
+)
+MULTI_CALL_SETTINGS = {
+    "max_block_size": 25,
+    "max_threads": 2,
+    "ai_function_embedding_max_batch_size": 1,
+}
+
+
+def test_multiple_ai_calls_in_one_query(started_cluster):
+    """Three AI function calls in one query share the request pool and the query's quota tracker.
+    Each call's outputs stay with its own rows, the embeddings match a run with one request at a time,
+    and `AIAPICalls` counts the requests of all three calls: 100 + 100 + 100 (one text per batch)."""
+    serial = instance.query(
+        MULTI_CALL_QUERY, settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests_per_thread": 1}
+    ).split("\t")
+
+    qid = unique_query_id("ai_multi_call")
+    concurrent = instance.query(
+        MULTI_CALL_QUERY,
+        settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests_per_thread": 10},
+        query_id=qid,
+    ).split("\t")
+
+    assert concurrent[:3] == ["100", "100", "100"], (
+        f"expected each aiGenerate call to answer its own rows, got (a matching, b matching, total) = {concurrent[:3]}"
+    )
+    assert concurrent[3] == serial[3], "aiEmbed returned different row/embedding pairs with concurrent requests"
+    assert int(get_profile_events(qid)["api_calls"]) == 300
+
+
+def test_api_call_quota_is_shared_by_ai_calls_in_one_query(started_cluster):
+    """`ai_function_max_api_calls_per_query` is one allowance for all AI function calls of the query,
+    and stays exact with concurrent requests from three calls drawing on it at once."""
+    qid = unique_query_id("ai_multi_call_quota")
+    instance.query(
+        MULTI_CALL_QUERY,
+        settings={
+            **MULTI_CALL_SETTINGS,
+            "ai_function_max_concurrent_requests_per_thread": 10,
+            "ai_function_max_api_calls_per_query": 50,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == 50
+
+
+def test_kill_query_stops_issuing_requests(started_cluster):
+    """`KILL QUERY` stops an AI function mid-block: no new request is sent after the kill. The 400 rows
+    form one block, which at 0.5s per request would otherwise take 200s and send all 400 requests."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_kill")
+    request = instance.get_query_request(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
+        settings={"ai_function_max_concurrent_requests_per_thread": 1},
+        query_id=qid,
+    )
+
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["requests"] >= 2, max_attempts=100, delay=0.1
+    )
+    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+    assert "Query was cancelled" in request.get_error()
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the killed query kept sending requests: {requests} of 400 were sent"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    exception_code = instance.query(
+        f"SELECT exception_code FROM system.query_log "
+        f"WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing'"
+    ).strip()
+    assert exception_code == "394"
+    assert int(get_profile_events(qid, "ExceptionWhileProcessing")["api_calls"]) == requests
+
+
+def test_max_execution_time_stops_issuing_requests(started_cluster):
+    """`max_execution_time` stops an AI function mid-block like `KILL QUERY`: the 400 rows form one block
+    that would take 200s at 0.5s per request, and the query fails after 2s having sent a fraction of them."""
+    _reset_concurrency()
+    error = instance.query_and_get_error(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={"max_execution_time": 2, "ai_function_max_concurrent_requests_per_thread": 1},
+    )
+    assert "TIMEOUT_EXCEEDED" in error
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the timed-out query kept sending requests: {requests} of 400 were sent"
+
+
+def test_max_execution_time_break_stops_issuing_requests(started_cluster):
+    """With `timeout_overflow_mode = 'break'` the query returns without an error once the time limit is
+    reached, and no further requests are sent."""
+    _reset_concurrency()
+    instance.query(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={
+            "max_execution_time": 2,
+            "timeout_overflow_mode": "break",
+            "ai_function_max_concurrent_requests_per_thread": 1,
+        },
+    )
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the query kept sending requests past the time limit: {requests} of 400 were sent"
+
+
+AI_THREAD_POOL_CONFIG = "/etc/clickhouse-server/config.d/ai_thread_pool.xml"
+
+
+def _set_ai_thread_pool_size(size):
+    instance.replace_config(
+        AI_THREAD_POOL_CONFIG,
+        f"<clickhouse><ai_function_max_thread_pool_size>{size}</ai_function_max_thread_pool_size></clickhouse>",
+    )
+    instance.query("SYSTEM RELOAD CONFIG")
+
+
+def test_cancelled_query_does_not_wait_for_other_queries_requests(started_cluster):
+    """With a single pool thread, query A queues 64 requests. Query B's request queues behind them, and B
+    fails on `max_execution_time` before A's requests are served. Once A is killed, its queued requests
+    are not sent."""
+    _set_ai_thread_pool_size(1)
+    qid_a = unique_query_id("ai_backlog")
+    try:
+        _reset_concurrency()
+        request_a = instance.get_query_request(
+            f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
+            settings={"ai_function_max_concurrent_requests_per_thread": 64},
+            query_id=qid_a,
+        )
+        wait_condition(
+            _concurrency_stats, lambda stats: stats["requests"] >= 1, max_attempts=100, delay=0.1
+        )
+
+        error = instance.query_and_get_error(
+            f"SELECT {SLOW_CHAT_CALL} FROM numbers(1) FORMAT Null",
+            settings={"max_execution_time": 1},
+        )
+        assert "TIMEOUT_EXCEEDED" in error
+        served = _concurrency_stats()["requests"]
+        assert served < 64, f"the timed-out query waited for {served} requests of the other query"
+
+        instance.query(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
+        assert "Query was cancelled" in request_a.get_error()
+        sent = _concurrency_stats()["requests"]
+        wait_condition(
+            lambda: instance.query(
+                "SELECT value FROM system.metrics WHERE metric = 'AIRequestThreadsScheduled'"
+            ).strip(),
+            lambda value: value == "0",
+            max_attempts=100,
+            delay=0.1,
+        )
+        # A request that passed its cancellation check before the kill may still arrive.
+        assert _concurrency_stats()["requests"] <= sent + 1
+    finally:
+        # Fails with `NOTHING_TO_KILL` when the query was already killed above.
+        instance.query_and_get_answer_with_error(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
+        _set_ai_thread_pool_size(1000)
+
+
+def test_shutdown_after_cancelling_query_with_request_in_flight(started_cluster):
+    """A killed query does not wait for its request to `/v1/chat/hang`. The server shuts down right after,
+    while the request is still in flight, and must drain the AI request pool before destroying the context."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_hang")
+    request = instance.get_query_request(
+        "SELECT aiGenerate(toString(number), map('credentials', 'ai_hang')) FROM numbers(1) FORMAT Null",
+        settings={"ai_function_max_retries": 0},
+        query_id=qid,
+    )
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["requests"] >= 1, max_attempts=100, delay=0.1
+    )
+    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+    assert "Query was cancelled" in request.get_error()
+
+    instance.restart_clickhouse()
+    assert instance.query("SELECT aiGenerate('x', map('credentials', 'ai_slow'))").strip() != ""
