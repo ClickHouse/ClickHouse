@@ -158,55 +158,44 @@ DEPENDENCIES = {
 
 # Drop direct dependencies unused in both native DWYU reports or already supplied
 # by retained public dependencies before and after them in the declared order.
-_EMBEDDED_UNUSED = {
+EMBEDDED_OBJECTS = {'clickhouse_common_io_embedded', 'dbms_embedded'}
+DBMS_EMBEDDED_UNUSED = {
     '//base/widechar_width',
     '@clickhouse_aws//:_aws__compile_0', '@clickhouse_azure//:_azure_sdk', '@clickhouse_openssl//:crypto',
     '//base:pcg_random', '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2',
     '@clickhouse_cctz//:_cctz', '@clickhouse_double_conversion//:_double-conversion',
     '@clickhouse_libdeflate//:_libdeflate', '@clickhouse_simdutf//:_simdutf', '@clickhouse_snappy//:_snappy',
     '@clickhouse_xz//:_liblzma', '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zmij//:_zmij', '@lz4//:lz4',
-}
-EMBEDDED_UNUSED = {
-    'clickhouse_common_io_embedded': _EMBEDDED_UNUSED | {
-        '//src:headers', MINIZIP,
-        '@clickhouse_libssh//:_ssh', '@clickhouse_silk//:_silk_fibers',
-        '//bazel:clickhouse_config_headers', '@clickhouse_abseil_cpp//:absl_base_config',
-        '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_crc32c//:_crc32c',
-        '@clickhouse_fast_float//:fast_float', '@clickhouse_heks//:heks', '@clickhouse_jemalloc//:_jemalloc',
-        '@llvm-project//libunwind:headers', '@lz4//:lz4_frame',
-    },
-    'dbms_embedded': _EMBEDDED_UNUSED | {
-        ARRAY_LENGTH,
-        '//base/glibc-compatibility', '//src/Common:cow',
-        '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
-        '@clickhouse_abseil_cpp//:absl_raw_hash_set', '@clickhouse_abseil_cpp//:absl_strings',
-        '@clickhouse_abseil_cpp//:absl_synchronization', '@clickhouse_arrow//:_arrow__compile_0',
-        '@clickhouse_aws_c_mqtt//:aws_c_mqtt', '@clickhouse_croaring//:_roaring',
-        '@clickhouse_google_protobuf//:_libprotobuf', '@clickhouse_hive_metastore//:_hivemetastore',
-        '@clickhouse_librdkafka//:_rdkafka__compile_0', '@clickhouse_llvm_project//:LLVMSupport',
-        '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
-        '@clickhouse_openssl//:ssl', '@clickhouse_thrift//:_thrift', '@clickhouse_zstd//:_zstd',
-        '@lz4//:lz4_frame',
-        '//base/glibc-rseq:glibc-rseq', '@clickhouse_abseil_cpp//:absl_log_severity',
-        '@clickhouse_capnproto//:_kj', '@clickhouse_datasketches_cpp//:datasketches_cpp',
-        '@clickhouse_flatbuffers//:_flatbuffers', '@clickhouse_grpc//:address_sorting',
-        '@clickhouse_lemmagen_c//:_lemmagen', '@clickhouse_libbcrypt//:_bcrypt',
-        '@clickhouse_libdivide//:libdivide', '@clickhouse_libfiu//:_libfiu',
-        '@clickhouse_libstemmer_c//:_stemmer', '@clickhouse_liburing//:_liburing', '@clickhouse_libuv//:_uv',
-        '@clickhouse_llvm_project//:llvm_headers', '@clickhouse_mecab//:_mecab',
-        '@clickhouse_mongo_c_driver//:_libbson', '@clickhouse_msgpack_c//:msgpack_c',
-        '@clickhouse_openldap//:_api', '@clickhouse_openldap//:_lber', '@clickhouse_sha3iuf//:_sha3iuf',
-        '@clickhouse_simdjson//:_simdjson', '@clickhouse_simsimd//:_simsimd',
-        '@clickhouse_sparsehash_c11//:sparsehash_c11', '@clickhouse_sqlite_amalgamation//:_sqlite',
-        '@clickhouse_ulid_c//:_ulid', '@clickhouse_usearch//:usearch',
-        '@clickhouse_vectorscan//:_vectorscan__compile_0', '@clickhouse_wordnet_blast//:_wnb',
-        '@clickhouse_xxhash//:xxHash',
-    },
+    ARRAY_LENGTH,
+    '//base/glibc-compatibility', '//src/Common:cow',
+    '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
+    '@clickhouse_abseil_cpp//:absl_raw_hash_set', '@clickhouse_abseil_cpp//:absl_strings',
+    '@clickhouse_abseil_cpp//:absl_synchronization', '@clickhouse_arrow//:_arrow__compile_0',
+    '@clickhouse_aws_c_mqtt//:aws_c_mqtt', '@clickhouse_croaring//:_roaring',
+    '@clickhouse_google_protobuf//:_libprotobuf', '@clickhouse_hive_metastore//:_hivemetastore',
+    '@clickhouse_librdkafka//:_rdkafka__compile_0', '@clickhouse_llvm_project//:LLVMSupport',
+    '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
+    '@clickhouse_openssl//:ssl', '@clickhouse_thrift//:_thrift', '@clickhouse_zstd//:_zstd',
+    '@lz4//:lz4_frame',
+    '//base/glibc-rseq:glibc-rseq', '@clickhouse_abseil_cpp//:absl_log_severity',
+    '@clickhouse_capnproto//:_kj', '@clickhouse_datasketches_cpp//:datasketches_cpp',
+    '@clickhouse_flatbuffers//:_flatbuffers', '@clickhouse_grpc//:address_sorting',
+    '@clickhouse_lemmagen_c//:_lemmagen', '@clickhouse_libbcrypt//:_bcrypt',
+    '@clickhouse_libdivide//:libdivide', '@clickhouse_libfiu//:_libfiu',
+    '@clickhouse_libstemmer_c//:_stemmer', '@clickhouse_liburing//:_liburing', '@clickhouse_libuv//:_uv',
+    '@clickhouse_llvm_project//:llvm_headers', '@clickhouse_mecab//:_mecab',
+    '@clickhouse_mongo_c_driver//:_libbson', '@clickhouse_msgpack_c//:msgpack_c',
+    '@clickhouse_openldap//:_api', '@clickhouse_openldap//:_lber', '@clickhouse_sha3iuf//:_sha3iuf',
+    '@clickhouse_simdjson//:_simdjson', '@clickhouse_simsimd//:_simsimd',
+    '@clickhouse_sparsehash_c11//:sparsehash_c11', '@clickhouse_sqlite_amalgamation//:_sqlite',
+    '@clickhouse_ulid_c//:_ulid', '@clickhouse_usearch//:usearch',
+    '@clickhouse_vectorscan//:_vectorscan__compile_0', '@clickhouse_wordnet_blast//:_wnb',
+    '@clickhouse_xxhash//:xxHash',
 }
 
 
 def embedded_object_edits(build, rule, name, attrs, canonical):
-    """Keep the declared link order when making the six headerless objects' dependencies private."""
+    """Set implementation_deps for the targets that compile ClickHouse's embedded resources."""
     source = build.source
     defs = constant_defs(source.module)
     def values(node, cpu):
@@ -214,24 +203,25 @@ def embedded_object_edits(build, rule, name, attrs, canonical):
     if 'hdrs' in attrs or 'textual_hdrs' in attrs:
         raise ValueError(f'{name}: now publishes headers; review its public dependencies')
     def retained(cpu):
-        unused = {canonical(v) for v in EMBEDDED_UNUSED[name]}
-        if name == 'dbms_embedded' and cpu == 'x86_64':
+        if name == 'clickhouse_common_io_embedded':
+            # FrequencyHolder.cpp includes Common/FrequencyHolder.h and its ZstdInflatingReadBuffer needs zstd.h.
+            return ['//src/Common', '@clickhouse_zstd//:_zstd']
+        unused = {canonical(v) for v in DBMS_EMBEDDED_UNUSED}
+        if cpu == 'x86_64':
             unused.add(canonical('@clickhouse_simdcomp//:_simdcomp'))
         labels = {}
         for label in values(attrs.get('deps'), cpu) + values(attrs.get('implementation_deps'), cpu):
             key = canonical(label)
             if key not in unused:
                 labels.setdefault(key, label)
-        if name == 'dbms_embedded':
-            # Keeper's request handlers include config.h; the embedded client's descriptors use Boost.Iostreams.
-            headers = ['//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl']
-            for header in headers:
-                labels.pop(canonical(header), None)
-            deps = list(labels.values())
-            i = deps.index('//src/Common/ZooKeeper:clickhouse_common_zookeeper_base') + 1
-            deps[i:i] = headers
-            return deps
-        return list(labels.values())
+        # Keeper's request handlers include config.h; the embedded client's descriptors use Boost.Iostreams.
+        headers = ['//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl']
+        for header in headers:
+            labels.pop(canonical(header), None)
+        deps = list(labels.values())
+        i = deps.index('//src/Common/ZooKeeper:clickhouse_common_zookeeper_base') + 1
+        deps[i:i] = headers
+        return deps
     deps = retained(CPUS[0])
     if deps != retained(CPUS[1]):
         raise ValueError(f'{name}: X86 and ARM dependencies differ')
@@ -420,7 +410,7 @@ def apply(root):
         for _, rule in source.rules():
             attrs = {k.arg: k.value for k in rule.keywords}
             name = getattr(attrs.get('name'), 'value', None)
-            if package == 'src' and name in EMBEDDED_UNUSED:
+            if package == 'src' and name in EMBEDDED_OBJECTS:
                 edits.extend(embedded_object_edits(build, rule, name, attrs, canonical))
                 embedded.add(name)
                 continue
@@ -576,7 +566,7 @@ def apply(root):
                 else:
                     end = source.span(rule)[1] - 1
                     edits.append((end, end, f'\n    {field} = {result},\n'))
-        if embedded and embedded != EMBEDDED_UNUSED.keys():
+        if embedded and embedded != EMBEDDED_OBJECTS:
             raise ValueError(f'{package}: incomplete native #embed object rules')
         if found != {n for pkg, n in DEPENDENCIES if pkg == package}:
             raise ValueError(f'{package}: missing measured dependency target')
