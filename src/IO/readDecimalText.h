@@ -75,7 +75,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                     /// Stay in the integer or fractional phase until a buffer or precision
                     /// boundary, punctuation, or deferred zeroes require the scalar path.
                     const char * end = buf.position() + std::min<size_t>(buf.available(), max_digits - digits);
-                    uint32_t n;
+                    uint32_t n = 0;
                     do
                     {
                         const char * begin = buf.position();
