@@ -18,6 +18,8 @@ using namespace DB;
 namespace
 {
 
+/// Long statements are split into adjacent literals.
+/// NOLINTBEGIN(bugprone-suspicious-missing-comma)
 const std::vector<std::string> statements = {
     "SELECT a, b + 1 AS c, count() FROM db.t AS x LEFT JOIN u USING (a) PREWHERE b > 0 WHERE c IN (SELECT c FROM v) "
     "GROUP BY a, c WITH TOTALS HAVING count() > 1 ORDER BY a DESC NULLS LAST, c LIMIT 10 OFFSET 5 SETTINGS max_threads = 1",
@@ -38,6 +40,7 @@ const std::vector<std::string> statements = {
     "ALTER TABLE db.t ON CLUSTER c ADD COLUMN d UInt8 DEFAULT 0 AFTER c, MODIFY COLUMN b LowCardinality(String), "
     "DROP INDEX i, MODIFY TTL now() + INTERVAL 2 DAY, UPDATE a = a + 1 WHERE b = 'x'",
 };
+/// NOLINTEND(bugprone-suspicious-missing-comma)
 
 std::vector<std::string> prefixes()
 {
@@ -68,7 +71,7 @@ size_t parseAll(const std::vector<std::string> & queries)
 
 void run(benchmark::State & state, const std::vector<std::string> & queries)
 {
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
         benchmark::DoNotOptimize(parseAll(queries));
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * queries.size()));
 }

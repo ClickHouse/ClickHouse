@@ -112,18 +112,18 @@ void storeCapture(PartialASTState & state, const Expected & expected, ASTPtr par
 }
 
 /// The node a fragment is a part of: the node of an `ASTPartialStatement`, or the list itself.
-const IAST & fragmentNode(const IAST & fragment)
+const IAST * fragmentNode(const IAST & fragment)
 {
     if (const auto * wrapper = fragment.as<ASTPartialStatement>())
-        return *wrapper->statement;
-    return fragment;
+        return wrapper->statement.get();
+    return &fragment;
 }
 
 /// Whether a fragment fills the slot `key` of `parent`, or, for a null key, is an element of the list
 /// `parent`.
 bool fillsSlot(const IAST & parent, const char * key, const IAST & fragment)
 {
-    const IAST & node = fragmentNode(fragment);
+    const IAST & node = *fragmentNode(fragment);
     const std::string_view slot = key ? key : "";
     if (parent.as<ASTCreateQuery>())
         return (slot == "refresh_strategy" && node.as<ASTRefreshStrategy>()) || (slot == "dictionary" && node.as<ASTDictionary>())
