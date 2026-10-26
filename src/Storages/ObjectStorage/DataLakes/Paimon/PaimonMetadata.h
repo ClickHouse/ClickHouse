@@ -123,17 +123,17 @@ private:
 
     /// Get snapshots between from_snapshot (exclusive) and to_snapshot (inclusive).
     /// If max_snapshots_to_load > 0, stop loading once the limit is reached.
-    /// If skip_compact is true, snapshots with commit_kind == "COMPACT" are excluded
-    /// (used by incremental read to avoid re-processing compacted data).
+    /// If append_only is true, only APPEND snapshots are returned: COMPACT, OVERWRITE and ANALYZE
+    /// ones are skipped (after checking them for deletion vectors), and any other commit kind throws.
     /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
-    /// (including skipped compact / missing ones), so the caller can advance the watermark
+    /// (including skipped / missing ones), so the caller can advance the watermark
     /// past gaps that produced no data files. last_scanned_state is its state, or nullptr
     /// when that id was expired.
     std::vector<PaimonTableStatePtr> getSnapshotsBetween(
         Int64 from_snapshot_id,
         Int64 to_snapshot_id,
         UInt64 max_snapshots_to_load,
-        bool skip_compact,
+        bool append_only,
         std::optional<Int64> & last_scanned_snapshot_id,
         PaimonTableStatePtr & last_scanned_state) const;
 

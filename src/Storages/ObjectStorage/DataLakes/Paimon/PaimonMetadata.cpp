@@ -821,7 +821,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     Int64 from_snapshot_id,
     Int64 to_snapshot_id,
     UInt64 max_snapshots_to_load,
-    bool skip_compact,
+    bool append_only,
     std::optional<Int64> & last_scanned_snapshot_id,
     PaimonTableStatePtr & last_scanned_state) const
 {
@@ -947,16 +947,27 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
                 unreadable_snapshot_hint(snapshot_id));
         }
 
-        /// Track the highest snapshot_id actually resolved, whether it is used or skipped
-        /// as compact. The caller uses this to advance the watermark past gaps.
+        /// Track the highest snapshot_id actually resolved, whether it is used or skipped.
+        /// The caller uses this to advance the watermark past gaps.
         last_scanned_snapshot_id = snapshot_id;
         last_scanned_state = state;
 
-        if (skip_compact && state->isCompact())
+        /// Only APPEND snapshots add rows: COMPACT and OVERWRITE ones rewrite existing rows, ANALYZE ones add none.
+        if (append_only && !state->isAppend())
         {
-            /// The watermark moves past a skipped compaction, which can add deletion vectors.
+            if (!state->isCompact() && state->commit_kind != "OVERWRITE" && state->commit_kind != "ANALYZE")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Paimon snapshot {} of '{}' has commit kind '{}', which the incremental read does not know, so it "
+                    "cannot tell whether the snapshot adds new rows. The consumed-snapshot cursor was not advanced.{}",
+                    snapshot_id,
+                    persistent_components.table_path,
+                    state->commit_kind,
+                    unreadable_snapshot_hint(snapshot_id));
+
+            /// The watermark moves past a skipped snapshot, which can add deletion vectors.
             checkNoDeletionVectors(*state, from_snapshot_id);
-            LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
+            LOG_TRACE(log, "Skipping {} snapshot_id={} in incremental read", state->commit_kind, snapshot_id);
             continue;
         }
 
@@ -1063,12 +1074,12 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
 
         /// In Paimon, each snapshot's delta_manifest_list contains the changes in that snapshot.
         /// We need to read all delta manifests from snapshots between committed+1 and current.
-        /// Skip Compact snapshots: their delta manifests contain compaction output (not new data).
+        /// Only APPEND snapshots add new rows, like Paimon's streaming read of an append table.
         std::optional<Int64> last_scanned_snapshot_id;
         PaimonTableStatePtr last_scanned_state;
         auto snapshots = getSnapshotsBetween(
             *committed_snapshot_id, state->snapshot_id, max_consume_snapshots,
-            /*skip_compact=*/true, last_scanned_snapshot_id, last_scanned_state);
+            /*append_only=*/true, last_scanned_snapshot_id, last_scanned_state);
 
         /// After the scan, so that a rewind landing before or during it is seen here.
         if (committed.snapshot_identity)
@@ -1076,7 +1087,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
 
         if (snapshots.empty())
         {
-            /// All snapshots in the range were either compact or missing.
+            /// All snapshots in the range were either skipped or missing.
             /// Still advance the watermark so we don't re-scan them next time.
             if (last_scanned_snapshot_id)
                 last_consumed_snapshot_id = last_scanned_snapshot_id;
@@ -1087,7 +1098,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
 
         data_files = collectDataFilesFromManifests(
             snapshots, ManifestKind::Delta, partition_pruner, true, true, committed_snapshot_id);
-        /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
+        /// Use last_scanned (not snapshots.back()) to advance past trailing skipped/missing snapshots.
         last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
         const auto & last_consumed_state = last_scanned_snapshot_id ? last_scanned_state : snapshots.back();
         if (last_consumed_state)

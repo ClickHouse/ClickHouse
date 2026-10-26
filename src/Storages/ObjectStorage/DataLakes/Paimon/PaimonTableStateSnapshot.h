@@ -59,6 +59,7 @@ struct TableStateSnapshot
     }
 
     bool isCompact() const { return commit_kind == "COMPACT"; }
+    bool isAppend() const { return commit_kind == "APPEND"; }
 
     bool operator==(const TableStateSnapshot & other) const
     {
