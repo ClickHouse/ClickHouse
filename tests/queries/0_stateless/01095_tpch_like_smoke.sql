@@ -7,7 +7,6 @@ DROP TABLE IF EXISTS lineitem;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
-SET enable_analyzer = 1;
 SET cross_to_inner_join_rewrite = 1;
 
 CREATE TABLE part
