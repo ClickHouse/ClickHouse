@@ -107,13 +107,19 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken(std::string_view token)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range)
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(
+    std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings)
 {
+    /// A pattern scan delivers the info of a token again when another query already has it,
+    /// so the embedded postings are added only together with a token that is new for this query.
     if (is_failed || tokens.contains(token))
         return;
 
     tokens[token] = token_info;
     addRowsRange(token_rows_range);
+
+    if (embedded_postings)
+        addPostings(*embedded_postings);
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
@@ -138,11 +144,12 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     }
 }
 
-void TextIndexAnalyzer::QueryBuilder::addPostings(std::string_view token, const PostingList & token_postings)
+void TextIndexAnalyzer::QueryBuilder::addPostings(const PostingList & token_postings)
 {
-    /// A pattern scan delivers embedded postings again for a token another query already has.
-    if (is_failed || !tokens_with_read_postings.emplace(token).second)
+    if (is_failed)
         return;
+
+    ++num_read_postings;
 
     if (!postings)
         postings = token_postings;
@@ -238,16 +245,33 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         token_rows_range = *clipped_range;
     }
 
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addTokenInfo(token, token_info, token_rows_range);
-    });
-
+    /// The embedded postings come with the token info, so they are clipped to the readable rows here and added in `QueryBuilder::addTokenInfo`.
+    std::optional<PostingList> embedded_postings;
     if (!token_info->embedded_postings.empty())
     {
-        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
-        addPostings(token, embedded);
+        tokens_with_postings.emplace(token);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+
+        embedded_postings.emplace(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        if (readable_rows)
+            embedded_postings = readable_rows->clipPostings(*embedded_postings);
+    }
+
+    const bool no_readable_postings = embedded_postings && embedded_postings->isEmpty();
+    processTokenOperation(token, [&](QueryBuilder & query_builder)
+    {
+        query_builder.addTokenInfo(token, token_info, token_rows_range, embedded_postings && !no_readable_postings ? &*embedded_postings : nullptr);
+    });
+
+    /// No readable row has the token, as when the postings read from disk are clipped to nothing in `addPostings`.
+    if (no_readable_postings)
+    {
+        processTokenOperation(token, [&](QueryBuilder & query_builder)
+        {
+            query_builder.addMissingToken(token);
+        });
+
+        queries_by_token.erase(token);
     }
 }
 
@@ -279,7 +303,7 @@ void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & 
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addPostings(token, *postings_ptr);
+        query_builder.addPostings(*postings_ptr);
     });
 }
 
