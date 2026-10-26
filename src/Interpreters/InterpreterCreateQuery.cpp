@@ -3027,11 +3027,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         else
         {
             StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
-            /// An `Alias` reports its target's keys.
-            if (const auto * alias = as_storage->as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
-                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
-                                StorageID{as_database_name, as_table_saved}.getNameForLogs());
             /// A materialized view keeps its keys in its target table.
             if (const auto * materialized_view = as_storage->as<StorageMaterializedView>())
             {
@@ -3040,6 +3035,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                     getContext()->checkAccess(AccessType::SHOW_COLUMNS, materialized_view->getTargetTableId());
                 as_storage = materialized_view->getTargetTable();
             }
+            /// An `Alias` reports its target's keys, including when it is the target of a materialized view.
+            if (const auto * alias = as_storage->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                                as_storage->getStorageID().getNameForLogs());
             auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
             if (as_storage_metadata->isPartitionKeyDefined() && as_storage_metadata->hasPartitionKey())
                 source_partition_by = as_storage_metadata->getPartitionKeyAST();

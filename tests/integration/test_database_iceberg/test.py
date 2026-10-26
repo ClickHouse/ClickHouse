@@ -2546,8 +2546,26 @@ def test_create_table_as_mv_external_target_requires_grant(started_cluster):
         error = node.query_and_get_error(create_query, user=user, settings=settings)
         assert "ACCESS_DENIED" not in error, error
         assert "private_sort_key" in error, error
+
+        # An `Alias` as the external target forwards to the protected table, which needs its own privilege.
+        node.query(f"REVOKE SHOW COLUMNS ON {source}_target FROM {user}")
+        node.query(f"CREATE TABLE {source}_alias ENGINE = Alias('default', 'src_{namespace}_target')")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {source}_alias_mv TO {source}_alias (visible Int64) "
+            f"AS SELECT visible FROM {source}_target"
+        )
+        node.query(f"GRANT SHOW COLUMNS ON {source}_alias_mv TO {user}")
+        node.query(f"GRANT SHOW COLUMNS ON {source}_alias TO {user}")
+        error = node.query_and_get_error(
+            create_query.replace(f"AS {source}_mv ", f"AS {source}_alias_mv "), user=user, settings=settings
+        )
+        assert "ACCESS_DENIED" in error, error
+        assert "private_sort_key" not in error, error
+        assert node.query(f"SHOW TABLES FROM {CATALOG_NAME} LIKE '{namespace}.%'") == ""
     finally:
         node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP TABLE IF EXISTS {source}_alias_mv")
+        node.query(f"DROP TABLE IF EXISTS {source}_alias")
         node.query(f"DROP TABLE IF EXISTS {source}_mv")
         node.query(f"DROP TABLE IF EXISTS {source}_target")
 
