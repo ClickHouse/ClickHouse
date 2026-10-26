@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT concat(materialize(toLowCardinality('b')), 'a') FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a';
 

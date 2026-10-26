@@ -184,9 +184,17 @@ private:
     /// Must be called under `handler_mutex`.
     void applyPartialDropRecoveryMode();
 
-    ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
+    ASTPtr createAlterSettingsQuery(const SettingsChanges & new_settings);
 
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
+
+    /// Adds the change of `materialized_postgresql_unmaterialized_tables_list` to persist `unmaterialized_published_tables`
+    /// (except `except`) together with `materialized_postgresql_tables_list`, if there is anything to persist or to clear.
+    void addUnmaterializedTablesListChange(SettingsChanges & changes, const String & except) const TSA_REQUIRES(tables_mutex);
+
+    /// The changes that restore `materialized_postgresql_tables_list` and `materialized_postgresql_unmaterialized_tables_list`
+    /// captured before a failed `ATTACH TABLE` or `DETACH TABLE PERMANENTLY`.
+    SettingsChanges createTablesListsRollback(const String & original_tables_list, const String & original_unmaterialized_tables_list) const;
 
     bool is_attach;
     /// `is_attach` as it was when the database was loaded: unlike `is_attach`, the partial-drop recovery does not
@@ -254,6 +262,11 @@ private:
     /// otherwise overwrite a concurrent change of the membership of another table. Taken before `handler_mutex`
     /// and `tables_mutex`.
     std::mutex table_membership_mutex;
+
+    /// The tables of a whole-schema database that are in the publication but are not replicated, because they
+    /// do not have nested tables (for example, their initial snapshot has failed). They are not in
+    /// `materialized_tables`, but `getTablesForBackup` must not silently omit them.
+    std::set<String> unmaterialized_published_tables TSA_GUARDED_BY(tables_mutex);
 
     mutable std::mutex handler_mutex;
     /// Whether `startSynchronization` completed successfully (guarded by `handler_mutex`). Makes the startup

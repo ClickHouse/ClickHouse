@@ -2,7 +2,6 @@
 -- A value that is not in the Enum has no name, hence no key subcolumn, and must not be
 -- rewritten to one: it reads as the default value, like a key that is missing from the map.
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_enum_numeric;

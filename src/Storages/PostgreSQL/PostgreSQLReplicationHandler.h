@@ -168,7 +168,10 @@ public:
     void requireCompleteInitialSnapshot() { require_complete_initial_snapshot = true; }
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    std::set<String> fetchRequiredTables();
+    /// `nested_tables_on_disk` are the tables that were already replicated before the restart (their nested tables exist).
+    /// `published_but_not_materialized` receives the tables that are in the publication but are not replicated,
+    /// because they do not have nested tables (for example, their initial snapshot has failed).
+    std::set<String> fetchRequiredTables(const std::set<String> & nested_tables_on_disk, std::set<String> & published_but_not_materialized);
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
@@ -198,6 +201,8 @@ private:
     void createPublicationIfNeeded(pqxx::nontransaction & tx);
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
+
+    void logPublishedButNotMaterialized(const std::set<String> & published_but_not_materialized) const;
 
     /// Coordinated single-table engine: throws unless the existing publication publishes exactly `table_name`.
     void assertPublicationPublishesOnlyTable(pqxx::nontransaction & tx, const String & table_name);
@@ -461,6 +466,10 @@ private:
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
+
+    /// The published tables of a whole-schema database that were never materialized, persisted together with `tables_list`
+    /// (see the setting `materialized_postgresql_unmaterialized_tables_list`).
+    String unmaterialized_tables_list;
 
     String schema_list;
 

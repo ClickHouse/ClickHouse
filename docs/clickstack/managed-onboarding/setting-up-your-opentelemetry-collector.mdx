@@ -22,12 +22,20 @@ Install the official ClickHouse agent skills before using the setup assistant:
 npx skills add clickhouse/agent-skills
 ```
 
+If you already have [`clickhousectl`](/concepts/features/interfaces/cli), you can install the same skills into the coding agents it detects instead:
+
+```bash
+clickhousectl skills --detected-only
+```
+
+To target one agent, pass `--agent` (for example, `--agent claude`). Add `--global` to install into your home directory rather than the current project.
+
 <AgentPrompt
   prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my Managed ClickStack service."
   description="Your agent will set up the ClickStack OpenTelemetry collector for you. Works with Claude Code, Cursor, Codex, and other coding agents."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-    "Install clickhousectl if missing and authenticate it (asks you for a ClickHouse Cloud API key — paste in chat or run the login command yourself).",
+    "Install clickhousectl if missing and check that it's authenticated with an API key (browser login is read-only and can't create the ingestion user). If it isn't, ask you to run clickhousectl cloud auth login --interactive yourself in a separate terminal, from the same project directory (the key is saved to .clickhouse/credentials.json there). Never paste the API key secret into the chat.",
     "Ask you for the target ClickHouse Cloud service ID or name, then fetch its HTTPS endpoint.",
     "Create a hyperdx_ingest SQL user on the service (generates a strong password, or uses one you provide).",
     "Run the ClickStack OpenTelemetry collector locally in Docker, pointed at your service.",

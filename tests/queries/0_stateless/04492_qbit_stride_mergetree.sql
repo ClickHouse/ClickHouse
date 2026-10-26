@@ -1,8 +1,6 @@
 -- A strided QBit must round-trip through MergeTree storage (separate streams per stride group) across a merge,
 -- and the partial-dimension distance search must work on the merged part.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS qbit_mt;
 CREATE TABLE qbit_mt (id UInt32, vec QBit(Float32, 16, 8)) ENGINE = MergeTree ORDER BY id;
 
