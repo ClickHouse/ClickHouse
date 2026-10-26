@@ -443,6 +443,19 @@ void HTTPHandler::processQuery(
             deferred_unrecognized_params.emplace_back(key, value);
     }
 
+    /// The order of the parameters is not covered by the AWS signature (they are sorted in the canonical request), while
+    /// the settings are applied sequentially, so their order matters: a `profile` overrides the settings before it, and
+    /// a setting overrides its alias before it. Apply them in a canonical order: the `profile` first, then by name.
+    /// The repeated parameters are rejected by `parseAWSSignatureV4Request`.
+    if (is_aws_signature_v4)
+    {
+        std::ranges::sort(settings_changes, [](const SettingChange & lhs, const SettingChange & rhs)
+        {
+            return std::pair(lhs.name != "profile", std::string_view(lhs.name)) < std::pair(rhs.name != "profile", std::string_view(rhs.name));
+        });
+        std::ranges::sort(deferred_unrecognized_params);
+    }
+
     /// The `X-ClickHouse-Database` header is an alias for the `database` setting. It overrides a
     /// matching URL parameter (preserving the historical precedence).
     if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())

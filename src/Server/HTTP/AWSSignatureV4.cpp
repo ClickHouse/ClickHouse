@@ -534,7 +534,26 @@ bool isAWSSignatureV4QueryParameter(const String & name)
 
 AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & request, time_t now)
 {
+    /// `HTMLForm` and `Poco::URI`, which provide the path and the parameters to the query, treat a raw `#` as the beginning
+    /// of a fragment and drop the rest, while in the signature it would mean itself. Then a signed `%23` could be replaced
+    /// with `#` to remove the signed parameters following it from the execution, without changing the signature.
+    if (request.getURI().contains('#'))
+        throwInvalid("the request target must not contain '#', it has to be percent-encoded");
+
     auto params = parseQueryString(getQueryString(request));
+
+    /// The parameters are sorted in the canonical request, so their order is not signed, while the query takes the first
+    /// value of a repeated parameter (e.g. `query`) and the settings take the last one. A repeated parameter could
+    /// change its meaning by reordering without changing the signature, so the repetitions are not allowed. The names are
+    /// compared case-insensitively, as `HTMLForm` looks them up.
+    {
+        std::unordered_set<String> seen_params;
+        for (const auto & [key, value] : params)
+        {
+            if (!seen_params.insert(Poco::toLower(key)).second)
+                throwInvalid(fmt::format("the query parameter '{}' is specified more than once", key));
+        }
+    }
     bool has_authorization_header = request.has("Authorization");
     bool presigned = findParameter(params, "X-Amz-Algorithm") != nullptr;
 
