@@ -7,8 +7,6 @@
 namespace DB
 {
 
-struct Settings;
-
 /** Parses a name of an object which could be written in the following forms:
   * name / `name` / "name" (identifier) or 'name'.
   * Note that empty strings are not allowed.
@@ -18,10 +16,8 @@ bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, Str
 /// Parse a list of identifiers or string literals.
 bool parseIdentifiersOrStringLiterals(IParser::Pos & pos, Expected & expected, Strings & result);
 
-/// Parse a list of identifiers or string literals into vector of strings.
-std::vector<String> parseIdentifiersOrStringLiterals(const String & str, const Settings & settings);
-
-/// Parse a list of identifiers or string literals into unordered_set of Strings.
-std::unordered_set<String> parseIdentifiersOrStringLiteralsToSet(const String & str, const Settings & settings);
+/// The overloads that parse a whole string, taking the parser limits from the settings, live in
+/// `Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h` - the parser does not depend on
+/// the settings schema.
 
 }

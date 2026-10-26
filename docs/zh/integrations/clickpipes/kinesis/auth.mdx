@@ -1,0 +1,133 @@
+---
+slug: /integrations/clickpipes/kinesis/auth
+sidebarTitle: 'Kinesis 基于角色的访问控制'
+title: 'Kinesis 基于角色的访问控制'
+description: '本文介绍 ClickPipes 客户如何利用基于角色的访问控制，对 Amazon Kinesis 进行身份验证并安全访问其数据流。'
+doc_type: 'guide'
+keywords: ['Amazon Kinesis']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文介绍 ClickPipes 客户如何利用基于角色的访问控制与 Amazon Kinesis 进行身份验证，并安全地访问其数据流。
+
+<div id="prerequisite">
+  ## 前置条件
+</div>
+
+要按照本指南操作，您需要具备：
+
+* 一个已启用的 ClickHouse Cloud 服务
+* 一个 AWS 账户
+
+<div id="introduction">
+  ## 介绍
+</div>
+
+在深入设置安全的 Kinesis 访问之前，先了解其工作机制很重要。下面概述了 ClickPipes 如何通过承担客户 AWS 账户中的某个角色来访问 Amazon Kinesis 数据流。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="安全 Kinesis" size="lg" border />
+
+采用这种方式后，客户就可以在一个地方统一管理对其 Kinesis 数据流的所有访问权限 (即被承担角色的 IAM 策略) ，而无需逐一修改每个流的访问策略。
+
+<div id="setup">
+  ## 配置
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### 获取 ClickHouse 服务 IAM 角色 ARN
+</div>
+
+* 1. 登录到您的 ClickHouse Cloud 账户。
+* 2. 选择要为其创建集成的 ClickHouse 服务
+* 3. 选择 **设置** 选项卡
+* 4. 向下滚动到页面底部的 **Network security 信息** 部分
+* 5. 复制如下所示该服务对应的 **Service role ID (IAM)** 值。
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="Secure S3 ARN" size="lg" border />
+
+<div id="setting-up-iam-assume-role">
+  ### 配置 IAM AssumeRole
+</div>
+
+<div id="manually-create-iam-role">
+  #### 手动创建 IAM 角色。
+</div>
+
+* 1. 在 Web 浏览器中，使用具有创建和管理 IAM 角色权限的 IAM 用户登录你的 AWS 账户。
+
+* 2. 进入 IAM Service Console。
+
+* 3. 创建一个新的 IAM 角色，并将 Trusted Entity Type 设为 `AWS account`。请注意，要使其正常工作，IAM 角色名称**必须以** `ClickHouseAccessRole-` 开头。
+
+  **i. 配置信任策略**
+
+  信任策略允许 ClickHouse 的 IAM 角色来承担此角色。请将 `{ClickHouse_IAM_ARN}` 替换为你的 ClickHouse 服务中的 IAM Role ARN (在上一步获取) 。
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "{ClickHouse_IAM_ARN}"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }
+  ```
+
+  **ii. 配置权限策略**
+
+  权限策略授予对你的 Kinesis stream 的访问权限。请替换以下占位符：
+
+  * `{REGION}`：你的 AWS 区域 (例如 `us-east-1`) 
+  * `{ACCOUNT_ID}`：你的 AWS 账户 ID
+  * `{STREAM_NAME}`：你的 Kinesis stream 名称
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:DescribeStream",
+          "kinesis:GetShardIterator",
+          "kinesis:GetRecords",
+          "kinesis:ListShards",
+          "kinesis:RegisterStreamConsumer",
+          "kinesis:DeregisterStreamConsumer",
+          "kinesis:ListStreamConsumers"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:SubscribeToShard",
+          "kinesis:DescribeStreamConsumer"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}/*"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:ListStreams"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  ```
+
+* 4. 创建完成后，复制新的 **IAM Role Arn**。这是访问你的 Kinesis stream 所需的值。

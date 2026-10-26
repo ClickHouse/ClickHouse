@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'C#'
+keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
+slug: /integrations/csharp
+description: '通过 HTTP 或原生 TCP 协议连接 ClickHouse 的官方 C# 客户端。'
+title: 'ClickHouse C# 客户端'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-cs'
+---
+
+官方 C# 客户端可通过 HTTP 或原生 TCP 协议连接 ClickHouse。
+两款客户端均包含在 `ClickHouse.Driver` NuGet 包中。
+
+## HTTP {#http}
+
+HTTP 客户端提供线程安全的高级 `ClickHouseClient` API，以及
+供 ORM 使用的 ADO.NET API。它支持 .NET 6.0 及更高版本，适用于大多数应用程序。
+
+如果有以下需求，请使用 HTTP 客户端：
+
+* 使用 ADO.NET 或 ORM；
+* 以 CSV、JSONEachRow、Parquet 或原始数据流格式输入和输出数据；
+* 使用 bearer 身份验证或自定义 HTTP 请求头；
+* 自定义参数类型解析、参数格式化或读取转换；
+* 为每次查询指定数据库或角色；
+* 提升 `JSON` 处理性能。TCP 客户端只能以文本形式传输 `JSON` 值。
+
+[阅读 HTTP 客户端文档](./http)。
+
+## 原生 TCP {#native-tcp}
+
+原生 TCP 客户端目前仍处于实验阶段，其公开 API 可能在后续版本中发生变化。它提供
+`ClickHouseTcpClient` API，支持按列读取数据块、原生压缩、连接池复用以及
+固定会话。适用于 .NET 8.0 及更高版本。
+
+如需以下功能，请使用原生 TCP 客户端：
+
+* 更高的性能，尤其是在按列处理数据时；
+* 列式数据块；
+* 持久连接；
+* 通过 `OpenSessionAsync` 使用固定会话；
+* 进度、profile、日志、汇总值和极值回调；
+* 将 W3C trace 上下文传播至 ClickHouse。
+
+[阅读原生 TCP 客户端文档](./tcp)。

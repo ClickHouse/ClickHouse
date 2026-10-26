@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Disks/IDisk.h>
@@ -18,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 
@@ -38,12 +40,61 @@ using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
+struct RenderOptions;
+struct RenderedCreateQuery;
+struct RenderedCreateQueryFields;
+using RenderedCreateQueryPtr = std::shared_ptr<const RenderedCreateQuery>;
 
 /// This structure is returned when getLightweightTablesIterator is called
 /// It contains basic details of the table, currently only the table name
 struct LightWeightTableDetails
 {
     String name;
+};
+
+/// What a query asks of the table names of one database, passed to getTablesIterator so the
+/// database enumerates less than everything it holds: a DataLake catalog lists only the
+/// namespaces it needs, and any database can skip the names the query cannot ask for.
+struct TablesFilter
+{
+    /// How the table name column is constrained: `In` (`name = 'ns.table'`, or
+    /// `name IN ('ns.a', 'ns.b')`) or `Like` (`name LIKE 'ns.%'`); `None` means no usable
+    /// predicate.
+    enum class Kind
+    {
+        None,
+        In,
+        Like,
+    };
+
+    Kind kind = Kind::None;
+
+    /// `Like`: the pattern (e.g. `ns.%`).
+    String pattern;
+
+    /// `In`: the names the query can ask for (e.g. `ns.a`, `ns.b`). It is an
+    /// over-approximation - a name in it need not exist, and a database is free to return
+    /// fewer - but every name the query can ask for is in it, so restricting an enumeration
+    /// to these names never hides a row. Shared so that handing the filter to one database
+    /// after another does not rebuild it.
+    std::shared_ptr<const NameSet> names;
+
+    static TablesFilter createIn(const Names & names_)
+    {
+        return {Kind::In, {}, std::make_shared<const NameSet>(names_.begin(), names_.end())};
+    }
+
+    static TablesFilter createLike(String pattern_) { return {Kind::Like, std::move(pattern_), {}}; }
+
+    /// A `filter_by_table_name` predicate accepting only the names the query can ask for, or
+    /// an empty function when this filter cannot decide by name alone (`None`, and `Like`,
+    /// whose pattern is only a listing hint and is not matched here).
+    std::function<bool(const String &)> getFilterByTableName() const
+    {
+        if (kind != Kind::In)
+            return {};
+        return [name_set = names](const String & name) { return name_set->contains(name); };
+    }
 };
 
 class IDatabaseTablesIterator
@@ -181,19 +232,17 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Database engines that do not own ClickHouse table metadata cannot contain arbitrary ClickHouse table engines:
-    /// - *MergeTree
-    /// - Distributed
-    /// - RocksDB
+    /// External database (i.e. `PostgreSQL`/Datalake/...) does not support any of ClickHouse internal tables:
+    /// - `*MergeTree`
+    /// - `Distributed`
+    /// - `RocksDB`
     /// - ...
     virtual bool isExternal() const { return true; }
 
-    /// True for databases whose contents live on a remote service that we don't
-    /// want to enumerate implicitly in system tables (data lake catalogs, MySQL, PostgreSQL, ...).
-    /// Such databases are hidden from system.tables / system.columns / system.completions
-    /// unless `show_remote_databases_in_system_tables` is enabled.
-    /// This is distinct from `isExternal()` (which classifies whether the engine supports
-    /// ClickHouse internal table types).
+    virtual bool isDatalakeCatalog() const { return false; }
+
+    /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
+    /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
     virtual bool isRemoteDatabase() const { return false; }
 
     /// Load a set of existing tables.
@@ -265,6 +314,9 @@ public:
     /// Throws exception when table exists.
     virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
 
+    /// Whether a full-definition `ATTACH` may take a detached table's name, i.e. skip `checkMetadataFilenameAvailability`.
+    virtual bool canReattachTableWithFullDefinition() const { return true; }
+
     /// Check if the table name exceeds the max allowed length
     virtual void checkTableNameLength(const String & /*table_name*/) const {}
 
@@ -277,10 +329,53 @@ public:
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
+    /// Conjunction of an explicit `filter_by_table_name` and what `tables_filter` can decide
+    /// by name; either side may be absent, and an absent side accepts every name.
+    static FilterByNameFunction combineFilters(const FilterByNameFunction & filter_by_table_name, const TablesFilter & tables_filter)
+    {
+        auto filter_by_names = tables_filter.getFilterByTableName();
+        if (!filter_by_names)
+            return filter_by_table_name;
+        if (!filter_by_table_name)
+            return filter_by_names;
+        return [filter_by_table_name, filter_by_names](const String & name)
+        {
+            return filter_by_names(name) && filter_by_table_name(name);
+        };
+    }
+
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    /// Maps a table obtained from `getTablesIterator` to the storage a user-facing read must go
+    /// through. For almost every database this is the very same storage, and the default
+    /// implementation returns it unchanged.
+    ///
+    /// `MaterializedPostgreSQL` is the exception: the iterator exposes the physical nested
+    /// `ReplacingMergeTree` tables, so that generic enumerators - `system.parts`,
+    /// `ServerAsynchronousMetrics`, backups - keep seeing real `MergeTree` storages and their
+    /// UUIDs, while reading the data requires the `StorageMaterializedPostgreSQL` wrapper, which
+    /// filters out the deleted rows and forces `FINAL`. Engines that read data through the
+    /// iterator - `Merge` - must therefore map every enumerated table through this method.
+    virtual StoragePtr getTableForRead(const String & /*table_name*/, const StoragePtr & table, ContextPtr /*local_context*/) const
+    {
+        return table;
+    }
+
+    /// Same as getTablesIterator, but accepts what the query asks of the table names.
+    /// Implementations that can push it down to an external catalog (e.g. DataLake) or look a
+    /// table up by name (e.g. DatabaseWithOwnTablesBase) override this; the default only
+    /// narrows the enumeration to the names the query can ask for.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const
+    {
+        return getTablesIterator(context, combineFilters(filter_by_table_name, tables_filter), skip_not_loaded);
+    }
 
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
@@ -295,6 +390,17 @@ public:
         }
 
         return result;
+    }
+
+    /// Lightweight tables iterator with a TablesFilter hint. Default only narrows the
+    /// enumeration to the names the query can ask for.
+    virtual std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const
+    {
+        return getLightweightTablesIterator(context, combineFilters(filter_by_table_name, tables_filter), skip_not_loaded);
     }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
@@ -381,10 +487,14 @@ public:
         return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
-    {
-        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ true);
-    }
+    /// Throws if the table does not exist. If a similarly-named table exists (in this or
+    /// another database), the exception message contains a "Maybe you meant ...?" hint,
+    /// like the one produced for `SELECT` queries.
+    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const;
+
+    /// The CREATE query rendered for `system.tables`. Never null. Read only the requested `fields`.
+    RenderedCreateQueryPtr
+    getRenderedCreateTableQuery(const String & name, ContextPtr context, const RenderedCreateQueryFields & fields) const;
 
     /// Get the CREATE DATABASE query for current database.
     ASTPtr getCreateDatabaseQuery() const
@@ -431,6 +541,8 @@ public:
     virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
     /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
     virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
+
+    virtual String getDefaultTableEngineName(const String & /*table_name*/) const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
@@ -474,6 +586,10 @@ public:
 protected:
     virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
+
+    /// Renders on every call. An override may serve a cached rendering of more fields than asked.
+    virtual RenderedCreateQueryPtr getRenderedCreateTableQueryImpl(
+        const String & name, ContextPtr context, const RenderOptions & options, const RenderedCreateQueryFields & fields) const;
 
     mutable std::mutex mutex;
     String database_name TSA_GUARDED_BY(mutex);

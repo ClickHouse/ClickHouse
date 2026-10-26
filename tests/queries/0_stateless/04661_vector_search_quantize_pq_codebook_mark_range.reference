@@ -1,0 +1,4 @@
+part_type	Wide
+partial_range	3000	3000
+full_scan	10000	10000
+same_codebook	1	1	1

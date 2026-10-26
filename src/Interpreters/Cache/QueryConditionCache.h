@@ -9,6 +9,23 @@
 namespace DB
 {
 
+struct Settings;
+class ColumnsDescription;
+class ColumnMapper;
+struct FormatSettings;
+
+/// Settings that change how a function inside a condition evaluates without leaving any trace in the
+/// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family, `locate`, `least`/`greatest` and a few more
+/// read them while they run; the registration rule is in the definition).
+/// Two queries whose conditions differ only in those settings must not share a cache entry: a mark verdict
+/// computed under one value is wrong under the other. Fold the returned salt into the condition hash.
+UInt64 queryConditionCacheSettingsSalt(const Settings & settings);
+
+/// Combines the hash of a condition's `ActionsDAG` with that salt. Every producer of a query condition
+/// cache key has to use it, or a verdict written by one query is never found by the next one.
+UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt);
+
+
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
 /// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
@@ -76,6 +93,39 @@ public:
     /// Compute cache key from table UUID, part name and condition hash
     static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
 
+    /// Compose the `part_name` component of a cache key for a file-backed table (e.g. `File`, `S3`,
+    /// object storage). Uses the full path (not just the base name) so files that share a name in
+    /// different directories do not collide, and folds in a content-version token so an in-place
+    /// rewrite of the file yields a different key rather than a stale hit. The token is the ETag for
+    /// remote objects, or a local identity (modification time + inode + size) for local files. For
+    /// immutable files (e.g. data-lake data files) the path alone is a stable identity and the token
+    /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
+    /// either, so the mapping is unambiguous.
+    static String makeFilePartName(const String & path, std::string_view version_token);
+
+    /// The `table_id` for the entries of a file-backed table. A `part_name` from `makeFilePartName` that
+    /// identifies the data by itself - an absolute local path with its version token, or the full
+    /// location of a remote object, including the storage it is in, with its ETag (or of an immutable
+    /// data lake file) - needs no table to be unambiguous. So a table without a UUID (the one behind a
+    /// table function like `file` or `s3`, or a table in a database without UUIDs) keeps such entries
+    /// without a table, while a `Nil` `table_id` disables the cache (see `write` and `read`).
+    /// The `part_name` identifies only the bytes of the file, not how they are read: the same file can be
+    /// read through another format, compression or structure (e.g. a column missing in the file with
+    /// another default), and a verdict of one such reader is wrong for another. A table fixes all of them,
+    /// so a table without a UUID gets an id derived from them instead. A data lake also maps its columns to
+    /// the fields of a file by field ids (`column_mapper`, may be null), and the same file and columns can
+    /// map to different fields (e.g. a column dropped and added again under the same name, read at two
+    /// snapshots), so the mapping is part of the id too. A table can also fix the format settings of its
+    /// reader at `CREATE` (`format_settings`, null when the reader takes them from the query context, which
+    /// the condition hash covers already), and those that change the verdict are part of the id as well.
+    static UUID getTableIdForFileEntries(
+        const UUID & table_uuid,
+        std::string_view format,
+        std::string_view compression_method,
+        const ColumnsDescription & columns,
+        const ColumnMapper * column_mapper,
+        const FormatSettings * format_settings);
+
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
@@ -84,7 +134,10 @@ public:
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+    /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
+    /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
+    /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;

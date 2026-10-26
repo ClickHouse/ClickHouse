@@ -1,0 +1,46 @@
+---
+description: 'TCP 연결 제한.'
+sidebarTitle: 'TCP 연결 제한'
+slug: /operations/settings/tcp-connection-limits
+title: 'TCP 연결 제한'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse TCP 연결(즉, [command-line client](/ko/concepts/features/interfaces/client)를 통한 연결)은
+일정 횟수의 쿼리 실행 후 또는 일정 시간이 지나면 자동으로 종료될 수 있습니다.
+연결이 종료된 후에는 자동으로 다시 연결되지 않습니다(다만 다른 방식으로 트리거되는 경우는 예외이며,
+예를 들어 command-line client에서 다른 쿼리를 전송하는 경우가 있습니다).
+
+연결 제한은 서버 설정
+`tcp_close_connection_after_queries_num`(쿼리 횟수 제한용)
+또는 `tcp_close_connection_after_queries_seconds`(시간 제한용)를 0보다 크게 설정하여 활성화할 수 있습니다.
+두 제한이 모두 활성화된 경우, 둘 중 먼저 도달한 제한에 따라 연결이 종료됩니다.
+
+제한에 도달해 연결이 종료되면 클라이언트는
+`TCP_CONNECTION_LIMIT_REACHED` 예외를 받으며, **연결 종료를 일으킨 쿼리는 절대 처리되지 않습니다**.
+
+<div id="query-limits">
+  ## 쿼리 제한
+</div>
+
+`tcp_close_connection_after_queries_num`이 N으로 설정되어 있다고 가정하면, 해당 연결에서는
+성공한 쿼리 N개까지 허용됩니다. 그리고 N + 1번째 쿼리에서 클라이언트 연결이 종료됩니다.
+
+처리된 모든 쿼리는 쿼리 제한에 포함됩니다. 따라서 command-line client로 연결할 때,
+자동으로 실행되는 초기 시스템 경고 쿼리가 제한에 포함될 수 있습니다.
+
+TCP 연결이 idle 상태일 때(즉, 일정 시간 동안 쿼리를 처리하지 않았을 때이며,
+이 시간은 세션 설정 `poll_interval`로 지정됨), 지금까지 집계된 쿼리 수는 0으로 재설정됩니다.
+즉, idle 상태가 발생하면 단일 연결에서의 전체 쿼리 수가
+`tcp_close_connection_after_queries_num`를 초과할 수 있습니다.
+
+<div id="duration-limits">
+  ## 지속 시간 제한
+</div>
+
+연결 지속 시간은 클라이언트가 연결되는 즉시 측정되기 시작합니다.
+`tcp_close_connection_after_queries_seconds`초가 지난 뒤 첫 번째 쿼리가 실행되면 클라이언트 연결이 종료됩니다.

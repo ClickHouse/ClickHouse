@@ -17,11 +17,11 @@ Offset 0
 Output: number MOD 10, sum(number) * 2
 
 Expression (Project names)
-│  Actions: INPUT : 0 -> modulo(__table1.number, 10_UInt8) UInt8 : 0
-│           INPUT : 1 -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 1
-│           ALIAS modulo(__table1.number, 10_UInt8) :: 0 -> key UInt8 : 2
-│           ALIAS multiply(sum(__table1.number), 2_UInt8) :: 1 -> total UInt64 : 0
-│  Positions: 2 0
+│  Actions: INPUT : 0 -> multiply(sum(__table1.number), 2_UInt8) UInt64 : 0
+│           INPUT : 1 -> modulo(__table1.number, 10_UInt8) UInt8 : 1
+│           ALIAS multiply(sum(__table1.number), 2_UInt8) :: 0 -> total UInt64 : 2
+│           ALIAS modulo(__table1.number, 10_UInt8) :: 1 -> key UInt8 : 0
+│  Positions: 0 2
 └──Limit (preliminary LIMIT)
    │  Limit 5
    │  Offset 0

@@ -23,7 +23,9 @@
                 <metadata_type>plain_rewritable</metadata_type>
                 <endpoint>http://minio1:9001/root/data_with_cache/</endpoint>
                 <endpoint_subpath from_env="ENDPOINT_SUBPATH"></endpoint_subpath>
-                <object_metadata_cache_size>1000</object_metadata_cache_size>
+                <!-- `object_metadata_cache_size` used to be here, but `plain_rewritable` stopped
+                     reading it after the metadata storage of `plain_rewritable` was separated from
+                     `plain`, so it did nothing. -->
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_plain_rewritable_with_metadata_cache>

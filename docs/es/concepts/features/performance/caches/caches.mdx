@@ -1,0 +1,36 @@
+---
+description: 'Al ejecutar consultas, ClickHouse utiliza diferentes cachés.'
+sidebarTitle: 'Cachés'
+slug: /operations/caches
+title: 'Tipos de caché'
+keywords: ['cache']
+doc_type: 'reference'
+---
+
+Al ejecutar consultas, ClickHouse utiliza diferentes cachés para acelerar las consultas
+y reducir la necesidad de leer o escribir en disco.
+
+Los principales tipos de caché son:
+
+* `mark_cache` — Caché de [marcas](/es/resources/develop-contribute/introduction/architecture#merge-tree) utilizada por los motores de tabla de la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree).
+* `uncompressed_cache` — Caché de datos sin comprimir utilizada por los motores de tabla de la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree).
+* Caché de páginas del sistema operativo (utilizada indirectamente para archivos con los datos propiamente dichos).
+
+Además, hay muchos otros tipos de caché:
+
+* Caché de DNS.
+* Caché de [Regexp](/es/reference/formats/Regexp).
+* Caché de expresiones compiladas.
+* Caché de [índice de similitud vectorial](/es/reference/engines/table-engines/mergetree-family/annindexes).
+* Caché de [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes#caching).
+* Caché de esquemas del [formato Avro](/es/reference/formats/Avro/Avro).
+* Caché de datos de [Dictionaries](/es/reference/statements/create/dictionary).
+* Caché de inferencia de esquemas.
+* [Caché del sistema de archivos](/es/concepts/features/configuration/server-config/storing-data) para discos S3, Azure, Local y otros.
+* [Caché de páginas en espacio de usuario](/es/concepts/features/performance/caches/userspace-page-cache)
+* [Caché de consultas](/es/concepts/features/performance/caches/query-cache).
+* [Caché de condiciones de consulta](/es/concepts/features/performance/caches/query-condition-cache).
+* Caché de esquemas de formato.
+
+Si desea borrar una de las cachés, por motivos de ajuste del rendimiento, solución de problemas o coherencia de los datos,
+puede usar la sentencia [`SYSTEM CLEAR ... CACHE`](/es/reference/statements/system).

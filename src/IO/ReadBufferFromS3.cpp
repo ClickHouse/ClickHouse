@@ -5,10 +5,15 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/StdStreamBufFromReadBuffer.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/HTTPConnectionPool.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
+
+#include <aws/core/http/HttpResponse.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/HistogramMetrics.h>
@@ -28,6 +33,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3RequestsCut;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
@@ -51,6 +57,7 @@ namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
+    extern const char s3_read_inject_etag_mismatch[];
 }
 
 namespace ErrorCodes
@@ -61,6 +68,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
@@ -100,12 +108,16 @@ ReadBufferFromS3::ReadBufferFromS3(
     bool restricted_seek_,
     std::optional<size_t> file_size_,
     const S3CredentialsRefreshCallback & credentials_refresh_callback_,
-    BlobStorageLogWriterPtr blob_storage_log_)
+    BlobStorageLogWriterPtr blob_storage_log_,
+    const String & expected_etag_,
+    UInt64 expected_etag_hash_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , version_id(version_id_)
+    , expected_etag(expected_etag_)
+    , expected_etag_hash(expected_etag_hash_)
     , request_settings(request_settings_)
     , offset(offset_)
     , read_until_position(read_until_position_)
@@ -130,6 +142,14 @@ bool ReadBufferFromS3::nextImpl()
 
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
+    }
+
+    if (impl && impl->isResultReleased() && cut_request_end && static_cast<size_t>(offset) == cut_request_end)
+    {
+        /// The request was cut to one buffer fill, and that fill is consumed: the connection has
+        /// already returned to the pool, and the next fill needs a new request.
+        resetWorkingBuffer();
+        impl.reset();
     }
 
     if (impl)
@@ -216,13 +236,15 @@ bool ReadBufferFromS3::nextImpl()
             if (!processException(getPosition(), attempt) || last_attempt)
                 throw;
 
+            /// Drop the failed request before pausing. Its connection is of no use to this buffer
+            /// anymore, and keeping it during the back-off would only take it away from the others.
+            /// `impl` is reinitialized on the next attempt.
+            resetWorkingBuffer();
+            impl.reset();
+
             /// Pause before next attempt.
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
-
-            /// Try to reinitialize `impl`.
-            resetWorkingBuffer();
-            impl.reset();
         }
     }
 
@@ -260,13 +282,14 @@ bool ReadBufferFromS3::nextImpl()
     offset += working_buffer.size();
 
     // release result if possible to free pooled HTTP session for better reuse
-    bool is_read_until_position = read_until_position && read_until_position == offset;
+    const bool is_read_until_position = read_until_position && read_until_position == offset;
+    const bool is_cut_request_end = cut_request_end && cut_request_end == static_cast<size_t>(offset);
     const bool stream_eof = impl->isStreamEof();
-    if (stream_eof || is_read_until_position)
+    if (stream_eof || is_read_until_position || is_cut_request_end)
     {
         release_reason = fmt::format(
             "{} (read {}/{}, file size: {}, restricted seek: {})",
-            impl->isStreamEof() ? "stream EOF" : "read until position reached",
+            stream_eof ? "stream EOF" : is_read_until_position ? "read until position reached" : "end of the request cut to one buffer fill",
             offset.load(), read_until_position.load(),
             file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
 
@@ -305,10 +328,17 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         try
         {
             result = sendRequest(attempt, range_begin, range_begin + n - 1);
-            std::istream & istr = result->GetBody();
+
+            /// The body of the response is a ReadBuffer wrapped into a stream, because the AWS
+            /// SDK accepts nothing else; read from the buffer, so that the data goes into `to`
+            /// without a copy in between.
+            auto * stream_buf = dynamic_cast<StdStreamBufFromReadBuffer *>(result->GetBody().rdbuf());
+            if (!stream_buf)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The body of a GetObject response is not a ReadBuffer");
+            ReadBuffer & body = stream_buf->getReadBuffer();
 
             bool cancelled = false;
-            copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
+            copyFromReadBufferWithProgressCallback(body, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
 
@@ -319,7 +349,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             }
 
             /// Read remaining bytes after the end of the payload
-            istr.ignore(INT64_MAX);
+            body.tryIgnore(std::numeric_limits<size_t>::max());
         }
         catch (...)
         {
@@ -327,6 +357,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
             if (!processException(range_begin, attempt) || last_attempt)
                 throw;
+
+            /// Drop the failed request before pausing, for the same reason as in `nextImpl`: its
+            /// connection is of no use to this read anymore, and holding it during the back-off
+            /// would only keep it away from the other readers of the same group.
+            result.reset();
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
@@ -380,6 +415,11 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         tryLogCurrentException(log);
         return false;
     }
+
+    /// The object was overwritten in place; re-fetching the same range would just return the new
+    /// generation again. Fail fast and let the caller retry the whole read with fresh metadata.
+    if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+        return false;
 
     return true;
 }
@@ -491,6 +531,17 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
     }
 }
 
+void ReadBufferFromS3::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
+{
+    if (impl)
+    {
+        impl->detachSession();
+        resetWorkingBuffer();
+        impl.reset();
+    }
+    read_settings.io_scheduling = io_scheduling;
+}
+
 void ReadBufferFromS3::setReadUntilEnd()
 {
     if (read_until_position)
@@ -533,7 +584,32 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     if (read_until_position && offset >= read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
-    const auto right_offset = read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt;
+    std::optional<size_t> right_offset = read_until_position ? std::make_optional<size_t>(read_until_position - 1) : std::nullopt;
+
+    /// A request normally covers the whole range this buffer has to deliver, and its connection stays
+    /// with the buffer until the range is consumed. A MergeTree reader opens one such buffer per
+    /// substream of every part it reads and consumes them in lockstep, so a merge of parts with a
+    /// `JSON` column holds thousands of connections that are idle nearly all the time, and several
+    /// such merges can take the whole connection group away from everyone else.
+    ///
+    /// Once the connection group of the disks is above its soft limit, cut the request to what one
+    /// buffer fill consumes. The response is then complete right after the fill, the connection
+    /// returns to the pool at once, and the next fill sends a new request from the new offset.
+    /// The connections held by such readers are then bounded by the fills in flight rather than by
+    /// the number of open streams. This costs a request per fill, so it is done only under pressure.
+    cut_request_end = 0;
+    if (client_ptr->isClientForDisk() && HTTPConnectionPools::instance().isSoftLimitReached(HTTPConnectionGroupType::DISK))
+    {
+        /// Exclusive end of the range this buffer has to deliver; unknown when reading to the end of an object of unknown size.
+        const std::optional<size_t> range_end = read_until_position ? std::make_optional<size_t>(read_until_position) : file_size;
+        const size_t fill_size = use_external_buffer ? internal_buffer.size() : read_settings.remote_fs_settings.buffer_size;
+        if (range_end && fill_size && static_cast<size_t>(offset) + fill_size < *range_end)
+        {
+            cut_request_end = static_cast<size_t>(offset) + fill_size;
+            right_offset = cut_request_end - 1;
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsCut);
+        }
+    }
 
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
@@ -549,8 +625,13 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
+    /// Pin the GET to the generation seen at read setup via If-Match, so an in-place overwrite is
+    /// rejected with 412 instead of transferring torn cross-generation bytes. Only for non-versioned
+    /// reads with a known expected_etag.
+    else if (!expected_etag.empty())
+        req.SetIfMatch(expected_etag);
 
-    S3::setClickhouseAttemptNumber(req, attempt);
+    S3::setClickHouseAttemptNumber(req, attempt);
 
     if (range_end_incl)
     {
@@ -598,6 +679,28 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (outcome.IsSuccess())
     {
         auto result = outcome.GetResultWithOwnership();
+
+        String response_etag = result.GetETag();
+        fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
+
+        /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
+        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
+        /// taken from the current version, would falsely mismatch) and empty response ETags.
+        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
+                "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+                bucket, key, expected_etag, response_etag);
+
+        /// With only the hash there is no If-Match, so nothing else pins this GET: an empty response
+        /// ETag fails too.
+        if (version_id.empty() && expected_etag_hash && getETagHash(response_etag) != expected_etag_hash)
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was replaced during read (expected etag hash {}, got etag {}); retry the query",
+                bucket, key, expected_etag_hash, response_etag);
+
         if (blob_storage_log)
         {
             size_t data_size = static_cast<size_t>(result.GetContentLength());
@@ -622,6 +725,18 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             blob_log_watch.elapsedMicroseconds(),
             static_cast<Int32>(error.GetErrorType()), error.GetMessage());
     }
+
+    /// Map the If-Match 412 to the same non-retryable S3_OBJECT_CHANGED_DURING_READ as the success-path
+    /// comparison (a generic S3 error would be retried by processException). Must map here from the raw
+    /// error: S3Exception keeps only the Aws S3Errors code, not the HTTP 412 status.
+    if (version_id.empty() && !expected_etag.empty()
+        && error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} was replaced during read (If-Match on etag {} failed); "
+            "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+            bucket, key, expected_etag);
+
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 

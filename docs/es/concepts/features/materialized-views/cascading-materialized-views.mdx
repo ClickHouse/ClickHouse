@@ -1,0 +1,378 @@
+---
+slug: /guides/developer/cascading-materialized-views
+title: 'Vistas materializadas en cascada'
+description: 'Cómo usar varias vistas materializadas a partir de una tabla de origen.'
+keywords: ['vista materializada', 'agregación']
+doc_type: 'guide'
+---
+
+Este ejemplo muestra cómo crear una vista materializada y, después, cómo encadenar una segunda vista materializada sobre la primera. En esta página verá cómo hacerlo, algunas de las posibilidades y sus limitaciones. Se pueden resolver distintos casos de uso creando una vista materializada que tome como origen otra vista materializada.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QDAJTKZT8y4?si=1KqPNHHfaKfxtPat" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<br />
+
+Ejemplo:
+
+Usaremos un conjunto de datos ficticio con el número de visitas por hora para un grupo de nombres de dominio.
+
+Nuestro objetivo
+
+1. Necesitamos los datos agregados por mes para cada nombre de dominio,
+2. También necesitamos los datos agregados por año para cada nombre de dominio.
+
+Puede elegir una de estas opciones:
+
+* Escribir consultas que lean y agreguen los datos durante la consulta SELECT
+* Preparar los datos durante la ingesta en un nuevo formato
+* Preparar los datos durante la ingesta para una agregación específica.
+
+Preparar los datos mediante vistas materializadas le permitirá reducir la cantidad de datos y cálculos que ClickHouse necesita realizar, haciendo que sus consultas SELECT sean más rápidas.
+
+<div id="source-table-for-the-materialized-views">
+  ## Tabla de origen para las vistas materializadas
+</div>
+
+Cree la tabla de origen; como nuestro objetivo es generar informes sobre los datos agregados y no sobre las filas individuales, podemos procesarlos, pasar la información a las vistas materializadas y descartar los datos reales entrantes. Esto cumple nuestro objetivo y ahorra almacenamiento, por lo que usaremos el motor de tabla `Null`.
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+```
+
+```sql
+CREATE TABLE analytics.hourly_data
+(
+    `domain_name` String,
+    `event_time` DateTime,
+    `count_views` UInt64
+)
+ENGINE = Null
+```
+
+<Note>
+  Puedes crear una vista materializada sobre una tabla Null. Así, los datos escritos en la tabla se reflejarán en la vista, pero los datos originales en bruto seguirán descartándose.
+</Note>
+
+<div id="monthly-aggregated-table-and-materialized-view">
+  ## Tabla agregada mensual y vista materializada
+</div>
+
+Para la primera vista materializada, necesitamos crear la tabla `Target`; en este ejemplo, será `analytics.monthly_aggregated_data` y almacenará la suma de las vistas por mes y por nombre de dominio.
+
+```sql
+CREATE TABLE analytics.monthly_aggregated_data
+(
+    `domain_name` String,
+    `month` Date,
+    `sumCountViews` AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (domain_name, month)
+```
+
+La vista materializada que enviará los datos a la tabla de destino tendrá este aspecto:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.monthly_aggregated_data_mv
+TO analytics.monthly_aggregated_data
+AS
+SELECT
+    toDate(toStartOfMonth(event_time)) AS month,
+    domain_name,
+    sumState(count_views) AS sumCountViews
+FROM analytics.hourly_data
+GROUP BY
+    domain_name,
+    month
+```
+
+<div id="yearly-aggregated-table-and-materialized-view">
+  ## Tabla anual agregada y vista materializada
+</div>
+
+Ahora crearemos la segunda vista materializada, que estará vinculada a nuestra tabla de destino anterior, `monthly_aggregated_data`.
+
+Primero, crearemos una nueva tabla de destino que almacenará la suma de las visualizaciones agregadas por año para cada nombre de dominio.
+
+```sql
+CREATE TABLE analytics.year_aggregated_data
+(
+    `domain_name` String,
+    `year` UInt16,
+    `sumCountViews` UInt64
+)
+ENGINE = SummingMergeTree()
+ORDER BY (domain_name, year)
+```
+
+Este paso define la cascada. La sentencia `FROM` usará la tabla `monthly_aggregated_data`, lo que significa que el flujo de datos será el siguiente:
+
+1. Los datos llegan a la tabla `hourly_data`.
+2. ClickHouse reenviará los datos recibidos a la tabla de la primera vista materializada, `monthly_aggregated_data`,
+3. Por último, los datos recibidos en el paso 2 se reenviarán a `year_aggregated_data`.
+
+```sql
+CREATE MATERIALIZED VIEW analytics.year_aggregated_data_mv
+TO analytics.year_aggregated_data
+AS
+SELECT
+    toYear(toStartOfYear(month)) AS year,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    year
+```
+
+<Note>
+  Un malentendido común al trabajar con vistas materializadas es pensar que los datos se leen de la tabla. No es así como funcionan las `vistas materializadas`; los datos que se propagan son el bloque insertado, no el resultado final de la tabla.
+
+  Imaginemos, en este ejemplo, que el motor usado en `monthly_aggregated_data` es CollapsingMergeTree; los datos que se reenvían a nuestra segunda vista materializada, `year_aggregated_data_mv`, no serán el resultado final de la tabla colapsada, sino el bloque de datos con los campos definidos como en `SELECT ... GROUP BY`.
+
+  Si usas CollapsingMergeTree, ReplacingMergeTree o incluso SummingMergeTree y planeas crear una vista materializada en cascada, debes comprender las limitaciones que se describen aquí.
+</Note>
+
+<div id="sample-data">
+  ## Datos de ejemplo
+</div>
+
+Ha llegado el momento de poner a prueba nuestra vista materializada en cascada insertando algunos datos:
+
+```sql
+INSERT INTO analytics.hourly_data (domain_name, event_time, count_views)
+VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),
+       ('clickhouse.com', '2019-02-02 00:00:00', 2),
+       ('clickhouse.com', '2019-02-01 00:00:00', 3),
+       ('clickhouse.com', '2020-01-01 00:00:00', 6);
+```
+
+Si haces un SELECT del contenido de `analytics.hourly_data`, verás lo siguiente, porque el motor de tabla es `Null`, pero los datos se procesaron.
+
+```sql
+SELECT * FROM analytics.hourly_data
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+Hemos utilizado un conjunto de datos pequeño para asegurarnos de que podemos seguir y comparar el resultado con lo que esperamos; una vez que el flujo funcione correctamente con un conjunto de datos pequeño, podrás pasar a un volumen mayor de datos.
+
+<div id="results">
+  ## Resultados
+</div>
+
+Si intentas consultar la tabla de destino seleccionando el campo `sumCountViews`, verás la representación binaria (en algunos terminales), ya que el valor no se almacena como un número, sino como un tipo AggregateFunction.
+Para obtener el resultado final de la agregación, debes usar el sufijo `-Merge`.
+
+Puedes ver los caracteres especiales almacenados en AggregateFunction con esta consulta:
+
+```sql
+SELECT sumCountViews FROM analytics.monthly_aggregated_data
+```
+
+```response
+┌─sumCountViews─┐
+│               │
+│               │
+│               │
+└───────────────┘
+
+3 rows in set. Elapsed: 0.003 sec.
+```
+
+En su lugar, probemos a usar el sufijo `Merge` para obtener el valor `sumCountViews`:
+
+```sql
+SELECT
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data;
+```
+
+```response
+┌─sumCountViews─┐
+│            12 │
+└───────────────┘
+
+1 fila en el conjunto. Elapsed: 0.003 sec.
+```
+
+En `AggregatingMergeTree` hemos definido `AggregateFunction` como `sum`, por lo que podemos usar `sumMerge`. Si usamos la función `avg` en `AggregateFunction`, utilizaremos `avgMerge`, y así sucesivamente.
+
+```sql
+SELECT
+    month,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    month
+```
+
+Ahora podemos comprobar que las vistas materializadas cumplen el objetivo que nos hemos propuesto.
+
+Ahora que tenemos los datos almacenados en la tabla de destino `monthly_aggregated_data`, podemos obtener los datos agregados por mes para cada nombre de dominio:
+
+```sql
+SELECT
+   month,
+   domain_name,
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+   domain_name,
+   month
+```
+
+```response
+┌──────month─┬─domain_name────┬─sumCountViews─┐
+│ 2020-01-01 │ clickhouse.com │             6 │
+│ 2019-01-01 │ clickhouse.com │             1 │
+│ 2019-02-01 │ clickhouse.com │             5 │
+└────────────┴────────────────┴───────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+Datos agregados por año para cada nombre de dominio:
+
+```sql
+SELECT
+   year,
+   domain_name,
+   sum(sumCountViews)
+FROM analytics.year_aggregated_data
+GROUP BY
+   domain_name,
+   year
+```
+
+```response
+┌─year─┬─domain_name────┬─sum(sumCountViews)─┐
+│ 2019 │ clickhouse.com │                  6 │
+│ 2020 │ clickhouse.com │                  6 │
+└──────┴────────────────┴────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="combining-multiple-source-tables-to-single-target-table">
+  ## Combinar varias tablas de origen en una sola tabla de destino
+</div>
+
+Las vistas materializadas también pueden utilizarse para combinar varias tablas de origen en una misma tabla de destino. Esto resulta útil para crear una vista materializada similar a la lógica de `UNION ALL`.
+
+Primero, cree dos tablas de origen que representen distintos conjuntos de métricas:
+
+```sql
+CREATE TABLE analytics.impressions
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+
+CREATE TABLE analytics.clicks
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+```
+
+Luego, cree la tabla `Target` con el conjunto combinado de métricas:
+
+```sql
+CREATE TABLE analytics.daily_overview
+(
+    `on_date` Date,
+    `domain_name` String,
+    `impressions` SimpleAggregateFunction(sum, UInt64),
+    `clicks` SimpleAggregateFunction(sum, UInt64)
+) ENGINE = AggregatingMergeTree ORDER BY (on_date, domain_name)
+```
+
+Cree dos vistas materializadas que apunten a la misma tabla `Target`. No es necesario incluir explícitamente las columnas que faltan:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.daily_impressions_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS impressions,
+    0 clicks         ---<<<--- si omites esto, el valor será 0 igualmente
+FROM
+    analytics.impressions
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+
+CREATE MATERIALIZED VIEW analytics.daily_clicks_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS clicks,
+    0 impressions    ---<<<--- si omites esto, el valor será 0 igualmente
+FROM
+    analytics.clicks
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+```
+
+Ahora, al insertar valores, estos se agregarán a las columnas correspondientes de la tabla `Target`:
+
+```sql
+INSERT INTO analytics.impressions (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-02-01 00:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+
+INSERT INTO analytics.clicks (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+```
+
+Las impresiones y los clics combinados en la tabla `Target`:
+
+```sql
+SELECT
+    on_date,
+    domain_name,
+    sum(impressions) AS impressions,
+    sum(clicks) AS clicks
+FROM
+    analytics.daily_overview
+GROUP BY
+    on_date,
+    domain_name
+;
+```
+
+Esta consulta debería devolver algo como:
+
+```response
+┌────on_date─┬─domain_name────┬─impressions─┬─clicks─┐
+│ 2019-01-01 │ clickhouse.com │           2 │      2 │
+│ 2019-03-01 │ clickhouse.com │           1 │      1 │
+│ 2019-02-01 │ clickhouse.com │           1 │      0 │
+└────────────┴────────────────┴─────────────┴────────┘
+
+3 rows in set. Elapsed: 0.018 sec.
+```

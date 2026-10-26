@@ -32,7 +32,8 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0,
+    default_compression_codec = 'LZ4'; -- index/granule output is codec-stable; the default codec is randomized server-side
 
 INSERT INTO tab3
 SELECT number,
@@ -84,7 +85,8 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0,
+    default_compression_codec = 'LZ4'; -- index/granule output is codec-stable; the default codec is randomized server-side
 
 INSERT INTO tab3_mid
 SELECT number,
@@ -136,7 +138,8 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0,
+    default_compression_codec = 'LZ4'; -- index/granule output is codec-stable; the default codec is randomized server-side
 
 INSERT INTO tab4
 SELECT number,

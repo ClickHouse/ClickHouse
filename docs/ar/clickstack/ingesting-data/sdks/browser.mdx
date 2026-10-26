@@ -1,0 +1,183 @@
+---
+slug: /use-cases/observability/clickstack/sdks/browser
+description: 'Browser SDK لـ ClickStack - حزمة Observability من ClickHouse'
+title: 'JavaScript للمتصفح'
+doc_type: 'guide'
+keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
+---
+
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+يتيح لك Browser SDK الخاص بـ ClickStack تضمين أدوات الرصد في
+تطبيق الواجهة الأمامية لديك لإرسال
+الأحداث إلى ClickStack. وهذا يتيح لك عرض
+طلبات الشبكة والاستثناءات إلى جانب أحداث الواجهة الخلفية ضمن خط زمني واحد.
+
+بالإضافة إلى ذلك، سيلتقط تلقائيًا بيانات إعادة تشغيل الجلسة ويربطها،
+بحيث يمكنك استعراض ما كان يراه المستخدم بصريًا خطوة بخطوة واستكشاف
+المشكلات أثناء استخدامه لتطبيقك.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## البدء {#getting-started}
+
+<br />
+
+<Tabs>
+  <Tab title="استيراد الحزمة">
+    **ثبّت عبر استيراد الحزمة (موصى به)**
+
+    استخدم الأمر التالي لتثبيت [حزمة المتصفح](https://www.npmjs.com/package/@hyperdx/browser).
+
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    **أعِدّ ClickStack**
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // احذفها عند استخدام Managed ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // حدّده لربط التتبعات من الواجهة الأمامية بطلبات الواجهة الخلفية
+        consoleCapture: true, // التقاط سجلات وحدة التحكّم (القيمة الافتراضية false)
+        advancedNetworkCapture: true, // التقاط الرؤوس والمتن الكامل لطلبات HTTP واستجاباته (القيمة الافتراضية false)
+    });
+    ```
+  </Tab>
+
+  <Tab title="وسم Script">
+    **ثبّت عبر وسم Script (بديل)**
+
+    يمكنك أيضًا تضمين البرنامج النصي وتثبيته عبر وسم script بدلًا من
+    التثبيت عبر NPM. سيؤدي ذلك إلى إتاحة المتغير العام `HyperDX`، ويمكن
+    استخدامه بالطريقة نفسها المستخدمة مع حزمة NPM.
+
+    يُنصح بهذا إذا كان موقعك لا يُبنى حاليًا باستخدام أداة تجميع.
+
+    ```html
+    <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // احذفها عند استخدام Managed ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // حدّده لربط التتبعات من الواجهة الأمامية بطلبات الواجهة الخلفية
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+### الخيارات {#options}
+
+* `apiKey` - مفتاح واجهة برمجة تطبيقات للإدخال الخاص بك في ClickStack.
+* `service` - اسم الخدمة الذي ستظهر به الأحداث في واجهة مستخدم HyperDX.
+* `tracePropagationTargets` - قائمة بأنماط Regex لمطابقتها مع طلبات HTTP
+  لربط تتبعات الواجهة الأمامية والخلفية، وسيضيف ذلك
+  ترويسة `traceparent` إضافية إلى جميع الطلبات التي تطابق أيًا من الأنماط. يجب
+  ضبط هذا على نطاق واجهة برمجة تطبيقات للواجهة الخلفية لديك (مثلًا `api.yoursite.com`).
+* `consoleCapture` - (اختياري) التقاط جميع سجلات وحدة التحكّم (القيمة الافتراضية `false`).
+* `advancedNetworkCapture` - (اختياري) التقاط رؤوس الطلبات/الاستجابات كاملةً
+  والأجسام (القيمة الافتراضية `false`).
+* `url` - (اختياري) عنوان URL لـ OpenTelemetry Collector، وهو مطلوب فقط
+  للمثيلات المستضافة ذاتيًا.
+* `maskAllInputs` - (اختياري) ما إذا كان يجب إخفاء جميع حقول الإدخال في
+  إعادة تشغيل الجلسة (القيمة الافتراضية `false`).
+* `maskAllText` - (اختياري) ما إذا كان يجب إخفاء كل النصوص في إعادة تشغيل الجلسة (القيمة الافتراضية
+  `false`).
+* `disableIntercom` - (اختياري) ما إذا كان يجب تعطيل تكامل Intercom (القيمة الافتراضية `false`)
+* `disableReplay` - (اختياري) ما إذا كان يجب تعطيل إعادة تشغيل الجلسة (القيمة الافتراضية `false`)
+
+## تهيئة إضافية {#additional-configuration}
+
+### إرفاق معلومات المستخدم أو البيانات الوصفية {#attach-user-information-or-metadata}
+
+سيتيح لك إرفاق معلومات المستخدم البحث في الجلسات والأحداث وتصفيتها
+في واجهة مستخدم HyperDX. يمكن استدعاء ذلك في أي وقت أثناء جلسة العميل. وسترتبط
+جلسة العميل الحالية وجميع الأحداث المُرسلة بعد هذا الاستدعاء
+بمعلومات المستخدم.
+
+ستملأ `userEmail` و`userName` و`teamName` واجهة الجلسات
+بالقيم المقابلة، ولكن يمكن حذفها. ويمكن أيضًا تحديد أي قيم إضافية
+واستخدامها للبحث عن الأحداث.
+
+```javascript
+HyperDX.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // Other custom properties...
+});
+```
+
+### الالتقاط التلقائي لأخطاء حدود الأخطاء في React {#auto-capture-react-error-boundary-errors}
+
+إذا كنت تستخدم React، فيمكنك تلقائيًا التقاط الأخطاء التي تحدث داخل
+حدود الأخطاء في React من خلال تمرير مكوّن حدّ الأخطاء الخاص بك
+إلى الدالة `attachToReactErrorBoundary`.
+
+```javascript
+// Import your ErrorBoundary (we're using react-error-boundary as an example)
+import { ErrorBoundary } from 'react-error-boundary';
+
+// This will hook into the ErrorBoundary component and capture any errors that occur
+// within any instance of it.
+HyperDX.attachToReactErrorBoundary(ErrorBoundary);
+```
+
+### إرسال الإجراءات المخصّصة {#send-custom-actions}
+
+لتتبّع حدث معيّن في التطبيق بشكل صريح (مثل التسجيل أو الإرسال
+وغير ذلك)، يمكنك استدعاء الدالة `addAction` مع اسم الحدث وبيانات
+وصفية اختيارية له.
+
+مثال:
+
+```javascript
+HyperDX.addAction('Form-Completed', {
+  formId: 'signup-form',
+  formName: 'Signup Form',
+  formType: 'signup',
+});
+```
+
+### تفعيل التقاط حركة الشبكة ديناميكيًا {#enable-network-capture-dynamically}
+
+لتفعيل أو تعطيل التقاط حركة الشبكة ديناميكيًا، ما عليك سوى استدعاء الدالة `enableAdvancedNetworkCapture` أو `disableAdvancedNetworkCapture` حسب الحاجة.
+
+```javascript
+HyperDX.enableAdvancedNetworkCapture();
+```
+
+### تفعيل توقيت الموارد لطلبات CORS {#enable-resource-timing-for-cors-requests}
+
+إذا كان تطبيق الواجهة الأمامية لديك يُجري طلبات إلى واجهة برمجة تطبيقات على نطاق مختلف، فيمكنك
+اختياريًا تفعيل إرسال ترويسة `Timing-Allow-Origin`[header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) مع الطلب. يتيح ذلك لـ ClickStack التقاط
+معلومات دقيقة عن توقيت الموارد للطلب، مثل استعلام DNS وتنزيل
+الاستجابة وغير ذلك، عبر [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming).
+
+إذا كنت تستخدم `express` مع حزم `cors`، فيمكنك استخدام
+المقتطف التالي لتفعيل الترويسة:
+
+```javascript
+var cors = require('cors');
+var onHeaders = require('on-headers');
+
+// ... all your stuff
+
+app.use(function (req, res, next) {
+  onHeaders(res, function () {
+    var allowOrigin = res.getHeader('Access-Control-Allow-Origin');
+    if (allowOrigin) {
+      res.setHeader('Timing-Allow-Origin', allowOrigin);
+    }
+  });
+  next();
+});
+app.use(cors());
+```

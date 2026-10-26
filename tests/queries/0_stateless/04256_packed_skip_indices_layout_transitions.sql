@@ -30,7 +30,10 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
          packed_skip_index_max_bytes = 4096,
          auto_statistics_types = '',
-         index_granularity = 1024;
+         index_granularity = 1024,
+         -- Pinned: a randomized low ratio sparse-serializes some columns per part, adding column
+         -- files that break this test's "phases differ only in index layout" file-count assumption.
+         ratio_of_defaults_for_sparse_serialization = 1.0;
 
 -- Remembers the active part's file count at each phase so later phases can compare against the
 -- packed baseline without printing absolute counts.
@@ -45,8 +48,7 @@ FROM system.parts WHERE database = currentDatabase() AND table = 't_pack_trans' 
 SELECT 'phase1_filtered_lookup', count() FROM t_pack_trans WHERE w = '7919';
 SELECT 'phase1_index_in_plan',
        countIf(explain LIKE '%Name: bf_w%')
-FROM (EXPLAIN indexes = 1 SELECT * FROM t_pack_trans WHERE w = '7919') AS s
-SETTINGS allow_experimental_analyzer = 1;
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_pack_trans WHERE w = '7919') AS s;
 CHECK TABLE t_pack_trans SETTINGS check_query_single_value_result = 1;
 
 -- ---------------------------------------------------------------------------------------------

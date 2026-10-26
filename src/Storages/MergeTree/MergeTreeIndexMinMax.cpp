@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -128,6 +129,9 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
+        normalizeBoolFields(min_ref);
+        normalizeBoolFields(max_ref);
+
         if (update_in_place)
         {
             hyperrectangle[i].left_included = true;
@@ -166,7 +170,12 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         auto index_column_name = index_sample_block.getByPosition(i).name;
-        const auto & column = block.getByName(index_column_name).column;
+        const auto & src_column = block.getByName(index_column_name).column;
+        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+        /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL
+        /// sentinel; otherwise IS NULL wrongly prunes). getExtremes on LC materializes internally too,
+        /// so this adds no extra work.
+        const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
             column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
         else
@@ -203,6 +212,8 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
+    /// The granule bound comes from `getExtremes`, which skips NaN.
+    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -215,6 +226,7 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
          KeyCondition::RPNElement::FUNCTION_NOT_IN_SET,
          KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE,
          KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON,
+         KeyCondition::RPNElement::FUNCTION_ATOM_GROUP,
          KeyCondition::RPNElement::FUNCTION_IS_NULL,
          KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL,
          KeyCondition::RPNElement::ALWAYS_FALSE});
@@ -249,15 +261,15 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", &storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+
     return {0 /* unknown */, {}};
 }
 
@@ -293,6 +305,9 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(scratch, istr, format_settings);
         serialization->deserializeBinary(value, istr, format_settings);
     }
+
+    normalizeBoolFields(value);
+
     /// If index granularity is not 1, we insert the same value as the min
     /// or max for all the corresponding granules. For our top-K purpose, this
     /// is safe and maybe lead to false positives, but never wrong results.
@@ -493,8 +508,7 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                     "with different data types. Consider using typed subcolumns or cast column to a specific data type",
                     column.type->getName(), column.name);
         };
-        check_not_dynamic_or_variant(*column.type);
-        column.type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
     }
 }
 

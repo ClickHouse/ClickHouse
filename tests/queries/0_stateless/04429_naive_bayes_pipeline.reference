@@ -1,0 +1,9 @@
+loaded	1
+byte_recovers_labels	1
+codepoint_recovers_labels	1
+token_recovers_labels	1
+byte_distinct_scripts	1
+codepoint_distinct_scripts	1
+token_distinct_scripts	1
+empty_input_uses_prior	1
+functions	1	1	1

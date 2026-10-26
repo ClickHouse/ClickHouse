@@ -29,10 +29,7 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(element_type));
-    }
+    String getSignatureString() const override { return "() -> Array(" + element_type + ")"; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -50,7 +47,7 @@ void registerFunction(FunctionFactory & factory, const String & element_type)
     FunctionDocumentation::Syntax syntax = fmt::format("emptyArray{}()", element_type);
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {fmt::format("An empty {} array.", element_type), {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", fmt::format("SELECT emptyArray{}", element_type), "[]"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", fmt::format("SELECT emptyArray{}()", element_type), "[]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

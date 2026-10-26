@@ -6,6 +6,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -14,9 +15,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-namespace
-{
-
+/// This function is exposed for testing purposes
 FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const ActionsDAG & filter_dag, const String & filter_column_name)
 {
     /// If either DAG contains IN subquery sets that are not yet built we cannot evaluate the filter result
@@ -56,6 +55,9 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
 
     return getFilterResult(filter_output[0]);
 }
+
+namespace
+{
 
 /// Check if filter has a form like "column" or "NOT column", where column is an input
 bool isSimpleFilter(const ActionsDAG::Node * filter_node, bool must_negate)
@@ -130,7 +132,18 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     QueryPlan::Node * child_node = parent_node->children.front();
     auto & child = child_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
-    if (!join)
+    if (!join || child_node->children.size() != 2)
+        return 0;
+
+    /// The Join engine requires its declared join kind and strictness to remain unchanged. A prepared
+    /// key-value storage can fill a missing key with the type default on a direct lookup but with the
+    /// column default when read as an ordinary stream, and which applies is decided after this pass.
+    auto isPreparedJoinStorage = [](auto & step)
+    {
+        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
+        return lookup_step && static_cast<bool>(lookup_step->getPreparedJoinStorage());
+    };
+    if (isPreparedJoinStorage(child_node->children.back()->step))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
@@ -140,7 +153,22 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!isLeftOrRight(join_operator.kind))
         return 0;
 
+    /// Both conversions below are only worth doing if the join can still be executed afterwards.
+    const auto & join_settings = join->getJoinSettings();
+    const bool semi_can_be_executed
+        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_operator.kind, JoinStrictness::Semi);
+    const bool anti_can_be_executed
+        = JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_operator.kind, JoinStrictness::Anti);
+
+    if (!semi_can_be_executed && !anti_can_be_executed)
+        return 0;
+
     const auto & filter_dag = filter->getExpression();
+
+    /// Not-built sets keep the join ANY: not every join algorithm can run SEMI.
+    if (dagContainsNonReadySet(filter_dag))
+        return 0;
+
     const auto & filter_column_name = filter->getFilterColumnName();
     const auto & left_stream_input_header = join->getInputHeaders().front();
     const auto & right_stream_input_header = join->getInputHeaders().back();
@@ -152,7 +180,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -164,7 +192,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
@@ -183,7 +211,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -195,7 +223,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_can_be_executed)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;

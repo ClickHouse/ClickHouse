@@ -11,6 +11,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -102,7 +104,14 @@ protected:
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
 
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
+    virtual void addStreams(const NameAndTypePair & name_and_type) = 0;
+
+    /// Per-column min_compress_block_size override if set, otherwise the table default.
+    UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
+
+    /// Codec for one substream of a column: the codec declared for the column or for the subcolumn the substream
+    /// belongs to, otherwise the default codec of the part.
+    CompressionCodecPtr getSubstreamCodec(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const;
 
     /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
     /// Before writing a block we need to prepare its columns, so they will always be serialized in the same
@@ -116,6 +125,9 @@ protected:
     void initColumnsSubstreamsIfNeeded();
 
     virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
+
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
@@ -131,7 +143,7 @@ protected:
 
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
-    /// files on data_part_storage by the SizeAdaptiveSpoolBuffer wrapper and are not part of
+    /// files on data_part_storage by the size-adaptive packing wrapper and are not part of
     /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0) or when
     /// this writer is borrowing another writer's archive via @skip_indices_packed_writer_borrowed.
     std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
@@ -168,6 +180,10 @@ protected:
     Block block_sample;
 
     bool streams_initialized = false;
+
+    /// Cleared before the finalize path initializes streams: that path runs only when no block was
+    /// ever written, and such a part has no marks for a column to share with a skip index.
+    bool claim_column_stream_bases = true;
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;

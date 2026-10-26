@@ -1,0 +1,189 @@
+---
+title: 'JSONのエクスポート'
+slug: /integrations/data-formats/json/exporting
+description: 'ClickHouseからJSONデータをエクスポートする方法'
+keywords: ['json', 'clickhouse', 'フォーマット', 'エクスポート']
+doc_type: 'guide'
+---
+
+インポートに使用できるJSONフォーマットのほとんどは、エクスポートにも使用できます。最もよく使われるのは [`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow) です。
+
+```sql
+SELECT * FROM sometable FORMAT JSONEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":245}
+{"path":"1-krona","month":"2017-01-01","hits":4}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":3}
+```
+
+また、[`JSONCompactEachRow`](/ja/reference/formats/JSON/JSONCompactEachRow) を使用すると、カラム名を省略してディスク容量を節約できます。
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+<div id="overriding-data-types-as-strings">
+  ## データ型を文字列として扱う
+</div>
+
+ClickHouse はデータ型を考慮し、標準に従って JSON をエクスポートします。ただし、すべての値を文字列としてエンコードする必要がある場合は、[JSONStringsEachRow](/ja/reference/formats/JSON/JSONStringsEachRow) フォーマットを使用できます。
+
+```sql
+SELECT * FROM sometable FORMAT JSONStringsEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":"245"}
+{"path":"1-krona","month":"2017-01-01","hits":"4"}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":"3"}
+```
+
+これで、数値カラム `hits` は文字列としてエンコードされます。文字列としてのエクスポートは、すべての JSON* フォーマットでサポートされています。`JSONStrings\*` および `JSONCompactStrings\*` フォーマットを確認してください。
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactStringsEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", "245"]
+["1-krona", "2017-01-01", "4"]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", "3"]
+```
+
+<div id="exporting-metadata-together-with-data">
+  ## データとあわせてメタデータをエクスポートする
+</div>
+
+アプリケーションで広く使われている汎用的な[JSON](/ja/reference/formats/JSON/JSON)フォーマットでは、結果データだけでなく、カラムの型やクエリ統計もエクスポートされます。
+
+```sql
+SELECT * FROM sometable FORMAT JSON
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                {
+                        "path": "Bob_Dolman",
+                        "month": "2016-11-01",
+                        "hits": 245
+                },
+                ...
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000497457,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+[JSONCompact](/ja/reference/formats/JSON/JSONCompact) フォーマットでは、同じメタデータを出力しつつ、データ自体はよりコンパクトな形式で表現されます：
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompact
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                ["Bob_Dolman", "2016-11-01", 245],
+                ["1-krona", "2017-01-01", 4],
+                ["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.00074981,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+すべての値を文字列としてエンコードするには、[`JSONStrings`](/ja/reference/formats/JSON/JSONStrings) または [`JSONCompactStrings`](/ja/reference/formats/JSON/JSONCompactStrings) フォーマットの利用を検討してください。
+
+<div id="compact-way-to-export-json-data-and-structure">
+  ## JSONデータとその構造をコンパクトにエクスポートする方法
+</div>
+
+データとその構造をより効率的に出力するには、[`JSONCompactEachRowWithNamesAndTypes`](/ja/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes) フォーマットを使用します。
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRowWithNamesAndTypes
+```
+
+```response
+["path", "month", "hits"]
+["String", "Date", "UInt32"]
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+これは、カラム名と型を示す 2 つのヘッダー行が先頭に付いた compact JSON フォーマットを使用します。このフォーマットは、別の ClickHouse インスタンス (または他のアプリ) にデータを取り込む際にも使用できます。
+
+<div id="exporting-json-to-a-file">
+  ## JSON をファイルにエクスポートする
+</div>
+
+エクスポートした JSON データをファイルに保存するには、[INTO OUTFILE](/ja/reference/statements/select/into-outfile) 句を使用します。
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 2.220 sec. Processed 36.84 million rows, 1.27 GB (16.60 million rows/s., 572.47 MB/s.)
+```
+
+ClickHouse では、約 3,700 万件のレコードをわずか 2 秒で JSON ファイルにエクスポートできました。`COMPRESSION` 句を使用して、エクスポート時に圧縮を有効にすることもできます。
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json.gz' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 22.680 sec. Processed 36.84 million rows, 1.27 GB (1.62 million rows/s., 56.02 MB/s.)
+```
+
+完了までにより時間はかかりますが、生成される圧縮ファイルは大幅に小さくなります:
+
+```bash
+2.2G    out.json
+576M    out.json.gz
+```

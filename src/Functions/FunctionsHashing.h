@@ -41,7 +41,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
 #include <base/range.h>
@@ -49,6 +48,7 @@
 #include <base/unaligned.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace DB
 {
@@ -58,7 +58,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int OPENSSL_ERROR;
@@ -236,7 +235,9 @@ struct HalfMD5Impl
     static constexpr auto name = "halfMD5";
     using ReturnType = UInt64;
 
-    static UInt64 apply(const char * begin, size_t size)
+    /// SHARED_ACROSS_DSO covers the thread-local context below. This is a per-row hash, so the
+    /// definition stays in the header to keep it inlinable rather than moving to a .cpp.
+    SHARED_ACROSS_DSO static UInt64 apply(const char * begin, size_t size)
     {
         union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
@@ -308,6 +309,7 @@ struct SipHash128Impl
 
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
+    static UInt128 applyPadded(const char * data, const size_t size) { return sipHash128Padded(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -389,7 +391,7 @@ struct SipHash128ReferenceKeyedImpl
   * Usually there is no reason to use MurmurHash.
   * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
   * in ClickHouse as is. For example, it is needed to reproduce the behaviour
-  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+  * for NGINX a/b testing module: https://nginx.org/en/docs/http/ngx_http_split_clients_module.html
   */
 struct MurmurHash2Impl32
 {
@@ -746,6 +748,33 @@ struct ImplXxHash64
     static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
+/// https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.xxhash64.html
+struct ImplXxHash64Spark
+{
+    static constexpr auto name = "xxHash64Spark";
+    using ReturnType = Int64;
+
+    /// Some restrictions apply:
+    /// (1) While the Spark equivalent function supports >1 argument, only a single argument was verified
+    ///     to return the same result in ClickHouse and Spark.
+    /// (2) Only String and NULL arguments were verified to return the same result in ClickHouse and Spark.
+    /// (3) NULL arguments must return a custom hash value
+    static constexpr size_t number_of_arguments = 1; /// (1)
+    static constexpr bool use_default_implementation_for_nulls = false;
+    static constexpr bool check_all_arguments_are_strings = true; /// (2)
+    static constexpr Int64 custom_null_hash = 42; /// (3)
+
+    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH64(s, len, 42); }
+
+    static Int64 combineHashes(UInt64 /*h1*/, UInt64 /*h2*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} cannot be called with more than one argument", name);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
+};
+
 struct ImplXXH3
 {
     static constexpr auto name = "xxh3";
@@ -828,13 +857,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
+        return "(NumberRepresentable) -> " + DataTypeNumber<typename Impl::ReturnType>{}.getName();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -891,30 +916,38 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <typename Impl, typename Name>
 class FunctionIntHash : public TargetSpecific::Default::FunctionIntHash<Impl, Name>
 {
 public:
-    explicit FunctionIntHash(ContextPtr context) : selector(context)
+    explicit FunctionIntHash([[maybe_unused]] ContextPtr context)
     {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
-
-    #if USE_MULTITARGET_CODE
-        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
-        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
-        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
-        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::x86_64_v4,
-            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
-    #endif
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
+            return;
+        }
+#endif
+#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+        /// Only reached from the translation units pinned to `-march=x86-64-v2` in
+        /// `src/Functions/CMakeLists.txt` (`FunctionsHashingMisc.cpp`), where `Default` inherits v2
+        /// codegen and this per-function body is the only AVX2 one. Everywhere else `Default` is
+        /// already built for the AVX2 baseline, so there is nothing to choose between.
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -923,7 +956,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -935,8 +968,9 @@ public:
     static constexpr auto name = Impl::name;
     static constexpr UInt128 NULL_HASH = UInt128({0xc58ad2da03d9a871ul, 0x5715f196cbea7a40ul});
 
-    /// Keep default implementation of useDefaultImplementationForNulls for compatibility.
-    /// E.g. someHash(NULL) is NULL, but someHash(tuple(NULL)) is not NULL.
+    /// Keep default implementation of `useDefaultImplementationForNulls` for compatibility unless an implementation opts
+    /// out via `Impl::use_default_implementation_for_nulls`.
+    /// E.g. `someHash(NULL)` is `NULL`, but `someHash(tuple(NULL))` is not `NULL`.
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -1121,13 +1155,17 @@ private:
             key = Impl::getKey(key_cols, 0);
 
         SerializationPtr serialization;
+        const bool contiguous = type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+        std::optional<WriteBufferFromOwnString> buf;
+        if (!contiguous)
+            buf.emplace();
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             if constexpr (Keyed)
                 if (!key_cols.is_const && i != 0)
                     key = Impl::getKey(key_cols, i);
             ToType hash;
-            if (type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            if (contiguous)
             {
                 auto bytes = column->getDataAt(i);
                 hash = apply(key, bytes.data(), bytes.size());
@@ -1138,13 +1176,15 @@ private:
                 /// to serialize value and calculate hash from it.
                 if (!serialization)
                     serialization = type->getDefaultSerialization();
-                WriteBufferFromOwnString buf;
                 if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                    serialization->serializeForHashCalculation(column_const->getDataColumn(), 0, buf);
+                    serialization->serializeForHashCalculation(column_const->getDataColumn(), 0, *buf);
                 else
-                    serialization->serializeForHashCalculation(*column, i, buf);
-                auto bytes = buf.str();
+                    serialization->serializeForHashCalculation(*column, i, *buf);
+                const auto & bytes = buf->str();
                 hash = apply(key, bytes.data(), bytes.size());
+                /// str() finalized the buffer: restart() makes it writable again, and past the cap it
+                /// frees an outlier row's allocation instead of pinning it for the rest of the column.
+                buf->restart(DBMS_DEFAULT_BUFFER_SIZE);
             }
             if constexpr (first)
                 vec_to[i] = hash;
@@ -1171,7 +1211,7 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                const ToType hash = apply(key,
+                const ToType hash = applyPadded(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset);
 
@@ -1194,7 +1234,7 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                const ToType hash = apply(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
                 if constexpr (first)
                     vec_to[i] = hash;
                 else
@@ -1341,7 +1381,10 @@ private:
             }
             else
             {
-                null_hash = static_cast<ToType>(NULL_HASH);
+                if constexpr (requires { Impl::custom_null_hash; })
+                    null_hash = Impl::custom_null_hash;
+                else
+                    null_hash = static_cast<ToType>(NULL_HASH);
             }
 
             typename ColumnVector<ToType>::Container original_vec_to;
@@ -1490,9 +1533,27 @@ public:
     {
         return name;
     }
-
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override
+    {
+        if constexpr (requires { Impl::number_of_arguments; })
+            return false;
+        else
+            return true;
+    }
+    size_t getNumberOfArguments() const override
+    {
+        if constexpr (requires { Impl::number_of_arguments; })
+            return Impl::number_of_arguments;
+        else
+            return 0;
+    }
+    bool useDefaultImplementationForNulls() const override
+    {
+        if constexpr (requires { Impl::use_default_implementation_for_nulls; })
+            return Impl::use_default_implementation_for_nulls;
+        else
+            return true;
+    }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -1500,8 +1561,52 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignatureString() const override
     {
+        /// backward-compatible: UInt128 hashes serialize to FixedString(16) unless the trait
+        /// opts into returning UInt128 directly. Functions in this family are variadic;
+        /// individual implementations may reject zero arguments at execute time.
+        const String ret = (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
+            ? "FixedString(16)"
+            : DataTypeNumber<ToType>{}.getName();
+        return "([Any], ...) -> " + ret;
+    }
+
+    /// Keep the type-aware override so master's per-Impl `check_all_arguments_are_strings` validation is
+    /// still enforced (the declarative `[Any]` signature above cannot express a per-Impl compile-time
+    /// constraint, so it remains documentation-only for this family). The `ColumnsWithTypeAndName`
+    /// overload must also be overridden: otherwise the base-class overload would apply the `[Any]`
+    /// signature on the normal resolution path and skip this validation, letting e.g. an `Array`
+    /// argument reach `xxHash64Spark`, whose `combineHashes` throws `LOGICAL_ERROR` and aborts
+    /// builds with assertions enabled.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            types[i] = arguments[i].type;
+        return getReturnTypeImpl(types);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if constexpr (requires { Impl::check_all_arguments_are_strings; })
+        {
+            if (Impl::check_all_arguments_are_strings)
+            {
+                for (const auto & argument : arguments)
+                {
+                    const DataTypePtr nested_type = removeNullable(argument);
+                    const WhichDataType which(nested_type);
+                    if (!which.isString() && !which.isNothing())
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}. Must be String or NULL",
+                            argument->getName(),
+                            getName());
+                }
+            }
+        }
+
         /// backward-compatible
         if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
         {
@@ -1576,6 +1681,15 @@ public:
             return Impl::apply(begin, size);
     }
 
+    /// For data that is followed by at least 7 readable bytes, such as a value of a padded column.
+    static ToType applyPadded(const KeyType & key, const char * begin, size_t size)
+    {
+        if constexpr (!Keyed && requires { Impl::applyPadded(begin, size); })
+            return Impl::applyPadded(begin, size);
+        else
+            return apply(key, begin, size);
+    }
+
     static ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
     {
         if constexpr (Keyed)
@@ -1587,26 +1701,60 @@ public:
 
 ) // DECLARE_MULTITARGET_CODE
 
+struct ImplWyHash64;
+
+/// Which arguments an implementation wants the AVX-512 body for. Measured v3 against v4 over every
+/// legal (function, argument type) pair: AVX-512 wins nearly everywhere, and the three exceptions are
+/// below. Ratios are the geometric mean over the types in each class.
+///
+/// `javaHash` and `hiveHash` are a byte-serial `h = 31 * h + c` chain, run once per input byte. The
+/// AVX2 body vectorizes that loop across rows; at 512 bits LLVM's cost model abandons vectorization
+/// and emits scalar code instead. The trip count decides which way it goes, so the choice follows the
+/// argument width rather than the function: 1.16x faster for arguments of 8 bytes and under, 0.56x for
+/// 16- and 32-byte ones (`UUID`, `IPv6`, `(U)Int128/256`, `Decimal128/256`), a tie for strings.
+///
+/// `wyHash64` is 0.85x on arguments of 8 bytes and under and ties on everything else, so AVX-512 buys
+/// it nothing at any width.
+///
+/// Everything else stays on AVX-512, worth up to 1.93x (`xxHash64`), 1.71x (`xxh3`), 1.57x
+/// (`murmurHash2_64`) and 1.44x (`cityHash64`).
+enum class HashAVX512Usage : uint8_t
+{
+    Always,
+    /// Only when every argument is a fixed-size value of at most 8 bytes.
+    NarrowOnly,
+    Never,
+};
+
+template <typename Impl>
+constexpr HashAVX512Usage hash_avx512_usage = HashAVX512Usage::Always;
+template <> inline constexpr HashAVX512Usage hash_avx512_usage<JavaHashImpl> = HashAVX512Usage::NarrowOnly;
+template <> inline constexpr HashAVX512Usage hash_avx512_usage<HiveHashImpl> = HashAVX512Usage::NarrowOnly;
+template <> inline constexpr HashAVX512Usage hash_avx512_usage<ImplWyHash64> = HashAVX512Usage::Never;
+
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <typename Impl, bool Keyed = false, typename KeyType = char, typename KeyColumnsType = char>
 class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>
 {
 public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
+    explicit FunctionAnyHash([[maybe_unused]] ContextPtr context)
     {
-        selector
-            .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-
 #if USE_MULTITARGET_CODE
-        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
-        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
-        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        if constexpr (hash_avx512_usage<Impl> != HashAVX512Usage::Never)
+        {
+            if (isArchSupported(TargetArch::x86_64_v4))
+                avx512_impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        }
 #endif
+        baseline_impl = makeBaselineImpl();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        if (avx512_impl && wantsAVX512(arguments))
+            return avx512_impl->executeImpl(arguments, result_type, input_rows_count);
+        return baseline_impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -1615,7 +1763,32 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    static std::unique_ptr<IFunction> makeBaselineImpl()
+    {
+#if USE_MULTITARGET_CODE && !defined(__AVX2__)
+        /// See the note in `FunctionIntHash`: only the v2-pinned translation units get here.
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return std::make_unique<TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+#endif
+        return std::make_unique<TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+    }
+
+    static bool wantsAVX512([[maybe_unused]] const ColumnsWithTypeAndName & arguments)
+    {
+        if constexpr (hash_avx512_usage<Impl> == HashAVX512Usage::NarrowOnly)
+        {
+            for (const auto & argument : arguments)
+            {
+                if (!argument.type->haveMaximumSizeOfValue() || argument.type->getMaximumSizeOfValueInMemory() > 8)
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    std::unique_ptr<IFunction> baseline_impl;
+    /// Null when the CPU has no AVX-512, or when this implementation never wants it.
+    std::unique_ptr<IFunction> avx512_impl;
 };
 
 
@@ -1641,7 +1814,7 @@ struct URLHierarchyHashImpl
         /// Let's parse everything that goes before the path
 
         /// Suppose that the protocol has already been changed to lowercase.
-        while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+        while (pos < end && ((*pos >= 'a' && *pos <= 'z') || (*pos >= '0' && *pos <= '9')))
             ++pos;
 
         /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
@@ -1708,25 +1881,9 @@ public:
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto arg_count = arguments.size();
-        if (arg_count != 1 && arg_count != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
-                "passed {}, should be 1 or 2.", getName(), arg_count);
-
-        const auto * first_arg = arguments.front().get();
-        if (!WhichDataType(first_arg).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
-
-        if (arg_count == 2)
-        {
-            const auto & second_arg = arguments.back();
-            if (!isInteger(second_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String, [Integer]) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -1870,6 +2027,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+using FunctionXxHash64Spark = FunctionAnyHash<ImplXxHash64Spark>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 

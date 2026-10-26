@@ -1,0 +1,8 @@
+<svg fill="none" height="100%" viewBox="0 0 37 37" width="100%" xmlns="http://www.w3.org/2000/svg" fit="" preserveAspectRatio="xMidYMid meet" focusable="false">
+  <rect fill="#FFB200" height="36.9995" rx="1" width="4.11106"></rect>
+  <path d="M0 32.8887H4.11106V35.9997C4.11106 36.552 3.66335 36.9997 3.11106 36.9997H1C0.447715 36.9997 0 36.552 0 35.9997V32.8887Z" fill="#FF0000"></path>
+  <rect fill="#FFB200" height="36.9995" rx="1" width="4.11106" x="8.22266"></rect>
+  <rect fill="#FFB200" height="36.9995" rx="1" width="4.11106" x="16.4443"></rect>
+  <rect fill="#FFB200" height="36.9995" rx="1" width="4.11106" x="24.666"></rect>
+  <rect fill="#FFB200" height="8.22212" rx="1" width="4.11106" x="32.8887" y="14.3896"></rect>
+</svg>

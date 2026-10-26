@@ -1,13 +1,49 @@
+#include <Access/ContextAccess.h>
 #include <Backups/BackupFactory.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
+
+#include <Poco/URI.h>
+
+#include <fmt/format.h>
+
+#include <iterator>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int BACKUP_ENGINE_NOT_FOUND;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    void appendIdentityComponent(String & identity, std::string_view component)
+    {
+        fmt::format_to(std::back_inserter(identity), ":{}:{}", component.size(), component);
+    }
+
+    /// Must normalize identically to `ITableFunction::getFunctionURINormalized`, or the same regex
+    /// grant matches a table function and not a backup. An empty result requires a whole-source grant.
+    String normalizeAccessURI(const String & uri)
+    {
+        if (uri.empty())
+            return uri;
+        try
+        {
+            Poco::URI parsed(uri);
+            parsed.normalize();
+            return parsed.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            return "";
+        }
+    }
 }
 
 
@@ -35,20 +71,89 @@ BackupFactory & BackupFactory::instance()
     return the_instance;
 }
 
+void BackupFactory::checkSourceAccess(const BackupInfo & backup_info, ContextPtr context, OpenMode open_mode) const
+{
+    const String & engine_name = backup_info.backup_engine_name;
+    auto it = engines.find(engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
+
+    if (!it->second.source_access)
+        return;
+
+    if (auto target = it->second.source_access(backup_info, context, open_mode))
+        context->getAccess()->checkAccessWithFilter(
+            target->flags, AccessTypeObjects::toStringSource(target->source), normalizeAccessURI(target->uri));
+}
+
 BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
 {
     const String & engine_name = params.backup_info.backup_engine_name;
-    auto it = creators.find(engine_name);
-    if (it == creators.end())
+    auto it = engines.find(engine_name);
+    if (it == engines.end())
         throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
-    return (it->second)(params);
+
+    /// Authorize the location before the creator does any network or filesystem I/O.
+    checkSourceAccess(params.backup_info, params.context, params.open_mode);
+
+    return it->second.creator(params);
 }
 
-void BackupFactory::registerBackupEngine(const String & engine_name, const CreatorFn & creator_fn)
+String BackupFactory::getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const
 {
-    if (creators.contains(engine_name))
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to identify a backup destination");
+    if (!backup_info.id_arg.empty() && !backup_info.frozen_named_collection)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Named collection '{}' must be frozen before identifying a backup destination",
+            backup_info.id_arg);
+
+    const String & engine_name = backup_info.backup_engine_name;
+    auto it = engines.find(engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
+
+    String identity = "backup-destination-v1";
+    appendIdentityComponent(identity, engine_name);
+    for (const auto & component : it->second.destination_identity(backup_info, context))
+        appendIdentityComponent(identity, component);
+    return identity;
+}
+
+void BackupFactory::registerBackupEngine(
+    const String & engine_name,
+    const CreatorFn & creator_fn,
+    const DestinationIdentityFn & destination_identity_fn,
+    const SourceAccessFn & source_access_fn,
+    SecretArgumentsSpec secret_arguments)
+{
+    if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    creators[engine_name] = creator_fn;
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, source_access_fn, std::move(secret_arguments)});
+}
+
+const SecretArgumentsSpec * BackupFactory::tryGetSecretArgumentsSpec(const String & engine_name) const
+{
+    auto it = engines.find(engine_name);
+    return it == engines.end() ? nullptr : &it->second.secret_arguments;
+}
+
+SecretArgumentsSpec credentialFreeBackupSecretArguments(size_t arity)
+{
+    return {.custom = [arity](FunctionSecretArgumentsFinder & finder)
+    {
+        /// An engine that takes fewer arguments rejects the rest only after the statement has been formatted
+        /// for logging, so the count has to be checked here too. Each of these reads every argument of its own
+        /// as a string, so another shape - an array among them - is read by none of them and can carry a string
+        /// of its own. Anything else (an override, a nested map, a surplus slot) can carry a credential.
+        const auto & arguments = *finder.function->arguments;
+        bool credential_free = arguments.size() == arity;
+        for (size_t i = 0; credential_free && i < arity; ++i)
+            credential_free = arguments.at(i)->tryGetString(nullptr, /* allow_identifier= */ false);
+        if (!credential_free)
+            finder.maskEveryArgument();
+    }};
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

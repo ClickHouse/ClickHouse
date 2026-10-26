@@ -1,0 +1,89 @@
+---
+sidebarTitle: 'R2DBC 驱动'
+keywords: ['clickhouse', 'java', '驱动', '集成', 'r2dbc']
+description: 'ClickHouse R2DBC 驱动'
+slug: /integrations/java/r2dbc
+title: 'R2DBC 驱动'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+<div id="r2dbc-driver">
+  ## R2DBC 驱动
+</div>
+
+用于 ClickHouse 的异步 Java 客户端的 [R2DBC](https://r2dbc.io/) 封装。
+
+<div id="environment-requirements">
+  ### 环境要求
+</div>
+
+* [OpenJDK](https://openjdk.java.net) 版本 &gt;= 8
+
+<div id="setup">
+  ### 配置
+</div>
+
+```xml
+<dependency>
+    <groupId>com.clickhouse</groupId>
+    <!-- 如需使用 SPI 0.9.1.RELEASE，请改为 clickhouse-r2dbc_0.9.1 -->
+    <artifactId>clickhouse-r2dbc</artifactId>
+    <version>0.7.1</version>
+    <!-- 使用包含所有依赖的 uber jar；如需更小的 jar，可将 classifier 改为 http 或 grpc -->
+    <classifier>all</classifier>
+    <exclusions>
+        <exclusion>
+            <groupId>*</groupId>
+            <artifactId>*</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+```
+
+<div id="connect-to-clickhouse">
+  ### 连接 ClickHouse
+</div>
+
+```java showLineNumbers
+ConnectionFactory connectionFactory = ConnectionFactories
+    .get("r2dbc:clickhouse:http://{username}:{password}@{host}:{port}/{database}");
+
+    Mono.from(connectionFactory.create())
+        .flatMapMany(connection -> connection
+```
+
+<div id="query">
+  ### 查询
+</div>
+
+```java showLineNumbers
+connection
+    .createStatement("select domain, path,  toDate(cdate) as d, count(1) as count from clickdb.clicks where domain = :domain group by domain, path, d")
+    .bind("domain", domain)
+    .execute()
+    .flatMap(result -> result
+    .map((row, rowMetadata) -> String.format("%s%s[%s]:%d", row.get("domain", String.class),
+        row.get("path", String.class),
+        row.get("d", LocalDate.class),
+        row.get("count", Long.class)))
+    )
+    .doOnNext(System.out::println)
+    .subscribe();
+```
+
+<div id="insert">
+  ### 插入
+</div>
+
+```java showLineNumbers
+connection
+    .createStatement("insert into clickdb.clicks values (:domain, :path, :cdate, :count)")
+    .bind("domain", click.getDomain())
+    .bind("path", click.getPath())
+    .bind("cdate", LocalDateTime.now())
+    .bind("count", 1)
+    .execute();
+```

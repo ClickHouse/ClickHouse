@@ -1,0 +1,8 @@
+OK JSON: resolved snippet content is rendered
+OK JSON: raw snippet tag <WhenToUseJson> is resolved away
+OK Pretty: resolved snippet content is rendered
+OK Pretty: raw snippet tag <PrettyFormatSettings> is resolved away
+OK RowBinary: resolved snippet content is rendered
+OK RowBinary: raw snippet tag <RowBinaryFormatSettings> is resolved away
+OK Avro: resolved snippet content is rendered
+OK Avro: raw snippet tag <DataTypeMapping> is resolved away

@@ -10,12 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace
 {
 
@@ -48,18 +42,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 1 or 2 arguments");
-        }
-        if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(Any, [String]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -111,11 +96,11 @@ Returns a string representation of a geometry in [SVG](https://en.wikipedia.org/
     )";
     FunctionDocumentation::Syntax syntax = "svg(geometry[, style])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry object (Point, Ring, Polygon, MultiPolygon).", {"Point", "Ring", "Polygon", "MultiPolygon"}},
+        {"geometry", "Geometry object (Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon).", {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"}},
         {"style", "Optional CSS style string to apply to the SVG element.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the SVG representation of the geometry.", {"String"}};
-    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT svg((0.0, 1.0))", R"(<circle cx="0" cy="-1" r="5"/>)"}};
+    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT svg((0.0, 1.0))", R"(<circle cx="0" cy="1" r="5" style=""/>)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

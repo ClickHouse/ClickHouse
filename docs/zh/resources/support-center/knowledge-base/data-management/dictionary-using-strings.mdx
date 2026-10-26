@@ -1,0 +1,92 @@
+---
+title: 如何创建使用字符串键和值的 ClickHouse 字典
+description: 了解如何以 MergeTree 表为源，使用字符串键和值创建 ClickHouse 字典，并查看设置与用法示例。
+date: 2023-07-10
+tags: ['数据建模']
+keywords: ['字典', '字符串键', '字符串值']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何以 MergeTree 表作为源，创建使用字符串键和值的 ClickHouse 字典
+
+<div id="answer">
+  ## 答案
+</div>
+
+* 创建字典的源表
+
+```
+CREATE TABLE db1.table1_dict_source
+(
+  id UInt32,
+  email String,
+  name String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+* 插入数据行
+
+```
+INSERT INTO db1.table1_dict_source
+(id, email, name)
+VALUES
+(1, 'me@domain.com', 'me'),
+(2, 'you@domain.com', 'you');
+```
+
+* 创建键和值均为 String 的字典
+
+```
+CREATE DICTIONARY db1.table1_dict
+(
+    email String,
+    name String
+)
+PRIMARY KEY email
+SOURCE(
+CLICKHOUSE(
+TABLE 'table1_dict_source'
+USER 'default'
+PASSWORD 'ClickHouse123!'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 0 MAX 1000);
+```
+
+* 测试字典
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_dict;
+
+SELECT *
+FROM db1.table1_dict
+
+Query id: 098396ce-11dd-4c71-a0e1-40723dd67ddc
+
+┌─email──────────┬─name─┐
+│ me@domain.com  │ me   │
+│ you@domain.com │ you  │
+└────────────────┴──────┘
+
+2 rows in set. Elapsed: 0.001 sec. 
+```
+
+你也可以使用 dictGet 函数从中获取值，例如：
+
+```
+SELECT dictGet('db1.table1_dict', 'name', 'me@domain.com');
+```
+
+响应：
+
+```
+┌─dictGet('db1.table1_dict', 'name', 'me@domain.com')─┐
+│ me                                                  │
+└─────────────────────────────────────────────────────┘
+```
+
+更多详情 - [https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions)

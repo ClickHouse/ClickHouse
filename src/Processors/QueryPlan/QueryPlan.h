@@ -2,21 +2,33 @@
 
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Core/Field.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <functional>
 #include <list>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
+
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
+
+class AnalyzeStepsStats;
+
+struct PrettyNames;
+struct PrettyNamesPerPlan;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -48,7 +60,7 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
-/// Options from EXPLAIN PLAN query.
+/// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -65,6 +77,10 @@ struct ExplainPlanOptions
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
+    /// Print a plan executed by stateless workers (`make_distributed_plan`) as one plan per query fragment,
+    /// followed by the exchanges between the fragments.
+    /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
+    bool fragments = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
@@ -73,11 +89,33 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
-
+    /// Show estimates
+    bool estimates = false;
+    /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
+    bool processors_profile = false;
+    /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
+    /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
+    /// durin colleciton
+    bool matches = false;
+    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
+    /// Gives access to more elaborative time metrics, affects the performance of a query
+    bool time = false;
+    /// When set, each step is annotated with the hash of the plan node it belongs to. Nothing in a
+    /// plan carries these - they come from `calculateHashTableCacheKeys` - so a caller holding them
+    /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
+    /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
+    const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
 
     SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
+struct DistributedPlanCut;
+
+struct CostEstimationInfo
+{
+    Float64 cost = 0.0;
+    Float64 rows = 0.0;
+};
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -100,7 +138,12 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+    /// Serialization for a distributed-plan worker task: every subquery set ships as its built
+    /// values (a `TupleValues` record bounded by `sets_transfer_limits`), and a set without
+    /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
+    /// the subquery.
+    void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
@@ -114,10 +157,35 @@ public:
 
     void resolveStorages(const ContextPtr & context);
 
+    /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
+    /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it), because set and CTE
+    /// expansion is then left to `convertToDistributed`; a plan that skipped the decision keeps its
+    /// `Delayed*` placeholder steps and fails with a logical error when the pipeline is built.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
+
+    /// The first part of `convertToDistributed`: checks that the optimized plan can still be distributed,
+    /// takes the `IN`-subquery sets out of it, cuts it into the stages of a distributed plan, and adds the
+    /// `final_result` exchange to the `main` stage.
+    DistributedPlanCut cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings);
+
+    /// The single decision function for `make_distributed_plan`. When this plan cannot be
+    /// distributed: throws under `distributed_plan_fallback_to_local_execution = 0`, otherwise
+    /// logs, flips `settings.make_distributed_plan` to false and returns true. The plan is
+    /// verified at most once and the outcome is recorded in `distributed_plan_decision`.
+    bool applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings);
+
+    /// True once `applyDistributedPlanFallbackToLocal` accepted this plan for distributed execution.
+    bool staysDistributed() const { return distributed_plan_decision == DistributedPlanDecision::Distributed; }
+
+    /// True once `applyDistributedPlanFallbackToLocal` rejected this plan, which then runs locally.
+    bool didFallBackToLocal() const { return distributed_plan_decision == DistributedPlanDecision::FellBack; }
+
+    /// Why `applyDistributedPlanFallbackToLocal` rejected this plan; empty unless `didFallBackToLocal`.
+    const String & getDistributedPlanFallbackReason() const { return distributed_plan_fallback_reason; }
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -135,13 +203,17 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+
     void explainPlan(
         WriteBuffer & buffer,
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
+        const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
-        bool is_last_child_plan = true) const;
+        bool is_last_child_plan = true,
+        AnalyzeStepsStats * steps_to_stats = nullptr) const;
+
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -149,6 +221,16 @@ public:
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
     auto getInterpretersContexts() const { return resources.interpreter_context; }
+    /// Registers a context that `applyDistributedPlanFallbackToLocal` sets `make_distributed_plan = 0` on
+    /// when this plan falls back (see `QueryPlanResourceHolder::distributed_plan_decision_contexts`).
+    void addDistributedPlanDecisionContext(ContextMutablePtr context)
+    {
+        resources.distributed_plan_decision_contexts.emplace_back(std::move(context));
+    }
+    /// Copies the interpreter and decision contexts of a plan that is kept aside instead of being united
+    /// into this one (set sources, materialized CTEs, correlated subqueries), so they stay alive and
+    /// follow this plan's distributed-plan decision.
+    void takeContextsFrom(const QueryPlan & kept_aside_plan);
     void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
@@ -166,6 +248,7 @@ public:
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
+        std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
     using Nodes = std::list<Node>;
@@ -184,16 +267,34 @@ public:
     void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
 
+    /// Clone the subtree rooted at `subplan_root` (which may belong to another plan) into a new,
+    /// standalone plan. Unlike building a plan with `addStep`, this preserves branching subtrees
+    /// (multiple sources / multi-input steps).
+    static QueryPlan cloneSubtree(Node * subplan_root);
+
+    /// Same as above, preserving the execution limits and resources from the plan that owns the subtree.
+    static QueryPlan cloneSubtree(Node * subplan_root, const QueryPlan & source_plan);
+
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
-    struct SerializationFlags;
+    struct SerializationFlags
+    {
+        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        UInt64 version = 0;
+        bool skip_data = false;
+        /// See `serializeForDistributedTask`.
+        bool sets_must_be_ready = false;
+        SizeLimits sets_transfer_limits = {};
+        /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
+        size_t subquery_nesting_depth = 0;
+    };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
-    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context);
+    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
@@ -209,7 +310,24 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+
+    enum class DistributedPlanDecision
+    {
+        Undecided,
+        Distributed,
+        FellBack,
+    };
+
+    /// The outcome of `applyDistributedPlanFallbackToLocal` for this plan. Later calls do not
+    /// re-verify the plan, they only re-apply the recorded outcome to the settings. This is correct
+    /// only while every caller passes the same settings as the inputs of the decision
+    /// (`enable_cascades_optimizer`, the `distributed_plan_default_*_bucket_count` values, the
+    /// projection force flags). It holds today because they all come from the same query context.
+    DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
+    /// The reason of a `FellBack` decision, for `EXPLAIN`.
+    String distributed_plan_fallback_reason;
 };
+
 
 /// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,
@@ -238,6 +356,12 @@ struct QueryPlanAndSets
 std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
 
+/// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.
+/// Steps for which `ignore` returns true are accepted anyway, e.g. planner markers that are replaced
+/// before the plan is shipped.
+const QueryPlan::Node * findNonSerializableStep(
+    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore = {});
+
 
 struct ExchangeDescription
 {
@@ -248,9 +372,21 @@ struct ExchangeDescription
     };
 
     String name;
+    /// Id of the producer stage: the N of `exchange_N`, or the id of the `main` stage for `final_result`.
+    /// Not sent to workers.
+    UInt32 id = 0;
     Kind kind = Kind::Persisted;
     size_t source_bucket_count = 0;
     size_t destination_bucket_count = 0;
+
+    /// Name of the logical exchange step this exchange was cut from (`ShuffleExchange`, `ScatterExchange`,
+    /// `BroadcastExchange`, `GatherExchange`). Kept for `EXPLAIN`; not sent to workers. Empty for `final_result`,
+    /// which is not cut from a logical exchange step.
+    String exchange_step_name = {};
+    /// Hash keys of a shuffle or scatter exchange; empty for `any` distribution, broadcast and gather.
+    Names keys = {};
+    /// Sort order a gather exchange maintains when merging, if any.
+    std::optional<SortDescription> sort_description = {};
 };
 
 using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
@@ -263,6 +399,17 @@ struct QueryPlanParameters
     std::unordered_map<String, Field> parameters;
 };
 
+/// One transported runtime filter this task receives: the executor reads the filter from `stream`
+/// (the broadcast of the merge root) and registers it under `filter_key` in the task's filter lookup.
+struct RuntimeFilterReceiveDescriptor
+{
+    String filter_key;
+    String filter_name;
+    DataTypePtr key_column_type;
+    RuntimeFilterGeometry geometry;
+    ExchangeStreamId stream;
+};
+
 /// Represents a single local task in a distributed query plan
 struct DistributedQueryTask
 {
@@ -270,26 +417,58 @@ struct DistributedQueryTask
     QueryPlanParameters parameters;
     std::vector<ExchangeStreamId> input_exchange_streams;
     std::vector<ExchangeStreamId> output_exchange_streams;
+    std::vector<RuntimeFilterReceiveDescriptor> runtime_filter_descriptors;
 };
 
 /// A group of tasks with the same plan fragment and differenet parameters
 /// Tasks can be executed in parallel on different partitions of data
 struct DistributedQueryStage
 {
+    /// Number of the stage: the N of `stage_N` for worker stages, the next number for `main`, so that
+    /// ids ascend from the leaves to `main`. Not sent to workers.
+    UInt32 id = 0;
     QueryPlan query_plan_fragment;   /// Common for all tasks
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+
+    /// The stage only merges and sends a runtime filter (an `rf_merge_*` stage); it produces no
+    /// query data. See `waitsForFilterOnlyStages` for whether an executor waits for it.
+    bool filter_only = false;
 };
+
+/// A stage that another stage reads from, and the exchange between them.
+struct StageDependency
+{
+    String stage;
+    String exchange;
+};
+
+using StageDependencies = std::vector<StageDependency>;
 
 /// Represents a graph of stages
 /// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
 struct DistributedQueryPlan
 {
     std::unordered_map<String, DistributedQueryStage> stages;
-    /// Maps stage name to stages it depends on and the corresponding exchange_id
-    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    /// Maps stage name to the stages it reads from, in the order to start them.
+    std::unordered_map<String, StageDependencies> stage_depends_on;
     /// Maps exchange_id to exchange description
     ExchangeDescriptions exchange_descriptions;
     String final_result_stream_name;
+};
+
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
+/// The result of `QueryPlan::cutIntoDistributedPlan`.
+struct DistributedPlanCut
+{
+    DistributedQueryPlan distributed_plan;
+    /// The exchange the `main` stage sends the result of the query to.
+    ExchangeDescription final_result_exchange;
+    /// The header of the result of the query, taken before the cut.
+    SharedHeader result_header;
+    /// The `IN`-subquery sets taken out of the plan; the caller adds them back to the initiator plan.
+    std::vector<FutureSetFromSubqueryPtr> delayed_sets;
 };
 
 }

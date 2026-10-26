@@ -52,6 +52,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// No declarative signature here on purpose: for a `Map(K, V)` argument the return type is the
+    /// map's *named* `Tuple(keys, values)`, and the DSL cannot express named tuples. An unnamed
+    /// `Tuple(K, V)` would lose the element names that `untuple` relies on, so `getReturnTypeImpl`
+    /// below stays authoritative.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & arr = getArrayJoinDataType(arguments[0]);
@@ -84,6 +88,14 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
+
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)`). Use the `ARRAY JOIN` clause for those queries. `JOIN LATERAL` over a correlated subquery is a separate experimental feature and does not make `unnest` usable as a table source.
+
+`arrayJoin`, including via its `unnest` alias, cannot be used in a `JOIN ON` condition that is evaluated during the join, because such a condition must
+preserve the number of rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are
+extracted before the join and are unaffected. A non-disjunctive `ALL INNER JOIN` condition is also unaffected,
+because there the condition is applied after the join instead.
+Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
 )";
     FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {
@@ -92,11 +104,11 @@ these are replaced with the corresponding array value.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a set of rows unfolded from `arr`."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src)", R"(
-┌─dst─┬─\'Hello\'─┬─src─────┐
-│   1 │ Hello     │ [1,2,3] │
-│   2 │ Hello     │ [1,2,3] │
-│   3 │ Hello     │ [1,2,3] │
-└─────┴───────────┴─────────┘
+┌─dst─┬─'Hello'─┬─src─────┐
+│   1 │ Hello   │ [1,2,3] │
+│   2 │ Hello   │ [1,2,3] │
+│   3 │ Hello   │ [1,2,3] │
+└─────┴─────────┴─────────┘
         )"},
         {"arrayJoin affects all sections of the query", R"(
 -- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
@@ -113,7 +125,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
         )"},
         {"Using multiple arrayJoin functions", R"(
-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -128,21 +140,24 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    city,
+    browser
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
         )"
         },
         {"Unexpected results due to optimizations", R"(
 -- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
 -- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
@@ -212,11 +227,14 @@ ARRAY JOIN
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
         )"
         },
@@ -236,11 +254,14 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
         )", R"(
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
         )"
         }
@@ -251,8 +272,9 @@ GROUP BY
     factory.registerFunction<FunctionArrayJoin>(documentation);
     /// PostgreSQL/SQL-standard alias. `unnest(arr)` in a SELECT clause behaves
     /// the same as `arrayJoin(arr)` - one row per array element. Note that
-    /// PostgreSQL's `LATERAL`/`CROSS JOIN UNNEST(...)` table-source syntax is
-    /// not supported by this alias and still requires `ARRAY JOIN`.
+    /// PostgreSQL's `LATERAL unnest(...)` / `CROSS JOIN UNNEST(...)` table-source
+    /// syntax is not supported by this alias and still requires `ARRAY JOIN`;
+    /// the experimental `JOIN LATERAL` only accepts a subquery on its right side.
     factory.registerAlias("unnest", "arrayJoin", FunctionFactory::Case::Insensitive);
 }
 

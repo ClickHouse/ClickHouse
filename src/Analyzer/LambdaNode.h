@@ -4,7 +4,9 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Core/Names.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -31,41 +33,74 @@ namespace DB
 class LambdaNode;
 using LambdaNodePtr = std::shared_ptr<LambdaNode>;
 
+class LambdaArgumentsNode;
+using LambdaArgumentsNodePtr = std::shared_ptr<LambdaArgumentsNode>;
+
+class LambdaArgumentsNode final : public ITableExpressionNode
+{
+public:
+    explicit LambdaArgumentsNode(Names argument_names);
+
+    QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::LAMBDA_ARGS; }
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+    const Names & getNames() const { return names; }
+    const DataTypes & getTypes() const { return types; }
+
+    void resolve(DataTypes argument_types)
+    {
+        types = std::move(argument_types);
+    }
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
+    QueryTreeNodePtr cloneImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    Names names;
+    DataTypes types;
+};
+
 class LambdaNode final : public IQueryTreeNode
 {
 public:
     /// Initialize lambda with argument names and lambda body expression
-    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_ = {});
-
-    /// Get argument names
-    const Names & getArgumentNames() const
-    {
-        return argument_names;
-    }
+    explicit LambdaNode(LambdaArgumentsNodePtr arguments_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_ = {});
 
     /// Get arguments
-    const ListNode & getArguments() const
+    const LambdaArgumentsNode & getArguments() const
     {
-        return children[arguments_child_index]->as<const ListNode &>();
+        return assert_cast<const LambdaArgumentsNode &>(*children[arguments_child_index]);
     }
 
-    /// Get arguments
-    ListNode & getArguments()
+    LambdaArgumentsNode & getArguments()
     {
-        return children[arguments_child_index]->as<ListNode &>();
+        return assert_cast<LambdaArgumentsNode &>(*children[arguments_child_index]);
     }
+
+    LambdaArgumentsNodePtr getArgumentsTyped()
+    {
+        return static_pointer_cast<LambdaArgumentsNode>(children[arguments_child_index]);
+    }
+
+    // /// Get arguments
+    // ListNode & getArguments()
+    // {
+    //     return children[arguments_child_index]->as<ListNode &>();
+    // }
 
     /// Get arguments node
-    const QueryTreeNodePtr & getArgumentsNode() const
-    {
-        return children[arguments_child_index];
-    }
+    // const QueryTreeNodePtr & getArgumentsNode() const
+    // {
+    //     return children[arguments_child_index];
+    // }
 
-    /// Get arguments node
-    QueryTreeNodePtr & getArgumentsNode()
-    {
-        return children[arguments_child_index];
-    }
+    // /// Get arguments node
+    // QueryTreeNodePtr & getArgumentsNode()
+    // {
+    //     return children[arguments_child_index];
+    // }
 
     /// Get expression
     const QueryTreeNodePtr & getExpression() const
@@ -106,7 +141,6 @@ protected:
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
-    Names argument_names;
     DataTypePtr result_type;
     bool is_operator = false;
 

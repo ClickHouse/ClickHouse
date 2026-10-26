@@ -65,12 +65,6 @@ public:
 
     std::string_view getTypeName() const override { return "scheduler"; }
 
-    bool equals(ISchedulerNode *) override
-    {
-        chassert(false);
-        return false;
-    }
-
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
         child = std::static_pointer_cast<ISpaceSharedNode>(child_);
@@ -132,6 +126,13 @@ public:
 
     ResourceAllocation * selectAllocationToKill(IncreaseRequest &, ResourceCost, String &) override
     {
+        chassert(false);
+        return nullptr;
+    }
+
+    ResourceAllocation * selectAllocationToSpill(ResourceCost, String &) override
+    {
+        // Spill selection is initiated by `AllocationLimit`, never at the root.
         chassert(false);
         return nullptr;
     }

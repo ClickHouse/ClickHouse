@@ -40,8 +40,7 @@ EXPLAIN SYNTAX SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) 
 EXPLAIN QUERY TREE
 SELECT dictGet('dictdb_01376.dict_exists', 'value', number) as val
 FROM numbers(2)
-GROUP BY val
-SETTINGS enable_analyzer = 1;
+GROUP BY val;
 
 DROP DICTIONARY dictdb_01376.dict_exists;
 DROP TABLE dictdb_01376.table_for_dict;

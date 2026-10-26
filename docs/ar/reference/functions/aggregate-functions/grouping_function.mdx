@@ -1,0 +1,371 @@
+---
+description: 'توثيق الدالة التجميعية GROUPING.'
+slug: /sql-reference/aggregate-functions/grouping_function
+title: 'GROUPING'
+doc_type: 'reference'
+---
+
+<div id="grouping">
+  ## GROUPING
+</div>
+
+يُعدّ [ROLLUP](/ar/reference/statements/select/group-by#rollup-modifier) و[CUBE](/ar/reference/statements/select/group-by#cube-modifier) معدّلين لـ GROUP BY. وكلاهما يحسب المجاميع الفرعية. يأخذ ROLLUP قائمة مرتّبة من الأعمدة، على سبيل المثال `(day, month, year)`، ويحسب المجاميع الفرعية عند كل مستوى من مستويات التجميع ثم المجموع الكلي. أما CUBE فيحسب المجاميع الفرعية لجميع التركيبات الممكنة للأعمدة المحددة. وتحدّد GROUPING أيّ الصفوف التي يعيدها ROLLUP أو CUBE هي تجميعات عليا، وأيّها صفوف كان سيعيدها GROUP BY من دون تعديل.
+
+تأخذ الدالة GROUPING عدة أعمدة كوسيط، وتُرجع قناع بتات.
+
+* تشير `1` إلى أن الصف الذي يعيده معدّل `ROLLUP` أو `CUBE` لـ `GROUP BY` هو مجموع فرعي
+* تشير `0` إلى أن الصف الذي يعيده `ROLLUP` أو `CUBE` هو صف ليس مجموعًا فرعيًا
+
+<div id="grouping-sets">
+  ## GROUPING SETS
+</div>
+
+افتراضيًا، يحسب المُعدِّل CUBE المجاميع الفرعية لجميع التركيبات الممكنة للأعمدة المُمرَّرة إلى CUBE. ويتيح لك GROUPING SETS تحديد التركيبات التي تريد حسابها تحديدًا.
+
+يُعدّ تحليل البيانات الهرمية حالة استخدام مناسبة لمُعدِّلات ROLLUP وCUBE وGROUPING SETS. المثال هنا عبارة عن جدول يحتوي على بيانات حول توزيعة Linux وإصدارها المثبَّتين عبر مركزي بيانات. وقد يكون من المفيد عرض البيانات بحسب التوزيعة والإصدار والموقع.
+
+<div id="load-sample-data">
+  ### تحميل بيانات تجريبية
+</div>
+
+```sql
+CREATE TABLE servers ( datacenter VARCHAR(255),
+                         distro VARCHAR(255) NOT NULL,
+                         version VARCHAR(50) NOT NULL,
+                         quantity INT
+                       )
+                        ORDER BY (datacenter, distro, version)
+```
+
+```sql
+INSERT INTO servers(datacenter, distro, version, quantity)
+VALUES ('Schenectady', 'Arch','2022.08.05',50),
+       ('Westport', 'Arch','2022.08.05',40),
+       ('Schenectady','Arch','2021.09.01',30),
+       ('Westport', 'Arch','2021.09.01',20),
+       ('Schenectady','Arch','2020.05.01',10),
+       ('Westport', 'Arch','2020.05.01',5),
+       ('Schenectady','RHEL','9',60),
+       ('Westport','RHEL','9',70),
+       ('Westport','RHEL','7',80),
+       ('Schenectady','RHEL','7',80)
+```
+
+```sql
+SELECT 
+    *
+FROM
+    servers;
+```
+
+```response
+┌─datacenter──┬─distro─┬─version────┬─quantity─┐
+│ Schenectady │ Arch   │ 2020.05.01 │       10 │
+│ Schenectady │ Arch   │ 2021.09.01 │       30 │
+│ Schenectady │ Arch   │ 2022.08.05 │       50 │
+│ Schenectady │ RHEL   │ 7          │       80 │
+│ Schenectady │ RHEL   │ 9          │       60 │
+│ Westport    │ Arch   │ 2020.05.01 │        5 │
+│ Westport    │ Arch   │ 2021.09.01 │       20 │
+│ Westport    │ Arch   │ 2022.08.05 │       40 │
+│ Westport    │ RHEL   │ 7          │       80 │
+│ Westport    │ RHEL   │ 9          │       70 │
+└─────────────┴────────┴────────────┴──────────┘
+
+10 rows in set. Elapsed: 0.409 sec.
+```
+
+<div id="simple-queries">
+  ### استعلامات بسيطة
+</div>
+
+اعرض عدد الخوادم في كل مركز بيانات حسب التوزيعة:
+
+```sql
+SELECT
+    datacenter,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter,
+    distro;
+```
+
+```response
+┌─datacenter──┬─distro─┬─qty─┐
+│ Schenectady │ RHEL   │ 140 │
+│ Westport    │ Arch   │  65 │
+│ Schenectady │ Arch   │  90 │
+│ Westport    │ RHEL   │ 150 │
+└─────────────┴────────┴─────┘
+
+4 rows in set. Elapsed: 0.212 sec.
+```
+
+```sql
+SELECT
+    datacenter, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter;
+```
+
+```response
+┌─datacenter──┬─qty─┐
+│ Westport    │ 215 │
+│ Schenectady │ 230 │
+└─────────────┴─────┘
+
+2 rows in set. Elapsed: 0.277 sec. 
+```
+
+```sql
+SELECT
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    distro;
+```
+
+```response
+
+┌─distro─┬─qty─┐
+│ Arch   │ 155 │
+│ RHEL   │ 290 │
+└────────┴─────┘
+
+2 rows in set. Elapsed: 0.352 sec. 
+```
+
+```sql
+SELECT
+    SUM(quantity) qty
+FROM
+    servers;
+```
+
+```response
+┌─qty─┐
+│ 445 │
+└─────┘
+
+1 row in set. Elapsed: 0.244 sec. 
+```
+
+<div id="comparing-multiple-group-by-statements-with-grouping-sets">
+  ### مقارنة عدة عبارات GROUP BY مع GROUPING SETS
+</div>
+
+تقسيم البيانات من دون CUBE أو ROLLUP أو GROUPING SETS:
+
+```sql
+SELECT
+    datacenter,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter,
+    distro
+UNION ALL
+SELECT
+    datacenter, 
+    null,
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    datacenter
+UNION ALL
+SELECT
+    null,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    distro
+UNION ALL
+SELECT
+    null,
+    null,
+    SUM(quantity) qty
+FROM
+    servers;
+```
+
+```response
+┌─datacenter─┬─distro─┬─qty─┐
+│ ᴺᵁᴸᴸ       │ ᴺᵁᴸᴸ   │ 445 │
+└────────────┴────────┴─────┘
+┌─datacenter──┬─distro─┬─qty─┐
+│ Westport    │ ᴺᵁᴸᴸ   │ 215 │
+│ Schenectady │ ᴺᵁᴸᴸ   │ 230 │
+└─────────────┴────────┴─────┘
+┌─datacenter──┬─distro─┬─qty─┐
+│ Schenectady │ RHEL   │ 140 │
+│ Westport    │ Arch   │  65 │
+│ Schenectady │ Arch   │  90 │
+│ Westport    │ RHEL   │ 150 │
+└─────────────┴────────┴─────┘
+┌─datacenter─┬─distro─┬─qty─┐
+│ ᴺᵁᴸᴸ       │ Arch   │ 155 │
+│ ᴺᵁᴸᴸ       │ RHEL   │ 290 │
+└────────────┴────────┴─────┘
+
+9 rows in set. Elapsed: 0.527 sec. 
+```
+
+الحصول على نفس المعلومات باستخدام GROUPING SETS:
+
+```sql
+SELECT
+    datacenter,
+    distro, 
+    SUM (quantity) qty
+FROM
+    servers
+GROUP BY
+    GROUPING SETS(
+        (datacenter,distro),
+        (datacenter),
+        (distro),
+        ()
+    )
+```
+
+```response
+┌─datacenter──┬─distro─┬─qty─┐
+│ Schenectady │ RHEL   │ 140 │
+│ Westport    │ Arch   │  65 │
+│ Schenectady │ Arch   │  90 │
+│ Westport    │ RHEL   │ 150 │
+└─────────────┴────────┴─────┘
+┌─datacenter──┬─distro─┬─qty─┐
+│ Westport    │        │ 215 │
+│ Schenectady │        │ 230 │
+└─────────────┴────────┴─────┘
+┌─datacenter─┬─distro─┬─qty─┐
+│            │        │ 445 │
+└────────────┴────────┴─────┘
+┌─datacenter─┬─distro─┬─qty─┐
+│            │ Arch   │ 155 │
+│            │ RHEL   │ 290 │
+└────────────┴────────┴─────┘
+
+9 rows in set. Elapsed: 0.427 sec.
+```
+
+<div id="comparing-cube-with-grouping-sets">
+  ### مقارنة CUBE مع GROUPING SETS
+</div>
+
+يوفّر CUBE في الاستعلام التالي، `CUBE(datacenter,distro,version)`، تدرجًا هرميًا قد لا يكون منطقيًا. فلا معنى للنظر إلى إصدار عبر التوزيعتين، لأن Arch وRHEL لا يتبعان دورة إصدارات واحدة ولا معايير تسمية الإصدارات نفسها. ويُعد مثال GROUPING SETS الوارد بعد هذا المثال أنسب، لأنه يجمع `distro` و`version` في المجموعة نفسها.
+
+```sql
+SELECT
+   datacenter,
+   distro,
+   version,
+   SUM(quantity)
+FROM
+   servers
+GROUP BY
+   CUBE(datacenter,distro,version)
+ORDER BY
+   datacenter,
+   distro;
+```
+
+```response
+┌─datacenter──┬─distro─┬─version────┬─sum(quantity)─┐
+│             │        │ 7          │           160 │
+│             │        │ 2020.05.01 │            15 │
+│             │        │ 2021.09.01 │            50 │
+│             │        │ 2022.08.05 │            90 │
+│             │        │ 9          │           130 │
+│             │        │            │           445 │
+│             │ Arch   │ 2021.09.01 │            50 │
+│             │ Arch   │ 2022.08.05 │            90 │
+│             │ Arch   │ 2020.05.01 │            15 │
+│             │ Arch   │            │           155 │
+│             │ RHEL   │ 9          │           130 │
+│             │ RHEL   │ 7          │           160 │
+│             │ RHEL   │            │           290 │
+│ Schenectady │        │ 9          │            60 │
+│ Schenectady │        │ 2021.09.01 │            30 │
+│ Schenectady │        │ 7          │            80 │
+│ Schenectady │        │ 2022.08.05 │            50 │
+│ Schenectady │        │ 2020.05.01 │            10 │
+│ Schenectady │        │            │           230 │
+│ Schenectady │ Arch   │ 2022.08.05 │            50 │
+│ Schenectady │ Arch   │ 2021.09.01 │            30 │
+│ Schenectady │ Arch   │ 2020.05.01 │            10 │
+│ Schenectady │ Arch   │            │            90 │
+│ Schenectady │ RHEL   │ 7          │            80 │
+│ Schenectady │ RHEL   │ 9          │            60 │
+│ Schenectady │ RHEL   │            │           140 │
+│ Westport    │        │ 9          │            70 │
+│ Westport    │        │ 2020.05.01 │             5 │
+│ Westport    │        │ 2022.08.05 │            40 │
+│ Westport    │        │ 7          │            80 │
+│ Westport    │        │ 2021.09.01 │            20 │
+│ Westport    │        │            │           215 │
+│ Westport    │ Arch   │ 2020.05.01 │             5 │
+│ Westport    │ Arch   │ 2021.09.01 │            20 │
+│ Westport    │ Arch   │ 2022.08.05 │            40 │
+│ Westport    │ Arch   │            │            65 │
+│ Westport    │ RHEL   │ 9          │            70 │
+│ Westport    │ RHEL   │ 7          │            80 │
+│ Westport    │ RHEL   │            │           150 │
+└─────────────┴────────┴────────────┴───────────────┘
+
+39 rows in set. Elapsed: 0.355 sec. 
+```
+
+<Note>
+  قد لا يكون للإصدار في المثال أعلاه معنى واضح إذا لم يكن مرتبطًا بتوزيعة. ولو كنّا نتتبّع إصدار النواة، فقد يكون ذلك منطقيًا لأن إصدار النواة يمكن أن يرتبط بأيٍّ من التوزيعتين. لذا قد يكون استخدام GROUPING SETS، كما في المثال التالي، خيارًا أفضل.
+</Note>
+
+```sql
+SELECT
+    datacenter,
+    distro,
+    version,
+    SUM(quantity)
+FROM servers
+GROUP BY
+    GROUPING SETS (
+        (datacenter, distro, version),
+        (datacenter, distro))
+```
+
+```response
+┌─datacenter──┬─distro─┬─version────┬─sum(quantity)─┐
+│ Westport    │ RHEL   │ 9          │            70 │
+│ Schenectady │ Arch   │ 2022.08.05 │            50 │
+│ Schenectady │ Arch   │ 2021.09.01 │            30 │
+│ Schenectady │ RHEL   │ 7          │            80 │
+│ Westport    │ Arch   │ 2020.05.01 │             5 │
+│ Westport    │ RHEL   │ 7          │            80 │
+│ Westport    │ Arch   │ 2021.09.01 │            20 │
+│ Westport    │ Arch   │ 2022.08.05 │            40 │
+│ Schenectady │ RHEL   │ 9          │            60 │
+│ Schenectady │ Arch   │ 2020.05.01 │            10 │
+└─────────────┴────────┴────────────┴───────────────┘
+┌─datacenter──┬─distro─┬─version─┬─sum(quantity)─┐
+│ Schenectady │ RHEL   │         │           140 │
+│ Westport    │ Arch   │         │            65 │
+│ Schenectady │ Arch   │         │            90 │
+│ Westport    │ RHEL   │         │           150 │
+└─────────────┴────────┴─────────┴───────────────┘
+
+14 rows in set. Elapsed: 1.036 sec. 
+```

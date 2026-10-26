@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Get started'
+description: 'Step-by-step guide to create your first Azure Blob Storage (ABS) ClickPipe.'
+slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
+title: 'Create your first Azure Blob Storage ClickPipe'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+**Prerequisites**
+
+To follow this guide, you will need:
+- An Azure Blob Storage account
+- [Azure connection string](/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
+- Container name
+- A running ClickHouse Cloud service
+
+<Steps>
+<Step title="Navigate to data sources" id="navigate-to-data-sources">
+
+From the home page of your service, click **Data sources** in the left hand menu.
+Expand the **ClickPipes** dropdown and click **Create ClickPipe**
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="Navigate to Data Sources" size="md"/>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="Create ClickPipe" size="md"/>
+</Step>
+<Step title="Select the data source" id="select-data-source">
+
+Select **Azure Blob Storage** as data type
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Select Azure Blob Storage" size="md"/>
+</Step>
+<Step title="Setup your ClickPipe connection" id="setup-connection">
+
+1. Give your ClickPipe a descriptive name
+2. Select **Connection String** from the authentication method dropdown
+3. Paste your Azure connection string in the field for **Connection string**
+4. Enter your container name
+5. Enter your Azure Blob Storage file path, using wildcards if you want to ingest multiple files
+
+Optionally, enable continuous ingestion. See ["Continuous Ingestion"](/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion) for more details.
+
+Finally, click **Incoming data**
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="Configuration Details" size="md"/>
+</Step>
+<Step title="Select data format" id="select-data-format">
+
+1. Select file type
+2. File compression (`detect automatically`, `none`, `gzip`, `brotli`, `xz` or `zstd`)
+3. Complete additional format specific configuration such as delimiter used for comma-separated formats
+4. Click **Parse information**
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="Choose Data Format" size="md"/>
+</Step>
+<Step title="Configure table, schema and settings" id="configure-table-schema">
+
+Now you need to create a new table or select an existing one where the incoming data can be stored.
+
+1. Select whether to upload data to a new table or an existing table
+2. Select the database to use, and which name to give the table if it is a new table
+3. Choose a sorting key or keys
+4. Define any mappings from the source file to destination table for column name, column type, default value and nullability
+5. Finally, specify advanced settings such as the engine type you wish to use, the expression to partition by and the primary key
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="Parse Information" size="md"/>
+
+When you have finished configuring your table, schema and settings, click **Details and settings**
+</Step>
+<Step title="Configure permissions" id="configure-permissions">
+
+ClickPipes will set up a dedicated database user for data writing.
+You can select a role for this user.
+For materialized views or dictionary access from the destination table, opt for "Full access".
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="Configure Permissions" size="md"/>
+</Step>
+<Step title="Complete setup" id="complete-setup">
+
+Click **Create ClickPipe** to complete setup
+
+You should now see your ClickPipe in a provisioning status.
+After a few moments it will change from **provisioning** to **completed**.
+</Step>
+</Steps>

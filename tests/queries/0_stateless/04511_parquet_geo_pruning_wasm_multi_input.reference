@@ -1,0 +1,7 @@
+=== all rows returned (fail-closed, no incorrect pruning) ===
+1
+2
+3
+4
+=== pruned_row_groups (expect no pruning) ===
+no pruning

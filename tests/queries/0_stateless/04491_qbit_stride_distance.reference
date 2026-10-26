@@ -1,0 +1,31 @@
+L2: strided (first 8 dims) vs non-strided baseline, optimization on
+1	2.8284
+2	28.5657
+1	2.8284
+2	28.5657
+cosine: strided (first 8 dims) vs non-strided baseline, optimization on
+1	0.0059
+2	0.2758
+1	0.0059
+2	0.2758
+Same with the partial-reads optimization disabled (user-form fallback)
+1	2.8284
+2	28.5657
+1	0.0059
+2	0.2758
+Full-dimension strided search (3-arg form reads all stride groups)
+1	4
+2	37.0945
+Reduced precision on first 8 dims
+1	5.6789
+2	14.2829
+Nullable precision / dims propagate to a Nullable result
+Nullable(Float64)
+Nullable(Float64)
+1	2.8284
+2	28.5657
+Partial-read I/O contract: distinct vec.N streams referenced in the plan
+p=8 dims=2048 (expect 16)	16
+p=16 dims=4096 (expect 64)	64
+optimization off (expect 0)	0
+Validation errors

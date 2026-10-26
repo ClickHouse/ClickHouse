@@ -1,0 +1,14 @@
+datetime: 2020-01-02 03:04:05.000000
+datetime64_3: 2020-01-02 03:04:05.123000
+datetime64_0: 2020-01-02 03:04:05.000000
+datetime64_9: 2020-01-02 03:04:05.123456
+array_datetime: ['2020-01-02 03:04:05.000000']
+datetime64_6_ctl: 2020-01-02 03:04:05.123456
+parquet_ctl: 2020-01-02 03:04:05.000000
+repeat_inserts: 2020-01-02 03:04:05.000000 2021-02-03 04:05:06.000000
+shared_target: 2020-01-02 03:04:05.000000 2020-01-03 03:04:05.000000
+insert_into_mv_type_mismatch: Code: 53
+insert_into_mv_rows: 0
+insert_into_mv_data_files: 0
+insert_into_mv_no_widening_ctl: 2020-01-02 03:04:05.123456
+avro_logical_type: timestamp-micros

@@ -1,0 +1,36 @@
+---
+description: 'When performing queries, ClickHouse uses different caches.'
+sidebarTitle: 'Caches'
+slug: /operations/caches
+title: 'Cache types'
+keywords: ['cache']
+doc_type: 'reference'
+---
+
+When performing queries, ClickHouse uses different caches to speed up queries
+and reduce the need to read from or write to disk.
+
+The main cache types are:
+
+- `mark_cache` — Cache of [marks](/resources/develop-contribute/introduction/architecture#merge-tree) used by table engines of the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family.
+- `uncompressed_cache` — Cache of uncompressed data used by table engines of the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family.
+- Operating system page cache (used indirectly, for files with actual data).
+
+There are also a host of additional cache types:
+
+- DNS cache.
+- [Regexp](/reference/formats/Regexp) cache.
+- Compiled expressions cache.
+- [Vector similarity index](/reference/engines/table-engines/mergetree-family/annindexes) cache.
+- [Text index](/reference/engines/table-engines/mergetree-family/textindexes#caching) cache.
+- [Avro format](/reference/formats/Avro/Avro) schemas cache.
+- [Dictionaries](/reference/statements/create/dictionary) data cache.
+- Schema inference cache.
+- [Filesystem cache](/concepts/features/configuration/server-config/storing-data) over S3, Azure, Local and other disks.
+- [Userspace page cache](/concepts/features/performance/caches/userspace-page-cache)
+- [Query cache](/concepts/features/performance/caches/query-cache).
+- [Query condition cache](/concepts/features/performance/caches/query-condition-cache).
+- Format schema cache.
+
+Should you wish to clear one of the caches, for performance tuning, troubleshooting, or data consistency reasons,
+you can use the [`SYSTEM CLEAR ... CACHE`](/reference/statements/system) statement.

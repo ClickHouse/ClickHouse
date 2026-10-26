@@ -1,0 +1,94 @@
+---
+slug: /cloud/reference/shared-catalog
+sidebarTitle: 'Shared Catalog'
+title: 'Shared Catalog y el motor de base de datos Shared'
+keywords: ['SharedCatalog', 'SharedDatabaseEngine']
+description: 'Describe el componente Shared Catalog y el motor de base de datos Shared en ClickHouse Cloud'
+doc_type: 'reference'
+---
+
+**Disponible exclusivamente en ClickHouse Cloud (y en servicios cloud de socios oficiales)**
+
+Shared Catalog es un componente nativo de la nube responsable de replicar los metadatos y las operaciones DDL de las bases de datos y tablas que usan motores sin estado entre réplicas en ClickHouse Cloud. Permite una gestión del estado coherente y centralizada de estos objetos, lo que garantiza la consistencia de los metadatos incluso en entornos dinámicos o parcialmente desconectados.
+
+Shared Catalog **no replica las tablas en sí**, sino que garantiza que todas las réplicas tengan una visión coherente de las definiciones de bases de datos y tablas mediante la replicación de consultas DDL y metadatos.
+
+Admite la replicación de los siguientes motores de base de datos:
+
+* Shared
+* PostgreSQL
+* MySQL
+* DataLakeCatalog
+
+<div id="architecture-and-metadata-storage">
+  ## Arquitectura y almacenamiento de metadatos
+</div>
+
+Todos los metadatos y el historial de consultas DDL de Shared Catalog se almacenan de forma centralizada en ZooKeeper. No se guarda nada en el disco local. Esta arquitectura garantiza:
+
+* Un estado coherente en todas las réplicas
+* Que los nodos de cómputo no tengan estado
+* Un arranque inicial rápido y fiable de las réplicas
+
+<div id="shared-database-engine">
+  ## Shared database engine
+</div>
+
+El **Shared database engine** funciona junto con Shared Catalog para gestionar bases de datos cuyas tablas usan **motores de tabla sin estado** como `SharedMergeTree`. Estos motores de tabla no escriben estado persistente en disco y son compatibles con entornos de cómputo dinámicos.
+
+Shared database engine se basa en el comportamiento del motor de base de datos Replicated y lo mejora, al tiempo que ofrece garantías adicionales y ventajas operativas.
+
+<div id="key-benefits">
+  ### Beneficios clave
+</div>
+
+* **CREATE TABLE ... AS SELECT atómico**
+  La creación de la tabla y la inserción de datos se ejecutan de forma atómica: o bien se completa toda la operación, o la tabla no se crea en absoluto.
+
+* **RENAME TABLE entre bases de datos**
+  Permite mover tablas entre bases de datos de forma atómica:
+  ```sql
+  RENAME TABLE db1.table TO db2.table;
+  ```
+
+* **Recuperación automática de tablas con UNDROP TABLE**
+  Las tablas eliminadas se conservan durante un período predeterminado de 8 horas y pueden restaurarse:
+  ```sql
+  UNDROP TABLE my_table;
+  ```
+  La ventana de retención se puede configurar mediante la configuración del servidor.
+
+* **Separación cómputo-cómputo mejorada**
+  A diferencia del motor de base de datos Replicated, que requiere que todas las réplicas estén en línea para procesar una consulta DROP, Shared Catalog realiza la eliminación centralizada de metadatos. Esto permite que las operaciones se completen correctamente incluso cuando algunas réplicas están fuera de línea.
+
+* **Replicación automática de metadatos**
+  Shared Catalog garantiza que las definiciones de las bases de datos se repliquen automáticamente en todos los servidores durante el inicio. Los operadores no necesitan configurar ni sincronizar manualmente los metadatos en las instancias nuevas.
+
+* **Estado de metadatos centralizado y versionado**
+  Shared Catalog almacena una fuente única de verdad en ZooKeeper. Cuando una réplica se inicia, obtiene el estado más reciente y aplica las diferencias necesarias para alcanzar la consistencia. Durante la ejecución de consultas, el sistema puede esperar a que otras réplicas alcancen al menos la versión requerida de los metadatos para garantizar la corrección.
+
+<div id="usage-in-clickhouse-cloud">
+  ## Uso en ClickHouse Cloud
+</div>
+
+Para los usuarios finales, usar Shared Catalog y el motor de base de datos Shared no requiere ninguna configuración adicional. La creación de bases de datos es la misma de siempre:
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud asigna automáticamente el motor de base de datos Shared a las bases de datos. Cualquier tabla creada dentro de una base de datos de este tipo con motores sin estado se beneficiará automáticamente de las funcionalidades de replicación y coordinación de Shared Catalog.
+
+<div id="summary">
+  ## Resumen
+</div>
+
+Shared Catalog y el motor de base de datos Shared proporcionan:
+
+* Replicación de metadatos fiable y automática para motores sin estado
+* Cómputo sin estado, sin persistencia local de metadatos
+* Operaciones atómicas para DDL complejos
+* Compatibilidad mejorada con entornos de cómputo elásticos, efímeros o parcialmente desconectados
+* Uso transparente para los usuarios de ClickHouse Cloud
+
+Estas capacidades convierten a Shared Catalog en la base de la gestión de metadatos escalable y nativa de la nube en ClickHouse Cloud.

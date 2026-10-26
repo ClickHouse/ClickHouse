@@ -42,9 +42,9 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 day)
         )",
         R"(
-┌─minus(CAST('⋯valDay(10))─┐
-│               1998-06-06 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalDay(10))─┐
+│                                           1998-06-06 │
+└──────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

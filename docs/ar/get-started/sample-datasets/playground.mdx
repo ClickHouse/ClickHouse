@@ -1,0 +1,55 @@
+---
+description: 'يتيح ClickHouse Playground للمستخدمين تجربة ClickHouse عبر تشغيل الاستعلامات فورًا، من دون إعداد الخادم أو العنقود الخاص بهم.'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebarTitle: 'ClickHouse Playground'
+slug: /getting-started/playground
+title: 'ClickHouse Playground'
+doc_type: 'guide'
+---
+
+يتيح [ClickHouse Playground](https://sql.clickhouse.com) للمستخدمين تجربة ClickHouse عبر تشغيل الاستعلامات فورًا، من دون إعداد الخادم أو العنقود الخاص بهم.
+تتوفر عدة مجموعات بيانات تجريبية في Playground.
+
+يمكنك إرسال استعلامات إلى Playground باستخدام أي عميل HTTP، مثل [curl](https://curl.haxx.se) أو [wget](https://www.gnu.org/software/wget/)، أو إعداد اتصال باستخدام برامج تشغيل [JDBC](/ar/integrations/language-clients/java/jdbc) أو [ODBC](/ar/concepts/features/interfaces/odbc). تتوفر [هنا](/ar/integrations/home) مزيد من المعلومات حول المنتجات البرمجية التي تدعم ClickHouse.
+
+## بيانات الاعتماد {#credentials}
+
+| المعلمة                | القيمة                             |
+| :--------------------- | :--------------------------------- |
+| نقطة نهاية HTTPS       | `https://play.clickhouse.com:443/` |
+| نقطة نهاية TCP الأصلية | `play.clickhouse.com:9440`         |
+| المستخدم               | `explorer` أو `play`               |
+| كلمة المرور            | (فارغة)                            |
+
+## القيود {#limitations}
+
+تُنفَّذ الاستعلامات بحساب مستخدم للقراءة فقط، لذا تسري القيود التالية:
+
+* لا يُسمح باستعلامات DDL
+* لا يُسمح باستعلامات INSERT
+
+تخضع الخدمة أيضًا لحصص استخدام.
+
+لتجاوز قيود القراءة فقط وتجربة تحميل بياناتك، يمكنك التسجيل للحصول على [فترة تجريبية مجانية من ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-playground) أو [تثبيت ClickHouse](/ar/get-started/setup/install) محليًا.
+
+## أمثلة {#examples}
+
+مثال على نقطة نهاية HTTPS باستخدام `curl`:
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+مثال على نقطة نهاية TCP باستخدام [عميل ClickHouse](/ar/concepts/features/interfaces/client):
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+## مواصفات ClickHouse Playground {#specifications}
+
+يعمل ClickHouse Playground لدينا بالمواصفات التالية:
+
+* مستضاف على Google Cloud ‏(GCE) في منطقة US Central ‏(US-Central-1)
+* إعداد يتكوّن من 3 نُسخ متماثلة
+* سعة تخزين تبلغ 256 GiB و59 وحدة CPU افتراضية لكل نسخة.

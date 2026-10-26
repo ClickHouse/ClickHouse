@@ -1,0 +1,18 @@
+file, explicit structure
+\N	1
+\N	2
+\N	3
+stream, explicit structure
+\N	1
+\N	2
+\N	3
+schema inference
+x	Nullable(Nothing)					
+n	Nullable(Int64)					
+\N	1
+\N	2
+\N	3
+schema inference with the skip setting keeps the null column
+\N	1
+\N	2
+\N	3

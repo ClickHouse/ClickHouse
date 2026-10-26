@@ -23,9 +23,21 @@ public:
         uint32_t queue_size,
         const std::atomic<bool> & stopped);
 
-    void subscribe() override;
+    bool needsAck() const override { return true; }
+
+    /// An asynchronous pull subscription is renewed only when a message is delivered, so it stops
+    /// once its pull request is gone: the client closes it when the broker answers the request while
+    /// shutting down, and a reconnect resends the `SUB` line but not the request.
+    /// Checked only while connected: a subscription created during a reconnect is sound, but it
+    /// predates the reconnect count, so it would be replaced once more for nothing.
+    bool needsResubscribe() const override
+    {
+        return isSubscribed() && isConnectionConnected() && (hasClosedSubscription() || hasConnectionReconnected());
+    }
 
 protected:
+    void subscribeImpl() override;
+
     void nackMessage(natsMsg * msg) override;
 
     NATSSubscriptionPtr subscribeToSubject(const String & subject);

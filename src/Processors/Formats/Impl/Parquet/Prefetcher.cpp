@@ -2,6 +2,7 @@
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
@@ -22,6 +23,8 @@ namespace ProfileEvents
     extern const Event ParquetPrefetcherReadRandomRead;
     extern const Event ParquetPrefetcherReadSeekAndRead;
     extern const Event ParquetPrefetcherReadEntireFile;
+    extern const Event ParquetPrefetcherReadBytes;
+    extern const Event ParquetPrefetcherUsedBytes;
 }
 
 namespace DB::Parquet
@@ -36,9 +39,14 @@ void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatP
     range_sets.resize(1);
 }
 
-Prefetcher::~Prefetcher()
+void Prefetcher::shutdownTasks()
 {
     shutdown->shutdown();
+}
+
+Prefetcher::~Prefetcher()
+{
+    shutdownTasks();
 
     /// Assert that all PrefetchHandle-s were destroyed.
     chassert(std::all_of(requests.begin(), requests.end(), [](const RequestState & req)
@@ -49,7 +57,9 @@ Prefetcher::~Prefetcher()
 
 void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options)
 {
-    if (options.seekable_read)
+    /// `input_format_allow_seeks`. When seeks are disallowed we read the whole file sequentially
+    /// below instead of fetching the footer and the needed column ranges.
+    if (options.format.seekable_read)
     {
         bool has_file_size = isBufferWithFileSize(*reader_);
         auto * seekable = dynamic_cast<SeekableReadBuffer *>(reader_);
@@ -67,7 +77,14 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
             }
 
             if (reader)
+            {
                 file_size = getFileSizeFromReadBuffer(*seekable);
+                if (auto * file_buf = dynamic_cast<ReadBufferFromFileBase *>(seekable))
+                {
+                    size_t view_offset = 0;
+                    is_local_file = file_buf->isRegularLocalFile(&view_offset);
+                }
+            }
         }
     }
 
@@ -87,10 +104,27 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
 
         read_mode = ReadMode::EntireFileIsInMemory;
         file_size = entire_file.size();
+        ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, file_size);
     }
 }
 
+bool Prefetcher::readsInBackground() const
+{
+    return read_mode == ReadMode::RandomRead && parser_shared_resources && !parser_shared_resources->io_runner.isDisabled();
+}
+
+bool Prefetcher::readsThroughPageCache() const
+{
+    return read_mode == ReadMode::RandomRead && reader->readsThroughPageCache();
+}
+
 void Prefetcher::readSync(char * to, size_t n, size_t offset)
+{
+    readImpl(to, n, offset);
+    ProfileEvents::increment(ProfileEvents::ParquetPrefetcherUsedBytes, n);
+}
+
+void Prefetcher::readImpl(char * to, size_t n, size_t offset)
 {
     if (offset > file_size || n > file_size - offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File read out of bounds: offset {}, length {}, file size {}", offset, n, file_size);
@@ -101,6 +135,7 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
         case ReadMode::RandomRead:
             nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, nread);
             break;
         case ReadMode::SeekAndRead:
         {
@@ -112,9 +147,11 @@ void Prefetcher::readSync(char * to, size_t n, size_t offset)
             reader->setReadUntilPosition(offset + n);
             nread = reader->readBig(to, n);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadSeekAndRead);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, nread);
             break;
         }
         case ReadMode::EntireFileIsInMemory:
+            /// The whole file was counted in `ParquetPrefetcherReadBytes` when loaded into memory.
             memcpy(to, entire_file.data() + offset, n);
             nread = n;
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadEntireFile);
@@ -184,6 +221,125 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
     }
 }
 
+std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
+    const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
+    std::vector<size_t> * created_task_first_handle)
+{
+    chassert(ranges_finalized.load(std::memory_order_relaxed));
+    if (created_task_first_handle)
+        created_task_first_handle->clear();
+
+    std::unordered_set<const RequestState *> requests_set;
+    std::vector<PrefetchHandle *> handles;
+    for (PrefetchHandle * handle : requests_to_start)
+        if (*handle && !handle->memory && requests_set.insert(handle->request).second)
+            handles.push_back(handle);
+
+    std::vector<Task *> new_tasks;
+    size_t charged = 0;
+    {
+        std::unique_lock lock(mutex);
+
+        /// A new task spans a run of these ranges with gaps below min_bytes_for_seek, plus its buffer's padding.
+        size_t bound = 0;
+        std::vector<std::pair<size_t, size_t>> ranges_to_read;
+        for (const PrefetchHandle * handle : handles)
+        {
+            const RequestState * req = handle->request;
+            if (req->state.load(std::memory_order_acquire) == RequestState::State::HasTask)
+            {
+                bound += static_cast<size_t>(static_cast<double>(req->length) * req->task->memory_amplification);
+            }
+            else
+            {
+                const RangeState & range = range_sets.at(req->range_set_idx).ranges.at(req->range_idx);
+                ranges_to_read.emplace_back(range.start, range.end);
+                bound += PaddedPODArray<char>::pad_left + PaddedPODArray<char>::pad_right;
+            }
+        }
+        std::sort(ranges_to_read.begin(), ranges_to_read.end());
+        for (size_t i = 0; i < ranges_to_read.size();)
+        {
+            auto [start, end] = ranges_to_read[i];
+            for (++i; i < ranges_to_read.size() && ranges_to_read[i].first < end + min_bytes_for_seek; ++i)
+                end = std::max(end, ranges_to_read[i].second);
+            bound += end - start;
+        }
+        if (bound > max_memory)
+            return std::nullopt;
+
+        for (const PrefetchHandle * handle : handles)
+            if (Task * task = pickRangesAndCreateTaskLocked(handle->request, /*splitting=*/ false, 0, 0, &requests_set))
+                new_tasks.push_back(task);
+
+        for (PrefetchHandle * handle : handles)
+        {
+            const RequestState * req = handle->request;
+            chassert(req->state.load(std::memory_order_relaxed) == RequestState::State::HasTask);
+            size_t memory_usage = static_cast<size_t>(static_cast<double>(req->length) * req->task->memory_amplification);
+            handle->memory = MemoryUsageToken(memory_usage, diff);
+            charged += memory_usage;
+        }
+
+        if (created_task_first_handle)
+        {
+            std::unordered_set<const Task *> not_seen(new_tasks.begin(), new_tasks.end());
+            for (size_t pos = 0; pos < requests_to_start.size() && !not_seen.empty(); ++pos)
+            {
+                const PrefetchHandle * handle = requests_to_start[pos];
+                if (*handle && not_seen.erase(handle->request->task))
+                    created_task_first_handle->push_back(pos);
+            }
+            chassert(not_seen.empty());
+        }
+    }
+
+    for (Task * task : new_tasks)
+        scheduleTask(task);
+    return charged;
+}
+
+bool Prefetcher::extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const
+{
+    return next.first_range_idx == run.last_range_idx + 1 && (next.begin <= run.end || next.begin - run.end < min_bytes_for_seek);
+}
+
+std::optional<Prefetcher::AdjacentRanges> Prefetcher::getAdjacentRanges(const std::vector<PrefetchHandle *> & handles)
+{
+    chassert(ranges_finalized.load(std::memory_order_relaxed));
+
+    std::vector<size_t> range_indices;
+    range_indices.reserve(handles.size());
+
+    std::lock_guard lock(mutex);
+    const auto & ranges = range_sets.at(0).ranges;
+    for (const PrefetchHandle * handle : handles)
+    {
+        if (!*handle)
+            continue;
+        const RequestState * req = handle->request;
+        if (req->range_set_idx != 0 || req->range_idx >= ranges.size() || ranges[req->range_idx].request != req)
+            return std::nullopt;
+        range_indices.push_back(req->range_idx);
+    }
+    if (range_indices.empty())
+        return std::nullopt;
+
+    std::sort(range_indices.begin(), range_indices.end());
+    range_indices.erase(std::unique(range_indices.begin(), range_indices.end()), range_indices.end());
+
+    const RangeState & first = ranges[range_indices.front()];
+    AdjacentRanges res{.first_range_idx = range_indices.front(), .last_range_idx = range_indices.back(), .begin = first.start, .end = first.end};
+    for (size_t i = 1; i < range_indices.size(); ++i)
+    {
+        const RangeState & range = ranges[range_indices[i]];
+        if (range_indices[i] != range_indices[i - 1] + 1 || (range.start > res.end && range.start - res.end >= min_bytes_for_seek))
+            return std::nullopt;
+        res.end = std::max(res.end, range.end);
+    }
+    return res;
+}
+
 std::vector<PrefetchHandle> Prefetcher::splitRange(
     PrefetchHandle request, const std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used)
 {
@@ -212,7 +368,9 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
             size_t subrange_end = 0;
             for (const auto & [start, length] : subranges)
             {
-                if (start < range.start || length > range.end - start)
+                /// `start > range.end` has to be checked separately: `range.end - start` would
+                /// underflow and let a subrange past the end of the range through.
+                if (start < range.start || start > range.end || length > range.end - start)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Subrange out of bounds: [{}, {}) not in [{}, {})", start, start + length, range.start, range.end);
                 subrange_start = std::min(subrange_start, start);
                 subrange_end = std::max(subrange_end, start + length);
@@ -259,6 +417,15 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
 
     chassert(parent_req->state.load(std::memory_order_relaxed) == RequestState::State::HasTask);
     Task * task = parent_req->task;
+
+    /// The parent range was already coalesced into a task, so the check above was skipped. Validate
+    /// against the task instead, before touching refcount or RequestState-s: `task_offset` below is
+    /// otherwise unchecked and getRangeData would hand out a span outside the task's buffer.
+    size_t task_end = task->offset + task->length;
+    for (const auto & [start, length] : subranges)
+        if (start < task->offset || start > task_end || length > task_end - start)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Subrange out of bounds: [{}, {}) not in read task [{}, {})", start, start + length, task->offset, task_end);
+
     task->refcount.fetch_add(subranges.size());
 
     for (size_t i = 0; i < subranges.size(); ++i)
@@ -277,7 +444,14 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
 void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock)
 {
     chassert(lock.owns_lock());
+    Task * task = pickRangesAndCreateTaskLocked(initial_req, splitting, start_offset, end_offset, /*coalesce_only=*/ nullptr);
+    lock.unlock();
+    if (task)
+        scheduleTask(task);
+}
 
+Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only)
+{
     /// Re-check state after locking mutex.
     switch (initial_req->state.load(std::memory_order_acquire))
     {
@@ -288,8 +462,12 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
             break;
         case RequestState::State::HasTask:
             /// Another thread created a task while we were locking the mutex.
-            return;
+            return nullptr;
     }
+    auto may_coalesce = [coalesce_only](const RequestState * req)
+    {
+        return coalesce_only ? coalesce_only->contains(req) : req->allow_incidental_read.load(std::memory_order_relaxed);
+    };
     size_t range_set_idx = initial_req->range_set_idx;
     size_t range_idx = initial_req->range_idx;
     auto & ranges = range_sets.at(range_set_idx).ranges;
@@ -314,7 +492,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         const RangeState & r = ranges[idx - 1];
         if (r.end + min_bytes_for_seek <= start_offset || // short gap
             r.start + bytes_per_read_task <= initial_offset || // task not too big
-            !r.request->allow_incidental_read.load(std::memory_order_relaxed)) // range wants to be coalesced
+            !may_coalesce(r.request)) // range wants to be coalesced
             break;
 
         const auto s = r.request->state.load(std::memory_order_relaxed);
@@ -349,7 +527,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         const RangeState & r = ranges[end_idx];
         if (end_offset + min_bytes_for_seek <= r.start ||
             initial_offset + bytes_per_read_task <= r.end ||
-            !r.request->allow_incidental_read.load(std::memory_order_relaxed))
+            !may_coalesce(r.request))
             break;
 
         const auto s = r.request->state.load(std::memory_order_relaxed);
@@ -394,9 +572,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     chassert(actual_refcount > 0);
     decreaseTaskRefcount(&task, initial_refcount - actual_refcount);
 
-    lock.unlock();
-
-    scheduleTask(&task);
+    return &task;
 }
 
 void Prefetcher::decreaseTaskRefcount(Task * task, size_t amount)
@@ -427,7 +603,7 @@ void Prefetcher::scheduleTask(Task * task)
 
 std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
 {
-    const RequestState * req = request.request;
+    RequestState * req = request.request;
     chassert(req->state == RequestState::State::HasTask);
     Task * task = req->task;
     Task::State s = task->state.load(std::memory_order_acquire);
@@ -452,6 +628,16 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
     if (s == Task::State::Exception)
         rethrowException(task);
     chassert(s == Task::State::Done);
+
+    /// Both `buf` and `cached_region` below cover at least [task->offset, task->offset + task->length).
+    /// Checked instead of asserted: handing out a span past the end would be a segfault in release builds.
+    if (req->task_offset > task->length || req->length > task->length - req->task_offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetched range [{}, {}) is outside its read task [{}, {})",
+            task->offset + req->task_offset, task->offset + req->task_offset + req->length, task->offset, task->offset + task->length);
+
+    /// The same range can be requested many times (e.g. once per page), count it once.
+    if (!req->data_used.load(std::memory_order_relaxed) && !req->data_used.exchange(true, std::memory_order_relaxed))
+        ProfileEvents::increment(ProfileEvents::ParquetPrefetcherUsedBytes, req->length);
 
     if (task->cached_region.has_value())
     {
@@ -504,7 +690,7 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
                 /// where multiple consumer threads could try to lazily populate task->buf concurrently.
                 if (cached_regions.size() > 1)
                 {
-                    task->buf.resize(task->length);
+                    task->buf.resize_exact(task->length);
                     size_t copied = 0;
                     for (const auto & region : cached_regions)
                     {
@@ -516,11 +702,12 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
             }
 
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, task->length);
         }
         else
         {
-            task->buf.resize(task->length);
-            readSync(task->buf.data(), task->length, task->offset);
+            task->buf.resize_exact(task->length);
+            readImpl(task->buf.data(), task->length, task->offset);
         }
     }
     catch (...)

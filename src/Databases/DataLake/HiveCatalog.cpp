@@ -10,8 +10,10 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Common/RemoteHostFilter.h>
 #include <Databases/DataLake/Common.h>
 #include <Common/FailPoint.h>
 
@@ -74,8 +76,9 @@ std::pair<String, Int32> parseHostPort(const String & url)
 
 }
 
-HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
+HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_)
     : ICatalog(warehouse_)
+    , DB::WithContext(context_)
     , base_url(base_url_)
 {
     std::lock_guard lock(client_mutex);
@@ -97,6 +100,10 @@ void HiveCatalog::reconnectUnlocked() const TSA_REQUIRES(client_mutex)
     }
 
     auto [host, port] = parseHostPort(base_url);
+
+    /// Also rejects control characters such as NUL, which `getaddrinfo` would truncate the host at.
+    getContext()->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(
+        host + ":" + std::to_string(port), static_cast<UInt16>(port), "Hive metastore address");
 
     socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
     transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
@@ -129,6 +136,11 @@ void HiveCatalog::executeWithRetry(Func && func) const
             {
                 reconnectUnlocked();
             }
+            catch (const DB::Exception &)
+            {
+                /// Non-transient (e.g. `UNACCEPTABLE_URL` from `remote_url_allow_hosts`), retrying cannot help.
+                throw;
+            }
             catch (const std::exception & ex)
             {
                 LOG_TRACE(
@@ -154,9 +166,9 @@ bool HiveCatalog::empty() const
     return result.empty();
 }
 
-DB::Names HiveCatalog::getTables() const
+CatalogTables HiveCatalog::getTables() const
 {
-    DB::Names result;
+    CatalogTables result;
     DB::Names databases;
 
     executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
@@ -165,9 +177,32 @@ DB::Names HiveCatalog::getTables() const
     {
         DB::Names current_tables;
         executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
+        /// A Hive catalog used with the Iceberg engine lists only Iceberg tables, so they are readable.
         for (const auto & table : current_tables)
-            result.push_back(db + "." + table);
+            result.push_back(CatalogTable{.name = db + "." + table});
     }
+    return result;
+}
+
+DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
+{
+    /// HMS databases are flat — they cannot contain nested namespaces.
+    DB::Names databases;
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    return databases;
+}
+
+CatalogTables HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    DB::Names current_tables;
+    /// Retry transient `TTransportException` (same wrapper as `getTables`) rather
+    /// than letting it bubble up and become an empty table list.
+    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, namespace_name); });
+    /// A Hive catalog used with the Iceberg engine lists only Iceberg tables, so they are readable.
+    CatalogTables result;
+    result.reserve(current_tables.size());
+    for (const auto & table : current_tables)
+        result.push_back(CatalogTable{.name = namespace_name + "." + table});
     return result;
 }
 

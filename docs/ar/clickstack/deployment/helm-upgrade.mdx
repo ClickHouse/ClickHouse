@@ -1,0 +1,438 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-upgrade
+title: 'دليل ترقية Helm'
+description: 'الترحيل من مخطط Helm لـ ClickStack ذي القوالب المضمّنة v1.x إلى معمارية المخططات الفرعية v2.x'
+doc_type: 'guide'
+keywords: ['ترقية ClickStack', 'ترحيل Helm', 'من v1.x إلى v2.x', 'معمارية المخططات الفرعية', 'ترحيل ClickStack']
+---
+
+يغطي هذا الدليل الترحيل من مخطط Helm لـ ClickStack ذي القوالب المضمّنة (v1.x) إلى المعمارية المعتمدة على المخططات الفرعية (v2.x). هذا **تغيير جذري** يستبدل موارد Kubernetes المُعدّة يدويًا بموارد مخصصة يديرها المشغّل لكل من MongoDB وClickHouse، ويستخدم مخطط Helm الرسمي لـ OpenTelemetry Collector.
+
+<Warning>
+  **تغيير جذري**
+
+  المخطط v2.x **غير** متوافق مع v1.x بأثر رجعي. الترقية الموضعية باستخدام `helm upgrade` غير مدعومة. نوصي بإجراء تثبيت جديد إلى جانب عملية النشر الحالية وترحيل البيانات، بدلًا من محاولة تنفيذ ترقية موضعية.
+</Warning>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* خذ نسخة احتياطية من بياناتك قبل الترقية (MongoDB, ClickHouse PVCs)
+* راجع تجاوزات `values.yaml` الحالية — فقد نُقلت معظم المفاتيح أو أُعيدت تسميتها
+
+<div id="two-phase-installation">
+  ## التثبيت على مرحلتين
+</div>
+
+يعتمد الـ مخطط بالإصدار v2.x عملية تثبيت على مرحلتين. يجب تثبيت Operators (التي تسجّل CRDs) قبل الـ مخطط الرئيسي (الذي ينشئ CRs):
+
+```bash
+# Phase 1: Install operators and CRDs
+helm install clickstack-operators clickstack/clickstack-operators
+
+# Phase 2: Install ClickStack
+helm install my-clickstack clickstack/clickstack
+```
+
+ألغِ التثبيت بترتيب عكسي:
+
+```bash
+helm uninstall my-clickstack
+helm uninstall clickstack-operators
+```
+
+<div id="data-persistence">
+  ### استدامة البيانات
+</div>
+
+لا يزيل الأمر `helm uninstall` عناصر `PersistentVolumeClaims` التي يُنشئها مشغّلا MongoDB وClickHouse. وهذا مقصود لتجنّب فقدان البيانات عن طريق الخطأ. لتنظيف PVCs بعد إلغاء التثبيت، راجع:
+
+* [وثائق MongoDB Kubernetes Operator](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
+
+<div id="storage-class">
+  ### فئة التخزين
+</div>
+
+أُزيل كلٌّ من `global.storageClassName` و`global.keepPVC`. تُضبط فئة التخزين الآن مباشرةً ضمن `CR spec` الخاص بكل مشغّل:
+
+```yaml
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - spec:
+              storageClassName: "fast-ssd"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+```
+
+<div id="what-changed">
+  ## ما الذي تغيّر
+</div>
+
+| المكوّن        | قبل (v1.x)                                                                    | بعد (v2.x)                                                                                                                                   |
+| -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| MongoDB        | مورد Deployment مضمّن + خدمة + PVC                                            | [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) يدير مورد `MongoDBCommunity` مخصّصًا (CR)                 |
+| ClickHouse     | مورد Deployment مضمّن + خدمة + ConfigMaps + PVCs                              | [ClickHouse Operator](/ar/products/kubernetes-operator/overview) يدير الموردين المخصّصين `ClickHouseCluster` و`KeeperCluster` (CRs)             |
+| OTEL Collector | مورد Deployment مضمّن + خدمة (كتلة `otel.*`)                                  | [مخطط Helm الرسمي لـ OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts) (المخطط الفرعي `otel-collector:`) |
+| قيم HyperDX    | مفاتيح مسطّحة ضمن `hyperdx.*` إضافةً إلى `tasks:` و`appUrl` في المستوى الأعلى | أُعيد تنظيمها حسب نوع مورد K8s ضمن `hyperdx.*` (انظر أدناه)                                                                                  |
+| hdx-oss-v2     | مخطط قديم متوقّف الاستخدام                                                    | أُزيل بالكامل                                                                                                                                |
+
+<div id="hyperdx-values-reorganization">
+  ## إعادة تنظيم قيم HyperDX
+</div>
+
+أصبحت الكتلة `hyperdx:` منظَّمة الآن وفقًا لنوع مورد Kubernetes:
+
+```yaml
+hyperdx:
+  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+    api: 8000
+    app: 3000
+    opamp: 4320
+
+  frontendUrl: "http://localhost:3000"   # Replaces the removed appUrl
+
+  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+    APP_PORT: "3000"
+    HYPERDX_LOG_LEVEL: "info"
+
+  secrets:        # → clickstack-secret Secret (sensitive env vars)
+    HYPERDX_API_KEY: "..."
+    CLICKHOUSE_PASSWORD: "otelcollectorpass"
+    CLICKHOUSE_APP_PASSWORD: "hyperdx"
+    MONGODB_PASSWORD: "hyperdx"
+
+  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
+  service:        # K8s Service spec (type, annotations)
+  ingress:        # K8s Ingress spec (host, tls, annotations)
+  podDisruptionBudget:  # K8s PDB spec
+  tasks:          # K8s CronJob specs (previously top-level tasks:)
+```
+
+<div id="key-moves">
+  ### أهم التغييرات
+</div>
+
+| قبل (v1.x)                                 | بعد (v2.x)                                                                       |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| `appUrl`                                   | أُزيل. استخدم `hyperdx.frontendUrl` (القيمة الافتراضية: `http://localhost:3000`) |
+| `tasks.*` (على المستوى الأعلى)             | `hyperdx.tasks.*`                                                                |
+| `mongodb.password`                         | `hyperdx.secrets.MONGODB_PASSWORD`                                               |
+| `clickhouse.config.users.appUserPassword`  | `hyperdx.secrets.CLICKHOUSE_APP_PASSWORD`                                        |
+| `clickhouse.config.users.otelUserPassword` | `hyperdx.secrets.CLICKHOUSE_PASSWORD`                                            |
+| تجاوزات متغيرات البيئة `otel.*`            | `hyperdx.config.*` (غير حساسة) و`hyperdx.secrets.*` (حساسة)                      |
+
+<div id="unified-configmap-and-secret">
+  ### ConfigMap وSecret الموحَّدان
+</div>
+
+تمر جميع متغيرات البيئة الآن عبر موردين ثابتَي الاسم تتم مشاركتهما بين Deployment HyperDX **و** OTel collector عبر `envFrom`:
+
+* **`clickstack-config`** ConfigMap — يُعبَّأ من `hyperdx.config`
+* **`clickstack-secret`** Secret — يُعبَّأ من `hyperdx.secrets`
+
+لم يعد هناك ConfigMap منفصل مخصّص لـ OTel. ويقرأ كلا عبئي العمل من المصدرين نفسيهما.
+
+<div id="mongodb-migration">
+  ## ترحيل MongoDB
+</div>
+
+<div id="mongodb-removed-values">
+  ### القيم التي أُزيلت
+</div>
+
+لم تعد قيم `mongodb.*` التالية متوفّرة:
+
+```yaml
+# REMOVED — do not use
+mongodb:
+  image: "..."
+  port: 27017
+  strategy: ...
+  nodeSelector: {}
+  tolerations: []
+  livenessProbe: ...
+  readinessProbe: ...
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+```
+
+<div id="mongodb-new-values">
+  ### القيم الجديدة
+</div>
+
+تتم الآن إدارة MongoDB بواسطة المشغّل MCK عبر مورد مخصص `MongoDBCommunity`. ويُولَّد قسم المواصفات في المورد المخصص كما هو من `mongodb.spec`:
+
+```yaml
+mongodb:
+  enabled: true
+  spec:
+    members: 1
+    type: ReplicaSet
+    version: "5.0.32"
+    security:
+      authentication:
+        modes: ["SCRAM"]
+    users:
+      - name: hyperdx
+        db: hyperdx
+        passwordSecretRef:
+          name: '{{ include "clickstack.mongodb.fullname" . }}-password'
+        roles:
+          - name: dbOwner
+            db: hyperdx
+          - name: clusterMonitor
+            db: admin
+        scramCredentialsSecretName: '{{ include "clickstack.mongodb.fullname" . }}-scram'
+    additionalMongodConfig:
+      storage.wiredTiger.engineConfig.journalCompressor: zlib
+```
+
+تُضبط كلمة مرور MongoDB في `hyperdx.secrets.MONGODB_PASSWORD` (وليس `mongodb.password`). ويُشار إليها تلقائيًا في Secret كلمة المرور وقالب `mongoUri`.
+
+لإضافة تخزين دائم، أضِف كتلة `statefulSet` داخل `mongodb.spec`:
+
+```yaml
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: "your-storage-class"
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+يُضبط المخطط الفرعي لمشغّل MCK تحت `mongodb-operator:` (وليس `mongodb-kubernetes:`). راجع [وثائق MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity) للاطلاع على جميع حقول CRD المتاحة.
+
+<div id="clickhouse-migration">
+  ## الترحيل إلى ClickHouse
+</div>
+
+<div id="clickhouse-removed-values">
+  ### القيم المُزالة
+</div>
+
+لم تعد قيم `clickhouse.*` التالية موجودة:
+
+```yaml
+# REMOVED — do not use
+clickhouse:
+  image: "..."
+  terminationGracePeriodSeconds: 90
+  resources: {}
+  livenessProbe: ...
+  readinessProbe: ...
+  startupProbe: ...
+  nodeSelector: {}
+  tolerations: []
+  service:
+    type: ClusterIP
+    annotations: {}
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+    logSize: 5Gi
+  config:
+    clusterCidrs: [...]
+    users:
+      appUserPassword: "..."
+      otelUserPassword: "..."
+      otelUserName: "..."
+```
+
+<div id="mongodb-new-values">
+  ### القيم الجديدة
+</div>
+
+تُدار ClickHouse الآن بواسطة ClickHouse Operator عبر الموارد المخصصة `ClickHouseCluster` و`KeeperCluster`. ويُعرَض قسم `spec` في كلٍّ منهما حرفيًا انطلاقًا من values:
+
+```yaml
+clickhouse:
+  enabled: true
+  port: 8123
+  nativePort: 9000
+  prometheus:
+    enabled: true
+    port: 9363
+  keeper:
+    spec:
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      replicas: 1
+      shards: 1
+      keeperClusterRef:
+        name: '{{ include "clickstack.clickhouse.keeper" . }}'
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+      settings:
+        extraUsersConfig:
+          users:
+            app:
+              password: '{{ .Values.hyperdx.secrets.CLICKHOUSE_APP_PASSWORD }}'
+            otelcollector:
+              password: '{{ .Values.hyperdx.secrets.CLICKHOUSE_PASSWORD }}'
+        extraConfig:
+          max_connections: 4096
+          keep_alive_timeout: 64
+          max_concurrent_queries: 100
+```
+
+أصبحت بيانات اعتماد مستخدم ClickHouse الآن تُستمد من `hyperdx.secrets` (وليس من `clickhouse.config.users`). ويشير تعريف العنقود إليها باستخدام تعبيرات القوالب.
+
+تتم تهيئة المخطط الفرعي ClickHouse Operator ضمن `clickhouse-operator:`. تكون `webhooks` و`cert-manager` معطّلتين افتراضيًا. راجع [دليل تهيئة المشغّل](/ar/products/kubernetes-operator/guides/configuration) للاطلاع على جميع حقول CRD المتاحة.
+
+<div id="otel-collector-migration">
+  ## ترحيل OTel collector
+</div>
+
+<div id="clickhouse-removed-values">
+  ### القيم المُزالة
+</div>
+
+لم تعد كتلة `otel:` بأكملها موجودة:
+
+```yaml
+# REMOVED — do not use
+otel:
+  enabled: true
+  image: ...
+  replicas: 1
+  resources: {}
+  clickhouseEndpoint: ...
+  clickhouseUser: ...
+  clickhousePassword: ...
+  clickhouseDatabase: "default"
+  opampServerUrl: ...
+  port: 13133
+  nativePort: 24225
+  grpcPort: 4317
+  httpPort: 4318
+  healthPort: 8888
+  env: []
+  customConfig: ...
+```
+
+<div id="mongodb-new-values">
+  ### القيم الجديدة
+</div>
+
+يُنشر الآن OTel collector عبر مخطط Helm الرسمي لـ OpenTelemetry Collector باعتباره المخطط الفرعي `otel-collector:`. ولا توجد طبقة `otel:` التفافية للمخطط الأب — اضبط المخطط الفرعي مباشرةً.
+
+تُشارَك متغيرات البيئة (نقطة نهاية ClickHouse، وعنوان URL لـ OpAMP، وما إلى ذلك) عبر `clickstack-config` ConfigMap الموحّد و`clickstack-secret` Secret. ويكون `extraEnvsFrom` الخاص بالمخطط الفرعي مُوصّلًا مسبقًا:
+
+```yaml
+otel-collector:
+  enabled: true
+  mode: deployment
+  image:
+    repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+    tag: ""
+  extraEnvsFrom:
+    - configMapRef:
+        name: clickstack-config
+    - secretRef:
+        name: clickstack-secret
+  ports:
+    otlp:
+      enabled: true
+      containerPort: 4317
+      servicePort: 4317
+    otlp-http:
+      enabled: true
+      containerPort: 4318
+      servicePort: 4318
+```
+
+لضبط الموارد (سابقًا `otel.resources`):
+
+```yaml
+otel-collector:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+```
+
+لتعيين عدد النسخ المتماثلة (سابقًا `otel.replicas`):
+
+```yaml
+otel-collector:
+  replicaCount: 3
+```
+
+لضبط nodeSelector/tolerations (سابقًا `otel.nodeSelector`/`otel.tolerations`):
+
+```yaml
+otel-collector:
+  nodeSelector:
+    node-role: monitoring
+  tolerations:
+    - key: monitoring
+      operator: Equal
+      value: otel
+      effect: NoSchedule
+```
+
+راجع [مخطط Helm الخاص بـ OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) للاطلاع على جميع قيم المخطط الفرعي المتاحة.
+
+<div id="unchanged-values">
+  ## القيم التي لم تتغير
+</div>
+
+لا تتأثر الأقسام التالية بعملية الترحيل هذه:
+
+* `global.*` (imageRegistry, imagePullSecrets)
+
+<div id="fresh-install-vs-in-place-upgrade">
+  ## تثبيت جديد مقابل الترقية الموضعية
+</div>
+
+بالنسبة إلى **التثبيت الجديد**، لا حاجة إلى أي خطوات خاصة. تعمل القيم الافتراضية مباشرةً.
+
+بالنسبة إلى **الترقية الموضعية** لإصدار موجود، انتبه إلى ما يلي:
+
+1. سيُثبَّت المشغّلان (MCK وClickHouse Operator) كعمليتَي نشر جديدتين في مساحة الاسم الخاصة بك
+2. سيحذف Helm موردَي Deployment الحاليَّين لـ MongoDB وClickHouse (لأنهما لم يعودا موجودين ضمن قوالب مخطط)
+3. سينشئ المشغّلان موارد StatefulSet جديدة لإدارة MongoDB وClickHouse
+4. **لن يُعاد استخدام PVCs من المخطط القديم تلقائيًا** بواسطة موارد StatefulSet التي يديرها المشغّلان
+
+نوصي بإجراء تثبيت جديد إلى جانب عملية النشر الحالية وترحيل البيانات، بدلًا من إجراء ترقية موضعية.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [دليل Helm الرئيسي](/ar/clickstack/deployment/helm) - التثبيت الأساسي مع v2.x
+* [دليل الإعداد](/ar/clickstack/deployment/helm-configuration) - مفاتيح واجهة برمجة التطبيقات، والأسرار، وموارد Ingress
+* [ملفات البيان الإضافية](/ar/clickstack/deployment/helm-additional-manifests) - كائنات Kubernetes مخصّصة
+* [مستودع مخططات Helm الخاصة بـ ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) - الشيفرة المصدرية للمخطط ومرجع values

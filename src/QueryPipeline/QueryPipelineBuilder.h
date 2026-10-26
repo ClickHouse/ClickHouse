@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
@@ -17,8 +17,7 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 
 class QueryPlan;
 
-class PipelineExecutor;
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+class IQueryPlanStep;
 
 class SubqueryForSet;
 
@@ -27,6 +26,8 @@ struct SizeLimits;
 struct ExpressionActionsSettings;
 
 class IJoin;
+class FillingRightJoinSideTransform;
+using FillingRightJoinSideTransformRawPtrs = std::vector<FillingRightJoinSideTransform *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using JoinPtr = std::shared_ptr<IJoin>;
 class TableJoin;
 
@@ -35,6 +36,7 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 struct SetAndKey;
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
+struct SetSpillSettings;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -79,6 +81,25 @@ public:
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
 
+    /// Connect all pending seal inputs of the gated reads in the probe pipeline (see
+    /// SealGatedReadTransform) to the build completion seal of the given filling transforms
+    /// (exactly one of them emits; many ports are collapsed with a resize, many gates are fed
+    /// through one copy). The seal carries the completed runtime filter with the given key as
+    /// an optional payload. Called for joins marked as gating their probe side; unmarked
+    /// joins carry the pending inputs upward. No-op without pending seal inputs.
+    static void wireSealGatedReading(
+        QueryPipelineBuilder & probe,
+        QueryPipelineBuilder & build,
+        const FillingRightJoinSideTransformRawPtrs & filling_transforms,
+        const String & runtime_filter_key,
+        Processors * collected_processors);
+
+    /// Feed the pending seal inputs from null sources: the gated reads then proceed without
+    /// the runtime filter (fail-open). Used when the gates cannot or must not be wired, e.g.
+    /// for a gated read which ended up on the build side of a join (wiring it would deadlock)
+    /// or in a pipeline which does not support gating.
+    static void terminatePendingSealInputs(QueryPipelineBuilder & builder, Processors * collected_processors);
+
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
@@ -92,6 +113,9 @@ public:
 
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
+    /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
+    /// say nothing about the join result; they are recalculated above the join if they are wanted.
+    void dropExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
@@ -138,7 +162,9 @@ public:
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
         size_t max_streams,
+        IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
+        const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
@@ -147,6 +173,7 @@ public:
         JoinPtr join,
         SharedHeader & output_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.
@@ -156,7 +183,16 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
+
+    /// Join two independent pipelines with a two-input joining transform created by the caller.
+    /// Each pipeline must have a single output stream (the transform may rely on its order).
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        ProcessorPtr joining,
+        Processors * collected_processors);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
@@ -164,6 +200,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
@@ -175,20 +212,23 @@ public:
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
-        PreparedSetsCachePtr prepared_sets_cache);
+        PreparedSetsCachePtr prepared_sets_cache,
+        SetSpillSettings spill_settings,
+        bool recoverable_build = false);
 
     void addMaterializingCTETransform(
         SharedHeader res_header,
         MaterializedCTEPtr materialized_cte);
 
-    PipelineExecutorPtr execute();
-
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
 
     bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
 
     const Block & getHeader() const { return pipe.getHeader(); }
     const SharedHeader & getSharedHeader() const { return pipe.getSharedHeader(); }
+
+    const Processors & getProcessors() const { return pipe.getProcessors(); }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
@@ -231,6 +271,8 @@ public:
     bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
 
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
+    /// Read access to what this pipeline keeps alive, e.g. to tell whether it reads a given table.
+    const QueryPlanResourceHolder & getResources() const { return resources; }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

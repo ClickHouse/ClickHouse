@@ -1,8 +1,9 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 #include <chrono>
+#include <limits>
 
 #include <pcg_random.hpp>
 #include <filesystem>
@@ -480,12 +481,22 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
+        #if defined(OS_DARWIN)
+        /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
+        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+        #else
         file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
+        #endif
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
             ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
         }
+
+        #if defined(OS_DARWIN)
+        if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
+        #endif
 
         allocateSizeForNextPartition();
     }
@@ -509,7 +520,7 @@ public:
         iocb write_request{};
         iocb * write_request_ptr{&write_request};
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
         write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
@@ -543,7 +554,8 @@ public:
         auto bytes_written = eventResult(event);
 
         ProfileEvents::increment(ProfileEvents::AIOWrite);
-        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
+        if (bytes_written > 0)
+            ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
@@ -568,19 +580,21 @@ public:
         return true;
     }
 
-    bool readKeys(size_t block_start, size_t blocks_length, PaddedPODArray<KeyType> & out) const
+    /// For complex keys, the keys written into `out` are `std::string_view`s pointing into `read_buffer_memory`,
+    /// so the caller must keep `read_buffer_memory` alive for as long as it uses `out`.
+    bool readKeys(size_t block_start, size_t blocks_length, Memory<> & read_buffer_memory, PaddedPODArray<KeyType> & out) const
     {
         if (block_start + blocks_length > current_blocks_size)
             return false;
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
+        read_buffer_memory = Memory<>(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
@@ -611,6 +625,9 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
         }
 
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(&event, sizeof(event));
+
         auto read_bytes = eventResult(event);
 
         if (read_bytes != static_cast<ssize_t>(buffer_size_in_bytes))
@@ -622,6 +639,9 @@ public:
 
         ProfileEvents::increment(ProfileEvents::AIORead);
         ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
+
+        // Unpoison the memory returned from an uninstrumented system function.
+        __msan_unpoison(read_buffer_memory.data(), buffer_size_in_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -660,7 +680,7 @@ public:
 
             char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
-            #if defined(OS_FREEBSD)
+            #if defined(OS_FREEBSD) || defined(OS_DARWIN)
             request.aio.aio_lio_opcode = LIO_READ;
             request.aio.aio_fildes = file.fd;
             request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(buffer_place));
@@ -793,7 +813,21 @@ private:
 
     static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
-        #if defined(OS_FREEBSD)
+        #if defined(OS_DARWIN)
+            /// macOS has neither fallocate nor posix_fallocate. F_PREALLOCATE reserves blocks past EOF
+            /// but does not change the file size, so ftruncate sets the size afterwards. We must match
+            /// fallocate's contract of actually reserving space: if the reservation fails (e.g. ENOSPC)
+            /// we fail here rather than letting ftruncate grow a sparse file and pushing the failure
+            /// into a later write, after cache state (evicted index entries) has already changed.
+            fstore_t store{F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, static_cast<off_t>(len), 0};
+            if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
+            {
+                store.fst_flags = F_ALLOCATEALL;
+                if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
+                    return -1;
+            }
+            return ::ftruncate(fd, static_cast<off_t>(offset + len));
+        #elif defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
         #else
             return fallocate(fd, 0, offset, len);
@@ -804,7 +838,7 @@ private:
     {
         char * result = nullptr;
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
             result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
             result = reinterpret_cast<char *>(request.aio_buf);
@@ -1125,8 +1159,8 @@ private:
             for (auto & key_in_block : keys_in_block)
             {
                 char * key_data = block_data + key_in_block.offset_in_block;
-                /// This is larger size than necessary but we don't know the exact size of serialized columns
-                size_t size = configuration.read_buffer_blocks_size;
+                /// The serialized columns are within the block, but we don't know their exact size.
+                size_t size = configuration.block_size - key_in_block.offset_in_block;
                 ReadBufferFromString in({key_data, size});
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
@@ -1157,11 +1191,29 @@ private:
 
             auto key = keys[key_index];
 
+            /// Values are prefixed with a header of their serialized sizes,
+            /// so that on fetch the columns that were not requested can be skipped.
+            const size_t sizes_header_size = columns_to_serialize_size * sizeof(UInt32);
+            if (sizes_header_size)
+            {
+                temporary_values_pool.allocContinue(sizes_header_size, block_start);
+                allocated_size_for_columns += sizes_header_size;
+            }
+
             for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
             {
                 auto & column = columns[column_index];
                 temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start, nullptr);
                 allocated_size_for_columns += temporary_column_data[column_index].size();
+            }
+
+            char * sizes_header_start = const_cast<char *>(block_start);
+            for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
+            {
+                size_t serialized_size = temporary_column_data[column_index].size();
+                if (serialized_size > std::numeric_limits<UInt32>::max())
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Serialized column value size is too large for SSD cache");
+                unalignedStore<UInt32>(sizes_header_start + column_index * sizeof(UInt32), static_cast<UInt32>(serialized_size));
             }
 
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
@@ -1279,8 +1331,10 @@ private:
                 if (started_reusing_old_partitions)
                 {
                     /// If we start reusing old partitions we need to remove old keys on disk from index before writing buffer
+                    /// For complex keys, `old_keys` point into `old_keys_buffer`, so it must outlive them.
+                    Memory<> old_keys_buffer;
                     PaddedPODArray<KeyType> old_keys;
-                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys);
+                    file_buffer.readKeys(block_index_in_file_before_write, configuration.write_buffer_blocks_size, old_keys_buffer, old_keys);
 
                     size_t file_read_end_block_index = block_index_in_file_before_write + configuration.write_buffer_blocks_size;
 

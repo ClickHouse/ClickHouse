@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'remoteSecure の使用'
+slug: /cloud/migration/clickhouse-to-cloud
+title: 'remoteSecure を使用したセルフマネージド ClickHouse と ClickHouse Cloud 間の移行'
+description: 'セルフマネージド ClickHouse と ClickHouse Cloud 間の移行方法を説明するページ'
+doc_type: 'guide'
+keywords: ['移行', 'ClickHouse Cloud', 'OSS', 'セルフマネージドから Cloud へ移行']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import AddARemoteSystem from '/snippets/ja/_add_remote_ip_access_list_detail.mdx';
+
+import CompatibilityNote from '/snippets/ja/compatibility.mdx';
+
+<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+
+このガイドでは、セルフマネージド ClickHouse サーバーから ClickHouse Cloud へ移行する方法と、ClickHouse Cloud サービス間で移行する方法を説明します。
+[`remoteSecure`](/ja/reference/functions/table-functions/remote) 関数は `SELECT` および `INSERT` クエリで使用され、リモートの ClickHouse サーバーにアクセスできるようにします。これにより、`SELECT` を埋め込んだ `INSERT INTO` クエリを書くだけで、テーブルを簡単に移行できます。
+
+<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
+  ## セルフマネージド ClickHouse から ClickHouse Cloud への移行
+</div>
+
+<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+
+ソーステーブルが分片化されているか、レプリケーションされているかにかかわらず、ClickHouse Cloud では宛先テーブルを作成するだけで済みます (このテーブルでは Engine パラメータを省略でき、テーブルエンジンには `SharedMergeTree` が自動的に選択されます) 。
+また、ClickHouse Cloud が垂直・水平両方のスケーリングを自動的に処理します。
+テーブルをどのようにレプリケートし、どのように分片化するかを考える必要はありません。
+
+この例では、セルフマネージド ClickHouse が*ソース*であり、ClickHouse Cloud サービスが*宛先*です。
+
+<div id="overview">
+  ### 概要
+</div>
+
+手順は次のとおりです。
+
+1. 移行元サービスに読み取り専用ユーザーを追加する
+2. 宛先サービス上に、移行元テーブルと同じ構造を作成する
+3. 移行元のネットワーク接続性に応じて、移行元から宛先へデータをPullするか、移行元からデータをプッシュする
+4. 宛先のIP Access Listから移行元サーバーを削除する (該当する場合)
+5. 移行元サービスから読み取り専用ユーザーを削除する
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### あるシステムから別のシステムへのテーブルの移行:
+</div>
+
+この例では、1 つのテーブルをセルフマネージドの ClickHouse サーバーから ClickHouse Cloud に移行します。
+
+<CompatibilityNote />
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  ### ソース側の ClickHouse システム (現在データをホストしているシステム) で
+</div>
+
+* ソース側のテーブル (この例では `db.table`) を読み取れる読み取り専用ユーザーを追加します
+
+```sql
+CREATE USER exporter
+IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+SETTINGS readonly = 1;
+```
+
+```sql
+GRANT SELECT ON db.table TO exporter;
+```
+
+* テーブル定義をコピー
+
+```sql
+SELECT create_table_query
+FROM system.tables
+WHERE database = 'db' AND table = 'table'
+```
+
+<div id="on-the-destination-clickhouse-cloud-system">
+  ### 宛先の ClickHouse Cloud 環境で:
+</div>
+
+* 宛先のデータベースを作成します:
+
+```sql
+CREATE DATABASE db
+```
+
+* 移行元の CREATE TABLE 文を使用して、宛先を作成します。
+
+<Tip>
+  CREATE ステートメントを実行する際は、ENGINE をパラメータなしの ReplicatedMergeTree に変更してください。ClickHouse Cloud ではテーブルは常にレプリケートされ、適切なパラメータが提供されます。ただし、`ORDER BY`、`PRIMARY KEY`、`PARTITION BY`、`SAMPLE BY`、`TTL`、`SETTINGS` 句はそのまま残してください。
+</Tip>
+
+```sql
+CREATE TABLE db.table ...
+```
+
+* `remoteSecure` 関数を使用して、セルフマネージドの移行元からデータをプルします
+
+<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+
+```sql
+INSERT INTO db.table SELECT * FROM
+remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+<Note>
+  ソースシステムが外部ネットワークから利用できない場合は、`remoteSecure` 関数が `select` と `insert` の両方で使用できるため、プルする代わりにデータをプッシュできます。次のオプションを参照してください。
+</Note>
+
+* `remoteSecure` 関数を使用して、データを ClickHouse Cloud サービスにプッシュします
+
+<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+
+<Tip>
+  **リモートシステムを ClickHouse Cloud サービスの IP Access List に追加します**
+
+  `remoteSecure` 関数が ClickHouse Cloud サービスに接続するには、リモートシステムの IP アドレスが IP Access List で許可されている必要があります。詳細については、この Tip の下にある **Manage your IP Access List** を展開してください。
+</Tip>
+
+<AddARemoteSystem />
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
+'default', 'PASS') SELECT * FROM db.table
+```
+
+<div id="migrating-between-clickhouse-cloud-services">
+  ## ClickHouse Cloud サービス間の移行
+</div>
+
+<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+
+ClickHouse Cloud サービス間でデータを移行するユースケースの例をいくつか示します。
+
+* 復元したバックアップからデータを移行する
+* Development サービスから staging サービスへ (または staging から本番環境へ) データをコピーする
+
+この例では 2 つの ClickHouse Cloud サービスがあり、それぞれを *ソース* と *宛先* と呼びます。データはソースから宛先へ Pull されます。必要に応じて Push することもできますが、ここでは読み取り専用ユーザーを使用するため、Pull の方法を示します。
+
+<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+
+この移行は、いくつかの手順で進めます。
+
+1. 一方の ClickHouse Cloud サービスを *ソース*、もう一方を *宛先* として決める
+2. ソースサービスに読み取り専用ユーザーを追加する
+3. 宛先サービスにソーステーブルの構造を複製する
+4. ソースサービスへの IP アクセスを一時的に許可する
+5. データをソースから宛先へコピーする
+6. 宛先で IP Access List を再設定する
+7. ソースサービスから読み取り専用ユーザーを削除する
+
+<div id="add-a-read-only-user-to-the-source-service">
+  #### ソースサービスに読み取り専用ユーザーを追加する
+</div>
+
+* ソーステーブル (この例では `db.table`) を読み取るための読み取り専用ユーザーを追加します
+
+  ```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+  ```
+
+  ```sql
+  GRANT SELECT ON db.table TO exporter;
+  ```
+
+* テーブル定義をコピーします
+  ```sql
+  select create_table_query
+  from system.tables
+  where database = 'db' and table = 'table'
+  ```
+
+<div id="duplicate-the-table-structure-on-the-destination-service">
+  #### 宛先サービスでテーブル構造を複製する
+</div>
+
+宛先にdatabaseがまだ存在しない場合は、作成します。
+
+* 宛先databaseを作成します。
+  ```sql
+  CREATE DATABASE db
+  ```
+
+* ソースの CREATE TABLE 文を使って、宛先にテーブルを作成します。
+
+  宛先では、ソースの `select create_table_query...` の出力を使ってtableを作成します。
+
+  ```sql
+  CREATE TABLE db.table ...
+  ```
+
+<div id="allow-remote-access-to-the-source-service">
+  #### ソースサービスへのリモートアクセスを許可する
+</div>
+
+ソースから宛先にデータを取得するには、ソースサービスで接続が許可されている必要があります。ソースサービスの &quot;IP Access List&quot; 機能を一時的に無効にします。
+
+<Tip>
+  ソースの ClickHouse Cloud service を引き続き使用する場合は、アクセス元を任意の場所から許可する設定に切り替える前に、既存の IP Access List を JSONファイルにエクスポートしてください。こうしておけば、データ移行後にアクセスリストを再度インポートできます。
+</Tip>
+
+許可リストを変更し、一時的に **Anywhere** からのアクセスを許可します。詳細については、[IP Access List](/ja/products/cloud/guides/security/connectivity/setting-ip-filters) のドキュメントを参照してください。
+
+<div id="copy-the-data-from-source-to-destination">
+  #### コピー元から宛先へデータをコピーする
+</div>
+
+* `remoteSecure` 関数を使用して、コピー元の ClickHouse Cloud サービスからデータをプルします
+  宛先に接続します。宛先の ClickHouse Cloud サービスでこのコマンドを実行します。
+
+  ```sql
+  INSERT INTO db.table SELECT * FROM
+  remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+  ```
+
+* 宛先のサービス内のデータを確認します
+
+<div id="re-establish-the-ip-access-list-on-the-source">
+  #### ソースで IP Access List を再設定する
+</div>
+
+先ほどアクセスリストをエクスポートしていた場合は、**Share** から再インポートできます。そうでない場合は、アクセスリストにエントリを追加し直してください。
+
+<div id="remove-the-read-only-exporter-user">
+  #### 読み取り専用の`exporter`ユーザーを削除
+</div>
+
+```sql
+DROP USER exporter
+```
+
+* サービスの IP Access List を切り替えてアクセスを制限します

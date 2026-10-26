@@ -1,4 +1,7 @@
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
@@ -13,6 +16,7 @@ namespace Setting
 {
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -57,7 +61,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     SharedHeader sample_block_,
     ContextPtr context,
     const String & format,
-    const String & compression_method)
+    const String & compression_method,
+    FormatFilterInfoPtr format_filter_info)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
@@ -72,9 +77,11 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         std::move(buffer),
         chosen_compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
-        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+        settings[Setting::snappy_mode]);
 
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings_);
+    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
+        format, *write_buf, *sample_block, context, format_settings_, std::move(format_filter_info));
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)

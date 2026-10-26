@@ -1,0 +1,52 @@
+---
+description: '介绍 ClickHouse 对第三方库的使用以及如何添加和维护第三方库的页面。'
+sidebarTitle: '第三方库'
+slug: /development/contrib
+title: '第三方库'
+doc_type: 'reference'
+---
+
+ClickHouse 出于不同用途使用第三方库，例如连接其他数据库、在从磁盘加载/保存数据时对数据进行解码/编码，或实现某些专用的 SQL 函数。
+为避免依赖目标系统中已有的库，每个第三方库都会作为 Git 子模块导入 ClickHouse 的源代码树，并与 ClickHouse 一同编译和链接。
+可通过以下查询获取第三方库及其许可证列表：
+
+```sql
+SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
+```
+
+请注意，此处列出的库均位于 ClickHouse 仓库的 `contrib/` 目录中。
+根据构建选项，其中一些库可能未编译，因此其功能在运行时可能不可用。
+
+[示例](https://sql.clickhouse.com?query_id=478GCPU7LRTSZJBNY3EJT3)
+
+<div id="adding-and-maintaining-third-party-libraries">
+  ## 添加和维护第三方库
+</div>
+
+每个第三方库都必须放在 ClickHouse 仓库 `contrib/` 目录下各自独立的目录中。
+不要把外部代码的副本直接堆到库目录里。
+而是应创建一个 Git 子模块，从外部上游仓库拉取第三方代码。
+
+ClickHouse 使用的所有子模块都列在 `.gitmodule` 文件中。
+
+* 如果该库可以直接使用 (默认情况) ，可以直接引用上游仓库。
+* 如果该库需要打补丁，请在 [GitHub 上的 ClickHouse organization](https://github.com/ClickHouse) 中为该上游仓库创建一个 fork。
+
+在后一种情况下，我们的目标是尽可能将自定义补丁与上游提交隔离开。
+为此，从你要集成的分支或标签创建一个带 `ClickHouse/` 前缀的分支，例如 `ClickHouse/2024_2` (对应分支 `2024_2`) 或 `ClickHouse/release/vX.Y.Z` (对应标签 `release/vX.Y.Z`) 。
+不要跟随上游开发分支 `master`/ `main` / `dev` (也就是说，不要在 fork 仓库中使用 `ClickHouse/master` / `ClickHouse/main` / `ClickHouse/dev` 这类前缀分支) 。
+这类分支一直在变化，会让正确的版本管理变得更困难。
+“前缀分支”可确保将上游仓库的变更拉取到 fork 时，不会影响自定义的 `ClickHouse/` 分支。
+`contrib/` 中的子模块只能跟踪已 fork 的第三方仓库中的 `ClickHouse/` 分支。
+
+补丁只应用到外部库的 `ClickHouse/` 分支上。
+
+有两种做法：
+
+* 你想在 fork 仓库中某个带 `ClickHouse/` 前缀的分支上新增一个修复，例如 sanitizer 修复。在这种情况下，将该修复推送为一个带 `ClickHouse/` 前缀的分支，例如 `ClickHouse/fix-sanitizer-disaster`。然后从这个新分支向自定义跟踪分支创建一个 PR，例如 `ClickHouse/2024_2 <-- ClickHouse/fix-sanitizer-disaster`，再合并该 PR。
+* 你更新了子模块，并且需要重新应用之前的补丁。在这种情况下，重新创建旧 PR 就有些小题大做了。相反，只需将旧提交 cherry-pick 到新的 `ClickHouse/` 分支中 (对应新版本) 。如果某些 PR 包含多个提交，可以放心把这些提交 squash。在最理想的情况下，我们已经把自定义补丁贡献回上游，因此在新版本中就可以省略这些补丁。
+
+子模块更新后，在 ClickHouse 中更新子模块引用，使其指向 fork 中的新哈希。
+
+为第三方库创建补丁时，请以官方仓库为目标，并考虑将补丁贡献回上游仓库。
+这样可以确保其他人也能从该补丁中受益，同时不会给 ClickHouse 团队带来维护负担。

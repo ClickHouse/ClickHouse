@@ -1,0 +1,110 @@
+---
+sidebarTitle: '概要'
+description: 'ClickPipes を使用して、BigQuery から ClickHouse Cloud にデータをエクスポートする方法。'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'BigQuery と ClickHouse Cloud のインテグレーション'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/ja/_intro.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="features">
+  ## 機能
+</div>
+
+<div id="initial-load">
+  ### 初期ロード
+</div>
+
+BigQuery ClickPipe は、BigQuery の [データセット](https://docs.cloud.google.com/bigquery/docs/datasets-intro) 内で選択したテーブルを、1 回のバッチ操作で ClickHouse の宛先テーブルにロードします。インジェストタスクが完了すると、ClickPipe は自動的に自動停止します。初期ロードのインジェストプロセスでは、ステージング用にユーザーが用意した Google Cloud Storage (GCS) バケットが必要です。今後は、この中間バケットは ClickPipes によって提供および管理される予定です。
+
+<Note>
+  ClickPipes は、BigQuery からステージング用の GCS バケットにデータを取得するために、バッチ抽出ジョブを利用します。この操作によって、BigQuery で**処理料金が発生することはありません**。
+</Note>
+
+<div id="cdc">
+  ### CDC (変更データキャプチャ)
+</div>
+
+CDC はプライベートプレビューでは**サポートされていません**が、今後サポートされる予定です。それまでは、初期ロードの完了後に BigQuery のデータエクスポートを ClickHouse Cloud に継続的に同期する方法として、[Google Cloud Storage ClickPipe](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview) の使用を推奨します。
+
+<div id="data-type-mapping">
+  ## データ型マッピング
+</div>
+
+[BigQuery のデータ型](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types)。
+
+| BigQuery データ型     | ClickHouse データ型 | 詳細                                  |
+| ----------------- | --------------- | ----------------------------------- |
+| `BOOL`            | `Bool`          |                                     |
+| `INT64`           | `Int64`         |                                     |
+| `FLOAT64`         | `Float64`       |                                     |
+| `NUMERIC`         | `Decimal(P, S)` | 精度は最大 38、スケールは最大 9。精度/スケールは保持されます。  |
+| `BIGNUMERIC`      | `Decimal(P, S)` | 精度は最大 76、スケールは最大 38。精度/スケールは保持されます。 |
+| `STRING`          | `String`        |                                     |
+| `BYTES`           | `String`        |                                     |
+| `JSON`            | `String` (JSON) |                                     |
+| `DATE`            | `Date`          |                                     |
+| `TIME`            | `String`        | マイクロ秒精度。                            |
+| `DATETIME`        | `DateTime`      | マイクロ秒精度。                            |
+| `TIMESTAMP`       | `DateTime64(6)` | マイクロ秒精度。                            |
+| `GEOGRAPHY`       | `String`        |                                     |
+| `GEOMETRY`        | `String`        |                                     |
+| `UUID`            | `String`        |                                     |
+| `ARRAY<T>`        | `Array(T)`      |                                     |
+| `ARRAY<DATE>`     | `Array(Date)`   |                                     |
+| `STRUCT` (RECORD) | `String`        |                                     |
+
+<div id="access-control">
+  ## アクセス制御
+</div>
+
+<div id="authentication">
+  ### 認証
+</div>
+
+<div id="service-account-credentials">
+  #### サービスアカウントの認証情報
+</div>
+
+ClickPipes は、[サービスアカウントキー](https://docs.cloud.google.com/iam/docs/keys-create-delete)を使用して Google Cloud プロジェクトに認証します。ClickPipes が BigQuery からデータをエクスポートし、ステージング用の GCS バケットにロードしてから ClickHouse に読み込めるように、必要最小限の[権限](#permissions)のみを持つ専用のサービスアカウントを作成することを推奨します。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery と Cloud ストレージ の権限を持つサービスアカウントキーの作成" size="lg" border />
+
+<div id="permissions">
+  ### 権限
+</div>
+
+<div id="bigquery">
+  #### BigQuery
+</div>
+
+サービス アカウントには、次の BigQuery ロールが必要です。
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+アクセス範囲をさらに絞り込むには、ロールがアクセスできるリソースを制限するために [IAM 条件](https://docs.cloud.google.com/bigquery/docs/conditions) を使用することを推奨します。たとえば、`dataViewer` ロールを、同期対象のテーブルを含む特定のデータセットのみに制限できます。
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+<div id="cloud-storage">
+  #### Cloud ストレージ
+</div>
+
+サービス アカウントには、次の Cloud ストレージ ロールが必要です。
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+アクセス範囲をさらに絞るには、[IAM 条件](https://docs.cloud.google.com/bigquery/docs/conditions)を使用して、ロールがアクセスできるリソースを制限することを推奨します。たとえば、`objectAdmin` ロールと `bucketViewer` ロールを、ClickPipes の同期用に作成した専用バケットのみに制限できます。
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

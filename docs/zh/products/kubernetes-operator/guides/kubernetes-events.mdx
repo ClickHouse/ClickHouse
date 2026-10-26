@@ -1,0 +1,208 @@
+---
+position: 8
+slug: /clickhouse-operator/guides/kubernetes-events
+title: Kubernetes 事件
+keywords: ['kubernetes', '事件', '故障排查', '协调', 'system.warnings']
+description: 'operator 如何以 Kubernetes 事件的形式上报协调失败、扩缩容进度、版本检查以及 ClickHouse server 警告到 ClickHouseCluster 和 KeeperCluster 对象，如何查看这些事件，以及各类事件原因的含义。'
+doc_type: 'guide'
+---
+
+operator 会在其管理的 `ClickHouseCluster` 和
+`KeeperCluster` 对象上记录 Kubernetes 事件。这些事件可追踪 operator 在
+协调过程中执行的操作——资源变更在哪一步失败、集群何时变为
+就绪、扩缩容为何被阻塞——并暴露那些通常不会出现在用户日常查看日志中的失败。它们将便于阅读的历史记录直接附加到自定义资源上，从而对 [指标](/zh/products/kubernetes-operator/guides/monitoring)
+形成补充。
+
+`clickhouse-controller` 会在 `ClickHouseCluster` 对象上报告事件，而
+`keeper-controller` 会在 `KeeperCluster` 对象上报告这些事件。资源
+生命周期失败事件还会引用其所涉及的受管对象 (
+StatefulSet、Service、ConfigMap、Secret、PodDisruptionBudget、
+PersistentVolumeClaim 或版本探测 Job) ；其他事件则只引用
+集群本身。
+
+<Note>
+  Kubernetes API server 会在生存时间 (TTL) 到期后使事件过期——默认
+  为一小时 (`--event-ttl`) 。因此，事件只是反映近期活动的短期信号，
+  并非持久的审计记录。
+</Note>
+
+<div id="viewing-events">
+  ## 查看事件
+</div>
+
+最快捷的方法是对自定义资源运行 `kubectl describe`，它会在底部列出
+最新的事件：
+
+```bash
+NS=<your-namespace>
+
+kubectl -n $NS describe clickhousecluster <name>
+kubectl -n $NS describe keepercluster <name>
+```
+
+要直接列出事件——例如实时查看事件，或筛选出失败事件——
+请查询 `events` 资源，并按关联对象或类型进行过滤：
+
+```bash
+# All events for one cluster, newest last
+kubectl -n $NS get events \
+  --field-selector involvedObject.name=<name> \
+  --sort-by=.lastTimestamp
+
+# Only warnings across the namespace
+kubectl -n $NS get events --field-selector type=Warning
+
+# Follow events as they arrive
+kubectl -n $NS get events --watch
+```
+
+负责上报的控制器会显示在事件源中，因此你可以将
+`ClickHouseCluster` 事件 (`clickhouse-controller`) 与 `KeeperCluster` 事件
+(`keeper-controller`) 区分开来。
+
+<div id="event-reasons">
+  ## 事件原因参考
+</div>
+
+Operator 会产生一组固定的原因，并按其所描述的内容分组。`Normal`
+事件表示预期的进展；`Warning` 事件表示失败，或提示用户
+应采取行动的状态。
+
+<div id="resource-lifecycle">
+  ### 资源生命周期
+</div>
+
+当 operator 在协调过程中无法
+应用其所管理的资源时，会在 `ClickHouseCluster` 和 `KeeperCluster` 上发出此事件。
+
+| 原因             | 类型 | 含义                                                                                         |
+| -------------- | -- | ------------------------------------------------------------------------------------------ |
+| `FailedCreate` | Warning | operator 无法创建其所管理的资源 (例如 StatefulSet、Service、ConfigMap、Secret、PodDisruptionBudget 或 Job) 。 |
+| `FailedUpdate` | Warning | operator 无法更新资源。                                                                           |
+| `FailedDelete` | Warning | operator 在协调或缩容期间无法删除其所管理的资源。                                                              |
+
+<div id="cluster-readiness">
+  ### 集群就绪情况
+</div>
+
+当集群跨过就绪状态边界时，这两类资源都会发出事件。
+
+| Reason            | Type    | 含义                                                                                                |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `ClusterReady`    | Normal  | 集群变为就绪：每个 ClickHouse 分片至少有一个就绪副本，或者 Keeper quorum 拥有一个 leader 和足够多的跟随者 (或者其单个 standalone 副本已启动) 。 |
+| `ClusterNotReady` | Warning | 集群退出就绪状态——某个 ClickHouse 分片已没有任何就绪副本，或者 Keeper quorum 丢失了 leader，或跟随者数量不足。                         |
+
+<div id="scaling">
+  ### 扩缩容
+</div>
+
+当 operator 更改 `KeeperCluster` 的副本数时，会发出此类事件。
+
+| 原因                         | 类型 | 含义                                            |
+| -------------------------- | -- | --------------------------------------------- |
+| `HorizontalScaleStarted`   | Normal | operator 开始添加或移除副本。                           |
+| `HorizontalScaleCompleted` | Normal | 扩缩容操作已完成。                                     |
+| `ReplicaCreated`           | Normal | operator 已向集群 添加一个副本。                   |
+| `ReplicaDeleted`           | Normal | operator 在缩容期间移除了一个副本。                        |
+| `HorizontalScaleBlocked`   | Warning | operator 拒绝执行扩缩容，因为当前 Keeper 状态尚未达到可安全扩缩容的条件。 |
+
+<Note>
+  当 Keeper 的扩缩容请求看起来没有任何反应时，需要关注 `HorizontalScaleBlocked` 事件：
+  operator 会有意暂缓这次变更，保持现有 quorum，
+  而不是冒脑裂风险。该事件消息会说明
+  阻止这次变更的限制条件。
+</Note>
+
+<div id="external-secret">
+  ### 外部 Secret
+</div>
+
+当集群引用了 operator 无法使用的外部 Secret 时，`ClickHouseCluster` 上会发出此事件。请参阅
+[配置指南](/zh/products/kubernetes-operator/guides/configuration)中的“外部 Secret”功能。
+
+| Reason                   | Type    | Meaning                                    |
+| ------------------------ | ------- | ------------------------------------------ |
+| `ExternalSecretNotFound` | Warning | 被引用的 Secret 在集群所在的命名空间中不存在。                |
+| `ExternalSecretInvalid`  | Warning | 该 Secret 存在，但缺少必需的键 (仅在 `Observe` 策略下报告) 。 |
+
+<div id="version-checks">
+  ### 版本检查
+</div>
+
+由 `ClickHouseCluster` 和 `KeeperCluster` 的版本检查发出。
+`VersionProbeFailed` 是 ClickHouse 版本探测 Job 特有的事件。
+
+| 原因                        | 类型 | 含义                                                                  |
+| ------------------------- | -- | ------------------------------------------------------------------- |
+| `VersionProbeFailed`      | Warning | 版本探测 Job 无法检测到正在运行的 ClickHouse 版本。                                  |
+| `VersionDiverge`          | Warning | 检测到的某个副本版本与 operator 为集群检测到的版本不一致。在滚动更新期间，此事件会被抑制。                  |
+| `VersionUpgradeAvailable` | Warning | 配置的升级通道上有更新版本可用、当前运行版本不在该通道内，或者该版本已结束支持。operator 绝不会自行升级——此事件仅用于通知。 |
+
+<div id="clickhouse-warnings">
+  ### ClickHouse server 警告
+</div>
+
+| 原因                  | 类型 | 含义                                                 |
+| ------------------- | -- | -------------------------------------------------- |
+| `ClickHouseWarning` | Warning | 由 ClickHouse server 自身上报的警告，转发自 `system.warnings`。 |
+
+最后这一类原因比较特殊：它描述的并不是 operator 自身的操作。在
+每个就绪的副本上，operator 会定期查询服务器的
+[`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) 表，
+并将其中的每一行作为集群上的 `Warning` 事件重新发布，同时以前缀标明其来源
+副本。这样一来，ClickHouse 自身的配置和运行时
+警告——已废弃配置项、过低的限制值、不安全的选项——都会变成你可以通过
+`kubectl` 看到的事件，而无需分别对每个副本打开一个 `ClickHouse 客户端` 会话。
+
+```bash
+kubectl -n $NS get events \
+  --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
+```
+
+<div id="events-vs-metrics">
+  ## 事件、指标和条件
+</div>
+
+operator 提供了三类可观测性信息；请按各自最擅长的场景使用：
+
+* **Events** (本指南) —— 最近发生、便于阅读，并附加在对象上。最适合回答
+  “这个集群刚刚发生了什么”，以及配合
+  `kubectl describe` 进行交互式故障排查。它们会过期。
+* 自定义资源上的 **`status.conditions`** —— 当前且持久的真实状态
+  (ready、外部 Secret 有效、允许扩缩容、版本已同步) 。最适合用于
+  脚本和 GitOps 健康门禁。可使用以下命令读取：
+  `kubectl get clickhousecluster <name> -o jsonpath='{.status.conditions}'`。
+* **[指标](/zh/products/kubernetes-operator/guides/monitoring)** —— 持久且
+  数值化。最适合用于仪表盘，以及针对持续存在的 reconcile 错误率进行
+  告警。
+
+一个 `Warning` 事件和一个 `False` condition 往往是在从两个
+角度描述同一个问题：事件记录的是发生当下及其消息，而 condition 则会持续反映
+该状态，直到问题消除。
+
+<div id="troubleshooting">
+  ## 通过事件进行故障排查
+</div>
+
+以下是一些常见信号及其所指向的问题：
+
+* **`FailedCreate` / `FailedUpdate` 重复出现** — operator 无法应用某个
+  resource。事件消息中会包含 API 错误 (admission 拒绝、quota
+  限制、spec 无效) 。协调会持续重试，因此如果是暂时性原因，通常会自行恢复；如果是持续性问题，则需要修复 spec 或 集群。
+* **`ClusterNotReady` 且没有对应的 `ClusterReady`** — 集群 未能
+  恢复。事件消息会指出哪些 shards 尚未就绪，或说明存在 quorum
+  问题；请检查其对应的 Pod (容器组) 。
+* **`HorizontalScaleBlocked`** — 出于安全考虑，预期的扩缩容被暂时阻止。执行任何强制操作前，
+  请先查看消息中说明的具体约束。
+* **`ExternalSecretNotFound` / `ExternalSecretInvalid`** — 修正 Secret 名称或
+  其 keys；一旦 operator 可以使用该 Secret，对应的 `ExternalSecretValid` condition 就会切换为 `True`。
+* **`ClickHouseWarning`** — 问题出在 ClickHouse 内部，而不在 operator。
+  请像处理 `system.warnings` 中的一行那样对待这条消息。
+
+<div id="related-guides">
+  ## 相关指南
+</div>
+
+* [监控 Operator](/zh/products/kubernetes-operator/guides/monitoring) — 指标和健康探针，是事件的持久化对应物。
+* [扩缩容](/zh/products/kubernetes-operator/guides/scaling) — `HorizontalScaleBlocked` 的保护作用，以及 Keeper quorum 如何限制扩缩容。
+* [配置](/zh/products/kubernetes-operator/guides/configuration) — external-secret 事件背后的外部 Secret 功能。

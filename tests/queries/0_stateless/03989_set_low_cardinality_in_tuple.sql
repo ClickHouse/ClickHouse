@@ -1,6 +1,6 @@
 -- Regression test: LowCardinality inside Tuple in IN subquery caused LOGICAL_ERROR
 -- because Set::setHeader only stripped top-level LowCardinality from set_elements_types
--- while convertToFullIfNeeded (recursive since #97493) stripped it from inner columns,
+-- while convertToFullIfWrapped (recursive since #97493) stripped it from inner columns,
 -- creating a column/type mismatch in KeyCondition::tryPrepareSetColumnsForIndex.
 SET allow_suspicious_low_cardinality_types = 1;
 

@@ -123,3 +123,4 @@ SELECT CAST(NULL, 'Nullable(Decimal64(1))') IN (CAST('33.30', 'Decimal64(2)'), N
 -- NULL handling: Float64->Decimal with NULL
 SELECT CAST('33.3', 'Nullable(Decimal64(1))') IN (33.3, NULL);   -- 1: first exact
 SELECT CAST('33.3', 'Nullable(Decimal64(1))') IN (33.33, NULL);  -- 0: lossy, NULL doesn't help
+SELECT tuple(CAST(NULL, 'Nullable(Decimal64(1))')) IN (tuple(CAST('33.33', 'Decimal64(2)'))) SETTINGS transform_null_in = 1;  -- 0: lossy, not a NULL member

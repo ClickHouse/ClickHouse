@@ -1,0 +1,78 @@
+---
+title: 'التعامل مع أعمدة TOAST'
+description: 'تعرّف على كيفية التعامل مع أعمدة TOAST عند نسخ البيانات متماثلًا من PostgreSQL إلى ClickHouse.'
+slug: /integrations/clickpipes/postgres/toast
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'إدخال البيانات', 'مزامنة لحظية']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+عند نسخ البيانات متماثلًا من PostgreSQL إلى ClickHouse، من المهم فهم القيود والاعتبارات الخاصة المرتبطة بأعمدة TOAST (تقنية تخزين السمات كبيرة الحجم). سيساعدك هذا الدليل على تحديد أعمدة TOAST والتعامل معها بشكل صحيح ضمن عملية النسخ المتماثل.
+
+<div id="what-are-toast-columns-in-postgresql">
+  ## ما هي أعمدة TOAST في PostgreSQL؟
+</div>
+
+تُعد TOAST ‏(The Oversized-Attribute Storage Technique) الآلية التي يستخدمها PostgreSQL للتعامل مع قيم الحقول الكبيرة. عندما يتجاوز الصف الحد الأقصى المسموح به لحجم الصف (عادةً 2KB، لكن قد يختلف ذلك حسب إصدار PostgreSQL والإعدادات الدقيقة)، ينقل PostgreSQL تلقائيًا قيم الحقول الكبيرة إلى جدول TOAST منفصل، ولا يحتفظ في الجدول الرئيسي إلا بمؤشر إليها.
+
+من المهم ملاحظة أنه أثناء Change Data Capture (CDC)، لا تُضمَّن أعمدة TOAST التي لم تتغير في دفق النسخ المتماثل. وقد يؤدي ذلك إلى نسخ متماثل غير مكتمل للبيانات إذا لم يُتعامل معه بشكل صحيح.
+
+أثناء التحميل الأولي (snapshot)، ستُكرَّر جميع قيم الأعمدة، بما في ذلك أعمدة TOAST، بشكل صحيح بغض النظر عن حجمها. تؤثر القيود الموضحة في هذا الدليل أساسًا في عملية CDC المستمرة بعد التحميل الأولي.
+
+يمكنك قراءة المزيد عن TOAST وكيفية تنفيذها في PostgreSQL هنا: https://www.postgresql.org/docs/current/storage-toast.html
+
+<div id="identifying-toast-columns-in-a-table">
+  ## تحديد أعمدة TOAST في جدول
+</div>
+
+لتحديد ما إذا كان الجدول يحتوي على أعمدة TOAST، يمكنك استخدام استعلام SQL التالي:
+
+```sql
+SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class c ON a.attrelid = c.oid
+WHERE c.relname = 'your_table_name'
+  AND a.attlen = -1
+  AND a.attstorage != 'p'
+  AND a.attnum > 0;
+```
+
+سيُرجع هذا الاستعلام أسماء الأعمدة وأنواع بياناتها التي قد تكون قابلة للتخزين باستخدام TOAST. ومع ذلك، من المهم ملاحظة أن هذا الاستعلام يحدّد فقط الأعمدة المؤهلة لتخزين TOAST استنادًا إلى نوع البيانات وسمات التخزين الخاصة بها. ولتحديد ما إذا كانت هذه الأعمدة تحتوي فعليًا على بيانات مخزنة باستخدام TOAST، ستحتاج إلى التحقق مما إذا كانت القيم في هذه الأعمدة تتجاوز الحجم المطلوب. ويعتمد تخزين البيانات فعليًا باستخدام TOAST على المحتوى الفعلي المخزَّن في هذه الأعمدة.
+
+<div id="ensuring-proper-handling-of-toast-columns">
+  ## ضمان التعامل الصحيح مع أعمدة TOAST
+</div>
+
+لضمان التعامل مع أعمدة TOAST بشكل صحيح أثناء النسخ المتماثل، ينبغي ضبط `REPLICA IDENTITY` للجدول على `FULL`. يوجّه ذلك PostgreSQL إلى تضمين الصف القديم بالكامل في WAL لعمليات UPDATE وDELETE، مما يضمن توفّر جميع قيم الأعمدة (بما في ذلك أعمدة TOAST) لعملية النسخ المتماثل.
+
+يمكنك ضبط `REPLICA IDENTITY` على `FULL` باستخدام أمر SQL التالي:
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+راجِع [هذه التدوينة](https://xata.io/blog/replica-identity-full-performance) للتعرّف على اعتبارات الأداء عند ضبط `REPLICA IDENTITY FULL`.
+
+<div id="replication-behavior-when-replica-identity-full-is-not-set">
+  ## سلوك النسخ المتماثل عند عدم تعيين `REPLICA IDENTITY FULL`
+</div>
+
+إذا لم يتم تعيين `REPLICA IDENTITY FULL` لجدول يحتوي على أعمدة TOAST، فقد تواجه المشكلات التالية عند النسخ المتماثل إلى ClickHouse:
+
+1. في عمليات INSERT، ستُنسخ جميع الأعمدة (بما في ذلك أعمدة TOAST) بشكل صحيح.
+
+2. في عمليات UPDATE:
+   * إذا لم يُعدَّل عمود TOAST، فستظهر قيمته على أنها NULL أو فارغة في ClickHouse.
+   * إذا عُدِّل عمود TOAST، فستُنسخ قيمته بشكل صحيح.
+
+3. في عمليات DELETE، ستظهر قيم أعمدة TOAST على أنها NULL أو فارغة في ClickHouse.
+
+قد تؤدي هذه السلوكيات إلى عدم اتساق البيانات بين مصدر PostgreSQL ووجهة ClickHouse. لذلك، من الضروري تعيين `REPLICA IDENTITY FULL` للجداول التي تحتوي على أعمدة TOAST لضمان نسخ متماثل دقيق وكامل للبيانات.
+
+<div id="conclusion">
+  ## الخلاصة
+</div>
+
+تُعد المعالجة الصحيحة لأعمدة TOAST أمرًا أساسيًا للحفاظ على تكامل البيانات عند تكرارها من PostgreSQL إلى ClickHouse. ومن خلال تحديد أعمدة TOAST وضبط `REPLICA IDENTITY` المناسب، يمكنك ضمان تكرار بياناتك بدقة واكتمال.

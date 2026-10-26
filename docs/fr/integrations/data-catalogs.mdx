@@ -1,0 +1,242 @@
+---
+sidebarTitle: 'Catalogues de données'
+sidebar_label: 'Catalogues de données'
+sidebar_position: 2
+description: 'Comment connecter un catalogue de données pour des tables Iceberg ou Delta dans ClickHouse Cloud via l’interface utilisateur des sources de données.'
+slug: /integrations/data-catalogs
+title: 'Connecter un catalogue de données à ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['catalogues de données', 'lac de données', 'iceberg', 'unity catalog', 'glue', 'delta lake', 'onelake', 'polaris', 'biglake', 'clickhouse cloud']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Connectez ClickHouse Cloud à vos catalogues de données pour accéder à vos tables aux formats de table ouverts. Vous pouvez configurer des connexions dans l’interface **Sources de données**. Pour effectuer la configuration via SQL, utilisez le moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake) dans l’éditeur SQL de votre choix.
+
+<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="Interface de ClickHouse Cloud avec des intégrations de catalogues de données" />
+
+Une fois la connexion établie, les tables du catalogue s’affichent dans la console SQL sous le nom de base de données de votre choix. Vous pouvez les interroger avec du SQL ClickHouse standard, les joindre à des tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) et les utiliser comme sources pour des [vues matérialisées](/fr/concepts/features/materialized-views).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+Avant de connecter un catalogue, vérifiez les éléments suivants :
+
+* **Autorisations du service.** Vous devez disposer de l’autorisation `control-plane:service:manage` pour accéder à la page **Sources de données** et ajouter des catalogues.
+* **Service en cours d’exécution.** Si le service est inactif, réactivez-le depuis la page **Sources de données** ou les paramètres du service avant de connecter ou d’afficher des catalogues associés.
+* **Identifiants du catalogue.** Rassemblez les informations de connexion correspondant à votre type de catalogue avant d’ouvrir le panneau latéral. Chaque catalogue utilise des champs et des mécanismes d’authentification différents ; consultez [Ajouter la connexion à votre catalogue](#add-your-catalog-connection) ci-dessous.
+
+<div id="connect-your-catalog">
+  ## Connectez votre catalogue
+</div>
+
+<Steps>
+  <Step title="Ouvrez le panneau latéral du catalogue de données" id="open-data-catalog-flyout">
+    1. Sélectionnez **Sources de données** dans la navigation de gauche.
+    2. Cliquez sur **+ Ajouter un catalogue** si vous n’avez pas encore configuré de source de données. Sinon, cliquez sur **Ajouter une source de données** &gt; **Ajouter un catalogue de lac de données**.
+    3. Dans le panneau latéral **Connecter votre catalogue de données**, sélectionnez votre catalogue dans la liste déroulante **Sélectionner un catalogue**. Si le catalogue prend en charge plusieurs formats de table ouverts, choisissez-en un dans **Format de table ouvert**.
+
+    <Image img="/images/integrations/data-catalogs/catalog-flyout-select.png" alt="Panneau latéral Connecter votre catalogue de données avec la liste déroulante Sélectionner un catalogue affichant AWS Glue, BigLake Metastore, Microsoft OneLake, Polaris, REST Catalog et Unity Catalog" size="lg" />
+  </Step>
+
+  <Step title="Ajoutez la connexion à votre catalogue" id="add-your-catalog-connection">
+    Sélectionnez votre catalog ci-dessous pour obtenir les instructions et les prérequis. Renseignez ensuite les paramètres de connection, ainsi qu&#39;un **Database name** — la database ClickHouse qui expose les tables de votre catalog dans la SQL Console.
+
+    <Tabs>
+      <Tab title="AWS Glue" id="aws-glue">
+        [Le catalogue AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog) expose les tables [Iceberg](/fr/reference/engines/table-engines/integrations/iceberg) enregistrées dans le Glue Data Catalog.
+
+        Avant de vous connecter, vérifiez les éléments suivants :
+
+        * ClickHouse version 25.12 ou ultérieure.
+        * Les tables Iceberg sont enregistrées dans le Glue Data Catalog AWS dans votre Region cible.
+        * Pour l’authentification par clé d’accès, vous disposez d’une clé d’accès d’utilisateur IAM autorisée à lire les métadonnées Glue et les objets S3 sous-jacents.
+        * Pour l’authentification par rôle IAM (26.2+), vous disposez d’un rôle IAM qui fait confiance à votre rôle de service ClickHouse. Incluez l’ARN du rôle de service figurant dans **Settings → Network security information** dans la stratégie d’approbation du rôle. Consultez [Accéder aux données Iceberg de manière sécurisée](/fr/products/cloud/guides/data-sources/accessing-iceberg-data-securely) pour obtenir des exemples de stratégies IAM.
+
+        Dans le flyout, saisissez votre **Region** AWS (par exemple, `us-west-2`), puis choisissez une méthode d’authentification :
+
+        **Authentification par clé d’accès**
+
+        1. Sélectionnez **AWS Access Key** comme **Authentication method**.
+        2. Saisissez votre **Access Key ID** et votre **Secret Access Key**.
+        3. Saisissez un **Database name** pour la base de données ClickHouse qui expose vos tables Glue.
+
+        **Authentification par rôle IAM (26.2+)**
+
+        1. Sélectionnez **AWS IAM Role** comme **Authentication method**.
+        2. Copiez le **Service role ID (IAM)** depuis le panneau flyout et ajoutez-le à la stratégie d’approbation de votre rôle IAM.
+        3. Saisissez votre **AWS Role ARN** ainsi qu’un **AWS Role Session Name** facultatif.
+        4. Saisissez un **Database name** pour la base de données ClickHouse qui expose vos tables Glue.
+
+        <Note>
+          Glue prend en charge plusieurs formats de tables, mais ClickHouse lit uniquement les tables **Iceberg** depuis Glue.
+        </Note>
+      </Tab>
+
+      <Tab title="Unity Catalog (Iceberg)" id="unity-iceberg">
+        Interrogez les tables [Iceberg](/fr/reference/engines/table-engines/integrations/iceberg) Unity Catalog qui utilisent des emplacements de stockage externes, à l’aide des identifiants client OAuth d’un principal de service Databricks. Consultez le [guide Unity Catalog](/fr/guides/use-cases/data-warehousing/unity-catalog#read-iceberg) pour connaître la procédure de configuration complète.
+
+        Avant de vous connecter, vérifiez les points suivants :
+
+        * Vous utilisez ClickHouse version 25.12 ou ultérieure.
+        * [Unity Catalog est configuré pour l’accès aux données externes](https://docs.databricks.com/aws/en/external-access/admin).
+        * Vous disposez d’un [principal de service](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m) Databricks avec un ID client OAuth et un secret client. Ce principal de service dispose des privilèges `USE CATALOG`, `USE SCHEMA`, `USE EXTERNAL SCHEMA` et `SELECT` sur les tables que vous souhaitez interroger.
+
+        Dans le volet déroulant :
+
+        1. Saisissez l’**URL de l’espace de travail** Databricks (par exemple, `dbc-1234567a-cbde.cloud.databricks.com`).
+        2. Saisissez le **nom du catalog Databricks** auquel vous connecter (par exemple, `icebench`).
+        3. Saisissez l’**ID client** OAuth et le **secret client** de votre principal de service.
+        4. Saisissez un **nom de base de données** pour la base de données ClickHouse exposant vos tables Unity Catalog.
+      </Tab>
+
+      <Tab title="Unity Catalog (Delta)" id="unity-delta">
+        Interrogez les tables Unity Catalog [Delta Lake](/fr/reference/engines/table-engines/integrations/deltalake) utilisant des emplacements de stockage externes à l’aide d’un jeton d’accès personnel (PAT) Databricks. Consultez le [guide Unity Catalog](/fr/guides/use-cases/data-warehousing/unity-catalog#read-delta) pour connaître la procédure de configuration complète.
+
+        Avant de vous connecter, vérifiez les points suivants :
+
+        * ClickHouse version 25.12 ou ultérieure.
+        * [Unity Catalog est configuré pour l’accès aux données externes](https://docs.databricks.com/aws/en/external-access/admin).
+        * Un [jeton d’accès personnel](https://docs.databricks.com/aws/en/dev-tools/auth/pat) Databricks disposant au minimum des autorisations `EXTERNAL USE SCHEMA`, `USE CATALOG`, `USE SCHEMA` et `SELECT` sur les tables cibles.
+
+        Dans le panneau latéral :
+
+        1. Saisissez l’**URL de l’espace de travail** Databricks (par exemple, `dbc-1234567a-cbde.azuredatabricks.net`).
+        2. Saisissez le **nom du catalogue Databricks** auquel vous souhaitez vous connecter.
+        3. Saisissez votre **jeton d’accès personnel**.
+        4. Saisissez un **nom de base de données** pour la base de données ClickHouse exposant vos tables Delta.
+
+        <Note>
+          Iceberg et Delta utilisent des méthodes d’authentification différentes dans l’UI. Deux bases de données ClickHouse distinctes sont nécessaires pour accéder aux deux types de tables.
+        </Note>
+      </Tab>
+
+      <Tab title="Catalogue REST" id="rest">
+        Connectez-vous à tout catalogue compatible avec la spécification [Iceberg REST Catalog](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml). Consultez le [guide du catalogue REST](/fr/guides/use-cases/data-warehousing/rest-catalog) pour connaître la procédure de configuration complète.
+
+        Avant de vous connecter, vérifiez les points suivants :
+
+        * Vous utilisez ClickHouse version 25.12 ou ultérieure.
+        * Le endpoint de votre catalogue REST est accessible depuis ClickHouse Cloud.
+        * Vous disposez d’identifiants client OAuth ou d’un jeton Bearer, selon la configuration de votre catalogue.
+        * Vous disposez d’un URI S3 ou compatible pour le **endpoint de stockage** des données de table (par ex. `s3://my-bucket/path`).
+
+        Dans le volet latéral :
+
+        1. Saisissez l’**URL du catalogue** (par ex. `https://catalog.example.com/v1`).
+        2. Saisissez l’**entrepôt** ou l’espace de noms du catalogue (par ex. `demo`).
+        3. Saisissez le préfixe d’URI du **endpoint de stockage** pour le stockage des tables.
+        4. Sélectionnez une **méthode d’authentification** : **Identifiants client OAuth** ou **Jeton Bearer**, puis saisissez les identifiants correspondants.
+        5. Saisissez un **nom de base de données** pour la base de données ClickHouse qui expose les tables de votre catalogue REST.
+      </Tab>
+
+      <Tab title="Microsoft OneLake" id="onelake">
+        Interrogez des tables [Iceberg](/fr/reference/engines/table-engines/integrations/iceberg) dans Microsoft Fabric OneLake à l’aide des identifiants d’une application Azure AD. Consultez le [guide Fabric OneLake](/fr/guides/use-cases/data-warehousing/onelake-catalog) pour connaître la procédure de configuration complète.
+
+        Avant de vous connecter, vérifiez les points suivants :
+
+        * ClickHouse version 25.12 ou ultérieure.
+        * Des tables Iceberg existent dans un espace de travail Fabric.
+        * Vous disposez d’une application Entra ID (Azure AD) avec un ID client et un secret.
+        * Vous disposez de votre ID de tenant, de votre ID d’espace de travail et d’un ID d’élément de données. Utilisez votre **ID Lakehouse** figurant dans l’URL de la page Lakehouse. Consultez les [prérequis Microsoft OneLake](https://learn.microsoft.com/en-us/fabric/onelake/table-apis/table-apis-overview#prerequisites) pour savoir où trouver ces valeurs.
+
+        Dans le panneau latéral :
+
+        1. Saisissez l’**ID d’espace de travail** Fabric.
+        2. Saisissez l’**ID d’élément de données** — utilisez votre ID Lakehouse. Les ID d’entrepôt ne sont pas pris en charge.
+        3. Saisissez votre **ID de tenant** Entra ID, votre **ID d’application (client)** et votre **secret client**.
+        4. Saisissez un **nom de base de données** pour la base de données ClickHouse qui expose vos tables OneLake.
+      </Tab>
+
+      <Tab title="Polaris" id="polaris">
+        Connectez-vous à un déploiement Snowflake Open Catalog (Polaris) pour les tables [Iceberg](/fr/reference/engines/table-engines/integrations/iceberg). Consultez le [guide du catalogue Polaris](/fr/guides/use-cases/data-warehousing/polaris-catalog) pour obtenir les instructions de configuration complètes.
+
+        Avant de vous connecter, vérifiez les points suivants :
+
+        * Vous utilisez ClickHouse version 26.2 ou ultérieure.
+        * Vous disposez d&#39;un catalogue Polaris avec des identifiants client OAuth.
+        * Vous disposez d&#39;un URI d&#39;endpoint de stockage pour les données des tables Iceberg (par exemple, `s3://company-iceberg-prod/warehouse/`).
+
+        Dans le flyout :
+
+        1. Saisissez l&#39;**identifiant du compte de catalogue** (par exemple, `ab12345.snowflakecomputing.com`).
+        2. Saisissez le **nom du catalogue** (par exemple, `snowflake_open_catalog`).
+        3. Saisissez l&#39;**ID client** OAuth et le **secret client**.
+        4. Saisissez le préfixe d&#39;URI de l&#39;**endpoint de stockage** pour le stockage des tables.
+        5. Saisissez un **nom de base de données** pour la base de données ClickHouse qui expose vos tables Polaris.
+      </Tab>
+
+      <Tab title="BigLake Metastore" id="biglake">
+        Connectez-vous à Google Cloud BigLake Metastore (aussi appelé Lakehouse runtime catalog) pour les tables [Iceberg](/fr/reference/engines/table-engines/integrations/iceberg) stockées dans GCS. Consultez le [guide BigLake Metastore](/fr/guides/use-cases/data-warehousing/biglake-catalog) pour connaître la procédure de configuration complète.
+
+        Avant de vous connecter, vérifiez les points suivants :
+
+        * Version 26.2 ou ultérieure de ClickHouse.
+        * Vous disposez d’une instance BigLake Metastore contenant des tables Iceberg dans GCS.
+        * Vous disposez d’identifiants Google Application Default Credentials (ADC), notamment d’un ID client, d’un secret client, d’un jeton d’actualisation et d’un ID de projet de quota.
+
+        Dans le flyout :
+
+        1. Saisissez votre **ID client Google ADC**, votre **secret client**, votre **jeton d’actualisation** et votre **ID de projet de quota**.
+        2. Saisissez l’URI du **bucket Cloud Storage** contenant les données des tables (par exemple, `gs://biglake-public-nyc-taxi-iceberg`).
+        3. Saisissez un **nom de base de données** pour la base de données ClickHouse qui expose vos tables BigLake.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Enregistrer la connexion" id="save-connection">
+    Après avoir renseigné les champs :
+
+    1. Cliquez sur **Add catalog**. ClickHouse valide la connexion et les identifiants lors de l’enregistrement.
+    2. En cas de réussite, une notification de confirmation s’affiche avec un lien **View in SQL console**. Votre catalogue apparaît dans la table **Linked catalogs**, avec son état de connexion et le nombre de tables.
+
+    Dans le menu **Actions** d’une ligne de catalogue lié, vous pouvez supprimer la connexion au catalogue. Cette opération supprime la base de données du catalogue dans ClickHouse, mais ne supprime aucune donnée de votre catalogue externe.
+  </Step>
+</Steps>
+
+<div id="query-data">
+  ## Interrogez vos données
+</div>
+
+<Steps>
+  <Step title="Afficher les tables de votre catalogue" id="view-tables">
+    Sur la page **Sources de données**, repérez votre catalogue dans le tableau **Catalogues liés**, puis cliquez sur **Afficher les tables**.
+
+    <Image img="/images/integrations/data-catalogs/linked-catalogs-table.png" alt="Tableau des catalogues liés avec l’action Afficher les tables" size="lg" />
+
+    ClickHouse ouvre la Console SQL avec la base de données de votre catalogue sélectionnée et affiche la liste des tables disponibles.
+
+    <Note>
+      Les tables peuvent ne pas apparaître immédiatement après la connexion d’un catalogue. Selon le catalogue, leur affichage peut prendre jusqu’à 3 minutes.
+    </Note>
+
+    <Image img="/images/integrations/data-catalogs/catalog-tables-browser.png" alt="Navigateur de tables de la Console SQL affichant les tables du catalogue" size="lg" />
+  </Step>
+
+  <Step title="Exécuter une requête" id="run-a-query">
+    Saisissez une requête dans l’éditeur SQL, puis cliquez sur **Run**. Placez le nom complet de la table entre accents graves :
+
+    ```sql
+    SELECT * FROM `identity_profiles.identity_profiles_iceberg`
+    ```
+
+    <Image img="/images/integrations/data-catalogs/catalog-sql-query.png" alt="Requête SQL avec résultats utilisant des accents graves pour un nom de table comportant des points" size="lg" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Résolution des problèmes
+</div>
+
+* Si vous ne voyez pas vos tables dans la console SQL : vérifiez les identifiants, l’accès réseau et les types de tables dans le catalogue. Assurez-vous que les tables attendues utilisent des formats de fichiers et de tables pris en charge.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [Accélérer les analyses sur les données lakehouse](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — charger les tables du catalogue dans MergeTree pour les requêtes récurrentes
+* [Accéder aux données Iceberg en toute sécurité](/fr/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — configuration du rôle IAM pour accéder à AWS Iceberg et Glue

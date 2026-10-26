@@ -1,7 +1,7 @@
 -- Tags: long
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
 SET parallel_hash_join_threshold = 0;

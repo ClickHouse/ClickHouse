@@ -45,11 +45,12 @@ TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyG
 {
     if (this != &src)
     {
-        nodes = src.nodes;
-        nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
-        nodes_by_uuid = src.nodes_by_uuid;
-        levels_calculated = src.levels_calculated;
-        nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
+        /// Copying the `nodes` set would share the `Node` objects with the source graph - they are held
+        /// by `shared_ptr` and point at each other - so every modification of the copy would also modify
+        /// the graph it was copied from. Rebuild the nodes instead, which is what makes a copy usable as
+        /// a scratch graph, e.g. to test what a rename would do to the dependencies.
+        clear();
+        mergeWith(src);
     }
     return *this;
 }
@@ -93,7 +94,12 @@ size_t TablesDependencyGraph::getNumberOfTables() const
 void TablesDependencyGraph::addDependency(const StorageID & table_id, const StorageID & dependency)
 {
     auto * table_node = addOrUpdateNode(table_id);
+
+    /// Adding `dependency` removes `table_node` from the graph if it gives the name of `table_node` to another node.
+    NodeSharedPtr table_node_holder = *nodes.find(table_node);
     auto * dependency_node = addOrUpdateNode(dependency);
+    if (!nodes.contains(table_node))
+        table_node = dependency_node; /// It has the name `table_node` had, so it's the node of `table_id` now.
 
     bool inserted = table_node->dependencies.insert(dependency_node).second;
     if (!inserted)
@@ -240,11 +246,15 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
         }
     }
 
-    chassert(table_node->dependencies.empty());
-    if (remove_isolated_tables && !table_node_removed && table_node->dependents.empty())
+    /// `table_node` was its own dependency if it was removed above, and is dangling from then on.
+    if (!table_node_removed)
     {
-        /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
-        removeNode(table_node);
+        chassert(table_node->dependencies.empty());
+        if (remove_isolated_tables && table_node->dependents.empty())
+        {
+            /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
+            removeNode(table_node);
+        }
     }
 
     setNeedRecalculateLevels();
@@ -707,10 +717,29 @@ std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSplitByDepen
     if (sorted_nodes.empty())
         return tables_split_by_level;
 
-    tables_split_by_level.resize(sorted_nodes.back()->level + 1);
+    /// Find the maximum non-cyclic level to size the vector.
+    /// Nodes with level == CYCLIC_LEVEL are placed into a dedicated trailing bucket
+    /// so that callers (e.g. RestorerFromBackup) that tolerate cycles still work
+    /// instead of crashing due to SIZE_MAX + 1 overflow in resize().
+    size_t max_level = 0;
+    bool has_cyclic = false;
     for (const auto * node : sorted_nodes)
     {
-        tables_split_by_level[node->level].emplace_back(node->storage_id);
+        if (node->level == CYCLIC_LEVEL)
+            has_cyclic = true;
+        else if (node->level > max_level)
+            max_level = node->level;
+    }
+
+    tables_split_by_level.resize(max_level + 1 + (has_cyclic ? 1 : 0));
+    size_t cyclic_bucket = max_level + 1;
+
+    for (const auto * node : sorted_nodes)
+    {
+        if (node->level == CYCLIC_LEVEL)
+            tables_split_by_level[cyclic_bucket].emplace_back(node->storage_id);
+        else
+            tables_split_by_level[node->level].emplace_back(node->storage_id);
     }
     return tables_split_by_level;
 }

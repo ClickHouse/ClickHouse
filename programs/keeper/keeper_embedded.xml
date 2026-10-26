@@ -9,6 +9,7 @@
         <server_id>1</server_id>
         <log_storage_path>./keeper_log</log_storage_path>
         <snapshot_storage_path>./keeper_snapshot</snapshot_storage_path>
+        <data_storage_path>./keeper_data</data_storage_path>
 
         <raft_configuration>
             <server>

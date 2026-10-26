@@ -1,3 +1,5 @@
+import re
+
 from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
@@ -5,6 +7,8 @@ from praktika.utils import MetaClasses, Utils
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_PATH
 
 SYNC = "CH Inc sync"
+
+GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
 
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
@@ -26,14 +30,15 @@ class RunnerLabels:
     ARM_MEDIUM_CPU = ["self-hosted", "arm-medium-cpu"]
     AMD_MEDIUM_MEM = ["self-hosted", "amd-medium-mem"]
     ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
+    ARM_MEDIUM_STORAGE = ["self-hosted", "arm-medium-storage"]
     AMD_SMALL = ["self-hosted", "amd-small"]
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
-    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
+    AMD_TINY = ["self-hosted", "amd-tiny"]
+    ARM_TINY = ["self-hosted", "arm-tiny"]
+    RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
 class CIFiles:
@@ -43,21 +48,62 @@ class CIFiles:
 
 BASE_BRANCH = "master"
 
+NIGHTLY_PERF_BATCH_JOBS = [f"{b}/4" for b in range(1, 5)]
+# {"<test>.xml": "N/4" | "<extra_job>" | "skip"}, see tests/performance/README.md. Balanced by the ARM wall times of 2026-10-22.
+NIGHTLY_PERF_PLACEMENT = {
+    "arrow_flight_loopback.xml": "1/4",
+    "encodings_hits.xml": "1/4",
+    "formats_hits_read.xml": "1/4",
+    "join_algorithms_sf10.xml": "1/4",
+    "json_bluesky.xml": "1/4",
+    "projections_hits.xml": "1/4",
+    "skip_index_minmax_set_hits.xml": "1/4",
+    "analyzer_large_queries.xml": "2/4",
+    "external_sort_hits.xml": "2/4",
+    "parquet_pushdown_long.xml": "2/4",
+    "tpch_sf100.xml": "2/4",
+    "tpcds_sf100.xml": "3/4",
+    "external_aggregation_hits.xml": "4/4",
+    "formats_hits_write.xml": "4/4",
+    "iceberg_compaction.xml": "4/4",
+    "iceberg_deletes_scale.xml": "4/4",
+    "iceberg_rest_catalog.xml": "4/4",
+    "iceberg_scale_manifests.xml": "4/4",
+    "iceberg_time_travel_evolution.xml": "4/4",
+    "iceberg_write_scale.xml": "4/4",
+    "insert_async_dedup.xml": "4/4",
+    "lakes_cross_format.xml": "4/4",
+    "merges_optimize_final.xml": "4/4",
+    "mutations_big_table.xml": "4/4",
+    "parquet_s3_read.xml": "4/4",
+    "partitions_many.xml": "4/4",
+    "query_shapes_hits.xml": "4/4",
+    "vector_index_laion.xml": "4/4",
+}
+assert all(j in NIGHTLY_PERF_BATCH_JOBS or re.fullmatch("[a-z0-9_]+", j) for j in NIGHTLY_PERF_PLACEMENT.values()), NIGHTLY_PERF_PLACEMENT
+
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-)
-
-chcache_secret = Secret.Config(
-    name="chcache_password",
     type=Secret.Type.AWS_SSM_PARAMETER,
     region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
+        name="clickhouse-dockerhub-registry",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-connection",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    #TODO: remove
+    Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
@@ -75,7 +121,6 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -93,42 +138,85 @@ SECRETS = [
     ),
 ]
 
+# Push-only secrets: consumed by the loom code.refresh pre_hook, which runs
+# only in MasterCI and ReleaseBranchCI. Kept out of the shared SECRETS list
+# so untrusted lanes (pull_request, backport) never register them and PR
+# code cannot resolve the loom writer token via Info.get_secret.
+LOOM_SECRETS = [
+    Secret.Config(
+        name="loom-url",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="loom-ci-token",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+]
+
+# In-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com (amd64) /
+# ports.ubuntu.com (arm64) are frequently unreachable over IPv4 from the runners
+# and have no IPv6 route; the in-region mirror is reachable and fast. Passed as
+# build args to the Ubuntu-based images, whose Dockerfiles keep canonical
+# defaults so local builds are unchanged.
+APT_MIRROR_BUILD_ARGS = {
+    "apt_archive": "http://us-east-1.ec2.archive.ubuntu.com",
+    "apt_ports_archive": "http://us-east-1.ec2.ports.ubuntu.com",
+}
+
 DOCKERS = [
     Docker.Config(
         name="clickhouse/style-test",
         path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=["clickhouse/fasttest", "clickhouse/cctools"],
+    ),
+    Docker.Config(
+        name="clickhouse/wasm-builder",
+        path="./ci/docker/wasm-builder",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
+    ),
+    Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/cctools"],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -146,7 +234,7 @@ DOCKERS = [
         name="clickhouse/performance-comparison",
         path="./ci/docker/performance-comparison",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
@@ -164,13 +252,13 @@ DOCKERS = [
         name="clickhouse/integration-test",
         path="./ci/docker/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["clickhouse/test-base", "clickhouse/cctools"],
     ),
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
@@ -255,6 +343,7 @@ DOCKERS = [
         path="./ci/docker/integration/postgresql_java_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/python-bottle",
@@ -279,6 +368,7 @@ DOCKERS = [
         path="./ci/docker/install/deb",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/install-rpm-test",
@@ -291,12 +381,14 @@ DOCKERS = [
         path="./ci/docker/sqlancer-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/mysql_dotnet_client",
         path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
 ]
 
@@ -304,40 +396,54 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
-    # sccache-warmup variants of the release builds (MasterCI only): PR-style
-    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
-    # but built on master so the shared sccache is populated read-write for
-    # read-only PR builds to reuse. See build_clickhouse.py and
-    # PR_CACHE_WARMUP_BUILD_TYPES.
-    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
+    # The release builds of master made exactly like a PR release build (MasterCI
+    # only, see PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py). Their
+    # server binary is the reference of the PR performance comparison, and as
+    # master builds they also fill the shared sccache that PR builds read.
+    AMD_RELEASE_PERFORMANCE_REFERENCE = "amd_release_performance_reference"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
-    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
+    ARM_RELEASE_PERFORMANCE_REFERENCE = "arm_release_performance_reference"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
     ARM_MSAN = "arm_msan"
-    ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
     PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
+    # The limited clang-tidy check. Configured exactly like `arm_tidy`, but
+    # instead of running clang-tidy over the whole tree it analyzes only the
+    # translation units the change touches, which is what makes it fast enough
+    # to be part of the merge queue.
+    # See ci/jobs/scripts/clang_tidy_changed_files.py.
+    ARM_TIDY_CHANGED_FILES = "arm_tidy_changed_files"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
     ARM_V80COMPAT = "arm_v80compat"
     AMD_FREEBSD = "amd_freebsd"
+    AMD_ILLUMOS = "amd_illumos"
     PPC64LE = "ppc64le"
     AMD_COMPAT = "amd_compat"
     AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
+    # WebAssembly (wasm64, through Emscripten). Experimental: the multicall `clickhouse`
+    # binary builds, and `clickhouse local` runs under Node.js >= 24 and in browsers.
+    # The CI job pins the binary target (see build_clickhouse.py).
+    WASM64 = "wasm64"
+    # The standalone WebAssembly build of just the SQL parser (`utils/wasm-parser`), for a
+    # browser. A CMake project of its own rather than a target of this tree, with its own
+    # toolchain and its own job script - see `build_wasm_parser.py`.
+    WASM_PARSER = "wasm_parser"
     ARM_FUZZERS = "arm_fuzzers"
+    AMD_CFI = "amd_cfi"
 
 
 class JobNames:
@@ -346,6 +452,7 @@ class JobNames:
     STYLE_CHECK = "Style check"
     CODE_REVIEW = "Code Review"
     FAST_TEST = "Fast test"
+    CLANG_TIDY_CHANGED_FILES = "Clang-tidy (changed files)"
     BUILD = "Build"
     UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
@@ -355,8 +462,9 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    DOCS = "Docs check"
+    SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
+    DOCS_EXAMPLES = "Docs examples"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
@@ -364,7 +472,12 @@ class JobNames:
     SQL_LOGIC_TEST = "SQLLogic test"
     SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
+    # No "++": the job name becomes the GitHub Actions job id via
+    # Utils.normalize_string, and '+' is not a valid id character.
+    SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    PROMQL_COMPLIANCE = "PromQL Compliance"
+    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -391,18 +504,26 @@ class JobNames:
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
+    # Unit-test (gtest) bugfix validation. Unlike the functional/integration
+    # validators above, this is a single AMD-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
+    # aggregation in `new_tests_check.py`.
+    BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    LIBFUZZER_CORPUS_MINIMIZATION = "libFuzzer corpus minimization"
+    PARSER_MEMORY_CHECK = "Parser memory check"
+    STORAGE_MEMORY_CHECK = "Storage memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
-    CI_TESTS = "CI Tests"
 
 
 class ToolSet:
-    COMPILER_C = "clang-21"
-    COMPILER_CPP = "clang++-21"
+    COMPILER_C = "clang-22"
+    COMPILER_CPP = "clang++-22"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
@@ -419,30 +540,38 @@ class ArtifactNames:
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
+    CH_AMD_RELEASE_PERFORMANCE_REFERENCE = "CH_AMD_RELEASE_PERFORMANCE_REFERENCE"
     CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
+    CH_ARM_RELEASE_PERFORMANCE_REFERENCE = "CH_ARM_RELEASE_PERFORMANCE_REFERENCE"
     CH_ARM_DEBUG = "CH_ARM_DEBUG"
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
     CH_ARM_MSAN = "CH_ARM_MSAN"
-    CH_ARM_UBSAN = "CH_ARM_UBSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
+    CH_AMD_DARWIN_SIGNED = "CH_AMD_DARWIN_SIGNED"
+    CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
+    CH_AMD_ILLUMOS = "CH_AMD_ILLUMOS_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
     CH_AMD_COMPAT = "CH_AMD_COMPAT_BIN"
     CH_AMD_MUSL = "CH_AMD_MUSL_BIN"
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
+    CH_WASM64 = "CH_WASM64_BIN"
+    CH_WASM_PARSER = "CH_WASM_PARSER_BIN"
 
     FAST_TEST = "FAST_TEST"
 
@@ -451,17 +580,10 @@ class ArtifactNames:
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
-    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
+    # Packages are built for the release builds only - they are what gets published, and
+    # everything else in CI runs from the `CH_*` binary.
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
-    DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAN = "DEB_AMD_MSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_DEBUG = "DEB_ARM_DEBUG"
-    DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
-    DEB_ARM_TSAN = "DEB_ARM_TSAN"
-    DEB_ARM_MSAN = "DEB_ARM_MSAN"
-    DEB_ARM_UBSAN = "DEB_ARM_UBSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -471,9 +593,11 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
+    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+    CH_AMD_CFI = "CH_AMD_CFI"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -482,7 +606,37 @@ class ArtifactNames:
 
 
 LLVM_FT_NUM_BATCHES = 3
-LLVM_IT_NUM_BATCHES = 5
+LLVM_IT_NUM_BATCHES = 8
+# Batch count of the ASan integration-test flavor, which runs the whole integration suite
+# on `AMD_MEDIUM` with three xdist workers against a two-hour pytest `--session-timeout`.
+#
+# Eight, not six: the suite measures about 112000 test-seconds, so six batches put the heaviest
+# shard at 119.7 of the 120 available minutes - no margin at all, however well they are
+# balanced - and this flavor, when it still carried the old-analyzer flag, timed out 133 times
+# in the three weeks after it went to six. Eight brings the heaviest shard to 82 minutes, 68%
+# of the budget.
+#
+# Batches are the right lever rather than a longer timeout: the aggregate compute is unchanged,
+# since the work is the same and only the parallelism differs, so the only cost is one more
+# per-batch setup - and the job gets its answer 25% sooner.
+#
+# To re-measure, score the packing of `get_optimal_test_batch` against per-module
+# `sum(test_duration_ms)` from CIDB rather than against its own `TEST_DURATIONS` table - that
+# table currently sums to 97000 test-seconds against a measured 112000, so it reports every
+# shard as evenly packed while the measured spread across six is 1.24.
+ASAN_IT_NUM_BATCHES = 8
+# The s3 + DBReplicated parallel variant runs the whole stateless suite un-batched
+# and is the slowest job in CI (main run alone ~1h40m-2h10m under coverage
+# instrumentation). It is split into batches so each shard finishes well inside
+# the runner lease and is not torn down mid-job.
+LLVM_FT_S3_DB_REPL_NUM_BATCHES = 3
+# The sequential counterpart is lighter than the parallel variant but still slow
+# enough to benefit from being split, so it gets its own (smaller) batch count.
+LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
+# The ParallelReplicas and AsyncInsert s3 variants run the whole stateless
+# suite, but only their parallel flavors come close to the job timeout, so only
+# those two are batched; the sequential ones stay un-batched.
+LLVM_FT_S3_PARALLEL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -491,17 +645,35 @@ LLVM_FT_ARTIFACTS_LIST = [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    # default.profdata files for batches from Functional tests with S3 + DBReplicated, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_db_repl_parallel_{batch}"
+    for total_batches in (LLVM_FT_S3_DB_REPL_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for batches from Functional tests with S3 + DBReplicated, sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_db_repl_sequential_{batch}"
+    for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for batches from Functional tests with ParallelReplicas/AsyncInsert + S3, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3{flavor}_parallel_{batch}"
+    for flavor in ("", "_async")
+    for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for jobs from Functional tests with ParallelReplicas/AsyncInsert + S3, sequential execution
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
-    # default.profdata files for 5 batches from Integration tests
+    # default.profdata files for the batches from Integration tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
     for total_batches in (LLVM_IT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
@@ -523,8 +695,22 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_ARM_ASAN_UBSAN,
     ArtifactNames.CH_ARM_TSAN,
     ArtifactNames.CH_ARM_MSAN,
-    ArtifactNames.CH_ARM_UBSAN,
 ]
+
+
+def with_long_retention_tags(artifacts):
+    """Tag the long-retention binaries among `artifacts`, leaving the rest as is.
+
+    The tags feed the job digest, so workflows sharing a build cache entry have to
+    apply the same ones. They cannot overwrite each other's uploads: the S3 prefix
+    carries the workflow and the job name as well as the branch and the commit.
+    """
+    return [
+        artifact.add_tags({"retention": "long"})
+        if artifact.name in BINARIES_WITH_LONG_RETENTION
+        else artifact
+        for artifact in artifacts
+    ]
 
 
 class ArtifactConfigs:
@@ -547,7 +733,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_ASAN_UBSAN,
             ArtifactNames.CH_ARM_TSAN,
             ArtifactNames.CH_ARM_MSAN,
-            ArtifactNames.CH_ARM_UBSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -561,6 +746,47 @@ class ArtifactConfigs:
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
+            ArtifactNames.CH_AMD_CFI,
+        ]
+    )
+    clickhouse_binaries.append(
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_ILLUMOS,
+            type=Artifact.Type.S3,
+            path=f"{TEMP_DIR}/build/programs/stripped/bin/clickhouse",
+            compress_zst=True,
+        )
+    )
+    # Built by MasterCI only, hence not part of the shared `clickhouse_binaries`.
+    clickhouse_performance_reference_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/self-extracting/clickhouse",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE,
+            ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE,
+        ]
+    )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
+        ]
+    )
+    clickhouse_darwin_signed_zips = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-macos.zip",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_SIGNED,
+            ArtifactNames.CH_ARM_DARWIN_SIGNED,
         ]
     )
     llvm_profdata_file = Artifact.Config(
@@ -569,12 +795,27 @@ class ArtifactConfigs:
         path=[
             "./*.profdata",
         ],
+        # The coverage merge (llvm-profdata) runs non-blocking and can produce no
+        # .profdata (e.g. it crashes on a corrupt .profraw). A missing batch is
+        # tolerated by the downstream LLVM Coverage aggregation, which globs
+        # whatever .profdata files exist, so a missing file must not redden a
+        # coverage job whose tests all passed. Marking the artifact optional lets
+        # the runner skip a missing file with a warning instead of erroring.
+        optional=True,
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
     llvm_coverage_info_file = Artifact.Config(
         name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/llvm_coverage.info",
+        # The LLVM Coverage job deliberately publishes no .info when its
+        # measurement is incomplete (a shard profile is missing or corrupt), so
+        # that "an .info exists for a commit" means "that commit's measurement
+        # merged every shard". The diff gate walks master ancestors and uses the
+        # first commit with an .info as its baseline, so withholding the file is
+        # what keeps incomplete master runs out of the baseline series. A missing
+        # file must therefore not redden the job that skipped on purpose.
+        optional=True,
     )
     clickhouse_debians = Artifact.Config(
         name="*",
@@ -583,16 +824,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
-            ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_ASAN_UBSAN,
-            ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_DEBUG,
-            ArtifactNames.DEB_ARM_ASAN_UBSAN,
-            ArtifactNames.DEB_ARM_TSAN,
-            ArtifactNames.DEB_ARM_MSAN,
-            ArtifactNames.DEB_ARM_UBSAN,
         ]
     )
     clickhouse_rpms = Artifact.Config(
@@ -628,6 +860,28 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )
+    # `emcc` emits a pair: the WebAssembly module and the JavaScript that instantiates it
+    # (memory setup, syscalls, the Web Workers backing pthreads).
+    clickhouse_wasm = Artifact.Config(
+        name=ArtifactNames.CH_WASM64,
+        type=Artifact.Type.S3,
+        path=[
+            f"{TEMP_DIR}/build/programs/clickhouse.js",
+            f"{TEMP_DIR}/build/programs/clickhouse.wasm",
+        ],
+    )
+    # The two configurations of the standalone SQL parser that `Build (wasm_parser)` publishes:
+    # everything, and the smallest build the project offers (no formatting, no access management).
+    # No JavaScript sidecar, unlike the Emscripten build above - the module is a WASI reactor, and
+    # the consumer supplies the preview1 imports. See utils/wasm-parser/README.md.
+    wasm_parser = Artifact.Config(
+        name=ArtifactNames.CH_WASM_PARSER,
+        type=Artifact.Type.S3,
+        path=[
+            f"{TEMP_DIR}/build/parser.wasm",
+            f"{TEMP_DIR}/build/parser-no-formatting-no-dcl.wasm",
+        ],
+    )
     fuzzers = Artifact.Config(
         name=ArtifactNames.ARM_FUZZERS,
         type=Artifact.Type.S3,
@@ -641,6 +895,11 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    clickhouse_examples = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,

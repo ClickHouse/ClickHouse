@@ -1,0 +1,433 @@
+---
+title: 'DataStoreのプロファイリング'
+sidebarTitle: 'プロファイリング'
+slug: /chdb/debugging/profiling
+description: '組み込みプロファイラでDataStoreのパフォーマンスを測定'
+keywords: ['chdb', 'DataStore', 'プロファイリング', 'パフォーマンス', 'タイミング', 'ベンチマーク']
+doc_type: 'guide'
+---
+
+DataStoreプロファイラを使うと、実行時間を測定し、パフォーマンスのボトルネックを特定できます。
+
+<div id="quick-start">
+  ## クイックスタート
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# プロファイリングを有効化
+config.enable_profiling()
+
+# 操作を実行
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# レポートを表示
+profiler = get_profiler()
+print(profiler.report())
+```
+
+<div id="enabling">
+  ## プロファイリングの有効化
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# プロファイリングを有効化する
+config.enable_profiling()
+
+# プロファイリングを無効化する
+config.disable_profiling()
+
+# プロファイリングが有効かどうかを確認する
+print(config.profiling_enabled)  # True または False
+```
+
+***
+
+<div id="api">
+  ## Profiler API
+</div>
+
+<div id="get-profiler">
+  ### Profilerの取得
+</div>
+
+```python
+from chdb.datastore.config import get_profiler
+
+profiler = get_profiler()
+```
+
+<div id="report">
+  ### report()
+</div>
+
+パフォーマンスレポートを表示します。
+
+```python
+profiler.report(min_duration_ms=0.1)
+```
+
+**パラメータ:**
+
+| パラメータ             | 型     | デフォルト | 説明               |
+| ----------------- | ----- | ----- | ---------------- |
+| `min_duration_ms` | float | `0.1` | この時間以上のステップのみを表示 |
+
+**出力例:**
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+   45.79ms (100.0%) Total Execution
+     23.25ms ( 50.8%) Query Planning [ops_count=2]
+     22.29ms ( 48.7%) SQL Segment 1 [ops=2]
+       20.48ms ( 91.9%) SQL Execution
+        1.74ms (  7.8%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:    45.79ms
+======================================================================
+```
+
+レポートには次が表示されます。
+
+* 各ステップの所要時間 (ミリ秒) 
+* 親/合計時間に占める割合
+* 操作の階層構造
+* 各ステップのメタデータ (例: `ops_count`、`ops`)
+
+<div id="step">
+  ### step()
+</div>
+
+コードブロックの実行時間を手動で計測します。
+
+```python
+with profiler.step("custom_operation"):
+    # ここにコードを記述
+    expensive_operation()
+```
+
+<div id="clear">
+  ### clear()
+</div>
+
+すべてのプロファイリングデータをクリアします。
+
+```python
+profiler.clear()
+```
+
+<div id="summary">
+  ### summary()
+</div>
+
+ステップ名と所要時間 (ms) の対応を表す辞書を取得します。
+
+```python
+summary = profiler.summary()
+for name, duration in summary.items():
+    print(f"{name}: {duration:.2f}ms")
+```
+
+出力例:
+
+```text
+Total Execution: 45.79ms
+Total Execution.Cache Check: 0.00ms
+Total Execution.Query Planning: 23.25ms
+Total Execution.SQL Segment 1: 22.29ms
+Total Execution.SQL Segment 1.SQL Execution: 20.48ms
+Total Execution.SQL Segment 1.Result to DataFrame: 1.74ms
+```
+
+***
+
+<div id="understanding">
+  ## レポートを理解する
+</div>
+
+<div id="step-names">
+  ### ステップ名
+</div>
+
+| ステップ名                 | 説明                         |
+| --------------------- | -------------------------- |
+| `Total Execution`     | 全体の実行時間                    |
+| `Query Planning`      | クエリのプランニングにかかった時間          |
+| `SQL Segment N`       | SQL セグメント N の実行            |
+| `SQL Execution`       | 実際の SQL クエリの実行             |
+| `Result to DataFrame` | 結果を pandas の DataFrame に変換 |
+| `Cache Check`         | クエリキャッシュの確認                |
+| `Cache Write`         | 結果を cache に書き込み            |
+
+<div id="duration">
+  ### 実行時間
+</div>
+
+* **計画ステップ** (Query Planning): 通常は高速
+* **実行ステップ** (SQL Execution): 実際の処理が行われる部分
+* **転送ステップ** (Result to DataFrame): データを pandas に変換する部分
+
+<div id="bottlenecks">
+  ### ボトルネックの特定
+</div>
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+  200.50ms (100.0%) Total Execution
+    10.25ms (  5.1%) Query Planning [ops_count=4]
+   190.00ms ( 94.8%) SQL Segment 1 [ops=4]
+     185.00ms ( 97.4%) SQL Execution    <- Main bottleneck
+       5.00ms (  2.6%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:   200.50ms
+======================================================================
+```
+
+***
+
+<div id="patterns">
+  ## プロファイリングパターン
+</div>
+
+<div id="single-query">
+  ### 単一のクエリをプロファイリングする
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()  # 以前のデータをクリア
+
+# クエリを実行
+result = ds.filter(...).groupby(...).agg(...).to_df()
+
+# このクエリのプロファイルを表示
+print(profiler.report())
+```
+
+<div id="multiple-queries">
+  ### 複数クエリのプロファイリング
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()
+
+# クエリ 1
+with profiler.step("Query 1"):
+    result1 = query1.to_df()
+
+# クエリ 2
+with profiler.step("Query 2"):
+    result2 = query2.to_df()
+
+print(profiler.report())
+```
+
+<div id="compare">
+  ### アプローチの比較
+</div>
+
+```python
+profiler = get_profiler()
+
+# アプローチ1: フィルタリング後にグループ化
+profiler.clear()
+with profiler.step("filter_then_groupby"):
+    result1 = ds.filter(ds['x'] > 10).groupby('y').sum().to_df()
+summary1 = profiler.summary()
+time1 = summary1.get('filter_then_groupby', 0)
+
+# アプローチ2: グループ化後にフィルタリング
+profiler.clear()
+with profiler.step("groupby_then_filter"):
+    result2 = ds.groupby('y').sum().filter(ds['x'] > 10).to_df()
+summary2 = profiler.summary()
+time2 = summary2.get('groupby_then_filter', 0)
+
+print(f"Approach 1: {time1:.2f}ms")
+print(f"Approach 2: {time2:.2f}ms")
+print(f"Winner: {'Approach 1' if time1 < time2 else 'Approach 2'}")
+```
+
+***
+
+<div id="optimization">
+  ## 最適化のヒント
+</div>
+
+<div id="check-sql">
+  ### 1. SQL実行時間を確認する
+</div>
+
+`SQL execution` がボトルネックになっている場合:
+
+* フィルターを追加してデータ量を減らす
+* CSV ではなく Parquet を使用する
+* 適切な索引が設定されているか確認する (データベースソースの場合)
+
+<div id="check-io">
+  ### 2. I/O時間を確認する
+</div>
+
+`read_csv` または `read_parquet` がボトルネックになっている場合:
+
+* Parquet を使用する (列指向かつ圧縮可能) 
+* 必要なカラムだけを読み取る
+* 可能であればソース側でフィルタする
+
+<div id="check-transfer">
+  ### 3. データ転送を確認する
+</div>
+
+`to_df` が遅い場合:
+
+* 結果セットが大きすぎる可能性があります
+* フィルターを追加するか、件数を制限します
+* プレビューには `head()` を使用します
+
+<div id="compare-engines">
+  ### 4. エンジンを比較する
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# chdb を使ってプロファイリング
+config.use_chdb()
+profiler.clear()
+result_chdb = query.to_df()
+time_chdb = profiler.total_duration_ms
+
+# pandas を使ってプロファイリング
+config.use_pandas()
+profiler.clear()
+result_pandas = query.to_df()
+time_pandas = profiler.total_duration_ms
+
+print(f"chdb: {time_chdb:.2f}ms")
+print(f"pandas: {time_pandas:.2f}ms")
+```
+
+***
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="best-practice-1">
+  ### 1. 最適化する前にプロファイリングを行う
+</div>
+
+```python
+# 勘に頼らず、まずは測定！
+config.enable_profiling()
+result = your_query.to_df()
+print(get_profiler().report())
+```
+
+<div id="best-practice-2">
+  ### 2. テストごとにクリアする
+</div>
+
+```python
+profiler.clear()  # 以前のデータをクリア
+# テストを実行
+print(profiler.report())
+```
+
+<div id="best-practice-3">
+  ### 3. Focus には min_duration_ms を使用する
+</div>
+
+```python
+# 100ms以上の操作のみ表示
+profiler.report(min_duration_ms=100)
+```
+
+<div id="best-practice-4">
+  ### 4. 代表的なデータをプロファイリングする
+</div>
+
+```python
+# 実際のデータサイズでプロファイリングする
+# 小規模なテストデータでは実際のボトルネックが見えないことがある
+```
+
+<div id="best-practice-5">
+  ### 5. 本番環境では無効化する
+</div>
+
+```python
+# 開発環境
+config.enable_profiling()
+
+# 本番環境
+config.set_profiling_enabled(False)  # オーバーヘッドを避ける
+```
+
+***
+
+<div id="example">
+  ## 例: 完全なプロファイリングセッション
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# Setup
+config.enable_profiling()
+config.enable_debug()  # 何が起きているかも確認する
+profiler = get_profiler()
+
+# データの読み込み
+profiler.clear()
+print("=== Loading Data ===")
+ds = pd.read_csv("sales_2024.csv")  # 1000万行
+print(profiler.report())
+
+# クエリ1: 単純なフィルター
+profiler.clear()
+print("\n=== Query 1: Simple Filter ===")
+result1 = ds.filter(ds['amount'] > 1000).to_df()
+print(profiler.report())
+
+# クエリ2: 複雑な集計
+profiler.clear()
+print("\n=== Query 2: Complex Aggregation ===")
+result2 = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'category')
+    .agg({
+        'amount': ['sum', 'mean', 'count'],
+        'quantity': 'sum'
+    })
+    .sort('sum', ascending=False)
+    .head(20)
+    .to_df()
+)
+print(profiler.report())
+
+# サマリー
+print("\n=== Summary ===")
+print(f"Query 1: {len(result1)} rows")
+print(f"Query 2: {len(result2)} rows")
+```

@@ -18,24 +18,29 @@
 ```
 curl https://clickhouse.com/ | sh
 ```
+Or skip the install: try [ClickHouse Cloud](https://console.clickhouse.cloud/signUp?utm_medium=referral&utm_source=github) for free and start querying in minutes.
 
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
-* [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
+* [ClickHouse Cloud](https://clickhouse.com/cloud) ClickHouse as a service, built by the creators and maintainers.
 * [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
-* [ClickHouse Theater](https://presentations.clickhouse.com/) contains presentations and videos about ClickHouse.
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
-* [Bluesky](https://bsky.app/profile/clickhouse.com) and [X](https://x.com/ClickHouseDB) for short news.
+* [X](https://x.com/ClickHouseDB) and [LinkedIn](https://www.linkedin.com/company/clickhouseinc/) for short news.
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlighting, powered by github.dev.
-* [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
+* [Contact us](https://clickhouse.com/company/contact) to discuss your use case with a ClickHouse expert.
 
 ## Monthly Release & Community Call
+The [ClickHouse **26.9** Release Call](https://www.youtube.com/watch?v=wLrTlU5LLWI) took place on September 17, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.9/).
 
-Join us for the [ClickHouse **26.5** Release Call](https://clickhouse.com/company/events/v26-5-community-release-call) on May 21, 2026.
+The [ClickHouse **26.8** Release Call](https://www.youtube.com/watch?v=5A9gRYE0v2M) took place on August 27, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.8/).
+
+The [ClickHouse **26.7** Release Call](https://www.youtube.com/watch?v=mKBNLaFOVDA) took place on July 23, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.7/).
+
+The [ClickHouse **26.6** special "10 Year Anniversary" Release Call](https://www.youtube.com/watch?v=-NmqMH9y4EY) — recording and [slides](https://presentations.clickhouse.com/2026-release-26.6/).
 
 Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
@@ -46,31 +51,27 @@ Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/314862596/) - June 9th, 2026
-* [LA Happy Hour](https://luma.com/clickh-tshu) - June 10th, 2026
-* [ClickHouse + Hex AI hackathon](https://luma.com/clickh-2ujv)- June 11th, 2026
-* [Meetup São Paulo](https://luma.com/clickh-87tk) - June 11th, 2026
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/314863232/) - June 11, 2026
-* [ClickHouse Cafe @ Data & AI Summit](https://luma.com/clickh-vrjd) - June 16th, 2026
-* [NY Happy Hour](https://luma.com/odgqf98e) - June 17th, 2026
-* [Seattle Iceberg Meetup](https://luma.com/vwt2i2rs) - June 25th, 2026
-* [KL Meetup](https://luma.com/clickh-8cfv) - June 26th, 2026 
-* [AI Demo Night SF](https://luma.com/clickh-2crf) - July 1st, 2026
-* [Data at scale Amsterdam](https://luma.com/clickh-ha56) - July 7th, 2026
-* [AI Builders Night NY](https://luma.com/clickh-lz8k) - July 8th, 2026
-* [Happy Hour Open Source de Montréal](https://luma.com/clickh-o8up) - July 9th, 2026
-* [AI Builders Night SF](https://luma.com/clickh-gz0r)- July 14th, 2026
-* [Bangkok OSS & Data Evening: Queries, Code & Community](https://luma.com/gpzn0n8v) - July 23, 2026 
+* [AI Builders and Databases Tel Aviv](https://luma.com/clickh-satv) - October 12th, 2026
+* [Hands-on training: Agent Observability with Langfuse in New York](https://luma.com/piww2zyw) - October 15th, 2026
+* [Hands-on training: Agent Observability with Langfuse in Menlo Park](https://luma.com/clickh-3qe8) - October 19th, 2026
+* [AI Builders and Databases London](https://luma.com/clickh-ykgp) - October 21st, 2026
+* [AI Builders and Databases Dubai](https://luma.com/clickh-vtzf) - October 22nd, 2026
+* [AI Builders Night New York @ Modal](https://luma.com/clickh-qu9s) - November 3rd, 2026
+* [LibreChat Meetup New York](https://luma.com/clickh-3qx0) - November 5th, 2026
+* [Observability with ClickStack Fundamentals Kubecon Training](https://luma.com/clickh-migc) - November 9th, 2026
+* [San Francisco Data Engineering Meetup with ClickHouse](https://luma.com/clickh-z0ty) - November 17th, 2026
+* [Toronto Data Engineering Meetup with ClickHouse](https://luma.com/clickh-4120) - November 18th, 2026
+
 
 
 Recent meetups
-* [Toronto Meetup](https://luma.com/d5sytpvo) - June 2nd, 2026
-* [AI Demo Night NY](https://luma.com/zi2360cm) - May 21st, 2026
-* [Chicago Meetup](https://luma.com/c5evgnbc) - May 19th, 2026
-* [Agentic AI Unplugged: Bengaluru Edition](https://luma.com/AgenticAI-BLR2026) - May 15th, 2026
-* [Long Beach Pycon Party](https://luma.com/hs289p7w) - May 15th, 2026
-* [ClickHouse + Cast AI Meetup (Singapore)](https://luma.com/awssummitsg26party) - May 6th, 2026
-* [Boston Meetup](https://luma.com/0f3asaol) - May 6th, 2026
+* [Open House London](https://luma.com/ggnwajnd) - September 30th, 2026
+* [Grok Bot Montreal Build Day](https://luma.com/ggnwajnd) - October 3rd, 2026
+* [Open House Munich](https://luma.com/6xorx3qw) - October 6th, 2026
+* [SF Tech Week AI Night](https://luma.com/clickh-zngw) - October 6th, 2026
+* [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
+* [Mountain View Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
+
 
 ## Recent Recordings
 

@@ -1,0 +1,173 @@
+---
+title: 'query_cache_* セッション設定'
+sidebarTitle: 'query_cache_*'
+toc_max_heading_level: 2
+description: 'query_cache_* の自動生成グループに含まれる ClickHouse のセッション設定。'
+doc_type: 'reference'
+---
+
+{/*自動生成開始*/}
+
+import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+
+これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
+
+## query_cache_compress_entries {#query_cache_compress_entries}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)内のエントリを圧縮します。これにより、クエリキャッシュのメモリ使用量は削減されますが、クエリキャッシュへの挿入やクエリキャッシュからの読み取りは遅くなります。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## query_cache_for_subqueries {#query_cache_for_subqueries}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "`use_query_cache` をすべてのサブクエリに伝播させるための新しい設定です。これがない場合、サブクエリが cache されるのは、サブクエリごとに明示的に `SETTINGS use_query_cache = true` を指定した場合のみです。"}]}]} />
+
+有効にすると、サブクエリの結果が [query cache](/ja/concepts/features/performance/caches/query-cache) に書き込まれたり、そこから読み込まれたりするようになります。これにより、`use_query_cache` がすべてのサブクエリに伝播されます。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## query_cache_max_entries {#query_cache_max_entries}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+現在のユーザーがインメモリの [query cache](/ja/concepts/features/performance/caches/query-cache) に保存できるクエリ結果の最大件数です。0 は無制限を意味します。
+
+この制限は、ディスク上のquery cache (設定 `query_cache_on_disk_cache_name`) には適用されません。ディスク上のquery cacheのエントリは、この設定ではなく、基盤となるファイルシステムキャッシュのサイズによって制限されます。
+
+設定可能な値:
+
+* 0 以上の整数。
+
+## query_cache_max_size_in_bytes {#query_cache_max_size_in_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+現在のユーザーがインメモリの [query cache](/ja/concepts/features/performance/caches/query-cache) に割り当てられるメモリの最大量 (バイト単位) 。0 は無制限を意味します。
+
+この制限は、ディスク上のquery cache (設定 `query_cache_on_disk_cache_name`) には適用されません。ディスク上のquery cacheのエントリは、基盤となるファイルシステムキャッシュのサイズによって上限が決まります。
+
+設定可能な値:
+
+* 0 以上の整数。
+
+## query_cache_min_query_duration {#query_cache_min_query_duration}
+
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
+
+クエリの結果を[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)に保存するために、そのクエリが実行されている必要がある最小時間 (ミリ秒単位) 。
+
+設定可能な値:
+
+* 0 以上の整数。
+
+## query_cache_min_query_runs {#query_cache_min_query_runs}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+[query cache](/ja/concepts/features/performance/caches/query-cache) に結果が保存されるまでに、`SELECT` クエリが実行される必要がある最小回数。
+
+設定可能な値:
+
+* 0 以上の整数。
+
+## query_cache_nondeterministic_function_handling {#query_cache_nondeterministic_function_handling}
+
+<SettingsInfoBlock type="QueryResultCacheNondeterministicFunctionHandling" default_value="throw" />
+
+`rand()` や `now()` などの非決定論的関数を含む `SELECT` クエリを、[query cache](/ja/concepts/features/performance/caches/query-cache) がどのように扱うかを制御します。
+
+設定可能な値:
+
+* `'throw'` - 例外をスローし、クエリ結果を cache しません。
+* `'save'` - クエリ結果を cache します。
+* `'ignore'` - クエリ結果を cache せず、例外もスローしません。
+
+## query_cache_on_disk_cache_name {#query_cache_on_disk_cache_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "query cacheのエントリを、指定した名前のファイルシステムキャッシュを使ってディスク上に保存するための新しい設定。"}]}]} />
+
+[query cache](/ja/concepts/features/performance/caches/query-cache)のエントリをディスク上に保存するファイルシステムキャッシュ (サーバー設定の `filesystem_caches` セクション内のエントリ) の名前です。名前が指定されている場合 (かつ [use&#95;query&#95;cache](/ja/reference/settings/session-settings/use-query#use_query_cache) が有効な場合) 、クエリ結果は指定されたファイルシステムキャッシュにも追加でキャッシュされ、そこからも結果が返されます。ディスク上のquery cacheは、インメモリのquery cacheより大きな容量を確保でき、サーバーを再起動しても失われず、インメモリのquery cacheとは独立して動作します。具体的には、設定 [enable&#95;reads&#95;from&#95;query&#95;cache&#95;on&#95;disk](/ja/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) および [enable&#95;writes&#95;to&#95;query&#95;cache&#95;on&#95;disk](/ja/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) によって、インメモリのquery cacheとは別に制御されます。ファイルシステムキャッシュ内のこれらのエントリは、ファイルシステムキャッシュの通常のエントリとして扱われます。つまり、削除から保護されることはなく、キャッシュ内の他のデータと同じルールで追い出されます。`SYSTEM CLEAR FILESYSTEM CACHE '<name>'` を実行すると、これらのエントリはファイルシステムキャッシュ内の他のすべてのデータとともに削除されます。一方、`SYSTEM CLEAR QUERY CACHE` は、この設定で指定されたファイルシステムキャッシュからディスク上のquery cacheのエントリのみを削除し、その他のデータはそのまま残します。クエリ結果専用のファイルシステムキャッシュを用意することを推奨します。
+
+設定可能な値:
+
+* 空文字列 - ディスク上のquery cacheは無効になります
+* 事前に設定済みのファイルシステムキャッシュの名前
+
+## query_cache_on_disk_codec {#query_cache_on_disk_codec}
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "ZSTD(3)"},{"label": "ディスク上の query cacheエントリの圧縮コーデックを制御する新しい設定です。"}]}]} />
+
+ディスク上の[query cache](/ja/concepts/features/performance/caches/query-cache)のエントリに使用する圧縮コーデックです ([query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ja/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) を参照) 。この設定が影響するのは書き込みのみです。圧縮データは自己記述的であるため、読み取りはこの設定とは無関係に行われます。
+
+## query_cache_share_between_users {#query_cache_share_between_users}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+有効にすると、[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)にキャッシュされた`SELECT`クエリの結果を、他のユーザーも参照できるようになります。
+セキュリティ上の理由から、この設定を有効にすることは推奨されません。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## query_cache_squash_partial_results {#query_cache_squash_partial_results}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+部分的な結果ブロックを、サイズが [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) のブロックにまとめます。[query cache](/ja/concepts/features/performance/caches/query-cache) への挿入のパフォーマンスは低下しますが、cache エントリの圧縮効率は向上します ([query&#95;cache&#95;compress-entries](/ja/reference/settings/session-settings/query-cache#query_cache_compress_entries) を参照) 。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## query_cache_system_table_handling {#query_cache_system_table_handling}
+
+<SettingsInfoBlock type="QueryResultCacheSystemTableHandling" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "throw"},{"label": "query cache はシステムテーブルに対するクエリ結果をキャッシュしなくなりました"}]}]} />
+
+[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache) がシステムテーブル、つまり `system.*` および `information_schema.*` データベース内のテーブルに対する `SELECT` クエリをどのように扱うかを制御します。
+
+設定可能な値:
+
+* `'throw'` - 例外をスローし、クエリ結果をキャッシュしません。
+* `'save'` - クエリ結果をキャッシュします。
+* `'ignore'` - クエリ結果をキャッシュせず、例外もスローしません。
+
+## query_cache_tag {#query_cache_tag}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": ""},{"label": "query cache にラベルを付けるための新しい設定。"}]}]} />
+
+[query cache](/ja/concepts/features/performance/caches/query-cache) のエントリに付けるラベルとして機能する文字列です。
+タグが異なる同じクエリは、query cache では別のものとして扱われます。
+
+設定可能な値:
+
+* 任意の文字列
+
+## query_cache_ttl {#query_cache_ttl}
+
+<SettingsInfoBlock type="Seconds" default_value="60" />
+
+指定した秒数を過ぎると、[query cache](/ja/concepts/features/performance/caches/query-cache) 内のエントリは古いものと見なされます。
+
+設定可能な値:
+
+* 0 以上の整数。
+
+{/*AUTOGENERATED_END*/}

@@ -1,0 +1,76 @@
+---
+title: "DB::Exception: La parte XXXXX se solapa con la parte anterior YYYYY. Es un error o el resultado de una intervención manual en los datos de ZooKeeper."
+date: 2023-05-02
+description: "Este artículo explica cómo resolver el error DB::Exception relacionado con partes solapadas en ClickHouse, a menudo causado por una condición de carrera o por una intervención manual en los datos de ZooKeeper."
+tags: ['Errores y excepciones', 'Tablas del sistema']
+keywords: ['Partes solapadas', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## Por qué ocurre
+</div>
+
+Cuando se produce este error, una tabla aparece como de solo lectura y el mensaje de error indica partes superpuestas.
+
+Puedes ver el error en los registros o mediante
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+El mensaje de error es similar a este:
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## Causa del error
+</div>
+
+Este error puede deberse a una condición de carrera entre `mergeSelectingTask` y la reinicialización de la cola.
+
+<div id="solution">
+  ## Solución
+</div>
+
+Ejecute las siguientes consultas en todas las réplicas:
+
+```sql
+DETACH TABLE table_name;  -- Necesario para DROP REPLICA
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- Eliminará todo lo que haya en /table_path_in_zk
+
+ATTACH TABLE table_name;  -- La tabla estará en modo de solo lectura, ya que no hay metadatos en ZK
+```
+
+Luego, ejecute lo siguiente en todas las réplicas:
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- Desconectará todas las particiones, recreará los metadatos en ZK (como si fuera una tabla nueva vacía) y luego volverá a adjuntar todas las particiones
+
+SYSTEM SYNC REPLICA table_name; -- Espera a que las réplicas sincronicen las partes. También se recomienda verificar `system.detached_parts` en todas las réplicas una vez finalizada la recuperación.
+```
+
+<Tip>
+  Debes actualizar ClickHouse a la versión más reciente.
+</Tip>
+
+<div id="additional-resources">
+  ## Recursos adicionales
+</div>
+
+PR e incidencias relacionadas en GitHub:
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## Versiones afectadas:
+</div>
+
+ClickHouse v 22.12 y versiones anteriores

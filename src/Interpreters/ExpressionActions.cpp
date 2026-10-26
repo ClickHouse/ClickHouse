@@ -49,7 +49,14 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
+    const ActionsDAG & actions_dag,
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
+    bool reorder_arguments,
+    std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments);
+
+static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
     : actions_dag(std::move(actions_dag_))
@@ -57,14 +64,23 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_map<const ActionsDAG::Node *, size_t> short_circuit_eager_arguments;
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(
+        actions_dag,
+        settings.short_circuit_function_evaluation,
+        settings.short_circuit_function_evaluation_reorder_arguments,
+        short_circuit_eager_arguments);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
         actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
-    linearizeActions(lazy_executed_nodes);
+    std::unordered_set<const ActionsDAG::Node *> reorderable_short_circuit_arguments;
+    if (settings.short_circuit_function_evaluation_reorder_arguments && !lazy_executed_nodes.empty())
+        reorderable_short_circuit_arguments = findReorderableShortCircuitArguments(actions_dag, lazy_executed_nodes);
+
+    linearizeActions(lazy_executed_nodes, reorderable_short_circuit_arguments, short_circuit_eager_arguments);
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
@@ -304,7 +320,61 @@ static bool findLazyExecutedNodes(
     return has_lazy_node;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
+/// Will the node be executed on all rows (not lazily) in the `enable` mode of short-circuit function evaluation?
+/// This is the case if it doesn't contain functions that are suitable for short-circuit arguments execution.
+static bool isCheapForShortCircuitEvaluation(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, bool> & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    bool res = false;
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::COLUMN:
+            res = true;
+            break;
+        case ActionsDAG::ActionType::ALIAS:
+            res = isCheapForShortCircuitEvaluation(node->children.front(), cache);
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            res = !node->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(node->children))
+                && std::ranges::all_of(node->children, [&](const auto * child) { return isCheapForShortCircuitEvaluation(child, cache); });
+            break;
+        default:
+            break;
+    }
+
+    cache[node] = res;
+    return res;
+}
+
+/// Does the node contain functions that are stateful, have observable side effects (like `sleep`),
+/// or are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
+/// Such a node must not be executed on fewer rows than in the original order.
+static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, bool> & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    bool res = false;
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && (node->function_base->isStateful()
+            || node->function_base->hasObservableSideEffects()
+            || !node->function_base->isDeterministicInScopeOfQuery()))
+        res = true;
+    else
+        res = std::ranges::any_of(node->children, [&](const auto * child) { return hasOrderSensitiveFunctions(child, cache); });
+
+    cache[node] = res;
+    return res;
+}
+
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(
+    const ActionsDAG & actions_dag,
+    ShortCircuitFunctionEvaluation short_circuit_function_evaluation,
+    bool reorder_arguments,
+    std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments)
 {
     if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
         return {};
@@ -313,11 +383,50 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 
     /// Firstly, find all short-circuit functions and get their settings.
     std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
+    std::unordered_map<const ActionsDAG::Node *, bool> is_cheap_cache;
+    std::unordered_map<const ActionsDAG::Node *, bool> has_order_sensitive_functions_cache;
     for (const auto & node : nodes)
     {
         IFunctionBase::ShortCircuitSettings short_circuit_settings;
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
+        {
+            /// The argument with disabled lazy execution is executed on all rows. If it is heavy, while another argument
+            /// is cheap, and the function allows it, execute the cheap argument on all rows instead, so that the heavy one
+            /// is executed lazily, only on the rows that passed the cheap one. Example: `heavy(x) AND y > 0`.
+            /// It is safe: the cheap argument is executed on all rows anyway (it is not lazy), and the heavy one is
+            /// executed on a subset of the rows it was executed on before.
+            /// In the `force_enable` mode all arguments are lazy, so there is no cheap argument that is executed anyway.
+            /// The heavy argument must not contain stateful functions, functions with observable side effects (like `sleep`)
+            /// or functions that are not deterministic in the scope of the query (like `rand`),
+            /// because executing them on fewer rows changes what an observer sees.
+            /// For the same reason, the cheap argument is not moved in front of the arguments between the first one
+            /// and itself that contain such functions: they would be executed on fewer rows as well.
+            /// The arguments after the cheap one are executed on the same rows as before.
+            if (reorder_arguments
+                && short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::ENABLE
+                && short_circuit_settings.arguments_are_commutative
+                && short_circuit_settings.arguments_with_disabled_lazy_execution.size() == 1
+                && short_circuit_settings.arguments_with_disabled_lazy_execution.contains(0)
+                && !isCheapForShortCircuitEvaluation(node.children[0], is_cheap_cache)
+                && !hasOrderSensitiveFunctions(node.children[0], has_order_sensitive_functions_cache))
+            {
+                for (size_t i = 1; i < node.children.size(); ++i)
+                {
+                    if (isCheapForShortCircuitEvaluation(node.children[i], is_cheap_cache))
+                    {
+                        short_circuit_settings.arguments_with_disabled_lazy_execution = {i};
+                        /// If the function itself is executed lazily, it executes this argument first as well.
+                        short_circuit_eager_arguments[&node] = i;
+                        break;
+                    }
+
+                    if (hasOrderSensitiveFunctions(node.children[i], has_order_sensitive_functions_cache))
+                        break;
+                }
+            }
+
             short_circuit_nodes[&node] = short_circuit_settings;
+        }
     }
 
     /// If there are no short-circuit functions, no need to do anything.
@@ -344,7 +453,86 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
-void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+/// Can the node be executed on more rows than it is executed on now, with no difference but the time?
+/// The nodes that are not executed lazily are executed on all rows already. For a lazily executed node,
+/// all functions that are executed lazily must be unable to throw, be stateless, have no observable side effects
+/// and be deterministic in the scope of the query.
+static bool canBeExecutedOnMoreRows(
+    const ActionsDAG::Node * node,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    std::unordered_map<const ActionsDAG::Node *, bool> & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    bool res = false;
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::COLUMN:
+            res = true;
+            break;
+        case ActionsDAG::ActionType::ALIAS:
+            res = canBeExecutedOnMoreRows(node->children.front(), lazy_executed_nodes, cache);
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            if (!lazy_executed_nodes.contains(node))
+                res = true;
+            else
+                res = !node->function_base->isStateful()
+                    && !node->function_base->hasObservableSideEffects()
+                    && node->function_base->isDeterministicInScopeOfQuery()
+                    && !node->function_base->canThrow(getDataTypesWithConstInfoFromNodes(node->children))
+                    && std::ranges::all_of(node->children, [&](const auto * child) { return canBeExecutedOnMoreRows(child, lazy_executed_nodes, cache); });
+            break;
+        default:
+            break;
+    }
+
+    cache[node] = res;
+    return res;
+}
+
+/** Find the lazily executed arguments of short-circuit functions with commutative arguments (`and`, `or`) that can be
+  * executed before the arguments that precede them. Such an argument is executed on more rows than in the original
+  * order, so it is allowed only if this changes nothing but the time, see `canBeExecutedOnMoreRows`.
+  * The other lazy arguments, for example `intDiv(1, x)` in `x != 0 AND intDiv(1, x) > 0`, keep all the arguments that
+  * precede them in front of them.
+  * The function chooses the order of these arguments by the statistics collected during the execution,
+  * see `ShortCircuitArgumentStatistics`.
+  */
+static std::unordered_set<const ActionsDAG::Node *> findReorderableShortCircuitArguments(
+    const ActionsDAG & actions_dag, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+{
+    std::unordered_set<const ActionsDAG::Node *> res;
+    std::unordered_map<const ActionsDAG::Node *, bool> cache;
+
+    for (const auto & node : actions_dag.getNodes())
+    {
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        if (node.type != ActionsDAG::ActionType::FUNCTION
+            || !node.function_base->isShortCircuit(short_circuit_settings, node.children.size())
+            || !short_circuit_settings.arguments_are_commutative)
+            continue;
+
+        for (const auto * child : node.children)
+        {
+            /// The column of a lazily executed function is passed through aliases as is.
+            while (child->type == ActionsDAG::ActionType::ALIAS)
+                child = child->children.front();
+
+            if (lazy_executed_nodes.contains(child) && canBeExecutedOnMoreRows(child, lazy_executed_nodes, cache))
+                res.insert(child);
+        }
+    }
+
+    return res;
+}
+
+void ExpressionActions::linearizeActions(
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    const std::unordered_set<const ActionsDAG::Node *> & reorderable_short_circuit_arguments,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & short_circuit_eager_arguments)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
@@ -436,7 +624,11 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        if (reorderable_short_circuit_arguments.contains(node))
+            action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
+        if (auto it = short_circuit_eager_arguments.find(node); it != short_circuit_eager_arguments.end())
+            action.short_circuit_eager_argument = it->second;
 
         for (const auto & parent : cur_info.parents)
         {
@@ -683,7 +875,16 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             }
 
             if (action.is_lazy_executed)
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+                res_column.column = ColumnFunction::create(
+                    num_rows,
+                    action.node->function_base,
+                    std::move(arguments),
+                    /*is_short_circuit_argument_=*/ true,
+                    action.node->is_function_compiled,
+                    /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                    /*allow_lazy_replicated_captures_=*/ false,
+                    action.short_circuit_argument_statistics,
+                    action.short_circuit_eager_argument);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
@@ -800,7 +1001,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 }
 
 void ExpressionActions::execute(
-    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
+    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, const std::atomic<bool> * is_cancelled) const
 {
     ExecutionContext execution_context
     {
@@ -843,7 +1044,7 @@ void ExpressionActions::execute(
             throw;
         }
 
-        if (check_cancelled && check_cancelled())
+        if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
         {
             /// Return an empty block with the names and types of result columns
             block = sample_block.cloneWithColumns(sample_block.cloneEmptyColumns());
@@ -852,43 +1053,155 @@ void ExpressionActions::execute(
         }
     }
 
-    if (project_inputs)
-    {
-        block.clear();
-    }
-    else if (allow_duplicates_in_input)
-    {
-        /// This case is the same as when the input is projected
-        /// since we do not need any input columns.
-        block.clear();
-    }
-    else
-    {
-        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
-        for (auto input : execution_context.inputs_pos)
-            if (input >= 0)
-                block.erase(input);
-    }
-
     Block res;
+    res.reserve(result_positions.size() + block.columns());
 
+    /// Note: `result_positions` may reference the same column position more than once
+    /// (e.g. when an output node is requested twice), so keep copying here rather than moving.
     for (auto pos : result_positions)
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (auto && item : block)
-        res.insert(std::move(item));
+    /// Carry through the input columns that were not consumed as action inputs.
+    /// `project_inputs`/`allow_duplicates_in_input` drop all inputs; otherwise keep the ones whose
+    /// block position was not bound to a required input (i.e. is not present in `inputs_pos`).
+    ///
+    /// Previously the consumed inputs were removed with `Block::erase` one by one. Each such erase is
+    /// O(columns) (a vector shift plus a full rescan of `index_by_name` to fix up positions), so the
+    /// loop was O(columns^2) overall — pathological for very wide inputs, e.g. the hundreds of QBit
+    /// bit-plane sub-columns fed into a single `*DistanceTransposed` call. Build the surviving columns
+    /// in a single pass instead, without ever mutating `block`'s name index.
+    if (!project_inputs && !allow_duplicates_in_input)
+    {
+        std::vector<bool> consumed(block.columns(), false);
+        for (auto input : execution_context.inputs_pos)
+            if (input >= 0)
+                consumed[input] = true;
+
+        size_t pos = 0;
+        for (auto && item : block)
+        {
+            if (!consumed[pos])
+                res.insert(std::move(item));
+            ++pos;
+        }
+    }
 
     block.swap(res);
 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
+std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
+{
+    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
+
+    for (size_t pos = 0; pos < header.columns(); ++pos)
+    {
+        auto it = input_positions.find(header.getByPosition(pos).name);
+        if (it != input_positions.end())
+        {
+            for (auto input_pos : it->second)
+            {
+                if (inputs_pos[input_pos] < 0)
+                {
+                    inputs_pos[input_pos] = pos;
+                    break;
+                }
+            }
+        }
+    }
+
+    return inputs_pos;
+}
+
+Columns ExpressionActions::executeOnColumns(
+    Columns columns,
+    const Block & header,
+    const std::vector<ssize_t> & input_positions_for_header,
+    size_t & num_rows,
+    bool dry_run,
+    const std::atomic<bool> * is_cancelled) const
+{
+    /// The chunk must match the fixed input header positionally. The block-based path validated this
+    /// implicitly via `Block::cloneWithColumns`; keep the same guard here, because both `header.getByPosition`
+    /// and the cached `input_positions_for_header` index the inputs by position without bounds checks.
+    if (columns.size() != header.columns())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot execute expression on columns positionally: the input header [{}] has {} columns, "
+            "but {} columns were given",
+            header.dumpStructure(), header.columns(), columns.size());
+
+    /// Build the inputs positionally from the fixed header; no `Block` (and hence no name index) is created.
+    ColumnsWithTypeAndName inputs;
+    inputs.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & structure = header.getByPosition(i);
+        inputs.emplace_back(std::move(columns[i]), structure.type, structure.name);
+    }
+
+    ExecutionContext execution_context
+    {
+        .inputs = inputs,
+        .num_rows = num_rows,
+    };
+    /// Fixed header => the input mapping is the same for every chunk and is precomputed by the caller.
+    execution_context.inputs_pos = input_positions_for_header;
+    execution_context.columns.resize(num_columns);
+
+    for (const auto & action : actions)
+    {
+        try
+        {
+            executeAction(action, execution_context, dry_run, /*allow_duplicates_in_input=*/false, settings.enable_lazy_columns_replication);
+            checkLimits(execution_context.columns);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            throw;
+        }
+
+        if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
+        {
+            num_rows = 0;
+            auto empty = sample_block.cloneEmptyColumns();
+            return Columns(std::make_move_iterator(empty.begin()), std::make_move_iterator(empty.end()));
+        }
+    }
+
+    Columns res;
+    res.reserve(result_positions.size() + inputs.size());
+
+    /// Result columns first, in `sample_block`/`result_positions` order (a position may repeat).
+    for (auto pos : result_positions)
+        if (execution_context.columns[pos].column)
+            res.push_back(execution_context.columns[pos].column);
+
+    /// Then the input columns that were not consumed as action inputs (unless the inputs are projected away).
+    if (!project_inputs)
+    {
+        std::vector<bool> consumed(inputs.size(), false);
+        for (auto input : execution_context.inputs_pos)
+            if (input >= 0)
+                consumed[input] = true;
+
+        for (size_t i = 0; i < inputs.size(); ++i)
+            if (!consumed[i])
+                res.push_back(inputs[i].column);
+    }
+
+    num_rows = execution_context.num_rows;
+    return res;
+}
+
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, const std::atomic<bool> * is_cancelled) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run, allow_duplicates_in_input, std::move(check_cancelled));
+    execute(block, num_rows, dry_run, allow_duplicates_in_input, is_cancelled);
 
     if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});

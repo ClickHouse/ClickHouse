@@ -1,0 +1,61 @@
+---
+sidebarTitle: 'Descripción general'
+slug: /migrations/redshift-overview
+description: 'Migrar de Amazon Redshift a ClickHouse'
+keywords: ['Redshift']
+title: 'Comparación entre ClickHouse Cloud y Amazon Redshift'
+doc_type: 'guide'
+---
+
+> Este documento ofrece una introducción a cómo migrar datos de Amazon
+> Redshift a ClickHouse.
+
+<div id="introduction">
+  ## Introducción
+</div>
+
+Amazon Redshift es un almacén de datos en la nube que ofrece capacidades de elaboración de informes y
+analítica para datos estructurados y semiestructurados. Fue
+diseñado para manejar cargas de trabajo analíticas sobre grandes conjuntos de datos siguiendo
+principios de bases de datos orientadas a columnas similares a los de ClickHouse. Como parte de la
+oferta de AWS, a menudo es la solución predeterminada a la que recurren los usuarios de AWS para sus
+necesidades de análisis de datos.
+
+Aunque resulta atractivo para los usuarios actuales de AWS debido a su estrecha integración con el
+ecosistema de Amazon, los usuarios de Redshift que lo adoptan para sustentar aplicaciones de
+analítica en tiempo real acaban necesitando una solución más optimizada para este
+fin. Como resultado, recurren cada vez más a ClickHouse para beneficiarse de un
+mejor rendimiento de las consultas y de una mayor compresión de datos, ya sea como reemplazo o como
+una &quot;capa de aceleración&quot; implementada junto con las cargas de trabajo existentes de Redshift.
+
+<div id="clickhouse-vs-redshift">
+  ## ClickHouse vs Redshift
+</div>
+
+Para los usuarios muy integrados en el ecosistema de AWS, Redshift representa una
+opción natural cuando surgen necesidades de data warehousing. Redshift se diferencia de
+ClickHouse en este aspecto importante: optimiza su motor para cargas de trabajo de data
+warehousing que requieren informes complejos y consultas analíticas.
+En todos los modos de implementación, las dos limitaciones siguientes dificultan
+el uso de Redshift para cargas de trabajo analíticas en tiempo real:
+
+* Redshift [compila código para cada plan de ejecución de consulta](https://docs.aws.amazon.com/redshift/latest/dg/c-query-performance.html),
+  lo que añade una sobrecarga significativa a la primera ejecución de una consulta. Esta sobrecarga puede
+  estar justificada cuando los patrones de consulta son predecibles y los planes de ejecución compilados
+  pueden almacenarse en una caché de consultas. Sin embargo, esto plantea dificultades para aplicaciones
+  interactivas con consultas variables. Incluso cuando Redshift puede aprovechar esta
+  caché de compilación de código, ClickHouse es más rápido en la mayoría de las consultas. Consulte [&quot;ClickBench&quot;](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|Rf\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-).
+* Redshift [limita la concurrencia a 50 en todas las colas](https://docs.aws.amazon.com/redshift/latest/dg/c_workload_mngmt_classification.html),
+  lo que, aunque es adecuado para BI, lo hace inapropiado para aplicaciones
+  analíticas con alta concurrencia.
+
+Por el contrario, aunque ClickHouse también puede utilizarse para consultas analíticas complejas,
+está optimizado para cargas de trabajo analíticas en tiempo real, ya sea para impulsar aplicaciones
+o para actuar posteriormente como acelerador del warehouse. Como resultado, los usuarios de Redshift normalmente
+sustituyen o complementan Redshift con ClickHouse por las siguientes razones:
+
+| Advantage                                       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Menor latencia de consulta**                  | ClickHouse logra menores latencias de consulta, incluso con patrones de consulta variados, bajo alta concurrencia y mientras recibe inserciones en streaming. Incluso cuando su consulta no encuentra resultados en la caché, algo inevitable en la analítica interactiva orientada al usuario, ClickHouse puede seguir procesándola rápidamente.                                                                                                           |
+| **Límites más altos de consultas concurrentes** | ClickHouse establece límites mucho más altos para las consultas concurrentes, lo cual es vital para experiencias de aplicación en tiempo real. En ClickHouse, tanto autogestionado como en Cloud, puede ampliar su asignación de cómputo para alcanzar la concurrencia que su aplicación necesita para cada servicio. El nivel de concurrencia de consultas permitida es configurable en ClickHouse, y en ClickHouse Cloud el valor predeterminado es 1000. |
+| **Compresión de datos superior**                | ClickHouse ofrece una compresión de datos superior, lo que le permite reducir su almacenamiento total (y, por tanto, el costo) o conservar más datos al mismo costo y obtener más información en tiempo real a partir de ellos. Consulte &quot;ClickHouse vs Redshift Storage Efficiency&quot; a continuación.                                                                                                                                              |

@@ -45,7 +45,7 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Function {} is deprecated since its usage is error-prone (see docs). "
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
@@ -74,6 +74,11 @@ public:
     /// We do not use default implementation for LowCardinality because this is not a pure function.
     /// If used, optimization for LC may execute function only for dictionary, which gives wrong result.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    String getSignatureString() const override
+    {
+        return "(T, Integer) -> T OR (T, Integer, D) -> leastSupertype(T, D)";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -238,6 +243,7 @@ The function can be enabled by setting `allow_deprecated_error_prone_window_func
         {
             "Usage example",
             R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
             )",
             R"(
@@ -258,6 +264,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
         {
             "With default value",
             R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
             )",
             R"(

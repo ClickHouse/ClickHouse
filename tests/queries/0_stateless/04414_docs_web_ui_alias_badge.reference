@@ -1,0 +1,6 @@
+ClickHouse <span class="accent">Reference</span>
+.alias-badge {
+function aliasTarget
+badge.className = 'alias-badge'
+badge.title = 'Alias of '
+1

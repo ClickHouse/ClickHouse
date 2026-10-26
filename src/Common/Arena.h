@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <vector>
 #include <Core/Defines.h>
@@ -8,6 +9,7 @@
 #include <Common/Allocator.h>
 #include <Common/memcpySmall.h>
 #include <base/getPageSize.h>
+#include <base/arithmeticOverflow.h>
 
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
@@ -92,34 +94,33 @@ private:
     size_t used_bytes = 0;
     size_t page_size;
 
-    static size_t roundUpToPageSize(size_t s, size_t page_size)
+    template <typename Size>
+    static Size roundUpToPageSize(Size s, size_t page_size)
     {
         return (s + page_size - 1) / page_size * page_size;
     }
 
-    /// If MemoryChunks size is less than 'linear_growth_threshold', then use exponential growth, otherwise - linear growth
-    ///  (to not allocate too much excessive memory).
-    size_t nextSize(size_t min_next_size) const
+    /// Uses exponential buffer growth below `linear_growth_threshold` and linear growth above it
+    /// to limit unused capacity.
+    template <typename Size>
+    Size nextSize(Size min_next_size) const
     {
-        size_t size_after_grow = 0;
+        Size size_after_grow = 0;
 
         if (head.empty())
         {
-            size_after_grow = std::max(min_next_size, initial_size);
+            size_after_grow = std::max<Size>(min_next_size, initial_size);
         }
         else if (head.size() < linear_growth_threshold)
         {
-            size_after_grow = std::max(min_next_size, head.size() * growth_factor);
+            size_after_grow = std::max(min_next_size, Size(head.size()) * growth_factor);
         }
         else
         {
-            // allocContinue() combined with linear growth results in quadratic
-            // behavior: we append the data by small amounts, and when it
-            // doesn't fit, we create a new MemoryChunk and copy all the previous data
-            // into it. The number of times we do this is directly proportional
-            // to the total size of data that is going to be serialized. To make
-            // the copying happen less often, round the next size up to the
-            // linear_growth_threshold.
+            /// With `allocContinue`, appending small amounts can repeatedly copy the accumulated data
+            /// into a new `MemoryChunk`. Growing by similarly small amounts would make the number of
+            /// copies proportional to the serialized size, resulting in quadratic work. Rounding the
+            /// next size up to `linear_growth_threshold` makes these copies less frequent.
             size_after_grow = ((min_next_size + linear_growth_threshold - 1)
                     / linear_growth_threshold) * linear_growth_threshold;
         }
@@ -128,10 +129,21 @@ private:
         return roundUpToPageSize(size_after_grow, page_size);
     }
 
+    /// The size of an allocation can come from the data, so it is rejected instead of wrapping around.
+    [[noreturn]] static void throwTooLargeAllocation(size_t size);
+
     /// Add next contiguous MemoryChunk of memory with size not less than specified.
-    void NO_INLINE addMemoryChunk(size_t min_size)
+    void NO_INLINE addMemoryChunk(size_t min_size, size_t alignment = 0)
     {
-        size_t next_size = nextSize(min_size + pad_right);
+        /// The alignment and the padding added here, and the rounding inside `nextSize`, would wrap
+        /// around for a size close to the maximum of `size_t`, and then a chunk smaller than the
+        /// requested size would be allocated. Sizes that the allocator refuses outright are cut off
+        /// here as well: the size of an allocation can come from the data, so it is a data error
+        /// rather than the logical error the allocator would report.
+        if (min_size > MAX_ALLOCATION_SIZE - alignment - pad_right - linear_growth_threshold - page_size)
+            throwTooLargeAllocation(min_size);
+
+        size_t next_size = nextSize(min_size + alignment + pad_right);
         if (head.empty())
         {
             head = MemoryChunk(next_size);
@@ -157,6 +169,47 @@ public:
     {
     }
 
+    /// Bounds additional memory for `num_allocations` calls to `alloc` requesting `total_bytes` in total.
+    /// Includes buffers and metadata without inspecting individual allocation sizes or changing the arena.
+    /// Saturates at the maximum of `size_t` when the bound is not representable.
+    size_t estimateGrowthMemory(size_t num_allocations, size_t total_bytes) const noexcept
+    {
+        if (num_allocations == 0 || (!head.empty() && total_bytes <= head.remaining()))
+            return 0;
+
+        /// The total covers multiple allocations, so its hypothetical buffer can exceed the allocation
+        /// limit. Wider arithmetic preserves the sizing calculation until the estimate is saturated.
+        constexpr size_t max_size = std::numeric_limits<size_t>::max();
+        const UInt128 next_chunk_size = nextSize(UInt128(total_bytes) + pad_right);
+        if (next_chunk_size > max_size)
+            return max_size;
+
+        const size_t max_next_chunk_size = static_cast<size_t>(next_chunk_size);
+        /// If the smallest possible next buffer can hold the entire payload, no second buffer is needed.
+        if (num_allocations == 1 || total_bytes <= nextSize(UInt128(pad_right)) - pad_right)
+            return max_next_chunk_size + (head.empty() ? 0 : sizeof(MemoryChunk));
+
+        /// Each abandoned tail is smaller than the allocation that did not fit. Therefore the usable
+        /// capacity of all new buffers except the last is less than twice the requested bytes.
+        /// Each buffer has at least one page, which also bounds the padding and metadata overhead.
+        size_t twice_total_bytes = 0;
+        if (common::mulOverflow(total_bytes, size_t(2), twice_total_bytes))
+            return max_size;
+        const size_t max_chunks = std::min(num_allocations, twice_total_bytes / (page_size - pad_right) + 1);
+
+        /// A new buffer able to hold the entire payload must be the last. Its predecessor is therefore
+        /// smaller than `total_bytes + pad_right`. Geometric growth can multiply that by `growth_factor`;
+        /// linear rounding can at most double it. `max_next_chunk_size` also covers the first allocation.
+        size_t buffer_bytes = 0;
+        size_t overhead_bytes = 0;
+        if (common::mulOverflow(std::max(growth_factor, size_t(2)), max_next_chunk_size, buffer_bytes)
+            || common::mulOverflow(max_chunks, pad_right + sizeof(MemoryChunk), overhead_bytes)
+            || common::addOverflow(buffer_bytes, twice_total_bytes, buffer_bytes)
+            || common::addOverflow(buffer_bytes, overhead_bytes, buffer_bytes))
+            return max_size;
+        return buffer_bytes;
+    }
+
     /// Get piece of memory, without alignment.
     /// Note: we expect it will return a non-nullptr even if the size is zero.
     char * alloc(size_t size)
@@ -176,7 +229,7 @@ public:
     {
         used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
-            addMemoryChunk(size + alignment);
+            addMemoryChunk(size, alignment);
 
         do
         {
@@ -192,7 +245,7 @@ public:
                 return res;
             }
 
-            addMemoryChunk(size + alignment);
+            addMemoryChunk(size, alignment);
         } while (true);
     }
 

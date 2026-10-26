@@ -1,0 +1,4 @@
+QBit(BFloat16, 16, 8): q.1 .. q.16 -> first stride, q.17 .. q.32 -> second stride
+sign plane of group 0 (q.1)	11111111
+sign plane of group 1 (q.17)	00000000
+subcolumn type	FixedString(1)

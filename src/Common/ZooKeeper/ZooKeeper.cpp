@@ -45,7 +45,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
+    extern const int REPLICA_ALREADY_EXISTS;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
@@ -242,7 +242,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
                       impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
 
-            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
+            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool()->createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
             {
                 auto component_guard = Coordination::setCurrentComponent("ZooKeeper::reconnect");
                 try
@@ -1452,6 +1452,13 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
     if (condition(content))
     {
         auto code = tryRemove(path, stat.version);
+        /// The node was rewritten after it was read, so the condition no longer describes it.
+        if (code == Coordination::Error::ZBADVERSION)
+            throw DB::Exception(
+                DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
+                "Ephemeral node {} was rewritten while it was being removed. Node data when it was read: '{}'",
+                path,
+                content);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw Coordination::Exception::fromPath(code, path);
     }
@@ -1461,10 +1468,10 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
         int32_t timeout_ms = 3 * args.session_timeout_ms;
         if (!eph_node_disappeared->tryWait(timeout_ms))
             throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
-                "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
-                "Node data: '{}'",
+                DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
+                "Ephemeral node {} still exists after {}s and is not owned by us: most likely another session "
+                "still holds it, or a previous session's node has not expired yet. It can also mean that "
+                "session_timeout_ms in the client's config differs from the server's. Node data: '{}'",
                 path,
                 timeout_ms / 1000,
                 content);
@@ -1765,6 +1772,38 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     };
 
     impl->list(path, list_request_type, std::move(callback), watch_callback, with_stat, with_data);
+    return future;
+}
+
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncListWithOptions(
+    const std::string & path,
+    const Coordination::ListOptions & options)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise, path](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException::fromPath(response.error, path)));
+        else
+            promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), {});
+    return future;
+}
+
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncTryListWithOptionsNoThrow(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), std::move(watch_callback));
     return future;
 }
 
@@ -2102,6 +2141,26 @@ Coordination::RequestPtr makeListRecursiveRequest(const std::string & path, uint
     return request;
 }
 
+Coordination::RequestPtr makeListWithOptionsRequest(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (path.empty() || path[0] != '/')
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "Path must begin with /");
+    if (options.recursive && watch)
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+
+    auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
+    request->path = path;
+    request->options_version = Coordination::requiredListOptionsVersion(options);
+    request->options = options;
+    request->watch_callback = watch;
+    request->has_watch = static_cast<bool>(watch);
+    return request;
+}
+
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version)
 {
     auto request = std::make_shared<Coordination::ZooKeeperSetRequest>();
@@ -2177,55 +2236,6 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path, Coordinatio
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
     return request;
-}
-
-std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log)
-{
-    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
-    {
-        /// Do not allow this for new tables, print warning for tables created in old versions
-        if (check_starts_with_slash)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
-        if (log)
-            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases", zookeeper_path);
-        zookeeper_path = "/" + zookeeper_path;
-    }
-
-    return zookeeper_path;
-}
-
-String extractZooKeeperName(const String & path)
-{
-    if (path.empty())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
-    if (path[0] == '/')
-        return String(DEFAULT_ZOOKEEPER_NAME);
-    auto pos = path.find(":/");
-    if (pos != String::npos && pos < path.find('/'))
-    {
-        auto zookeeper_name = path.substr(0, pos);
-        if (zookeeper_name.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
-        return zookeeper_name;
-    }
-    return String(DEFAULT_ZOOKEEPER_NAME);
-}
-
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)
-{
-    if (path.empty())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
-    if (path[0] == '/')
-        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
-    auto pos = path.find(":/");
-    if (pos != String::npos && pos < path.find('/'))
-    {
-        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
-    }
-    return normalizeZooKeeperPath(path, check_starts_with_slash, log);
 }
 
 String getSequentialNodeName(const String & prefix, UInt64 number)

@@ -4,9 +4,13 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <IO/IReadBufferMetadataProvider.h>
+#include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -14,7 +18,7 @@ namespace DB
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
  */
-class ReadBufferFromWebServer : public ReadBufferFromFileBase
+class ReadBufferFromWebServer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     explicit ReadBufferFromWebServer(
@@ -23,7 +27,17 @@ public:
         size_t file_size_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
-        size_t read_until_position = 0);
+        size_t read_until_position = 0,
+        HTTPHeaderEntries headers_ = {});
+
+    explicit ReadBufferFromWebServer(
+        std::vector<String> urls_,
+        ContextPtr context_,
+        size_t file_size_,
+        const ReadSettings & settings_ = {},
+        bool use_external_buffer_ = false,
+        size_t read_until_position = 0,
+        HTTPHeaderEntries headers_ = {});
 
     bool nextImpl() override;
 
@@ -31,7 +45,7 @@ public:
 
     off_t getPosition() override;
 
-    String getFileName() const override { return url; }
+    String getFileName() const override { return current_url.empty() ? urls.front() : current_url; }
 
     void setReadUntilPosition(size_t position) override;
 
@@ -39,22 +53,36 @@ public:
 
     bool supportsRightBoundedReads() const override { return true; }
 
+    /// Report the capability from the same flag that drives the `nextImpl` external branch,
+    /// as `ReadBufferFromS3` does, so it can't diverge from the buffer's actual behaviour.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
+
+    Map getResponseHeaders() const;
+    std::optional<Field> getMetadata(const String & name) const override;
+
 private:
     std::unique_ptr<SeekableReadBuffer> initialize();
 
     LoggerPtr log;
     ContextPtr context;
 
-    const String url;
+    const std::vector<String> urls;
+    String current_url;
     size_t buf_size;
+
+    /// Must outlive `impl`: the buffer created in `initialize` stores a reference to these credentials,
+    /// and with delayed initialization the HTTP request (which reads them) fires in `nextImpl`, long
+    /// after `initialize` returns.
+    Poco::Net::HTTPBasicCredentials credentials;
 
     std::unique_ptr<SeekableReadBuffer> impl;
 
     ReadSettings read_settings;
-
-    Poco::Net::HTTPBasicCredentials credentials{};
+    HTTPHeaderEntries headers;
 
     bool use_external_buffer;
+    bool has_pending_first_read_result = false;
+    bool pending_first_read_result = false;
 
     /// atomic is required for CachedOnDiskReadBufferFromFile, which can access
     /// to this variable via getFileOffsetOfBufferEnd()/seek() from multiple

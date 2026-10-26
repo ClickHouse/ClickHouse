@@ -1,0 +1,354 @@
+---
+slug: /sql-reference/functions/geo/s2
+sidebarTitle: 'الهندسة في S2'
+title: 'دوال للتعامل مع فهرس S2'
+description: 'توثيق الدوال الخاصة بالتعامل مع فهرس S2'
+doc_type: 'reference'
+---
+
+<div id="s2index">
+  ## S2Index
+</div>
+
+‏[S2](https://s2geometry.io/) هو نظام فهرسة جغرافي تُمثَّل فيه جميع البيانات الجغرافية على سطح كرة (على غرار الكرة الأرضية).
+
+في مكتبة S2، تُمثَّل النقاط على أنها فهرس S2، وهو رقم معيّن يرمّز داخليًا إلى نقطة على سطح كرة الوحدة، بدلًا من أزواج (خط العرض، خط الطول) التقليدية. للحصول على فهرس نقطة S2 لنقطة معيّنة محددة بالتنسيق (خط العرض، خط الطول)، استخدم الدالة [geoToS2](#geotos2). ويمكنك أيضًا استخدام الدالة [s2ToGeo](#s2togeo) للحصول على الإحداثيات الجغرافية المقابلة لـ فهرس نقطة S2 المحدد.
+
+<div id="geotos2">
+  ## geoToS2
+</div>
+
+يعيد فهرس [S2](#s2index) للنقطة المقابلة للإحداثيات المقدَّمة `(longitude, latitude)`.
+
+**البنية**
+
+```sql
+geoToS2(lon, lat)
+```
+
+**الوسائط**
+
+* `lon` — خط الطول. [Float64](/ar/reference/data-types/float).
+* `lat` — خط العرض. [Float64](/ar/reference/data-types/float).
+
+**القيم المُرجعة**
+
+* فهرس نقطة S2. [UInt64](/ar/reference/data-types/int-uint).
+
+**مثال**
+
+```sql title="Query"
+SELECT geoToS2(37.79506683, 55.71290588) AS s2Index;
+```
+
+```text title="Response"
+┌─────────────s2Index─┐
+│ 4704772434919038107 │
+└─────────────────────┘
+```
+
+<div id="s2togeo">
+  ## s2ToGeo
+</div>
+
+يعيد الإحداثيات الجغرافية `(longitude, latitude)` المطابقة لفهرس نقطة [S2](#s2index) المُعطى.
+
+**البنية**
+
+```sql
+s2ToGeo(s2index)
+```
+
+**الوسائط**
+
+* `s2index` — فهرس S2. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيم المُعادة**
+
+* [Tuple](/ar/reference/data-types/tuple) يتكوّن من قيمتين:
+  * `lon`. [Float64](/ar/reference/data-types/float).
+  * `lat`. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2ToGeo(4704772434919038107) AS s2Coodrinates;
+```
+
+```text title="Response"
+┌─s2Coodrinates────────────────────────┐
+│ (37.79506681471008,55.7129059052841) │
+└──────────────────────────────────────┘
+```
+
+<div id="s2getneighbors">
+  ## s2GetNeighbors
+</div>
+
+تعيد فهارس الجوار في S2 المقابلة إلى [S2](#s2index) المُعطى. كل خلية في نظام S2 هي شكل رباعي تحدّه أربعة خطوط جيوديسية، لذا لكل خلية 4 خلايا مجاورة.
+
+**الصيغة**
+
+```sql
+s2GetNeighbors(s2index)
+```
+
+**الوسائط**
+
+* `s2index` — فهرس S2. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيمة المُعادة**
+
+* مصفوفة تتكوّن من 4 فهارس متجاورة: `array[s2index1, s2index3, s2index2, s2index4]`. [مصفوفة](/ar/reference/data-types/array)([UInt64](/ar/reference/data-types/int-uint)).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2GetNeighbors(5074766849661468672) AS s2Neighbors;
+```
+
+```text title="Response"
+┌─s2Neighbors───────────────────────────────────────────────────────────────────────┐
+│ [5074766987100422144,5074766712222515200,5074767536856236032,5074767261978329088] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="s2cellsintersect">
+  ## s2CellsIntersect
+</div>
+
+يحدِّد ما إذا كانت خليتا [S2](#s2index) المعطاتان تتقاطعان أم لا.
+
+**الصيغة**
+
+```sql
+s2CellsIntersect(s2index1, s2index2)
+```
+
+**المعاملات**
+
+* `siIndex1`, `s2index2` — فهرس S2. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيمة المعادة**
+
+* `1` — إذا كانت الخلايا تتقاطع. [UInt8](/ar/reference/data-types/int-uint).
+* `0` — إذا كانت الخلايا لا تتقاطع. [UInt8](/ar/reference/data-types/int-uint).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560) AS intersect;
+```
+
+```text title="Response"
+┌─intersect─┐
+│         1 │
+└───────────┘
+```
+
+<div id="s2capcontains">
+  ## s2CapContains
+</div>
+
+يحدّد ما إذا كان الغطاء الكروي يحتوي على نقطة S2. يمثّل الغطاء الكروي جزءًا من الكرة يقطعه مستوى. وتُعرَّف بنقطة على الكرة ونصف قطر بالدرجات.
+
+**الصيغة**
+
+```sql
+s2CapContains(center, degrees, point)
+```
+
+**المعاملات**
+
+* `center` — فهرس نقطة S2 الذي يمثّل الغطاء الكروي. [UInt64](/ar/reference/data-types/int-uint).
+* `degrees` — نصف قطر الغطاء الكروي بالدرجات. [Float64](/ar/reference/data-types/float).
+* `point` — فهرس نقطة S2. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيمة المُعادة**
+
+* `1` — إذا كان الغطاء الكروي يحتوي على فهرس نقطة S2. [UInt8](/ar/reference/data-types/int-uint).
+* `0` — إذا كان الغطاء الكروي لا يحتوي على فهرس نقطة S2. [UInt8](/ar/reference/data-types/int-uint).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819) AS capContains;
+```
+
+```text title="Response"
+┌─capContains─┐
+│           1 │
+└─────────────┘
+```
+
+<div id="s2capunion">
+  ## s2CapUnion
+</div>
+
+يحدّد أصغر غطاء كروي يحتوي على غطائي الإدخال المعطيين. يمثّل الغطاء الكروي جزءًا من الكرة اقتُطع بمستوى. ويُعرَّف بنقطة على الكرة ونصف قطر بالدرجات.
+
+**الصيغة**
+
+```sql
+s2CapUnion(center1, radius1, center2, radius2)
+```
+
+**المعاملات**
+
+* `center1`, `center2` — فهرسا نقطتَي S2 المقابلان للغطاءين الكرويين المُدخلين. [UInt64](/ar/reference/data-types/int-uint).
+* `radius1`, `radius2` — نصفا قطر الغطاءين الكرويين المُدخلين بالدرجات. [Float64](/ar/reference/data-types/float).
+
+**القيم المعادة**
+
+* `center` — فهرس نقطة S2 المقابل لمركز أصغر غطاء كروي يحتوي على الغطاءين الكرويين المُدخلين. [UInt64](/ar/reference/data-types/int-uint).
+* `radius` — نصف قطر أصغر غطاء كروي يحتوي على الغطاءين الكرويين المُدخلين. [Float64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2CapUnion(3814912406305146967, 1.0, 1157347770437378819, 1.0) AS capUnion;
+```
+
+```text title="Response"
+┌─capUnion───────────────────────────────┐
+│ (4534655147792050737,60.2088283994957) │
+└────────────────────────────────────────┘
+```
+
+<div id="s2rectadd">
+  ## s2RectAdd
+</div>
+
+يزيد حجم المستطيل الحاوي ليشمل نقطة S2 المعطاة. في نظام S2، يُمثَّل المستطيل بنوع من S2Region يُسمى `S2LatLngRect`، وهو يمثّل مستطيلاً في فضاء خط العرض وخط الطول.
+
+**الصيغة**
+
+```sql
+s2RectAdd(s2pointLow, s2pointHigh, s2Point)
+```
+
+**المعاملات**
+
+* `s2PointLow` — فهرس نقطة S2 الأدنى المقابل للمستطيل. [UInt64](/ar/reference/data-types/int-uint).
+* `s2PointHigh` — فهرس نقطة S2 الأعلى المقابل للمستطيل. [UInt64](/ar/reference/data-types/int-uint).
+* `s2Point` — فهرس نقطة S2 المستهدف الذي يجب توسيع المستطيل الحدّي ليشمله. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيم المُعادة**
+
+* `s2PointLow` — معرّف خلية S2 الأدنى المقابل للمستطيل الموسَّع. [UInt64](/ar/reference/data-types/int-uint).
+* `s2PointHigh` — معرّف خلية S2 الأعلى المقابل للمستطيل الموسَّع. [UInt64](/ar/reference/data-types/float).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2RectAdd(5178914411069187297, 5177056748191934217, 5179056748191934217) AS rectAdd;
+```
+
+```text title="Response"
+┌─rectAdd───────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectcontains">
+  ## s2RectContains
+</div>
+
+يحدّد ما إذا كان مستطيل معيّن يحتوي على نقطة S2. في نظام S2، يُمثَّل المستطيل بنوع من `S2Region` يُسمّى `S2LatLngRect`، ويمثّل مستطيلاً في فضاء خطوط الطول والعرض.
+
+**البنية**
+
+```sql
+s2RectContains(s2PointLow, s2PointHi, s2Point)
+```
+
+**الوسيطات**
+
+* `s2PointLow` — فهرس نقطة S2 الأدنى المقابل للمستطيل. [UInt64](/ar/reference/data-types/int-uint).
+* `s2PointHigh` — فهرس نقطة S2 الأعلى المقابل للمستطيل. [UInt64](/ar/reference/data-types/int-uint).
+* `s2Point` — فهرس نقطة S2 المستهدف. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيمة المُعادة**
+
+* `1` — إذا كان المستطيل يحتوي على نقطة S2 المحددة.
+* `0` — إذا كان المستطيل لا يحتوي على نقطة S2 المحددة.
+
+**مثال**
+
+```sql title="Query"
+SELECT s2RectContains(5179062030687166815, 5177056748191934217, 5177914411069187297) AS rectContains;
+```
+
+```text title="Response"
+┌─rectContains─┐
+│            0 │
+└──────────────┘
+```
+
+<div id="s2rectunion">
+  ## s2RectUnion
+</div>
+
+يعيد أصغر مستطيل يضم اتحاد هذا المستطيل والمستطيل المُعطى. في نظام S2، يُمثَّل المستطيل بنوع من S2Region يُسمى `S2LatLngRect`، ويمثل مستطيلاً في فضاء خط العرض وخط الطول.
+
+**البنية**
+
+```sql
+s2RectUnion(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**الوسائط**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — فهرسا نقطة S2 الأدنى والأعلى المقابلان للمستطيل الأول. [UInt64](/ar/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — فهرسا نقطة S2 الأدنى والأعلى المقابلان للمستطيل الثاني. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيم المُعادة**
+
+* `s2UnionRect2PointLow` — معرّف خلية S2 الأدنى المقابل للمستطيل الناتج عن الاتحاد. [UInt64](/ar/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — معرّف خلية S2 الأعلى المقابل للمستطيل الناتج عن الاتحاد. [UInt64](/ar/reference/data-types/int-uint).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectUnion;
+```
+
+```text title="Response"
+┌─rectUnion─────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectintersection">
+  ## s2RectIntersection
+</div>
+
+يُرجِع أصغر مستطيل يحيط بمنطقة التقاطع بين هذا المستطيل والمستطيل المعطى. في نظام S2، يُمثَّل المستطيل بنوع من S2Region يُسمى `S2LatLngRect`، ويمثل مستطيلاً في فضاء خطوط العرض والطول.
+
+**الصيغة**
+
+```sql
+s2RectIntersection(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**الوسائط**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — فهرسا نقطة S2 الأدنى والأعلى المقابلان للمستطيل الأول. [UInt64](/ar/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — فهرسا نقطة S2 الأدنى والأعلى المقابلان للمستطيل الثاني. [UInt64](/ar/reference/data-types/int-uint).
+
+**القيم المُعادة**
+
+* `s2UnionRect2PointLow` — معرّف خلية S2 الأدنى المقابل للمستطيل الذي يحتوي على تقاطع المستطيلات المُعطاة. [UInt64](/ar/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — معرّف خلية S2 الأعلى المقابل للمستطيل الذي يحتوي على تقاطع المستطيلات المُعطاة. [UInt64](/ar/reference/data-types/int-uint).
+
+**مثال**
+
+```sql title="Query"
+SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectIntersection;
+```
+
+```text title="Response"
+┌─rectIntersection──────────────────────────┐
+│ (5178914411069187297,5177056748191934217) │
+└───────────────────────────────────────────┘
+```

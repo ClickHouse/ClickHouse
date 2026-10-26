@@ -1,0 +1,41 @@
+---
+sidebarTitle: 'LibreChat'
+title: 'LibreChat'
+description: 'Como o LibreChat atua como a interface de chat e de agentes da stack de dados agêntica'
+doc_type: 'guide'
+keywords: ['stack de dados agêntica', 'LibreChat', 'chat', 'interface', 'MCP']
+---
+
+O LibreChat é a **interface de chat e de agentes** da [Agentic Data Stack](/pt-BR/products/agentic-data-stack/overview). Em vez de escrever SQL, o usuário faz uma pergunta em linguagem natural e um agente responde.
+
+O agente opera por meio do ClickHouse servidor MCP para inspecionar seus bancos de dados e tabelas, executar consultas somente leitura e montar uma resposta com base nos resultados. A stack já faz toda essa integração para você, de modo que o LibreChat consulta seus dados desde o primeiro acesso. Implante a stack completa com o [guia de configuração do Docker](/pt-BR/products/agentic-data-stack/docker-setup).
+
+<div id="capabilities">
+  ## Recursos do LibreChat
+</div>
+
+| Recurso                                                                                                         | O que faz                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Criar um agente com base nos seus dados](https://www.librechat.ai/docs/features/agents)                        | Crie um agente reutilizável para uma pergunta recorrente. Duas escolhas fazem com que ele entenda o ClickHouse: forneça **Instruções** que descrevam seu esquema e as tabelas preferidas, e adicione o servidor MCP **ClickHouse-Local** para que ele possa listar bancos de dados e tabelas e executar consultas somente leitura. |
+| [Conectar mais servidores MCP](https://www.librechat.ai/docs/features/mcp)                                      | O agente não se limita ao ClickHouse. Adicione qualquer servidor MCP nas configurações de MCP do LibreChat para que uma única conversa possa acessar outros bancos de dados, APIs internas ou ferramentas SaaS.                                                                                                                    |
+| [Gerar gráficos e visualizações](https://www.librechat.ai/docs/features/artifacts)                              | Peça ao agente para visualizar seus resultados, por exemplo: &quot;Faça um gráfico dos 10 principais produtos por receita&quot;, e ele retornará um gráfico interativo que você poderá explorar e compartilhar. As visualizações usam o LibreChat Artifacts, habilitado por agente.                                                |
+| [Executar código com o Code Interpreter](https://www.librechat.ai/docs/features/code_interpreter)               | Além de SQL, o agente pode executar código em um sandbox seguro para transformar ou analisar seus resultados, como converter uma consulta em um arquivo ou em uma métrica calculada.                                                                                                                                               |
+| [Executar consultas longas em segundo plano](https://www.librechat.ai/docs/features/resumable_streams)          | Uma consulta pode demorar um pouco, e você não precisa esperar. Com streams retomáveis, inicie uma geração, mude para outra conversa e volte depois para ver a resposta concluída.                                                                                                                                                 |
+| [Compartilhar uma análise como um link somente leitura](https://www.librechat.ai/docs/features/shareable_links) | Compartilhe uma conversa como um link somente leitura para que outras pessoas possam revisar uma análise sem executá-la novamente. A visualização compartilhada inclui as chamadas de ferramenta e o SQL por trás de cada resposta, fornecendo uma cadeia de custódia clara de como um resultado foi produzido.                    |
+| [Controlar o acesso a servidores MCP](https://www.librechat.ai/docs/features/access_control)                    | Em uma implantação de equipe, o Controle de Acesso Baseado em Funções define quem pode usar, criar e compartilhar servidores MCP e agentes, e em qual nível (visualizador, Editor ou proprietário).                                                                                                                                |
+
+<div id="in-the-stack">
+  ## Na stack
+</div>
+
+O LibreChat vem pré-configurado em `librechat.yaml`, então funciona de imediato:
+
+* O [ClickHouse servidor MCP](/pt-BR/products/agentic-data-stack/components/mcp-server) é registrado como fonte de ferramentas, para que o agente possa explorar e consultar o ClickHouse sem configuração adicional.
+* Cada conversa é rastreada no [Langfuse](/pt-BR/products/agentic-data-stack/components/langfuse) para observabilidade, capturando prompts, chamadas de ferramentas, respostas, custo e latência.
+* O [Admin Panel](https://github.com/ClickHouse/librechat-admin-panel) (porta 3081) é uma UI baseada em navegador para alterar essa configuração (endpoints, servidores MCP e configurações do agente) sem editar o `librechat.yaml` manualmente.
+
+Para conectar o ClickHouse servidor MCP a uma instância standalone do LibreChat, consulte o guia oficial: [Using ClickHouse MCP server with LibreChat](/pt-BR/guides/use-cases/ai-ml/MCP/librechat). Para ver a documentação completa dos recursos do LibreChat, consulte a [documentação do LibreChat](https://www.librechat.ai/docs).
+
+<Info>
+  **Prefere uma experiência gerenciada?** O ClickHouse Cloud oferece [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents) (Beta) — uma experiência de agente hospedada, sem necessidade de configuração, construída sobre a mesma base, com os recursos de criação de agentes disponíveis no console da Cloud.
+</Info>

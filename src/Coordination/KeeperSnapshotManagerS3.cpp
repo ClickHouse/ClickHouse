@@ -107,6 +107,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         static constexpr bool s3_slow_all_threads_after_network_error = true;
         static constexpr bool s3_slow_all_threads_after_retryable_error = false;
         static constexpr bool enable_s3_requests_logging = false;
+        static const RemoteHostFilter remote_host_filter;
 
         if (!new_uri.key.empty())
         {
@@ -116,7 +117,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings[S3AuthSetting::region],
-            RemoteHostFilter(),
+            remote_host_filter,
             s3_max_redirects,
             S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
             s3_slow_all_threads_after_network_error,
@@ -131,7 +132,6 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = new_uri.is_virtual_hosted_style,
-            .disable_checksum = false,
             .gcs_issue_compose_request = false,
             .is_s3express_bucket = S3::isS3ExpressEndpoint(new_uri.endpoint),
         };
@@ -155,7 +155,10 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::role_arn],
                 auth_settings[S3AuthSetting::role_session_name],
                 auth_settings[S3AuthSetting::external_id],
-                /*sts_endpoint_override=*/""
+                /*sts_endpoint_override=*/"",
+                /*kms_role_arn=*/"",
+                /// Keeper snapshot upload is a server-internal operation; it uses the server's own credentials.
+                /*forbid_implicit_credentials=*/false
             },
             credentials.GetSessionToken(),
             shared_cache);

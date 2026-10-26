@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMap'
+title: 'avgMap'
+description: 'Exemplo de uso do combinador avgMap'
+keywords: ['avg', 'map', 'combinador', 'exemplos', 'avgMap']
+sidebarTitle: 'avgMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`Map`](/pt-BR/reference/functions/aggregate-functions/combinators#-map) pode ser aplicado à função [`avg`](/pt-BR/reference/functions/aggregate-functions/avg)
+para calcular a média aritmética dos valores em um map para cada chave, usando a
+função de combinador de agregação `avgMap`.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Neste exemplo, vamos criar uma tabela que armazena códigos de status e suas contagens em diferentes intervalos de tempo,
+em que cada linha contém um map que associa códigos de status às respectivas contagens. Usaremos
+`avgMap` para calcular a contagem média de cada código de status em cada intervalo de tempo.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    avgMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+A função `avgMap` calculará a média da contagem de cada código de status em cada intervalo de tempo. Por exemplo:
+
+* No intervalo de tempo &#39;2000-01-01 00:00:00&#39;:
+  * Status &#39;a&#39;: 15
+  * Status &#39;b&#39;: 25
+  * Status &#39;c&#39;: (35 + 45) / 2 = 40
+  * Status &#39;d&#39;: 55
+  * Status &#39;e&#39;: 65
+* No intervalo de tempo &#39;2000-01-01 00:01:00&#39;:
+  * Status &#39;d&#39;: 75
+  * Status &#39;e&#39;: 85
+  * Status &#39;f&#39;: (95 + 105) / 2 = 100
+  * Status &#39;g&#39;: (115 + 125) / 2 = 120
+
+```response title="Response"
+   ┌────────────timeslot─┬─avgMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':100,'g':120}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':40,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`avg`](/pt-BR/reference/functions/aggregate-functions/avg)
+* [`combinador Map`](/pt-BR/reference/functions/aggregate-functions/combinators#-map)

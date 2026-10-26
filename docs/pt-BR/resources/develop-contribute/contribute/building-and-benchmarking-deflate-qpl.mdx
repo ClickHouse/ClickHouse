@@ -1,0 +1,360 @@
+---
+description: 'Como compilar o ClickHouse e executar benchmark com o codec DEFLATE_QPL'
+sidebarTitle: 'Compilando e executando benchmark do DEFLATE_QPL'
+slug: /development/building_and_benchmarking_deflate_qpl
+title: 'Executar benchmark com DEFLATE_QPL'
+doc_type: 'guide'
+---
+
+* Certifique-se de que sua máquina host atenda aos [pré-requisitos](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites) exigidos pelo QPL
+
+* deflate&#95;qpl é habilitado por padrão durante a compilação com CMake. Caso você o altere acidentalmente, verifique novamente a flag de compilação: ENABLE&#95;QPL=1
+
+* Para os requisitos gerais, consulte as instruções gerais de [compilação do ClickHouse](/pt-BR/resources/develop-contribute/build/build)
+
+<div id="files-list">
+  ## Lista de arquivos
+</div>
+
+A pasta `benchmark_sample` em [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) traz exemplos de como executar benchmarks com scripts Python:
+
+`client_scripts` contém scripts Python para executar benchmarks típicos, por exemplo:
+
+* `client_stressing_test.py`: Script Python para teste de estresse de consultas com [1~4] instâncias de servidor.
+* `queries_ssb.sql`: O arquivo lista todas as consultas do [Star Schema Benchmark](/pt-BR/get-started/sample-datasets/star-schema)
+* `allin1_ssb.sh`: Este script shell executa automaticamente todo o fluxo de benchmark em um único processo.
+
+`database_files` indica que os arquivos do banco de dados serão armazenados de acordo com o codec lz4/deflate/zstd.
+
+<div id="run-benchmark-automatically-for-star-schema">
+  ## Execute automaticamente o benchmark para esquema em estrela:
+</div>
+
+```bash
+$ cd ./benchmark_sample/client_scripts
+$ sh run_ssb.sh
+```
+
+Após concluir, verifique todos os resultados nesta pasta:`./output/`
+
+Caso haja alguma falha, execute manualmente o benchmark conforme as seções abaixo.
+
+<div id="definition">
+  ## Definição
+</div>
+
+[CLICKHOUSE&#95;EXE] significa o caminho para o programa executável `clickhouse`.
+
+<div id="environment">
+  ## Ambiente
+</div>
+
+* CPU: Sapphire Rapid
+* Para os requisitos do sistema, consulte [System Requirements for QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)
+* Para a configuração do IAA, consulte [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration)
+* Instale os módulos Python:
+
+```bash
+pip3 install clickhouse_driver numpy
+```
+
+[Autoverificação de IAA]
+
+```bash
+$ accel-config list | grep -P 'iax|state'
+```
+
+Saída esperada como esta:
+
+```bash
+    "dev":"iax1",
+    "state":"enabled",
+            "state":"enabled",
+```
+
+Se nada for exibido, isso significa que o IAA não está pronto para funcionar. Verifique a configuração do IAA novamente.
+
+<div id="generate-raw-data">
+  ## Gerar dados brutos
+</div>
+
+```bash
+$ cd ./benchmark_sample
+$ mkdir rawdata_dir && cd rawdata_dir
+```
+
+Use [`dbgen`](/pt-BR/get-started/sample-datasets/star-schema) para gerar dados com 100 milhões de linhas usando os parâmetros:
+-s 20
+
+Espera-se que arquivos como `*.tbl` sejam gerados em `./benchmark_sample/rawdata_dir/ssb-dbgen`:
+
+<div id="database-setup">
+  ## Configuração do banco de dados
+</div>
+
+Configure o banco de dados com o codec LZ4
+
+```bash
+$ cd ./database_dir/lz4
+$ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+Aqui, você deverá ver a mensagem `Connected to ClickHouse server` no console, o que significa que o cliente configurou com sucesso a conexão com o servidor.
+
+Conclua as três etapas abaixo mencionadas em [Star Schema Benchmark](/pt-BR/get-started/sample-datasets/star-schema)
+
+* Criar tabelas no ClickHouse
+* Inserir dados. Aqui, use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` como dados de entrada.
+* Converter o &quot;star schema&quot; em um &quot;flat schema&quot; desnormalizado
+
+Configure o banco de dados com o codec IAA Deflate
+
+```bash
+$ cd ./database_dir/deflate
+$ [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+Repita as mesmas três etapas do lz4 acima
+
+Configure o banco de dados com o codec ZSTD
+
+```bash
+$ cd ./database_dir/zstd
+$ [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+Conclua as mesmas três etapas do `lz4` acima.
+
+[self-check]
+Para cada codec (lz4/zstd/deflate), execute a consulta abaixo para confirmar que os bancos de dados foram criados com sucesso:
+
+```sql
+SELECT count() FROM lineorder_flat
+```
+
+Você deverá ver a saída abaixo:
+
+```sql
+┌───count()─┐
+│ 119994608 │
+└───────────┘
+```
+
+[Autoverificação do codec IAA Deflate]
+
+Na primeira vez que você executar uma inserção ou consulta no cliente, o console do ClickHouse server deverá exibir este log:
+
+```text
+Hardware-assisted DeflateQpl codec is ready!
+```
+
+Se isso nunca aparecer, mas você vir outro log como abaixo:
+
+```text
+Initialization of hardware-assisted DeflateQpl codec failed
+```
+
+Isso significa que os dispositivos IAA não estão prontos; verifique a configuração do IAA novamente.
+
+<div id="benchmark-with-single-instance">
+  ### Benchmark com uma única instância
+</div>
+
+* Antes de iniciar o benchmark, desative o C6 e defina o governador de frequência da CPU como `performance`
+
+```bash
+$ cpupower idle-set -d 3
+$ cpupower frequency-set -g performance
+```
+
+* Para eliminar o impacto da vinculação de memória entre soquetes, usamos `numactl` para fixar o servidor em um soquete e o cliente em outro.
+* Instância única significa um único servidor conectado a um único cliente
+
+Agora execute o benchmark para LZ4/Deflate/ZSTD, respectivamente:
+
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4 
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > lz4.log
+```
+
+IAA deflate:
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate.log
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > zstd.log
+```
+
+Agora, devem ser exibidos três logs, como esperado:
+
+```text
+lz4.log
+deflate.log
+zstd.log
+```
+
+Como verificar as métricas de desempenho:
+
+Nosso foco é QPS; procure pela palavra-chave `QPS_Final` e colete as estatísticas
+
+<div id="benchmark-with-multi-instances">
+  ## Benchmark com múltiplas instâncias
+</div>
+
+* Para reduzir o impacto da limitação de memória causada pelo excesso de threads, recomendamos executar o benchmark com múltiplas instâncias.
+* Múltiplas instâncias significa usar vários servidores (2 ou 4), cada um conectado ao seu respectivo cliente.
+* Os núcleos de um socket precisam ser divididos igualmente e atribuídos aos respectivos servidores.
+* Para múltiplas instâncias, é necessário criar uma nova pasta para cada codec e inserir os dados seguindo etapas semelhantes às de uma instância única.
+
+Há 2 diferenças:
+
+* No lado do cliente, você precisa iniciar o ClickHouse com a porta atribuída durante a criação da tabela e a inserção de dados.
+* No lado do servidor, você precisa iniciar o ClickHouse com o arquivo de configuração XML específico no qual a porta foi atribuída. Todos os arquivos de configuração XML personalizados para múltiplas instâncias foram fornecidos em ./server&#95;config.
+
+Aqui, assumimos que há 60 núcleos por socket e usamos 2 instâncias como exemplo.
+Inicie o servidor para a primeira instância
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+```
+
+IAA Deflate:
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+```
+
+[Inicie o servidor da segunda instância]
+
+LZ4:
+
+```bash
+$ cd ./database_dir && mkdir lz4_s2 && cd lz4_s2
+$ cp ../../server_config/config_lz4_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir && mkdir zstd_s2 && cd zstd_s2
+$ cp ../../server_config/config_zstd_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null&
+```
+
+IAA Deflate:
+
+```bash
+$ cd ./database_dir && mkdir deflate_s2 && cd deflate_s2
+$ cp ../../server_config/config_deflate_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
+```
+
+Criação de tabelas &amp;&amp; inserção de dados para a segunda instância
+
+Criação de tabelas:
+
+```bash
+$ [CLICKHOUSE_EXE] client -m --port=9001 
+```
+
+Inserção de dados:
+
+```bash
+$ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
+```
+
+* [TBL&#95;FILE&#95;NAME] representa o nome de um arquivo cujo nome corresponde à expressão regular: *. tbl em `./benchmark_sample/rawdata_dir/ssb-dbgen`.
+* `--port=9001` indica a porta atribuída à instância do servidor, que também está definida em config&#95;lz4&#95;s2.xml/config&#95;zstd&#95;s2.xml/config&#95;deflate&#95;s2.xml. Para mais instâncias, você precisa substituí-lo pelos valores 9002/9003, que correspondem às instâncias s3/s4, respectivamente. Se você não a definir, a porta padrão será 9000, que já foi usada pela primeira instância.
+
+Benchmark com 2 instâncias
+
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ cd ./database_dir/lz4_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2  > lz4_2insts.log
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ cd ./database_dir/zstd_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null& 
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2insts.log
+```
+
+IAA deflate
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ cd ./database_dir/deflate_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > deflate_2insts.log
+```
+
+Aqui, o último argumento, `2`, de client&#95;stressing&#95;test.py representa o número de instâncias. Para usar mais instâncias, você precisa substituí-lo pelo valor 3 ou 4. Este script oferece suporte a até 4 instâncias/
+
+Agora, três logs devem ser exibidos, como esperado:
+
+```text
+lz4_2insts.log
+deflate_2insts.log
+zstd_2insts.log
+```
+
+Como verificar as métricas de desempenho:
+
+Nosso foco é QPS; pesquise pela palavra-chave `QPS_Final` e colete as estatísticas.
+
+A configuração do benchmark para 4 instâncias é semelhante à das 2 instâncias acima.
+Recomendamos usar os dados do benchmark de 2 instâncias como relatório final para análise.
+
+<div id="tips">
+  ## Dicas
+</div>
+
+Antes de iniciar um novo ClickHouse server, certifique-se de que não há nenhum processo do ClickHouse em segundo plano em execução; verifique e finalize o antigo:
+
+```bash
+$ ps -aux| grep clickhouse
+$ kill -9 [PID]
+```
+
+Ao comparar a lista de consultas em ./client&#95;scripts/queries&#95;ssb.sql com o [Star Schema Benchmark](/pt-BR/get-started/sample-datasets/star-schema) oficial, você verá que 3 consultas não estão incluídas: Q1.2/Q1.3/Q3.4 . Isso ocorre porque a utilização de CPU é muito baixa &lt; 10% nessas consultas, o que significa que elas não demonstram diferenças de desempenho.

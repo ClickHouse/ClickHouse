@@ -1,0 +1,172 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-12
+title: 'Demo days - 2026-06-12'
+sidebarTitle: '2026-06-12'
+description: 'ClickStack demo days for 2026-06-12'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Schema migration tool {#schema-migration-tool}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/jRKTN30ghAo" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+The schema migration tool is a new ClickStack feature in active development that allows users to trigger and monitor ClickHouse schema migrations directly from the UI. Warren enables the migrator, creates a full-text search index on the `body` column, and then removes it while following progress through a live log tail.
+
+Support for deployment-wide schema changes is planned next, bringing the feature closer to general availability. 
+
+## Source level filters for alerts and MCP {#source-level-filters-for-alerts-and-mcp}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Drew demos a major expansion of source filter support across ClickStack. Alerts can now be configured on dashboard tiles and raw SQL tiles that require source filters, with clear inline guidance when filters are missing or when a query does not contain a filter macro for injection. Saved search alerts support the same behaviour.
+
+Source filters are now respected throughout the service map experience, propagating selections into linked search pages and trace side panels.
+
+The MCP has also gained source filter awareness. Agents can discover filter requirements, retrieve available values, and pass filters into query tools. Filter values are cross-pruned, allowing one selection to narrow compatible values for others. When required filters are omitted, the MCP can automatically select them and report which values were applied. Initial evaluation results indicate no measurable impact on sources that do not use source filters.
+
+**Related PRs:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: show icon on tiles with excluded source-scoped filters, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+## Candidate columns when building sources {#candidate-columns-when-building-sources}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/PA-6sDjdjIM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+When creating a source, ClickStack now suggests candidate fields from the underlying table to help populate the configuration form. Suggestions are displayed as clickable chips, while validation distinguishes between fields that do not exist and fields that are valid but require source filters before they can be resolved.
+
+A new warning also highlights cases where a body expression has been configured without an implicit column. The feature is largely complete, with only minor UI polish and validation improvements remaining.
+
+**Related PRs:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
+
+## Anomaly alerts with group-by (WIP) {#anomaly-alerts-with-group-by}
+
+*Demo by [@fleon](https://github.com/fleon)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+This work addresses a usability challenge with anomaly detection on grouped time series. Displaying anomaly bands across every series at once quickly becomes unreadable. Himanshu's approach surfaces anomaly bands through the legend on hover, while still rendering them directly on the chart when a single series is selected.
+
+This feature is still in active development and pending futher improvements before release.
+
+## MCP eval multi-model selector {#mcp-eval-multi-model-selector}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+The MCP evaluation framework now supports running a single evaluation suite against multiple models simultaneously. Brandon demonstrates the feature by comparing Fable, Opus, and Sonnet in a single run following the launch of Fable.
+
+Across both the ClickHouse and HyperDX evaluation suites, Fable achieved substantially stronger results on ClickStack-specific questions. If only we could use the model :).
+
+**Related PRs:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): support multi-model comparison in eval batches, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: AI eval framework for benchmarking MCP servers
+
+## All notebook tools now use the MCP {#all-notebook-tools-now-use-the-mcp}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/lJnrfmQswpQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+All notebook investigation tools now execute through the ClickStack MCP rather than a separate implementation. While there is no visible change for users, the consolidation removes duplicate code paths and provides a foundation for future notebook and local agent interoperability.
+
+Raw SQL notebook tiles are planned next.
+
+## Datadog receiver {#datadog-receiver}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/P0VVuN_yL6Q" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Spencer demos improvements to the Datadog receiver.
+
+Previously, Datadog log payloads were ingested largely as unstructured JSON within the message body. The receiver now extracts and promotes key fields such as trace IDs, span IDs, timestamps, and HTTP request metadata into standard OpenTelemetry resource and log attributes.
+
+Datadog's 64-bit numeric trace IDs are also expanded into the 128-bit OpenTelemetry format, enabling proper trace correlation within ClickStack. The receiver is expected to be included in the ClickStack collector distribution, with further testing planned around end-to-end trace correlation.
+
+## Event patterns: any column {#event-patterns-any-column}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/5uGZ69YNV74" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Event pattern analysis can now run against any string column rather than being limited to `Body`. A new column selector defaults to `Body` to preserve existing behaviour, but allows users to select any column that can be represented as a string.
+
+Aaron also walks through the masking logic used to normalise variable content before the Drain algorithm groups events into patterns. The feature remains under review but should be available soon.
+
+**Related PRs:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: add pattern column selector for event pattern matching on any column
+
+## Span links (WIP) {#span-links}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/SK-T5J3YcQE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Alex demos early work on span link support in the ClickStack trace viewer. Span links are an OpenTelemetry concept that allows spans to reference related spans in other traces and are a frequently requested tracing feature.
+
+The current implementation surfaces linked spans and their associated attributes directly within the trace panel. The design and presentation are still being refined so consider this very much a work in progress.
+
+**Related PRs:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): surface span links in the trace viewer
+
+## Time series highlighting on hover {#time-series-highlighting-on-hover}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/QhyWYDE-stY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Multi-series time charts now highlight the series closest to the cursor. This makes it significantly easier to identify individual lines in dense charts with many group-by values.
+
+The feature originated from feedback received from teams migrating from Grafana to ClickStack.
+
+**Related PRs:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: highlight the series nearest the cursor in time chart tooltips
+
+## Duplicate series {#duplicate-series}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/PnhU_CtRFc4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A duplicate action has been added to the chart builder. Users can now copy an existing series configuration and make small adjustments, rather than rebuilding a similar series from scratch.
+
+Alex demonstrates the workflow by creating a P50 versus P95 comparison.
+
+**Related PRs:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): duplicate a series in the chart builder
+
+## Editable pill filters (WIP) {#editable-pill-filters}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/T7q_qkhWjUU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Filter pills are becoming editable directly within the search interface. Early functionality includes switching between include and exclude modes, editing values in place, and copying filters directly from the pill.
+
+The implementation is still in progress, with additional functionality and polish planned before release.
+
+**Related PRs:** [#2455](https://github.com/hyperdxio/hyperdx/pull/2455) feat(search): editable filter pills, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): allow free-text values when editing a filter pill

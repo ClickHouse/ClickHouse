@@ -6,6 +6,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -18,6 +19,10 @@ namespace ErrorCodes
 {
 extern const int TIMEOUT_EXCEEDED;
 extern const int LOGICAL_ERROR;
+}
+namespace FailPoints
+{
+extern const char replicated_database_status_finished_node_missing[];
 }
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
@@ -41,10 +46,30 @@ ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
 
 ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]] const String & host_id)
 {
-    /// Replicated database retries in case of error, it should not write error status.
+    /// A present finished/<host_id> for a Replicated database always holds status 0; an absent one is the benign
+    /// cleaner/retry race, not a remote error. This is a debug/sanitizer-only cross-check.
 #ifdef DEBUG_OR_SANITIZER_BUILD
     fs::path status_path = fs::path(node_path) / "finished" / host_id;
-    return getExecutionStatus(status_path);
+    bool node_exists = true;
+    ExecutionStatus status = getExecutionStatus(status_path, &node_exists);
+    /// Simulate the absent-node read (tryGet false -> node_exists false and the getExecutionStatus sentinel).
+    fiu_do_on(FailPoints::replicated_database_status_finished_node_missing,
+    {
+        node_exists = false;
+        status = ExecutionStatus(-1, "Cannot obtain error message");
+    });
+    /// Only the absent-node case is the benign race, so report success like the non-debug branch for it. A present
+    /// node holds a real deserialized status (positive code), or the (-1) sentinel when its payload is corrupt
+    /// (tryDeserializeText is atomic, so the sentinel survives) which the cross-check must still surface.
+    if (!node_exists)
+    {
+        LOG_DEBUG(log, "finished node {} is absent (benign cleaner/retry race), reporting success", status_path.string());
+        return ExecutionStatus{0};
+    }
+    if (status.code < 0)
+        LOG_WARNING(log, "finished node {} is present but its status payload could not be deserialized, "
+                    "surfacing it via the cross-check", status_path.string());
+    return status;
 #else
     return ExecutionStatus{0};
 #endif
@@ -97,7 +122,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::handleTimeoutExceeded()
 
     constexpr auto msg_format = "ReplicatedDatabase DDL task {} is not finished on {} of {} hosts "
                                 "({} of them are currently executing the task, {} are inactive). "
-                                "They are going to execute the query in background. Was waiting for {} seconds{}";
+                                "They are going to execute the query in background. Was waiting for {:.3f} seconds{}";
 
     if (throw_on_timeout || (throw_on_timeout_only_active && !stop_waiting_offline_hosts))
     {

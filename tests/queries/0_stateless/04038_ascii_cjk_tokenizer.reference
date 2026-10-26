@@ -60,7 +60,6 @@ select tokensForLikePattern('abc你好', 'asciiCJK');         -- ASCII then Unic
 ['abc','你','好']
 select tokensForLikePattern('你好%世界', 'asciiCJK');       -- Unicode token with wildcards
 ['你','好','世','界']
-set enable_analyzer = 1;
 set enable_full_text_index = 1;
 drop table if exists tab;
 create table tab (key UInt64, str String, index text_idx(str) type text(tokenizer = asciiCJK)) engine MergeTree order by key;
@@ -70,8 +69,10 @@ default	tab	1	1	1
 explain estimate select * from tab where str like '%错误503需要%';
 default	tab	0	0	0
 drop table tab;
--- backward compatibility: unicodeWord alias
+-- Aliases
 select tokens('taichi张三丰in the house', 'unicodeWord');
+['taichi','张','三','丰','in','the','house']
+select tokens('taichi张三丰in the house', 'unicode_word');
 ['taichi','张','三','丰','in','the','house']
 drop table if exists tab2;
 create table tab2 (key UInt64, str String, index text_idx(str) type text(tokenizer = unicodeWord)) engine MergeTree order by key;

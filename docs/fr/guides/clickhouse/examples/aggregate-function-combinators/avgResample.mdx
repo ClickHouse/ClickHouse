@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: "Exemple d’utilisation du combinateur Resample avec avg"
+keywords: ['avg', 'Resample', 'combinateur', 'exemples', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le [combinateur `Resample`](/fr/reference/functions/aggregate-functions/combinators#-resample)
+peut être appliqué à la [fonction d’agrégation `count`](/fr/reference/functions/aggregate-functions/count)
+pour compter les valeurs d’une colonne de clé dans un nombre fixe
+d’intervalles (`N`).
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="basic-example">
+  ### Exemple simple
+</div>
+
+Examinons un exemple. Nous allons créer une table contenant les champs `name`, `age` et
+`wage` des employés, puis y insérer des données :
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Calculons le salaire moyen des personnes dont l’âge se situe dans les intervalles `[30,60)`
+et `[60,75)` (`[` est exclusif et `)` inclusif). Comme nous utilisons une
+représentation entière pour l’âge, nous obtenons des âges dans les intervalles `[30, 59]` et `[60,74]`.
+Pour ce faire, nous appliquons le combinateur `Resample` à la fonction d’agrégation `avg`.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`count`](/fr/reference/functions/aggregate-functions/count)
+* [`Resample combinateur`](/fr/reference/functions/aggregate-functions/combinators#-resample)

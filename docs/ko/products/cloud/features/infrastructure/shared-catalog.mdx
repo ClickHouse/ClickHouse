@@ -1,0 +1,94 @@
+---
+slug: /cloud/reference/shared-catalog
+sidebarTitle: 'Shared catalog'
+title: 'Shared Catalog 및 공유 데이터베이스 엔진'
+keywords: ['SharedCatalog', 'SharedDatabaseEngine']
+description: 'ClickHouse Cloud의 Shared Catalog 구성 요소와 공유 데이터베이스 엔진을 설명합니다'
+doc_type: 'reference'
+---
+
+**ClickHouse Cloud(및 자사 파트너 클라우드 서비스)에서만 사용할 수 있습니다**
+
+Shared Catalog는 ClickHouse Cloud에서 상태 비저장 엔진을 사용하는 데이터베이스와 테이블의 메타데이터 및 DDL 작업을 레플리카 간에 복제하는 클라우드 네이티브 구성 요소입니다. 이 구성 요소는 이러한 객체의 상태를 일관되게 중앙에서 관리할 수 있도록 하며, 동적으로 변경되거나 일부가 오프라인인 환경에서도 메타데이터 일관성을 보장합니다.
+
+Shared Catalog는 **테이블 자체를 복제하지는 않지만**, DDL 쿼리와 메타데이터를 복제하여 모든 레플리카가 데이터베이스 및 테이블 정의를 일관되게 참조할 수 있도록 합니다.
+
+다음 데이터베이스 엔진의 복제를 지원합니다:
+
+* Shared
+* PostgreSQL
+* MySQL
+* DataLakeCatalog
+
+<div id="architecture-and-metadata-storage">
+  ## 아키텍처 및 메타데이터 저장소
+</div>
+
+Shared Catalog의 모든 메타데이터와 DDL 쿼리 이력은 ZooKeeper에 중앙집중식으로 저장됩니다. 로컬 디스크에는 아무것도 저장되지 않습니다. 이 아키텍처는 다음을 보장합니다.
+
+* 모든 레플리카 간의 일관된 상태
+* 컴퓨트 노드의 무상태성
+* 빠르고 안정적인 레플리카 부트스트래핑
+
+<div id="shared-database-engine">
+  ## 공유 데이터베이스 엔진
+</div>
+
+**공유 데이터베이스 엔진**은 Shared Catalog와 함께 사용되어 `SharedMergeTree`와 같은 **무상태 테이블 엔진**을 사용하는 테이블이 포함된 데이터베이스를 관리합니다. 이러한 테이블 엔진은 디스크에 영구적인 상태를 기록하지 않으며, 동적 컴퓨트 환경과 호환됩니다.
+
+공유 데이터베이스 엔진은 Replicated 데이터베이스 엔진의 동작을 기반으로 이를 개선하는 한편, 추가적인 보장과 운영상 이점도 제공합니다.
+
+<div id="key-benefits">
+  ### 주요 이점
+</div>
+
+* **Atomic CREATE TABLE ... AS SELECT**
+  테이블 생성과 데이터 삽입이 원자적으로 수행됩니다. 즉, 전체 작업이 완료되거나 테이블이 아예 생성되지 않습니다.
+
+* **데이터베이스 간 RENAME TABLE**
+  데이터베이스 간에 테이블을 원자적으로 이동할 수 있습니다.
+  ```sql
+  RENAME TABLE db1.table TO db2.table;
+  ```
+
+* **UNDROP TABLE을 통한 자동 테이블 복구**
+  삭제된 테이블은 기본적으로 8시간 동안 유지되며 복원할 수 있습니다.
+  ```sql
+  UNDROP TABLE my_table;
+  ```
+  유지 기간은 서버 설정으로 조정할 수 있습니다.
+
+* **개선된 컴퓨트-컴퓨트 분리**
+  DROP 쿼리를 처리하려면 모든 레플리카가 온라인 상태여야 하는 Replicated 데이터베이스 엔진과 달리, Shared Catalog는 메타데이터 삭제를 중앙에서 처리합니다. 따라서 일부 레플리카가 오프라인 상태여도 작업을 성공적으로 수행할 수 있습니다.
+
+* **자동 메타데이터 복제**
+  Shared Catalog는 시작 시 데이터베이스 정의가 모든 서버에 자동으로 복제되도록 합니다. 운영자는 새 인스턴스에서 메타데이터를 수동으로 구성하거나 동기화할 필요가 없습니다.
+
+* **중앙에서 관리되는 버전별 메타데이터 상태**
+  Shared Catalog는 ZooKeeper에 단일 정보 원본을 저장합니다. 레플리카가 시작되면 최신 상태를 가져와 diff를 적용해 일관성을 맞춥니다. 쿼리 실행 중에는 정확성을 보장하기 위해 다른 레플리카가 최소한 필요한 메타데이터 버전에 도달할 때까지 시스템이 대기할 수 있습니다.
+
+<div id="usage-in-clickhouse-cloud">
+  ## ClickHouse Cloud에서의 사용
+</div>
+
+최종 사용자는 Shared Catalog와 공유 데이터베이스 엔진을 사용할 때 추가 구성이 필요하지 않습니다. 데이터베이스 생성은 기존과 동일합니다:
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud는 데이터베이스에 공유 데이터베이스 엔진을 자동으로 할당합니다. 이러한 데이터베이스에서 상태 비저장 엔진으로 생성한 모든 테이블에는 Shared Catalog의 복제 및 조정 기능이 자동으로 적용됩니다.
+
+<div id="summary">
+  ## 요약
+</div>
+
+Shared Catalog와 공유 데이터베이스 엔진은 다음을 제공합니다.
+
+* 상태 비저장 엔진을 위한 안정적이고 자동화된 메타데이터 복제
+* 로컬 메타데이터를 영구 저장하지 않는 상태 비저장 컴퓨트
+* 복잡한 DDL을 위한 원자적 연산
+* 탄력적이고 일시적이거나 부분적으로 오프라인 상태인 컴퓨트 환경에 대한 향상된 지원
+* ClickHouse Cloud 사용자를 위한 원활한 사용 경험
+
+이러한 capability를 통해 Shared Catalog는 ClickHouse Cloud에서 확장 가능하고 클라우드 네이티브한 메타데이터 관리의 기반이 됩니다.

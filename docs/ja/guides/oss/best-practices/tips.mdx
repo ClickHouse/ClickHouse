@@ -1,0 +1,351 @@
+---
+description: 'オープンソース版 ClickHouse の利用に関する推奨事項を説明するページ'
+sidebarTitle: 'OSS 利用の推奨事項'
+slug: /operations/tips
+title: 'OSS 利用の推奨事項'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+<div id="cpu-scaling-governor">
+  ## CPU スケーリングガバナー
+</div>
+
+常に `performance` スケーリングガバナーを使用してください。`on-demand` スケーリングガバナーは、継続的に高い負荷がかかる環境ではパフォーマンスが大幅に低下します。
+
+```bash
+$ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+```
+
+<div id="cpu-limitations">
+  ## CPU の制限事項
+</div>
+
+CPU は過熱することがあります。過熱によって CPU のクロック周波数が制限されたかどうかは、`dmesg` で確認できます。
+この制限は、データセンター側で設定されることもあります。負荷をかけた状態で監視するには、`turbostat` を使用できます。
+
+<div id="ram">
+  ## RAM
+</div>
+
+少量のデータ (圧縮後で最大約 200 GB) の場合は、データ量と同程度の、できるだけ多くのメモリを使用するのが最適です。
+大量のデータを扱い、対話的 (オンライン) なクエリを処理する場合は、ホットデータのサブセットがページ cache に収まるよう、適切な量の RAM (128 GB 以上) を使用してください。
+サーバー 1 台あたり約 50 TB のデータ量であっても、128 GB の RAM を使用すると、64 GB と比べてクエリ性能が大幅に向上します。
+
+overcommit は無効にしないでください。`cat /proc/sys/vm/overcommit_memory` の値は 0 または 1 にする必要があります。次を実行します
+
+```bash
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
+
+`perf top` を使って、メモリ管理に関してカーネル内でどれだけ時間が費やされているかを確認します。
+永続的な huge pages も割り当てる必要はありません。
+
+<div id="using-less-than-16gb-of-ram">
+  ### 16GB未満のRAMを使用する
+</div>
+
+推奨されるRAM容量は32 GB以上です。
+
+システムのRAMが16 GB未満の場合、デフォルト設定がこのメモリ容量に見合っていないため、さまざまなメモリ例外が発生することがあります。RAM容量が少ないシステム (最小2 GB程度) でもClickHouseは使用できますが、そのような構成では追加のチューニングが必要で、低いレートでしか取り込めません。
+
+RAMが16GB未満の環境でClickHouseを使用する場合は、以下を推奨します。
+
+* `config.xml` 内のmark cacheのサイズを小さくします。500 MBまで下げられますが、ゼロには設定できません。
+* クエリ処理スレッド数を `1` まで減らします。
+* `max_block_size` を `8192` まで下げます。`1024` 程度の値でも実用的です。
+* `max_download_threads` を `1` に下げます。
+* `input_format_parallel_parsing` と `output_format_parallel_formatting` を `0` に設定します。
+* ログテーブルへの書き込みを無効にします。これにより、バックグラウンドのマージタスクがログテーブルのマージを実行するためにRAMを確保し続けるのを防げます。`asynchronous_metric_log`、`metric_log`、`text_log`、`trace_log` を無効にします。
+
+追加の注意事項:
+
+* メモリアロケータによってcacheされたメモリをflushするには、`SYSTEM JEMALLOC PURGE`
+  コマンドを実行できます。
+* 低メモリのマシンでは、S3やKafkaのインテグレーションの使用は推奨しません。これらはバッファにかなりのメモリを必要とするためです。
+
+<div id="storage-subsystem">
+  ## ストレージサブシステム
+</div>
+
+予算に余裕がありSSDを使えるなら、SSDを使ってください。
+そうでなければ、HDDを使ってください。7200 RPMのSATA HDDで十分です。
+
+ディスクシェルフが接続された少数のサーバーよりも、ローカルハードドライブを搭載した多数のサーバーを優先してください。
+ただし、クエリの頻度が低いアーカイブの保存であれば、シェルフでも問題ありません。
+
+<div id="raid">
+  ## RAID
+</div>
+
+HDD を使用する場合は、RAID-10、RAID-5、RAID-6、または RAID-50 を構成できます。
+Linux では、ソフトウェア RAID (`mdadm`) のほうが適しています。
+RAID-10 を作成する場合は、`far` レイアウトを選択してください。
+予算に余裕があるなら、RAID-10 を選んでください。
+
+LVM 単体 (RAID や `mdadm` なし) でも問題ありませんが、LVM で RAID を構成したり `mdadm` と組み合わせたりする方法はあまり検証されておらず、ミスが起きる可能性も高くなります
+(誤った chunk サイズの選択、chunk の不整合、誤った RAID タイプの選択、ディスクのクリーンアップ忘れなど) 。LVM の利用に自信があるなら、
+使用しても問題ありません。
+
+ディスクが 4 台を超える場合は、RAID-5 ではなく、RAID-6 (推奨) または RAID-50 を使用してください。
+RAID-5、RAID-6、または RAID-50 を使用する場合は、デフォルト値が通常は最適ではないため、必ず stripe&#95;cache&#95;size を増やしてください。
+
+```bash
+$ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
+```
+
+次の式を用いて、デバイス数とブロックサイズから正確な値を計算します: `2 * num_devices * chunk_size_in_bytes / 4096`.
+
+64 KB のブロックサイズは、ほとんどの RAID 構成で十分です。clickhouse-server の平均書き込みサイズは約 1 MB (1024 KB) であるため、推奨されるストライプサイズも 1 MB です。必要に応じて、RAID アレイ内の非パリティディスク数で 1 MB を割った値にブロックサイズを設定することで最適化できます。これにより、各書き込みが使用可能なすべての非パリティディスクに並列に分散されます。
+ブロックサイズは、小さすぎても大きすぎてもいけません。
+
+SSD では RAID-0 を使用できます。
+RAID を使用するかどうかにかかわらず、データ保護のために常にレプリケーションを使用してください。
+
+キュー長を長めに設定して NCQ を有効にします。HDD では mq-deadline または CFQ スケジューラを選択し、SSD では noop を選択します。&#39;readahead&#39; 設定は減らさないでください。
+HDD では、書き込み cache を有効にしてください。
+
+OS で NVME および SSD ディスクに対して [`fstrim`](https://en.wikipedia.org/wiki/Trim_\(computing\)) が有効になっていることを確認してください (通常は cronjob または systemd service で実装されます) 。
+
+<div id="file-system">
+  ## ファイルシステム
+</div>
+
+最も信頼性が高いのは Ext4 です。マウントオプションには `noatime` を設定してください。XFS も適しています。
+そのほかのほとんどのファイルシステムでも、通常は問題なく動作します。
+
+FAT-32 と exFAT は、ハードリンクに対応していないためサポートされていません。
+
+圧縮ファイルシステムは使用しないでください。ClickHouse 自体がより適切に圧縮を行うためです。
+暗号化ファイルシステムの使用も推奨されません。ClickHouse には組み込みの暗号化機能があり、そちらのほうが優れているためです。
+
+ClickHouse は NFS 上でも動作しますが、最適な選択肢ではありません。
+
+<div id="linux-kernel">
+  ## Linux カーネル
+</div>
+
+古い Linux カーネルは使用しないでください。
+
+<div id="network">
+  ## ネットワーク
+</div>
+
+IPv6 を使用している場合は、ルートキャッシュのサイズを増やしてください。
+Linux カーネル 3.2 より前では、IPv6 の実装に多くの問題がありました。
+
+可能であれば、少なくとも 10 Gb のネットワークを使用してください。1 Gb でも動作はしますが、数十テラバイトのデータを持つレプリカの修復や、大量の中間データを伴う分散クエリの処理では、性能が大幅に低下します。
+
+<div id="huge-pages">
+  ## Huge Pages
+</div>
+
+透過的 Huge Pages は、常に `madvise` に設定してください。古いカーネル (5.9 より前) では、THP を `always` に設定すると、パフォーマンスが大幅に低下することがあります。これは、特に 64 GB 以上の RAM を搭載したシステムで、カーネルがメモリのデフラグメンテーションに過剰な時間を費やすためです。カーネル 5.9 では proactive compaction が導入され、THP をより適切に処理できるようになりましたが、THP が `always` に設定されていると ClickHouse は起動時に引き続き警告を出します。そのため、カーネルのバージョンにかかわらず、推奨される設定は `madvise` です。
+
+```bash
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+```
+
+透過的巨大ページの設定を永続的に変更するには、`/etc/default/grub` を編集し、`GRUB_CMDLINE_LINUX_DEFAULT` オプションに `transparent_hugepage=madvise` を追加します。
+
+```bash
+$ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
+```
+
+その後、`sudo update-grub` コマンドを実行し、変更を反映させるために再起動します。
+
+<div id="hypervisor-configuration">
+  ## ハイパーバイザーの設定
+</div>
+
+OpenStack を使用している場合は、次を設定します
+
+```ini
+cpu_mode=host-passthrough
+```
+
+`nova.conf` で。
+
+libvirt を使用している場合は、次のように設定します
+
+```xml
+<cpu mode='host-passthrough'/>
+```
+
+XML 設定で指定します。
+
+これは、ClickHouse が `cpuid` 命令から正しい情報を取得できるようにするために重要です。
+そうしないと、ハイパーバイザーが古い CPU モデル上で動作している場合に、`Illegal instruction` によるクラッシュが発生することがあります。
+
+<div id="zookeeper">
+  ## ClickHouse Keeper と ZooKeeper
+</div>
+
+ClickHouse クラスターでは、ZooKeeper の置き換えとして ClickHouse Keeper の使用を推奨します。[ClickHouse Keeper](/ja/guides/oss/deployment-and-scaling/keeper/index) のドキュメントを参照してください。
+
+引き続き ZooKeeper を使用する場合は、新しめのバージョンの ZooKeeper (3.4.9 以降) を使うのが最善です。安定版 Linux ディストリビューションに含まれているバージョンは古い可能性があります。
+
+異なる ZooKeeper クラスター間でデータを転送するために、手書きのスクリプトを使ってはなりません。sequential ノードでは結果が正しくならないためです。同じ理由で、&quot;zkcopy&quot; ユーティリティも決して使用しないでください: https://github.com/ksprojects/zkcopy/issues/15
+
+既存の ZooKeeper クラスターを 2 つに分割したい場合、正しい方法は、まずレプリカ数を増やし、その後 2 つの独立したクラスターとして再構成することです。
+
+テスト環境、またはインジェスト率が低い環境では、ClickHouse と同じサーバー上で ClickHouse Keeper を実行できます。
+本番環境では、ClickHouse と ZooKeeper/Keeper には別々のサーバーを使用するか、ClickHouse のファイルと Keeper のファイルを別々のディスクに配置することを推奨します。ZooKeeper/Keeper はディスクレイテンシに非常に敏感で、ClickHouse が利用可能なシステムリソースをすべて使い切る可能性があるためです。
+
+アンサンブルに ZooKeeper オブザーバーを含めることはできますが、ClickHouse サーバーがオブザーバーとやり取りすべきではありません。
+
+`minSessionTimeout` 設定は変更しないでください。値を大きくすると ClickHouse の再起動の安定性に影響する可能性があります。
+
+デフォルト設定の ZooKeeper は時限爆弾です:
+
+> デフォルト構成では、ZooKeeper サーバーは古い snapshots と logs のファイルを削除しません (`autopurge` を参照) 。これは operator の責任です。
+
+この爆弾は解除しなければなりません。
+
+以下の ZooKeeper (3.5.1) 構成は、大規模な本番環境で使用されています:
+
+zoo.cfg:
+
+```bash
+# http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html
+
+# The number of milliseconds of each tick
+tickTime=2000
+# The number of ticks that the initial
+# synchronization phase can take
+# This value is not quite motivated
+initLimit=300
+# The number of ticks that can pass between
+# sending a request and getting an acknowledgement
+syncLimit=10
+
+maxClientCnxns=2000
+
+# It is the maximum value that client may request and the server will accept.
+# It is Ok to have high maxSessionTimeout on server to allow clients to work with high session timeout if they want.
+# But we request session timeout of 30 seconds by default (you can change it with session_timeout_ms in ClickHouse config).
+maxSessionTimeout=60000000
+# the directory where the snapshot is stored.
+dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/data
+# Place the dataLogDir to a separate physical disc for better performance
+dataLogDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/logs
+
+autopurge.snapRetainCount=10
+autopurge.purgeInterval=1
+
+# To avoid seeks ZooKeeper allocates space in the transaction log file in
+# blocks of preAllocSize kilobytes. The default block size is 64M. One reason
+# for changing the size of the blocks is to reduce the block size if snapshots
+# are taken more often. (Also, see snapCount).
+preAllocSize=131072
+
+# Clients can submit requests faster than ZooKeeper can process them,
+# especially if there are a lot of clients. To prevent ZooKeeper from running
+# out of memory due to queued requests, ZooKeeper will throttle clients so that
+# there is no more than globalOutstandingLimit outstanding requests in the
+# system. The default limit is 1000.
+# globalOutstandingLimit=1000
+
+# ZooKeeper logs transactions to a transaction log. After snapCount transactions
+# are written to a log file a snapshot is started and a new transaction log file
+# is started. The default snapCount is 100000.
+snapCount=3000000
+
+# If this option is defined, requests will be will logged to a trace file named
+# traceFile.year.month.day.
+#traceFile=
+
+# Leader accepts client connections. Default value is "yes". The leader machine
+# coordinates updates. For higher update throughput at thes slight expense of
+# read throughput the leader can be configured to not accept clients and focus
+# on coordination.
+leaderServes=yes
+
+standaloneEnabled=false
+dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.cfg.dynamic
+```
+
+Java のバージョン:
+
+```text
+openjdk 11.0.5-shenandoah 2019-10-15
+OpenJDK Runtime Environment (build 11.0.5-shenandoah+10-adhoc.heretic.src)
+OpenJDK 64-Bit Server VM (build 11.0.5-shenandoah+10-adhoc.heretic.src, mixed mode)
+```
+
+JVM パラメータ:
+
+```bash
+NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}
+ZOOCFGDIR=/etc/$NAME/conf
+
+# TODO これは非常に見苦しい
+# 必要なjarを特定するにはどうすればよいか？
+# log4jはlog4j.propertiesファイルがクラスパスに含まれている必要があるようだ
+CLASSPATH="$ZOOCFGDIR:/usr/build/classes:/usr/build/lib/*.jar:/usr/share/zookeeper-3.6.2/lib/audience-annotations-0.5.0.jar:/usr/share/zookeeper-3.6.2/lib/commons-cli-1.2.jar:/usr/share/zookeeper-3.6.2/lib/commons-lang-2.6.jar:/usr/share/zookeeper-3.6.2/lib/jackson-annotations-2.10.3.jar:/usr/share/zookeeper-3.6.2/lib/jackson-core-2.10.3.jar:/usr/share/zookeeper-3.6.2/lib/jackson-databind-2.10.3.jar:/usr/share/zookeeper-3.6.2/lib/javax.servlet-api-3.1.0.jar:/usr/share/zookeeper-3.6.2/lib/jetty-http-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-io-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-security-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-server-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-servlet-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jetty-util-9.4.24.v20191120.jar:/usr/share/zookeeper-3.6.2/lib/jline-2.14.6.jar:/usr/share/zookeeper-3.6.2/lib/json-simple-1.1.1.jar:/usr/share/zookeeper-3.6.2/lib/log4j-1.2.17.jar:/usr/share/zookeeper-3.6.2/lib/metrics-core-3.2.5.jar:/usr/share/zookeeper-3.6.2/lib/netty-buffer-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-codec-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-common-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-handler-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-resolver-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-transport-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-transport-native-epoll-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/netty-transport-native-unix-common-4.1.50.Final.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient_common-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient_hotspot-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/simpleclient_servlet-0.6.0.jar:/usr/share/zookeeper-3.6.2/lib/slf4j-api-1.7.25.jar:/usr/share/zookeeper-3.6.2/lib/slf4j-log4j12-1.7.25.jar:/usr/share/zookeeper-3.6.2/lib/snappy-java-1.1.7.jar:/usr/share/zookeeper-3.6.2/lib/zookeeper-3.6.2.jar:/usr/share/zookeeper-3.6.2/lib/zookeeper-jute-3.6.2.jar:/usr/share/zookeeper-3.6.2/lib/zookeeper-prometheus-metrics-3.6.2.jar:/usr/share/zookeeper-3.6.2/etc"
+
+ZOOCFG="$ZOOCFGDIR/zoo.cfg"
+ZOO_LOG_DIR=/var/log/$NAME
+USER=zookeeper
+GROUP=zookeeper
+PIDDIR=/var/run/$NAME
+PIDFILE=$PIDDIR/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
+JAVA=/usr/local/jdk-11/bin/java
+ZOOMAIN="org.apache.zookeeper.server.quorum.QuorumPeerMain"
+ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
+JMXLOCALONLY=false
+JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
+    -Xmx{{ '{{' }} cluster.get('xmx','1G') {{ '}}' }} \
+    -Xlog:safepoint,gc*=info,age*=debug:file=/var/log/$NAME/zookeeper-gc.log:time,level,tags:filecount=16,filesize=16M
+    -verbose:gc \
+    -XX:+UseG1GC \
+    -Djute.maxbuffer=8388608 \
+    -XX:MaxGCPauseMillis=50"
+```
+
+Saltの初期化:
+
+```text
+description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+respawn
+
+limit nofile 8192 8192
+
+pre-start script
+    [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment" ] || exit 0
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+    [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
+    chown $USER:$GROUP $ZOO_LOG_DIR
+end script
+
+script
+    . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+    [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
+    if [ -z "$JMXDISABLE" ]; then
+        JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
+    fi
+    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} \
+        -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
+        -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
+end script
+```
+
+<div id="antivirus-software">
+  ## ウイルス対策ソフト
+</div>
+
+ウイルス対策ソフトを使用している場合は、ClickHouse のデータファイル (`/var/lib/clickhouse`) があるフォルダーをスキャン対象から除外するよう設定してください。そうしないと、パフォーマンスが低下したり、データのインジェスト中やバックグラウンドでのマージ中に予期しないエラーが発生したりすることがあります。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ClickHouse 入門で陥りがちな 13 の「致命的な落とし穴」とその回避方法](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

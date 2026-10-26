@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <limits>
+#include <optional>
 #include <string>
 #include <span>
 
@@ -24,16 +25,26 @@ struct StoredObject
 
     String remote_path; /// abs path
     String local_path; /// or equivalent "metadata_path"
+    std::optional<size_t> read_source_index;
 
     /// NOTE: the type must stay uint64_t — MetadataStorageFromDisk removal log serializes it as UInt64 LE.
     uint64_t bytes_size = UnknownSize;
 
+    /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
+    /// catching an in-place overwrite mid-read. Empty means no validation.
+    String etag;
+
+    /// `getETagHash` of the ETag, 0 if not computed. Used only where a read asks for it.
+    UInt64 etag_hash = 0;
+
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",
-        uint64_t bytes_size_ = UnknownSize)
+        uint64_t bytes_size_ = UnknownSize,
+        std::optional<size_t> read_source_index_ = std::nullopt)
         : remote_path(remote_path_)
         , local_path(local_path_)
+        , read_source_index(read_source_index_)
         , bytes_size(bytes_size_)
     {}
 
@@ -46,6 +57,8 @@ using StoredObjectsSpan = std::span<const StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
 Strings collectRemotePaths(const StoredObjects & objects);
+
+UInt64 getETagHash(const String & etag);
 
 }
 
