@@ -119,7 +119,16 @@ ALTER RULE rule_name AS (source_query) REJECT WITH 'message'
         .examples = {
             {"Change a rule into a rejection",
              R"(
-ALTER RULE rule_1 AS
+CREATE RULE totals_rule AS
+(
+    SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
+)
+REWRITE TO
+(
+    SELECT date, hits FROM totals WHERE page = {name:String}
+);
+
+ALTER RULE totals_rule AS
 (
     SELECT date, sum(hits) FROM stats WHERE page = {name:String} GROUP BY date
 )

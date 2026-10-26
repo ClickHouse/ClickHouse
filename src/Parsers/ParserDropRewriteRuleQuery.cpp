@@ -52,7 +52,13 @@ See [Query rewrite rules](/operations/query-rules) for the details.
 DROP RULE [IF EXISTS] rule_name
 )",
         .examples = {
-            {"Drop a rule", "DROP RULE rule_1;", ""},
+            {"Drop a rule",
+             R"(
+CREATE RULE old_rule AS (SELECT * FROM stats) REJECT WITH 'Full scans of stats are not allowed';
+
+DROP RULE old_rule;
+)", ""},
+            {"Drop a rule that may not exist", "DROP RULE IF EXISTS missing_rule;", ""},
         },
         .parent = "DROP",
         .related = {"CREATE RULE", "ALTER RULE"},
