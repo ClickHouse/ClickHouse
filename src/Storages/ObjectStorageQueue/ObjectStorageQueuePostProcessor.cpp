@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Disks/IDisk.h>
@@ -16,6 +17,8 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/scope_guard.h>
+
+#include <Poco/URI.h>
 
 #include <chrono>
 #include <thread>
@@ -54,6 +57,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
     extern const S3AuthSettingsS3UriStyle uri_style;
+}
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool allow_native_copy;
 }
 
 #endif
@@ -409,6 +417,21 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 /* for_disk_s3 */ false
             );
             auto dst_uri = S3::URI(move_uri);
+
+            /// Native copy sends `CopyObject` through the source client, so it writes the destination bucket on the source endpoint,
+            /// not on the endpoint of `move_uri`. If `remote_url_allow_hosts` does not allow that, copy through `dst_client` instead.
+            const auto & src_uri = s3_storage->getURI();
+            Poco::URI native_copy_endpoint(src_uri.endpoint);
+            Poco::URI native_copy_uri = native_copy_endpoint;
+            if (src_uri.is_virtual_hosted_style)
+                native_copy_uri.setHost(dst_uri.bucket + "." + native_copy_endpoint.getHost());
+            else
+                native_copy_uri.setPath("/" + dst_uri.bucket + "/");
+            const auto & remote_host_filter = contextPtr->getRemoteHostFilter();
+            if (!remote_host_filter.isBucketAllowed(native_copy_endpoint.getHost(), native_copy_endpoint.getPort(), dst_uri.bucket)
+                && !remote_host_filter.checkURL(native_copy_uri, /*throw_on_error=*/ false))
+                s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
+
             auto read_settings = getReadSettings();
             const auto read_settings_to_use = s3_storage->patchSettings(read_settings);
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
