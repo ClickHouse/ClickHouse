@@ -113,44 +113,42 @@ private:
         return LUTIndex{static_cast<UInt32>(index)};
     }
 
+    /// The additive operators compute in `Int64`, so that a result below zero saturates to the first index
+    /// instead of wrapping around to a huge `UInt32` and saturating to the last one.
+    /// Note: `LUTIndex` converts to `UInt32 &` implicitly, so `index += x` and `index -= x` would bypass
+    /// the normalization - write `index = index + x` instead.
     template <typename T>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator+(const LUTIndex & index, const T v)
     {
-        return normalizeLUTIndex(index.toUnderType() + UInt32(v));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) + static_cast<Int64>(v));
     }
 
     template <typename T>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator+(const T v, const LUTIndex & index)
     {
-        return normalizeLUTIndex(static_cast<Int64>(v + index.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(v) + static_cast<Int64>(index.toUnderType()));
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator+(const LUTIndex & index, const LUTIndex & v)
     {
-        return normalizeLUTIndex(static_cast<UInt32>(index.toUnderType() + v.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) + static_cast<Int64>(v.toUnderType()));
     }
 
     template <typename T>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator-(const LUTIndex & index, const T v)
     {
-        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - UInt32(v)));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) - static_cast<Int64>(v));
     }
 
     template <typename T>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator-(const T v, const LUTIndex & index)
     {
-        return normalizeLUTIndex(static_cast<Int64>(v - index.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(v) - static_cast<Int64>(index.toUnderType()));
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     friend LUTIndex operator-(const LUTIndex & index, const LUTIndex & v)
     {
-        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType() - v.toUnderType()));
+        return normalizeLUTIndex(static_cast<Int64>(index.toUnderType()) - static_cast<Int64>(v.toUnderType()));
     }
 
     template <typename T>
@@ -760,20 +758,22 @@ public:
     }
 
     template <typename DateOrTime>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     LUTIndex toFirstDayOfQuarterIndex(DateOrTime v) const
     {
         LUTIndex index = toLUTIndex(v);
         size_t month_inside_quarter = (lut[index].month - 1) % 3;
 
-        index -= lut[index].day_of_month;
+        /// Step to the first day of each month, never to the day before it, because that day is not in the LUT
+        /// for the first month of the LUT.
+        index = index - (lut[index].day_of_month - 1);
         while (month_inside_quarter)
         {
-            index -= lut[index].day_of_month;
+            index = index - 1;
+            index = index - (lut[index].day_of_month - 1);
             --month_inside_quarter;
         }
 
-        return index + 1;
+        return index;
     }
 
     template <typename DateOrTime>
@@ -817,7 +817,6 @@ public:
             return toDayNum(LUTIndex(toFirstDayNumOfYearIndex(v)));
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     Time toFirstDayOfNextMonth(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))
@@ -827,11 +826,10 @@ public:
         }
 
         LUTIndex index = findIndexInRange(t);
-        index += 32 - lut[index].day_of_month;
+        index = index + (32 - lut[index].day_of_month);
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     Time toFirstDayOfPrevMonth(Time t) const
     {
         if (unlikely(isOutOfLUTRange(t)))
@@ -841,7 +839,7 @@ public:
         }
 
         LUTIndex index = findIndexInRange(t);
-        index -= lut[index].day_of_month;
+        index = index - lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
