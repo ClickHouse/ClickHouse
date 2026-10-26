@@ -1767,6 +1767,23 @@ The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0, \
         {"25.1", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."}) \
     \
+    DECLARE(String, output_format_puffin_referenced_data_file, "", R"(
+Location of the data file the deletion vector written by the Puffin output format applies to. Written into the `referenced-data-file` property of the `deletion-vector-v1` blob. Required: the Puffin output format throws an exception when it is empty.
+)", 0, \
+        {"26.10", "", "", "New setting: data file location written into the `referenced-data-file` property by the new Puffin output format."}) \
+    DECLARE(Int64, output_format_puffin_snapshot_id, -1, R"(
+Value of the `snapshot-id` field written into the blob metadata of every `deletion-vector-v1` blob by the Puffin output format. Apache Iceberg writes `-1` for deletion vectors because the snapshot id is not known when the file is written.
+)", 0, \
+        {"26.10", -1, -1, "New setting: `snapshot-id` written into deletion vector blob metadata by the new Puffin output format."}) \
+    DECLARE(Int64, output_format_puffin_sequence_number, -1, R"(
+Value of the `sequence-number` field written into the blob metadata of every `deletion-vector-v1` blob by the Puffin output format. Apache Iceberg writes `-1` for deletion vectors because the sequence number is assigned on commit.
+)", 0, \
+        {"26.10", -1, -1, "New setting: `sequence-number` written into deletion vector blob metadata by the new Puffin output format."}) \
+    DECLARE(String, output_format_puffin_field_ids, "2147483645", R"(
+Comma-separated list of Iceberg field ids written into the `fields` list of the blob metadata of every `deletion-vector-v1` blob by the Puffin output format. The default is the id of the `_pos` metadata column, which is what Apache Iceberg writes for deletion vectors.
+)", 0, \
+        {"26.10", "2147483645", "2147483645", "New setting: `fields` written into deletion vector blob metadata by the new Puffin output format."}) \
+    \
     DECLARE(CapnProtoEnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::CapnProtoEnumComparingMode::BY_VALUES, R"(
 How to map ClickHouse Enum and CapnProto Enum
 )", 0) \
