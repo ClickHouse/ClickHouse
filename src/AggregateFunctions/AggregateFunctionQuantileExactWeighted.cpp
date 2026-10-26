@@ -111,6 +111,11 @@ struct QuantileExactWeighted
         while (reader.next())
         {
             const auto & pair = reader.get();
+            /// `add` ignores values with zero weight in `quantilesExactWeightedInterpolated`, so a state that
+            /// holds them was not produced by it; skip them so that a state of only zero weights is empty.
+            if constexpr (interpolated)
+                if (!pair.second)
+                    continue;
             map[pair.first] = pair.second;
         }
     }
@@ -338,8 +343,8 @@ private:
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
         std::partial_sum(array, array + size, array,
             [](const Pair & acc, const Pair & p) { return Pair(p.first, addWeights(acc.second, p.second)); });
-        /// A deserialized state may contain only zero weights.
-        return common::subIgnoreOverflow(array[size - 1].second, Weight(1));
+        /// `add` and `deserialize` keep only positive weights, so the total weight is at least 1.
+        return array[size - 1].second - 1;
     }
 
     /// getFloat implementation with interpolation
