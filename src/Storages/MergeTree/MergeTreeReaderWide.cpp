@@ -1605,26 +1605,45 @@ std::unordered_map<String, IMergeTreeReader::StreamsBytes> MergeTreeReaderWide::
     return column_to_streams;
 }
 
-std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
+std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
     /// Prefixes of other columns are not needed to list the streams and can be large, e.g. `LowCardinality` dictionaries.
     const auto & infos = data_part_info_for_read->getSerializationInfos();
     if (std::ranges::any_of(columns_to_read, [&](const auto & column) { return streamsDependOnPrefixes(column, infos); }))
         deserializePrefixForAllColumns(columns_to_read.size(), 0);
 
-    std::unordered_map<String, std::vector<String>> column_to_streams;
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
+        /// Under the requested name: the part may read the column under another one, as the `size0` of a Nested
+        /// array, which is the offsets subcolumn of the collected Nested column.
+        auto & streams_of_column = column_to_streams[requested_column_names[i]];
+        std::unordered_map<String, size_t> stream_positions;
 
         ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
         {
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
 
-            if (const auto & stream_name = getStreamName(name_and_type, substream_path))
-                column_to_streams[name_and_type.name].push_back(*stream_name);
+            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            if (!stream_name)
+                return;
+
+            /// A file shared by several subcolumns is reported once per subcolumn: their hints add up, a stream without
+            /// a hint counts its file once.
+            const auto & size_hint = substream_path.back().size_hint;
+            auto [it, inserted] = stream_positions.try_emplace(*stream_name, streams_of_column.size());
+            if (inserted)
+            {
+                streams_of_column.push_back({*stream_name, size_hint});
+            }
+            else if (size_hint && streams_of_column[it->second].size_hint)
+            {
+                streams_of_column[it->second].size_hint->compressed += size_hint->compressed;
+                streams_of_column[it->second].size_hint->uncompressed += size_hint->uncompressed;
+            }
         };
 
         auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
