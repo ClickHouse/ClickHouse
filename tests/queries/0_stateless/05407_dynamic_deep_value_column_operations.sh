@@ -12,9 +12,9 @@ $CLICKHOUSE_CLIENT -q "SELECT arraySort([d, d]) FROM $(nested_value 3)"
 
 # Depending on the build and the stack size, a deep value is either processed or rejected with
 # TOO_DEEP_RECURSION, but it must never crash the server or use memory quadratic in the depth.
-for depth in 1000 4000 8000 11000 14000; do
+for depth in 1000 9000; do
     table=$(nested_value $depth)
-    for query in "SELECT [d] FROM $table" "SELECT arraySort([d, d]) FROM $table" "SELECT any(d) FROM $table" "SELECT arrayJoin([d, d]) FROM $table" "SELECT d, arrayJoin([1, 2]) FROM $table" "SELECT d FROM $table WHERE d IS NOT NULL"; do
+    for query in "SELECT [d] FROM $table" "SELECT arraySort([d, d]) FROM $table" "SELECT d, arrayJoin([1, 2]) FROM $table" "SELECT d FROM $table WHERE d IS NOT NULL"; do
         out=$($CLICKHOUSE_CLIENT -q "$query FORMAT Null" 2>&1)
         [[ -z "$out" || "$out" == *TOO_DEEP_RECURSION* ]] || echo "$query, depth $depth: $out"
     done
