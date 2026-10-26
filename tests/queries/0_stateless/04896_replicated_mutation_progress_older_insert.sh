@@ -41,7 +41,7 @@ for case in control held; do
         # The block lock is deleted in Keeper while log pulling is stopped on this replica.
         # Progress must remain NULL until the replica can pull fresh logs.
         $CLICKHOUSE_CLIENT -q "SYSTEM STOP PULLING REPLICATION LOG t_older_insert"
-        $CLICKHOUSE_CLIENT -q "DELETE FROM system.zookeeper WHERE path = '$zk_path/block_numbers/0' AND name = 'block-0000000000'"
+        $CLICKHOUSE_KEEPER_CLIENT -q "rm '$zk_path/block_numbers/0/block-0000000000'"
 
         state_unpulled=$($CLICKHOUSE_CLIENT -q "SELECT parts_to_do, progress IS NULL, progress BETWEEN 0.3 AND 0.7 FROM system.mutations
             WHERE database = currentDatabase() AND table = 't_older_insert' AND parts_to_do = 1 AND latest_fail_reason != ''")
