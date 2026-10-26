@@ -82,6 +82,7 @@ struct DataType
     RootDataType root_type{};
     String raw_type;
     DataTypePtr clickhouse_data_type;
+    UInt32 time_precision = 0;
     static DataType parse(const Poco::JSON::Object::Ptr & json_object, const String & key)
     {
         DataType type;
@@ -218,6 +219,7 @@ struct DataType
             {
                 type.root_type = RootDataType::TIME_WITHOUT_TIME_ZONE;
                 type.clickhouse_data_type = std::make_shared<DataTypeInt64>();
+                type.time_precision = has_precision(real_type) ? static_cast<UInt32>(parse_precision(real_type)[0]) : 0;
             }
             else if (real_type.starts_with("TIMESTAMP"))
             {

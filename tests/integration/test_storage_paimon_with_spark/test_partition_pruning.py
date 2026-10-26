@@ -1,6 +1,9 @@
+import os
+
 import pytest
 
 from helpers.paimon_utils import (
+    PAIMON_WAREHOUSE,
     create_spark_paimon_table,
     get_creation_expression,
     get_uuid_str,
@@ -144,4 +147,110 @@ def test_partition_pruning_types(started_cluster_paimon_with_spark, storage_type
     # explicitly-typed literal is.
     _check_pruning(
         instance, table_expr, "part = toDecimal32('2.5', 2)", expected_pruned_files=1
+    )
+
+
+def _partition_directories(table_name):
+    table_dir = os.path.join(PAIMON_WAREHOUSE, "default.db", table_name)
+    return {
+        os.path.relpath(root, table_dir)
+        for root, dirs, _ in os.walk(table_dir)
+        if any(d.startswith("bucket-") for d in dirs)
+    }
+
+
+@pytest.mark.parametrize(
+    "columns, partitioned_by, tblproperties, values, expected_dirs, expected",
+    [
+        pytest.param(
+            "part STRING",
+            "part",
+            {},
+            "(1, 'a'), (2, ''), (3, ' '), (4, NULL)",
+            {"part=a", "part=__DEFAULT_PARTITION__"},
+            "1\ta\n2\t\n3\t \n4\t\\N\n",
+            id="blank_string",
+        ),
+        pytest.param(
+            "part STRING",
+            "part",
+            {"partition.default-name": "EMPTY"},
+            "(1, '')",
+            {"part=EMPTY"},
+            "1\t\n",
+            id="custom_default_name",
+        ),
+        pytest.param(
+            "part DOUBLE",
+            "part",
+            {},
+            "(1, 2.0D), (2, 1.0E10D), (3, 1.0E-4D)",
+            {"part=2.0", "part=1.0E10", "part=1.0E-4"},
+            "1\t2\n2\t10000000000\n3\t0.0001\n",
+            id="double",
+        ),
+        pytest.param(
+            "part FLOAT",
+            "part",
+            {},
+            "(1, CAST(2.0 AS FLOAT)), (2, CAST(1.0E10 AS FLOAT)), (3, CAST(1.0E-4 AS FLOAT))",
+            {"part=2.0", "part=1.0E10", "part=1.0E-4"},
+            "1\t2\n2\t10000000000\n3\t0.0001\n",
+            id="float",
+        ),
+        pytest.param(
+            "d DATE, ts TIMESTAMP_NTZ, tl TIMESTAMP, b BOOLEAN, s STRING",
+            "d, ts, tl, b, s",
+            {"partition.legacy-name": "false"},
+            "(1, DATE '2024-01-01', TIMESTAMP_NTZ '2024-01-15 11:30:00.123456', TIMESTAMP '2024-01-15 10:30:00', true, '')",
+            {
+                "d=2024-01-01/ts=2024-01-15 11%3A30%3A00.123456/tl=2024-01-15 10%3A30%3A00.000000/b=true/s=__DEFAULT_PARTITION__"
+            },
+            "1\t2024-01-01\t2024-01-15 11:30:00.123456\t2024-01-15 10:30:00.000000\ttrue\t\n",
+            id="legacy_name_false",
+        ),
+    ],
+)
+def test_partition_directory_names(
+    started_cluster_paimon_with_spark,
+    columns,
+    partitioned_by,
+    tblproperties,
+    values,
+    expected_dirs,
+    expected,
+):
+    """The data file path is rebuilt from the partition value, so it must name the directory Paimon wrote."""
+    started_cluster = started_cluster_paimon_with_spark
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    table_name = "test_partition_names_" + get_uuid_str()
+
+    create_spark_paimon_table(
+        spark,
+        table_name,
+        "id INT NOT NULL, " + columns,
+        partitioned_by=partitioned_by,
+        tblproperties=tblproperties,
+    )
+    spark.sql(f"INSERT INTO {spark_table(table_name)} VALUES {values}")
+    assert _partition_directories(table_name) == expected_dirs
+    upload_paimon_table(started_cluster, "s3", table_name)
+
+    table_expr = get_creation_expression(
+        "s3", table_name, started_cluster, table_function=True
+    )
+    # A local time zone timestamp is rendered in the server time zone, not in the session one.
+    assert (
+        instance.query(
+            f"SELECT count() FROM {table_expr}",
+            settings={"session_timezone": "Asia/Shanghai"},
+        )
+        == f"{expected.count(chr(10))}\n"
+    )
+    assert (
+        instance.query(
+            f"SELECT id, {partitioned_by} FROM {table_expr} ORDER BY id"
+        )
+        == expected
     )
