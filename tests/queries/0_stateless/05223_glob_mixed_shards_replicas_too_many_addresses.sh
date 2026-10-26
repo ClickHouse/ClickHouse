@@ -20,8 +20,8 @@ $CLICKHOUSE_CLIENT --table_function_remote_max_addresses 3 --query "CREATE DATAB
     | grep -oF -e "Database engine 'Remote'" -e "too many result addresses: 4, while at most 3 are allowed" \
     | head -n 2
 
-# The `url` family generates the shards lazily and expands the replicas of each one as it is taken, so
-# the total is counted as the addresses are consumed, and the limit is hit by reading them all. The
+# The `url` family generates the shards lazily and counts the replicas of each one as it is generated,
+# so the limit is hit by reading up to the shard that crosses it. The
 # addresses are served by the HTTP interface of the server the test runs against: `SELECT+1{1|2}` is
 # a shard with the replicas `SELECT+11` and `SELECT+12`.
 URL="${CLICKHOUSE_URL}&query=SELECT+{1,2}{1|2}"

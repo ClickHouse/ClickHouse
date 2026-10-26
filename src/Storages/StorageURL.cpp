@@ -356,8 +356,10 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller)
-        : max_addresses_upper_bound(max_addresses)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller_)
+        : description(uri_)
+        , caller(caller_)
+        , max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
         , filter_context(context)
@@ -365,7 +367,7 @@ public:
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
         /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
         if (split_uris)
-            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, caller, '|');
+            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, caller_, '|');
         else
             single_uri = uri_;
 
@@ -428,7 +430,8 @@ public:
     /// generated addresses, batches are prefetched until `requested` survivors are buffered, the
     /// pattern is exhausted, or the limit is reached - so a pattern whose first survivors appear
     /// after the first batch still gets its parallelism. Rejected addresses count as generated:
-    /// prefetching stops at the limit rather than walking an unbounded pattern.
+    /// prefetching stops at the limit rather than walking an unbounded pattern, and it never asks
+    /// past the limit itself - that is left to a stream.
     size_t sizeForStreams(size_t requested)
     {
         std::lock_guard lock(mutex);
@@ -454,7 +457,7 @@ public:
             return 1;
         }
 
-        while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
+        while (batch.size() - batch_index < requested && !exhausted && !limit_exceeded && generated < max_addresses_upper_bound)
             fillBatch();
 
         /// Never zero: when everything buffered was pruned and the limit is reached, the one stream
@@ -477,6 +480,10 @@ private:
     /// when the pattern is exhausted or the whole portion was filtered out.
     void fillBatch() TSA_REQUIRES(mutex)
     {
+        /// Everything within the limit has been generated, and there is more.
+        if (limit_exceeded)
+            throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses_upper_bound);
+
         batch.erase(batch.begin(), batch.begin() + batch_index);
         batch_index = 0;
 
@@ -494,22 +501,37 @@ private:
         else
         {
             /// Never generate more addresses than the limit allows. Asking for one past it is what makes
-            /// the generator report that the pattern is too large - and only a query that reads that far
-            /// ever asks.
+            /// the pattern reported as too large - and only a query that reads that far ever asks.
+            /// The generator yields the URLs, and the limit is on the addresses of both stages together,
+            /// as for `remote`, so the failover options (`|`) of every URL are counted here, before the
+            /// `_path` / `_file` filter: a URL the filter rejects is still generated, and
+            /// `example-{1,2}-{1|2}` is four addresses, not two.
+            const size_t generated_before = generated;
             size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses_upper_bound - std::min(max_addresses_upper_bound, generated));
             if (target == 0)
                 target = 1;
 
-            fresh.reserve(target);
             String uri;
-            while (fresh.size() < target)
+            while (generated - generated_before < target)
             {
                 if (!generator->next(uri))
                     break;
-                ++generated;
+                const size_t options = parseReplicasOfShard(uri, description, max_addresses_upper_bound, caller).size();
+                /// The URL that crosses the limit is not buffered: the query may still stop at one of
+                /// the addresses before it, and only if it does not, the next batch reports the limit.
+                if (generated + options > max_addresses_upper_bound)
+                {
+                    limit_exceeded = true;
+                    break;
+                }
+                generated += options;
                 fresh.push_back(std::move(uri));
             }
-            exhausted = generator->isExhausted();
+
+            if (fresh.empty() && limit_exceeded)
+                throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses_upper_bound);
+
+            exhausted = !limit_exceeded && generator->isExhausted();
         }
 
         if (has_filter && !fresh.empty())
@@ -554,6 +576,9 @@ private:
 
     std::optional<RemoteDescriptionGenerator> generator TSA_GUARDED_BY(mutex);
     String single_uri;
+    /// The pattern and the surface that expands it, for the error message.
+    const String description;
+    const RemoteDescriptionCaller caller;
     const size_t max_addresses_upper_bound;
 
     bool has_filter = false;
@@ -566,8 +591,11 @@ private:
 
     Strings batch TSA_GUARDED_BY(mutex);
     size_t batch_index TSA_GUARDED_BY(mutex) = 0;
+    /// The addresses generated so far, counting the failover options of every URL.
     size_t generated TSA_GUARDED_BY(mutex) = 0;
     bool exhausted TSA_GUARDED_BY(mutex) = false;
+    /// The next URL would cross the limit; the next batch reports it.
+    bool limit_exceeded TSA_GUARDED_BY(mutex) = false;
     std::optional<size_t> exact_size;
 };
 
@@ -2202,21 +2230,16 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return;
         }
 
-        /// The generator only counts the URLs, and the failover options (`|`) of each of them are expanded
-        /// here, as the URL is taken. The limit is on the addresses of both stages together, as for
-        /// `remote`, so the options are counted as they are consumed: a query that stops early still
-        /// pays only for what it reads, and `example-{1,2}-{1|2}` is four addresses, not two.
-        auto consumed_addresses = std::make_shared<std::atomic<size_t>>(0);
+        /// The failover options (`|`) of each URL are expanded here, as the URL is taken. The iterator
+        /// has already counted them against the limit when it generated the URL, before the `_path` /
+        /// `_file` filter, so the URLs the filter rejected count too.
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [glob_iterator, max_addresses, caller = glob_caller, uri = storage->uri, with_globs = is_url_with_globs, consumed_addresses]()
+            [glob_iterator, max_addresses, caller = glob_caller, uri = storage->uri]()
             {
                 String next_uri = glob_iterator->next();
                 if (next_uri.empty())
                     return StorageURLSource::FailoverOptions{};
-                auto options = getFailoverOptions(next_uri, uri, max_addresses, caller);
-                if (with_globs && consumed_addresses->fetch_add(options.size()) + options.size() > max_addresses)
-                    throwTooManyAddressesForDescription(uri, ',', '|', caller, max_addresses);
-                return options;
+                return getFailoverOptions(next_uri, uri, max_addresses, caller);
             });
 
         num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));

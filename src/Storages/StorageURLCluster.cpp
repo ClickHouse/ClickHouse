@@ -24,7 +24,6 @@
 #include <TableFunctions/TableFunctionURLCluster.h>
 
 #include <Common/parseRemoteDescription.h>
-#include <atomic>
 #include <memory>
 
 
@@ -176,22 +175,13 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
 
     /// Every task is expanded into its failover options (`|`) only on the worker, which knows nothing
     /// about the other tasks. The limit is on the addresses of both stages together, as for `url`, so the
-    /// options of every task are counted here, where all the tasks are handed out: `{1,2}{1|2}` is four
-    /// addresses, not two tasks of two addresses each.
-    auto consumed_addresses = std::make_shared<std::atomic<size_t>>(0);
-    auto next_callback = [iter = std::move(iterator), consumed_addresses, max_addresses, with_globs, uri_ = uri](size_t) mutable
-        -> ClusterFunctionReadTaskResponsePtr
+    /// iterator counts the options of every task as it generates it, before the `_path` / `_file` filter:
+    /// `{1,2}{1|2}` is four addresses, not two tasks of two addresses each.
+    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
-        if (with_globs)
-        {
-            const auto caller = tableFunctionURLClusterCaller();
-            const size_t options = parseReplicasOfShard(url, uri_, max_addresses, caller).size();
-            if (consumed_addresses->fetch_add(options) + options > max_addresses)
-                throwTooManyAddressesForDescription(uri_, ',', '|', caller, max_addresses);
-        }
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
