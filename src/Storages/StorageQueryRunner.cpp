@@ -5,6 +5,7 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -337,8 +338,10 @@ class QueryRunnerDispatcher : WithContext
 
                 ClientInfo query_client_info = context->getClientInfo();
                 query_client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+                Settings settings = context->getSettingsRef();
+                prepareSecondaryQuerySettings(settings);
                 connection->sendQuery(
-                    timeouts, query, {}, "", QueryProcessingStage::Complete, &context->getSettingsRef(), &query_client_info, false, {}, {});
+                    timeouts, query, {}, "", QueryProcessingStage::Complete, &settings, &query_client_info, false, {}, {});
                 sent_query = true;
             }
 
