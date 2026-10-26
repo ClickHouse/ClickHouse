@@ -511,6 +511,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// has only one): the exact scale to fall back to when the tolerant vote fails on the rest of
     /// the vector, or the near scale to compete with an exact vote on the payload of the vector.
     std::array<Int8, WALLABY_MAX_SAMPLES> sampled_alternative_alphas{};
+    /// The position of each sampled value in the vector, for the pruning bound to re-check it at
+    /// scales that findAlpha did not scan.
+    std::array<UInt32, WALLABY_MAX_SAMPLES> sampled_value_positions{};
     UInt32 sampled_alpha_count = 0;
     /// Sampled values that no scale can represent: they are exceptions of every candidate.
     UInt32 sampled_unquantizable = 0;
@@ -530,6 +533,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             {
                 sampled_alphas[sampled_alpha_count] = static_cast<Int8>(*sample_alpha);
                 sampled_alternative_alphas[sampled_alpha_count] = static_cast<Int8>(sample_alternative.value_or(*sample_alpha));
+                sampled_value_positions[sampled_alpha_count] = position;
                 ++sampled_alpha_count;
             }
             else
@@ -562,6 +566,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             {
                 sampled_alphas[sampled_alpha_count] = static_cast<Int8>(*sample_alpha);
                 sampled_alternative_alphas[sampled_alpha_count] = static_cast<Int8>(sample_alternative.value_or(*sample_alpha));
+                sampled_value_positions[sampled_alpha_count] = position;
                 ++sampled_alpha_count;
             }
             else
@@ -1212,9 +1217,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * position the candidate has to except. The minimal alpha of a sample is the lower scale of
       * its near/exact pair, not its vote: a sample that voted an exact scale may still have a near
       * scale a few steps lower, and at every scale from there on its adjustment can be arbitrarily
-      * narrow, so it does not have to cost the candidate anything. Extrapolating that count to the whole vector is not a
-      * bound, because the sample positions are deterministic and a block can put its entire
-      * high-precision minority on them. The packed lanes contribute nothing: nothing about their
+      * narrow, so it does not have to cost the candidate anything. The pair is the lowest such
+      * scale only down to zero (see findAlpha); a negative candidate checks the sample directly.
+      * Extrapolating that count to the whole vector is not a bound, because the sample positions
+      * are deterministic and a block can put its entire high-precision minority on them. The packed lanes contribute nothing: nothing about their
       * width can be bounded from below from the reference scale's width. Scaling it by log2(10)
       * bits per scale step (as an earlier revision did) is an *upper* bound in the widening
       * direction and unsound in the narrowing one, since the payload takes the cheaper of the
@@ -1236,6 +1242,17 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * of distinct positions is a strictly stronger bound, and the growth is paid for only where
       * it can save the far more expensive full-vector passes.
       */
+    /// Whether the value is representable at the scale up to an adjustment narrower than the
+    /// near threshold, i.e. whether it can cost the scale less than the floor assumed below.
+    const auto is_near_at = [](typename Traits::FloatType value, Int32 scale)
+    {
+        constexpr T near_threshold = T{1} << (Traits::width_bits / 4);
+        SignedType quantized_value;
+        T adjustment;
+        return quantizeValueWithAdjustment<T>(value, scale, quantized_value, adjustment) == QuantizeStatus::Ok
+            && adjustment < near_threshold;
+    };
+
     const auto estimate_allows = [&](Int32 candidate) -> bool
     {
         if (!reference_filled || candidate == reference_alpha)
@@ -1244,7 +1261,18 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         {
             UInt32 bound = sampled_unquantizable;
             for (UInt32 i = 0; i < sampled_alpha_count; ++i)
-                bound += std::min(sampled_alphas[i], sampled_alternative_alphas[i]) > candidate ? 1 : 0;
+            {
+                if (std::min(sampled_alphas[i], sampled_alternative_alphas[i]) <= candidate)
+                    continue;
+                /// findAlpha looks for a near scale only from its scan start (zero, or the first
+                /// in-domain negative scale) upwards, and its bit-exact exits for integers do not
+                /// look at all, so below zero the pair is not the lowest cheap scale: an integer
+                /// that is exact at scale 0 can still land within a few ULPs at a much lower
+                /// negative scale. There the sample is checked at the candidate itself.
+                if (candidate < 0 && is_near_at(values[sampled_value_positions[i]], candidate))
+                    continue;
+                ++bound;
+            }
             for (Int32 wider = candidate + 1; wider <= Traits::max_alpha; ++wider)
                 bound = std::max(bound, monotone_exceptions_at[alpha_index(wider)]);
             return bound;
