@@ -938,18 +938,17 @@ bool SerializationTuple::supportsPooling() const
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
 {
-    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
-    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
-    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
-    if (elems.empty())
-        return column;
-
-    MutableColumns wrapped;
-    wrapped.reserve(elems.size());
+    /// Wrap each element in place by its own serialization (element serializations are SerializationNamed
+    /// wrappers that forward to the real element serialization, so kinds compose). `column` is the freshly
+    /// created base column, so its elements are not shared.
+    auto & tuple = assert_cast<ColumnTuple &>(*column);
     for (size_t i = 0; i != elems.size(); ++i)
-        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
-
-    return ColumnTuple::create(std::move(wrapped));
+    {
+        auto & element = tuple.getColumnPtr(i);
+        chassert(element->use_count() == 1);
+        element = elems[i]->wrapColumnForDeserialization(element->assumeMutable());
+    }
+    return column;
 }
 
 }
