@@ -211,7 +211,7 @@ size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key,
 {
     auto ast_equals = [](const ASTPtr & lhs, const ASTPtr & rhs)
     {
-        return lhs->formatIgnoringRedundantParentheses() == rhs->formatIgnoringRedundantParentheses();
+        return lhs->formatWithSecretsOneLine() == rhs->formatWithSecretsOneLine();
     };
 
     const auto storage_expr_list = storage_metadata->getSortingKey().getOriginalExpressionList();
@@ -479,7 +479,7 @@ bool patchHasHigherDataVersion(const IMergeTreeDataPartInfoForReader & patch, In
     return patchHasHigherDataVersion(patch.getPartName(), min_patch_version, max_patch_version, max_data_version);
 }
 
-PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, PartsRangeView range, Int64 next_mutation_version)
+PartsRange getPatchesToApplyOnMerge(const std::vector<MergeTreePartInfo> & patch_parts, const PartsRange & range, Int64 next_mutation_version)
 {
     if (range.empty())
         return {};

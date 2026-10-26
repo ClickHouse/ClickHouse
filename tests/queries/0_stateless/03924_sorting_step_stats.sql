@@ -6,7 +6,8 @@ SET use_statistics = 1;
 
 INSERT INTO t SELECT * FROM numbers(999);
 
-SET query_plan_join_swap_table = 0,
+SET enable_analyzer = 1,
+    query_plan_join_swap_table = 0,
     enable_parallel_replicas = 0,
     use_skip_indexes_for_top_k = 0,
     use_top_k_dynamic_filtering = 0,

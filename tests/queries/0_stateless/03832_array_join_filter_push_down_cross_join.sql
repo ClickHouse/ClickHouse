@@ -5,6 +5,8 @@
 -- target stream, causing a LOGICAL_ERROR:
 -- "In Filter cannot be more inputs in the DAG than columns in the input header"
 
+SET enable_analyzer = 1;
+
 -- Original fuzzer-found query
 SELECT DISTINCT anyLastDistinct(r.number), l.number, grouping(l.number)
 FROM numbers(1) AS l INNER JOIN numbers(2, assumeNotNull(isNull(13))) AS r

@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23865
+SET enable_analyzer=1;
 
 create table table_local engine = Memory AS select * from numbers(10);
 

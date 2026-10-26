@@ -6,6 +6,8 @@
 -- left table expression, assigning the CrossJoinNode as the column source.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=1aefdf9c553447757c0daa4a6d48fa875173b7ee&name_0=MasterCI&name_1=BuzzHouse%20%28amd_ubsan%29
 
+SET enable_analyzer = 1;
+
 SELECT 1 AS c0
 FROM (SELECT 1 AS c0) AS t0
 CROSS JOIN (SELECT 2 AS b) AS t1

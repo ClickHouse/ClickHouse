@@ -17,7 +17,9 @@ import PrettyFormatSettings from '/snippets/es/common-pretty-format-settings.mdx
 | ------- | ------ | ----- |
 | ✗       | ✔      |       |
 
-## Descripción {#description}
+<div id="description">
+  ## Descripción
+</div>
 
 El formato `Pretty` muestra los datos como tablas con caracteres Unicode,
 utilizando secuencias de escape ANSI para mostrar colores en la terminal.
@@ -27,7 +29,9 @@ Esto es necesario para que los bloques puedan mostrarse sin almacenar en búfer 
 
 [NULL](/es/reference/syntax) se muestra como `ᴺᵁᴸᴸ`.
 
-## Ejemplo de uso {#example-usage}
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
 
 Ejemplo (mostrado con el formato [`PrettyCompact`](/es/reference/formats/Pretty/PrettyCompact)):
 
@@ -41,30 +45,17 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Las filas no usan secuencias de escape en ninguno de los formatos `Pretty`. En su lugar, los caracteres de control no imprimibles (controles C0 `0x00`-`0x1F` y `DEL` `0x7F`) que aparecen en los valores y en los nombres de las columnas se muestran de forma predeterminada como los &quot;Control Pictures&quot; de Unicode correspondientes (`U+2400`-`U+2421`), de modo que sigan siendo visibles y no deformen la tabla. Por ejemplo, un NUL se muestra como `␀`:
+Las filas no usan secuencias de escape en ninguno de los formatos `Pretty`. El siguiente ejemplo se muestra para el formato [`PrettyCompact`](/es/reference/formats/Pretty/PrettyCompact):
 
 ```sql title="Query"
-SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
 ```response title="Response"
-┌─Escaping_test─────────────────┐
-│ String with a NUL ␀ character │
-└───────────────────────────────┘
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and      character │
+└──────────────────────────────────────┘
 ```
-
-`TAB`, el salto de línea y `ESC` son excepciones: siempre se imprimen tal cual, porque el terminal los interpreta en lugar de descartarlos (una tabulación avanza hasta la siguiente posición de tabulación, y una secuencia de escape ANSI es lo que permite que los datos incluyan una visualización). Un salto de línea también sigue partiendo la línea: dentro de una celda de la tabla cuando [`output_format_pretty_multiline_fields`](/es/reference/settings/formats#output_format_pretty_multiline_fields) está habilitado, y tal cual en caso contrario. El nombre de una columna es la excepción a esa excepción: el encabezado y el pie ocupan una sola línea, por lo que un salto de línea en un nombre se reemplaza como cualquier otro carácter de control.
-
-Para imprimir, en cambio, los caracteres de control literalmente, deshabilite [`output_format_pretty_display_control_characters`](/es/reference/settings/formats#output_format_pretty_display_control_characters):
-
-```sql title="Query"
-SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
-SETTINGS output_format_pretty_display_control_characters = 0
-```
-
-En ese caso, la respuesta contiene el byte `NUL` sin procesar. Un terminal lo omite, por lo que el carácter
-resulta invisible y la fila queda una posición más ancha que el borde calculado para ella: precisamente la
-tabla deformada que se evita al mostrar el Control Picture.
 
 Para evitar mostrar demasiados datos en el terminal, solo se imprimen las primeras `10,000` filas.
 Si el número de filas es mayor o igual que `10,000`, se imprime el mensaje &quot;Showed first 10 000&quot;.
@@ -109,7 +100,9 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## Ajustes de formato {#format-settings}
+<div id="format-settings">
+  ## Ajustes de formato
+</div>
 
 <PrettyFormatSettings />
 

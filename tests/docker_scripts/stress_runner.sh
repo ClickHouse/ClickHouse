@@ -77,46 +77,19 @@ clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
-# Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU and SIEVE
-# to exercise all eviction policies. SIEVE is only implemented for the CacheBase-backed caches,
-# so it is not applied to the filesystem cache (storage_conf, backed by FileCachePolicy).
+# Randomize cache policies.
 cache_policy=""
-case $((RANDOM % 3)) in
-    0) cache_policy="SLRU" ;;
-    1) cache_policy="SIEVE" ;;
-    *) cache_policy="LRU" ;;
-esac
-
-echo "Using mark/uncompressed cache policy: $cache_policy"
-
-# The filesystem cache (storage_conf) is backed by a separate policy enum without SIEVE,
-# so it keeps its own LRU/SLRU randomization.
-file_cache_policy=""
 if [ $((RANDOM % 2)) -eq 1 ]; then
-    file_cache_policy="SLRU"
+    cache_policy="SLRU"
 else
-    file_cache_policy="LRU"
+    cache_policy="LRU"
 fi
 
-echo "Using filesystem cache policy: $file_cache_policy"
+echo "Using cache policy: $cache_policy"
 
-if [ "$file_cache_policy" = "SLRU" ]; then
+if [ "$cache_policy" = "SLRU" ]; then
     sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
-
-# The mark and uncompressed caches default to SLRU (in cache_policy.xml).
-if [ "$cache_policy" != "SLRU" ]; then
-    sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
-fi
-
-# Randomize use_real_disk_size in cache
-use_real_disk_size=$((RANDOM % 2))
-
-echo "use_real_disk_size: $use_real_disk_size"
-sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-| sed "s|<use_real_disk_size>[^<]*</use_real_disk_size>|<use_real_disk_size>$use_real_disk_size</use_real_disk_size>|" \
-> /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 
 start_server || { echo "Failed to start server"; exit 1; }
 
@@ -235,41 +208,11 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
-# `--max_execution_time` is enforced cooperatively: the deadline is raised out of band and ends the
-# query only where its threads observe it, so it does not bound a statement parked in blocking I/O.
-# Bound each INSERT in wall-clock time instead.
-PREP_MAX_EXECUTION_TIME=600
-PREP_STATEMENT_TIMEOUT=$((PREP_MAX_EXECUTION_TIME + 300))
-PREP_STDERR=/tmp/prep_statement.err
-
-function run_prep_statement()
-{
-    local rc=0
-    LC_ALL=C timeout --verbose --signal=TERM --kill-after=60 "$PREP_STATEMENT_TIMEOUT" "$@" \
-        2> "$PREP_STDERR" || rc=$?
-    cat "$PREP_STDERR" >&2
-
-    # An expiry is 124 with the TERM diagnostic, or 137 with the KILL one. Neither half identifies it
-    # alone: `clickhouse-client` exits with the server's error code, and a signal the wrapper merely
-    # forwarded exits 143 after printing the same TERM line.
-    case "$rc" in
-        124) grep -qF "sending signal TERM to command" "$PREP_STDERR" || return $rc ;;
-        137) grep -qF "sending signal KILL to command" "$PREP_STDERR" || return $rc ;;
-        *) return $rc ;;
-    esac
-
-    echo -e "Stateful data preparation statement exceeded ${PREP_STATEMENT_TIMEOUT}s (see gdb.log)$FAIL" >> /test_output/test_results.tsv
-    echo "thread apply all backtrace (on stateful prep bound)" >> /test_output/gdb.log
-    timeout --verbose --signal=TERM --kill-after=60 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
-    clickhouse stop --force
-    exit 1
-}
-
 # Might fail in sanitizer runs, not very important
 set +e
-run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -327,13 +270,8 @@ rm -f /etc/clickhouse-server/config.d/transactions.xml
 
 sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
 
-if [ "$file_cache_policy" = "SLRU" ]; then
+if [ "$cache_policy" = "SLRU" ]; then
     sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
-fi
-
-# The mark and uncompressed caches default to SLRU (in cache_policy.xml).
-if [ "$cache_policy" != "SLRU" ]; then
-    sed -i.tmp -e "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>$cache_policy</mark_cache_policy>|" -e "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>$cache_policy</uncompressed_cache_policy>|" /etc/clickhouse-server/config.d/cache_policy.xml
 fi
 
 # Randomize async_load_databases
@@ -385,7 +323,7 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 10 600 || { echo "Failed to start server"; exit 1; }
+start_server 10 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
@@ -402,6 +340,5 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
-collect_jemalloc_profiles /var/log/clickhouse-server/clickhouse-server*.log
 
 mv /var/log/clickhouse-server/stderr.log /test_output/

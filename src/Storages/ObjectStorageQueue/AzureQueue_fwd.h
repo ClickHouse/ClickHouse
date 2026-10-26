@@ -8,6 +8,7 @@ namespace AzureQueue
 {
 
 static constexpr auto TABLE_ENGINE_NAME = "AzureQueue";
+static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
 
 using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
@@ -19,7 +20,8 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
             return {};
-        DB::maskAzureConnectionStringSecrets(masked_value);
+        DB::maskConnectionStringKey(masked_value, "AccountKey=");
+        DB::maskConnectionStringKey(masked_value, "SharedAccessSignature=");
         return fmt::format("'{}'", masked_value);
     }},
 };

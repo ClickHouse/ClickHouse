@@ -1,5 +1,6 @@
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
+SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
@@ -13,6 +14,8 @@ ENGINE = MergeTree
 ORDER BY (day, account_id);
 
 INSERT INTO test SELECT * FROM generateRandom('account_id Int64, country String, source_type String, day DateTime', 42) LIMIT 100;
+
+SET enable_analyzer = 1;
 
 EXPLAIN PLAN header = 1
 SELECT
