@@ -4,7 +4,6 @@
 SET inject_random_order_for_select_without_order_by = 1;
 
 -- Works only with enabled analyzer
-SET enable_analyzer = 1;
 
 -- Expect that these queries don't time out
 

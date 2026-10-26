@@ -44,6 +44,7 @@ using ColumnsHashing::HashMethodContextPtr;
 using ColumnsHashing::LastElementCacheStats;
 
 class CompiledAggregateFunctionsHolder;
+struct MemoryTrackerSwitcher;
 class NativeWriter;
 struct OutputBlockColumns;
 
@@ -149,6 +150,7 @@ public:
         /// Settings to flush temporary data to the filesystem (external aggregation).
         /// 0 - do not use external aggregation.
         size_t max_bytes_before_external_group_by = 0;
+        size_t min_bytes_before_external_group_by = 0;
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
@@ -167,16 +169,39 @@ public:
         UInt64 adaptive_aggregator_freeze_threshold = 0;
         UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
 
+        bool use_aggregation_memory_tracker = true;
+
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
         /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
         /// only its n best cells by that count. Exact, because a group outside its own
         /// bucket's best n has at least n groups ahead of it globally. Zero disables. Kept
-        /// out of the constructor and of the plan serialization deliberately: a deserialized
-        /// plan re-runs without the optimization, which is the safe direction.
+        /// out of the constructor and off the wire deliberately: it is a property of the plan
+        /// shape, and the side that runs the aggregation derives it from its own plan (a
+        /// deserialized plan is optimized again before it is turned into a pipeline).
         size_t bucket_top_k = 0;
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
+
+        /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
+        /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds
+        /// `ORDER BY <the output of a single aggregate with a declared MergedValueBound> LIMIT n`.
+        /// Instead of merging every group of a two-level bucket across the per-thread hash tables
+        /// and materializing all of them, the merge walks the tables in the order of the partial
+        /// values of that aggregate and stops as soon as no unseen group can rank among the
+        /// bucket's n best, so only the candidate groups are merged and materialized. Exact for
+        /// the same reason as `bucket_top_k`: a group outside its own bucket's best n has at
+        /// least n groups ahead of it globally. Kept out of the constructor and off the wire
+        /// deliberately, like `bucket_top_k`.
+        struct ThresholdTopKParams
+        {
+            size_t k = 0;
+            bool ascending = false;
+            /// Index in `aggregates` of the function the query orders by.
+            size_t aggregate_index = 0;
+            MergedValueBound bound = MergedValueBound::Unknown;
+        };
+        std::optional<ThresholdTopKParams> threshold_top_k;
 
         /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
         /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
@@ -319,6 +344,7 @@ public:
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
+            size_t min_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
             size_t max_threads_,
@@ -337,7 +363,8 @@ public:
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
-            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+            bool use_aggregation_memory_tracker_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -405,6 +432,15 @@ public:
         std::atomic<bool> & is_cancelled,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
+    /// `drainStagedBatch` into the session's shared table, called under `pressure_sweep_mutex`.
+    /// A drain that throws midway (a memory limit hit while creating states, say) leaves keys
+    /// in the shared table whose states are null; the session is cancelled before the lock is
+    /// released, so no other producer drains into that table or writes it.
+    size_t drainStagedBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared,
+        const std::vector<StagedChunkPtr> & chunks,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
     /// A fresh drain destination of the session's method type, with one arena per bucket.
     AggregatedDataVariantsPtr createAdaptiveDrainTable(AggregatedDataVariants::Type type) const;
 
@@ -456,7 +492,14 @@ public:
     bool drainStagedChunksBatchUnderMemoryPressure(
         AdaptiveAggregationSession & shared,
         PaddedPODArray<AggregateDataPtr> & places_scratch,
-        size_t & drained_records_out) const;
+        size_t & drained_records_out,
+        size_t & drained_bytes_out,
+        bool only_over_trigger) const;
+
+    /// The same valve driven by an explicit spill request instead of the external threshold:
+    /// writes even a below-floor tail, including any existing shared drain residue. Stops once
+    /// at least this many bytes are released or there is nothing left. Returns the bytes released.
+    size_t drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
     /// merge goes external, spilling at the part bound as it goes, and throws if anything
@@ -635,6 +678,10 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
+    /// Flushes the table on request of the memory scheduler; returns the released bytes.
+    /// Requires a two-level or convertible table and temporary data storage.
+    size_t spill(AggregatedDataVariants & data_variants, bool no_more_keys) const;
+
     /// Flushes the variants like `writeToTemporaryFile` and consumes them: the table comes back
     /// invalidated and stripped of its arenas instead of re-armed for further aggregation, for
     /// callers that destroy it next.
@@ -653,6 +700,8 @@ public:
 
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }
+
+    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
 
 
 private:
@@ -721,10 +770,18 @@ private:
 
     bool all_aggregates_has_trivial_destructor = false;
 
+    /// Whether any of the aggregate functions supports parallel merging of large states
+    /// (see IAggregateFunction::isAbleToParallelizeMerge), e.g. uniqExact.
+    bool has_function_with_parallelizable_merge = false;
+
     /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
     std::unique_ptr<MemoryTracker> memory_tracker;
+
+    /// Redirects the thread's accounting to the per-table tracker (created on demand under the
+    /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.
+    MemoryTracker * switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
@@ -893,7 +950,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     template <typename LocalMethod, typename SharedMethod>
     requires MapAggregationMethod<LocalMethod>
@@ -907,7 +965,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// The set counterpart: with no aggregate functions there are no places to record and no states to
     /// advance, so a hit is just the probe and a miss stages the key alone.
@@ -923,7 +982,8 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        MemoryTracker * local_memory_tracker) const;
 
     /// Groups the current block's staged misses by bucket (counting sort) into one staged chunk
     /// and hands it to `stageChunk`. Key bytes are copied exactly once, straight from
@@ -1074,29 +1134,84 @@ private:
         UInt32 total_worker;
     };
 
+    /// Pairs of states (with the function's state offset applied) whose merge `mergeDataImpl` deferred
+    /// because they are too large to merge serially; one entry per aggregate function.
+    /// A destination repeats once per source it has to absorb, so after grouping by destination the
+    /// group is merged in one parallel multi-way pass (`mergeDeferredLargeStates`).
+    struct DeferredMergePairs
+    {
+        PaddedPODArray<AggregateDataPtr> dst_places;
+        PaddedPODArray<AggregateDataPtr> src_places;
+    };
+    using DeferredMerges = std::vector<DeferredMergePairs>;
+
+    /// True if the query can benefit from deferring large state merges: some aggregate function
+    /// can parallelize its merge and there is a thread pool to run it on.
+    bool worthDeferringLargeMerges() const { return has_function_with_parallelizable_merge && params.max_threads > 1; }
+
+    /// Merge the pairs deferred by `mergeDataImpl` / `mergeSingleLevelPartitionImpl` / `mergeStreamsImplCase`,
+    /// using the thread pool. With `destroy_sources` the source states are destroyed afterwards (they were
+    /// detached from the source hash tables); without it they stay owned by the caller (aggregate columns
+    /// of a block of partial states). If `is_cancelled` is set, nothing is merged and only the destruction happens.
+    void mergeDeferredLargeStates(DeferredMerges & deferred, Arena * arena, std::atomic<bool> & is_cancelled, bool destroy_sources) const;
+
+    /// The total number of deferred pairs of all aggregate functions.
+    static size_t numDeferredMerges(const DeferredMerges & deferred);
+
+    /// Destroy the deferred source states without merging (used on the exception path: the source
+    /// hash tables have already been detached from these states, so nothing else will destroy them).
+    void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
+
     /// Merge NULL key data from hash table `src` into `dst`.
+    /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
             Table & table_dst,
             Table & table_src,
-            Arena * arena) const;
+            Arena * arena,
+            DeferredMerges * deferred = nullptr) const;
 
     /// Merge data from hash table `src` into `dst`.
+    /// If `deferred` is not null, pairs of states too large to merge serially are recorded there
+    /// (per aggregate function) instead of being merged; the caller must pass them to
+    /// `mergeDeferredLargeStates` afterwards.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        DeferredMerges * deferred = nullptr)
         const;
 
+    /// Merge the states of one source row `src` into `dst` and destroy them. If `deferred` is not null,
+    /// pairs of states too large to merge serially are recorded there instead, as in `mergeDataImpl`.
+    void mergeAndDestroyRowOrDefer(AggregateDataPtr dst, AggregateDataPtr src, Arena * arena, DeferredMerges * deferred) const;
+
+    /// Merge the batch of source rows `src_places` into `dst_places` and destroy them, deferring the large pairs to
+    /// `deferred` if it is not null. The source rows are detached from their hash table: if it throws, every state
+    /// of the batch has been destroyed, except those already recorded in `deferred` and, with `skip_compiled`, the
+    /// states of the compiled functions, which the caller has merged by the JIT-compiled function.
+    void mergeAndDestroyDetachedBatch(
+        PaddedPODArray<AggregateDataPtr> & dst_places,
+        PaddedPODArray<AggregateDataPtr> & src_places,
+        DeferredMerges * deferred,
+        Arena * arena,
+        std::atomic<bool> & is_cancelled,
+        bool skip_compiled) const;
+
+    /// Whether the state of the `i`-th aggregate function of the source row `src` is the last pair recorded in `deferred`.
+    bool isRecordedDeferredPair(const DeferredMerges * deferred, size_t i, ConstAggregateDataPtr src) const;
+
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
+    /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     void mergeDataNoMoreKeysImpl(
         Table & table_dst,
         AggregatedDataWithoutKey & overflows,
         Table & table_src,
-        Arena * arena) const;
+        Arena * arena,
+        DeferredMerges * deferred = nullptr) const;
 
     /// A set method has no aggregate states, so there is nothing to merge or overflow.
     template <typename Method, typename Table>
@@ -1105,14 +1220,16 @@ private:
         Table & table_dst,
         AggregatedDataWithoutKey & overflows,
         Table & table_src,
-        Arena * arena) const;
+        Arena * arena,
+        DeferredMerges * deferred = nullptr) const;
 
     /// A set method has no aggregate states: the merge is a plain key union.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        DeferredMerges * deferred = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -1121,7 +1238,8 @@ private:
         Table & table_dst,
         AggregatedDataWithoutKey & overflows,
         Table & table_src,
-        Arena * arena) const;
+        Arena * arena,
+        DeferredMerges * deferred = nullptr) const;
 
     /// Same, but ignores the rest of the keys.
     template <typename Method, typename Table>
@@ -1129,7 +1247,8 @@ private:
     void mergeDataOnlyExistingKeysImpl(
         Table & table_dst,
         Table & table_src,
-        Arena * arena) const;
+        Arena * arena,
+        DeferredMerges * deferred = nullptr) const;
 
     /// A set method has no aggregate states, so there is nothing to merge.
     template <typename Method, typename Table>
@@ -1137,7 +1256,8 @@ private:
     void mergeDataOnlyExistingKeysImpl(
         Table & table_dst,
         Table & table_src,
-        Arena * arena) const;
+        Arena * arena,
+        DeferredMerges * deferred = nullptr) const;
 
     void mergeWithoutKeyDataImpl(
         ManyAggregatedDataVariants & non_empty_data,
@@ -1301,7 +1421,41 @@ private:
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-        size_t * full_group_count) const;
+        size_t * full_group_count,
+        std::atomic<int> * threshold_top_k_verdict = nullptr) const;
+
+    /// The top-K threshold merge (see `Params::threshold_top_k`): merges and materializes only
+    /// the groups that can rank among the bucket's k best by the ordering aggregate. Returns
+    /// nothing when it declines at run time (a method it does not serve, a bucket too small
+    /// for the pruning to pay for the setup, or a value distribution the threshold cannot cut;
+    /// the latter verdict is shared across the buckets through `threshold_top_k_verdict`), and
+    /// the caller falls back to the ordinary merge. Defined in AggregatorThresholdTopK.cpp.
+    std::optional<AggregatedChunk> tryMergeAndConvertOneBucketToChunkThresholdTopK(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
+
+    template <typename Method>
+    requires MapAggregationMethod<Method>
+    std::optional<AggregatedChunk> mergeAndConvertOneBucketToChunkThresholdTopKImpl(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
+
+    /// The threshold merge ranks groups by an aggregate's value, which a set method cannot have.
+    /// This overload exists only because the call site tests it at run time.
+    template <typename Method>
+    requires SetAggregationMethod<Method>
+    std::optional<AggregatedChunk> mergeAndConvertOneBucketToChunkThresholdTopKImpl(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -1337,7 +1491,8 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        DeferredMerges * deferred = nullptr) const;
 
     /// A set method has no aggregate states: merging a block back only re-registers its keys.
     template <typename State, typename Table>
@@ -1352,10 +1507,14 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        DeferredMerges * deferred = nullptr) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
     /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
+    /// If `deferred` is not null, pairs of large states are collected there instead of being merged at the end of
+    /// the block, so that the caller can merge them together with the large states of other blocks via
+    /// `mergeDeferredLargeStates`; the caller must keep the block's columns alive until then.
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         const Columns & columns,
@@ -1367,7 +1526,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys = nullptr) const;
+        Arena * arena_for_keys = nullptr,
+        DeferredMerges * deferred = nullptr) const;
 
     /// `for_sub_range` as in `executeImpl`, for `mergeOnBlockSmall`.
     template <bool for_sub_range, typename Method, typename Table>
@@ -1383,7 +1543,8 @@ private:
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        DeferredMerges * deferred = nullptr) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         const Columns & columns,
@@ -1442,8 +1603,9 @@ private:
     /// at single level.
     bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
 
+    /// The columns must be alive while the instructions are used.
     void prepareAggregateInstructions(
-        Columns columns,
+        const Columns & columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
         AggregateFunctionInstructions & instructions,

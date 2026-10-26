@@ -12,6 +12,7 @@ namespace DB
 
 class ActionsDAG;
 struct Settings;
+struct FormatSettings;
 class KeyCondition;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -19,6 +20,12 @@ struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
+/// The settings of the file format readers that change which row groups a read prunes or which
+/// physical column it binds a column to. They are folded into the query condition cache keys of files.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings);
+/// The same, from the format settings of a reader, e.g. the ones a table fixed at `CREATE`.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings);
 
 /// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
 /// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
@@ -82,6 +89,22 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
+    /// Paths whose lake type is a local (wall clock) timestamp, not an instant: Delta `timestamp_ntz`,
+    /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64.
+    void setLocalTimestampPaths(std::unordered_set<String> && local_timestamp_paths_)
+    {
+        local_timestamp_paths = std::move(local_timestamp_paths_);
+    }
+    bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
+
+    /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
+    void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
+    {
+        iceberg_time_field_ids = std::move(iceberg_time_field_ids_);
+    }
+    bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
+    bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -95,6 +118,8 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
+    std::unordered_set<String> local_timestamp_paths;
+    std::unordered_set<Int64> iceberg_time_field_ids;
     std::optional<Int64> last_assigned_field_id;
 };
 
@@ -158,6 +183,9 @@ struct FormatFilterInfo
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;
+
+    /// The caller calls `IInputFormat::cacheFilterColumnStatistics` after reading a file.
+    bool keep_filter_column_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;

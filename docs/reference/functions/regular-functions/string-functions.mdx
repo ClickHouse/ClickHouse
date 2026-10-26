@@ -205,6 +205,8 @@ If the string is not valid Base32-encoded, an exception is thrown.
 base32Decode(encoded)
 ```
 
+**Aliases**: `from_base32`
+
 **Arguments**
 
 - `encoded` — String column or constant. [`String`](/reference/data-types/string)
@@ -238,6 +240,8 @@ Encodes a string using [Base32](https://datatracker.ietf.org/doc/html/rfc4648#se
 ```sql
 base32Encode(plaintext)
 ```
+
+**Aliases**: `to_base32`
 
 **Arguments**
 
@@ -424,6 +428,8 @@ Throws an exception in case of error.
 base64URLDecode(encoded)
 ```
 
+**Aliases**: `from_base64url`
+
 **Arguments**
 
 - `encoded` — String column or constant to encode. If the string is not valid Base64-encoded, an exception is thrown. [`String`](/reference/data-types/string)
@@ -457,6 +463,8 @@ Encodes a string using [Base64](https://datatracker.ietf.org/doc/html/rfc4648#se
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**Aliases**: `to_base64url`
 
 **Arguments**
 
@@ -1085,6 +1093,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+Introduced in: v26.11.0
+
+Calculates the normalized [edit distance](https://en.wikipedia.org/wiki/Edit_distance) similarity between two byte strings:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Returns a value between `0` (the edit distance equals the length of the longer string, as for `'ab'` and `'ba'`) and `1` (equal strings). Two empty strings are equal.
+
+**Syntax**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**Aliases**: `levenshteinRatio`
+
+**Arguments**
+
+- `s1` — First input string. [`String`](/reference/data-types/string)
+- `s2` — Second input string. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the normalized edit distance similarity between the two strings. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+Introduced in: v26.11.0
+
+Like [`editDistanceRatio`](#editDistanceRatio) but for UTF8-encoded strings: the edit distance and the lengths are counted in code points.
+
+**Syntax**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**Aliases**: `levenshteinRatioUTF8`
+
+**Arguments**
+
+- `s1` — First input UTF8 string. [`String`](/reference/data-types/string)
+- `s2` — Second input UTF8 string. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the normalized edit distance similarity between the two UTF8 strings. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 Introduced in: v24.6.0
@@ -1097,7 +1181,7 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
 editDistanceUTF8(s1, s2)
 ```
 
-**Aliases**: `levenshteinDistanceUTF8`
+**Aliases**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **Arguments**
 
@@ -1169,6 +1253,8 @@ Checks whether a string ends with the provided suffix.
 ```sql
 endsWith(s, suffix)
 ```
+
+**Aliases**: `ends_with`
 
 **Arguments**
 
@@ -2881,6 +2967,8 @@ Checks whether a string begins with the provided string.
 startsWith(s, prefix)
 ```
 
+**Aliases**: `starts_with`
+
 **Arguments**
 
 - `s` — String to check. [`String`](/reference/data-types/string)
@@ -3149,6 +3237,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+Introduced in: v26.11.0
+
+Calculates the normalized indel similarity between two byte strings, the same value as Python's `Levenshtein.ratio`:
+`2 * LCS / (length(s1) + length(s2))`, where `LCS` is the length of the [longest common subsequence](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+Equivalently, `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Returns a value between `0` (nothing in common) and `1` (equal strings). Two empty strings are equal.
+
+**Syntax**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**Arguments**
+
+- `s1` — First input string. [`String`](/reference/data-types/string)
+- `s2` — Second input string. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the normalized indel similarity between the two strings. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**Fuzzy matching of names**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+Introduced in: v26.11.0
+
+Like [`stringSimilarityRatio`](#stringSimilarityRatio) but for UTF8-encoded strings: the lengths are counted in code points.
+
+**Syntax**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**Arguments**
+
+- `s1` — First input UTF8 string. [`String`](/reference/data-types/string)
+- `s2` — Second input UTF8 string. [`String`](/reference/data-types/string)
+
+**Returned value**
+
+Returns the normalized indel similarity between the two UTF8 strings. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}
