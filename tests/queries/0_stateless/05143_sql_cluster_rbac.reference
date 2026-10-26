@@ -6,7 +6,9 @@ ACCESS_DENIED
 OK
 ACCESS_DENIED
 ACCESS_DENIED
--- CREATE privilege group must not unlock ALTER CLUSTER
+-- CREATE, ALTER and DROP privilege groups must not unlock cluster DDL
+ACCESS_DENIED
+ACCESS_DENIED
 ACCESS_DENIED
 -- ALTER CLUSTER alone: ALTER ok; DROP denied
 OK
@@ -15,4 +17,8 @@ ACCESS_DENIED
 OK
 -- recreating requires CREATE again
 ACCESS_DENIED
+OK
+-- SQL CLUSTER ADMIN grants every cluster DDL privilege
+OK
+OK
 OK

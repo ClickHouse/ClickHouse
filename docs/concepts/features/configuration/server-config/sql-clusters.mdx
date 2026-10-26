@@ -161,6 +161,8 @@ GRANT ALTER CLUSTER ON *.* TO john;
 GRANT DROP CLUSTER ON *.* TO john;
 ```
 
+These privileges belong to the `SQL CLUSTER ADMIN` group (`GRANT SQL CLUSTER ADMIN ON *.* TO john` grants all three). They are not a part of the `CREATE`, `ALTER`, and `DROP` privilege groups: the `secret` of a cluster authenticates incoming interserver queries, so the right to define it is equivalent to the right to run queries as any user. Grant these privileges only to administrators.
+
 Secrets in the stored `create_query` are hidden in [`system.clusters`](/reference/system-tables/clusters) unless the user is allowed to see secrets (the same rules as [`system.named_collections`](/reference/system-tables/named_collections)).
 
 ## Introspection {#introspection}
