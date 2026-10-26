@@ -260,8 +260,11 @@ private:
         bool skipped = false;
         bool absent_from_part = false;
         bool read_only_from_part = false;
+        /// Read from the part and cacheable: none of the above.
+        bool regular = false;
     };
     std::vector<ColumnKind> column_kinds;
+    size_t num_regular_columns = 0;
     bool has_columns_read_only_from_part = false;
 
     /// The columns cache.
@@ -300,9 +303,9 @@ private:
     bool partial_columns_started = false;
 
     /// The entries of the range, per result column, per stripe of the range (nullptr when the
-    /// stripe has no entry), and per granule whether every regular column of it is cached.
+    /// stripe has no entry), and per granule how many regular columns of it are cached.
     std::vector<std::vector<ColumnsCache::MappedPtr>> cached_entries;
-    std::vector<bool> granule_served_from_cache;
+    std::vector<UInt32> granule_cached_columns;
 
     const ColumnsCache::MappedPtr & cachedEntryFor(size_t pos, size_t mark) const;
     bool isGranuleColumnCached(size_t pos, size_t mark) const;
@@ -325,10 +328,13 @@ private:
     void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
 
     /// Look the granules [first_mark, end_mark) up in the cache for every regular column. Returns
-    /// the entries per column and per stripe, and per granule whether it can be served as a whole.
+    /// the entries per column and per stripe, and per granule how many regular columns are cached.
     void lookupColumnsCache(
         size_t first_mark, size_t end_mark, size_t num_columns,
-        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable);
+        std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns);
+
+    /// Whether the granules [begin, end) of a lookup can be served from the cache as a whole.
+    bool allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const;
 
     /// Whether the first mark range of this reader can be served from the cache as a whole
     /// *without touching a single stream of it*, and so need not be prefetched.

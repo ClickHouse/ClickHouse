@@ -104,6 +104,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
             if (!kind.skipped)
                 addStreams(columns_to_read[i], serializations[i], kind);
             has_columns_read_only_from_part = has_columns_read_only_from_part || kind.read_only_from_part;
+            kind.regular = !kind.skipped && !kind.absent_from_part && !kind.read_only_from_part;
+            num_regular_columns += kind.regular;
         }
     }
     catch (...)
@@ -405,15 +407,15 @@ bool MergeTreeReaderWide::isColumnSkipped(size_t pos) const
 
 void MergeTreeReaderWide::lookupColumnsCache(
     size_t first_mark, size_t end_mark, size_t num_columns,
-    std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable)
+    std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<UInt32> & cached_columns)
 {
     const size_t num_granules = end_mark - first_mark;
     const size_t first_stripe = stripes.stripeOf(first_mark);
     const size_t end_stripe = num_granules ? stripes.stripeOf(end_mark - 1) + 1 : first_stripe;
     entries.assign(num_columns, {});
-    servable.assign(num_granules, true);
 
-    bool any_regular_column = false;
+    cached_columns.assign(num_granules, 0);
+
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         /// Columns dropped by pending mutations, invalidated system columns, and columns that
@@ -421,24 +423,28 @@ void MergeTreeReaderWide::lookupColumnsCache(
         /// path never produces one for them, so requiring one would make every read of a table
         /// with such a column miss forever. A partially read column is still read from the part
         /// while the rest of the granule is served.
-        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+        if (!column_kinds[pos].regular)
             continue;
 
-        any_regular_column = true;
         entries[pos] = columns_cache->getMany(column_identities[pos], first_stripe, end_stripe);
 
-        for (size_t i = 0; i < num_granules; ++i)
+        /// Entry by entry rather than granule by granule: a stripe can hold hundreds of granules.
+        for (const auto & entry : entries[pos])
         {
-            const auto & entry = entries[pos][stripes.stripeOf(first_mark + i) - first_stripe];
-            if (!entry || !entry->coversMarks(first_mark + i, first_mark + i + 1))
-                servable[i] = false;
+            if (!entry)
+                continue;
+            for (size_t mark = std::max(entry->first_mark, first_mark); mark < std::min(entry->end_mark, end_mark); ++mark)
+                ++cached_columns[mark - first_mark];
         }
     }
+}
 
+bool MergeTreeReaderWide::allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const
+{
     /// Nothing is served if there is nothing to serve: without a regular column the read produces
     /// no cached rows, and the granules have to be read from the part for whatever they contain.
-    if (!any_regular_column)
-        servable.assign(num_granules, false);
+    return num_regular_columns && begin < end
+        && std::all_of(cached_columns.begin() + begin, cached_columns.begin() + end, [&](UInt32 cached) { return cached == num_regular_columns; });
 }
 
 void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns)
@@ -475,14 +481,15 @@ void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_ma
     range_first_stripe = stripes.stripeOf(from_mark);
 
     cached_entries.clear();
-    granule_served_from_cache.clear();
+    granule_cached_columns.clear();
 
     if (columns_cache_reads_possible)
     {
-        lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_served_from_cache);
+        lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_cached_columns);
         LOG_TEST(log, "Range of marks [{}, {}) of part {}: {} of {} granules are in the columns cache",
             range_first_mark, range_end_mark, columns_cache_part_name,
-            std::count(granule_served_from_cache.begin(), granule_served_from_cache.end(), true), granule_served_from_cache.size());
+            num_regular_columns ? std::count(granule_cached_columns.begin(), granule_cached_columns.end(), num_regular_columns) : 0,
+            granule_cached_columns.size());
     }
 }
 
@@ -508,10 +515,10 @@ bool MergeTreeReaderWide::canServeFirstRangeFromCache()
     const size_t end_mark = std::min(mark_range.end, data_part_info_for_read->getIndexGranularity().getMarksCount());
 
     std::vector<std::vector<ColumnsCache::MappedPtr>> entries;
-    std::vector<bool> servable;
-    lookupColumnsCache(mark_range.begin, end_mark, columns_to_read.size(), entries, servable);
+    std::vector<UInt32> cached_columns;
+    lookupColumnsCache(mark_range.begin, end_mark, columns_to_read.size(), entries, cached_columns);
 
-    return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool s) { return s; });
+    return allGranulesServed(cached_columns, 0, cached_columns.size());
 }
 
 /// The cache can still reject a stripe read whole for it (too large for a shard, budget used up, invalidated), leaving
@@ -540,14 +547,13 @@ bool MergeTreeReaderWide::isColumnsCacheStripeServed(size_t stripe)
 
     /// The stripe is in the range being read: its lookup is done. Otherwise it is the beginning of
     /// the next range, which is not looked up yet.
-    if (range_first_mark <= first_mark && end_mark <= range_end_mark && granule_served_from_cache.size() == range_end_mark - range_first_mark)
-        return std::all_of(granule_served_from_cache.begin() + (first_mark - range_first_mark),
-            granule_served_from_cache.begin() + (end_mark - range_first_mark), [](bool served) { return served; });
+    if (range_first_mark <= first_mark && end_mark <= range_end_mark && granule_cached_columns.size() == range_end_mark - range_first_mark)
+        return allGranulesServed(granule_cached_columns, first_mark - range_first_mark, end_mark - range_first_mark);
 
     std::vector<std::vector<ColumnsCache::MappedPtr>> entries;
-    std::vector<bool> servable;
-    lookupColumnsCache(first_mark, end_mark, columns_to_read.size(), entries, servable);
-    return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool served) { return served; });
+    std::vector<UInt32> cached_columns;
+    lookupColumnsCache(first_mark, end_mark, columns_to_read.size(), entries, cached_columns);
+    return allGranulesServed(cached_columns, 0, cached_columns.size());
 }
 
 const ColumnsCache::MappedPtr & MergeTreeReaderWide::cachedEntryFor(size_t pos, size_t mark) const
@@ -624,24 +630,51 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
     /// but is not a no-op to read, because `fillMissingColumns` sizes every re-added member of the
     /// group from its offsets. A column that is not cacheable is read the same way: in one call
     /// per block unless the block mixes served and read granules.
-    auto columns_from_disk = [&](size_t mark)
+    ///
+    /// The lookup of the range tells how many regular columns of a granule are cached: when all or
+    /// none of them are, the columns need not be checked one by one.
+    enum class GranuleCached : UInt8 { None, All, Some };
+    auto granule_cached = [&](size_t mark)
     {
-        std::vector<bool> from_disk(num_columns, false);
+        const size_t cached = granule_cached_columns.empty() ? 0 : granule_cached_columns[mark - range_first_mark];
+        if (cached == 0)
+            return GranuleCached::None;
+        return cached == num_regular_columns ? GranuleCached::All : GranuleCached::Some;
+    };
+    auto columns_from_disk = [&](size_t mark, GranuleCached cached, std::vector<bool> & from_disk)
+    {
+        from_disk.assign(num_columns, false);
+        if (cached == GranuleCached::All)
+            return;
         for (size_t pos = 0; pos < num_columns; ++pos)
-            if (!isColumnSkipped(pos) && !isColumnFilledAfterReading(pos) && !isGranuleColumnCached(pos, mark))
-                from_disk[pos] = true;
-        return from_disk;
+            from_disk[pos] = column_kinds[pos].regular && (cached == GranuleCached::None || !isGranuleColumnCached(pos, mark));
     };
 
     std::vector<size_t> sizes_before_reading;
+    std::vector<bool> from_disk;
+    std::vector<bool> next_from_disk;
     size_t read_rows = 0;
+    size_t hits = 0;
+    size_t misses = 0;
     size_t run_begin = 0;
     while (run_begin < segments.size())
     {
-        const auto from_disk = columns_from_disk(segments[run_begin].mark);
+        const auto run_cached = granule_cached(segments[run_begin].mark);
+        columns_from_disk(segments[run_begin].mark, run_cached, from_disk);
         size_t run_end = run_begin + 1;
-        while (run_end < segments.size() && columns_from_disk(segments[run_end].mark) == from_disk)
+        while (run_end < segments.size())
+        {
+            const auto cached = granule_cached(segments[run_end].mark);
+            if (cached != run_cached)
+                break;
+            if (cached == GranuleCached::Some)
+            {
+                columns_from_disk(segments[run_end].mark, cached, next_from_disk);
+                if (next_from_disk != from_disk)
+                    break;
+            }
             ++run_end;
+        }
 
         size_t run_rows = 0;
         for (size_t i = run_begin; i < run_end; ++i)
@@ -651,7 +684,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         size_t served_columns = 0;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+            if (!column_kinds[pos].regular)
                 continue;
             if (from_disk[pos])
                 ++disk_columns;
@@ -716,14 +749,14 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
                     accumulateRowsForColumnsCache(segment.mark, segment.offset, segment.rows, segment.granule_rows, row_in_run,
                         rows - row_in_run, from_disk, sizes_before_reading, res_columns);
                 if (columns_cache_reads_possible && segment.offset + segment.rows == segment.granule_rows)
-                    ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, disk_columns);
+                    misses += disk_columns;
                 row_in_run += segment.rows;
             }
         }
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos))
+            if (!column_kinds[pos].regular)
                 continue;
             /// The streams of a served column stay where they were; the others are at the cursor.
             disk_positioned[pos] = from_disk[pos];
@@ -733,7 +766,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         {
             for (size_t i = run_begin; i < run_end; ++i)
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
-                    ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
+                    hits += served_columns;
         }
 
         read_rows += rows;
@@ -744,6 +777,11 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
 
         run_begin = run_end;
     }
+
+    if (hits)
+        ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, hits);
+    if (misses)
+        ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, misses);
 
     /// Move the cursor over the rows that were produced.
     for (size_t left = std::min(read_rows, block_rows); left > 0;)
