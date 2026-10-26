@@ -1215,13 +1215,17 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
     result.reserve(data_files.size());
     for (auto & [file_path, file_schema_id] : data_files)
     {
-        checkDataFileSchema(file_path, file_schema_id, read_schema);
+        checkDataFileSchema(file_path, file_schema_id, read_schema, incremental_cursor);
         result.emplace_back(std::move(file_path));
     }
     return result;
 }
 
-void PaimonMetadata::checkDataFileSchema(const String & file_path, Int64 file_schema_id, const PaimonTableSchema & read_schema) const
+void PaimonMetadata::checkDataFileSchema(
+    const String & file_path,
+    Int64 file_schema_id,
+    const PaimonTableSchema & read_schema,
+    std::optional<Int64> incremental_cursor) const
 {
     if (file_schema_id == read_schema.id)
         return;
@@ -1258,12 +1262,25 @@ void PaimonMetadata::checkDataFileSchema(const String & file_path, Int64 file_sc
         else
             continue;
 
+        String recovery;
+        if (incremental_cursor && persistent_components.hasStreamState())
+            recovery = fmt::format(
+                "The cursor of this incremental read was not advanced, it is at snapshot {}. To move on, wait until Paimon expires "
+                "the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops "
+                "every snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
+                "'<id of the last snapshot committed before the change>'\"",
+                *incremental_cursor,
+                persistent_components.stream_state->getKeeperPath());
+        else
+            recovery = "Rewriting the table with the current schema in Paimon, for example with INSERT OVERWRITE <table> SELECT * "
+                       "FROM <table>, makes the snapshots created after it readable";
+
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Reading Paimon data file '{}' is not supported: {} in schema {} the file was written with, but {} in the "
             "current schema {}. Columns are matched to data files by name, not by field id, so the result would contain "
-            "wrong values.",
-            file_path, in_file, file_schema_id, in_read_schema, read_schema.id);
+            "wrong values. {}.",
+            file_path, in_file, file_schema_id, in_read_schema, read_schema.id, recovery);
     }
 
     std::lock_guard lock(checked_file_schemas_mutex);

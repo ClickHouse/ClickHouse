@@ -121,7 +121,11 @@ private:
     void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
 
     /// Throws if a data file written with schema `file_schema_id` cannot be read by column name with `read_schema`.
-    void checkDataFileSchema(const String & file_path, Int64 file_schema_id, const PaimonTableSchema & read_schema) const;
+    void checkDataFileSchema(
+        const String & file_path,
+        Int64 file_schema_id,
+        const PaimonTableSchema & read_schema,
+        std::optional<Int64> incremental_cursor) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;

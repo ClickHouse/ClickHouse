@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.paimon_utils import (
+    PAIMON_CATALOG,
     create_incremental_paimon_table,
     create_spark_paimon_table,
     drop_tables_at_exit,
@@ -117,6 +118,18 @@ def test_schema_evolution_rename_column(
     assert "NOT_IMPLEMENTED" in error
     assert "field id 1 is column 'b' in schema 0" in error
     assert "but column 'b2' in the current schema 1" in error
+    assert "INSERT OVERWRITE" in error
+
+    # Rewriting the table with the current schema makes the old rows readable under the new name.
+    execute_spark_query(
+        started_cluster,
+        storage_type,
+        table_name,
+        f"INSERT OVERWRITE {spark_table(table_name)} SELECT * FROM {spark_table(table_name)}",
+    )
+    schema, data = get_schema_and_data(instance, table_expr, order_by="a")
+    assert schema == [["a", "Int32"], ["b2", "Nullable(String)"]]
+    assert data == [["1", "one"], ["2", "two"], ["3", "three"]]
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
@@ -166,15 +179,29 @@ def test_schema_evolution_drop_and_add_same_name(
     assert "NOT_IMPLEMENTED" in error
     assert "column 'email' is field id 1 in schema 0" in error
     assert "but field id 2 in the current schema 2" in error
+    assert "INSERT OVERWRITE" in error
+
+    # Rewriting the table with the current schema drops the old email values.
+    execute_spark_query(
+        started_cluster,
+        storage_type,
+        table_name,
+        f"INSERT OVERWRITE {spark_table(table_name)} SELECT * FROM {spark_table(table_name)}",
+    )
+    schema, data = get_schema_and_data(instance, table_expr, order_by="a")
+    assert schema == [["a", "Int32"], ["email", "Nullable(String)"]]
+    assert data == [["1", "\\N"], ["2", "\\N"], ["3", "carol@example.com"]]
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_incremental_read_after_rename_column(
+def test_incremental_read_across_rename_column(
     started_cluster_paimon_with_spark, storage_type
 ):
-    """A caught-up incremental read continues across a RENAME COLUMN: its next
-    delta holds only files written with the new schema."""
+    """A caught-up incremental read continues across a RENAME COLUMN. A lagging
+    one is refused with its cursor kept, and resumes once the cursor is moved to
+    the last snapshot committed before the rename."""
     started_cluster = started_cluster_paimon_with_spark
+    spark = started_cluster.spark_session
     table_name = "test_schema_evolution_inc_" + storage_type + "_" + get_uuid_str()
 
     instance = create_incremental_paimon_table(
@@ -197,6 +224,53 @@ def test_incremental_read_after_rename_column(
             table_name,
             f"INSERT INTO {spark_table(table_name)} VALUES (1, 'one')",
         )
-        # SELECT *, not SELECT val2: the engine has column val until the background
-        # refresh pins the new snapshot, and SELECT * returns nothing until then.
         wait_until_query_result(instance, f"SELECT * FROM {table_name}", "1\tone\n")
+
+        keeper_path = f"/clickhouse/paimon/{table_name}"
+        zk = started_cluster.get_kazoo_client("zoo1")
+        try:
+            cursor = zk.get(f"{keeper_path}/committed_snapshot")[0]
+
+            # Not consumed before the next rename: its delta holds a file written with column val2.
+            execute_spark_query(
+                started_cluster,
+                storage_type,
+                table_name,
+                f"INSERT INTO {spark_table(table_name)} VALUES (2, 'two')",
+            )
+            before_rename = spark.sql(
+                f"SELECT max(snapshot_id) FROM {PAIMON_CATALOG}.default.`{table_name}$snapshots`"
+            ).collect()[0][0]
+            execute_spark_query(
+                started_cluster,
+                storage_type,
+                table_name,
+                f"ALTER TABLE {spark_table(table_name)} RENAME COLUMN val2 TO val3",
+            )
+            execute_spark_query(
+                started_cluster,
+                storage_type,
+                table_name,
+                f"INSERT INTO {spark_table(table_name)} VALUES (3, 'three')",
+            )
+
+            def assert_refused(query):
+                error = instance.query_and_get_error(query)
+                assert "NOT_IMPLEMENTED" in error
+                assert "field id 1 is column 'val2'" in error
+                assert "but column 'val3'" in error
+                return error
+
+            for _ in range(2):
+                error = assert_refused(f"SELECT * FROM {table_name}")
+                assert f"set '{keeper_path}/committed_snapshot'" in error
+                assert zk.get(f"{keeper_path}/committed_snapshot")[0] == cursor
+            assert_refused(
+                f"SELECT * FROM {table_name} SETTINGS paimon_target_snapshot_id = {before_rename}"
+            )
+
+            # Abandons only the snapshot of (2, 'two').
+            zk.set(f"{keeper_path}/committed_snapshot", str(before_rename).encode())
+            assert instance.query(f"SELECT * FROM {table_name}") == "3\tthree\n"
+        finally:
+            zk.stop()

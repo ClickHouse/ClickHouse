@@ -32,8 +32,10 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
   file counts via `EngineFileLikeReadFiles`, path-escaped partition values.
 - `test_schema_evolution.py`: ADD/DROP COLUMN across snapshots read by name;
   RENAME COLUMN and DROP + re-ADD under the same name raise `NOT_IMPLEMENTED`
-  (columns are matched by name, not field id); a caught-up incremental read
-  continues across a RENAME.
+  (columns are matched by name, not field id); `INSERT OVERWRITE` with the
+  current schema makes such a table readable again; a caught-up incremental
+  read continues across a RENAME, a lagging one is refused with its cursor kept
+  until the cursor is moved past the pre-rename snapshots.
 - `test_snapshot_visibility.py` — new snapshots visible to table functions
   (per query) and engines (metadata refresh).
 - `test_metadata_cache.py` — hit/miss accounting, `SYSTEM DROP PAIMON
