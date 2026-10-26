@@ -769,6 +769,15 @@ std::optional<String> tryReadNamedCollectionValue(const ASTPtr & arg, const Clus
     return std::nullopt;
 }
 
+/// Reads a named-collection override key the way `getKeyValueFromAST` does: an identifier, or a constant such as `'table'`.
+std::optional<String> tryReadNamedCollectionKey(const ASTPtr & arg, const ClusterLocality & clusters)
+{
+    String key;
+    if (tryGetIdentifierNameInto(arg, key))
+        return key;
+    return tryReadNamedCollectionValue(arg, clusters);
+}
+
 /// Mirrors the named-collection branch of `parseRemoteFunctionArguments`: the collection's own keys
 /// with the call's `key = value` overrides applied on top.
 RemoteCollectionTarget resolveRemoteNamedCollection(
@@ -792,8 +801,10 @@ RemoteCollectionTarget resolveRemoteNamedCollection(
         if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
             continue;
         String key;
-        if (!tryGetIdentifierNameInto(equals->arguments->children[0], key))
-            continue;
+        if (auto key_text = tryReadNamedCollectionKey(equals->arguments->children[0], clusters))
+            key = std::move(*key_text);
+        else
+            refuse("an override key is not a constant the dump can read");
         /// Credentials and the sharding key name no table and reach no address.
         if (key == "user" || key == "username" || key == "password" || key == "sharding_key")
             continue;
@@ -1614,8 +1625,9 @@ void collectNamedCollectionsFromTableFunction(
             const auto * equals = arguments[i]->as<ASTFunction>();
             if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
                 continue;
-            String key;
-            if (tryGetIdentifierNameInto(equals->arguments->children[0], key) && (key == "database" || key == "db"))
+            /// A key the dump cannot read may be `database` too; `collect_nested` reads only a table function anyway.
+            const auto key = tryReadNamedCollectionKey(equals->arguments->children[0], clusters);
+            if (!key || *key == "database" || *key == "db")
                 collect_nested(equals->arguments->children[1]);
         }
     }
@@ -1982,9 +1994,12 @@ std::vector<TableInfo> resolveTables(
         /// A view's select sources are deliberately not in `loading_dependencies_*`, so they are
         /// only discoverable by parsing the stored `SELECT`.
         ASTPtr select_ast;
-        if (row.engine == "Distributed" && !row.create_query.empty() && !database_info.at(row.database).is_external)
+        if ((row.engine == "Distributed" || row.engine == "Proxy") && !row.create_query.empty()
+            && !database_info.at(row.database).is_external)
         {
-            /// A table with `ENGINE = Remote(...)` also reads its local shard's table-function target at CREATE.
+            /// A table with `ENGINE = Remote(...)` also reads its local shard's table-function target at CREATE. A table
+            /// created `AS` a table function is a `Proxy` that resolves the function when it is first read, which a reader
+            /// analyzed at CREATE, such as a materialized view, does.
             ASTPtr create_ast;
             try
             {
@@ -2000,9 +2015,12 @@ std::vector<TableInfo> resolveTables(
             }
             auto * create = create_ast->as<ASTCreateQuery>();
             ASTFunction * engine = create && create->storage ? create->storage->engine : nullptr;
-            if (!engine || (!equalsCaseInsensitive(engine->name, "Remote") && !equalsCaseInsensitive(engine->name, "RemoteSecure")))
+            if (create && create->as_table_function)
+                select_ast = create->as_table_function->ptr();
+            else if (engine && (equalsCaseInsensitive(engine->name, "Remote") || equalsCaseInsensitive(engine->name, "RemoteSecure")))
+                select_ast = engine->ptr();
+            else
                 continue;
-            select_ast = engine->ptr();
         }
         else if (row.engine != "View" && row.engine != "MaterializedView")
             continue;
@@ -2113,6 +2131,22 @@ std::vector<TableInfo> resolveTables(
         {
             if (const auto * table_id = node.as<ASTTableIdentifier>(); table_id && !table_id->getDatabaseName().empty())
                 references.push_back({table_id->getDatabaseName(), table_id->shortName()});
+            /// A parameterized view is called like a table function, by its `[db.]name`, which the analyzer splits at the dot.
+            const auto * table_expression = node.as<ASTTableExpression>();
+            if (const auto * call = table_expression && table_expression->table_function
+                    ? table_expression->table_function->as<ASTFunction>() : nullptr;
+                call && !TableFunctionFactory::instance().isTableFunctionName(call->name))
+            {
+                const size_t dot = call->name.find('.');
+                if (dot == String::npos)
+                {
+                    /// The server stores the name as written, and replay resolves it in the owning database.
+                    if (known_tables.contains({row.database, call->name}))
+                        references.push_back({"", call->name});
+                }
+                else if (call->name.find('.', dot + 1) == String::npos)
+                    references.push_back({call->name.substr(0, dot), call->name.substr(dot + 1)});
+            }
             collectFunctionArgumentReferences(node, clusters, references);
             collectMergeAndLoopReferences(
                 node, all_table_names_by_db, undumped_databases, omitted_tables, row.database,
@@ -2906,7 +2940,13 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
             else if (validated_types)
                 for (const auto & child : parsed->children)
                     if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
-                        validated_types->push_back(column->getType());
+                    {
+                        /// `InterpreterCreateQuery::getColumnType` validates the type that the `NULL` modifier makes.
+                        if (column->null_modifier.value_or(false))
+                            validated_types->push_back(makeASTDataType("Nullable", column->getType()->clone()));
+                        else
+                            validated_types->push_back(column->getType());
+                    }
         }
         catch (const Exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2935,7 +2975,27 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
                         end = args.size() == 3 ? 2 : 0;
                     }
                     for (size_t i = begin; i < end; ++i)
+                    {
                         forEachNode(*args[i], [&](const IAST & argument) { add_types_in_string(argument, true); });
+                        /// A structure computed from strings, such as `concat('x LowCardinality(', 'UInt64)')`, is folded
+                        /// only by the server: like a computed CAST target, it keeps every type gate. `merge` wraps a database
+                        /// regexp in `REGEXP`, which is no structure.
+                        ASTPtr value = args[i];
+                        if (const auto * equals = value->as<ASTFunction>(); equals && equals->name == "equals" && equals->arguments
+                            && equals->arguments->children.size() == 2)
+                            value = equals->arguments->children[1];
+                        const auto * computed = value->as<ASTFunction>();
+                        bool from_strings = false;
+                        if (computed && validated_types && !equalsCaseInsensitive(computed->name, "REGEXP")
+                            && !TableFunctionFactory::instance().isTableFunctionName(computed->name))
+                            forEachNode(*value, [&](const IAST & part)
+                            {
+                                const auto * literal = part.as<ASTLiteral>();
+                                from_strings |= literal && literal->value.getType() == Field::Types::String;
+                            });
+                        if (from_strings)
+                            validated_types->push_back(value);
+                    }
                 }
             }
             else
