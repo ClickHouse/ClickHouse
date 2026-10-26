@@ -1,0 +1,10 @@
+String: batches>1=1 64	2016	1
+Nullable(String): batches>1=1 64	2016	1
+LowCardinality: batches>1=1 64	2016	4
+Array(String): batches>1=1 64	2016	1
+Map: batches>1=1 64	2016	1
+Tuple: batches>1=1 64	2016	1
+Variant: batches>1=1 64	2016	33
+FixedString: batches>1=1 64	2016	1
+FixedString fixed-width: batches>1=0 64	2016	1
+UInt64: batches>1=0 64	2016	64

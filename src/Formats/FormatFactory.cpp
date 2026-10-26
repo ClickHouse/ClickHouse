@@ -383,6 +383,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
+    format_settings.arrow.output_max_record_batch_bytes = settings[Setting::output_format_arrow_max_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
