@@ -31,6 +31,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #endif
 
 
@@ -740,12 +741,54 @@ void validateResolvedS3DiskCredentials(
             );
 }
 
+#if USE_GOOGLE_CLOUD
+/// Whether a disk created from user SQL, possibly behind wrappers, is a native GCS disk that authenticates with
+/// Application Default Credentials, which can resolve the server's identity. A disk from the server configuration
+/// may use them, so the walk stops there.
+static bool customDiskUsesGCSServerIdentity(DiskPtr disk)
+{
+    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    {
+        auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
+        if (!object_storage_disk)
+            continue;
+
+        const auto object_storage = object_storage_disk->getObjectStorage();
+        if (object_storage->getType() != ObjectStorageType::GCS)
+            return false;
+
+        return chooseGCSCredentialSource(*object_storage->getGCSObjectStorageSettings()) == GCSCredentialSource::ApplicationDefault;
+    }
+    return false;
+}
+#endif
+
 void validateResolvedGCSDiskCredentials(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context,
     bool is_loading_from_existing_metadata,
     const DynamicS3DiskCredentialInfo & info)
 {
+#if USE_GOOGLE_CLOUD
+    /// A wrapper such as `encrypted` or `cache` may name a native GCS disk another session created with the
+    /// credential opt-in. It is reused as it is, together with its authenticated client, so the wrapper is not a
+    /// GCS backend by itself but still borrows the server's identity.
+    if (!is_loading_from_existing_metadata && !info.restriction_exempt && context->shouldRestrictUserQueryS3Credentials())
+    {
+        const String wrapped_disk = config.getString("disk", "");
+        const auto disks = context->getDisksMap();
+        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end() && customDiskUsesGCSServerIdentity(it->second))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "A dynamic disk created from user SQL may not wrap the disk `{}`: it is a native GCS disk created from "
+                "user SQL that uses Application Default Credentials, which can resolve the server's identity."
+#if !CLICKHOUSE_CLOUD
+                " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+                , wrapped_disk);
+    }
+#endif
+
     /// Re-check after `include` is resolved, mirroring `validateResolvedS3DiskCredentials`: an `include` can
     /// inject a `gcs` backend with `service_account_key_file` or credential fields past the pre-resolution AST
     /// checks (which only see the keys present in the AST itself). A `system`-database disk is server-internal,
