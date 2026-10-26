@@ -4,11 +4,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <utility>
 
@@ -72,20 +74,25 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
+static bool isNotReadySetColumn(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+        return false;
+
+    const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    return !future_set || !future_set->get();
+}
+
 bool dagContainsNonReadySet(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
-        {
-            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-            if (column_set)
-            {
-                auto future_set = column_set->getData();
-                if (!future_set || !future_set->get())
-                    return true;
-            }
-        }
+        if (isNotReadySetColumn(node))
+            return true;
     }
     return false;
 }
@@ -124,6 +131,25 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
+bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    auto is_insensitive = [](const IFunctionBase & function)
+    {
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
+    };
+
+    /// A lambda without captures is constant-folded into a `COLUMN` node holding a `ColumnFunction`, which
+    /// hides the functions of its body from a plain scan over the function nodes; `allNodeFunctions`
+    /// descends into it.
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, is_insensitive))
+            return true;
+    }
+
+    return false;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
@@ -131,10 +157,6 @@ FilterResult filterResultForNotMatchedRows(
     bool allow_unknown_function_arguments
 )
 {
-    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
-    if (dagContainsNonReadySet(filter_dag))
-        return FilterResult::UNKNOWN;
-
     /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
     /// `IFunction::executeImplDryRun` with `input_rows_count=1`. For functions that are not
     /// deterministic within a single query (`rand`, `nowInBlock`, `rowNumberInAllBlocks`,
@@ -156,6 +178,13 @@ FilterResult filterResultForNotMatchedRows(
 
     ActionsDAG::IntermediateExecutionResult filter_input;
 
+    /// A set that is not built yet is an unknown argument: `in` must never be dry-run on it (that yields a fake 0).
+    for (const auto & node : filter_dag.getNodes())
+    {
+        if (isNotReadySetColumn(node))
+            filter_input.emplace(&node, ColumnWithTypeAndName{nullptr, node.result_type, node.result_name});
+    }
+
     /// Create constant columns with default values for inputs of the filter DAG
     for (const auto * input : filter_dag.getInputs())
     {
@@ -172,7 +201,12 @@ FilterResult filterResultForNotMatchedRows(
             continue;
         }
 
-        auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
+        /// A not-matched row holds the column's own default (`Date32`: 1970-01-01, not `getDefault`'s
+        /// 1900-01-01), and where default insertion is not trivial no probe is guaranteed faithful.
+        if (!input->result_type->isDefaultInsertTrivial())
+            continue;
+
+        auto constant_column = createColumnConstWithDefaultValue(input->result_type->createColumn());
         auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
@@ -217,5 +251,33 @@ FilterResult filterResultForNotMatchedRows(
 
     return FilterResult::UNKNOWN;
 }
+
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
+{
+    /// A STREAM read selects its parts and ranges during execution, so the range set captured
+    /// here is not the one that will be read.
+    if (reading->getQueryInfo().isStream())
+        return false;
+
+    /// Allow FINAL only for ReplacingMergeTree.
+    if (reading->isQueryWithFinal()
+        && reading->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
+        return false;
+
+    if (reading->isQueryWithSampling())
+        return false;
+
+    if (reading->getMutationsSnapshot()->hasPatchParts())
+        return false;
+
+    /// A row is addressed by the virtual columns `_part_starting_offset` and `_part_offset`, which a column of the table
+    /// with the same name takes the place of: the second read would fetch the rows that column's values point to.
+    const auto & columns = reading->getStorageMetadata()->getColumns();
+    if (columns.has("_part_offset") || columns.has("_part_starting_offset"))
+        return false;
+
+    return true;
+}
+
 }
 }

@@ -1,4 +1,6 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: `SYSTEM STOP REPLICATION QUEUES` does not keep the mutations of a `SharedMergeTree`
+-- pending, so an earlier mutation can run and change the parts a later `ALTER` is pruned against.
 -- https://github.com/ClickHouse/ClickHouse/issues/117115
 -- Mutation partition pruning refuses a predicate containing a query-time non-deterministic function,
 -- because the pruning pass folds it at submission time while the asynchronous execution evaluates it
@@ -114,8 +116,36 @@ SYSTEM SYNC REPLICA t_prune_alias_lambda PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_alias_lambda' ORDER BY mutation_id;
 
+SELECT 'lambda parameter inside a column definition';
+-- A column definition is authored at table scope, so following `r` has to reach the `now` behind `s`
+-- even while an enclosing lambda binds the name `s`. The binding is restored after the definition,
+-- so `s` following a deterministic definition is the parameter again and the predicate still prunes.
+DROP TABLE IF EXISTS t_prune_alias_lambda_scope;
+CREATE TABLE t_prune_alias_lambda_scope (p UInt32, k UInt64, arr Array(UInt32),
+    s UInt32 ALIAS toUnixTimestamp(now()), r UInt32 ALIAS s + 1, d UInt32 ALIAS k + 1, e UInt32 ALIAS d + 1)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_alias_lambda_scope', 'r1')
+PARTITION BY p ORDER BY k;
+INSERT INTO t_prune_alias_lambda_scope (p, k, arr) VALUES (1, 1, [1]), (2, 2, [2]);
+SYSTEM STOP REPLICATION QUEUES t_prune_alias_lambda_scope;
+ALTER TABLE t_prune_alias_lambda_scope DELETE WHERE p = 1 AND arrayExists(s -> s = r, arr);
+ALTER TABLE t_prune_alias_lambda_scope DELETE WHERE p = 1 AND arrayExists(s -> d = 1 AND s = 1, arr);
+-- Following `e` at table scope reaches the deterministic `d ALIAS k + 1` even though the lambda binds
+-- the name `d`, so the predicate still prunes. Declining to prune whenever a followed definition
+-- mentions a bound name would be safe but would lose that.
+ALTER TABLE t_prune_alias_lambda_scope DELETE WHERE p = 1 AND arrayExists(d -> e = 3 AND d = 1, arr);
+-- The `WHERE` predicate of an `ALTER UPDATE` is pruned by the same analysis.
+ALTER TABLE t_prune_alias_lambda_scope UPDATE arr = [0] WHERE p = 1 AND arrayExists(s -> s = r, arr);
+ALTER TABLE t_prune_alias_lambda_scope UPDATE arr = [0] WHERE p = 1 AND arrayExists(s -> d = 1 AND s = 1, arr);
+ALTER TABLE t_prune_alias_lambda_scope UPDATE arr = [0] WHERE p = 1 AND arrayExists(d -> e = 3 AND d = 1, arr);
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_alias_lambda_scope PULL;
+SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_prune_alias_lambda_scope' ORDER BY mutation_id;
+
 DROP TABLE t_prune_alias;
 DROP TABLE t_prune_alias_lambda;
+DROP TABLE t_prune_alias_lambda_scope;
 DROP TABLE t_prune_alias_ok;
 DROP TABLE t_prune_alias_qualified;
 DROP TABLE t_prune_alias_subcolumn;

@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
@@ -149,7 +149,7 @@ private:
 
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
-    Epoll epoll;
+    Epoll epoll{EpollNesting::ConnectionsFactory};
     LoggerPtr log;
     std::string fail_messages;
 

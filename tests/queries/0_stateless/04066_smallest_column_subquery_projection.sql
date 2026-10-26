@@ -13,7 +13,7 @@
 -- Regression test for STID 3938-33a6: server crash (LOGICAL_ERROR: No available columns)
 -- when getSmallestColumn() skipped all projection entries in certain builds.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_smallest_col;

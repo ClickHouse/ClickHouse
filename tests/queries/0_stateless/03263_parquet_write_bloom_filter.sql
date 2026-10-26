@@ -9,7 +9,6 @@ set input_format_parquet_bloom_filter_push_down = 1;
 -- stays unpruned (the dictionary would otherwise prune row groups by itself).
 set input_format_parquet_dictionary_filter_push_down = 0;
 set schema_inference_make_columns_nullable = 'auto';
-SET enable_analyzer = 1; -- required for multiple array joins
 set max_block_size = 1000000; -- have only one block to make sure rows are split into row groups deterministically
 set preferred_block_size_bytes = 1000000000000;
 

@@ -50,6 +50,7 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 
@@ -491,7 +492,7 @@ def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
 
     instance.query(
         f"INSERT INTO {table_name} SELECT number AS a, toString(number + 1) AS b FROM numbers(10, 10)",
-        settings={"allow_experimental_delta_lake_writes": 1},
+        settings={"allow_delta_lake_writes": 1},
     )
 
     # The data files written by ClickHouse must land under the prefixed table root,
