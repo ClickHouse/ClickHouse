@@ -38,6 +38,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -89,6 +90,9 @@ MergeTreeReadPoolStatelessParts::MergeTreeReadPoolStatelessParts(
 /// from the description instead of from a RangesInDataPart.
 void MergeTreeReadPoolStatelessParts::fillPerThreadInfoForBorrowedParts(size_t threads)
 {
+    if (threads > 1000000ull)
+        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Too many threads ({}) requested", threads);
+
     std::lock_guard lock(mutex);
 
     /// threads_tasks is in the base class
