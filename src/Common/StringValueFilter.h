@@ -6,6 +6,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -150,44 +151,60 @@ using StringValueFilterPtr = std::shared_ptr<const StringValueFilter>;
 using StringValueFilters = std::unordered_map<String, StringValueFilterPtr>;
 using StringValueFiltersPtr = std::shared_ptr<const StringValueFilters>;
 
+/// A systematic sample of a sequence of values: every `stride`-th of them, with `stride` doubled whenever the sample would not fit
+/// into its size otherwise, so that it is spread over all of the values instead of taken from the first ones. A value is sampled
+/// with a prefix (its size, as the part has it), and up to its part that fits.
+class StringValueSample
+{
+public:
+    explicit StringValueSample(size_t max_bytes_) : max_bytes(max_bytes_) {}
+
+    void add(const char * prefix, size_t prefix_size, const char * value, size_t size);
+
+    const std::string & getData() const { return data; }
+    /// The size of all of the values with their prefixes.
+    size_t getTotalBytes() const { return total_bytes; }
+
+private:
+    void halve();
+
+    const size_t max_bytes;
+    size_t stride = 1;
+    size_t num_values = 0;
+    size_t total_bytes = 0;
+    std::string data;
+    /// The end of every sampled value in `data`.
+    std::vector<size_t> ends;
+};
+
 /// The values of a column that a `StringValueFilter` replaced with empty strings. The in-memory size of the read
 /// column misses them, although they were read from disk.
 struct StringValuesSkippedByFilter
 {
     /// The total size of the values.
     size_t bytes = 0;
-    /// The values of this many rows read next are measured: they are written with their sizes, as they are replaced,
-    /// to measure their compressed size. The sizes are written as the part has them: as varints before the values, or as
-    /// `UInt64` in a stream of their own.
+    /// The values of this many rows read next are measured: they are sampled with their sizes, as they are replaced, to measure
+    /// their compressed size. The sizes are sampled as the part has them: as varints before the values, or as `UInt64` in a stream
+    /// of their own.
     size_t rows_to_measure = 0;
 
-    /// Compressing costs much more than reading, especially with a slow codec, so only the first bytes of the measured
-    /// values are compressed, and the compressed size of the rest is extrapolated from them. The short values and the long
-    /// ones are compressed separately: a few long values compress differently from many short ones, and would otherwise
-    /// take all of the bytes to compress. A long value is compressed up to its part that fits, a short one in full.
-    /// The sizes in a stream of their own are compressed up to their own limit, not only of the values compressed,
-    /// because a few of them compress to little more than the header of a compressed block.
+    /// Compressing costs much more than reading, especially with a slow codec, so only a sample of the measured values is compressed,
+    /// and the compressed size of the rest is extrapolated from it. The short values and the long ones are sampled separately: a few
+    /// long values compress differently from many short ones, and would otherwise take all of the sample. The sample of the long values
+    /// is as large as a block of the codec, because the long values that compress well compress the better the larger the block is.
     static constexpr size_t MAX_SHORT_VALUE_SIZE = 64 * 1024;
-    static constexpr size_t MAX_BYTES_TO_COMPRESS_OF_SHORT_VALUES = 16 * 1024;
-    static constexpr size_t MAX_BYTES_TO_COMPRESS_OF_LONG_VALUES = 1024 * 1024;
-    static constexpr size_t MAX_BYTES_TO_COMPRESS_OF_SIZES = 1024 * sizeof(UInt64);
+    static constexpr size_t MAX_SAMPLE_OF_SHORT_VALUES = 256 * 1024;
+    static constexpr size_t MAX_SAMPLE_OF_LONG_VALUES = 1024 * 1024;
+    static constexpr size_t MAX_SAMPLE_OF_SIZES = 64 * 1024;
 
-    struct CompressedSizeMeasurement
+    struct Samples
     {
-        struct Bytes
-        {
-            /// The bytes written to the compressor, and the bytes of all of the measured values.
-            size_t compressed = 0;
-            size_t total = 0;
-        };
-
-        WriteBuffer * values = nullptr;
-        WriteBuffer * sizes = nullptr;
-        Bytes values_bytes;
-        Bytes sizes_bytes;
+        StringValueSample short_values{MAX_SAMPLE_OF_SHORT_VALUES};
+        StringValueSample long_values{MAX_SAMPLE_OF_LONG_VALUES};
+        StringValueSample sizes{MAX_SAMPLE_OF_SIZES};
     };
-    CompressedSizeMeasurement short_values;
-    CompressedSizeMeasurement long_values;
+    /// Set while the values are measured.
+    std::unique_ptr<Samples> samples;
 
     /// The number of the rows measured, and the size of the measured values.
     size_t measured_rows = 0;
@@ -196,8 +213,8 @@ struct StringValuesSkippedByFilter
     /// Must be called for every replaced value that is not empty in the rows to measure: an empty value is read as it is.
     void add(const char * data, size_t size, bool size_is_inline)
     {
-        if (short_values.values)
-            writeToCompressedSizeMeasurement(data, size, size_is_inline);
+        if (samples)
+            addToSamples(data, size, size_is_inline);
     }
 
     /// Must be called after `rows` rows are read.
@@ -209,7 +226,7 @@ struct StringValuesSkippedByFilter
     }
 
 private:
-    void writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline);
+    void addToSamples(const char * data, size_t size, bool size_is_inline);
 };
 
 /// The values skipped in one read block, see `StringValuesSkippedByFilter`.
@@ -217,7 +234,7 @@ struct StringValuesSkippedInBlock
 {
     size_t bytes = 0;
     /// If the values were measured: the size of the measured values, and their compressed size with their sizes, as the codec
-    /// of the column compresses them (extrapolated from what is compressed of them), in this many first rows of the block.
+    /// of the column compresses them (extrapolated from their samples), in this many first rows of the block.
     std::optional<size_t> measured_bytes;
     size_t measured_compressed_bytes = 0;
     size_t measured_rows = 0;

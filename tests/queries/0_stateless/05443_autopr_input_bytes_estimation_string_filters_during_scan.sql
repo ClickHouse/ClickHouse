@@ -31,6 +31,8 @@ DROP TABLE IF EXISTS t_compact_empty_granules;
 DROP TABLE IF EXISTS t_compact_long_values;
 DROP TABLE IF EXISTS t_compact_large_matching_value;
 DROP TABLE IF EXISTS t_compact_large_replaced_value;
+DROP TABLE IF EXISTS t_compact_compressible_first_values;
+DROP TABLE IF EXISTS t_compact_compressible_first_values_inline_sizes;
 DROP TABLE IF EXISTS t_compact_repetitive_long_values;
 DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_long_records_zstd;
@@ -130,6 +132,23 @@ SELECT number, arrayStringConcat(arrayMap(i -> reinterpretAsString(cityHash64(nu
 OPTIMIZE TABLE t_compact_large_replaced_value FINAL;
 SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_large_replaced_value_1';
 SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_large_replaced_value_0';
+
+-- Only a sample of the replaced values is compressed, and it is spread over all of them: here the first values replaced compress
+-- to almost nothing, and the many values after them do not compress at all. Both with the sizes in a stream of their own and inline.
+CREATE TABLE t_compact_compressible_first_values(id UInt64, s String CODEC(LZ4)) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    serialization_info_version='with_types', string_serialization_version='with_size_stream', ratio_of_defaults_for_sparse_serialization=1;
+INSERT INTO t_compact_compressible_first_values SELECT number, multiIf(number = 0, concat('needle', repeat('x', 74)), number < 256, repeat('ab', 40),
+    arrayStringConcat(arrayMap(i -> reinterpretAsString(cityHash64(number, i)), range(10)))) FROM numbers(8192);
+SELECT count() FROM t_compact_compressible_first_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_compressible_first_values_1';
+SELECT count() FROM t_compact_compressible_first_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_compressible_first_values_0';
+
+CREATE TABLE t_compact_compressible_first_values_inline_sizes(id UInt64, s String CODEC(LZ4)) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    serialization_info_version='with_types', string_serialization_version='single_stream', ratio_of_defaults_for_sparse_serialization=1;
+INSERT INTO t_compact_compressible_first_values_inline_sizes SELECT * FROM t_compact_compressible_first_values;
+SELECT count() FROM t_compact_compressible_first_values_inline_sizes WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_compressible_first_values_inline_sizes_1';
+SELECT count() FROM t_compact_compressible_first_values_inline_sizes WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_compressible_first_values_inline_sizes_0';
 
 -- Here the values are 1 MiB each and repetitive, so that a part of one compresses much worse by itself than the whole.
 CREATE TABLE t_compact_repetitive_long_values(id UInt64, s String CODEC(LZ4)) ENGINE=MergeTree ORDER BY id
@@ -299,6 +318,8 @@ DROP TABLE t_compact_empty_granules;
 DROP TABLE t_compact_long_values;
 DROP TABLE t_compact_large_matching_value;
 DROP TABLE t_compact_large_replaced_value;
+DROP TABLE t_compact_compressible_first_values;
+DROP TABLE t_compact_compressible_first_values_inline_sizes;
 DROP TABLE t_compact_repetitive_long_values;
 DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_long_records_zstd;
