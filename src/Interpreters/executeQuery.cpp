@@ -2813,6 +2813,28 @@ bool astMayReferenceName(const ASTPtr & ast, const IAST * excluded, const String
     return false;
 }
 
+/// Whether `ast` may name the table `database.table`: an identifier, qualified or not, ending with its name,
+/// or a string literal with its name. An over-approximation, because an identifier of the same name may also
+/// refer to a column or a table of another database.
+bool astMayNameTable(const ASTPtr & ast, const String & database, const String & table)
+{
+    /// `ASTTableIdentifier` derives from `ASTIdentifier`, which `as` does not match.
+    if (const auto * id = dynamic_cast<const ASTIdentifier *>(ast.get()))
+        if (id->shortName() == table)
+            return true;
+
+    /// A table name passed as a string literal, e.g. to a table function.
+    if (const auto * literal = ast->as<ASTLiteral>())
+        if (literal->value.getType() == Field::Types::String)
+            if (const auto & value = literal->value.safeGet<String>(); value == table || value == database + "." + table)
+                return true;
+
+    for (const auto & child : ast->children)
+        if (astMayNameTable(child, database, table))
+            return true;
+    return false;
+}
+
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
 /// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
@@ -2934,6 +2956,53 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// would `DETACH`/`ATTACH` a table the query does not read), but must NOT shadow references in
             /// the seed term (otherwise `WITH RECURSIVE t AS (SELECT ... FROM t UNION ALL ...) ...` would
             /// miss the real table `t` that the seed term actually reads).
+            /// The analyzer registers the `WITH` definitions for a later lookup and analyzes only the
+            /// referenced ones, so `WITH unused AS (SELECT x FROM t) SELECT 1` never reads `t`. A definition is
+            /// used if the rest of the select references it, or if a used definition does — a reference from
+            /// an unused sibling (`WITH a AS (SELECT x FROM t), unused AS (SELECT x FROM a) SELECT 1`) does not
+            /// make it used. Collecting an unused definition would reattach a table the query does not use,
+            /// while not collecting it would be wrong for the old analyzer, which may still evaluate it. So a
+            /// query with an unused definition that names any object skips the hook.
+            std::unordered_set<const IAST *> used_definitions;
+            {
+                auto definition_name_of = [](const ASTPtr & with_child) -> String
+                {
+                    if (const auto * with_element = with_child->as<ASTWithElement>())
+                        return with_element->name;
+                    return with_child->tryGetAlias();
+                };
+
+                for (const auto & with_child : with->children)
+                {
+                    const String definition_name = definition_name_of(with_child);
+                    if (definition_name.empty() || astMayReferenceName(ast, with.get(), definition_name))
+                        used_definitions.insert(with_child.get());
+                }
+
+                bool changed = true;
+                while (changed)
+                {
+                    changed = false;
+                    for (const auto & with_child : with->children)
+                    {
+                        if (used_definitions.contains(with_child.get()))
+                            continue;
+                        const String definition_name = definition_name_of(with_child);
+                        for (const auto & used_child : with->children)
+                        {
+                            if (used_child == with_child || !used_definitions.contains(used_child.get()))
+                                continue;
+                            if (astMayReferenceName(used_child, nullptr, definition_name))
+                            {
+                                used_definitions.insert(with_child.get());
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             for (const auto & with_child : with->children)
             {
                 auto body_ctes = active_ctes;
@@ -2941,13 +3010,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
                 const auto * with_element = with_child->as<ASTWithElement>();
 
-                /// The analyzer registers the `WITH` definitions for a later lookup and analyzes only the
-                /// referenced ones, so `WITH unused AS (SELECT x FROM t) SELECT 1` never reads `t`. Collecting
-                /// such a definition would reattach a table the query does not use, while not collecting it
-                /// would be wrong for the old analyzer, which may still evaluate it. So a query with an unused
-                /// definition that names any object skips the hook.
-                const String definition_name = with_element ? with_element->name : with_child->tryGetAlias();
-                if (!definition_name.empty() && !astMayReferenceName(ast, with_child.get(), definition_name))
+                if (!used_definitions.contains(with_child.get()))
                 {
                     CollectTablesData unused_data(data.context);
                     unused_data.default_database = data.default_database;
@@ -3800,9 +3863,17 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                                 /* attach_short_syntax */ true);
 
                     /// The constraints are analyzed by `InterpreterCreateQuery::getConstraintsDescription` on
-                    /// `ATTACH` as well, executing their scalar subqueries.
+                    /// `ATTACH` as well, executing their scalar subqueries. A subquery reading the table itself
+                    /// (`CONSTRAINT c ASSUME x >= (SELECT count() FROM t)`) is analyzed fine here, while the table
+                    /// is still attached, but fails on the `ATTACH` back, after the `DETACH`, with
+                    /// `UNKNOWN_TABLE`. The dependency visitors drop such self references, so the dependency
+                    /// check does not exclude the table; skip it here if a constraint may name it.
                     if (create->columns_list->constraints)
+                    {
+                        if (astMayNameTable(create->columns_list->constraints, table_id.getDatabaseName(), table_id.getTableName()))
+                            continue;
                         InterpreterCreateQuery::getConstraintsDescription(create->columns_list->constraints, columns, validation_context);
+                    }
 
                     /// The `MergeTree` keys are rebuilt by `registerStorageMergeTree` under the same settings,
                     /// and a key set with `ALTER ... MODIFY ORDER BY` under a query-level setting can be
@@ -5756,8 +5827,13 @@ static BlockIO executeQueryImpl(
                 || astMentionsSetting(*out_ast, "additional_result_filter")
                 || astMentionsSetting(*out_ast, "additional_table_filters")
                 || astMentionsSetting(*out_ast, "implicit_table_at_top_level");
+            /// A nested `SETTINGS profile = '...'` is applied only when the analyzer reaches its scope, and the
+            /// profile may set any of the settings checked above (e.g. `additional_table_filters` naming a table
+            /// the caller cannot read, or `use_query_cache`). The checks above compare only literal setting
+            /// names, so a query that sets a profile anywhere is executed without the randomization.
+            bool sets_profile = astMentionsSetting(*out_ast, "profile");
             if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster && !may_use_query_result_cache
-                && !may_hide_outer_scopes && !has_query_in_settings)
+                && !may_hide_outer_scopes && !has_query_in_settings && !sets_profile)
             {
                 bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
                 auto reattach_probability = std::clamp(

@@ -1,0 +1,10 @@
+chained unused WITH definitions
+OK
+OK
+nested settings profile
+succeeded, detached
+ACCESS_DENIED, not detached
+OK
+constraint reading the table itself
+OK
+1
