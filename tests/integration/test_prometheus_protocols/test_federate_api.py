@@ -185,3 +185,20 @@ def test_federate_with_select_on_source_table(federate_users):
         assert response.status_code == 200 and response.text == expected, response.text
         response = federate_as("fed_reader", path, params)
         assert response.status_code == 200 and response.text == "", response.text
+
+
+# /federate reads the target tables, where a row policy of the TimeSeries table does not apply,
+# so it is refused while such a policy applies to the user, instead of exporting the rows the policy hides.
+def test_federate_with_row_policy_on_source_table(federate_users):
+    node.query("CREATE ROW POLICY fed_deny ON default.prometheus FOR SELECT USING 0 TO fed_reader")
+    try:
+        assert node.query("SELECT metric_name FROM prometheus", user="fed_reader", password="fed") == ""
+        for path, params in (("/federate", {}), ("/dynamic_table/federate", {"table": "prometheus"})):
+            for match in ([], ["fed_cpu"]):
+                response = federate_as("fed_reader", path, {**params, "match[]": match})
+                assert response.status_code == 400, response.text
+                assert "row policy is applied" in response.json()["error"], response.text
+    finally:
+        node.query("DROP ROW POLICY fed_deny ON default.prometheus")
+    expected = federate({"match[]": "fed_cpu"}).text
+    assert expected and federate_as("fed_reader", "/federate", {"match[]": "fed_cpu"}).text == expected

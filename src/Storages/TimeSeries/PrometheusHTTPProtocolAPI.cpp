@@ -31,6 +31,7 @@
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -54,6 +55,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -1090,6 +1092,16 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
 void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback)
 {
+    const auto storage_id = time_series_storage->getStorageID();
+
+    /// `timeSeriesSelector` reads the samples and the tags from the target tables, so a row policy of the `TimeSeries` table
+    /// itself is not applied there. Federation is refused instead of exporting the rows such a policy hides.
+    if (getEffectiveRowPolicyFilter(*time_series_storage, getContext()))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot federate the table {} because a row policy is applied on it. "
+            "The /federate endpoint reads the samples from its target tables, so it cannot apply the row policy",
+            storage_id.getNameForLogs());
+
     /// Like Prometheus, no `match[]` selectors means an empty response.
     if (match_params.empty())
         return;
@@ -1098,7 +1110,6 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
     const Int64 max_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     const Int64 min_time_ms = max_time_ms - 5 * 60 * 1000;
 
-    const auto storage_id = time_series_storage->getStorageID();
     String selects;
     for (const auto & match_param : match_params)
     {
