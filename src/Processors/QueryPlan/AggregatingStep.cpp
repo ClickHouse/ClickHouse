@@ -516,6 +516,7 @@ void AggregatingStep::buildRadixUniqExact(
     QueryPipelineBuilder & pipeline,
     const AggregatingTransformParamsPtr & transform_params,
     size_t max_threads,
+    size_t new_temporary_data_merge_threads,
     const StatsCollectingParams & stats_collecting_params) const
 {
     const auto & aggregator_params = transform_params->params;
@@ -525,7 +526,17 @@ void AggregatingStep::buildRadixUniqExact(
     const auto & input_header = pipeline.getHeader();
     const auto & argument = input_header.getByName(aggregate.argument_names[0]);
     const size_t num_streams = pipeline.getNumStreams();
-    auto state = createRadixUniqExactState(*argument.type, num_streams, stats_collecting_params);
+    /// The keys spill with the same settings as the ordinary aggregation, for consistency. Currently the ordinary
+    /// aggregation never spills this query: without `GROUP BY` it has no two-level form, which spilling needs. Keep it in
+    /// mind if its spilling evolves.
+    auto state = createRadixUniqExactState(
+        *argument.type,
+        num_streams,
+        stats_collecting_params,
+        {.max_bytes = aggregator_params.max_bytes_before_external_group_by,
+         .min_bytes = aggregator_params.min_bytes_before_external_group_by,
+         .min_free_disk_space = aggregator_params.min_free_disk_space,
+         .tmp_data_scope = aggregator_params.tmp_data_scope});
 
     const size_t key_position = input_header.getPositionByName(argument.name);
     auto result_header = std::make_shared<const Block>(output_header);
@@ -536,7 +547,11 @@ void AggregatingStep::buildRadixUniqExact(
         return std::make_shared<RadixUniqExactRouteTransform>(header, result_header, state, stream++, key_position);
     });
 
-    const size_t num_builders = std::min(max_threads, state->numBuckets());
+    /// The builds read the spilled keys back, and their memory adds up, so they run in as many threads as the ordinary
+    /// aggregation merges its temporary data with.
+    size_t num_builders = std::min(max_threads, state->numBuckets());
+    if (aggregator_params.max_bytes_before_external_group_by && aggregator_params.tmp_data_scope)
+        num_builders = std::min(num_builders, std::max<size_t>(new_temporary_data_merge_threads, 1));
     pipeline.transform([&](OutputPortRawPtrs ports)
     {
         auto barrier = std::make_shared<RadixUniqExactBarrierTransform>(result_header, ports.size(), num_builders);
@@ -640,7 +655,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     if (use_radix_uniq_exact)
     {
-        buildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params);
+        buildRadixUniqExact(pipeline, transform_params, max_threads, new_temporary_data_merge_threads, radix_uniq_exact_stats_params);
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         return;
     }
