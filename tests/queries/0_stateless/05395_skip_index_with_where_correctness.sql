@@ -193,13 +193,16 @@ SELECT 'formatRow field names given by aliases in the index condition are reject
 CREATE TABLE t_format_row_marker (k UInt64, ab UInt8, c UInt8) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_format_row_marker ADD INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n'; -- { serverError BAD_ARGUMENTS }
 
-SELECT 'setting read from the query that writes the part: use_legacy_to_time';
+SELECT 'use_legacy_to_time of the query that writes the part';
 SET enable_time_time64_type = 1;
-CREATE TABLE t_legacy_time (k UInt64, dt DateTime('UTC'), INDEX idx k TYPE minmax WHERE toString(toTime(dt)) = '10:00:00') ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_legacy_time SETTINGS use_legacy_to_time = 1 VALUES (1, '2020-01-01 10:00:00');
+CREATE TABLE t_legacy_time (k UInt64, dt DateTime('UTC'), INDEX idx k TYPE minmax GRANULARITY 1 WHERE toString(toTime(dt)) = '10:00:00') ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_legacy_time SETTINGS use_legacy_to_time = 1 VALUES (1, '2020-01-01 10:00:00'), (2, '2020-01-01 10:00:00');
 SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+-- The writer runs the condition as it was resolved when the index was defined, whatever its own `use_legacy_to_time`,
+-- so the part is indexed for this condition and the index skips the granule of `k = 2`.
+SELECT count() FROM t_legacy_time WHERE k = 1 AND toString(toTime(dt)) = '10:00:00' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'idx', max_rows_to_read = 1;
 
 SELECT 'update of the parent column of a subcolumn the condition reads';
 CREATE TABLE t_array (id UInt64, p Array(UInt8), INDEX i id TYPE minmax GRANULARITY 1 WHERE p.size0 > 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;

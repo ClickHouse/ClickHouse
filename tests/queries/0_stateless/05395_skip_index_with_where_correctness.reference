@@ -75,7 +75,8 @@ formatRow field names whose bytes run together the same way
 1
 1
 formatRow field names given by aliases in the index condition are rejected
-setting read from the query that writes the part: use_legacy_to_time
+use_legacy_to_time of the query that writes the part
+1
 1
 1
 1
