@@ -222,6 +222,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        bool output_datetime_as_timestamp = false;
         ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;

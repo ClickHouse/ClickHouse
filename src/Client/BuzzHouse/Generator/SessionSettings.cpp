@@ -1511,6 +1511,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"output_format_arrow_datetime_as_timestamp", trueOrFalseSettingNoOracle},
     {"output_format_arrow_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_arrow_low_cardinality_as_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},

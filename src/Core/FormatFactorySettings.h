@@ -1693,6 +1693,10 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0, \
         {"26.2", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."}) \
+    DECLARE(Bool, output_format_arrow_datetime_as_timestamp, false, R"(
+Write `DateTime` values as an Arrow `TIMESTAMP` in seconds with the time zone of the column (read back as `DateTime64(0)`), instead of plain 32-bit unsigned integers (read back as `UInt32`).
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
