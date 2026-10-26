@@ -210,11 +210,39 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
 void StringValuesSkippedByFilter::writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline)
 {
     measured_bytes += size;
+
+    const bool is_long = size > MAX_SHORT_VALUE_SIZE;
+    auto & measurement = is_long ? long_values : short_values;
+    auto & values_bytes = measurement.values_bytes;
+    const size_t max_bytes_to_compress = is_long ? MAX_BYTES_TO_COMPRESS_OF_LONG_VALUES : MAX_BYTES_TO_COMPRESS_OF_SHORT_VALUES;
+
     if (size_is_inline)
-        writeVarUInt(size, *values_compressed_size_measurement);
+    {
+        const size_t size_of_size = getLengthOfVarUInt(size);
+        values_bytes.total += size_of_size + size;
+        if (values_bytes.compressed + size_of_size >= max_bytes_to_compress)
+            return;
+        writeVarUInt(size, *measurement.values);
+        values_bytes.compressed += size_of_size;
+    }
     else
-        writeBinaryLittleEndian(static_cast<UInt64>(size), *sizes_compressed_size_measurement);
-    values_compressed_size_measurement->write(data, size);
+    {
+        auto & sizes_bytes = measurement.sizes_bytes;
+        sizes_bytes.total += sizeof(UInt64);
+        if (sizes_bytes.compressed < MAX_BYTES_TO_COMPRESS_OF_SIZES)
+        {
+            writeBinaryLittleEndian(static_cast<UInt64>(size), *measurement.sizes);
+            sizes_bytes.compressed += sizeof(UInt64);
+        }
+        values_bytes.total += size;
+        if (values_bytes.compressed >= max_bytes_to_compress)
+            return;
+    }
+
+    /// What is compressed of the long values fits into one block of the codec, as their parts do in the part.
+    const size_t size_to_compress = is_long ? std::min(size, max_bytes_to_compress - values_bytes.compressed) : size;
+    measurement.values->write(data, size_to_compress);
+    values_bytes.compressed += size_to_compress;
 }
 
 }
