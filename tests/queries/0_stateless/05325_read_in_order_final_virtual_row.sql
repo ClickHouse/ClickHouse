@@ -10,6 +10,8 @@ SET query_plan_optimize_join_order_limit = 1, query_plan_optimize_join_order_ran
 SET join_algorithm = 'hash', enable_join_runtime_filters = 0, enable_parallel_replicas = 0;
 SET max_threads = 3, max_final_threads = 3, optimize_on_insert = 0, optimize_read_in_reverse_order_final = 1;
 SET do_not_merge_across_partitions_select_final = 0;
+-- Disable force_primary_key_reverse_order: the reference pins the read type and the sort description in the sorting key direction
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS r;
 CREATE TABLE r (k UInt64) ENGINE = MergeTree ORDER BY k;
