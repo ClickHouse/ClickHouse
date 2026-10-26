@@ -87,7 +87,8 @@ def elapsed(instance, query, **kwargs) -> float:
 
 
 def test_delete_manifest_decode_concurrency(started_cluster_iceberg_with_spark):
-    """The result must not depend on `iceberg_delete_manifest_decode_concurrency`."""
+    """The result must not depend on how many threads read the table: the threads that
+    need the deletes first parse the delete manifests together."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_delete_manifest_decode_concurrency_" + get_uuid_str()
 
@@ -98,18 +99,16 @@ def test_delete_manifest_decode_concurrency(started_cluster_iceberg_with_spark):
     check_delete_manifests(instance, TABLE_NAME)
 
     expected = list(range(DELETE_COUNT, ROW_COUNT))
-    for concurrency in [1, 2, 4, 16]:
+    for max_threads in [1, 16]:
         assert (
             get_array(
                 instance.query(
                     f"SELECT id FROM {TABLE_NAME} ORDER BY id",
-                    settings={
-                        "iceberg_delete_manifest_decode_concurrency": concurrency
-                    },
+                    settings={"max_threads": max_threads},
                 )
             )
             == expected
-        ), f"wrong result with iceberg_delete_manifest_decode_concurrency={concurrency}"
+        ), f"wrong result with max_threads={max_threads}"
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
