@@ -926,13 +926,16 @@ String DatabaseDataLake::getNewTableLocation(
     /// see `getStorageEndpointForTable`. Returns `location` rewritten to the objects it is reopened at.
     auto get_reopened_location = [&](const String & location) -> String
     {
-        if (settings[DatabaseDataLakeSetting::storage_endpoint].value.empty())
+        const auto & storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
+        if (storage_endpoint.empty())
             return location;
 
         const auto storage_type = DataLake::parseStorageTypeFromLocation(location);
+        const bool virtual_hosted = settings[DatabaseDataLakeSetting::storage_uri_style].value == S3UriStyle::VIRTUAL_HOSTED;
         if (storage_type == DatabaseDataLakeStorageType::S3)
         {
-            if (settings[DatabaseDataLakeSetting::storage_uri_style].value == S3UriStyle::VIRTUAL_HOSTED)
+            /// A virtual-hosted endpoint names the bucket of the location in the host and keeps its own path as a key prefix.
+            if (virtual_hosted && Poco::URI(storage_endpoint).getPath().find_first_not_of('/') == String::npos)
                 return location;
         }
         else if (storage_type != DatabaseDataLakeStorageType::Azure)
@@ -969,8 +972,10 @@ String DatabaseDataLake::getNewTableLocation(
             return fmt::format("abfss://{}@{}/{}", container, host, path);
         }
 
-        /// An HTTP endpoint names the bucket in the first path component, an `s3://` one in the authority.
-        if (reopened_uri.getScheme() != "http" && reopened_uri.getScheme() != "https")
+        /// A path-style HTTP endpoint names the bucket in the first path component, an `s3://` one in the authority.
+        if (virtual_hosted)
+            path = Poco::URI(location).getHost() + "/" + path;
+        else if (reopened_uri.getScheme() != "http" && reopened_uri.getScheme() != "https")
             path = reopened_uri.getAuthority() + "/" + path;
         return "s3://" + path;
     };
@@ -995,7 +1000,7 @@ String DatabaseDataLake::getNewTableLocation(
 
         /// The catalog registers this location for other engines, so it cannot be rewritten to the objects
         /// the table is reopened at: reject placements where they differ.
-        if (!catalog->managesTableLocation() && !settings[DatabaseDataLakeSetting::force_add_bucket])
+        if (!catalog->managesTableLocation())
         {
             auto without_scheme = [](const String & uri)
             {

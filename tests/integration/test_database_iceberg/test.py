@@ -1547,6 +1547,31 @@ def test_create_without_engine_explicit_none_metadata_codec(started_cluster):
     assert not table.metadata_location.endswith(".gz.metadata.json"), table.metadata_location
 
 
+def test_create_without_engine_inline_query_settings(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_inline_query_settings_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # Query settings in the `SETTINGS` clause apply to the create whatever the default table engine is.
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+        "SETTINGS iceberg_metadata_compression_method = 'gzip'",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "default_table_engine": "None",
+        },
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    assert table.properties.get("write.metadata.compression-codec") == "gzip", table.properties
+    assert table.metadata_location.endswith(".gz.metadata.json"), table.metadata_location
+
+
 @pytest.mark.parametrize("engine_clause", [" ENGINE = Iceberg", ""])
 def test_create_requires_catalog_table_engine_grant(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
@@ -3259,6 +3284,36 @@ def test_create_table_azure_base_location_outside_storage_endpoint_rejected(star
     )
     assert "is reopened under `storage_endpoint`" in error, error
     assert "abfss://container-a@account.dfs.core.windows.net/container-b/base/" in error, error
+
+    catalog = load_catalog_impl(started_cluster)
+    assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
+
+
+@pytest.mark.parametrize("database_settings,reopened_prefix", [
+    ({"force_add_bucket": 1}, "s3://warehouse-rest/warehouse-rest/data/"),
+    (
+        {"storage_endpoint": "https://s3.company.test/root", "storage_uri_style": "virtual_hosted"},
+        "s3://warehouse-rest/root/data/",
+    ),
+])
+def test_create_table_base_location_reopened_elsewhere_rejected(started_cluster, database_settings, reopened_prefix):
+    # The catalog writes the metadata under the default base location, which the table is not reopened at.
+    node = started_cluster.instances["node1"]
+
+    namespace = f"test_ns_reopened_{uuid.uuid4().hex[:8]}"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        {"default_base_location": "s3://warehouse-rest/data", **database_settings},
+    )
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.t` (id Int64)",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "is reopened under `storage_endpoint`" in error, error
+    assert f"{reopened_prefix}{namespace}/t" in error, error
 
     catalog = load_catalog_impl(started_cluster)
     assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
