@@ -2181,3 +2181,35 @@ Analyzer diagnostics without a grade:
 - `//src/Functions/GatherUtils:clickhouse_functions_gatherutils`: DWYU could not verify whether 35 dependencies are needed for linking. [ARM64](https://app.buildbuddy.io/invocation/0b023ab2-d36a-47aa-8574-a31faded78d7).
 
 Separately, `DwyuRustImportEvidence` for `//programs:clickhouse__compile_0` rejected its symbol manifest as incomplete on x86-64 and ARM64. This action does not grade the C++ library.
+
+## f822811d3
+
+[f822811d3](https://github.com/dzbarsky/clickhouse/commit/f822811d346c8d8f924efdbcf8a3a548116819bb): Group Bazel sources and LLVM options and fix two DWYU diagnostics.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/632a8b2f-8716-4001-ac02-d3a2fc0e9859) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/632a8b2f-8716-4001-ac02-d3a2fc0e9859) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/632a8b2f-8716-4001-ac02-d3a2fc0e9859) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/9b7831a0-d341-48f9-936e-f0a9cff81d8e) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/9b7831a0-d341-48f9-936e-f0a9cff81d8e) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/9b7831a0-d341-48f9-936e-f0a9cff81d8e) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The normalized binaries matched native CMake. The other four binaries matched the [previous Bazel build](#9b8e46d60). Both native builds produced all nine validation reports.
+
+| CPU | Native build | DWYU build | Requested | Clean | With findings | Requested, ungraded | Not requested |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| x86-64 | [Native](https://app.buildbuddy.io/invocation/632a8b2f-8716-4001-ac02-d3a2fc0e9859) | [DWYU](https://app.buildbuddy.io/invocation/fdc50f81-c869-4cae-bde8-29e357f904fc) | 61 | 33 | 5 | 23 | 600 |
+| ARM64 | [Native](https://app.buildbuddy.io/invocation/9b7831a0-d341-48f9-936e-f0a9cff81d8e) | [DWYU](https://app.buildbuddy.io/invocation/bdfdd02e-6cf2-4997-92ba-b50ad6f0ce3f) | 46 | 34 | 3 | 9 | 615 |
+
+There are 661 production targets. Only a verified DWYU report counts as clean or with findings. Targets without a verified report remain ungraded.
+
+Bazel recorded 50,437 remote cache hits and 787 remote executions on x86-64; 50,833 remote cache hits and 787 remote executions on ARM64 in the native builds.
+
+Neither BuildBuddy worker started the declaration query: `unshare --net` returned `Operation not permitted`. One local Bazel 9.3.0 query of the same commit returned all 206 expected declarations: 65 `cc_proto_library`, 135 `llvm_runtime_objects`, and 6 `cc_import`. This query has no target platform and gives no DWYU grades.
+
+Every requested library produced its analyzer JSON. DWYU could not verify link use for 23 requested libraries on x86-64 and 9 on ARM64. Including libraries not requested, 623 of 661 targets remain ungraded on x86-64 and 624 on ARM64.
+
+All 5 x86-64 findings and all 3 ARM64 findings identify missing dependencies for headers under `src/AggregateFunctions`. On both CPUs, `//src:dbms__compile_2` uses `IAggregateFunction.h` from `//src/AggregateFunctions:aggregate_api` and `CacheBase.h` from `//src/Common:cache_policy` without directly declaring those owners.
+
+`@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage` is clean on both CPUs. DWYU no longer recommends moving `@clickhouse_abseil_cpp//:absl_function_ref`, `@clickhouse_google_cloud_cpp//:google_cloud_cpp_grpc_utils` from `deps` to `implementation_deps`. The `DwyuRustImportEvidence` action for `//programs:clickhouse__compile_0` succeeded on both CPUs. It checks the chdig Rust archive separately from the C++ dependency grade.
