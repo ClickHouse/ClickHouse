@@ -23,6 +23,7 @@
 #include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -164,6 +165,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
+    extern const MergeTreeSettingsString exclude_materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
@@ -1006,9 +1008,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
-    if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
+    /// The exclusion list is parsed only if there are statistics to build, so that it cannot affect
+    /// the merges of a table without statistics.
+    if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge] && global_ctx->metadata_snapshot->hasStatistics())
     {
-        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
+        global_ctx->gathered_data.statistics = collectStatisticsToMaterialize(
+            global_ctx->metadata_snapshot->getColumns(),
+            parseColumnNameList(
+                (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_statistics_on_merge].value,
+                "exclude_materialize_statistics_on_merge"));
     }
 
     if (global_ctx->merge_may_reduce_rows)

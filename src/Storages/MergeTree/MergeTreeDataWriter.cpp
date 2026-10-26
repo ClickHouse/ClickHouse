@@ -42,6 +42,7 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
@@ -85,6 +86,7 @@ namespace Setting
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
+    extern const SettingsString exclude_materialize_statistics_on_insert;
     extern const SettingsUInt64 materialize_statistics_on_insert_max_table_size;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
@@ -961,9 +963,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     ColumnsStatistics statistics;
-    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
+    if (global_settings[Setting::materialize_statistics_on_insert] && metadata_snapshot->hasStatistics())
     {
-        const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
+        /// Parse the exclusion list before the table size check below, so that an invalid value fails
+        /// the INSERT into every table with statistics, not only into the small ones. It is parsed for every
+        /// written part, but the default empty value costs nothing.
+        const NameSet exclude_columns = parseColumnNameList(
+            global_settings[Setting::exclude_materialize_statistics_on_insert].value, "exclude_materialize_statistics_on_insert");
+
+        const UInt64 max_table_size = global_settings[Setting::materialize_statistics_on_insert_max_table_size];
         /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
         /// statistics during merges instead, avoiding per-insert overhead.
         /// Setting value = 0 disables the limit.
@@ -971,7 +979,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
             const auto & all_columns = metadata_snapshot->getColumns();
-            statistics = ColumnsStatistics(all_columns);
+            statistics = collectStatisticsToMaterialize(all_columns, exclude_columns);
             /// A non-physical column is never present in a written block, so `build` below would
             /// reject it. Every other absence stays an error.
             std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });

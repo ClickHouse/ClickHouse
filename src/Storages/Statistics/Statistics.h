@@ -261,6 +261,12 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
+/// Creates the statistics of `columns` to build for a new part during an INSERT or a merge: those of
+/// every column with statistics, except the columns in `exclude_columns` (the value of
+/// `exclude_materialize_statistics_on_insert` or `exclude_materialize_statistics_on_merge` parsed by
+/// `parseColumnNameList`). The statistics of the excluded columns are not even created.
+ColumnsStatistics collectStatisticsToMaterialize(const ColumnsDescription & columns, const NameSet & exclude_columns);
+
 /// Whether statistics record the exact minimum and maximum of a column of this type. Only
 /// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`
 /// declines the other types outright (`minMaxStatisticsValidator`), while `basic` is declared for

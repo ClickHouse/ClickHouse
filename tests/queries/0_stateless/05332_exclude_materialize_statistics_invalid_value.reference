@@ -1,0 +1,6 @@
+Cannot parse the value 'a b' of setting 'exclude_materialize_statistics_on_merge' as a comma-separated list of column names: unexpected 'b' at position 3
+Cannot parse the value 'n.1' of setting 'exclude_materialize_statistics_on_merge' as a comma-separated list of column names: unexpected '1' at position 3
+exclude_materialize_statistics_on_merge = \'b\'
+Cannot parse the value '\'\'' of setting 'exclude_materialize_statistics_on_merge' as a comma-separated list of column names: a column name cannot be empty
+Cannot parse the value 'a,' of setting 'exclude_materialize_statistics_on_insert' as a comma-separated list of column names: unexpected end of string at position 3
+0

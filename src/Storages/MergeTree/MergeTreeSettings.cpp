@@ -15,6 +15,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
@@ -820,8 +821,80 @@ Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alo
         {"26.11", 0, 4096, "New setting. Lowers `max_parts_to_merge_at_once` when merging that many parts of a very wide table would not fit in memory, so that such merges stop failing with `MEMORY_LIMIT_EXCEEDED` on small servers. The previous value disables the estimate, preserving pre-26.11 behavior."}) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
+    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert).
+
+Mutations do not use this setting. A mutation that rewrites a column, such as `ALTER TABLE ... UPDATE`, builds statistics
+for it, and one that rewrites a whole part, such as `ALTER TABLE ... DELETE` or a mutation of a compact part, builds
+statistics for all columns.
+
+See also [exclude_materialize_statistics_on_merge](#exclude_materialize_statistics_on_merge) for more fine-grained control.
+)", 0, \
         {"26.1", true, true, "New setting"}) \
+    DECLARE(String, exclude_materialize_statistics_on_merge, "", R"(
+Excludes provided comma delimited list of columns from having statistics built and stored during merges. Has no effect if
+[materialize_statistics_on_merge](#materialize_statistics_on_merge) is false.
+
+Statistics declared with `STATISTICS(...)` in the column definition are excluded as well, not only those that
+[auto_statistics_types](#auto_statistics_types) adds.
+
+Only merges are affected. INSERTs still build statistics for the excluded columns, depending on the
+[materialize_statistics_on_insert](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert)
+session setting and [exclude_materialize_statistics_on_insert](/reference/settings/session-settings/other#exclude_materialize_statistics_on_insert),
+and so does an explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md) query. A merge does not
+keep them: the part it creates has no statistics for the excluded columns, even if all merged parts had them.
+
+Mutations do not use the setting either, as they do not use `materialize_statistics_on_merge`. A mutation that rewrites
+an excluded column, such as `ALTER TABLE ... UPDATE`, builds statistics for it, and one that rewrites a whole part, such
+as `ALTER TABLE ... DELETE` or a mutation of a compact part, builds statistics for all columns, the excluded ones
+included.
+
+The query planner estimates a condition on a column from the parts that have statistics for the column, and applies
+the estimate to all parts. With the default `materialize_statistics_on_insert = 1`, only the inserted parts that have
+not been merged yet have statistics for an excluded column, so estimates for it can be far off. Exclude the column
+with `exclude_materialize_statistics_on_insert` in the INSERTs into the table as well, so that no part has statistics
+for it.
+
+The value is a comma-separated list of column names. Names are case-sensitive. Write a name that contains
+special characters, such as a comma or a space, in backquotes or as a string literal. A column of a
+[Nested](/reference/data-types/nested-data-structures/index) structure is written as `n.x`. Names that are not
+columns of the table are ignored. `CREATE TABLE` and `ALTER TABLE` reject a value that is not such a list, and so
+does the server at startup if it is set in the `merge_tree` section of the configuration.
+
+The setting refers to columns by name, and `ALTER TABLE ... RENAME COLUMN` and `DROP COLUMN` do not change it. After
+column `b` is renamed to `b2`, merges build statistics for `b2` again, and a column that is added as `b` later is
+excluded. Change the setting in the same query, for example
+`ALTER TABLE tab RENAME COLUMN b TO b2, MODIFY SETTING exclude_materialize_statistics_on_merge = 'b2'`.
+
+For `ReplicatedMergeTree`, `ALTER TABLE ... MODIFY SETTING` is not replicated, so give every replica the same value,
+for example with a separate `ALTER TABLE ... ON CLUSTER ... MODIFY SETTING` query. A query that also changes columns,
+like the `RENAME COLUMN` one above, changes the setting only on the replica that runs it. Replicas with different
+values merge the same parts into different parts: a replica whose merged part differs from the one of another replica
+logs an error, discards its part and downloads the other one.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    c String
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS auto_statistics_types = 'basic', exclude_materialize_statistics_on_merge = 'b';
+
+INSERT INTO tab SELECT number, number, toString(number) FROM numbers(100); -- setting has no effect on INSERTs
+
+-- statistics for column `b` will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
+
+-- can exclude multiple columns by providing a list
+ALTER TABLE tab MODIFY SETTING exclude_materialize_statistics_on_merge = 'b, c';
+
+-- default setting, no columns excluded from being updated during merge
+ALTER TABLE tab MODIFY SETTING exclude_materialize_statistics_on_merge = '';
+```
+)", 0, \
+        {"26.10", "", "", "New setting. Excludes provided columns from statistics materialization during merges"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
@@ -3314,6 +3387,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
         CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
         CompressionCodecFactory::instance().get(codec);
+
+    /// Merges parse the list. Reject an invalid one when the table metadata is created or altered, or the
+    /// server starts with it in the `merge_tree` config section, instead of letting every merge fail.
+    parseColumnNameList(
+        (*this)[MergeTreeSetting::exclude_materialize_statistics_on_merge].value, "exclude_materialize_statistics_on_merge");
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

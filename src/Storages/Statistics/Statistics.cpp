@@ -1063,6 +1063,19 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
     }
 }
 
+ColumnsStatistics collectStatisticsToMaterialize(const ColumnsDescription & columns, const NameSet & exclude_columns)
+{
+    /// Like the constructor of `ColumnsStatistics`, but does not create the statistics of the excluded columns.
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+    ColumnsStatistics statistics;
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty() && !exclude_columns.contains(column.name))
+            statistics.emplace(column.name, factory.get(column));
+    }
+    return statistics;
+}
+
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
 {
     return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
