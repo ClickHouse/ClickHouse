@@ -161,46 +161,36 @@ DEPENDENCIES = {
          *LLVM_RUNTIME_HEADERS, '@llvm-project//third-party/siphash'], [], [TZDATA]),
 }
 
-# Drop direct dependencies unused in both native DWYU reports or already supplied
-# by retained public dependencies before and after them in the declared order.
-EMBEDDED_OBJECTS = {'clickhouse_common_io_embedded', 'dbms_embedded'}
-DBMS_EMBEDDED_UNUSED = {
-    '@clickhouse_jwt_cpp//:jwt_cpp', '@clickhouse_krb5//:_krb5',
-    '//base/widechar_width',
-    '@clickhouse_aws//:_aws__compile_0', '@clickhouse_azure//:_azure_sdk', '@clickhouse_openssl//:crypto',
-    '//base:pcg_random', '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2',
-    '@clickhouse_cctz//:_cctz', '@clickhouse_double_conversion//:_double-conversion',
-    '@clickhouse_libdeflate//:_libdeflate', '@clickhouse_simdutf//:_simdutf', '@clickhouse_snappy//:_snappy',
-    '@clickhouse_xz//:_liblzma', '@clickhouse_zlib_ng//:_zlib', '@clickhouse_zmij//:_zmij', '@lz4//:lz4',
-    ARRAY_LENGTH,
-    '//base/glibc-compatibility', '//src/Common:cow',
-    '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_abseil_cpp//:absl_inlined_vector_internal',
-    '@clickhouse_abseil_cpp//:absl_raw_hash_set', '@clickhouse_abseil_cpp//:absl_strings',
-    '@clickhouse_abseil_cpp//:absl_synchronization', '@clickhouse_arrow//:_arrow__compile_0',
-    '@clickhouse_aws_c_mqtt//:aws_c_mqtt', '@clickhouse_croaring//:_roaring',
-    '@clickhouse_google_protobuf//:_libprotobuf', '@clickhouse_hive_metastore//:_hivemetastore',
-    '@clickhouse_librdkafka//:_rdkafka__compile_0', '@clickhouse_llvm_project//:LLVMSupport',
-    '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
-    '@clickhouse_openssl//:ssl', '@clickhouse_thrift//:_thrift', '@clickhouse_zstd//:_zstd',
-    '@lz4//:lz4_frame',
-    '//base/glibc-rseq:glibc-rseq', '@clickhouse_abseil_cpp//:absl_log_severity',
-    '@clickhouse_capnproto//:_kj', '@clickhouse_datasketches_cpp//:datasketches_cpp',
-    '@clickhouse_flatbuffers//:_flatbuffers', '@clickhouse_grpc//:address_sorting',
-    '@clickhouse_lemmagen_c//:_lemmagen', '@clickhouse_libbcrypt//:_bcrypt',
-    '@clickhouse_libdivide//:libdivide', '@clickhouse_libfiu//:_libfiu',
-    '@clickhouse_libstemmer_c//:_stemmer', '@clickhouse_liburing//:_liburing', '@clickhouse_libuv//:_uv',
-    '@clickhouse_llvm_project//:llvm_headers', '@clickhouse_mecab//:_mecab',
-    '@clickhouse_mongo_c_driver//:_libbson', '@clickhouse_msgpack_c//:msgpack_c',
-    '@clickhouse_openldap//:_api', '@clickhouse_openldap//:_lber', '@clickhouse_sha3iuf//:_sha3iuf',
-    '@clickhouse_simdjson//:_simdjson', '@clickhouse_simsimd//:_simsimd',
-    '@clickhouse_sparsehash_c11//:sparsehash_c11', '@clickhouse_sqlite_amalgamation//:_sqlite',
-    '@clickhouse_ulid_c//:_ulid', '@clickhouse_usearch//:usearch',
-    '@clickhouse_vectorscan//:_vectorscan__compile_0', '@clickhouse_wordnet_blast//:_wnb',
-    '@clickhouse_xxhash//:xxHash',
+# The embedded C++ sources publish no headers.
+EMBEDDED_OBJECT_DEPS = {
+    'clickhouse_common_io_embedded': ['//src/Common', '@clickhouse_zstd//:_zstd'],
+    # The client and Keeper headers include the AI SDK, NuRaft and replxx.
+    'dbms_embedded': [
+        '//bazel:clickhouse_config_headers',
+        '@clickhouse_boost//:boost_headers_no_openssl',
+        '@clickhouse_nuraft//:_nuraft',
+        '//base/poco/Foundation:_poco_foundation',
+        '//base/poco/JSON:_poco_json',
+        '//base/poco/Net:_poco_net',
+        '//base/poco/Util:_poco_util',
+        '//base:common',
+        '//src/Common',
+        '//src/Compression:clickhouse_compression',
+        '//src/Common/Config:clickhouse_common_config',
+        ':clickhouse_common_io__compile_0',
+        '@clickhouse_ai_sdk_cpp//:sdk',
+        '@clickhouse_replxx//:_replxx',
+        '//src/Common:current_metrics',
+        '//src/Common:exception_api',
+        '//src/Common:stopwatch',
+        '//src/Common:parser_support_api',
+        ':headers',
+        '//bazel:web_ui_resources',
+    ],
 }
 
 
-def embedded_object_edits(build, rule, name, attrs, canonical):
+def embedded_object_edits(build, rule, name, attrs):
     """Set implementation_deps for the targets that compile ClickHouse's embedded resources."""
     source = build.source
     defs = constant_defs(source.module)
@@ -208,40 +198,10 @@ def embedded_object_edits(build, rule, name, attrs, canonical):
         return ast.literal_eval(eval_node(node, defs, cpu))
     if 'hdrs' in attrs or 'textual_hdrs' in attrs:
         raise ValueError(f'{name}: now publishes headers; review its public dependencies')
-    def retained(cpu):
-        if name == 'clickhouse_common_io_embedded':
-            # FrequencyHolder.cpp includes Common/FrequencyHolder.h and its ZstdInflatingReadBuffer needs zstd.h.
-            return ['//src/Common', '@clickhouse_zstd//:_zstd']
-        unused = {canonical(v) for v in DBMS_EMBEDDED_UNUSED}
-        if cpu == 'x86_64':
-            unused.add(canonical('@clickhouse_simdcomp//:_simdcomp'))
-        labels = {}
-        for label in values(attrs.get('deps'), cpu) + values(attrs.get('implementation_deps'), cpu):
-            key = canonical(label)
-            if key not in unused:
-                labels.setdefault(key, label)
-        # Keeper's request handlers include config.h; the embedded client's descriptors use Boost.Iostreams.
-        headers = ['//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl']
-        for header in headers:
-            labels.pop(canonical(header), None)
-        deps = list(labels.values())
-        i = deps.index('//src/Common/ZooKeeper:clickhouse_common_zookeeper_base') + 1
-        deps[i:i] = headers
-        return deps
-    deps = retained(CPUS[0])
-    if deps != retained(CPUS[1]):
-        raise ValueError(f'{name}: X86 and ARM dependencies differ')
+    deps = EMBEDDED_OBJECT_DEPS[name]
     edits = []
-    if 'deps' in attrs or values(attrs.get('implementation_deps'), CPUS[0]) != deps:
-        parts = [json.dumps(deps)]
-        group = values(defs['_PROTO_LIBRARIES'].value, CPUS[0]) if '_PROTO_LIBRARIES' in defs else []
-        if group and group[0] in deps:
-            i = deps.index(group[0])
-            if deps[i:i + len(group)] == group:
-                parts = ([json.dumps(deps[:i])] if i else []) + ['_PROTO_LIBRARIES']
-                if deps[i + len(group):]:
-                    parts.append(json.dumps(deps[i + len(group):]))
-        edits.append((*source.span(attrs['implementation_deps']), ' + '.join(parts)))
+    if 'deps' in attrs or any(values(attrs.get('implementation_deps'), cpu) != deps for cpu in CPUS):
+        edits.append((*source.span(attrs['implementation_deps']), json.dumps(deps)))
         for k in rule.keywords:
             if k.arg == 'deps':
                 edits.append((source.starts[k.lineno - 1], source.starts[k.end_lineno], ''))
@@ -428,8 +388,8 @@ def apply(root):
                         ])):
                     edits.append((*source.span(attrs[field]), json.dumps(owners)))
                 continue
-            if package == 'src' and name in EMBEDDED_OBJECTS:
-                edits.extend(embedded_object_edits(build, rule, name, attrs, canonical))
+            if package == 'src' and name in EMBEDDED_OBJECT_DEPS:
+                edits.extend(embedded_object_edits(build, rule, name, attrs))
                 embedded.add(name)
                 continue
             if (package, name) in {('src/Functions', 'clickhouse_functions_obj'),
@@ -584,7 +544,7 @@ def apply(root):
                 else:
                     end = source.span(rule)[1] - 1
                     edits.append((end, end, f'\n    {field} = {result},\n'))
-        if embedded and embedded != EMBEDDED_OBJECTS:
+        if embedded and embedded != EMBEDDED_OBJECT_DEPS.keys():
             raise ValueError(f'{package}: incomplete native #embed object rules')
         if found != {n for pkg, n in DEPENDENCIES if pkg == package}:
             raise ValueError(f'{package}: missing measured dependency target')
