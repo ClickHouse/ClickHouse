@@ -32,7 +32,6 @@ OPTIMIZE TABLE t_coord_small FINAL;
 
 CREATE TABLE t_coord_baseline (c UInt64) ENGINE = Memory;
 
-SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
 -- would change how many bytes are read and make the comparison below about something else.
 SET enable_join_runtime_filters = 0;

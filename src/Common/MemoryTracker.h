@@ -133,6 +133,10 @@ private:
 
         std::atomic<DB::PageCache *> page_cache = nullptr;
 
+        /// The sizes of the allocations over the hard limit that are being refused: they are in `amount` until they are
+        /// reverted, so the peak of an allocation that exceeded the limit without a check does not count them.
+        std::atomic<Int64> refusing_amount = 0;
+
         bool log_peak_memory_usage_in_destructor = true;
     };
 #pragma clang diagnostic pop
@@ -227,6 +231,12 @@ public:
     /// Debug builds only: what a query's tracker still holds (or is over-credited by) when that is large and
     /// not marked expected, else 0. Points at the query that allocated something outliving it.
     Int64 unexpectedDrift() const;
+
+    /// `size` bytes charged to this tracker now belong to the server, which goes on holding them (e.g. an
+    /// entry of a cache): take them off this tracker and its parents up to the global one, which keeps them.
+    /// Each takes at most what its child gave up, so a tracker that holds less does not go below zero.
+    /// The release has to be server-owned as well, under `MemoryTrackerBlockerInThread`.
+    void handOverToServer(Int64 size);
 
     /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
     /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
