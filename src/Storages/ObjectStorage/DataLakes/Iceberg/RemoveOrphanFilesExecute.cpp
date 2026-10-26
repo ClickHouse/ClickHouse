@@ -285,19 +285,20 @@ RemoveOrphanFilesResult removeOrphanFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
-    if (!object_storage->existsOrHasAnyChild(scan_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scan path '{}' does not exist", scan_path);
     RelativePathsWithMetadata actual_files;
     throwIfQueryCancelled(context);
     auto files_iterator = object_storage->iterate(scan_path, /* max_keys = */ 0, /* with_tags = */ false, /* start_after = */ std::nullopt);
     while (true)
     {
-        throwIfQueryCancelled(context);
         auto batch = files_iterator->getCurrentBatchAndScheduleNext();
+        throwIfQueryCancelled(context);
         if (!batch)
             break;
         actual_files.insert(actual_files.end(), std::make_move_iterator(batch->begin()), std::make_move_iterator(batch->end()));
     }
+    /// Only a local directory can exist with no file under it.
+    if (actual_files.empty() && (object_storage->isRemote() || !object_storage->existsOrHasAnyChild(scan_path)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scan path '{}' does not exist", scan_path);
     LOG_INFO(log, "Found {} actual files under scan path '{}'", actual_files.size(), scan_path);
 
     chassert(params.older_than.has_value());
