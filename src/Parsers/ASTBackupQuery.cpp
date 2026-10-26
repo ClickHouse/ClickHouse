@@ -955,11 +955,10 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
                     "'{}' is a BACKUP/RESTORE field rather than a setting, so it must not appear in "
                     "'default_settings' during AST JSON deserialization",
                     name);
-        children.push_back(settings);
     }
+    /// `settings` and `cluster_host_ids` stay outside `children`, as `ParserBackupQuery` and `clone`
+    /// keep them, so the deserialized AST has the same layout and tree hash as the parsed one.
     cluster_host_ids = r.readChild("cluster_host_ids");
-    if (cluster_host_ids)
-        children.push_back(cluster_host_ids);
     cluster = r.getString("cluster");
 
     /// `elements` is empty precisely for `BACKUP/RESTORE FROM SNAPSHOT ... TO ...`: `ParserBackupQuery`
