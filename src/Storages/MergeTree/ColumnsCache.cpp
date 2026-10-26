@@ -81,7 +81,7 @@ namespace
 {
 
 /// The server-owned columns of entries that are gone while a query still holds the column: an entry
-/// served whole shares its column with the read, see `MergeTreeReaderWide::serveRowsFromColumnsCache`.
+/// served whole shares its column with the read, see `IMergeTreeReader::serveRowsFromColumnsCacheEntry`.
 /// The memory has to be released under `MemoryTrackerBlockerInThread`, and the query would release it
 /// unblocked when it drops its reference, so the column is kept here until the query is done with it.
 /// Never destroyed: an entry can outlive every static.
@@ -341,7 +341,7 @@ ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, c
     /// The two runs can hold the same rows in different representations: the accumulated copy
     /// of a read is a clone of the column the read produced, and the same column of the same
     /// part is a `ColumnSparse` under one set of settings and a full column under another, which
-    /// is why `MergeTreeReaderWide::serveRowsFromColumnsCache` normalizes the serve path as well.
+    /// is why `IMergeTreeReader::serveRowsFromColumnsCacheEntry` normalizes the serve path as well.
     /// A sparse destination takes rows from a full source, but a full one cannot take them from
     /// a `ColumnSparse`, so make the source full when the destination is not sparse.
     ColumnPtr incoming_column = incoming->column;

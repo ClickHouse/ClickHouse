@@ -6832,11 +6832,7 @@ bool ReadFromMergeTree::mayWriteToColumnsCache(const RangesInDataParts & parts) 
     if (!columns_cache || columns_cache->maxSizeInBytes() == 0)
         return false;
 
-    const UUID table_uuid = data.getStorageID().uuid;
-    return std::ranges::any_of(parts, [&](const auto & part)
-    {
-        return part.data_part->getType() == MergeTreeDataPartType::Wide && canUseColumnsCacheForPart(table_uuid);
-    });
+    return !parts.empty() && canUseColumnsCacheForPart(data.getStorageID().uuid);
 }
 
 RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const

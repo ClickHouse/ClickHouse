@@ -4,11 +4,10 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 
 namespace DB
 {
-
-class ColumnsCache;
 
 using VirtualFields = std::unordered_map<String, Field>;
 using ValueSizeMap = std::map<std::string, double>;
@@ -228,6 +227,74 @@ protected:
     /// building a serialization of it when the part already holds one.
     bool hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const;
 
+    /// The columns cache, see `ColumnsCacheKey`. The state below is common to the readers of wide
+    /// and compact parts; how a read is served from the cache and written to it is up to each of them.
+
+    /// Decide whether this reader can use the cache: the cache is on, and the part is of a table
+    /// with a UUID (the key of the cache). `can_read` is false for a reader that cannot serve a granule from the cache, but can still write to it.
+    /// Must be called from the constructor of the derived reader, before anything is read.
+    void initColumnsCache(bool can_read);
+
+    /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
+    bool canWriteToColumnsCache() const;
+
+    /// Whether the cache admits the stripe, see `ColumnsCache::shouldAdmit`: decided once per stripe, when the
+    /// block that reads it is sized (see `canReadWholeColumnsCacheStripe`), and the same decision when it is written.
+    bool admitStripeToColumnsCache(size_t stripe);
+
+    /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
+    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column);
+
+    /// Write the pending entries to the cache.
+    void flushPendingColumnsCacheWrites();
+
+    /// Append the `rows` rows starting at row `row_begin` of the part, which `entry` holds, to the
+    /// result column at `pos`. Rows that are the whole entry, for an empty result column, are not
+    /// copied: the entry's column goes to `shared_columns`.
+    void serveRowsFromColumnsCacheEntry(
+        const ColumnsCacheEntry & entry, size_t pos, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns) const;
+
+    /// Rows are about to be appended to the result column at `pos`. A column shared with the columns
+    /// cache is not modified: the rows go to a copy of it.
+    static IColumn::MutablePtr & takeColumnForAppending(MutableColumns & res_columns, Columns & shared_columns, size_t pos);
+
+    /// Whether the rows of the column are not a function of the row range they are read for, so an
+    /// entry written by one read would be wrong for another: the distinct-paths subcolumn of a `JSON`
+    /// column (`ObjectDistinctPaths`) emits the path names of the part once per reader and the shared
+    /// data paths per call, rather than a value per row. It is recognized by its name: a typed path
+    /// spelled the same way is a regular column, and not caching it costs nothing but the caching.
+    static bool isColumnNotCacheable(const NameAndTypePair & column);
+
+    bool columns_cache_reads_possible = false;
+    bool columns_cache_writes_possible = false;
+
+    /// How the marks of the part are cut into stripes, and the identity of every result column
+    /// for the cache. See `ColumnsCacheKey`.
+    ColumnsCacheStripes stripes;
+    std::vector<UInt128> column_identities;
+
+    /// The name of the part in the cache, see `getColumnsCachePartName`.
+    String columns_cache_part_name;
+
+    /// Names of the result columns as the query requests them, position by position with
+    /// `columns_to_read`, which holds the names in the part: for a column renamed after the part
+    /// was written, the part still knows it by its old name. Cache entries are identified by the
+    /// requested name, so `system.columns_cache` and its access checks see the column as the
+    /// current schema names it. The renames themselves invalidate the table's entries, so a
+    /// name never refers to two columns within one schema identity.
+    Names requested_column_names;
+
+    /// Invalidation generation captured once when the reader was created, not per mark range.
+    /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
+    /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
+    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
+    UInt64 cache_table_generation = 0;
+
+    std::optional<std::pair<size_t, bool>> stripe_admission;
+
+    /// Entries ready to be written, written together by `flushPendingColumnsCacheWrites`.
+    std::vector<ColumnsCache::MappedPtr> pending_entries;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
@@ -276,7 +343,7 @@ private:
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
-/// Whether the columns of the part can be read from and written to the columns cache: only those of a wide part
+/// Whether the columns of the part can be read from and written to the columns cache: only those of a part
 /// of a table with a UUID (in an `Atomic` or `Replicated` database). The entries of a projection part are keyed
 /// by the name of its parent part and the projection, see `getColumnsCachePartName`.
 bool isColumnsCachePossibleForPart(const ColumnsCache * columns_cache, const IMergeTreeDataPartInfoForReader & part);
