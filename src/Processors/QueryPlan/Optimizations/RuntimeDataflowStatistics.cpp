@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/sortBlock.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -403,8 +404,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NameSet & partially_read_columns,
-    const NamesAndTypesList & part_columns,
+    const ColumnsDescription & part_columns,
     const ColumnSizeByName & column_sizes,
+    const CompressedBytesPerRowByName & subcolumn_compressed_bytes_per_row,
     const ColumnCodecByName & column_codecs,
     const CompressionCodecPtr & default_codec,
     size_t read_bytes,
@@ -437,6 +439,17 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     sample_bytes += column.column->byteSize();
                     compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
                 }
+                else if (const auto sub_it = subcolumn_compressed_bytes_per_row.find(column.name);
+                         sub_it != subcolumn_compressed_bytes_per_row.end())
+                {
+                    sample_bytes += column.column->byteSize();
+                    compressed_bytes += static_cast<size_t>(sub_it->second * static_cast<double>(column.column->size()));
+                }
+                /// Virtual columns and columns missing from the part are read from no stream, so they add nothing
+                /// to `read_bytes`. Any other column does, and its bytes would silently take the compression ratio
+                /// of the columns found here.
+                else if (part_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                    markUnsupportedCase();
             }
         }
         else if (std::ranges::any_of(
@@ -462,7 +475,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                 for (const auto & column : input_columns)
                 {
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
-                    if (part_columns.contains(column.name))
+                    if (part_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
                     {
                         const auto codec_it = column_codecs.find(column.name);
                         /// A column with no `CODEC` of its own is written with the part's default codec,

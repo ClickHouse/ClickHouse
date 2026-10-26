@@ -163,20 +163,36 @@ MergeTreeReadTask::MergeTreeReadTask(
         const auto default_codec = part_codec ? part_codec : CompressionCodecFactory::instance().getDefaultCodec();
         const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
         ColumnCodecByName resolved_codecs;
+        /// The part's column sizes are keyed by storage column, so a subcolumn (e.g. `s.size` read for `length(s)`)
+        /// is looked up by the streams read for it. Once per task rather than per block: `getSubcolumnSize` takes a
+        /// lock. A subcolumn whose streams have no size is left out, so that its read is reported as unsupported.
+        RuntimeDataflowStatisticsCacheUpdater::CompressedBytesPerRowByName resolved_subcolumn_sizes;
+        const size_t part_rows = info->data_part_info->getIndexGranularity().getTotalRows();
         for (const auto & name : info->task_columns.getAllColumnNames())
         {
-            const auto * description = metadata_columns.tryGet(name);
+            const auto column_in_part = info->data_part_info->tryGetColumn(name);
+            /// A subcolumn is written with the `CODEC` of its column.
+            const auto * description = metadata_columns.tryGet(column_in_part ? column_in_part->getNameInStorage() : name);
             if (description && description->codec)
                 resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
+            if (column_in_part && column_in_part->isSubcolumn() && info->data_part_info->isWidePart() && part_rows)
+            {
+                if (const auto size = info->data_part_info->getSubcolumnSize(name); size.data_compressed)
+                    resolved_subcolumn_sizes.emplace(
+                        name, static_cast<double>(size.data_compressed) / static_cast<double>(part_rows));
+            }
         }
 
-        dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
+        dataflow_cache_update_cb = [this,
+                                    default_codec,
+                                    column_codecs = std::move(resolved_codecs),
+                                    subcolumn_sizes = std::move(resolved_subcolumn_sizes)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
                                                            size_t read_bytes,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
-            const auto & part_columns = info->data_part_info->getColumns();
+            const auto & part_columns = info->data_part_info->getColumnsDescription();
             /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
             static const std::unordered_map<String, ColumnSize> no_column_sizes;
             auto column_sizes = info->data_part_info->getColumnSizes();
@@ -185,6 +201,7 @@ MergeTreeReadTask::MergeTreeReadTask(
                 partially_read_columns,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
+                subcolumn_sizes,
                 column_codecs,
                 default_codec,
                 read_bytes,
