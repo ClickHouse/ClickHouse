@@ -127,10 +127,9 @@ size_t AnalysisTableExpressionData::matchDatabaseAndTableName(const Identifier &
     if (database_name.empty() || table_name.empty())
         return 0;
 
-    size_t matched = matchDottedName(identifier, 0, database_name);
-    if (!matched)
-        return 0;
-    return matchDottedName(identifier, matched, table_name);
+    /// Matched as a whole: a quoted part may cross the boundary between the database and the table (`"db.ns".t` for the
+    /// table `ns.t` of the database `db`), the same as the name of the table expression itself.
+    return matchDottedName(identifier, 0, database_name + '.' + table_name);
 }
 
 }
