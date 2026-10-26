@@ -111,6 +111,10 @@ def test_rules_ignores_filter_parameters():
         "sort(up) + up",
         "sum(sort(rate(up[5m])))",
         "histogram_fraction(0, scalar(sort(up)), up)",
+        # Valid in Prometheus, but /api/v1/query requires these parameters to be constant.
+        "histogram_quantile(scalar(up), up)",
+        "max_over_time(quantile(scalar(up), up)[5m:1m])",
+        "max_over_time(quantile_over_time(scalar(up), up[5m] @ 100)[10m:1m])",
     ],
 )
 def test_query_exemplars_valid_query(query):
@@ -165,6 +169,9 @@ def test_query_exemplars_post():
         ("query_exemplars", {"query": "histogram_fraction(0, up)"}),
         ("query_exemplars", {"query": "histogram_fraction(up, 1, up)"}),
         ("query_exemplars", {"query": "histogram_fraction(0, scalar(rate(up)), up)"}),
+        ("query_exemplars", {"query": "histogram_quantile(up, up)"}),
+        ("query_exemplars", {"query": "histogram_quantile(scalar(rate(up)), up)"}),
+        ("query_exemplars", {"query": "histogram_quantile(scalar(up), up) + rate(up)"}),
         ("query_exemplars", {"query": "1 + abs()"}),
         ("query_exemplars", {"query": "up", "start": "abc"}),
         ("query_exemplars", {"query": "up", "start": "1700000600", "end": "1700000000"}),

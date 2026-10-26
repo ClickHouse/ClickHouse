@@ -701,10 +701,13 @@ private:
         PrometheusQueryTree query{query_text};
         std::vector<std::unique_ptr<PrometheusQueryTree::Node>> nodes;
         const auto * root = query.getRoot()->clone(nodes);
+        std::vector<std::unique_ptr<PrometheusQueryTree::Node>> constants;
         bool has_selector = false;
+        /// `clone` puts every node after its children, so the arguments of a node are rewritten before the node itself.
         for (auto & node : nodes)
         {
             has_selector |= (node->node_type == PrometheusQueryTree::NodeType::InstantSelector);
+            replaceParameterWithConstant(*node, constants, query.getTimeScale());
             if (node->node_type != PrometheusQueryTree::NodeType::Function)
                 continue;
             auto & function = typeid_cast<PrometheusQueryTree::Function &>(*node);
@@ -736,15 +739,54 @@ private:
             }
         }
 
-        /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
-        /// The SQL is never run, so it may name a table that doesn't exist.
+        checkConversionToSQL(*root, query.getTimeScale());
+        return has_selector;
+    }
+
+    /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
+    /// The SQL is never run, so it may name a table that doesn't exist.
+    static void checkConversionToSQL(const PrometheusQueryTree::Node & root, UInt32 time_scale)
+    {
+        std::vector<std::unique_ptr<PrometheusQueryTree::Node>> nodes;
+        const auto * new_root = root.clone(nodes);
         PrometheusQueryEvaluationSettings evaluation_settings;
         evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
         evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
         evaluation_settings.use_current_time = true;
-        auto checked_query = std::make_shared<PrometheusQueryTree>(std::move(nodes), root, query.getTimeScale());
+        auto checked_query = std::make_shared<PrometheusQueryTree>(std::move(nodes), new_root, time_scale);
         PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
-        return has_selector;
+    }
+
+    /// The conversion to SQL supports only some forms of phi of `histogram_quantile` and `quantile` and of the level of
+    /// `quantile_over_time`, e.g. not `histogram_quantile(scalar(up), up)`, but Prometheus only checks that they are scalars.
+    /// So such a parameter is checked as an expression of its own and replaced with a constant.
+    /// A literal is kept, so that error messages show the expression as it was written.
+    static void replaceParameterWithConstant(
+        PrometheusQueryTree::Node & node, std::vector<std::unique_ptr<PrometheusQueryTree::Node>> & constants, UInt32 time_scale)
+    {
+        bool has_parameter = false;
+        if (node.node_type == PrometheusQueryTree::NodeType::Function)
+        {
+            const auto & function_name = typeid_cast<const PrometheusQueryTree::Function &>(node).function_name;
+            has_parameter = (function_name == "histogram_quantile") || (function_name == "quantile_over_time");
+        }
+        else if (node.node_type == PrometheusQueryTree::NodeType::AggregationOperator)
+        {
+            /// The parameter of `quantile`, `topk`, `bottomk`, `limitk` and `count_values` is the first of two arguments.
+            has_parameter = (node.children.size() == 2);
+        }
+
+        if (!has_parameter || node.children.empty())
+            return;
+
+        auto & parameter = node.children[0];
+        if ((parameter->result_type != PrometheusQueryResultType::SCALAR) || (parameter->node_type == PrometheusQueryTree::NodeType::Scalar))
+            return;
+
+        checkConversionToSQL(*parameter, time_scale);
+        auto constant = std::make_unique<PrometheusQueryTree::Scalar>();
+        constant->parent = &node;
+        parameter = constants.emplace_back(std::move(constant)).get();
     }
 
     /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
