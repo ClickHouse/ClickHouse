@@ -262,7 +262,6 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
     ],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
-    source_headers = True,
     deps = [
         "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",

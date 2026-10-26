@@ -25,13 +25,18 @@ TARGETS_WITH_DIRECT_SOURCE_HEADERS = {
     'array_distance_transposed', 'benchmark_runtime_filter_objects',
     'clickhouse-benchmark-lib', 'clickhouse-client-lib', 'clickhouse-format-lib',
     'clickhouse-install-lib', 'clickhouse-keeper-lib', 'clickhouse-keeper-utils-lib',
-    'clickhouse-local-lib', 'clickhouse-server-lib', 'clickhouse_common_zookeeper',
-    'clickhouse_dictionaries__compile_1',
-    'clickhouse_functions_array__compile_0', 'clickhouse_functions_array__compile_1',
+    'clickhouse-local-lib', 'clickhouse-server-lib', 'clickhouse_aggregate_functions__compile_0',
+    'clickhouse_aggregate_functions__compile_1', 'clickhouse_common_config',
+    'clickhouse_common_zookeeper',
+    'clickhouse_compression', 'clickhouse_dictionaries__compile_1',
+    'clickhouse_dictionaries__compile_2', 'clickhouse_functions_array__compile_0',
+    'clickhouse_functions_array__compile_1',
     'clickhouse_functions_array__compile_2', 'clickhouse_functions_array__compile_3',
     'clickhouse_functions_gatherutils', 'clickhouse_functions_obj__compile_0',
+    'clickhouse_functions_obj__compile_1', 'clickhouse_functions_obj__compile_2',
     'clickhouse_functions_time_series', 'clickhouse_functions_uniqtheta',
-    'clickhouse_table_functions', 'dbms__compile_0', 'dbms_embedded',
+    'clickhouse_functions_url__compile_0', 'clickhouse_table_functions', 'daemon', 'dbms__compile_0',
+    'dbms_embedded', 'loggers',
 }
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
 

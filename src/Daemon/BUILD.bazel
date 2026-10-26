@@ -32,7 +32,6 @@ ch_cc_library(
         "ENABLE_MULTITARGET_CODE=1",
         "USE_CLICKHOUSE_THREADS=1",
     ]),
-    source_headers = True,
 )
 
 cc_library(

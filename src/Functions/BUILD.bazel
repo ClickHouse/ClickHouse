@@ -390,7 +390,6 @@ ch_cc_library(
         ],
     }),
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
-    source_headers = True,
     alwayslink = True,
 )
 
@@ -533,7 +532,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": [

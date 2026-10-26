@@ -44,7 +44,6 @@ ch_cc_library(
         "//src/Functions:headers",
     ],
     local_defines = DBMS_CONSUMER_DEFINES,
-    source_headers = True,
     alwayslink = True,
 )
 

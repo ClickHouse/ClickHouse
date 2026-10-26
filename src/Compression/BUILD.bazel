@@ -52,7 +52,6 @@ ch_cc_library(
         "USE_CLICKHOUSE_THREADS=1",
         "ZXC_STATIC_DEFINE",
     ]),
-    source_headers = True,
     deps = [
         "//src:core_types",
         "@clickhouse_llvm_project//:LLVMBitReader",

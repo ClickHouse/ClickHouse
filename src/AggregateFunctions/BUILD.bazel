@@ -132,7 +132,6 @@ ch_cc_library(
         "//src/Compression:codec_api",
     ],
     local_defines = DBMS_CONSUMER_DEFINES,
-    source_headers = True,
 )
 
 ch_cc_library(
@@ -207,7 +206,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [
             "//src/Common:memory_tracking_api",
