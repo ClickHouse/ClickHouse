@@ -232,6 +232,9 @@ void transformColumnsWithSharedIndex(
     Columns & columns,
     std::function<ColumnPtr(const ColumnPtr &)> transform,
     std::span<size_t> positions = {});
+/// An upper bound of the nested rows the indexes of `column` refer to, without allocating: the span of the
+/// indexes, or the number of runs of equal indexes, which is exact for sorted indexes.
+size_t getReferencedRowsBound(const ColumnReplicated & column);
 /// Materializes ColumnReplicated where lazy replication is not useful:
 /// - `isLazyReplicationUseful` returns false.
 /// - index size <= nested data size, when size check is enabled.

@@ -1662,3 +1662,90 @@ TEST(RuntimeDataflowStatisticsStateSampling, UnreferencedReplicatedStatesAreNotC
     ASSERT_TRUE(stats.has_value());
     EXPECT_LE(stats->output_bytes, wire_bytes * 2);
 }
+
+/// A `ColumnReplicated` of aggregate states that compaction keeps - its nested column is smaller than the
+/// output - goes on the wire as its indexes followed by the nested states. The indexes of a lazy `JOIN`
+/// output repeat a lot, and with a compressing wire codec they take almost nothing, so they must be
+/// compression-sampled rather than counted as incompressible: here 65536 `UInt8` indexes all refer to one
+/// empty `groupArray(UInt64)` state.
+TEST(RuntimeDataflowStatisticsStateSampling, RepeatedReplicatedIndexesAreSampledWithWireCodec)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 65536;
+    AggregateFunctionPtr function;
+    const ColumnPtr nested = createSkewedGroupArrayColumn(1, /*giant_state_row=*/1, /*elements_in_giant_state=*/0, function);
+    const ColumnPtr indexes = ColumnUInt8::create(rows, UInt8(0));
+    const ColumnPtr replicated = ColumnReplicated::create(nested, indexes);
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{replicated, std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}), "state"});
+
+    /// The ground truth is the compressed stream `NativeWriter` writes for the block.
+    const auto codec = CompressionCodecFactory::instance().get("ZSTD", 3);
+    NullWriteBuffer null_buf;
+    {
+        CompressedWriteBuffer compressed_buf(null_buf, codec);
+        NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+        writer.write(block);
+        compressed_buf.finalize();
+    }
+    const size_t wire_bytes = null_buf.count();
+    ASSERT_LT(wire_bytes, 1000);
+
+    const size_t cache_key = 0x111985 + 51;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, codec));
+        Block header = block.cloneEmpty();
+        updater.recordOutputChunk(Chunk(Columns{replicated}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    /// Counted as incompressible, the indexes alone would take 65536 bytes.
+    EXPECT_LE(stats->output_bytes, wire_bytes * 10);
+}
+
+/// Only sampled output chunks compact their `ColumnReplicated` columns - compaction copies the referenced
+/// payload - and the rest are sized from the indexes without touching the payload. That sizing must still
+/// leave out the nested rows no index refers to: here each chunk keeps 100 strings of 1000 bytes in the
+/// nested column, of which its 1000 rows reference only 10, as after a lazy `JOIN` and a filter.
+TEST(RuntimeDataflowStatisticsStateSampling, UnsampledReplicatedChunksCountOnlyReferencedRows)
+{
+    constexpr size_t chunks = 30;
+    constexpr size_t rows = 1000;
+    constexpr size_t nested_rows = 100;
+    constexpr size_t referenced_rows = 10;
+
+    auto nested = ColumnString::create();
+    for (size_t i = 0; i < nested_rows; ++i)
+        nested->insert(String(1000, static_cast<char>('a' + i % 26)));
+    auto indexes = ColumnUInt8::create();
+    for (size_t row = 0; row < rows; ++row)
+        indexes->insertValue(static_cast<UInt8>(row % referenced_rows));
+    const ColumnPtr replicated = ColumnReplicated::create(MutableColumnPtr(std::move(nested)), MutableColumnPtr(std::move(indexes)));
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{replicated, std::make_shared<DataTypeString>(), "s"});
+
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size() * chunks;
+
+    const size_t cache_key = 0x111985 + 52;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows * chunks, none));
+        Block header = block.cloneEmpty();
+        for (size_t chunk = 0; chunk < chunks; ++chunk)
+            updater.recordOutputChunk(Chunk(Columns{replicated}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    /// The whole nested column of every chunk would make it ten times as much.
+    EXPECT_GE(stats->output_bytes, wire_bytes * 4 / 5);
+    EXPECT_LE(stats->output_bytes, wire_bytes * 5 / 4);
+}

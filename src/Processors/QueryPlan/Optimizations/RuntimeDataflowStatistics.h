@@ -274,7 +274,7 @@ private:
     static void recordColumns(
         Statistics & statistics,
         size_t num_rows,
-        const ColumnsWithTypeAndName & cols,
+        const ColumnsWithTypeAndName & input_cols,
         const CompressionCodecPtr & wire_codec,
         std::optional<size_t> full_bytes = {},
         const KeyOrderProvider & key_order = {});

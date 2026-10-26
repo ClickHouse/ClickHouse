@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -45,6 +46,11 @@ extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStats(size_t key) const
 {
@@ -396,6 +402,49 @@ static bool hasAggregateStateLeaf(const IColumn & column)
     return has_leaf;
 }
 
+/// The type `SerializationReplicated` writes the indexes of `column` with.
+static DataTypePtr replicatedIndexesType(const ColumnReplicated & column)
+{
+    switch (column.getIndexes().getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            return std::make_shared<DataTypeUInt8>();
+        case sizeof(UInt16):
+            return std::make_shared<DataTypeUInt16>();
+        case sizeof(UInt32):
+            return std::make_shared<DataTypeUInt32>();
+        case sizeof(UInt64):
+            return std::make_shared<DataTypeUInt64>();
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of index type for ColumnReplicated: {}",
+                column.getIndexes().getSizeOfIndexType());
+    }
+}
+
+/// The bytes a state-free `ColumnReplicated` puts on the wire once `compactReplicatedColumns` has processed
+/// it, estimated without copying any payload: compaction materializes or filters the nested column, which
+/// for large `String` or `Array` values costs as much as the payload itself, too much for every chunk.
+/// Follow the writer's decision (`convertToFullColumnIfReplicationNotUseful`): a materialized column costs
+/// a row of average nested size per output row; a kept one costs its indexes and the referenced nested
+/// rows, the unreferenced ones being dropped, taken at the average nested row size as well.
+static size_t replicatedWireBytes(const ColumnReplicated & column)
+{
+    const size_t rows = column.size();
+    const auto & nested = column.getNestedColumn();
+    const size_t nested_rows = nested->size();
+    if (rows == 0 || nested_rows == 0)
+        return 0;
+    const double average_row_bytes = static_cast<double>(nested->byteSize()) / static_cast<double>(nested_rows);
+    if (!isLazyReplicationUseful(nested))
+        return static_cast<size_t>(average_row_bytes * static_cast<double>(rows));
+    const size_t referenced_rows = std::min(getReferencedRowsBound(column), nested_rows);
+    if (nested_rows >= rows && referenced_rows >= rows)
+        return static_cast<size_t>(average_row_bytes * static_cast<double>(rows));
+    return column.getIndexesColumn()->byteSize() + static_cast<size_t>(average_row_bytes * static_cast<double>(referenced_rows));
+}
+
 /// Samples the compression of everything in a state-bearing column except the aggregate-state leaves
 /// themselves: the carriers' own payload - null maps, array offsets, sibling tuple elements, ... - and any
 /// state-free subtrees. The leaves are sized and compression-sampled from their serialized states in
@@ -540,6 +589,23 @@ static void sampleNonStatePartsCompression(
             compressed_bytes);
         return;
     }
+    else if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        /// A `ColumnReplicated` that `compactReplicatedColumns` keeps - its nested column is smaller than the
+        /// output - goes on the wire as its indexes followed by its nested column (`SerializationReplicated`).
+        /// The indexes of a lazy `JOIN` output repeat a lot and compress very well, so sample them with the
+        /// wire codec instead of counting them as incompressible, and recurse into the nested payload.
+        sampleNonStatePartsCompression(
+            replicated_column->getIndexesColumn(),
+            replicatedIndexesType(*replicated_column),
+            repetitions,
+            codecs,
+            sample_bytes,
+            compressed_bytes);
+        sampleNonStatePartsCompression(
+            replicated_column->getNestedColumn(), type, repetitions, codecs, sample_bytes, compressed_bytes);
+        return;
+    }
     else if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column.get()))
     {
         sampleNonStatePartsCompression(
@@ -606,7 +672,7 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     Statistics & statistics,
     size_t num_rows,
-    const ColumnsWithTypeAndName & cols,
+    const ColumnsWithTypeAndName & input_cols,
     const CompressionCodecPtr & wire_codec,
     std::optional<size_t> full_bytes,
     const KeyOrderProvider & key_order)
@@ -614,6 +680,39 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     Stopwatch watch;
 
     const bool sample_block = shouldSampleBlock(statistics, num_rows);
+
+    /// `NativeWriter::write` compacts `ColumnReplicated` before serialization (`compactReplicatedColumns`):
+    /// after a lazy `JOIN` and a filter, the nested column can hold many rows - aggregate states, say - that
+    /// no index references any more, and the writer drops them or materializes the referenced rows.
+    /// Compaction copies payload, so apply it only where the exact wire shape is needed: in sampled blocks,
+    /// and to columns with aggregate-state leaves, whose states are counted value by value under a key that
+    /// includes their structural path, which differs between a replicated and a materialized column. A
+    /// state-free replicated column of an unsampled block is left alone and sized by `replicatedWireBytes`.
+    ColumnsWithTypeAndName compacted_cols;
+    /// Whether cols[i] is a `ColumnReplicated` left uncompacted.
+    std::vector<UInt8> col_is_uncompacted_replicated(input_cols.size(), 0);
+    if (std::ranges::any_of(input_cols, [](const auto & col) { return col.column->isReplicated(); }))
+    {
+        compacted_cols = input_cols;
+        Columns columns_to_compact;
+        std::vector<size_t> positions_to_compact;
+        for (size_t i = 0; i < compacted_cols.size(); ++i)
+        {
+            if (!compacted_cols[i].column->isReplicated())
+                continue;
+            if (sample_block || hasAggregateStateLeaf(*compacted_cols[i].column))
+            {
+                columns_to_compact.push_back(compacted_cols[i].column);
+                positions_to_compact.push_back(i);
+            }
+            else
+                col_is_uncompacted_replicated[i] = 1;
+        }
+        compactReplicatedColumns(columns_to_compact);
+        for (size_t i = 0; i < positions_to_compact.size(); ++i)
+            compacted_cols[positions_to_compact[i]].column = columns_to_compact[i];
+    }
+    const auto & cols = compacted_cols.empty() ? input_cols : compacted_cols;
 
     /// The uncompressed size of a column for the purpose of the estimate. `byteSize` of a
     /// `ColumnAggregateFunction` counts the state pointers plus the arena the column owns, and a column of
@@ -690,7 +789,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
         /// `byteSize` like any plain column; the state leaves are sized from their serialized states below.
-        col_plain_bytes[i] = (column->byteSize() - state_leaves_byte_size) * repetitions;
+        if (col_is_uncompacted_replicated[i])
+            col_plain_bytes[i] = replicatedWireBytes(assert_cast<const ColumnReplicated &>(*column));
+        else
+            col_plain_bytes[i] = (column->byteSize() - state_leaves_byte_size) * repetitions;
         plain_bytes += col_plain_bytes[i];
     }
     const bool has_aggregate_states = !state_leaves.empty();
@@ -848,7 +950,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
                 add_component_sample(col_plain_bytes[i], non_state_sample_bytes, non_state_compressed_bytes);
                 continue;
             }
-            auto [sample, compressed] = estimateCompressedColumnSize(sampled_cols[i], codecs);
+            /// An uncompacted replicated column gets here only in a block sampled because of an unsampled
+            /// state leaf; compact it now, so that the sample describes what the wire carries.
+            ColumnWithTypeAndName sampled_col = sampled_cols[i];
+            if (col_is_uncompacted_replicated[i])
+            {
+                Columns columns_to_compact{sampled_col.column};
+                compactReplicatedColumns(columns_to_compact);
+                sampled_col.column = columns_to_compact[0];
+            }
+            auto [sample, compressed] = estimateCompressedColumnSize(sampled_col, codecs);
             add_component_sample(col_plain_bytes[i], sample, compressed);
         }
     }
@@ -915,11 +1026,9 @@ RuntimeDataflowStatisticsCacheUpdater::KeyOrderProvider RuntimeDataflowStatistic
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
     chassert(chunk.getNumColumns() == header.columns());
-    /// `NativeWriter::write` compacts `ColumnReplicated` before serialization: after a lazy `JOIN` and a
-    /// filter, the nested column can hold many rows - aggregate states, say - that no index references any
-    /// more, and the writer drops them or materializes the referenced rows. Measure the same columns.
-    Columns columns = chunk.getColumns();
-    compactReplicatedColumns(columns);
+    /// `recordColumns` takes care of `ColumnReplicated`: compacting it here, before the block is known to be
+    /// sampled, would copy the payload of every chunk.
+    const auto & columns = chunk.getColumns();
     ColumnsWithTypeAndName cols;
     cols.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
