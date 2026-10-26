@@ -4,7 +4,6 @@
 DROP TABLE IF EXISTS t_json_bf_null;
 SET use_skip_indexes = 1;
 
-DROP TABLE IF EXISTS t_json_bf_null;
 CREATE TABLE t_json_bf_null (id UInt64, json JSON, INDEX idx JSONAllPaths(json) TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2;
 INSERT INTO t_json_bf_null VALUES (1, '{"a":42}'), (2, '{"a":43}'), (3, '{"b":1}'), (4, '{"b":2}');
