@@ -444,9 +444,10 @@ static void writeDataFiles(
             if (chunk.empty())
                 break;
 
-            data_file->manifest_list->statistics.update(chunk);
+            /// Statistics describe the rows actually written, so collect them after the deleted rows are removed.
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
+            data_file->manifest_list->statistics.update(chunk);
             data_file->new_records_count += chunk.getNumRows();
             ColumnsWithTypeAndName columns_with_types_and_name;
             for (size_t i = 0; i < sample_block->columns(); ++i)
