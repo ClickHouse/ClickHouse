@@ -80,11 +80,9 @@ ch_cc_library(
     }) + [
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_librdkafka//:_rdkafka",
-        "@clickhouse_silk//:_silk_fibers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
         "@clickhouse_grpc//:grpc",
         "@clickhouse_vectorscan//:_vectorscan",
-        "@clickhouse_zstd//:_zstd",
         "//src/Common:memory_tracking_api",
         "//src:core_types",
         ":headers",

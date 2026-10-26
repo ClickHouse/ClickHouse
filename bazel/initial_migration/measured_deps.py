@@ -121,9 +121,11 @@ DEPENDENCIES = {
         '@clickhouse_arrow//:_arrow', '@clickhouse_aws//:_aws', '@clickhouse_icu//:_icudata',
     ], ['//src/Common'], []),
     ('src/Functions/JSONPath', 'clickhouse_functions_jsonpath'): ([], ['//src/Parsers:headers'], ['//src/Parsers:parser_api']),
-    ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (
+        ['@clickhouse_icu//:_icudata', '@clickhouse_zstd//:_zstd'], [], []),
     ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
-    ('src/TableFunctions', 'clickhouse_table_functions'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/TableFunctions', 'clickhouse_table_functions'): (
+        ['@clickhouse_icu//:_icudata', '@clickhouse_silk//:_silk_fibers', '@clickhouse_zstd//:_zstd'], [], []),
     ('src', 'benchmark_runtime_filter_objects'): ([], [
         '@clickhouse_google_benchmark//:google_benchmark', '//bazel:clickhouse_config_headers',
         '@clickhouse_fmtlib//:_fmt', '//base:common', ':dbms', ':dbms__compile_0', ':dbms__compile_1', '//src/Common',
