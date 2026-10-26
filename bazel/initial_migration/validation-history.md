@@ -2241,3 +2241,38 @@ The [x86-64 workflow](https://app.buildbuddy.io/invocation/0ac04094-7064-4ecb-83
 Across the 658 declared targets, 601 remain ungraded on x86-64 and 607 on ARM64. The loading query does not grade DWYU.
 
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/f4858e70-7b61-4e14-b6e3-0ebf5067fbb4): 89/89 original analyzer JSONs (52 clean, 5 with include or dependency declaration findings, 32 ungraded with only unresolved link use); 0 requested without an original JSON; [ARM64 DWYU](https://app.buildbuddy.io/invocation/259aba51-05f0-4953-a6df-369033fbab04): 90/90 original analyzer JSONs (44 clean, 7 with include or dependency declaration findings, 39 ungraded with only unresolved link use); 0 requested without an original JSON. A report with only unresolved link use does not establish an unused dependency.
+
+## fed15da37
+
+[fed15da37](https://github.com/dzbarsky/clickhouse/commit/fed15da371f4e98fcaaee4858f6e76e16b8914f8): Declare ClickHouse header dependencies and share native tool linker options.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/700bef30-90ab-489d-8e21-0e10c70e93f0) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/700bef30-90ab-489d-8e21-0e10c70e93f0) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/700bef30-90ab-489d-8e21-0e10c70e93f0) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/0bdff0b8-dafe-4511-b8a7-9a07fc22efe0) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/0bdff0b8-dafe-4511-b8a7-9a07fc22efe0) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/0bdff0b8-dafe-4511-b8a7-9a07fc22efe0) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The normalized binaries matched native CMake. The other four binaries matched the [previous Bazel build](#feea3eb42). Both native builds produced all nine validation reports.
+
+| CPU | Native build | DWYU build | Requested | Clean | With findings | Requested, ungraded | Not requested |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| x86-64 | [Native](https://app.buildbuddy.io/invocation/700bef30-90ab-489d-8e21-0e10c70e93f0) | [DWYU](https://app.buildbuddy.io/invocation/01e2e7f6-5413-4504-b095-97e1f3166e33) | 39 | 21 | 2 | 16 | 619 |
+| ARM64 | [Native](https://app.buildbuddy.io/invocation/0bdff0b8-dafe-4511-b8a7-9a07fc22efe0) | [DWYU](https://app.buildbuddy.io/invocation/23a108b2-bba1-4f98-ada8-0270067758c6) | 40 | 21 | 2 | 17 | 618 |
+
+There are 658 production targets. Only a verified DWYU report counts as clean or with findings. Targets without a verified report remain ungraded.
+
+Bazel recorded these actions in each invocation's `buildMetrics.actionSummary.runnerCount`:
+
+| CPU | Native remote executions | Native remote cache hits | DWYU remote executions | DWYU remote cache hits |
+| --- | ---: | ---: | ---: | ---: |
+| x86-64 | 9 | 51,215 | 2,020 | 1,008 |
+| ARM64 | 9 | 51,611 | 2,013 | 1,020 |
+
+The [x86-64 workflow](https://app.buildbuddy.io/invocation/fe5d0e2e-5aab-45ca-b576-56c2a0251ddf) ran the platform-independent Bazel loading query and returned all 206 expected declarations (65 `cc_proto_library`, 135 `llvm_runtime_objects`, and 6 `cc_import`). ARM64 did not repeat the query.
+
+Across the 658 declared targets, 635 remain ungraded on x86-64 and 635 on ARM64. The loading query does not grade DWYU.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/01e2e7f6-5413-4504-b095-97e1f3166e33): 39/39 original reports, 21 clean, 2 with declaration findings, 15 with only unresolved link use, 1 otherwise ungraded; [ARM64 DWYU](https://app.buildbuddy.io/invocation/23a108b2-bba1-4f98-ada8-0270067758c6): 40/40 original reports, 21 clean, 2 with declaration findings, 16 with only unresolved link use, 1 otherwise ungraded. A report with only unresolved link use does not establish an unused dependency.
