@@ -65,7 +65,9 @@ void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_
 {
     init();
 
-    /// With marks of substreams, a subcolumn is read from the substreams it needs, and a column from all of them.
+    /// With marks of substreams, a subcolumn is read from the substreams it needs, and a column from all of them. A subcolumn
+    /// whose streams are not all substreams of the part (e.g. the null map of a sparse column, which is read from its offsets),
+    /// or that is a path of a dynamic column, is counted as the whole column, an upper bound.
     const size_t column_position = *column_positions[pos];
     const auto & column = columns_to_read[pos];
     std::vector<size_t> positions;
@@ -75,13 +77,21 @@ void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_
     }
     else if (column.isSubcolumn() && !column.getTypeInStorage()->hasDynamicSubcolumns())
     {
+        bool all_found = true;
         serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
-            if (!needSkipStream(pos, substream_path))
-                positions.push_back(columns_substreams.getSubstreamPosition(column_position, column, substream_path, storage_settings));
+            if (needSkipStream(pos, substream_path))
+                return;
+            if (auto position = columns_substreams.tryGetSubstreamPosition(column_position, column, substream_path, storage_settings))
+                positions.push_back(*position);
+            else
+                all_found = false;
         });
+        if (!all_found)
+            positions.clear();
     }
-    else
+
+    if (positions.empty())
     {
         for (size_t position = columns_substreams.getFirstSubstreamPosition(column_position);
              position <= columns_substreams.getLastSubstreamPosition(column_position); ++position)

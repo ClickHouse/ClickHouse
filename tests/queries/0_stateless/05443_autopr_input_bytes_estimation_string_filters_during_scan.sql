@@ -35,6 +35,7 @@ DROP TABLE IF EXISTS t_compact_small_blocks;
 DROP TABLE IF EXISTS t_compact_cached_column;
 DROP TABLE IF EXISTS t_compact_cached_short_rows;
 DROP TABLE IF EXISTS t_compact_cached_shared_blocks;
+DROP TABLE IF EXISTS t_compact_cached_sparse_null_map;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate is taken differently for the two.
@@ -152,6 +153,18 @@ SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_t
 SELECT sum(c0), sum(c1), sum(c2), sum(c3), sum(c4), sum(c5), sum(c6), sum(c7) FROM t_compact_cached_shared_blocks
 SETTINGS use_columns_cache=0, log_comment='cached_shared_blocks_0' FORMAT Null;
 
+-- The null map of a sparse `Nullable` column has no substream of its own in the part: it is read from the offsets of the
+-- sparse column, and a granule of it served from the cache is counted as the whole column.
+CREATE TABLE t_compact_cached_sparse_null_map(id UInt64, s Nullable(String)) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    nullable_serialization_version='allow_sparse', ratio_of_defaults_for_sparse_serialization=0.5;
+INSERT INTO t_compact_cached_sparse_null_map SELECT number, if(number % 32 = 0, hex(cityHash64(number)), NULL) FROM numbers(65536);
+SELECT sum(s.null) FROM t_compact_cached_sparse_null_map SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0;
+SELECT sum(s.null) FROM t_compact_cached_sparse_null_map
+SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_sparse_null_map_1';
+SELECT sum(s.null) FROM t_compact_cached_sparse_null_map SETTINGS use_columns_cache=0, log_comment='cached_sparse_null_map_0';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -222,3 +235,4 @@ DROP TABLE t_compact_small_blocks;
 DROP TABLE t_compact_cached_column;
 DROP TABLE t_compact_cached_short_rows;
 DROP TABLE t_compact_cached_shared_blocks;
+DROP TABLE t_compact_cached_sparse_null_map;
