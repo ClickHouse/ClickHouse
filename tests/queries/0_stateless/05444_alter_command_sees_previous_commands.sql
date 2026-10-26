@@ -30,6 +30,13 @@ SELECT name, type FROM system.columns WHERE database = currentDatabase() AND tab
 SHOW CREATE TABLE t_alter_previous_commands;
 DROP TABLE t_alter_previous_commands;
 
+-- A column added by the statement keeps its ALIAS kind for the later commands: an ALIAS has no subcolumns to modify.
+CREATE TABLE t_alter_previous_commands_alias (id UInt64) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_alter_previous_commands_alias ADD COLUMN p Tuple(a UInt32) ALIAS tuple(toUInt32(id)), MODIFY COLUMN IF EXISTS `p.a` CODEC(LZ4) SETTINGS enable_subcolumn_codecs = 1;
+SELECT name, type, default_kind, compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_alias' ORDER BY position;
+SELECT position(create_table_query, 'CODEC') FROM system.tables WHERE database = currentDatabase() AND name = 't_alter_previous_commands_alias';
+DROP TABLE t_alter_previous_commands_alias;
+
 -- The placement of a column (FIRST / AFTER) decides which columns DROP COLUMN of a Nested group removes: `n.b` placed
 -- after `n.a` is dropped together with `n`, so the following DROP COLUMN `n.b` finds no such column.
 CREATE TABLE t_alter_previous_commands_nested (`n.a` Array(UInt32), id UInt64) ENGINE = MergeTree ORDER BY id;

@@ -210,6 +210,12 @@ struct AlterCommand
         const ColumnsDescription * columns_before_alter = nullptr,
         const MergeTreeSettings * settings_defaults = nullptr) const;
 
+    /// The column of `ADD COLUMN`, before the Nested expansion and the IF NOT EXISTS filter.
+    ColumnDescription getAddedColumnDescription() const;
+
+    /// Changes `column` as `MODIFY COLUMN` does. The implicit indices of `metadata`, if given, follow a type change.
+    void modifyColumnDescription(ColumnDescription & column, StorageInMemoryMetadata * metadata, const ContextPtr & context) const;
+
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.
     MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;

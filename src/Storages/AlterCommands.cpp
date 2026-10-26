@@ -800,6 +800,134 @@ std::optional<AlterCommand> AlterCommand::extractSettingsResets()
 }
 
 
+ColumnDescription AlterCommand::getAddedColumnDescription() const
+{
+    ColumnDescription column(column_name, data_type);
+    if (default_expression)
+    {
+        column.default_desc.kind = default_kind;
+        column.default_desc.expression = default_expression;
+    }
+    if (comment)
+        column.comment = *comment;
+
+    if (codec)
+        column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
+
+    column.ttl = ttl;
+
+    if (!settings_changes.empty())
+    {
+        MergeTreeColumnSettings::validate(settings_changes);
+        column.settings = settings_changes;
+    }
+
+    /// The declared statistics are transferred like in CREATE (the types are validated against the
+    /// column data type by the storage in `checkAlterIsPossible`).
+    if (column_statistics_decl)
+        column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, data_type);
+
+    return column;
+}
+
+
+void AlterCommand::modifyColumnDescription(ColumnDescription & column, StorageInMemoryMetadata * metadata, const ContextPtr & context) const
+{
+    /// The result is validated by `validateColumnCodecs` after all commands are applied.
+    if (!subcolumn_name.empty())
+    {
+        if (to_remove == RemoveProperty::CODEC)
+            column.subcolumn_codecs.erase(subcolumn_name);
+        else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
+            column.subcolumn_codecs.set(subcolumn_name, codec);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
+                backQuote(subcolumn_name), backQuote(column_name));
+        return;
+    }
+
+    if (to_remove == RemoveProperty::DEFAULT
+        || to_remove == RemoveProperty::MATERIALIZED
+        || to_remove == RemoveProperty::ALIAS)
+    {
+        column.default_desc = ColumnDefault{};
+    }
+    else if (to_remove == RemoveProperty::CODEC)
+    {
+        column.codec.reset();
+    }
+    else if (to_remove == RemoveProperty::COMMENT)
+    {
+        column.comment = String{};
+    }
+    else if (to_remove == RemoveProperty::TTL)
+    {
+        column.ttl.reset();
+    }
+    else if (to_remove == RemoveProperty::SETTINGS)
+    {
+        column.settings.clear();
+    }
+    else
+    {
+        if (codec)
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
+
+        if (comment)
+            column.comment = *comment;
+
+        if (ttl)
+            column.ttl = ttl;
+
+        if (data_type)
+        {
+            column.type = data_type;
+            /// Update statistics data type to match the new column type
+            if (!column.statistics.empty())
+                column.statistics.data_type = data_type;
+            /// The type changed, so assume that implicit indices may change too
+            if (metadata)
+            {
+                metadata->dropImplicitIndicesForColumn(column_name);
+                metadata->addImplicitIndicesForColumn(column, context);
+            }
+        }
+
+        /// The declared statistics replace the explicit statistics of the column, like the other
+        /// declared properties (implicit statistics from `auto_statistics_types` are re-added by
+        /// the storage). The types are validated by the storage in `checkAlterIsPossible`.
+        if (column_statistics_decl)
+            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, column.type);
+
+        if (!settings_changes.empty())
+        {
+            MergeTreeColumnSettings::validate(settings_changes);
+            if (append_column_setting)
+                for (const auto & change : settings_changes)
+                    column.settings.setSetting(change.name, change.value);
+            else
+                column.settings = settings_changes;
+        }
+
+        if (!settings_resets.empty())
+        {
+            for (const auto & setting : settings_resets)
+                column.settings.removeSetting(setting);
+        }
+
+        /// Restating the type is not a default decision, so the column keeps the default it
+        /// currently has. Removals are handled by the `to_remove` branches above.
+        if (default_expression)
+        {
+            column.default_desc.kind = default_kind;
+            column.default_desc.expression = default_expression;
+            column.default_desc.ephemeral_default = ephemeral_default;
+        }
+    }
+}
+
+
 void AlterCommand::apply(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
@@ -828,30 +956,7 @@ void AlterCommand::apply(
 
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type);
-        if (default_expression)
-        {
-            column.default_desc.kind = default_kind;
-            column.default_desc.expression = default_expression;
-        }
-        if (comment)
-            column.comment = *comment;
-
-        if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
-
-        column.ttl = ttl;
-
-        if (!settings_changes.empty())
-        {
-            MergeTreeColumnSettings::validate(settings_changes);
-            column.settings = settings_changes;
-        }
-
-        /// The declared statistics are transferred like in CREATE (the types are validated against the
-        /// column data type by the storage in `checkAlterIsPossible`).
-        if (column_statistics_decl)
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, data_type);
+        ColumnDescription column = getAddedColumnDescription();
 
         /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
         /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
@@ -884,97 +989,8 @@ void AlterCommand::apply(
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
-            /// The result is validated by `validateColumnCodecs` after all commands are applied.
-            if (!subcolumn_name.empty())
-            {
-                if (to_remove == RemoveProperty::CODEC)
-                    column.subcolumn_codecs.erase(subcolumn_name);
-                else if (to_remove == RemoveProperty::NO_PROPERTY && codec)
-                    column.subcolumn_codecs.set(subcolumn_name, codec);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Only CODEC can be modified or removed for subcolumn {} of column {}",
-                        backQuote(subcolumn_name), backQuote(column_name));
-                return;
-            }
-
-            if (to_remove == RemoveProperty::DEFAULT
-                || to_remove == RemoveProperty::MATERIALIZED
-                || to_remove == RemoveProperty::ALIAS)
-            {
-                column.default_desc = ColumnDefault{};
-            }
-            else if (to_remove == RemoveProperty::CODEC)
-            {
-                column.codec.reset();
-            }
-            else if (to_remove == RemoveProperty::COMMENT)
-            {
-                column.comment = String{};
-            }
-            else if (to_remove == RemoveProperty::TTL)
-            {
-                column.ttl.reset();
-            }
-            else if (to_remove == RemoveProperty::SETTINGS)
-            {
-                column.settings.clear();
-            }
-            else
-            {
-                if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                        codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
-
-                if (comment)
-                    column.comment = *comment;
-
-                if (ttl)
-                    column.ttl = ttl;
-
-                if (data_type)
-                {
-                    column.type = data_type;
-                    /// Update statistics data type to match the new column type
-                    if (!column.statistics.empty())
-                        column.statistics.data_type = data_type;
-                    /// The type changed, so assume that implicit indices may change too
-                    metadata.dropImplicitIndicesForColumn(column_name);
-                    metadata.addImplicitIndicesForColumn(column, context);
-                }
-
-                /// The declared statistics replace the explicit statistics of the column, like the other
-                /// declared properties (implicit statistics from `auto_statistics_types` are re-added by
-                /// the storage). The types are validated by the storage in `checkAlterIsPossible`.
-                if (column_statistics_decl)
-                    column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, column.type);
-
-                if (!settings_changes.empty())
-                {
-                    MergeTreeColumnSettings::validate(settings_changes);
-                    if (append_column_setting)
-                        for (const auto & change : settings_changes)
-                            column.settings.setSetting(change.name, change.value);
-                    else
-                        column.settings = settings_changes;
-                }
-
-                if (!settings_resets.empty())
-                {
-                    for (const auto & setting : settings_resets)
-                        column.settings.removeSetting(setting);
-                }
-
-                /// Restating the type is not a default decision, so the column keeps the default it
-                /// currently has. Removals are handled by the `to_remove` branches above.
-                if (default_expression)
-                {
-                    column.default_desc.kind = default_kind;
-                    column.default_desc.expression = default_expression;
-                    column.default_desc.ephemeral_default = ephemeral_default;
-                }
-            }
+            modifyColumnDescription(column, &metadata, context);
         });
-
     }
     else if (type == MODIFY_ORDER_BY)
     {
@@ -2088,9 +2104,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                 else if (command.data_type)
                 {
                     columns_with_full_type_modify.emplace(command.column_name);
-                    /// A later command may refer to a subcolumn that only the new type has.
-                    if (columns.has(command.column_name))
-                        columns.modify(command.column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
                 }
             }
 
@@ -2163,21 +2176,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                             {
                                 command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
                             }
-
-                            /// Advance the working snapshot so that a subsequent command in the same
-                            /// ALTER statement (e.g. another `ADD ENUM VALUES` on the same column) merges
-                            /// against the already-extended type instead of the original one. Without this,
-                            /// `MODIFY COLUMN x ADD ENUM VALUES('a'), MODIFY COLUMN x ADD ENUM VALUES('b')`
-                            /// would lose `a`, because the commands are applied sequentially afterwards.
-                            columns.modify(command.column_name, [&](ColumnDescription & col) { col.type = command.data_type; });
                         }
                     }
                 }
             }
 
-            /// The snapshot follows the `FIRST` / `AFTER` placement of the column, like `apply` does.
-            if (!command.ignore && (command.first || !command.after_column.empty()) && columns.has(command.column_name))
-                columns.modifyColumnOrder(command.column_name, command.after_column, command.first);
+            if (!command.ignore && columns.has(command.column_name))
+                columns.modify(command.column_name, command.after_column, command.first,
+                    [&](ColumnDescription & column) { command.modifyColumnDescription(column, /*metadata=*/ nullptr, context); });
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
@@ -2185,7 +2191,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                 command.ignore = true;
             else
             {
-                ColumnDescription added_column(command.column_name, command.data_type);
+                ColumnDescription added_column = command.getAddedColumnDescription();
                 addColumnsAtPosition(
                     columns,
                     columnsAddedByAlter(columns, added_column, context, command.if_not_exists, share_nested_offsets),
