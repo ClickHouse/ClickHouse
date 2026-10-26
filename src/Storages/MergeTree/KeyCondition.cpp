@@ -7310,6 +7310,11 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     if (functions.empty())
         return key_range;
 
+    /// A bound where `isNull()` holds stands in for NULL or for an infinity, and is left untransformed below,
+    /// so no transformed value would remain to compare against an atom in the function's result domain.
+    if (single_point && (key_range.left.isNull() || key_range.right.isNull()))
+        return {};
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -7331,11 +7336,6 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
         {
             const auto & func = functions[i];
             const size_t function_number = first_function_number + i;
-
-            /// A bound where `isNull()` holds stands in for NULL or for an infinity, and is left untransformed below,
-            /// so no transformed value would remain to compare against an atom in the function's result domain.
-            if (single_point && (key_range.left.isNull() || key_range.right.isNull()))
-                return {};
 
             /// We check the monotonicity of each function on a specific range.
             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
