@@ -430,6 +430,28 @@
     M(ZooKeeperMulti, "Number of 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
     M(ZooKeeperMultiRead, "Number of read 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
     M(ZooKeeperMultiWrite, "Number of write 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
+    M(TransactionBeginMicroseconds, "Time spent in `BEGIN TRANSACTION`, explicit or implicit", ValueType::Microseconds) \
+    M(TransactionBeginSnapshotBehindLatest, "Number of transactions that began with a snapshot below the latest CSN, because the global watermark lags", ValueType::Number) \
+    M(TransactionCommitMicroseconds, "Time spent committing transactions, without waiting for the CSN to be loaded", ValueType::Microseconds) \
+    M(TransactionCommitAllocateCSNMicroseconds, "Time from the start of a transaction commit until Keeper allocated its CSN", ValueType::Microseconds) \
+    M(TransactionCommitAfterCSNMicroseconds, "Time spent finalizing committed transactions after their CSN was allocated", ValueType::Microseconds) \
+    M(TransactionCommitUnknownStatus, "Number of transaction commits whose outcome is unknown because of a Keeper hardware error", ValueType::Number) \
+    M(TransactionCommitUnknownStatusWaitMicroseconds, "Time spent waiting for the outcome of commits with unknown status", ValueType::Microseconds) \
+    M(TransactionWaitCSNLoaded, "Number of waits until a CSN is loaded into the latest snapshot, by a synchronous `COMMIT` or `SYSTEM SYNC TRANSACTION LOG`", ValueType::Number) \
+    M(TransactionWaitCSNLoadedMicroseconds, "Time spent waiting until a CSN is loaded into the latest snapshot", ValueType::Microseconds) \
+    M(TransactionWaitWatermark, "Number of waits until the watermark reaches a CSN, so a new transaction on this replica sees it, by `COMMIT` with `wait_visible` or `SYSTEM SYNC TRANSACTION LOG`", ValueType::Number) \
+    M(TransactionWaitWatermarkMicroseconds, "Time spent waiting until the watermark reaches a CSN", ValueType::Microseconds) \
+    M(TransactionsCommitted, "Number of committed transactions, including read-only ones", ValueType::Number) \
+    M(TransactionsRolledBack, "Number of rolled back transactions", ValueType::Number) \
+    M(TransactionCommitConflicts, "Number of transaction commits that failed with `SERIALIZATION_ERROR` because a concurrent operation changed a part", ValueType::Number) \
+    M(TransactionTIDsInvalidated, "Number of transaction IDs this replica invalidated", ValueType::Number) \
+    M(TransactionDeadReplicasMarked, "Number of replicas this replica marked dead for transactions", ValueType::Number) \
+    M(TransactionLogLoadMicroseconds, "Time spent loading the transaction log (`/log`) from Keeper: listing it, reading the new entries and applying them", ValueType::Microseconds) \
+    M(TransactionLogLoadedEntries, "Number of transaction log (`/log`) entries read from Keeper", ValueType::Number) \
+    M(TransactionLogLoads, "Number of loads of the transaction log (`/log`) from Keeper", ValueType::Number) \
+    M(TransactionBegins, "Number of `BEGIN TRANSACTION`, explicit or implicit", ValueType::Number) \
+    M(TransactionCommits, "Number of transaction commits started, including read-only and unsuccessful ones", ValueType::Number) \
+    M(TransactionCommitsWithCSN, "Number of transaction commits for which Keeper allocated a CSN", ValueType::Number) \
     M(ZooKeeperCheck, "Number of 'check' requests to ZooKeeper. Usually they don't make sense in isolation, only as part of a complex transaction.", ValueType::Number) \
     M(ZooKeeperSync, "Number of 'sync' requests to ZooKeeper. These requests are rarely needed or usable.", ValueType::Number) \
     M(ZooKeeperReconfig, "Number of 'reconfig' requests to ZooKeeper.", ValueType::Number) \
@@ -1152,9 +1174,13 @@ The server successfully detected this situation and will download merged part fr
     \
     M(BlobKillerThreadRuns, "Number of BlobKiller thread executes", ValueType::Number) \
     M(BlobKillerThreadLockedBlobs, "Number of blobs returned from metadata storage", ValueType::Number) \
+    M(BlobKillerThreadLockedSingleBlobs, "Number of blobs returned from metadata storage one by one", ValueType::Number) \
+    M(BlobKillerThreadLockedBatchedBlobs, "Number of blobs returned from metadata storage as part of a batch", ValueType::Number) \
     M(BlobKillerThreadRemoveTasks, "Number of remove tasks created by BlobKiller", ValueType::Number) \
     M(BlobKillerThreadRemovedBlobs, "Number of blobs removed by BlobKiller", ValueType::Number) \
     M(BlobKillerThreadRecordedBlobs, "Number of blobs which removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
+    M(BlobKillerThreadRecordedSingleBlobs, "Number of blobs removed one by one whose removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
+    M(BlobKillerThreadRecordedBatchedBlobs, "Number of blobs removed as part of a batch whose removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
     M(BlobKillerThreadLockBlobsErrors, "Number of blobs lock errors occurred during BlobKiller execution", ValueType::Number) \
     M(BlobKillerThreadRemoveBlobsErrors, "Number of blobs removal errors occurred during BlobKiller execution", ValueType::Number) \
     M(BlobKillerThreadRecordBlobsErrors, "Number of blobs recording errors occurred during BlobKiller execution", ValueType::Number) \
@@ -1236,6 +1262,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
     M(KeeperReadSnapshotDeferred, "Number of snapshot reads deferred because the requested snapshot is no longer available locally; NuRaft will retry the latest snapshot.", ValueType::Number) \
     M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
+    M(KeeperReadSnapshotStreamingSeeks, "Number of times a streaming snapshot transfer repositioned its reader because NuRaft requested an object other than the next one", ValueType::Number) \
     M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
     M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
     M(KeeperSaveSnapshot, "Number of snapshot save", ValueType::Number) \
@@ -1419,6 +1446,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheSeekBufferedBytesShortfall, "Distributed Cache read buffer event. The number of bytes the locally buffered data fell short of the gap when a skip was declined", ValueType::Bytes) \
     M(DistrCacheSeekReRequestFirstPacketMicroseconds, "Distributed Cache read buffer event. Time between requesting a new read range on the open stream because of a seek and receiving its first packet", ValueType::Microseconds) \
     M(DistrCacheEstimatedInflightBytesOnSeek, "Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)", ValueType::Bytes) \
+    M(DistrCacheKeptConnectionsWithInflightData, "Distributed Cache read buffer event. The number of times a connection was kept in the pool when a read request was cancelled while data could still arrive, because the estimated in-flight bytes did not exceed `distributed_cache_min_inflight_bytes_to_discard_connection`", ValueType::Number) \
+    M(DistrCacheKeptConnectionsInflightBytes, "Distributed Cache read buffer event. The estimated in-flight bytes of the connections counted in DistrCacheKeptConnectionsWithInflightData (compare with DistrCacheUnusedDataPacketsBytesUnknownRequest)", ValueType::Bytes) \
     M(DistrCacheReadBytesUnconsumedOnEndRequest, "Distributed Cache read buffer event. Bytes of the requested read range left unconsumed when the request was ended early", ValueType::Bytes) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \

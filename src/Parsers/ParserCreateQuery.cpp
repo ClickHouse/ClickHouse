@@ -2912,6 +2912,18 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
 </Note>
 
+### GDeflate {#gdeflate}
+
+<ExperimentalBadge/>
+
+`GDeflate[(level)]` — [GDeflate](https://github.com/NVIDIA/libdeflate/tree/gdeflate), a variant of Deflate whose bit stream is split into 32 interleaved sub-streams, with configurable `level`. Possible levels: \[1, 12\]. Default level: 6.
+
+A block is compressed in independent chunks of 64 KiB, each a GDeflate page, the format that nvcomp and DirectStorage expand on a GPU, many chunks in parallel. On the CPU, it compresses and decompresses about as fast as Deflate, slower than `LZ4` and `ZSTD`. For columns of integers (`Int*`, `UInt*`, `Decimal32`, `Decimal64`, `Date`, `Date32`, `DateTime`, `DateTime64`), a chunk whose values lie close together is bit-packed before it is compressed, each value as its difference from the least value of the chunk, where that makes the chunk smaller.
+
+<Note>
+This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
+</Note>
+
 ### Obsolete: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge/>
@@ -2981,6 +2993,7 @@ This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it
 <ExperimentalBadge/>
 
 `SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
+The codec is also not applicable to LowCardinality columns of MergeTree tables (also inside Array, Tuple or Nested), because their dictionaries would be corrupted.
 
 <Note>
 This codec is experimental and requires `SET enable_sz3_codec = 1` to use.
