@@ -2,6 +2,7 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
@@ -67,10 +68,11 @@ def _llvm_runtime_objects_impl(ctx):
         action_name = action,
     )
     triple = ctx.attr.arch + "-linux-gnu"
-    gcc_root = ctx.attr._sysroot.label.workspace_root + "/linux-" + ctx.attr.arch
+    c_headers = [target[DirectoryInfo] for target in ctx.attr._c_headers]
+    toolchain_files = depset(transitive = [toolchain.all_files] + [directory.transitive_files for directory in c_headers])
     header_inputs = depset(
         ctx.files.hdrs + private_headers + ctx.files.textual_srcs,
-        transitive = [toolchain.all_files, ctx.attr._sysroot[DefaultInfo].files],
+        transitive = [toolchain_files],
     )
     labels = {target.label: target for target in ctx.attr.srcs + ctx.attr.hdrs + ctx.attr.textual_srcs}.values()
     copts = [
@@ -85,10 +87,13 @@ def _llvm_runtime_objects_impl(ctx):
     for directory in ctx.attr.system_includes:
         include_dir = paths.join(ctx.label.workspace_root, ctx.label.package, directory)
         system_flags.extend(["-isystem", include_dir])
+
+    # Keep Clang's builtin headers before the Linux and glibc headers, as in CMake.
+    for directory in c_headers:
+        system_flags.extend(["-idirafter", directory.path])
     flags = [
         "--target=" + triple,
-        "--sysroot=" + gcc_root + "/" + triple + "/libc",
-        "--gcc-toolchain=" + gcc_root,
+        "-nostdlibinc",
         _resource_dir(ctx, toolchain, features, action),
     ] + ["-D" + define for define in ctx.attr.local_defines] + include_flags + copts + system_flags
     if ctx.attr._cmake_metadata[BuildSettingInfo].value and ctx.attr.reference_source_root:
@@ -143,7 +148,7 @@ def _llvm_runtime_objects_impl(ctx):
         }))
         result.append(LlvmRuntimeCompileInfo(
             units = units,
-            toolchain_files = toolchain.all_files,
+            toolchain_files = toolchain_files,
             declared_inputs = depset(ctx.files.hdrs),
             private_headers = depset(private_headers),
             textual_srcs = depset(ctx.files.textual_srcs),
@@ -168,7 +173,13 @@ llvm_runtime_objects = rule(
         "arch": attr.string(values = ["x86_64", "aarch64"], mandatory = True),
         "reference_source_root": attr.string(),
         "_cmake_metadata": attr.label(default = "@clickhouse//bazel:cmake_metadata"),
-        "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_compile_files"),
+        "_c_headers": attr.label_list(
+            default = [
+                "@kernel_headers//:kernel_headers_directory",
+                "@llvm//runtimes/glibc:glibc_headers_include_search_directory",
+            ],
+            providers = [DirectoryInfo],
+        ),
     },
     fragments = ["cpp"],
     toolchains = use_cc_toolchain(),

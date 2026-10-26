@@ -1534,9 +1534,10 @@ def dependency_inputs(builds, owners):
     })
     build('contrib/chdig').rule('filegroup', 'cargo_manifest', {'srcs': ['Cargo.toml']})
     build('contrib/openssl').rule('filegroup', 'headers', {'srcs': Glob(['include/**'])})
-    build('contrib/sysroot').rule('filegroup', 'linux_compile_files', {
+    # Cargo build scripts link host tools and target C/C++ configure checks.
+    build('contrib/sysroot').rule('filegroup', 'cargo_link_files', {
         'srcs': select({
-            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/**'], ('linux-' + arch + '/**/share/**',))
+            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/**/' + lib + '/**' for lib in ('lib', 'lib64')])
             for arch in ARCHES
         }),
     })

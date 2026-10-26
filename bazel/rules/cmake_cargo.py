@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, fromfile_prefix_chars="@")
     for name in [
         "output", "evidence", "cargo", "rustc", "rust-sysroot-anchor", "config", "manifest",
-        "workspace-manifest", "cc", "cxx", "ar",
+        "workspace-manifest", "cc", "cxx", "ar", "linux-headers", "glibc-headers",
     ]:
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--target", choices=["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"], required=True)
@@ -258,7 +258,7 @@ def main():
     # symlinks changes which multicall program LLVM runs.
     for key in [
         "output", "evidence", "cargo", "rustc", "rust_sysroot_anchor", "config", "manifest",
-        "workspace_manifest", "cc", "cxx", "ar",
+        "workspace_manifest", "cc", "cxx", "ar", "linux_headers", "glibc_headers",
     ]:
         setattr(args, key, getattr(args, key).absolute())
     if args.openssl_headers:
@@ -286,6 +286,10 @@ def main():
         libc_sysroot = gcc_root / native_target / "libc"
         if not libc_sysroot.is_dir():
             raise RuntimeError(f"Declared Cargo target sysroot was not staged: {libc_sysroot}")
+        # Clang searches these two GNU system directories after its builtin headers.
+        # Keep the CMake --sysroot operand: Cargo hashes it in archive member names.
+        (libc_sysroot / "include").symlink_to(args.linux_headers, target_is_directory=True)
+        (libc_sysroot / "usr/include").symlink_to(args.glibc_headers, target_is_directory=True)
         rust_sysroot, rust_target_libdir = selected_rust_sysroot(args)
         manifest = checkout / mounted_source(args.manifest, source_mounts(args))
         if not manifest.is_file():

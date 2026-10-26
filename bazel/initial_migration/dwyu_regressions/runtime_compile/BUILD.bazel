@@ -8,7 +8,7 @@ _ARCH = select({
     "@platforms//cpu:aarch64": "aarch64",
 })
 
-# A real configured compiler and sysroot supply these system includes.
+# Clang, Linux and glibc supply the system headers in system.c.
 # Ordinary compilation and DWYU must both succeed.
 llvm_runtime_objects(
     name = "system_headers",

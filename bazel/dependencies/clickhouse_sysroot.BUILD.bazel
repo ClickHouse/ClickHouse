@@ -1,10 +1,16 @@
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
-    name = "linux_compile_files",
+    name = "cargo_link_files",
     srcs = select({
-        "@platforms//cpu:x86_64": glob(["linux-x86_64/**"]),
-        "@platforms//cpu:aarch64": glob(["linux-aarch64/**"]),
+        "@platforms//cpu:x86_64": glob([
+            "linux-x86_64/**/lib/**",
+            "linux-x86_64/**/lib64/**",
+        ]),
+        "@platforms//cpu:aarch64": glob([
+            "linux-aarch64/**/lib/**",
+            "linux-aarch64/**/lib64/**",
+        ]),
     }),
 )
 

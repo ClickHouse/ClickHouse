@@ -1,5 +1,6 @@
 """Build native ClickHouse Cargo archives from Bazel-declared Rust sources."""
 
+load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
@@ -55,11 +56,18 @@ def _cmake_cargo_impl(ctx):
         args.add("--native-source-root", ctx.attr.native_source_root)
     args.add_all(["--mount", ctx.file.workspace_manifest.dirname, "rust/workspace"])
 
-    # RUSTFLAGS uses the literal CMake sysroot spelling. Only stage the
-    # target sysroot files already declared by this action.
-    args.add_all(["--mount", ctx.attr.sysroot_files.label.workspace_root, "contrib/sysroot"])
-    args.add_all(ctx.attr.sysroot_files[DefaultInfo].files, before_each = "--source")
-    source_depsets = [ctx.attr.workspace_sources[DefaultInfo].files]
+    linux_headers = ctx.attr._linux_headers[DirectoryInfo]
+    glibc_headers = ctx.attr._glibc_headers[DirectoryInfo]
+    args.add("--linux-headers", linux_headers.path)
+    args.add("--glibc-headers", glibc_headers.path)
+    args.add_all(["--mount", ctx.attr._link_files.label.workspace_root, "contrib/sysroot"])
+    args.add_all(ctx.files._link_files, before_each = "--source")
+    source_depsets = [
+        ctx.attr.workspace_sources[DefaultInfo].files,
+        ctx.attr._link_files[DefaultInfo].files,
+        linux_headers.transitive_files,
+        glibc_headers.transitive_files,
+    ]
     args.add_all(ctx.attr.workspace_sources[DefaultInfo].files, before_each = "--source")
     destinations = {"contrib/sysroot": True}
     for target, destination in ctx.attr.repositories.items():
@@ -122,7 +130,7 @@ def _cmake_cargo_impl(ctx):
         arguments = [args],
         inputs = depset(
             [ctx.file.config, ctx.file.manifest, ctx.file.workspace_manifest, rust.sysroot_anchor] + additional_inputs,
-            transitive = source_depsets + [rust.all_files, cc.all_files, ctx.attr.sysroot_files[DefaultInfo].files],
+            transitive = source_depsets + [rust.all_files, cc.all_files],
         ),
         outputs = [archive, evidence],
         tools = tools,
@@ -165,7 +173,9 @@ cmake_cargo = rule(
         # valid when Cargo resolves the complete ClickHouse Rust workspace.
         "repositories": attr.label_keyed_string_dict(mandatory = True, allow_files = True),
         "config": attr.label(mandatory = True, allow_single_file = True),
-        "sysroot_files": attr.label(default = "@clickhouse_sysroot//:linux_compile_files"),
+        "_link_files": attr.label(default = "@clickhouse_sysroot//:cargo_link_files"),
+        "_linux_headers": attr.label(default = "@kernel_headers//:kernel_headers_directory", providers = [DirectoryInfo]),
+        "_glibc_headers": attr.label(default = "@llvm//runtimes/glibc:glibc_headers_include_search_directory", providers = [DirectoryInfo]),
         # Cargo hashes the absolute SourceId of path dependencies outside
         # rust/workspace. Use the recorded CMake source root in an isolated RBE
         # action so the pinned Cargo recomputes those SourceIds itself.
