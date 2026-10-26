@@ -38,17 +38,19 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 
 -- The parallel-replicas plan is built from the query tree shipped to the replicas, where constants longer
 -- than `optimize_const_name_size` are replaced with `__getScalar` calls, also inside an `IN` subquery.
--- That changes the subquery's hash, which keys its set.
+-- That changes the subquery's hash, which keys its set. Only the query-based implementation of parallel
+-- replicas ships a query tree: the plan-based one ships a plan fragment, the sets hash alike in both plans,
+-- and the query switches. So these queries are pinned to the query-based implementation.
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != repeat('x', 300)))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS log_comment = '05401_long_warmup';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS parallel_replicas_plan_based = 0, log_comment = '05401_long_warmup';
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != repeat('x', 300)))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS log_comment = '05401_long_second';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS parallel_replicas_plan_based = 0, log_comment = '05401_long_second';
 
 -- The same with `optimize_const_name_size = 0`, which replaces every constant.
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != 'short'))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, log_comment = '05401_all_warmup';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, parallel_replicas_plan_based = 0, log_comment = '05401_all_warmup';
 SELECT g, sumIf(v, k IN (SELECT k FROM t_autopr_unpaired_sets WHERE v < 3 AND k != 'short'))
-FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, log_comment = '05401_all_second';
+FROM t_autopr_unpaired_sets GROUP BY g ORDER BY g SETTINGS optimize_const_name_size = 0, parallel_replicas_plan_based = 0, log_comment = '05401_all_second';
 
 -- `query_plan_convert_join_to_in` keys the set it makes of the right table by a random UUID, so the two
 -- plans never hash it alike. The query must still return its result, with or without switching.
