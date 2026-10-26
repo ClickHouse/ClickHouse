@@ -207,6 +207,20 @@ public:
         /// is held by a foreign `processing` node, later files of the domain must not be
         /// processed: the pointer would advance past the held file and lose it forever.
         std::map<OrderingDomain, std::set<std::string>> foreign_held_files_per_domain TSA_GUARDED_BY(next_mutex);
+        /// The total number of paths in `foreign_held_files_per_domain`.
+        size_t foreign_held_files_count TSA_GUARDED_BY(next_mutex) = 0;
+
+        /// Ordered mode only. The ordering barriers (the paths in `foreign_held_files_per_domain`
+        /// and the domains in `dropped_blocked_files_per_domain`) are retained for the whole
+        /// listing pass, so their number is capped: otherwise they would grow with the number of
+        /// ordering domains (e.g. partitions) which have a foreign-held file, regardless of the
+        /// size of the file status cache and of the other caps. A barrier beyond the cap cannot
+        /// be dropped like a retained file, because its domain must stay blocked, and it is not
+        /// known which of the later domains it belongs to. So the rest of the pass is blocked
+        /// as a whole (`ordering_barriers_overflowed`): nothing more is handed out, nothing is
+        /// inherited, and the next listing pass lists everything not processed yet again.
+        static constexpr size_t max_ordering_barriers = 1000;
+        bool ordering_barriers_overflowed TSA_GUARDED_BY(next_mutex) = false;
 
         /// Ordered mode only. The replayed files (`PendingRecheck::is_replay`) still waiting in
         /// `foreign_processing_files_to_recheck`. A replayed file is neither foreign-held nor handed
@@ -237,6 +251,9 @@ public:
 
         OrderingDomain getOrderingDomain(const std::string & path) const;
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        /// Whether one more ordering barrier fits into `max_ordering_barriers`. If not, blocks
+        /// the rest of the listing pass, see `ordering_barriers_overflowed`.
+        bool reserveOrderingBarrier() TSA_REQUIRES(next_mutex);
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         /// Drops a file of a blocked or deferred range beyond the replay cap, keeping its domain

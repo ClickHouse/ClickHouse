@@ -749,6 +749,10 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
 void ObjectStorageQueueSource::FileIterator::queueForeignProcessingRecheck(
     ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status)
 {
+    /// The rest of the pass is blocked anyway: the next listing pass lists the file again.
+    if (ordering_barriers_overflowed)
+        return;
+
     chassert(foreign_processing_files_to_recheck.size() >= pending_replays_count);
     if (foreign_processing_files_to_recheck.size() - pending_replays_count >= max_foreign_processing_rechecks)
     {
@@ -880,7 +884,9 @@ ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
     /// unfinished listing. An inherited later file could then be committed before the next
     /// listing pass reaches them and advance the `processed` pointer past them. Inherit nothing:
     /// the next listing pass rechecks every file in order.
-    if (iterator_invalidated)
+    /// The same applies when the ordering barriers overflowed: the foreign-held files beyond the cap
+    /// are not known, so an inherited file could be committed past one of them.
+    if (iterator_invalidated || ordering_barriers_overflowed)
     {
         foreign_processing_files_to_recheck.clear();
         inherited_foreign_processing_rechecks.clear();
@@ -1085,10 +1091,48 @@ ObjectStorageQueueSource::FileIterator::getOrderingDomain(const std::string & pa
 
 void ObjectStorageQueueSource::FileIterator::recordForeignHeldFile(const std::string & path)
 {
-    if (mode != ObjectStorageQueueMode::ORDERED)
+    if (mode != ObjectStorageQueueMode::ORDERED || ordering_barriers_overflowed)
         return;
 
-    foreign_held_files_per_domain[getOrderingDomain(path)].insert(path);
+    const auto domain = getOrderingDomain(path);
+    if (const auto it = foreign_held_files_per_domain.find(domain); it != foreign_held_files_per_domain.end() && it->second.contains(path))
+        return;
+
+    if (!reserveOrderingBarrier())
+        return;
+
+    foreign_held_files_per_domain[domain].insert(path);
+    ++foreign_held_files_count;
+}
+
+bool ObjectStorageQueueSource::FileIterator::reserveOrderingBarrier()
+{
+    if (ordering_barriers_overflowed)
+        return false;
+
+    if (foreign_held_files_count + dropped_blocked_files_per_domain.size() < max_ordering_barriers)
+        return true;
+
+    LOG_TRACE(
+        log,
+        "Not retaining more than {} ordering barriers of files processed by another processor, "
+        "the rest of this listing pass is blocked until the next listing pass lists it again",
+        max_ordering_barriers);
+
+    /// Everything is blocked from now on (`isBlockedByForeignHeldFile`), so the retained
+    /// barriers, blocked files and pending rechecks are not needed any more. The replays which are
+    /// in flight and the handed-out files with an unresolved set-processing outcome are kept:
+    /// they are tracked until they leave the iterator.
+    ordering_barriers_overflowed = true;
+    foreign_held_files_per_domain.clear();
+    foreign_held_files_count = 0;
+    dropped_blocked_files_per_domain.clear();
+    blocked_files_per_domain.clear();
+    blocked_files_count = 0;
+    foreign_processing_files_to_recheck.clear();
+    inherited_foreign_processing_rechecks.clear();
+    clearPendingReplays();
+    return false;
 }
 
 void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::string & path)
@@ -1108,6 +1152,8 @@ void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::s
     /// Only the smallest blocker of a domain blocks anything that the remaining ones do not.
     const bool smallest_blocker_resolved = held_it == held_files.begin();
     held_files.erase(held_it);
+    chassert(foreign_held_files_count > 0);
+    --foreign_held_files_count;
     if (!smallest_blocker_resolved)
         return;
 
@@ -1123,6 +1169,10 @@ void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::s
 
 void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr object)
 {
+    /// The rest of the pass is blocked as a whole: the next listing pass lists the file again.
+    if (ordering_barriers_overflowed)
+        return;
+
     const auto & path = object->getPath();
     const auto domain = getOrderingDomain(path);
 
@@ -1154,9 +1204,15 @@ void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr o
 void ObjectStorageQueueSource::FileIterator::dropFileUntilRelisted(const OrderingDomain & domain, const std::string & path)
 {
     /// Only the smallest dropped path matters: everything above it is blocked anyway.
-    const auto [dropped, inserted] = dropped_blocked_files_per_domain.try_emplace(domain, path);
-    if (!inserted && path < dropped->second)
-        dropped->second = path;
+    if (const auto dropped = dropped_blocked_files_per_domain.find(domain); dropped != dropped_blocked_files_per_domain.end())
+    {
+        if (path < dropped->second)
+            dropped->second = path;
+    }
+    else if (reserveOrderingBarrier())
+        dropped_blocked_files_per_domain.emplace(domain, path);
+    else
+        return;
 
     if (!std::exchange(blocked_files_replay_capped, true))
     {
@@ -1180,6 +1236,10 @@ void ObjectStorageQueueSource::FileIterator::deferBehindReplay(ObjectInfoPtr obj
     /// Retaining them only saves a relisting, so beyond the cap the file is dropped, and its
     /// domain stays blocked from its path on until the next listing pass lists it again:
     /// committing a later file would advance the `processed` pointer past the dropped one.
+    /// After the ordering barriers overflowed, the rest of the pass is blocked as a whole.
+    if (ordering_barriers_overflowed)
+        return;
+
     if (pending_replays_count >= max_blocked_files_to_replay)
     {
         const auto & path = object->getPath();
@@ -1221,8 +1281,15 @@ void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(
 
 bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const std::string & path)
 {
-    if (mode != ObjectStorageQueueMode::ORDERED
-        || (foreign_held_files_per_domain.empty() && dropped_blocked_files_per_domain.empty()))
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return false;
+
+    /// A foreign-held file beyond `max_ordering_barriers` is not retained, so its domain is not
+    /// known: no file may be processed before the next listing pass, see `ordering_barriers_overflowed`.
+    if (ordering_barriers_overflowed)
+        return true;
+
+    if (foreign_held_files_per_domain.empty() && dropped_blocked_files_per_domain.empty())
         return false;
 
     const auto domain = getOrderingDomain(path);

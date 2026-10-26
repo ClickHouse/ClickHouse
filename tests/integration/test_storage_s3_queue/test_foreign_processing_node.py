@@ -1265,3 +1265,100 @@ def test_foreign_processing_rechecks_are_capped(started_cluster):
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_ordering_barriers_are_capped_in_ordered_mode(started_cluster):
+    """The ordering barriers of foreign-held files are retained only up to a cap.
+
+    In Ordered mode a foreign-held file blocks the later files of its ordering domain for the
+    rest of the listing pass. With partitioning, every partition is a separate domain, so without
+    a cap the retained barriers grow with the number of partitions which have a foreign-held file,
+    regardless of the size of the file status cache (here: one element). Beyond
+    `max_ordering_barriers` (1000) the rest of the pass is blocked as a whole and left to the next
+    listing pass. No later file may be committed past a foreign-held one meanwhile: once the
+    foreign holds are released, every file is ingested.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_barriers_cap_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # The available files are listed first. Every partition `p...` has a foreign-held file,
+    # and the partitions beyond the cap have a later file as well.
+    held_partitions = 1050
+    available_files = [(f"{files_path}/a{i}_0.csv", i) for i in range(5)]
+    held_files = [(f"{files_path}/p{i:04}_0.csv", i) for i in range(held_partitions)]
+    later_files = [(f"{files_path}/p{i:04}_1.csv", i) for i in range(1000, held_partitions)]
+    files = available_files + held_files + later_files
+    generate_random_files(started_cluster, files_path, len(files), row_num=1, files=files)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_list_objects_batch_size": 100,
+            "s3queue_metadata_cache_size_elements": 1,
+            "s3queue_polling_min_timeout_ms": 1000,
+            "s3queue_polling_max_timeout_ms": 1000,
+            # The foreign observations stay trusted until the holds are released.
+            "s3queue_processing_state_cache_ttl_seconds": 300,
+        },
+        partitioning_mode="regex",
+        partition_regex=r"(?P<partition>[^_/]+)_(?P<sequence>\d+)",
+        partition_component="partition",
+    )
+
+    conflict_nodes = node.query(
+        f"SELECT sipHash64(concat('{files_path}/p', leftPad(toString(number), 4, '0'), '_0.csv')) FROM numbers({held_partitions})"
+    ).split()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+
+    def for_each_conflict_node(apply):
+        for begin in range(0, len(conflict_nodes), 100):
+            transaction = zk.transaction()
+            for conflict_node in conflict_nodes[begin : begin + 100]:
+                apply(transaction, f"{keeper_path}/processing/{conflict_node}")
+            assert all(not isinstance(r, Exception) for r in transaction.commit())
+
+    for_each_conflict_node(lambda t, path: t.create(path, b"another processor"))
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The available files are processed while the foreign holds remain.
+        run_with_retry(lambda x: x == len(available_files), get_count, retries=120)
+        run_with_retry(
+            lambda x: x,
+            lambda: node.contains_in_log(
+                "Not retaining more than 1000 ordering barriers of files processed by another processor"
+            ),
+            retries=120,
+        )
+        assert get_count() == len(available_files)
+
+        # The foreign owners release the files without committing them: the files of every
+        # partition are ingested, including the ones blocked beyond the cap.
+        for_each_conflict_node(lambda t, path: t.delete(path))
+        node.query(
+            f"ALTER TABLE {table_name} MODIFY SETTING s3queue_processing_state_cache_ttl_seconds = 0"
+        )
+        run_with_retry(lambda x: x == len(files), get_count, retries=180)
+        assert get_count() == len(files)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
