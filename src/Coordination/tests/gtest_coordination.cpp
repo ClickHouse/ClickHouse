@@ -1519,6 +1519,26 @@ TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
     })));
 }
 
+TEST(KeeperMemorySoftLimitAdmission, MultiWithRemoveFirst)
+{
+    /// The running delta goes below zero after a leading Remove; it must stay a signed value
+    /// rather than wrap around as an unsigned one.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeRemoveRequest("/a"),
+    })));
+
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeRemoveRequest("/some/long/path/to/remove"),
+        makeSetRequest("/b", "x"),
+    })));
+
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeRemoveRequest("/a"),
+        makeCreateRequest("/b", "data that is larger than the remove request"),
+        makeSetRequest("/c", "more data"),
+    })));
+}
+
 TEST(KeeperOverDispatcherMulti, CallbackPromotesFailedMultiAggregateError)
 {
     using namespace Coordination;
