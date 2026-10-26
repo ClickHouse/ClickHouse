@@ -1,0 +1,12 @@
+pk >	3
+pk <	3
+pk reversed	3
+pk < DateTime	3
+pk NOT <=	3
+pk monotonic chain	3
+pk pruning kept	0
+nullable pk >	3
+minmax >	4
+minmax <	3
+partition >	3
+partition <	3

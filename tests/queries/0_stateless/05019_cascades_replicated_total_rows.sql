@@ -1,7 +1,6 @@
 -- Tags: zookeeper
 -- zookeeper: the estimated table is ReplicatedMergeTree.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;

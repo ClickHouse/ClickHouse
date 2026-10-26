@@ -4,8 +4,6 @@
 -- transform_null_in). Each scenario is run with the cache disabled and then enabled; the
 -- two output blocks must be identical.
 
-SET enable_analyzer = 1;
-
 -- 1. A reused alias used as the left-hand side of several literal IN lists.
 SELECT h IN (0, 2, 4) AS a, h IN (1, 3, 5) AS b, h IN (6, 8, 10) AS c
 FROM (SELECT number * 2 AS h FROM numbers(8))
