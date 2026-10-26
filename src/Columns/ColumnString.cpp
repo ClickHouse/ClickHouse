@@ -11,6 +11,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -27,6 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -61,12 +63,19 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         = src_concrete.offsets[position] - src_concrete.offsets[static_cast<ssize_t>(position) - 1]; /// -1th index is Ok, see PaddedPODArray.
 
     const size_t old_rows = offsets.size();
-    const size_t new_rows = old_rows + length;
-    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
-    offsets.reserve(new_rows);
+    size_t new_rows = 0;
+    if (common::addOverflow(old_rows, length, new_rows))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many rows in string column: {} + {}", old_rows, length);
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + src_buf_size * length;
+    size_t added_size = 0;
+    size_t new_size = 0;
+    if (common::mulOverflow(src_buf_size, length, added_size) || common::addOverflow(old_size, added_size, new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too many bytes in string column: {} + {} * {}", old_size, src_buf_size, length);
+
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
     chars.resize(new_size);
 
     const UInt8 * src_buf = &src_concrete.chars[src_offset];
