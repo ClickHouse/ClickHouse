@@ -185,6 +185,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
+    /// One set of readers reads all ranges of this source.
+    MarkRangesPtr read_request_map;
+    std::vector<MarkRangesPtr> patch_read_request_maps;
+    if (read_settings.reader_executor.enabled)
+    {
+        read_request_map = std::make_shared<const MarkRanges>(mark_ranges);
+        for (const auto & ranges : patch_ranges)
+            patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
+    }
+
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
@@ -193,7 +203,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .storage_snapshot = storage_snapshot,
     };
 
-    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges);
+    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges, read_request_map, patch_read_request_maps);
 
     if (!readers.prewhere.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sequential source doesn't support PREWHERE");
@@ -469,7 +479,6 @@ public:
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
             KeyCondition key_condition(filter_dag, context, primary_key);
-            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())

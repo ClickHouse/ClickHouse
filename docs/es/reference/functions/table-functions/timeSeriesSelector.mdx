@@ -11,9 +11,7 @@ doc_type: 'referencia'
 Lee series temporales de una tabla TimeSeries, filtradas por un selector y con marcas de tiempo dentro de un intervalo especificado.
 Esta función es similar a los [selectores de rango](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors), pero también se utiliza para implementar [selectores instantáneos](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors).
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time)
@@ -21,19 +19,18 @@ timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_tim
 timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 * `db_name` - El nombre de la base de datos donde se encuentra la tabla TimeSeries.
 * `time_series_table` - El nombre de una tabla TimeSeries.
 * `instant_query` - Un selector instantáneo escrito en [sintaxis PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), sin los modificadores `@` ni `offset`.
-* &#96;min&#95;time - Marca de tiempo de inicio, inclusiva.
-* &#96;max&#95;time - Marca de tiempo de fin, inclusiva.
+* `min_time` - Marca de tiempo de inicio, inclusiva.
+* `max_time` - Marca de tiempo de fin, inclusiva.
 
-<div id="returned-value">
-  ## Valor devuelto
-</div>
+`min_time` y `max_time` pueden incluir fracciones de segundo aunque las marcas de tiempo de la tabla estén expresadas en segundos enteros:
+la función selecciona exactamente las muestras que cumplen `min_time <= timestamp <= max_time`, sin redondear los límites al tipo de las marcas de tiempo.
+
+## Valor devuelto {#returned-value}
 
 La función devuelve tres columnas:
 
@@ -43,9 +40,7 @@ La función devuelve tres columnas:
 
 No hay un orden específico para los datos devueltos.
 
-<div id="example">
-  ## Ejemplo
-</div>
+## Ejemplo {#example}
 
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())

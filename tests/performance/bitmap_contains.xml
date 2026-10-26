@@ -10,28 +10,101 @@
         )
         ENGINE = Memory
     </create_query>
+    <create_query>
+        CREATE TABLE bitmap_contains_32_sparse
+        (
+            name String,
+            bm AggregateFunction(groupBitmap, UInt32)
+        )
+        ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE bitmap_contains_random_keys
+        (
+            key UInt32
+        )
+        ENGINE = Memory
+    </create_query>
+    <create_query>
+        CREATE TABLE bitmap_contains_sorted_keys
+        (
+            key UInt32
+        )
+        ENGINE = Memory
+    </create_query>
 
     <fill_query>
         INSERT INTO bitmap_contains_32
         SELECT groupBitmapState(toUInt32(number))
         FROM numbers(1000000)
     </fill_query>
+    <fill_query>
+        INSERT INTO bitmap_contains_32_sparse
+        SELECT 'tiny', groupBitmapState(toUInt32(cityHash64(number))) FROM numbers(1000)
+        UNION ALL
+        SELECT 'sparse', groupBitmapState(toUInt32(cityHash64(number))) FROM numbers(100000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO bitmap_contains_random_keys
+        SELECT toUInt32(cityHash64(number + 1000000))
+        FROM numbers(8388608)
+    </fill_query>
+    <fill_query>
+        INSERT INTO bitmap_contains_sorted_keys
+        SELECT toUInt32(number * 4096)
+        FROM numbers(33554432)
+    </fill_query>
 
     <query>
         WITH (SELECT bm FROM bitmap_contains_32) AS bm
         SELECT countIf(bitmapContains(bm, toUInt64(number % 1000000)))
-        FROM numbers(10000000)
+        FROM numbers(150000000)
         FORMAT Null
     </query>
 
     <query>
         WITH (SELECT bm FROM bitmap_contains_32) AS bm
         SELECT countIf(bitmapContains(bm, toUInt64(4294967296 + number % 1000000)))
-        FROM numbers(10000000)
+        FROM numbers(150000000)
+        FORMAT Null
+    </query>
+
+    <!-- Random bitmaps: the container changes on almost every row for random keys. -->
+    <query>
+        WITH (SELECT bm FROM bitmap_contains_32_sparse WHERE name = 'tiny') AS bm
+        SELECT sum(bitmapContains(bm, key)) FROM bitmap_contains_random_keys
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (SELECT bm FROM bitmap_contains_32_sparse WHERE name = 'sparse') AS bm
+        SELECT sum(bitmapContains(bm, key)) FROM bitmap_contains_random_keys
+        FORMAT Null
+    </query>
+
+    <!-- Sorted keys: 16 consecutive rows per container, most containers are absent from the tiny bitmap. -->
+    <query>
+        WITH (SELECT bm FROM bitmap_contains_32_sparse WHERE name = 'tiny') AS bm
+        SELECT sum(bitmapContains(bm, key)) FROM bitmap_contains_sorted_keys
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (SELECT bm FROM bitmap_contains_32_sparse WHERE name = 'sparse') AS bm
+        SELECT sum(bitmapContains(bm, key)) FROM bitmap_contains_sorted_keys
         FORMAT Null
     </query>
 
     <drop_query>
         DROP TABLE bitmap_contains_32
+    </drop_query>
+    <drop_query>
+        DROP TABLE bitmap_contains_32_sparse
+    </drop_query>
+    <drop_query>
+        DROP TABLE bitmap_contains_random_keys
+    </drop_query>
+    <drop_query>
+        DROP TABLE bitmap_contains_sorted_keys
     </drop_query>
 </test>

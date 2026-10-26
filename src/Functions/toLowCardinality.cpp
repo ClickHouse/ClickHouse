@@ -33,12 +33,9 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments[0]->lowCardinality())
-            return arguments[0];
-
-        return std::make_shared<DataTypeLowCardinality>(arguments[0]);
+        return "(T) -> LowCardinality(T)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t /*input_rows_count*/) const override
@@ -54,6 +51,13 @@ public:
         auto column = res_type->createColumn();
         typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
         return column;
+    }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true, .is_strict = true };
     }
 };
 

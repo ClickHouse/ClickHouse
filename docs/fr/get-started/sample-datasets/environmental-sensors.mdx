@@ -13,10 +13,14 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 [Sensor.Community](https://sensor.community/en/) est un réseau mondial de capteurs porté par des contributeurs, qui produit des données environnementales ouvertes. Les données sont collectées par des capteurs partout dans le monde. N’importe qui peut acheter un capteur et l’installer où bon lui semble. Les API permettant de télécharger les données sont disponibles sur [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs), et les données sont librement accessibles sous la licence [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
-  Le jeu de données contient plus de 20 milliards d’enregistrements ; soyez donc prudent avant de simplement copier-coller les commandes ci-dessous, sauf si vos ressources peuvent gérer un tel volume. Les commandes ci-dessous ont été exécutées sur une instance de **production** de [ClickHouse Cloud](https://clickhouse.cloud).
+  Le jeu de données contient plus de 20 milliards d’enregistrements ; soyez donc prudent avant de simplement copier-coller les commandes ci-dessous, sauf si vos ressources peuvent gérer un tel volume. Ces commandes ont été exécutées sur un service [ClickHouse Cloud](/fr/products/cloud/getting-started/intro) correctement dimensionné.
 </Warning>
 
-1. Les données se trouvent dans S3, nous pouvons donc utiliser la fonction de table `s3` pour créer une table à partir des fichiers. Nous pouvons également interroger les données directement. Examinons quelques lignes avant d’essayer de les insérer dans ClickHouse :
+<Tip>
+  Pour tester ces commandes vous-même, vous pouvez vous inscrire à un [essai gratuit de ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors) ou installer [ClickHouse en auto-hébergement](/fr/get-started/setup/install).
+</Tip>
+
+1. Les données se trouvent dans S3, nous pouvons donc utiliser la fonction de table `s3` pour créer une table à partir des fichiers. Nous pouvons également interroger les données directement. Examinons quelques lignes avant d’essayer de les insérer dans ClickHouse :
 
 ```sql
 SELECT *
@@ -28,7 +32,7 @@ LIMIT 10
 SETTINGS format_csv_delimiter = ';';
 ```
 
-Les données se trouvent dans des fichiers CSV, mais le délimiteur est un point-virgule. Les lignes se présentent ainsi :
+Les données se trouvent dans des fichiers CSV, mais le délimiteur est un point-virgule. Les lignes se présentent ainsi :
 
 ```response
 ┌─sensor_id─┬─sensor_type─┬─location─┬────lat─┬────lon─┬─timestamp───────────┬──pressure─┬─altitude─┬─pressure_sealevel─┬─temperature─┐
@@ -74,7 +78,7 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. Les services ClickHouse Cloud disposent d’un cluster nommé `default`. Nous utiliserons la table function `s3Cluster`, qui lit les fichiers S3 en parallèle à partir des nœuds de votre cluster. (Si vous n&#39;avez pas de cluster, utilisez simplement la fonction `s3` et supprimez le nom du cluster.)
+3. Nous utiliserons la fonction de table [`s3Cluster`](/fr/reference/functions/table-functions/s3Cluster), qui répartit les fichiers S3 entre les nœuds de votre cluster afin qu’ils soient lus en parallèle. Dans ClickHouse Cloud, votre cluster s’appelle `default` et vous pouvez exécuter cette requête telle quelle. Sur un serveur autogéré, remplacez `default` par le nom de votre cluster — ou, si vous n’utilisez qu’un seul serveur, utilisez plutôt la fonction de table [`s3`](/fr/reference/functions/table-functions/s3) en supprimant le premier argument, de sorte que l’appel commence par l’URL.
 
 Cette requête prendra un certain temps — elle représente environ 1,67 To de données non compressées :
 
@@ -120,7 +124,7 @@ Voici la réponse — indiquant le nombre de lignes et la vitesse de traitement.
 0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)
 ```
 
-4. Voyons quel espace de stockage sur disque est nécessaire pour la table `sensors` :
+4. Voyons quel espace de stockage sur disque est nécessaire pour la table `sensors` :
 
 ```sql
 SELECT
@@ -145,7 +149,7 @@ Les 1,67 To sont compressés à 310 Gio, et il y a 20,69 milliards de lignes :
 └───────────┴────────────┴──────────────┴────────────┴─────────────┴────────────┘
 ```
 
-5. Analysons les données maintenant qu&#39;elles sont stockées dans ClickHouse. Notez que le volume de données augmente au fil du temps, à mesure que davantage de capteurs sont mis en service :
+5. Analysons les données maintenant qu&#39;elles sont stockées dans ClickHouse. Notez que le volume de données augmente au fil du temps, à mesure que davantage de capteurs sont mis en service :
 
 ```sql
 SELECT
@@ -160,7 +164,7 @@ Nous pouvons créer un graphique dans la console SQL pour visualiser les résult
 
 <Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Nombre d’événements par jour" />
 
-6. Cette requête compte le nombre de jours très chauds et humides :
+6. Cette requête compte le nombre de jours très chauds et humides :
 
 ```sql
 WITH
@@ -173,4 +177,4 @@ ORDER BY day ASC;
 
 Voici une visualisation du résultat :
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Journées chaudes et humides" />
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Jours chauds et humides" />

@@ -15,9 +15,7 @@ doc_type: 'reference'
   在 `clickhouse-go` v2.35.0 及更高版本中新增的选项，会在其说明旁标注 *(自 vX.Y.Z 起)*。没有 “Since” 标记的选项自 v2.0 起即已可用，并包含在所有受支持的版本中。
 </Info>
 
-<div id="how-options-are-set">
-  ## 选项的设置方式
-</div>
+## 选项的设置方式 {#how-options-are-set}
 
 选项可在三个作用范围内设置：
 
@@ -70,13 +68,9 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ***
 
-<div id="connection-options">
-  ## 连接选项
-</div>
+## 连接选项 {#connection-options}
 
-<div id="protocol-and-connection">
-  ### 协议和连接
-</div>
+### 协议和连接 {#protocol-and-connection}
 
 | 选项                 | 类型                         | 默认值                                                       | DSN 参数                                                           | 描述                                                                                | 最佳实践                                                                                                                                                                                    | 配置错误时                                                                                       |
 | ------------------ | -------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -86,9 +80,7 @@ rows, err := conn.Query(ctx, "SELECT ...")
 
 ***
 
-<div id="authentication">
-  ### 身份验证
-</div>
+### 身份验证 {#authentication}
 
 | 选项              | 类型                          | 默认值                | DSN 参数                         | 说明                                                                                           | 最佳实践                                            | 配置错误时                                                                              |
 | --------------- | --------------------------- | ------------------ | ------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -105,9 +97,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="timeouts">
-  ### 超时
-</div>
+### 超时 {#timeouts}
 
 | 选项            | 类型              | 默认值         | DSN 参数         | 说明                                                       | 最佳实践                                                                                | 配置不当时                                                                                               |
 | ------------- | --------------- | ----------- | -------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -122,9 +112,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="connection-pool">
-  ### 连接池
-</div>
+### 连接池 {#connection-pool}
 
 | 选项                | 类型              | 默认值                         | DSN 参数              | API              | 说明                                                                           | 最佳实践                                                                                                         | 配置不当时                                                                                                                             |
 | ----------------- | --------------- | --------------------------- | ------------------- | ---------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -148,9 +136,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="sql-db-settings">
-  ### 标准 database/sql 连接池设置
-</div>
+### 标准 database/sql 连接池设置 {#sql-db-settings}
 
 使用 `clickhouse.OpenDB()` 或 `sql.Open("clickhouse", dsn)` 时，返回的 `*sql.DB` 支持 Go 的标准连接池方法。`OpenDB()` 会自动应用 `Options` 中的前三项：
 
@@ -169,9 +155,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="compression">
-  ### 压缩
-</div>
+### 压缩 {#compression}
 
 | 选项                     | 类型                         | 默认值                 | DSN 参数                                                                         | 描述                                                         | 最佳实践                                                                                                  | 配置不当时                                                                              |
 | ---------------------- | -------------------------- | ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -192,9 +176,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="tls">
-  ### TLS
-</div>
+### TLS {#tls}
 
 | 选项    | 类型            | 默认值         | DSN 参数                            | 描述                                                             | 最佳实践                                                                                                | 配置错误时                                                                                                                                                                                                                                                                              |
 | ----- | ------------- | ----------- | --------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -204,9 +186,7 @@ GetJWT: func(ctx context.Context) (string, error) {
 
 ***
 
-<div id="logging">
-  ### 日志
-</div>
+### 日志 {#logging}
 
 | 选项                    | 类型                     | 默认值            | DSN 参数  | 描述                                                                                                    | 最佳实践                                                       | 配置错误时                                  |
 | --------------------- | ---------------------- | -------------- | ------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------- |
@@ -226,9 +206,7 @@ conn, err := clickhouse.Open(&clickhouse.Options{
 
 ***
 
-<div id="buffers-and-memory">
-  ### 缓冲区与内存
-</div>
+### 缓冲区与内存 {#buffers-and-memory}
 
 | 选项                     | Type    | 默认值     | DSN 参数              | 按查询                       | 说明                        | 最佳实践                                               | 配置不当时                                                                    |
 | ---------------------- | ------- | ------- | ------------------- | ------------------------- | ------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -237,9 +215,7 @@ conn, err := clickhouse.Open(&clickhouse.Options{
 
 ***
 
-<div id="http-specific">
-  ### HTTP 专用
-</div>
+### HTTP 专用 {#http-specific}
 
 <Warning>
   **在 Native 协议下会被静默忽略**
@@ -274,9 +250,7 @@ TransportFunc: func(t *http.Transport) (http.RoundTripper, error) {
 
 ***
 
-<div id="advanced-connection">
-  ### 高级连接
-</div>
+### 高级连接 {#advanced-connection}
 
 | 选项             | 类型                                                     | 默认值                   | DSN 参数 | 描述                                    | 最佳实践                                               | 配置不当时                                                               |
 | -------------- | ------------------------------------------------------ | --------------------- | ------ | ------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
@@ -285,9 +259,7 @@ TransportFunc: func(t *http.Transport) (http.RoundTripper, error) {
 
 ***
 
-<div id="client-information">
-  ### 客户端信息
-</div>
+### 客户端信息 {#client-information}
 
 | Option       | Type                | Default                          | DSN param                       | Per-query                | Description                                                                                                          | Best practice                                                                                  | When misconfigured          |
 | ------------ | ------------------- | -------------------------------- | ------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------- |
@@ -304,9 +276,7 @@ ClientInfo: clickhouse.ClientInfo{
 
 ***
 
-<div id="server-settings">
-  ### ClickHouse 服务器设置
-</div>
+### ClickHouse 服务器设置 {#server-settings}
 
 | 选项              | 类型                            | 默认值   | DSN 参数                                  | 是否支持按查询设置                           | 说明                                                                                     | 最佳实践                           | 配置错误时                                                                                                              |
 | --------------- | ----------------------------- | ----- | --------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -331,9 +301,7 @@ Settings: clickhouse.Settings{
 
 ***
 
-<div id="context-options">
-  ## Context 级别查询选项
-</div>
+## Context 级别查询选项 {#context-options}
 
 使用 `clickhouse.Context()` 为每个查询单独设置：
 
@@ -350,25 +318,25 @@ ctx := clickhouse.Context(context.Background(),
   如果 Context 的截止时间 &gt; 1 秒，`max_execution_time` 会自动设为 `seconds_remaining + 5`。这会覆盖任何手动设置的值。
 </Info>
 
-| 选项                        | 类型                         | 默认值                 | 协议           | 描述                                                                                                                                     | 最佳实践                                                                                 | 配置不当时                                                                                                                       |
-| ------------------------- | -------------------------- | ------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `WithQueryID`             | `string`                   | 自动生成                | 两者均支持        | 自定义查询 ID。可在 `system.query_log` 和 `system.processes` 中看到。                                                                               | 使用 UUID。便于执行 `KILL QUERY WHERE query_id='...'`。                                      | 重复的 ID：会导致 `system.query_log` 中出现混淆。                                                                                        |
-| `WithQuotaKey`            | `string`                   | `""`                | 两者均支持        | 用于多租户资源限制的 QUOTA 键。需要服务器端 QUOTA 配置。                                                                                                    | 用于按客户或按用户设置限制。                                                                       | 未配置 Quota：会被静默忽略。                                                                                                           |
-| `WithJWT`                 | `string`                   | `""`                | 仅支持 HTTPS    | ClickHouse Cloud 的单次查询 JWT 覆盖设置。*(自 v2.35.0 起)*                                                                                        | 适用于多租户代理中的单请求认证。                                                                     | 未启用 TLS：将被忽略，并回退到连接认证。已过期：`"Token has expired"`。                                                                            |
-| `WithSettings`            | `Settings`                 | 继承连接设置              | 两者皆可         | 按查询设置的服务器级配置。会与 connection 级 Settings 合并；发生冲突时，以上下文为准。                                                                                 | 按查询类型覆盖 `max_execution_time` 或 `max_rows_to_read`。                                   | 与连接级 `Settings` 相同。                                                                                                         |
-| `WithParameters`          | `参数` (`map[string]string`) | `nil`               | 两者皆可         | 服务器端参数化查询的参数值。查询语法：`{param_name:Type}`。                                                                                                | 为防止 SQL 注入，请使用此方式，而不要进行字符串拼接。                                                        | 参数缺失：`"Substitution {param_name:Type} isn't set"`。类型不匹配：`"Cannot parse string 'abc' as UInt64"`。                            |
-| `WithAsync`               | `bool` (wait)              | 同步                  | 两者           | 异步 insert 模式。设置 `async_insert=1`。`wait=true` 时还会设置 `wait_for_async_insert=1`。需要 ClickHouse 21.11+。*(自 v2.41.0 起；取代旧版 `WithStdAsync`。)* | 用于高吞吐量插入。                                                                            | `wait=false`：错误可能会异步出现——请检查 `system.asynchronous_insert_log`。与 SELECT 一起使用时：会被忽略。旧 server：`"Unknown setting async_insert"`。 |
-| `WithLogs`                | `func(*Log)`               | `nil`               | 仅支持 Native   | 查询执行期间的服务器日志条目回调。                                                                                                                      | 保持轻量快速——否则会阻塞执行。耗时较重的处理请使用 goroutine。                                                | 在 HTTP 上：不会被调用，且不会有任何提示。                                                                                                    |
-| `WithProgress`            | `func(*Progress)`          | `nil`               | 仅限原生协议       | 查询进度更新 (已处理的行数/字节数) 。                                                                                                                  | 务必保持处理快速——否则会阻塞执行。                                                                   | 在 HTTP 上：不会被调用，且不会有任何提示。                                                                                                    |
-| `WithProfileInfo`         | `func(*ProfileInfo)`       | `nil`               | 仅适用于 Native  | 查询执行统计信息回调。                                                                                                                            | 务必保持轻量——否则会阻塞执行。                                                                     | 在 HTTP 上：不会被调用，且不会有任何提示。                                                                                                    |
-| `WithProfileEvents`       | `func([]ProfileEvent)`     | `nil`               | 仅适用于 Native  | 性能计数器的回调函数。                                                                                                                            | 务必尽快返回——否则会阻塞执行。                                                                     | 在 HTTP 下：永远不会被调用，且不会有任何提示。                                                                                                  |
-| `WithoutProfileEvents`    | —                          | 发送事件                | 仅原生协议        | 禁用 profile events。适用于 ≥ 25.11 服务器的性能优化。*(自 v2.44.0 起)*                                                                                 | 在不需要 profile events 时使用。                                                             | 在较旧的 server 上：会因设置未知而报错。                                                                                                    |
-| `WithExternalTable`       | `...*ext.Table`            | `nil`               | 两者都支持        | 将临时查找表附加到查询中。数据按每次查询传输。                                                                                                                | 将表控制在 &lt; 10 MB 以内。原生协议比 HTTP (multipart) 更高效。                                      | 大表：每次查询的网络开销都较高。                                                                                                            |
-| `WithUserLocation`        | `*time.Location`           | 服务器时区               | 两者均可         | 覆盖 DateTime 解析所用的时区。                                                                                                                   | 当客户端与服务端时区不一致时，应显式设置。                                                                | 时区错误：DateTime 值会在无提示的情况下偏差数小时，并可能导致数据损坏。                                                                                    |
-| `WithColumnNamesAndTypes` | `[]ColumnNameAndType`      | `nil` (执行 DESCRIBE) | 仅限 HTTP      | 在 HTTP 插入时，通过预先提供列信息，跳过 `DESCRIBE TABLE` 往返请求。 *(自 v2.37.0 起)*                                                                         | 在 schema 已知且稳定时使用。                                                                   | 类型不匹配：`"Cannot convert String to UInt64"`。迁移后发生 schema drift：列信息已过时。                                                        |
-| `WithBlockBufferSize`     | `uint8`                    | connection 级别 (2)   | 两者皆可         | 为单个查询覆盖连接级别的 `BlockBufferSize`。                                                                                                        | 对于特定查询返回的大型结果集，可增大该值。                                                                | —                                                                                                                           |
-| `WithClientInfo`          | `ClientInfo`               | 连接级别                | 两者均支持        | 为单次查询附加额外的客户端信息。不会替换，只会追加。*(自 v2.42.0 起)*                                                                                              | 为每个请求添加上下文 (例如端点名称) 。                                                                | —                                                                                                                           |
-| `WithSpan`                | `trace.SpanContext`        | 为空                  | 仅限 Native 协议 | 用于分布式链路追踪的 OpenTelemetry span 上下文。                                                                                                     | 参阅 [OpenTelemetry](/zh/integrations/language-clients/go/clickhouse-api#open-telemetry)。 | —                                                                                                                           |
+| 选项                        | 类型                                 | 默认值                 | 协议           | 描述                                                                                                                                                       | 最佳实践                                                                                 | 配置不当时                                                                                                                       |
+| ------------------------- | ---------------------------------- | ------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `WithQueryID`             | `string`                           | 自动生成                | 两者均支持        | 自定义查询 ID。可在 `system.query_log` 和 `system.processes` 中看到。                                                                                                 | 使用 UUID。便于执行 `KILL QUERY WHERE query_id='...'`。                                      | 重复的 ID：会导致 `system.query_log` 中出现混淆。                                                                                        |
+| `WithQuotaKey`            | `string`                           | `""`                | 两者均支持        | 用于多租户资源限制的 QUOTA 键。需要服务器端 QUOTA 配置。                                                                                                                      | 用于按客户或按用户设置限制。                                                                       | 未配置 Quota：会被静默忽略。                                                                                                           |
+| `WithJWT`                 | `string`                           | `""`                | 仅支持 HTTPS    | ClickHouse Cloud 的单次查询 JWT 覆盖设置。*(自 v2.35.0 起)*                                                                                                          | 适用于多租户代理中的单请求认证。                                                                     | 未启用 TLS：将被忽略，并回退到连接认证。已过期：`"Token has expired"`。                                                                            |
+| `WithSettings`            | `Settings`                         | 继承连接设置              | 两者皆可         | 按查询设置的服务器级配置。会与 connection 级 Settings 合并；发生冲突时，以上下文为准。                                                                                                   | 按查询类型覆盖 `max_execution_time` 或 `max_rows_to_read`。                                   | 与连接级 `Settings` 相同。                                                                                                         |
+| `WithParameters`          | `Parameters` (`map[string]string`) | `nil`               | 两者皆可         | 服务器端参数化查询的参数值。查询语法：`{param_name:Type}`。参数值使用 ClickHouse 的 [`Escaped` 参数文本格式](/zh/integrations/language-clients/go/clickhouse-api#query-parameter-escaping)。 | 为防止 SQL 注入，请使用此方式，而不要进行字符串拼接。                                                        | 参数缺失：`"Substitution {param_name:Type} isn't set"`。类型不匹配：`"Cannot parse string 'abc' as UInt64"`。                            |
+| `WithAsync`               | `bool` (wait)                      | 同步                  | 两者           | 异步 insert 模式。设置 `async_insert=1`。`wait=true` 时还会设置 `wait_for_async_insert=1`。需要 ClickHouse 21.11+。*(自 v2.41.0 起；取代旧版 `WithStdAsync`。)*                   | 用于高吞吐量插入。                                                                            | `wait=false`：错误可能会异步出现——请检查 `system.asynchronous_insert_log`。与 SELECT 一起使用时：会被忽略。旧 server：`"Unknown setting async_insert"`。 |
+| `WithLogs`                | `func(*Log)`                       | `nil`               | 仅支持 Native   | 查询执行期间的服务器日志条目回调。                                                                                                                                        | 保持轻量快速——否则会阻塞执行。耗时较重的处理请使用 goroutine。                                                | 在 HTTP 上：不会被调用，且不会有任何提示。                                                                                                    |
+| `WithProgress`            | `func(*Progress)`                  | `nil`               | 仅限原生协议       | 查询进度更新 (已处理的行数/字节数) 。                                                                                                                                    | 务必保持处理快速——否则会阻塞执行。                                                                   | 在 HTTP 上：不会被调用，且不会有任何提示。                                                                                                    |
+| `WithProfileInfo`         | `func(*ProfileInfo)`               | `nil`               | 仅适用于 Native  | 查询执行统计信息回调。                                                                                                                                              | 务必保持轻量——否则会阻塞执行。                                                                     | 在 HTTP 上：不会被调用，且不会有任何提示。                                                                                                    |
+| `WithProfileEvents`       | `func([]ProfileEvent)`             | `nil`               | 仅适用于 Native  | 性能计数器的回调函数。                                                                                                                                              | 务必尽快返回——否则会阻塞执行。                                                                     | 在 HTTP 下：永远不会被调用，且不会有任何提示。                                                                                                  |
+| `WithoutProfileEvents`    | —                                  | 发送事件                | 仅原生协议        | 禁用 profile events。适用于 ≥ 25.11 服务器的性能优化。*(自 v2.44.0 起)*                                                                                                   | 在不需要 profile events 时使用。                                                             | 在较旧的 server 上：会因设置未知而报错。                                                                                                    |
+| `WithExternalTable`       | `...*ext.Table`                    | `nil`               | 两者都支持        | 将临时查找表附加到查询中。数据按每次查询传输。                                                                                                                                  | 将表控制在 &lt; 10 MB 以内。原生协议比 HTTP (multipart) 更高效。                                      | 大表：每次查询的网络开销都较高。                                                                                                            |
+| `WithUserLocation`        | `*time.Location`                   | 服务器时区               | 两者均可         | 覆盖 DateTime 解析所用的时区。                                                                                                                                     | 当客户端与服务端时区不一致时，应显式设置。                                                                | 时区错误：DateTime 值会在无提示的情况下偏差数小时，并可能导致数据损坏。                                                                                    |
+| `WithColumnNamesAndTypes` | `[]ColumnNameAndType`              | `nil` (执行 DESCRIBE) | 仅限 HTTP      | 在 HTTP 插入时，通过预先提供列信息，跳过 `DESCRIBE TABLE` 往返请求。 *(自 v2.37.0 起)*                                                                                           | 在 schema 已知且稳定时使用。                                                                   | 类型不匹配：`"Cannot convert String to UInt64"`。迁移后发生 schema drift：列信息已过时。                                                        |
+| `WithBlockBufferSize`     | `uint8`                            | connection 级别 (2)   | 两者皆可         | 为单个查询覆盖连接级别的 `BlockBufferSize`。                                                                                                                          | 对于特定查询返回的大型结果集，可增大该值。                                                                | —                                                                                                                           |
+| `WithClientInfo`          | `ClientInfo`                       | 连接级别                | 两者均支持        | 为单次查询附加额外的客户端信息。不会替换，只会追加。*(自 v2.42.0 起)*                                                                                                                | 为每个请求添加上下文 (例如端点名称) 。                                                                | —                                                                                                                           |
+| `WithSpan`                | `trace.SpanContext`                | 为空                  | 仅限 Native 协议 | 用于分布式链路追踪的 OpenTelemetry span 上下文。                                                                                                                       | 参阅 [OpenTelemetry](/zh/integrations/language-clients/go/clickhouse-api#open-telemetry)。 | —                                                                                                                           |
 
 ```go
 ctx := clickhouse.Context(ctx,
@@ -385,9 +353,7 @@ rows, err := conn.Query(ctx, "SELECT * FROM users WHERE id = {user_id:String}")
 
 ***
 
-<div id="batch-options">
-  ## 批次选项
-</div>
+## 批次选项 {#batch-options}
 
 传递给 `PrepareBatch()`。导入：`github.com/ClickHouse/clickhouse-go/v2/lib/driver`。
 
@@ -405,13 +371,9 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 
 ***
 
-<div id="quick-reference-tables">
-  ## 速查表
-</div>
+## 速查表 {#quick-reference-tables}
 
-<div id="pool-sizing">
-  ### 连接池大小建议
-</div>
+### 连接池大小建议 {#pool-sizing}
 
 | 应用类型           | MaxIdleConns | MaxOpenConns | ConnMaxLifetime |
 | -------------- | ------------ | ------------ | --------------- |
@@ -422,9 +384,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 | Kubernetes 部署  | 10           | 20           | 10m             |
 | 无服务器 (Lambda)  | 1            | 5            | 5m              |
 
-<div id="timeout-recommendations">
-  ### 超时建议
-</div>
+### 超时建议 {#timeout-recommendations}
 
 | 环境         | DialTimeout | ReadTimeout |
 | ---------- | ----------- | ----------- |
@@ -434,9 +394,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 | OLAP 工作负载  | 10s         | 30m         |
 | 实时 / OLTP  | 5s          | 10s         |
 
-<div id="dsn-parameters">
-  ### DSN 参数速查
-</div>
+### DSN 参数速查 {#dsn-parameters}
 
 | DSN 参数                     | Options 字段               | 示例                                      |
 | -------------------------- | ------------------------ | --------------------------------------- |
@@ -463,13 +421,9 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 
 ***
 
-<div id="troubleshooting">
-  ## 故障排查
-</div>
+## 故障排查 {#troubleshooting}
 
-<div id="acquire-conn-timeout">
-  ### 连接池耗尽：&quot;acquire conn timeout&quot;
-</div>
+### 连接池耗尽：&quot;acquire conn timeout&quot; {#acquire-conn-timeout}
 
 **原因：**连接池已耗尽——所有 `MaxOpenConns` 连接都在使用中，且在 `DialTimeout` 期限内没有连接可用。
 
@@ -482,9 +436,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 3. 增加 `MaxOpenConns`，使其与实际观测到的并发度相匹配。
 4. 仅当预期会出现突发流量，且等待获取连接确实是瓶颈时，才增加 `DialTimeout`。
 
-<div id="io-timeout">
-  ### 读取超时和连接重置错误
-</div>
+### 读取超时和连接重置错误 {#io-timeout}
 
 **原因：** 等待服务器响应时超过了 `ReadTimeout`，或者连接被服务器/网络关闭。
 
@@ -494,9 +446,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 * 使用 Context deadline 控制每个查询的超时时间
 * 检查 ClickHouse 服务端的 `max_execution_time` 限制
 
-<div id="auth-failed">
-  ### &quot;Code: 516. 身份验证失败&quot;
-</div>
+### &quot;Code: 516. 身份验证失败&quot; {#auth-failed}
 
 **原因：** 用户名或密码错误，或者用户不存在。
 
@@ -506,9 +456,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 * 检查 DSN 密码中的特殊字符是否存在 URL 编码问题
 * 确认该用户有权访问指定数据库
 
-<div id="tls-errors">
-  ### TLS 证书错误
-</div>
+### TLS 证书错误 {#tls-errors}
 
 | 错误                                              | 原因        | 解决方法                                   |
 | ----------------------------------------------- | --------- | -------------------------------------- |
@@ -517,9 +465,7 @@ batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
 | `x509: certificate signed by unknown authority` | CA 不受信任   | 将 CA 添加到 `tls.Config.RootCAs`          |
 | `connection reset by peer`                      | TLS/端口不匹配 | TLS 请使用 9440 (Native) 或 8443 (HTTP) 端口 |
 
-<div id="memory-growth">
-  ### 内存逐渐增长
-</div>
+### 内存逐渐增长 {#memory-growth}
 
 **原因：** 空闲连接的缓冲区大量积累。
 
