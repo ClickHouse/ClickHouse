@@ -2663,3 +2663,41 @@ ARM64 Clang startup directories, relative to the Bazel execution root: glibc `ba
 ARM64: all five CLI checks and seven HTTP GET checks passed.
 
 The two native unit-test binaries passed `AlterCommentOnly.CommentOnlyModifyColumn`, `TreeHashCompleteness.ColumnDeclarationCloneAndJSONRoundTripHashEqual`, `LiteralTokenMap.GrowsBeyondInlineCapacity`. Both ClickHouse binaries produced the full 4,934-byte reference output for [00436_convert_charset.sql](../../tests/queries/0_stateless/00436_convert_charset.sql).
+
+## 5d0f29e2c
+
+At [5d0f29e2c](https://github.com/dzbarsky/clickhouse/commit/5d0f29e2cac2fc7a284f97a41468c6565c3098ec), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/2b07927bd6b66163d37cba6cf90b372a4defdc29).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/cbf7bde9-ba7a-4bfa-b08a-3620ad799183) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/cbf7bde9-ba7a-4bfa-b08a-3620ad799183) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/cbf7bde9-ba7a-4bfa-b08a-3620ad799183) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c8ffe70b-557a-475f-bfcd-07d9d3f811fd) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/c8ffe70b-557a-475f-bfcd-07d9d3f811fd) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c8ffe70b-557a-475f-bfcd-07d9d3f811fd) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Matches previous Bazel |
+
+[x86-64](https://app.buildbuddy.io/invocation/cbf7bde9-ba7a-4bfa-b08a-3620ad799183): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,788 operands; its response file was `c3f9fbefae3856f97e6f88c648ce153b46c0464aba58fc3de1ee119cbe42e333`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+x86-64 [DWYU](https://app.buildbuddy.io/invocation/4057a87c-c30f-4a94-a1b2-de150ac5f9a4): verified. Of 3 targets offered, 2 were clean, 1 had findings, and 0 were ungraded. Findings: `//src/AggregateFunctions:clickhouse_aggregate_functions__compile_1`. Unresolved inputs: `//src/AggregateFunctions:clickhouse_aggregate_functions__compile_1`.
+
+[ARM64](https://app.buildbuddy.io/invocation/c8ffe70b-557a-475f-bfcd-07d9d3f811fd): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,701 operands; its response file was `04b4d7bdbf78104c6728b33fcde7805f9c4e145d08002bbda999da883802d365`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+ARM64 [DWYU](https://app.buildbuddy.io/invocation/1af3c998-fc3d-465a-9ca4-96fd774bbf7f): partial. Of 3 targets offered, 2 were clean, 0 had findings, and 1 were ungraded. Unresolved inputs: `//src/Functions:clickhouse_functions_obj__compile_1`.
+
+On both CPUs, `ZooKeeperTest.ListRequestWireRoundTrip` passed. The lower- and uppercase `SHOW TABLES FROM information_schema` queries each returned the 20 rows in [01161_information_schema.reference](../../tests/queries/0_stateless/01161_information_schema.reference). Both ClickHouse local invocations from [05316_local_sync_logger_without_channels](../../tests/queries/0_stateless/05316_local_sync_logger_without_channels.sh) passed with `--logger.async=0`; the trace run logged `SELECT 1`.
+
+This build gave `unit_tests_dbms` a direct dependency on the AggregateFunctions headers it includes,
+removed `clickhouse_source_headers` from ten libraries, removed unused DBMS dependencies, and narrowed
+the public include directories of NATS and libmongoc. Both native unit-test binaries passed
+[`CrossTabPhiSquaredWindowData.SerializeDeserializeRoundTrip`](../../src/AggregateFunctions/tests/gtest_crosstab.cpp),
+which serializes a populated cross-tabulation and checks the deserialized result.
+
+After the [preceding build](#2b07927bd) was published, four x86-64 report files recovered from
+its interrupted DWYU invocation verified 15 public headers: `//src/AggregateFunctions:aggregate_api`,
+`//src/Common:exception_api`, `//src:core_types`, and `//src/Loggers:headers` were clean.
+The other 25 x86-64 targets and all 27 ARM64 targets were ungraded. Both preceding DWYU builds timed out.
+
+The glibc provider comparison used focused linked fixtures containing imports from native ClickHouse.
+The LLVM 0.8.26 stubs bound 12 of 519 x86-64 imports and 6 of 521 ARM64 imports, including
+`pthread_self`, to `libpthread.so.0` instead of native CMake’s `libc.so.6`.
