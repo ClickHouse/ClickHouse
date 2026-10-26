@@ -14,7 +14,7 @@ METRIC FAMILIES INNER ENGINE = MergeTree PRIMARY KEY metric_family_name ORDER BY
 
 CREATE TABLE ts_mf_keys_copy AS ts_mf_keys_src ENGINE = TimeSeries;
 
-SELECT engine, primary_key, sorting_key FROM system.tables
+SELECT replaceRegexpOne(engine, '^(Shared|Replicated)', ''), primary_key, sorting_key FROM system.tables
 WHERE database = currentDatabase()
   AND name = '.inner_id.metricfamilies.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_mf_keys_copy');
 
