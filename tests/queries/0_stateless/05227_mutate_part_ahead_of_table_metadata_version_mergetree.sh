@@ -35,8 +35,10 @@ printf '1' > "${DETACHED_VERSION_FILE}"
 
 local_query "ALTER TABLE t_part_ahead ATTACH PARTITION 1"
 
+PART_NAME=$(local_query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_part_ahead' AND active")
+
 echo -n 'the part metadata version: '
-cat "$(find "${WORKING_DIR}" -name metadata_version.txt -not -path '*/detached/*')"
+cat "$(find "${WORKING_DIR}" -path "*/${PART_NAME}/metadata_version.txt" -not -path '*/detached/*')"
 echo
 echo -n 'the table metadata version: '
 local_query "SELECT metadata_version FROM system.tables WHERE database = currentDatabase() AND name = 't_part_ahead'"
