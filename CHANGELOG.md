@@ -24,6 +24,64 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release c7b68329fdb6544b16c4b41f8a042c56a2979543 (c7b68329fdb) FIXME as compared to 8e3eb7adf197a5e7890b02ced66d6febe68b0493 (8e3eb7adf19)
+
+#### New Feature
+* `GDeflate` compression codec on the CPU. ~SOTA codec for GPU decompression - highly important for our future pipeline https://docs.nvidia.com/cuda/nvcomp/gdeflate.html. [#127422](https://github.com/ClickHouse/ClickHouse/pull/127422) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+
+#### Experimental Feature
+* The experimental Cascades optimizer can run `DISTINCT` on several nodes of a distributed query plan: the preliminary `DISTINCT` deduplicates on every node before rows are gathered, and the final one runs on every node when its input is already split by the `DISTINCT` columns. [#126353](https://github.com/ClickHouse/ClickHouse/pull/126353) ([Alexander Gololobov](https://github.com/davenger)).
+* The columns cache (`use_columns_cache`) now applies to compact parts of `MergeTree` tables, not only to wide parts. [#127287](https://github.com/ClickHouse/ClickHouse/pull/127287) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Performance Improvement
+* Iceberg manifest files are now read ahead on the IO thread pool, up to 64 at a time, and parsed by the threads that read the table, so a query over a table with many manifests on object storage overlaps more round trips (3.2x faster on 200 manifests with 400 ms per read). The thread pool for decoding manifests is removed, and the settings `iceberg_manifest_decode_concurrency` (and its old name `iceberg_delete_manifest_decode_concurrency`), `iceberg_file_entries_queue_size`, `max_iceberg_manifest_decode_thread_pool_size`, `max_iceberg_manifest_decode_thread_pool_free_size` and `iceberg_manifest_decode_thread_pool_queue_size` are obsolete and have no effect. [#127100](https://github.com/ClickHouse/ClickHouse/pull/127100) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* Make `INSERT` and background merges fit into the memory of a small server. On a machine with a couple of GiB of RAM, `INSERT ... SELECT` into a table with many columns used to fail with `MEMORY_LIMIT_EXCEEDED` because the write buffers, the squashing stage and the Parquet reader were sized for large servers; and merges of very wide tables such as `system.metric_log` used to fail and never make progress, leaving the table to accumulate parts forever. All of these now scale with `max_server_memory_usage`. New `MergeTree` settings `max_memory_ratio_to_activate_adaptive_write_buffer` and `merge_memory_estimate_per_source_part_column` control the last two; set either to `0` for the previous behavior. [#116083](https://github.com/ClickHouse/ClickHouse/pull/116083) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `CAST` from `Variant` and `Dynamic` now fails only if the column has values of a type that cannot be converted to the target type. For example, a `Geometry` column holding only `MultiPolygon` values can now be cast to `MultiPolygon`. Closes [#127110](https://github.com/ClickHouse/ClickHouse/issues/127110). [#127142](https://github.com/ClickHouse/ClickHouse/pull/127142) ([Groene AI](https://github.com/groeneai)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix batch object deletion fallback on S3-compatible stores like Minio when FIPS mode restricts the MD5 digest. [#125507](https://github.com/ClickHouse/ClickHouse/pull/125507) ([Craig Ringer](https://github.com/ringerc)).
+* Fixed a `MaterializedPostgreSQL` database that replicates a whole PostgreSQL schema not resuming replication after a server restart if a new table was created in PostgreSQL after the database. [#125962](https://github.com/ClickHouse/ClickHouse/pull/125962) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix wrong results of `arrayReduceInRanges` for a range with a huge length or with a start before the beginning of the array. Such ranges are now clipped to the array, the same as in `arraySlice`. [#126531](https://github.com/ClickHouse/ClickHouse/pull/126531) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fixed the primary key and `minmax` indices skipping matching rows when a `Decimal` column was compared with a float constant under a key expression such as `toFloat64(d)`, for example `WHERE d = toFloat32(1)`, or with the floats of an `IN` subquery. Such a comparison with a `BFloat16` value no longer fails with "Conversion from BFloat16 to Decimal is not implemented". [#126584](https://github.com/ClickHouse/ClickHouse/pull/126584) ([sz-kristof](https://github.com/sz-kristof)).
+* Update `brotli` from v1.2.0 to v1.2.1, fixing an out-of-bounds write in the brotli decoder reachable through brotli-compressed input (HTTP `Content-Encoding: br`, `.br` files, Parquet). [#127419](https://github.com/ClickHouse/ClickHouse/pull/127419) ([Actuele AI](https://github.com/actueleai)).
+* Fix `INSERT INTO <replicated or Distributed table> SELECT ... FROM s3Cluster(...)` (and other object storage cluster table functions, or `s3` converted to `s3Cluster` by parallel replicas) writing the default values of the column types (`0`, empty string, `1970-01-01`) instead of the `DEFAULT` expressions of the destination table for fields missing in the source files. [#127657](https://github.com/ClickHouse/ClickHouse/pull/127657) ([Igor Nikonov](https://github.com/devcrafter)).
+* The `obfuscate` table function and `clickhouse obfuscator` no longer move `DateTime` and `DateTime64` values to the previous date on days when DST starts at midnight, e.g. in `America/Havana`, `Africa/Cairo` and `America/Santiago`. [#127749](https://github.com/ClickHouse/ClickHouse/pull/127749) ([oleg-milanov](https://github.com/oleg-milanov)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Not applicable — test-only change. [#121279](https://github.com/ClickHouse/ClickHouse/pull/121279) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#121299](https://github.com/ClickHouse/ClickHouse/pull/121299) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#121440](https://github.com/ClickHouse/ClickHouse/pull/121440) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#121453](https://github.com/ClickHouse/ClickHouse/pull/121453) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#122307](https://github.com/ClickHouse/ClickHouse/pull/122307) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Parquet top-K: find the best value of each row group without a virtual comparison per row. [#125154](https://github.com/ClickHouse/ClickHouse/pull/125154) ([Groene AI](https://github.com/groeneai)).
+* Follow-up to radix partitioned `uniqExact`: spilling and fixes. [#127252](https://github.com/ClickHouse/ClickHouse/pull/127252) ([Raúl Marín](https://github.com/Algunenano)).
+* Fix flaky integration test `test_merge_tree_s3/test.py::test_s3_disk_apply_new_settings` in the `db disk` flavour. [#127679](https://github.com/ClickHouse/ClickHouse/pull/127679) ([Groene AI](https://github.com/groeneai)).
+* Keep `use_query_condition_cache_for_time_conditions` experimental and disabled on master, as in 26.10. [#127687](https://github.com/ClickHouse/ClickHouse/pull/127687) ([Groene AI](https://github.com/groeneai)).
+* Make the `parallel` case of `05238_workload_memory_spilling_distinct` independent of block scheduling. [#127691](https://github.com/ClickHouse/ClickHouse/pull/127691) ([Groene AI](https://github.com/groeneai)).
+* Query #0 of the `insert_sequential_and_background_merges` performance test no longer slows down with every measured run, because its table now removes the merged parts right away. [#127692](https://github.com/ClickHouse/ClickHouse/pull/127692) ([Groene AI](https://github.com/groeneai)).
+* The `file_table_function` performance test writes to `/dev/null`, so its measured runs no longer depend on the data earlier runs appended to the same file. [#127693](https://github.com/ClickHouse/ClickHouse/pull/127693) ([Groene AI](https://github.com/groeneai)).
+* Make `05355_top_k_dynamic_filter_single_sort_column_ties` non-parallel. [#127694](https://github.com/ClickHouse/ClickHouse/pull/127694) ([Groene AI](https://github.com/groeneai)).
+* The `number_formatting_formats` performance test writes the output of queries #0-#11 to `/dev/null`, so these queries time the formatting instead of the runner's disk. [#127695](https://github.com/ClickHouse/ClickHouse/pull/127695) ([Groene AI](https://github.com/groeneai)).
+* The `polymorphic_parts_s`, `polymorphic_parts_m` and `polymorphic_parts_l` performance tests set `max_insert_threads = 1`, so each `INSERT` writes its parts in one thread, as it did before 26.8. [#127696](https://github.com/ClickHouse/ClickHouse/pull/127696) ([Groene AI](https://github.com/groeneai)).
+* The `aggregation_in_order_if_null_map` performance test runs its queries with `max_threads = 1`, so its timings no longer depend on how the threads of the multi-stream in-order aggregation interleave. [#127697](https://github.com/ClickHouse/ClickHouse/pull/127697) ([Groene AI](https://github.com/groeneai)).
+* Make `05229_parquet_v3_dictionary_filter_after_bloom` and `05325_parquet_v3_dictionary_filter_after_bloom_disjunction` measure the Parquet reader even when the query condition cache would skip the file. [#127698](https://github.com/ClickHouse/ClickHouse/pull/127698) ([Groene AI](https://github.com/groeneai)).
+* The `codecs_int_insert` performance test inserts 5M rows per query instead of 20M, so the whole test writes 4x less data and stays below the write volume after which its runs started to wait for the disk on CI. [#127700](https://github.com/ClickHouse/ClickHouse/pull/127700) ([Groene AI](https://github.com/groeneai)).
+* The forced-spill queries #1, #4 and #7 of the `external_distinct_header_constants` performance test use a 4 MiB `max_bytes_before_external_distinct` instead of 16 MiB, so every run spills the same way and their timings are no longer bimodal. [#127705](https://github.com/ClickHouse/ClickHouse/pull/127705) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test_keeper_https_control_standalone_cluster: wait for a leader and a follower. [#127712](https://github.com/ClickHouse/ClickHouse/pull/127712) ([Groene AI](https://github.com/groeneai)).
+* Fix the flaky integration test `test_scheduler_cached_disk/test.py::test_takeover_after_query_end`. [#127739](https://github.com/ClickHouse/ClickHouse/pull/127739) ([Groene AI](https://github.com/groeneai)).
+* The test `test_azure_blob_storage_plain_rewritable` no longer leaves `__meta/snapshot.bin` behind: the second disk it creates on the location of `node` has `metadata_snapshot_enabled = 0`, and its generated disk config is named per xdist worker. [#127744](https://github.com/ClickHouse/ClickHouse/pull/127744) ([Groene AI](https://github.com/groeneai)).
+* Case 6 of the `04633_async_insert_select_alter_race` test now keeps its tables on the local disk, so a filesystem cache can no longer push its view creation past the lock timeout. [#127751](https://github.com/ClickHouse/ClickHouse/pull/127751) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test `02346_text_index_phrase_search_cursors`. [#127760](https://github.com/ClickHouse/ClickHouse/pull/127760) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky `05045_create_token` when a token deadline falls into the hour repeated at the end of DST. [#127762](https://github.com/ClickHouse/ClickHouse/pull/127762) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky `05315_plain_rewritable_part_removal_without_copies` in the hour repeated at the end of DST. [#127763](https://github.com/ClickHouse/ClickHouse/pull/127763) ([Groene AI](https://github.com/groeneai)).
+* The SQLancer++ check no longer loses a worker thread to a `ConcurrentModificationException` in its own feedback statistics, which made the `FUZZING` oracle fail with no finding. [#127773](https://github.com/ClickHouse/ClickHouse/pull/127773) ([Groene AI](https://github.com/groeneai)).
+* Make test_parking_fires_on_idle_worker actually sleep. [#127780](https://github.com/ClickHouse/ClickHouse/pull/127780) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
