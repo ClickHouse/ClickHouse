@@ -19,7 +19,7 @@ ENGINE = MergeTree ORDER BY id;
 
 -- Omitted granularity gets the vector default; an explicit GRANULARITY is honored.
 SELECT table, granularity FROM system.data_skipping_indices
-WHERE database = currentDatabase() AND table IN ('tab_omitted', 'tab_explicit') ORDER BY table;
+WHERE database = currentDatabase() AND table IN ('tab_omitted', 'tab_explicit') AND name = 'idx' ORDER BY table;
 
 DROP TABLE tab_omitted;
 DROP TABLE tab_explicit;
