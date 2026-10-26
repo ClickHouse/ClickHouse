@@ -94,7 +94,15 @@ private:
     std::mutex reader_mutex;
 
     std::optional<Parquet::ReadManager> reader;
-    bool reported_count = false; // if need_only_count
+    bool need_only_count_prepared = false;
+    size_t need_only_count_next = 0;
+
+    struct NeedOnlyCountRowGroup
+    {
+        size_t row_num_offset = 0;
+        size_t num_rows = 0;
+    };
+    std::vector<NeedOnlyCountRowGroup> need_only_count_row_groups;
 
     /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
     bool min_max_from_statistics = false;
@@ -103,6 +111,7 @@ private:
     size_t previous_approx_bytes_read_for_chunk = 0;
 
     void initializeIfNeeded();
+    void prepareNeedOnlyCountRowGroups(const parquet::format::FileMetaData & file_metadata);
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
     /// nullopt if the metadata cache is not used.

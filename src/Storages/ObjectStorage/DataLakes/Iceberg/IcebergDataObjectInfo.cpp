@@ -89,6 +89,18 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & pa
 {
 }
 
+ObjectInfoPtr IcebergDataObjectInfo::clone() const
+{
+    /// `ObjectIteratorSplitByBuckets` must keep Iceberg delete metadata. Copying through `ObjectInfo` slices it off.
+    auto result = std::make_shared<IcebergDataObjectInfo>(relative_path_with_metadata, info);
+    result->data_lake_metadata = data_lake_metadata;
+    result->file_bucket_info = file_bucket_info;
+    result->file_bucket_info_from_query_condition_cache = file_bucket_info_from_query_condition_cache;
+    result->rows_to_read = rows_to_read;
+    result->archive_entry_index = archive_entry_index;
+    return result;
+}
+
 std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(
     ObjectStoragePtr object_storage,
     const SharedHeader & header,
