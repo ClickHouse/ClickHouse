@@ -300,6 +300,7 @@ namespace Setting
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
+    extern const SettingsBool flatten_nested;
 }
 
 namespace MergeTreeSetting
@@ -5794,14 +5795,14 @@ ColumnOldNames getColumnOldNames(const ColumnsDescription & columns)
     return old_names;
 }
 
-void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & command)
+void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & command, bool flatten_nested)
 {
     if (command.ignore)
         return;
     if (command.type == AlterCommand::ADD_COLUMN)
     {
         old_names.try_emplace(command.column_name, std::nullopt);
-        if (command.data_type)
+        if (command.data_type && flatten_nested)
         {
             ColumnsDescription added;
             added.add(ColumnDescription(command.column_name, command.data_type));
@@ -5823,7 +5824,7 @@ void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & comm
 }
 
 /// The columns of `old_columns` whose data the commands drop or clear.
-NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDescription & old_columns)
+NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDescription & old_columns, bool flatten_nested)
 {
     NameSet dropped_columns;
     auto old_names = getColumnOldNames(old_columns);
@@ -5847,7 +5848,7 @@ NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDe
                     dropped_columns.emplace(nested_column.name);
             }
         }
-        advanceColumnOldNames(old_names, command);
+        advanceColumnOldNames(old_names, command, flatten_nested);
     }
     return dropped_columns;
 }
@@ -5917,6 +5918,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
+    const bool flatten_nested = settings[Setting::flatten_nested];
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
@@ -6202,7 +6204,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             auto old_names = getColumnOldNames(old_metadata.columns);
             for (const auto & command : commands)
-                advanceColumnOldNames(old_names, command);
+                advanceColumnOldNames(old_names, command, flatten_nested);
 
             for (const auto & index : new_metadata.secondary_indices)
             {
@@ -6497,7 +6499,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             columns_in_projections.emplace(col, projection.name);
     }
 
-    const NameSet dropped_columns = getColumnsDroppedByAlter(commands, old_metadata.columns);
+    const NameSet dropped_columns = getColumnsDroppedByAlter(commands, old_metadata.columns, flatten_nested);
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
