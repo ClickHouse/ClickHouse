@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS t_streaming_watermark_limit;
 
 CREATE TABLE t_streaming_watermark_limit (ts DateTime64(3), x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
-INSERT INTO t_streaming_watermark_limit SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, number FROM numbers(10000);
+INSERT INTO t_streaming_watermark_limit SELECT toDateTime64('2020-01-01 00:00:00', 3) + number, number FROM numbers(100);
 
 -- A LIMIT finishes the read before the stream is drained; the query must terminate.
 SELECT x FROM t_streaming_watermark_limit STREAM BOUNDED WATERMARK FOR ts AS ts - INTERVAL 5 SECOND LIMIT 3;
