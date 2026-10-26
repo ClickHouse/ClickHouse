@@ -32,10 +32,10 @@ guide):
 
 3. Homepage links. English and localized homepage anchors must use
    root-relative hrefs without the `/docs` mount, because Mintlify adds the
-   deployment's base path to them when it renders the link. Click handlers
-   navigate to the canonical `/docs` destination. Localized links must also use
-   the page's locale before hydration. This keeps middle-click, copied links,
-   and no-JavaScript clients on the final published destination.
+   deployment's base path to them when it renders the link and handles their
+   clicks client-side. Localized links must also use the page's locale before
+   hydration. This keeps middle-click, copied links, and no-JavaScript clients
+   on the final published destination.
 
 4. Install-page Cloud banner parity. The English and localized install pages
    must render the same recommended Cloud banner, attributed signup link, and
@@ -599,11 +599,10 @@ def check_cloud_setup_link_labels(docs_root: Path) -> list:
 
 
 def check_localized_homepage_links(docs_root: Path) -> list:
-    """Ensure homepage links include the docs mount and locale before hydration."""
+    """Ensure homepage links leave the docs mount to Mintlify and keep the locale."""
     component = re.compile(
         r"export const QuickstartPill = \(\{ children \}\) => \{"
         r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
-        r".*?const href = withDocsBase\(path\);"
         r".*?href=\{path\}",
         re.DOTALL,
     )
@@ -630,43 +629,20 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         r".*?const path = localizeHref\("
         r"['\"]/resources/support-center/knowledge-base/setup-installation/"
         r"set-up-clickhouse-documentation-mcp-server['\"]\);"
-        r".*?const href = withDocsBase\(path\);"
         r".*?href=\{path\}",
         re.DOTALL,
-    )
-    docs_base_helper = (
-        "export const withDocsBase = (href) => {\n"
-        "    if (!href || !href.startsWith('/')) return href;\n"
-        "    const base = typeof window === 'undefined' || "
-        "window.location.pathname.startsWith('/docs') ? '/docs' : '';\n"
-        "    return base + href;\n"
-        "};"
-    )
-    navigation_helper = (
-        "export const navigateTo = (event, href) => {\n"
-        "    if (event.defaultPrevented) return;\n"
-        "    if (event.metaKey || event.ctrlKey || event.shiftKey || "
-        "event.altKey || event.button !== 0) return;\n"
-        "    if (event.currentTarget.getAttribute('href') === href) return;\n"
-        "    event.preventDefault();\n"
-        "    if (window.mintlify?.navigate) window.mintlify.navigate(href);\n"
-        "    else window.location.href = href;\n"
-        "};"
     )
     docs_base_requirements = {
         "const assetBase = typeof window === 'undefined' || "
         "window.location.pathname.startsWith('/docs') ? '/docs' : '';": 3,
-        "const resolvedHref = withDocsBase(href);": 1,
         "href={href}": 2,
         "href={path}": 3,
         "href={link.href}": 1,
-        "onClick={(event) => navigateTo(event, resolvedHref)}": 2,
-        "onClick={(event) => navigateTo(event, "
-        "withDocsBase(link.href))}": 1,
-        "onClick={(event) => navigateTo(event, href)}": 3,
         "const path = localizeHref('/integrations/home');": 1,
-        "const href = withDocsBase(path);": 3,
     }
+    # Mintlify adds the deployment's base path to these anchors and routes
+    # their clicks client-side, so adding `/docs` in the page doubles it.
+    forbidden_markers = ["withDocsBase", "navigateTo"]
     cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
 
@@ -676,21 +652,17 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         source = page.read_text(encoding="utf-8")
         name = page.relative_to(docs_root)
 
-        if source.count(docs_base_helper) != 1:
-            errors.append(
-                f"{name}: withDocsBase must default to the canonical `/docs` "
-                "mount during server-side rendering"
-            )
-        if source.count(navigation_helper) != 1:
-            errors.append(
-                f"{name}: navigateTo must preserve modifier and non-primary "
-                "clicks before overriding same-tab navigation"
-            )
+        for marker in forbidden_markers:
+            if marker in source:
+                errors.append(
+                    f"{name}: homepage links must not add the `/docs` mount "
+                    f"themselves (found {marker!r}); Mintlify adds it"
+                )
         for marker, count in docs_base_requirements.items():
             if source.count(marker) != count:
                 errors.append(
                     f"{name}: expected {count} occurrence(s) of {marker!r} "
-                    "so Mintlify adds `/docs` to rendered homepage anchors exactly once"
+                    "so homepage anchors render root-relative, localized hrefs"
                 )
 
         expected_path = "/get-started/setup/cloud"
@@ -700,14 +672,13 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         if not component_match:
             errors.append(
                 f"{name}: could not find a static QuickstartPill path "
-                "resolved through withDocsBase"
+                "rendered as its own href"
             )
         elif component_match.group("path") != expected_path:
             errors.append(
                 f"{name}: QuickstartPill path is "
                 f"{component_match.group('path')!r}; expected "
-                f"{expected_path!r}, which resolves to "
-                f"{f'/docs{expected_path}'!r} during server rendering"
+                f"{expected_path!r}"
             )
 
     for locale in LOCALES:
