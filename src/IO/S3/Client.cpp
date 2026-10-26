@@ -190,6 +190,19 @@ void Client::RetryStrategy::RequestBookkeeping(
 namespace
 {
 
+/// Reports the final error of a request; individual attempts are logged below the warning level.
+/// 404 inside an expecting scope and 412 for conditional writes are regular outcomes, not errors.
+template <typename Error>
+void logRequestError(const LoggerPtr & log, const Error & error)
+{
+    if (error.GetResponseCode() == Aws::Http::HttpResponseCode::NOT_FOUND && Expect404ResponseScope::is404Expected())
+        return;
+    if (error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
+        return;
+    LOG_ERROR(log, "S3 request failed, HTTP response code: {}, error: {}: {}",
+        error.GetResponseCode(), error.GetExceptionName(), error.GetMessage());
+}
+
 void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_config)
 {
     if (!client_config.retryStrategy)
@@ -425,7 +438,10 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
     /// as a cancellation instead of the stale S3/network outcome.
     auto outcome = headObjectInternal(request);
     if (!outcome.IsSuccess())
+    {
         CurrentThread::checkIfNotCancelled();
+        logRequestError(log, outcome.GetError());
+    }
     return outcome;
 }
 
@@ -737,6 +753,16 @@ template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
+    auto outcome = doRequestImpl(request, std::move(request_fn));
+    if (!outcome.IsSuccess())
+        logRequestError(log, outcome.GetError());
+    return outcome;
+}
+
+template <typename RequestType, typename RequestFn>
+std::invoke_result_t<RequestFn, RequestType &>
+Client::doRequestImpl(RequestType & request, RequestFn request_fn) const
+{
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
@@ -896,7 +922,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
 
-            tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts));
+            LOG_INFO(log, "Network error on S3 request, attempt {} of {}: {}",
+                attempt_no, max_attempts, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
 
             outcome = Aws::Client::AWSError<Aws::Client::CoreErrors>(
                 Aws::Client::CoreErrors::NETWORK_CONNECTION,

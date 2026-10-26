@@ -958,44 +958,6 @@ TEST(IOTestAwsS3Client, HttpResponseCodeToString)
     EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
 }
 
-TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
-{
-    {
-        SCOPED_TRACE("400 with non-empty x-amz-bucket-region");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        response.set("x-amz-bucket-region", "us-west-2");
-        EXPECT_TRUE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("2xx with header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-        response.set("x-amz-bucket-region", "eu-central-1");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(200, response));
-    }
-    {
-        SCOPED_TRACE("400 without header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("400 with empty x-amz-bucket-region");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        response.set("x-amz-bucket-region", "");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("404 with header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        response.set("x-amz-bucket-region", "ap-south-1");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(404, response));
-    }
-}
-
 namespace DB::ErrorCodes
 {
     extern const int S3_OBJECT_CHANGED_DURING_READ;

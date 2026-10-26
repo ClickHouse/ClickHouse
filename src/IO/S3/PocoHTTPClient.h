@@ -37,16 +37,8 @@ namespace DB
 class Context;
 }
 
-namespace Poco::Net
-{
-class HTTPMessage;
-}
-
 namespace DB::S3
 {
-
-/// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
-bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);
 
 /// Renders an HTTP response code for logs and error messages.
 /// The AWS SDK reports `REQUEST_NOT_MADE` (-1) when no response has been received at all, e.g. after a network error.
