@@ -27,6 +27,11 @@ public:
 
     bool hasStarted() const;
     bool hasFinished() const;
+    /// Whether the client waits for the user to type a query, i.e. no query is being processed.
+    bool isWaitingForQueryInput() const { return waiting_for_query_input.load(); }
+    /// How many times the client has started waiting for a query, i.e. returned to the prompt.
+    /// Unlike `isWaitingForQueryInput`, it allows noticing queries that finish between two checks.
+    UInt64 getPromptsCount() const { return prompts_count.load(); }
     int getExitCode() const;
     IClientDescriptorSet::DescriptorSet getDescriptorsForServer();
     void closeStdIn() const;
@@ -42,6 +47,8 @@ private:
     std::unique_ptr<IClientDescriptorSet> client_descriptors;
     std::atomic_flag started = ATOMIC_FLAG_INIT;
     std::atomic_flag finished = ATOMIC_FLAG_INIT;
+    std::atomic_bool waiting_for_query_input = false;
+    std::atomic<UInt64> prompts_count = 0;
 
     ThreadFromGlobalPool client_thread;
     std::unique_ptr<Session> db_session;

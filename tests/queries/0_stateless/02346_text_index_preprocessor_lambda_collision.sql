@@ -24,8 +24,8 @@ SELECT count() FROM tab WHERE hasAnyTokens(a, ['foo']) AND hasAnyTokens(b, ['BAR
 SELECT count() FROM tab WHERE hasAnyTokens(a, ['foo']) AND hasAnyTokens(b, ['BAR']) SETTINGS query_plan_direct_read_from_text_index = 0;
 
 SELECT 'preprocessor next to a query lambda';
-SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab SETTINGS enable_analyzer = 0;
-SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab SETTINGS enable_analyzer = 1;
+SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab;
+SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab;
 
 DROP TABLE tab;
 
@@ -42,8 +42,8 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab VALUES (1, ['X y'], ['x Y']), (2, ['z'], ['z']);
 
 SELECT 'string needles and a query lambda in one SELECT list';
-SELECT id, hasAnyTokens(a, 'x'), hasAnyTokens(b, 'X'), arrayMap(x -> x, a) FROM tab ORDER BY id SETTINGS enable_analyzer = 0;
-SELECT id, hasAnyTokens(a, 'x'), hasAnyTokens(b, 'X'), arrayMap(x -> x, a) FROM tab ORDER BY id SETTINGS enable_analyzer = 1;
+SELECT id, hasAnyTokens(a, 'x'), hasAnyTokens(b, 'X'), arrayMap(x -> x, a) FROM tab ORDER BY id;
+SELECT id, hasAnyTokens(a, 'x'), hasAnyTokens(b, 'X'), arrayMap(x -> x, a) FROM tab ORDER BY id;
 
 DROP TABLE tab;
 
@@ -58,7 +58,7 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab VALUES (1, ['Foo']), (2, ['foo']);
 
 SELECT 'postprocessor next to a query lambda';
-SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab SETTINGS enable_analyzer = 0;
-SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab SETTINGS enable_analyzer = 1;
+SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab;
+SELECT countIf(hasAnyTokens(a, ['foo'])), any(arrayMap(x -> upper(x), a)) FROM tab;
 
 DROP TABLE tab;
