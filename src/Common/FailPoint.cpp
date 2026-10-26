@@ -187,6 +187,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(rmt_restore_replica_pause_before_metadata_version_raise) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(smt_mutation_prune_pause_before_block_allocation) \
@@ -338,6 +339,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(packed_part_freeze_pause_before_copy) \
     PAUSEABLE(text_index_pause_before_write_temporary_segment) \
+    PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
@@ -369,6 +371,7 @@ static struct InitFiu
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
+    ONCE(merge_tree_load_part_io_error) \
     REGULAR(restore_part_inject_no_space_error) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
@@ -432,6 +435,7 @@ static struct InitFiu
     REGULAR(tx_log_abort_cleanup_multi) \
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
+    PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
@@ -463,8 +467,8 @@ static struct InitFiu
     ONCE(distributed_plan_task_fail_before_start) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
-    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_zookeeper_connection_attempt_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_connection_attempt_pause) \
     PAUSEABLE_ONCE(wasm_module_manager_pause_after_compile) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \

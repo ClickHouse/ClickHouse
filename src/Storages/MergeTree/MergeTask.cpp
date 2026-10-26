@@ -20,6 +20,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
@@ -1447,7 +1448,26 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
     if (hasLightweightDelete(global_ctx.future_part))
         return false;
 
-    return global_ctx.metadata_snapshot->hasRowsTTL() || global_ctx.metadata_snapshot->hasAnyRowsWhereTTL();
+    const auto & metadata = *global_ctx.metadata_snapshot;
+    if (!metadata.hasRowsTTL() && !metadata.hasAnyRowsWhereTTL())
+        return false;
+
+    /// `TTLDeleteFilterTransform` evaluates the rows TTLs before the merge, but only `TTLTransform`,
+    /// after the merge, fills the columns that no source part stores.
+    const auto & expired_columns = global_ctx.new_data_part->expired_columns;
+    auto is_missing = [&](const NameAndTypePair & column)
+    {
+        return Nested::tryGetColumnNameInStorage(column.name, expired_columns).has_value();
+    };
+    auto reads_missing_column = [&](const TTLDescription & ttl)
+    {
+        return std::ranges::any_of(ttl.expression_columns, is_missing) || std::ranges::any_of(ttl.where_expression_columns, is_missing);
+    };
+
+    if (metadata.hasRowsTTL() && reads_missing_column(metadata.getRowsTTL()))
+        return false;
+
+    return std::ranges::none_of(metadata.getRowsWhereTTLs(), reads_missing_column);
 }
 
 bool MergeTask::isVerticalTTLDelete(
@@ -1647,6 +1667,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     const auto & settings = global_ctx->context->getSettingsRef();
 
+    /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
+    /// merge is background work running next to the queries the server is there for, so bound them by the
+    /// memory limit exactly like the insert path does. Without this, a merge of a table with projections
+    /// keeps multi-hundred-MiB buffers alive on a small server even after the source-part fan-in has been
+    /// narrowed, which would leave the "merges fit into a small server's memory" contract unmet.
+    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
+    const size_t num_simultaneous_squashes = global_ctx->projections_to_rebuild.size() + 1;
+    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
+        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
+
     if (!global_ctx->projections_to_rebuild.empty())
     {
         /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
@@ -1655,7 +1685,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         ctx->pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+            min_block_size_bytes);
 
         /// Collect the union of columns required by all projections. Only these columns
         /// (plus `_row_exists` when present in the source block) are pushed into the
@@ -1670,7 +1700,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     {
         /// Post-calculate squash: accumulates calculated projection blocks before writing.
         ctx->projection_squashes.emplace_back(std::make_shared<const Block>(projection->sample_block.cloneEmpty()),
-            settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+            settings[Setting::min_insert_block_size_rows], min_block_size_bytes);
     }
 }
 

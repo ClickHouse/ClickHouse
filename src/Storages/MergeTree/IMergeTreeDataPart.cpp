@@ -1130,8 +1130,7 @@ bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
 {
     /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
     /// keyed by the UUID of the table and the name of the part, see `getColumnsCachePartName`.
-    return getType() == MergeTreeDataPartType::Wide
-        && canUseColumnsCacheForPart(storage.getStorageID().uuid);
+    return canUseColumnsCacheForPart(storage.getStorageID().uuid);
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1756,8 +1755,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
-        if (!isRetryableException(std::current_exception()))
+        /// Don't scare people with broken part error if it's retryable or an I/O error.
+        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception()))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
@@ -3791,9 +3790,18 @@ ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) c
         return *size;
 
     /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSize(subcolumn_name);
+    auto size = calculateSubcolumnSizes(NamesAndTypesList{getColumn(subcolumn_name)}).front();
     subcolumns_sizes_cache.add(subcolumn_name, size);
     return size;
+}
+
+std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndTypesList & subcolumns) const
+{
+    auto sizes = calculateSubcolumnSizes(subcolumns);
+    size_t i = 0;
+    for (const auto & subcolumn : subcolumns)
+        subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    return sizes;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
