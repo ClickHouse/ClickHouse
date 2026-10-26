@@ -194,7 +194,6 @@ ch_cc_library(
         "//src:core_types",
         "//src:headers",
         "//src/Common",
-        "//src/Parsers:headers",
         "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common:exception_api",

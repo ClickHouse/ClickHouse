@@ -104,6 +104,7 @@ DEPENDENCIES = {
     ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt', '@clickhouse_boost//:_boost_context'], [], []),
     ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Columns/benchmarks', 'column_insert_many_from_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
+    ('src/Common/ZooKeeper', 'headers'): (['//src/Parsers:headers'], [], []),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_base'): (['@clickhouse_replxx//:_replxx'], [], []),
     ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc', '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
     ('src/Common/benchmarks', 'profile_events_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
@@ -147,7 +148,7 @@ DEPENDENCIES = {
         '//src/Common:assert_cast', '//src:with_context', '//src/Common', '//src:column_types',
     ], [], []),
     ('src/Functions/array', 'clickhouse_functions_array__compile_0'): ([], ['//src:dbms__compile_0'], []),
-    ('src/Storages/System', 'headers'): (['//bazel:clickhouse_config_headers'], [], []),
+    ('src/Storages/System', 'headers'): (['//bazel:clickhouse_config_headers', '//src:with_context'], [], []),
     ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
         [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),

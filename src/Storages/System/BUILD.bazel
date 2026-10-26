@@ -505,6 +505,5 @@ cc_library(
         "//base:common",
         "//src/Common",
         "//src:column_types",
-        "//src:with_context",
     ],
 )
