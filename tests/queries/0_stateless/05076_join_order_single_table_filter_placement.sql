@@ -33,8 +33,6 @@ INSERT INTO t2 VALUES (0, 'Join_2_Value_0'), (1, 'Join_2_Value_1'), (3, 'Join_2_
 INSERT INTO t3 VALUES (0, 'Join_3_Value_0'), (1, 'Join_3_Value_1'), (4, 'Join_3_Value_4');
 INSERT INTO t4 VALUES (0, 'Join_4_Value_0'), (1, 'Join_4_Value_1'), (5, 'Join_4_Value_5');
 
-SET enable_analyzer = 1;
-
 -- Filter on a relation that is introduced last, against an already-joined subplan (relation id >= 2).
 SELECT 'filter deep relation greedy:';
 SELECT t2.id, t2.value, t3.id, t3.value, t1.id, t1.value

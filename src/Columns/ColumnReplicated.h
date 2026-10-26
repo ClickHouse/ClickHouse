@@ -75,6 +75,7 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
