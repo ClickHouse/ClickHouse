@@ -5,8 +5,6 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -77,14 +75,11 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExecuteAsQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementExecuteAs(StatementFactory & factory)
-{
-    factory.registerStatement("EXECUTE AS",
+    documentation["EXECUTE AS"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -128,7 +123,9 @@ EXECUTE AS target_user
 EXECUTE AS target_user subquery
 )",
         .related = {"GRANT", "CREATE USER", "SET ROLE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

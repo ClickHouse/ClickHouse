@@ -694,7 +694,7 @@ def test_failed_load_from_snapshot(started_cluster):
     # Create a table with wrong table structure
     assert "Could not convert string to i" in instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (a Int32, b Int32) ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY a
         """
     )
@@ -879,7 +879,7 @@ def test_dependent_loading(started_cluster):
 
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -1201,7 +1201,7 @@ def test_single_table_engine_with_non_default_schema(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1280,7 +1280,7 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     instance.query("DROP TABLE IF EXISTS ct_cs2 SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE ct_cs1 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1289,7 +1289,7 @@ def test_two_schemas_same_table_name_single_storage(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE ct_cs2 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1463,7 +1463,7 @@ def test_default_schema_preserves_legacy_identity(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1584,7 +1584,7 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
     table = "test_date_types_table_engine"
     error = instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, d Date)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -1788,7 +1788,7 @@ def test_backup_table_engine(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -1811,7 +1811,7 @@ def test_backup_table_engine(started_cluster):
     instance.query(f"DROP TABLE {table} SYNC")
     error = instance.query_and_get_error(
         f"RESTORE TABLE {table} FROM {backup_name}",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "from a backup is not supported" in error, error
     assert "MaterializedPostgreSQL" in error, error
@@ -1947,7 +1947,7 @@ def test_backup_table_engine_partitions(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -2506,7 +2506,7 @@ def test_uppercase_table_name_single_storage(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS `{table}` SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE `{table}` (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
         """
@@ -2561,7 +2561,7 @@ def test_publication_name_case_collision_single_storage(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS `{name}` SYNC")
         instance.query(
             f"""
-            SET allow_experimental_materialized_postgresql_table=1;
+            SET enable_materialized_postgresql_table=1;
             CREATE TABLE `{name}` (key Int32, value Int32)
             ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{name}', 'postgres', '{pg_pass}')
             ORDER BY key
@@ -2632,7 +2632,7 @@ def test_schema_aware_identity_publication_separator_collision(started_cluster):
     instance.query("DROP TABLE IF EXISTS sep_c2 SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE sep_c1 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'c', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2641,7 +2641,7 @@ def test_schema_aware_identity_publication_separator_collision(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE sep_c2 (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 'b_c', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2711,7 +2711,7 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     instance.query("DROP TABLE IF EXISTS hyp_underscore SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE hyp_dash (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2720,7 +2720,7 @@ def test_schema_aware_identity_slot_hyphen_distinct(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE hyp_underscore (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', 't', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2771,7 +2771,7 @@ def test_schema_aware_identity_long_database_name(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', '{long_pg_db}', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -2837,7 +2837,7 @@ def test_legacy_identity_adopted_on_attach_table_engine(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -3277,7 +3277,7 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, value Int32)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -3350,6 +3350,198 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     )
     if cursor.fetchall():
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+
+
+def test_whole_schema_database_restart_after_new_postgresql_table(started_cluster):
+    # A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
+    # `ATTACH TABLE`, so it has no nested table. On restart, the whole-schema database used to take
+    # the list of tables to replicate from the live PostgreSQL schema, failed on the missing nested
+    # table of the new one on every attempt, and never resumed replication of the other tables.
+    NUM_TABLES = 2
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Not in the publication: created in PostgreSQL after the database.
+    new_table = "postgresql_replica_created_later"
+    # In the publication, but without a nested table, as for a table whose initial snapshot has failed.
+    published_table = "postgresql_replica_published_later"
+    for table in (new_table, published_table):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+    # The same, but with a name that contains a comma and a trailing space: it must be remembered exactly.
+    # It sorts after `published_table`, so the backup errors below report `published_table` first.
+    comma_table = "postgresql_replica_z,pending "
+    pg_manager.create_postgres_table(comma_table)
+
+    instance.stop_clickhouse()
+    pg_manager.execute(
+        f"ALTER PUBLICATION postgres_database_ch_publication ADD TABLE {published_table}, \"{comma_table}\""
+    )
+    instance.start_clickhouse()
+
+    for i in range(NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number FROM numbers(10, 10)"
+        )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.tables WHERE database = 'test_database' AND name IN ('{new_table}', '{published_table}')"
+        ).strip()
+        == "0"
+    )
+    assert instance.contains_in_log(
+        f"contains tables that are not replicated, because they were never materialized (for example, their initial snapshot has failed): {published_table}"
+    )
+
+    # A full database backup must not silently omit the published table that has no nested table.
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # `ATTACH TABLE` of another table persists the list of the replicated tables, which does not contain
+    # the published table without a nested table. It must still be remembered after the next restart.
+    instance.query(f"ATTACH TABLE test_database.{new_table}")
+    check_tables_are_synchronized(instance, new_table)
+
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, new_table)
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # A failed `ATTACH TABLE` of the published table must not make the backup omit it. `ATTACH TABLE`
+    # creates a temporary replication slot, so it fails while all replication slots are in use.
+    pg_manager.execute(
+        "SELECT current_setting('max_replication_slots')::int - (SELECT count(*) FROM pg_replication_slots)"
+    )
+    free_slots = pg_manager.cursor.fetchone()[0]
+    dummy_slots = [f"mpg_dummy_slot_{i}" for i in range(free_slots)]
+    try:
+        for slot in dummy_slots:
+            pg_manager.execute(f"SELECT pg_create_physical_replication_slot('{slot}')")
+        instance.query_and_get_error(f"ATTACH TABLE test_database.{published_table}")
+    finally:
+        for slot in dummy_slots:
+            pg_manager.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_after_failed_attach')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and published_table in error, error
+
+    # The published table is added to replication with `ATTACH TABLE`.
+    instance.query(f"ATTACH TABLE test_database.{published_table}")
+    check_tables_are_synchronized(instance, published_table)
+
+    # The table with a comma in its name is still not replicated, and is still remembered after a restart.
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(instance, published_table)
+    error = instance.query_and_get_error(
+        "BACKUP DATABASE test_database TO Disk('backups', 'mpg_whole_schema_unmaterialized_backup_comma_table')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in error and comma_table in error, error
+
+    pg_manager.drop_materialized_db()
+    for table in (new_table, published_table, comma_table):
+        pg_manager.execute(f'DROP TABLE "{table}"')
+
+
+def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
+    # Two databases with explicit tables lists and unique replication consumer identifiers have separate
+    # replication slots, but share the publication. `ATTACH TABLE` on one of them adds the table to the
+    # shared publication. It is not a table of the other database, so after a restart the backup of the
+    # other database must not be refused because of it.
+    good = "shared_publication_good"
+    later = "shared_publication_later"
+    for table in (good, later):
+        pg_manager.create_postgres_table(table)
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(5)"
+        )
+
+    databases = ("shared_publication_db1", "shared_publication_db2")
+    for database in databases:
+        pg_manager.create_materialized_db(
+            ip=started_cluster.postgres_ip,
+            port=started_cluster.postgres_port,
+            materialized_database=database,
+            settings=[
+                f"materialized_postgresql_tables_list = '{good}'",
+                "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+            ],
+        )
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+
+    instance.query(f"ATTACH TABLE {databases[0]}.{later}")
+    check_tables_are_synchronized(instance, later, materialized_database=databases[0])
+
+    instance.restart_clickhouse()
+    for database in databases:
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+
+    instance.query(
+        f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup')"
+    )
+
+    for database in databases:
+        pg_manager.drop_materialized_db(database)
+    for table in (good, later):
+        pg_manager.execute(f"DROP TABLE {table}")
+
+
+def test_user_managed_slot_with_unique_consumer_identifier_rejected(started_cluster):
+    # A user-managed replication slot has a single fixed name, so it cannot be combined with
+    # `materialized_postgresql_use_unique_replication_consumer_identifier`. The combination is rejected
+    # for a freshly supplied definition, before anything is persisted.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    settings = """SETTINGS materialized_postgresql_replication_slot = 'user_managed_slot',
+                 materialized_postgresql_snapshot = '00000003-00000002-1',
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1"""
+    message = "cannot be used together with `materialized_postgresql_use_unique_replication_consumer_identifier`"
+
+    database_engine = f"ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', 'postgres', '{pg_pass}') {settings}"
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_user_slot_db {database_engine}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    error = instance.query_and_get_error(
+        f"ATTACH DATABASE test_user_slot_db UUID '{uuid.uuid4()}' {database_engine}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    assert "0" == instance.query(
+        "SELECT count() FROM system.databases WHERE name = 'test_user_slot_db'"
+    ).strip()
+
+    table_definition = f"""(key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', 'user_slot_table', 'postgres', '{pg_pass}')
+        ORDER BY key {settings}"""
+    error = instance.query_and_get_error(
+        f"CREATE TABLE test_user_slot_table {table_definition}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    error = instance.query_and_get_error(
+        f"ATTACH TABLE test_user_slot_table UUID '{uuid.uuid4()}' {table_definition}"
+    )
+    assert "BAD_ARGUMENTS" in error and message in error, error
+    assert "0" == instance.query(
+        "SELECT count() FROM system.tables WHERE database = 'default' AND name = 'test_user_slot_table'"
+    ).strip()
 
 
 if __name__ == "__main__":

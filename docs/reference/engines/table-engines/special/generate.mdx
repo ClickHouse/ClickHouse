@@ -19,14 +19,24 @@ Usage examples:
 
 ```sql
 ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+[SETTINGS null_ratio = ..., max_json_depth = ..., max_json_keys_per_object = ...]
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
 array or map columns and strings correspondingly in generated data.
 
+The `SETTINGS` clause controls how `Nullable`, `Variant`, `Dynamic` and `JSON` values are generated:
+`null_ratio` (default `0.0625`) is the probability that a value is `NULL` and the base probability
+that a `JSON` key is absent from a row - a minority of sparse keys are absent several times more
+often, `max_json_depth` (default `3`) bounds the nesting depth of generated `JSON` objects,
+and `max_json_keys_per_object` (default `8`) bounds the number of generated keys on one level of an
+object. The [`generateRandom`](/reference/functions/table-functions/generate) table function accepts
+the same settings.
+
 Generate table engine supports only `SELECT` queries.
 
-It supports all [DataTypes](/reference/data-types/index) that can be stored in a table except `AggregateFunction`.
+It supports all [DataTypes](/reference/data-types/index) that can be stored in a table,
+except `AggregateFunction`, `Interval`, `Nothing` and `QBit`.
 
 ## Example {#example}
 

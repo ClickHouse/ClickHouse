@@ -19,7 +19,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 opts=(
-    --enable_analyzer=1
     --join_algorithm='parallel_hash'
     # `query_plan_join_swap_table=true` forces every join to swap sides during reorder so the
     # right children are reorder-built sub-join nodes (rather than the left-deep originals).

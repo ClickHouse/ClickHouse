@@ -30,8 +30,7 @@
               "group": "Análisis en tiempo real",
               "pages": [
                 "es/get-started/quickstarts/create-your-first-materialized-view",
-                "es/get-started/quickstarts/create-your-first-projection",
-                "es/get-started/quickstarts/tutorial"
+                "es/get-started/quickstarts/create-your-first-projection"
               ]
             },
             {

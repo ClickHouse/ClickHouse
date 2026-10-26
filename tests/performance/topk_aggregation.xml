@@ -85,4 +85,26 @@
     <query>SELECT UserID, RegionID, count() FROM hits_100m_single GROUP BY UserID, RegionID LIMIT 10 FORMAT Null</query>
     <query>SELECT UserID, RegionID, CounterID, count() FROM hits_100m_single GROUP BY UserID, RegionID, CounterID LIMIT 10 FORMAT Null</query>
     <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL LIMIT 10 FORMAT Null</query>
+
+    <!-- ============ Section 3: keys clustered across the table ============ -->
+
+    <!-- Exercises `group_by_top_k_optimization_shared_boundary`.  The other
+         sections use keys uncorrelated with the physical row order, so every
+         thread's local boundary converges to the global one on its own and
+         sharing cannot help.  Here the ORDER BY key follows the table's sort
+         order and threads read disjoint key ranges: only the threads reading
+         the ranges with the winning keys can tighten a useful boundary, and
+         the rest skip rows only through the shared one. -->
+
+    <!-- hits_100m_single is sorted by CounterID ascending, so with DESC the
+         winning keys sit in the tail ranges of the table. -->
+    <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID DESC LIMIT 1000 FORMAT Null</query>
+    <query>SELECT CounterID, UserID, count() FROM hits_100m_single GROUP BY CounterID, UserID ORDER BY CounterID DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- numbers_mt gives each thread a contiguous ascending range: with DESC
+         every thread's local boundary keeps improving and never skips a row,
+         while the boundary published by the thread holding the top range lets
+         the other threads skip their ranges entirely. -->
+    <query>SELECT number, count() FROM numbers_mt(50000000) GROUP BY number ORDER BY number DESC LIMIT 100 FORMAT Null</query>
 </test>

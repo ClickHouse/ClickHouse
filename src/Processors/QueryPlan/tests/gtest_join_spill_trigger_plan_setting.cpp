@@ -567,3 +567,26 @@ TEST(JoinSpillTriggerPlanSetting, NullSafeEqualityIsAKeyForTheMergeAlgorithmsToo
             << algorithms;
     }
 }
+
+/// `allow_block_nested_loop_join` is written only towards a peer that knows the name, and a plan from a peer that
+/// predates it is read back with the block nested loop join disabled, which is how that peer ran its joins.
+TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_block_nested_loop_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN - 1;
+    const auto disabled = makeJoinSettings({{"allow_block_nested_loop_join", false}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.writeChangedBinary(out);
+        return out.str().contains("allow_block_nested_loop_join");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(disabled, current_version)));
+    EXPECT_FALSE(JoinSettings(serializeAt(disabled, current_version), current_version).allow_block_nested_loop_join);
+    EXPECT_TRUE(JoinSettings(serializeAt(makeJoinSettings({}), current_version), current_version).allow_block_nested_loop_join);
+
+    EXPECT_FALSE(carries_setting(serializeAt(disabled, pre_block_nested_loop_version)));
+    EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
+                     .allow_block_nested_loop_join);
+}

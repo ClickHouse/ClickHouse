@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки используются для настройки сервера ClickHouse и автоматически сгенерированы на основе исходного кода ClickHouse.
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Функция Cluster Discovery больше не является экспериментальной и всегда включена для кластеров, у которых в `remote_servers` есть секция `discovery`. Эта настройка устарела и ни на что не влияет. Она сохранена с типом `String`, чтобы по-прежнему принималось любое ранее допустимое значение, включая пустой тег.
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает экспериментальную поддержку драйверов для исполняемых пользовательских функций, определяемых через `user_defined_executable_function_drivers_config`. Драйвер преобразует фрагмент пользовательского кода, указанный в `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`, в исполняемую UDF, готовую к выполнению.
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает поддержку WebAssembly UDF в экспериментальном режиме
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Прежнее (экспериментальное) название `enable_webterminal`. По-прежнему поддерживается для обратной совместимости, если `enable_webterminal` не задан. Настройка устарела.
 

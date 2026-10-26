@@ -4,9 +4,8 @@
 -- the decorrelated expression DAG kept the pre-Nullable result type for the
 -- function while the correlated key became Nullable. See issue #107445.
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 SELECT number, (SELECT toString(number))
 FROM numbers(10)
