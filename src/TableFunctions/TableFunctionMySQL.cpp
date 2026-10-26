@@ -88,7 +88,9 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (!args_func.arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'mysql' must have arguments.");
 
-    auto & args = args_func.arguments->children;
+    /// A copy, since `CREATE TABLE ... AS mysql(...)` stores this call as the definition of the table, which must keep the
+    /// SETTINGS argument removed below.
+    ASTs args = args_func.arguments->children;
 
     MySQLSettings mysql_settings;
 
