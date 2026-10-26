@@ -1343,6 +1343,7 @@ The replica name in ZooKeeper.
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
     DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
+    DECLARE(UInt64, stream_kafka_locks_refresh_polls, 15, "Number of polls after which a Kafka consumer with offsets in Keeper re-checks which partitions it owns", 0) \
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, R"(How many entries hash table statistics collected during aggregation is allowed to have)", 0) \
     DECLARE(String, merge_workload, "default", R"(
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
@@ -3887,6 +3888,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"s3queue_disable_streaming",
              {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
             {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::No}},
+            {"stream_kafka_locks_refresh_polls",
+             {std::to_string(context->getKafkaLocksRefreshPolls()), ChangeableWithoutRestart::Yes}},
             {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
 

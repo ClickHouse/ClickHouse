@@ -108,7 +108,12 @@ public:
     ///   - Couldn't lock any topic partitions
     /// In case of these reasons it doesn't make sense to set up the whole pipeline, which not the lightest operation.
     /// As a result we have the the MessageSink callback. In the end I think the extra complexity worth it.
-    std::optional<CannotPollReason> prepareToPoll();
+    /// `locks_refresh_polls` is how many extra poll cycles the consumer may keep its current
+    /// assignment before this does a full Keeper round (refresh locks + rebalance). It is passed in
+    /// rather than captured in the constructor because consumers are built once in
+    /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
+    /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
+    std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
 
     /// Returns empty optional if polling it not possible or no messages were polled.
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.

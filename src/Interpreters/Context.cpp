@@ -464,6 +464,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
@@ -7780,6 +7781,21 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 {
     std::lock_guard lock(shared->mutex);
     shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
+}
+
+UInt64 Context::getKafkaLocksRefreshPolls() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::stream_kafka_locks_refresh_polls];
+}
+
+void Context::setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const
+{
+    std::lock_guard lock(shared->mutex);
+    const UInt64 previous = shared->server_settings[ServerSetting::stream_kafka_locks_refresh_polls];
+    if (previous != stream_kafka_locks_refresh_polls)
+        LOG_INFO(shared->log, "Changed stream_kafka_locks_refresh_polls from {} to {}", previous, stream_kafka_locks_refresh_polls);
+    shared->server_settings.set("stream_kafka_locks_refresh_polls", stream_kafka_locks_refresh_polls);
 }
 
 bool Context::getMessageQueueDisableInsertion() const
