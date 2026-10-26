@@ -1,0 +1,9 @@
+<clickhouse>
+    <mysql_port>9001</mysql_port>
+    <handshake_timeout_milliseconds>9000</handshake_timeout_milliseconds>
+    <profiles>
+        <default>
+            <receive_timeout>1</receive_timeout>
+        </default>
+    </profiles>
+</clickhouse>

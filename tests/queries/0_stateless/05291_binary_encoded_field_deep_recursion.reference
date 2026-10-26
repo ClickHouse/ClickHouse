@@ -1,0 +1,1 @@
+AggregateFunction(quantiles(0.1, 0.9), UInt64)	[0.2,1.8]

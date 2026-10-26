@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
@@ -186,23 +187,28 @@ void NonTransactionalRemovalLocks::store()
 
 void MergeTreeTransaction::removeOldPart(
     const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn,
-    LockKind kind, NonTransactionalRemovalLocks & removal_locks)
+    LockKind kind, NonTransactionalRemovalLocks * removal_locks)
 {
+    TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
+
     if (txn)
     {
         /// Lock part for removal and write current TID into version metadata file.
         /// If server crash just after committing transactions
         /// we will find this TID in version metadata and will finally remove part.
-        TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
         txn->removeOldPart(storage, part_to_remove, transaction_context, kind);
         return;
     }
-    removal_locks.lock(storage, /*covering_part=*/ nullptr, {part_to_remove}, kind);
+
+    if (removal_locks)
+        removal_locks->lock(storage, /*covering_part=*/ nullptr, {part_to_remove}, kind);
+    else
+        part_to_remove->version->setAndStoreNonTransactionalRemovalTID(kind, transaction_context);
 }
 
 void MergeTreeTransaction::addNewPartAndRemoveCovered(
     const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts,
-    MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks & removal_locks)
+    MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks * removal_locks)
 {
     TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
     TransactionInfoContext transaction_context{storage->getStorageID(), new_part->name};
@@ -233,7 +239,18 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(
     }
     else
     {
-        removal_locks.lock(storage, new_part, covered_parts, kind);
+        if (removal_locks)
+        {
+            removal_locks->lock(storage, new_part, covered_parts, kind);
+        }
+        else
+        {
+            for (const auto & covered : covered_parts)
+            {
+                transaction_context.part_name = covered->name;
+                covered->version->setAndStoreNonTransactionalRemovalTID(kind, transaction_context);
+            }
+        }
     }
 }
 
@@ -391,6 +408,7 @@ std::vector<MergeTreeTransaction::AffectedSMTTable> MergeTreeTransaction::getAff
     std::unordered_map<Int64, size_t> row_index_by_cross_replica_id;
     for (const auto & storage : storages)
     {
+        /// NOLINT(storage-cast): the tables register themselves here via `shared_from_this`, never through the catalog.
         const auto * smt = dynamic_cast<const StorageSharedMergeTree *>(storage.get());
         if (!smt)
             continue;
@@ -466,6 +484,8 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     DataPartsVector created_parts;
     std::vector<LockedPart> removed_parts;
@@ -534,6 +554,8 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
     /// and the adoption that registers its parts here, so rollback cannot land between the two.
     bool need_rollback = false;

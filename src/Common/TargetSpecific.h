@@ -88,7 +88,10 @@ enum class TargetArch : UInt32
     x86_64_v2 = (1 << 0),
     x86_64_v3 = (1 << 1),
     x86_64_v4 = (1 << 2),
+    /// Not a psABI level: `arch=icelake-server` feature set, v4 + VBMI, VBMI2 (`vpexpandb`, `vpcompressb`), IFMA, VNNI,
+    /// VPOPCNTDQ, BITALG, GFNI, VAES, VPCLMULQDQ. Despite the name, also set on AMD Zen 4 and Zen 5.
     x86_64_icelake = (1 << 3),
+    /// `arch=sapphirerapids` feature set: icelake + AVX512FP16, AVX512BF16, AVX-VNNI, AMX. Intel only (Zen 4/5 lack FP16 and AMX).
     x86_64_sapphirerapids = (1 << 4),
     GenuineIntel = (1 << 5),          /// Not an instruction set, but a CPU vendor. Used for optimizations that are only applicable for Intel CPUs, like prefetching
     x86_64_vaes = (1 << 6),           /// v3 + VAES. Not a microarchitecture level: VAES appears on Zen 3, which has no AVX-512 at all, and on Intel only from Ice Lake, so neither v4 nor icelake describes the set of CPUs that have it.
@@ -96,10 +99,15 @@ enum class TargetArch : UInt32
 
 /// Runtime detection.
 UInt32 getSupportedArchs();
+
+/// Constant-initialized, so a read is a plain load of a global: no guard variable on every call, and
+/// no dependency on the initialization order of other translation units. Filled in before any other
+/// static constructor runs, see `TargetSpecific.cpp`.
+extern constinit UInt32 supported_archs;
+
 inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
 {
-    static const UInt32 arches = getSupportedArchs();
-    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
+    return arch == TargetArch::Default || (supported_archs & static_cast<UInt32>(arch));
 }
 
 String toString(TargetArch arch);

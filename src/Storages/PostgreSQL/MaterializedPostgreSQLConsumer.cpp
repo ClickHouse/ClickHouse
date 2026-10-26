@@ -5,12 +5,12 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
+#include <Common/Hex.h>
 #include <Core/Field.h>
-#include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -671,7 +671,7 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
         select_context->makeQueryContext();
         select_context->setInternalQuery(true);
 
-        InterpreterSelectQuery interpreter(
+        InterpreterSelectQueryAnalyzer interpreter(
             select,
             select_context,
             SelectQueryOptions().setInternal(true).ignoreAccessCheck());
