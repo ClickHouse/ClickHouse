@@ -74,3 +74,8 @@ cascades shape distributes
 0	0
 0	0
 0	0
+-- window state kept in a column by another aggregate state: cast, serialized next to the original, through an external sort spilled then not spilled
+0.075652
+[0.075652,0.075652]
+5418535389041359701
+5418535389041359701

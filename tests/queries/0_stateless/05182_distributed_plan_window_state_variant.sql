@@ -258,4 +258,26 @@ LEFT JOIN t_window_state_variant_gather AS r ON l.p = r.p AND arrayExists(x -> f
 ORDER BY r.v LIMIT 3
 SETTINGS make_distributed_plan = 0;
 
+-- `any` of a value with `Dynamic` keeps the window state in a column. A tuple holds the serializations of
+-- both elements at once, so the cast state and the original must not share one.
+SELECT '-- window state kept in a column by another aggregate state: cast, serialized next to the original, through an external sort spilled then not spilled';
+SELECT round(finalizeAggregation(finalizeAggregation(CAST(anyState(tuple(s, CAST(1 AS Dynamic)))
+    AS AggregateFunction(any, Tuple(AggregateFunction(contingency, UInt32, UInt32), Dynamic)))).1), 6)
+FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather)
+SETTINGS make_distributed_plan = 0;
+SELECT arrayMap(x -> round(finalizeAggregation(finalizeAggregation(x).1), 6), [t.1, t.2])
+FROM (SELECT CAST(toString(tuple(CAST(g AS AggregateFunction(any, Tuple(AggregateFunction(contingency, UInt32, UInt32), Dynamic))), g))
+        AS Tuple(AggregateFunction(any, Tuple(AggregateFunction(contingency, UInt32, UInt32), Dynamic)),
+            AggregateFunction(any, Tuple(AggregateFunction(contingency, UInt32, UInt32), Dynamic)))) AS t
+    FROM (SELECT anyState(tuple(s, CAST(1 AS Dynamic))) AS g FROM (SELECT contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather)))
+SETTINGS make_distributed_plan = 0;
+SELECT sum(cityHash64(v, round(finalizeAggregation(finalizeAggregation(g).1), 6) + 0))
+FROM (SELECT v, anyState(tuple(s, CAST(v AS Dynamic))) OVER () AS g FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 1000,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+SELECT sum(cityHash64(v, round(finalizeAggregation(finalizeAggregation(g).1), 6) + 0))
+FROM (SELECT v, anyState(tuple(s, CAST(v AS Dynamic))) OVER () AS g FROM (SELECT v, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) ORDER BY v DESC)
+SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
+    max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
+
 DROP TABLE t_window_state_variant_gather;
