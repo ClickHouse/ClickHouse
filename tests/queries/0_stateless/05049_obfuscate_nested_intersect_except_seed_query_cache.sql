@@ -9,8 +9,6 @@
 --
 -- `obfuscate` is an effectively infinite, repeating source, so every read of it needs an explicit `LIMIT`.
 
-SET enable_analyzer = 1;
-
 SYSTEM DROP QUERY CACHE TAG '05049_obfuscate_nested_intersect_except';
 
 -- The session seed is deterministic, but the nested `EXCEPT` resets it to the default (empty) seed, so

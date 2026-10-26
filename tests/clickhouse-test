@@ -27,6 +27,7 @@ import os.path
 import platform
 import random
 import re
+import select
 import shutil
 import signal
 import socket
@@ -83,6 +84,10 @@ if __name__ == "__main__" and not _RUN_TOKEN.startswith(f"{os.getpid()}-"):
     _RUN_TOKEN = os.environ["_CLICKHOUSE_TEST_RUN_TOKEN"] = (
         f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
     )
+
+# Each test file is pinned to `test_client_<crc32(filename) % N>`. Bounded so ids are reused across
+# tests, while the stable hash keeps the same data on the same id.
+DISTRIBUTED_CACHE_CLIENT_ID_COUNT = 500
 
 
 def write_text_atomic(path: Path, text: str) -> None:
@@ -1062,6 +1067,26 @@ def get_zookeeper_session_uptime(args):
         return None
 
 
+def wait_for_exit(proc: Popen, timeout: float) -> None:
+    """Like `proc.wait(timeout)`, but wakes on the exit instead of polling with up to 50 ms sleeps."""
+    if proc.returncode is not None:
+        return
+    try:
+        pidfd = os.pidfd_open(proc.pid)
+    except (AttributeError, OSError):
+        pidfd = None
+    if pidfd is None:
+        proc.wait(timeout)
+        return
+    try:
+        poller = select.poll()
+        poller.register(pidfd, select.POLLIN)
+        poller.poll(timeout * 1000)
+    finally:
+        os.close(pidfd)
+    proc.wait(0)
+
+
 def need_retry(args, stdout, stderr, total_time):
     if args.check_zookeeper_session:
         # Sometimes we may get unexpected exception like "Replica is readonly" or "Shutdown is called for table"
@@ -1273,7 +1298,11 @@ def lldb_backtraces_only(dump: str) -> str:
 def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # The budget bounds a wedged lldb (e.g. signal-handler deadlock on the
     # inferior); it is not an estimate of the work, which scales with the
-    # binary's unwind/symbol cost. Killing lldb leaves the server untouched.
+    # binary's unwind/symbol cost. Killing lldb leaves the server untouched
+    # only without lldb's JIT-loader breakpoint: the linker folds the empty
+    # `__jit_debug_register_code` with other functions, so the `int3` a killed
+    # lldb leaves there traps server threads with SIGTRAP, a fatal signal to
+    # the server, and it wedges (state S, no logs, ignores SIGTERM).
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1287,7 +1316,8 @@ def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
     # print_c_stacktraces save the full dump to c_stacktraces.log and preview
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"{sudo}{lldb} --batch -p {pid}"
+        f"{sudo}{lldb} --batch -O 'settings set plugin.jit-loader.gdb.enable off'"
+        f" -p {pid}"
         f" -o '{LLDB_DROP_RENDEZVOUS_BREAKPOINT}'"
         " -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=timeout,
@@ -1722,6 +1752,7 @@ class FailureReason(enum.Enum):
     SHARED_CATALOG = "no-shared-catalog"
     SHARED_CATALOG_ONLY = "shared-catalog"
     DISTRIBUTED_CACHE = "distributed-cache"
+    DISTRIBUTED_CACHE_ONLY = "distributed-cache-only"
     NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
@@ -1863,6 +1894,14 @@ class SettingsRandomizer:
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
             0, 1
         ),
+        "distributed_cache_min_inflight_bytes_to_discard_connection_on_seek": lambda: random.choice(
+            [0, 1, 4096, 1024 * 1024, 4 * 1024 * 1024, 100 * 1024 * 1024]
+        ),
+        # Stress-only (see stress_test_only_settings): the distributed cache server runs in stress,
+        # so route reads/writes through it on most tests. Biased towards enabling (~3 in 4) to
+        # exercise the cache well, but not unconditionally so the non-cache path is still covered.
+        "force_read_through_distributed_cache": lambda: int(random.randint(0, 3) != 0),
+        "force_write_through_distributed_cache": lambda: int(random.randint(0, 3) != 0),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
         ),
@@ -1973,6 +2012,7 @@ class SettingsRandomizer:
         "optimize_skip_unused_shards_rewrite_in": lambda: random.random() > 0.05,
         "optimize_time_filter_with_preimage": lambda: random.random() > 0.05,
         "optimize_trivial_count_query": lambda: random.random() > 0.05,
+        "optimize_uniq_exact_radix_partitioning": lambda: random.randint(0, 1),
         "optimize_uniq_to_count": lambda: random.random() > 0.05,
         "optimize_use_projections": lambda: random.random() > 0.05,
         "optimize_use_implicit_projections": lambda: random.random() > 0.05,
@@ -1997,13 +2037,11 @@ class SettingsRandomizer:
         "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
-        # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
-        # That is why we use it with fallback to 'greedy'.
-        "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
+        "use_top_k_dynamic_filtering_for_single_string_sort_column": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
         "page_cache_max_coalesced_bytes": lambda: random.choice([65536, 1048576, 16777216, 67108864]),
@@ -2082,12 +2120,15 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
+        "use_top_k_dynamic_filtering_for_single_string_sort_column": "use_top_k_dynamic_filtering",
         # forcing independent DISTINCT is a no-op when the optimization is not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
 
     stress_test_only_settings = {
         "analyzer_compatibility_prefer_alias_over_subcolumn",
+        "force_read_through_distributed_cache",
+        "force_write_through_distributed_cache",
     }
 
     @staticmethod
@@ -2149,7 +2190,35 @@ class SettingsRandomizer:
         # in sync with use_skip_indexes_if_final even after it was forced to False).
         for setting, other_setting in SettingsRandomizer.dependent_settings.items():
             random_settings[setting] = random_settings[other_setting]
+        SettingsRandomizer.disable_distributed_cache_if_needed(args, tags, random_settings)
+
         SettingsRandomizer.adjust_settings_for_autopr(args, tags, random_settings)
+        return random_settings
+
+    @staticmethod
+    def disable_distributed_cache_if_needed(args, tags, random_settings):
+        # The distributed cache server is not available (shared catalog runs skip its config) or the
+        # test opts out, so do not route reads/writes through it even in stress.
+        if args.stress_tests and (
+            args.shared_catalog
+            or args.shared_catalog_stress
+            or (tags and "no-distributed-cache" in tags)
+        ):
+            random_settings["force_read_through_distributed_cache"] = 0
+            random_settings["force_write_through_distributed_cache"] = 0
+
+    @staticmethod
+    def get_distributed_cache_settings(args, tags):
+        # Only the distributed cache pair, for runs where the storage rule suppressed the rest
+        # (see TestCase.__init__). Same generators and same opt-outs as the full randomization.
+        random_settings = {
+            setting: SettingsRandomizer.settings[setting]()
+            for setting in (
+                "force_read_through_distributed_cache",
+                "force_write_through_distributed_cache",
+            )
+        }
+        SettingsRandomizer.disable_distributed_cache_if_needed(args, tags, random_settings)
         return random_settings
 
 
@@ -2611,18 +2680,28 @@ class TestCase:
         testcase_basename = os.path.basename(case_file)
 
         if args.cloud:
-            # Sticky host is used by default
-            # For additional coverage, queries can be run on different replicas if the test is designed for this
-            if "cloud-no-sticky" in self.tags:
-                os.environ["CLICKHOUSE_HOST"] = os.environ["CLICKHOUSE_HOST_NON_STICKY"]
-            else:
-                os.environ["CLICKHOUSE_HOST"] = os.environ["CLICKHOUSE_HOST_STICKY"]
-
-            tcp_host = os.environ["CLICKHOUSE_HOST"]
-            testcase_args.tcp_host = tcp_host
+            # CLICKHOUSE_HOST always stays the real host (DNS/certs only cover that), so it is
+            # never rewritten here. Native sticky routing instead pins the native-protocol
+            # connection to one replica via a TLS SNI override that the L4 proxy hashes;
+            # it does not cover the HTTP interface.
+            # Sticky is used by default; for additional coverage, queries can be run on
+            # different replicas if the test is designed for this.
             testcase_args.client = re.sub(
-                r"--host=[^\s]*", f"--host={tcp_host}", testcase_args.client, count=1
+                r"\s*--tls-sni-override=[^\s]*", "", testcase_args.client
             )
+            if "cloud-no-sticky" in self.tags:
+                self.sticky_client_option = ""
+                os.environ["CLICKHOUSE_CLIENT_OPT"] = os.environ[
+                    "CLICKHOUSE_CLIENT_OPT_BASE"
+                ]
+            else:
+                sticky_sni = os.environ["CLICKHOUSE_HOST_STICKY_SNI"]
+                self.sticky_client_option = f"--tls-sni-override={sticky_sni}"
+                testcase_args.client += f" {self.sticky_client_option}"
+                os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                    os.environ["CLICKHOUSE_CLIENT_OPT_BASE"]
+                    + f" {self.sticky_client_option}"
+                )
 
         testcase_args.testcase_basename = testcase_basename
 
@@ -2721,6 +2800,11 @@ class TestCase:
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
+    def has_transactions_in_test(self):
+        return not subprocess.call(
+            ["grep", "-iqE", "implicit_transaction|begin transaction", self.case_file]
+        )
+
     def test_observes_create_query_text(self):
         # True if the test would be perturbed by the client rewriting CREATE ... MergeTree
         # queries (which the codec injection enables via --allow_merge_tree_settings):
@@ -2761,9 +2845,7 @@ class TestCase:
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                self.base_client_options + client_options + " "
-            )
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = client_options + " "
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
@@ -2774,6 +2856,19 @@ class TestCase:
         overrides = self.feature_tag_overrides()
         if overrides:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+
+        # The options above were rebuilt from `base_client_options` or `client_options`,
+        # which do not contain the sticky routing set up by `configure_testcase_args`.
+        # Re-apply it, so that native clients of `.sh` tests are routed like `.sql` tests.
+        if self.sticky_client_option is not None:
+            routing_free_options = re.sub(
+                r"\s*--tls-sni-override=[^\s]*", "", os.environ["CLICKHOUSE_CLIENT_OPT"]
+            )
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                f"{routing_free_options} {self.sticky_client_option}".strip()
+            )
+
+        if overrides:
             return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
@@ -3194,6 +3289,25 @@ class TestCase:
         base_settings = {}
         if allow_random_settings:
             base_settings = SettingsRandomizer.get_random_settings(args, self.tags)
+        elif (
+            args.stress_tests
+            and getattr(args, "random_settings_suppressed_by_storage", False)
+            and not has_no_random_settings_tag
+            and not args.upgrade_check
+        ):
+            # The storage rule disables all randomization on non-release builds, which also turned
+            # off the distributed cache coverage that stress runs configure on purpose. Restore just
+            # that pair; the other randomized settings stay suppressed.
+            base_settings = SettingsRandomizer.get_distributed_cache_settings(args, self.tags)
+
+        if base_settings:
+            # Transactions store version metadata on disk from noexcept commit/rollback paths.
+            # On KILL QUERY the distributed cache buffer rethrows the cancellation from that IO,
+            # and the exception escaping the noexcept path aborts the server.
+            # FIXME: remove once transactional queries survive cancellation over distributed cache.
+            if args.stress_tests and self.has_transactions_in_test():
+                base_settings["force_read_through_distributed_cache"] = 0
+                base_settings["force_write_through_distributed_cache"] = 0
             self.apply_random_settings_limits(base_settings)
 
         base_mt_settings = {}
@@ -3211,6 +3325,21 @@ class TestCase:
         # - Otherwise, use randomized (if allowed), else empty.
         self.effective_settings = fixed_settings if fixed_settings else base_settings
         self.effective_merge_tree_settings = fixed_mt_settings if fixed_mt_settings else base_mt_settings
+
+        # Deterministic, not random: the id is part of the distributed cache key, so the same data
+        # must always use the same id. Excluded where the setting would be rejected - the upgrade
+        # check runs the previous release, shared catalog runs have no distributed cache config.
+        if (
+            (args.distributed_cache or args.stress_tests)
+            and not args.upgrade_check
+            and not (args.shared_catalog or args.shared_catalog_stress)
+            and not has_no_random_settings_tag
+            and not fixed_settings
+            and "no-random-distributed-cache-client-id" not in self.tags
+            and "distributed_cache_client_id" not in self.effective_settings
+        ):
+            client_id_bucket = zlib.crc32(self.case.encode()) % DISTRIBUTED_CACHE_CLIENT_ID_COUNT
+            self.effective_settings["distributed_cache_client_id"] = f"test_client_{client_id_bucket}"
 
         # The default compression codec is randomized at the server level (see the
         # <compression> override in tests/config/install.sh). Tests that opt out of
@@ -3243,6 +3372,10 @@ class TestCase:
         )
 
         self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+
+        # Native routing option for `CLICKHOUSE_CLIENT_OPT`, set by `configure_testcase_args`
+        # with `--cloud`: the sticky SNI override, or an empty string for `cloud-no-sticky`.
+        self.sticky_client_option = None
 
     def get_timeout(self, args) -> int:
         """Wall-clock budget for one run of this test.
@@ -3386,6 +3519,10 @@ class TestCase:
         if tags and ("no-distributed-cache" in tags) and args.distributed_cache:
             return FailureReason.DISTRIBUTED_CACHE
 
+        # Tests tagged `distributed-cache` only make sense with the distributed cache enabled.
+        if tags and ("distributed-cache" in tags) and not args.distributed_cache:
+            return FailureReason.DISTRIBUTED_CACHE_ONLY
+
         if (
             tags
             and ("atomic-database" in tags)
@@ -3411,6 +3548,16 @@ class TestCase:
         ):
             return FailureReason.SHARED_CATALOG_ONLY
 
+        # Shared Catalog specific tests must run before the file content check below would skip them
+        if (
+            args.shared_catalog
+            and not args.shared_catalog_stress
+            and not args.cloud
+            and tags
+            and ("shared-catalog" in tags)
+        ):
+            return None
+
         if (
             args.shared_catalog
             and not args.cloud
@@ -3422,10 +3569,6 @@ class TestCase:
             return FailureReason.NO_SHARED_OR_REPLICATED_MERGE_TREE
 
         if args.shared_catalog and not args.shared_catalog_stress and not args.cloud:
-            # shared catalog specific tests
-            if tags and ("shared-catalog" in tags):
-                return None
-
             if tags and ("no-shared-catalog" in tags):
                 return FailureReason.SHARED_CATALOG
             if tags and ("no-replicated-database" in tags):
@@ -4070,7 +4213,13 @@ class TestCase:
         # NOTE:
         # - client writes to fatal_sanitizer_prefix
         # - sanitizers write to fatal_sanitizer_prefix.PID
-        self.fatal_sanitizer_prefix = f"{self.stderr_file}-fatal"
+        # They live in a directory of their own, so the globs over the prefix do not list the
+        # whole suite directory (tens of thousands of files) several times per test.
+        fatal_dir = os.path.join(os.path.dirname(self.stderr_file), ".stderr-fatal")
+        os.makedirs(fatal_dir, exist_ok=True)
+        self.fatal_sanitizer_prefix = os.path.join(
+            fatal_dir, os.path.basename(self.stderr_file) + "-fatal"
+        )
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
@@ -4195,7 +4344,7 @@ class TestCase:
         write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
         try:
-            proc.wait(self.get_timeout(args))
+            wait_for_exit(proc, self.get_timeout(args))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -4424,6 +4573,7 @@ class TestCase:
                     )
                     # to avoid breaking CSV parser
                     result.description = result.description.replace("\0", "")
+
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
 
@@ -4954,14 +5104,16 @@ class TestSuite:
         if j2env is not None:
             j2env.globals.update(product=itertools.product)
 
+        # Compiled once: `re` caches only 512 patterns, so a longer list would be recompiled for every file.
+        selectors = [re.compile(pattern) for pattern in self.args.test or []]
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
             matching_selectors = (
                 {
-                    pattern
-                    for pattern in self.args.test
-                    if re.search(pattern, test_name)
+                    selector.pattern
+                    for selector in selectors
+                    if selector.search(test_name)
                 }
                 if self.args.test
                 else set()
@@ -6049,11 +6201,50 @@ def check_server_started(args):
     return False
 
 
+def check_native_sni_override_started(args):
+    """Verify a native-protocol connection using --tls-sni-override reaches a live replica.
+
+    Native sticky routing pins the connection by overriding the TLS SNI the client sends,
+    which the L4 proxy hashes - it only applies to the native protocol, so this has to be
+    checked by actually invoking the native client rather than the HTTP-based
+    check_server_started().
+    """
+    print("Connecting to ClickHouse server via SNI-overridden native client...", end="")
+    sys.stdout.flush()
+    retry_count = args.server_check_retries
+    command = f"{args.client} --query 'SELECT 1'"
+    while retry_count > 0:
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                executable=BASH,
+                capture_output=True,
+                timeout=30,
+                text=True,
+            )
+            if result.returncode == 0 and result.stdout.strip() == "1":
+                print(" OK")
+                sys.stdout.flush()
+                return True
+        except subprocess.TimeoutExpired:
+            pass
+        retry_count -= 1
+        print(".", end="")
+        sys.stdout.flush()
+        sleep(0.5)
+
+    print("\nAll connection tries failed")
+    sys.stdout.flush()
+    return False
+
+
 class BuildFlags:
     THREAD = "tsan"
     ADDRESS = "asan"
     UNDEFINED = "ubsan"
     MEMORY = "msan"
+    JEMALLOC_UAF = "jemalloc-uaf"
     WITH_COVERAGE = "with-coverage"
     WITH_COVERAGE_DEPTH = "with-coverage-depth"
     SANITIZERS = [THREAD, ADDRESS, UNDEFINED, MEMORY]
@@ -6106,6 +6297,13 @@ def collect_build_flags(args):
     )
     if with_coverage_depth.strip() in (b"ON", b"1"):
         result.append(BuildFlags.WITH_COVERAGE_DEPTH)
+
+    jemalloc_uaf = clickhouse_execute(
+        args,
+        "SELECT value FROM system.build_options WHERE name = 'ENABLE_JEMALLOC_UAF_SAN'",
+    )
+    if jemalloc_uaf.strip() in (b"ON", b"1"):
+        result.append(BuildFlags.JEMALLOC_UAF)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -6182,6 +6380,47 @@ def check_table_column(args, database, table, column):
 
 def get_hostname(args):
     return clickhouse_execute(args, "SELECT hostname()").decode("utf-8")
+
+def get_hostnames(args):
+    return clickhouse_execute(args, "SELECT hostname() FROM clusterAllReplicas(default)").decode("utf-8")
+
+
+def wait_for_all_cluster_nodes(args):
+    """Wait until get_hostnames() returns without errors, ensuring all nodes are ready."""
+    print("Waiting for all cluster nodes to be accessible...", end="")
+    sys.stdout.flush()
+    retry_count = args.server_check_retries
+    while retry_count > 0:
+        try:
+            get_hostnames(args)
+            print(" OK")
+            sys.stdout.flush()
+            return True
+        except (
+            HTTPError,
+            ConnectionError,
+            http.client.ImproperConnectionState,
+            SSLEOFError,
+        ) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
+            sys.stdout.flush()
+            retry_count -= 1
+            sleep(0.5)
+            continue
+        except Exception as e:
+            if args.hung_check:
+                print("Unexpected error, will retry: ", type(e).__name__, str(e))
+            else:
+                print(".", end="")
+            sys.stdout.flush()
+            retry_count -= 1
+            sleep(0.5)
+            continue
+    print("\nFailed to get hostnames from all cluster nodes")
+    return False
 
 
 def suite_key_func(item: str) -> Union[float, Tuple[int, str]]:
@@ -6929,18 +7168,21 @@ def main(args):
         raise TestException(msg)
 
     if args.cloud:
-        # When client connects to cloud instance it connects to random node
-        # But some .sh tests do multiple connections and depend on executing queries on single node
-        # Special annotation should be enabled for sticky-routing
-        # https://docs.dp.clickhouse-dev.com/infrastructure/sticky-routing.html
-        # "annotations": {"clickhouse.com/sticky-routing-enabled": "true"}
-        hostname = get_hostname(args)
+        # Recommended time to wait - 10 minutes
+        args.server_check_retries = 1500
+        if not wait_for_all_cluster_nodes(args):
+            raise TestException("Not all cluster nodes are accessible")
+
+        # When client connects to cloud instance it connects to random node.
+        # But some tests do multiple connections and depend on executing queries on a single node.
+        # Native sticky routing pins the native-protocol (9440) connection to one replica by
+        # overriding the TLS SNI sent to the L4 proxy, which hashes it on that value; it does
+        # not cover the HTTP interface.
         non_sticky_host = os.getenv("CLICKHOUSE_HOST")
-        host = hostname + ".sticky." + os.getenv("CLICKHOUSE_HOST")
-        os.environ["CLICKHOUSE_HOST"] = host
-        os.environ["CLICKHOUSE_HOST_STICKY"] = host
+        sticky_sni = get_hostname(args) + ".sticky." + non_sticky_host
+        os.environ["CLICKHOUSE_HOST_STICKY_SNI"] = sticky_sni
         os.environ["CLICKHOUSE_HOST_NON_STICKY"] = non_sticky_host
-        print("Sticky host:", host)
+        print("Sticky SNI override:", sticky_sni)
 
         user = os.getenv("CLICKHOUSE_CLIENT_USER")
         if user is None:
@@ -6962,15 +7204,15 @@ def main(args):
 
         os.environ["CLICKHOUSE_CONFIG_CLIENT"] = client_config_path
         args.configclient = client_config_path
+        os.environ["CLICKHOUSE_CLIENT_OPT_BASE"] = os.environ.get(
+            "CLICKHOUSE_CLIENT_OPT", ""
+        )
 
-        # Wait until the sticky host is accessible.
+        # Wait until the sticky replica is reachable over the native protocol.
         args_sticky = copy.deepcopy(args)
-        args_sticky.tcp_host = host
-        args_sticky.client += f" --host={host}"
-        # Recommended time to wait - 10 minutes
-        args_sticky.server_check_retries = 1500
-        if not check_server_started(args_sticky):
-            raise TestException(f"Sticky host '{host}' not responding")
+        args_sticky.client += f" --tls-sni-override={sticky_sni}"
+        if not check_native_sni_override_started(args_sticky):
+            raise TestException(f"Sticky replica (SNI '{sticky_sni}') not responding")
 
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
@@ -6994,7 +7236,11 @@ def main(args):
             "Pass --collect-per-test-coverage to enable collection."
         )
 
+    # Remember that suppression came from the storage rule, not from the user: an explicit
+    # --no-random-settings must stay fully suppressive (see TestCase.__init__).
+    args.random_settings_suppressed_by_storage = False
     if args.s3_storage and (BuildFlags.RELEASE not in args.build_flags):
+        args.random_settings_suppressed_by_storage = not args.no_random_settings
         args.no_random_settings = True
 
     if args.skip:
@@ -7572,6 +7818,10 @@ def parse_args():
     )
     parser.add_argument("test", nargs="*", help="Optional test case name regex")
     parser.add_argument(
+        "--test-list-file",
+        help="File with more test case name regexes, one per line",
+    )
+    parser.add_argument(
         "-d",
         "--disabled",
         action="store_true",
@@ -8048,7 +8298,14 @@ def parse_args():
         help="Kill all processes from the group pid file and exit (used by CI hooks for orphan cleanup)",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.test_list_file:
+        with open(args.test_list_file, encoding="utf-8") as f:
+            listed_tests = [line.strip() for line in f if line.strip()]
+        if not listed_tests:
+            parser.error(f"--test-list-file {args.test_list_file} lists no tests")
+        args.test += listed_tests
+    return args
 
 
 def cleanup_test_groups(diagnostics=True, worker_pids=None):
@@ -8347,7 +8604,14 @@ if __name__ == "__main__":
             #   Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or
             #   set database_replicated_always_detach_permanently to 1.
             "database_replicated_always_detach_permanently": 1,
-            # Break some tests
+            # The cloud profile forces `async_insert = 1`. The async insert
+            # path deduplicates identical blocks (keyed by block hash) regardless
+            # of `insert_deduplicate`, so tests that issue several identical
+            # `INSERT`s silently lose rows compared to a plain `MergeTree` run
+            # (e.g. wrong aggregates or "missing" rows). Force `async_insert = 0`
+            # to match the open-source default; tests that need async inserts
+            # enable them explicitly per query.
+            "async_insert": 0,
             "async_insert_deduplicate": 0,
             "insert_deduplicate": 0,
             "alter_sync": 2,

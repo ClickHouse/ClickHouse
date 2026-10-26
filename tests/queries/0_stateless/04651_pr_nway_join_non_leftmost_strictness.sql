@@ -4,6 +4,11 @@
 -- coordinated, so every replica evaluates the whole join and the initiator concatenates the copies,
 -- multiplying every row by the replica count.
 
+-- The restriction asserted here is specific to the query-based implementation, which ships the
+-- whole join tree: the plan-based one places the split itself and distributes several of these
+-- shapes safely, which `05239_pr_plan_based_nway_join_non_leftmost_strictness` asserts.
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t1 SYNC;
 DROP TABLE IF EXISTS t2 SYNC;
 DROP TABLE IF EXISTS t3 SYNC;
@@ -22,7 +27,6 @@ INSERT INTO t3 VALUES (7, '2020-01-01 00:00:00'), (8, '2020-01-02 00:00:00');
 INSERT INTO t4 VALUES (1, '2019-12-31 00:00:00'), (1, '2019-12-31 12:00:00'),
                       (2, '2020-01-01 00:00:00'), (2, '2020-01-01 12:00:00');
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
