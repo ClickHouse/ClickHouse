@@ -310,6 +310,8 @@ public:
 
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
+    virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
+
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, const StorageID & /*table_id*/) const
     {
