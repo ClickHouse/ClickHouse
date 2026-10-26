@@ -297,7 +297,7 @@ static bool shouldSkipShard(const Settings & settings, int exception_code, bool 
     if (exception_code == ErrorCodes::LOGICAL_ERROR)
         return false;
 
-    switch (settings[Setting::skip_unavailable_shards_mode])
+    switch (settings[Setting::skip_unavailable_shards_mode].value)
     {
         case SkipUnavailableShardsMode::UNAVAILABLE:
             return false;
