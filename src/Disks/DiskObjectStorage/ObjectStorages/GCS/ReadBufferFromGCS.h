@@ -76,6 +76,11 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
+    /// A filesystem-cache segment keeps a partially consumed reader across queries and rebinds its
+    /// scheduling links here when the downloader changes. No request outlives a `nextImpl` call
+    /// (each one takes its own `ResourceGuard`), so replacing the links is enough.
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override { read_settings.io_scheduling = io_scheduling; }
+
 private:
     void initialize();
 
