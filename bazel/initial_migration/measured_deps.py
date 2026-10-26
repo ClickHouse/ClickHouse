@@ -161,6 +161,7 @@ DEPENDENCIES = {
 # by retained public dependencies before and after them in the declared order.
 EMBEDDED_OBJECTS = {'clickhouse_common_io_embedded', 'dbms_embedded'}
 DBMS_EMBEDDED_UNUSED = {
+    '@clickhouse_jwt_cpp//:jwt_cpp', '@clickhouse_krb5//:_krb5',
     '//base/widechar_width',
     '@clickhouse_aws//:_aws__compile_0', '@clickhouse_azure//:_azure_sdk', '@clickhouse_openssl//:crypto',
     '//base:pcg_random', '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2',
