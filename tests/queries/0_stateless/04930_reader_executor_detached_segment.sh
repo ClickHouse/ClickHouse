@@ -15,6 +15,7 @@ READ_SETTINGS=(
     --remote_filesystem_read_method=read
     --enable_filesystem_cache=1
     --read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0
+    --use_statistics_for_sum_avg_aggregation=0
 )
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_re_detached"

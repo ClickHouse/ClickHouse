@@ -86,7 +86,7 @@ def test_basics(started_cluster):
     # Cold read, should miss cache. (Populating cache on write is not implemented.)
     query_id = uuid.uuid4().hex
     node.query(
-        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
+        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0",
         query_id=query_id,
     )
     node.query("system flush logs")
@@ -111,7 +111,7 @@ def test_basics(started_cluster):
     # Repeat read, should hit cache.
     query_id = uuid.uuid4().hex
     node.query(
-        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
+        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0",
         query_id=query_id,
     )
     node.query("system flush logs")
@@ -126,7 +126,7 @@ def test_basics(started_cluster):
     node.query("system drop page cache")
     query_id = uuid.uuid4().hex
     node.query(
-        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, read_from_page_cache_if_exists_otherwise_bypass_cache=1",
+        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0, read_from_page_cache_if_exists_otherwise_bypass_cache=1",
         query_id=query_id,
     )
     node.query("system flush logs")
@@ -150,7 +150,7 @@ def test_basics(started_cluster):
     # Repeat read, should still miss, but populate cache.
     query_id = uuid.uuid4().hex
     node.query(
-        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
+        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0",
         query_id=query_id,
     )
     node.query("system flush logs")
@@ -174,7 +174,7 @@ def test_basics(started_cluster):
     # Read again, hit the cache.
     query_id = uuid.uuid4().hex
     node.query(
-        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1",
+        "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0",
         query_id=query_id,
     )
     node.query("system flush logs")
@@ -223,7 +223,7 @@ def test_cache_arena_isolation(started_cluster):
     # Populate page cache + mark cache via S3 read
     node.query(
         "SELECT sum(k) FROM t_arena_page_cache "
-        "SETTINGS use_page_cache_for_disks_without_file_cache=1"
+        "SETTINGS use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0"
     )
 
     # Verify page cache is populated
@@ -329,7 +329,7 @@ def test_size_adjustment(started_cluster):
 
         # Read with cache enabled.
         node.query(
-            "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
+            "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1, use_statistics_for_sum_avg_aggregation=0;"
         )
 
         metrics = get_metrics()
