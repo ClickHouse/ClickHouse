@@ -270,6 +270,9 @@ struct QueryPlanOptimizationSettings
     /// JOIN runtime filter settings
     bool enable_join_runtime_filters = false; /// Filter left side by set of JOIN keys collected from the right side at runtime
     bool enable_join_runtime_filters_index_analysis = false; /// Filter left side using pk/skip indexes
+    /// The plan already carries the join runtime filters, added by an outer optimization (the local plan
+    /// of plan-based parallel replicas), so what settles them after the joins are converted must still run.
+    bool join_runtime_filters_already_added = false;
     UInt64 join_runtime_filter_exact_values_limit = 0;
     UInt64 join_runtime_bloom_filter_bytes = 0;
     UInt64 join_runtime_bloom_filter_hash_functions = 0;
