@@ -67,11 +67,11 @@ mkfifo "$fifo"
 
 function start_streamed_insert()
 {
-    local query_id=$1
+    local query_id=$1 query=${2:-"INSERT INTO src FORMAT TSV"}
     $CLICKHOUSE_CLIENT --query_id "$query_id" --async_insert 0 --parallel_view_processing 1 --max_threads 4 \
         --max_threads_min_free_memory_per_thread 0 --input_format_parallel_parsing 0 --max_insert_block_size 100 \
         --max_block_size 100 --function_sleep_max_microseconds_per_block 600000000 \
-        -q "INSERT INTO src FORMAT TSV" < "$fifo" >/dev/null 2>&1 &
+        -q "$query" < "$fifo" >/dev/null 2>&1 &
     client_pid=$!
     # Let bash pick the descriptor: under CI, shell_config.sh sends the xtrace to fd 3.
     exec {fifo_fd}>"$fifo"
@@ -93,6 +93,14 @@ start_streamed_insert "$query_id"
 kill -KILL $client_pid
 wait $client_pid 2>/dev/null
 wait_until_gone "streamed insert, client killed" "query_id = '$query_id'"
+exec {fifo_fd}>&-
+
+# With `input()` a pipeline thread reads the data, so it is the one that receives the `Cancel`.
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_input"
+start_streamed_insert "$query_id" "INSERT INTO src SELECT * FROM input('x UInt8') FORMAT TSV"
+kill -INT $client_pid
+seq 100 1>&"${fifo_fd}" 2>/dev/null
+wait_until_gone "insert select from input" "query_id = '$query_id'"
 exec {fifo_fd}>&-
 rm -f "$fifo"
 

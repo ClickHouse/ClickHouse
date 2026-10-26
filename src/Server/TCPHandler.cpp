@@ -799,22 +799,30 @@ void TCPHandler::runImpl()
                     if (context != query_state->query_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
-                    std::lock_guard lock(*callback_mutex);
-
-                    checkIfQueryCanceled(*query_state);
-
                     try
                     {
-                        if (receivePacketsExpectData(*query_state))
-                            return query_state->block_for_input;
+                        std::lock_guard lock(*callback_mutex);
 
-                        query_state->block_in.reset();
-                        query_state->maybe_compressed_in.reset();
-                        return {};
+                        checkIfQueryCanceled(*query_state);
+
+                        try
+                        {
+                            if (receivePacketsExpectData(*query_state))
+                                return query_state->block_for_input;
+
+                            query_state->block_in.reset();
+                            query_state->maybe_compressed_in.reset();
+                            return {};
+                        }
+                        catch (...)
+                        {
+                            query_state->stop_query = true;
+                            throw;
+                        }
                     }
                     catch (...)
                     {
-                        query_state->stop_query = true;
+                        killQueryIfStoppedByClient(*query_state);
                         throw;
                     }
                 });
