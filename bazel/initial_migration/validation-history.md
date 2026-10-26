@@ -2381,3 +2381,31 @@ The [x86-64 workflow](https://app.buildbuddy.io/invocation/e3275f40-72a5-49fa-a3
 Across the 658 declared targets, 634 remain ungraded on x86-64 and 633 on ARM64. The loading query does not grade DWYU.
 
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/6f5a19a5-d95a-489f-9327-7fb48c25544b): 33/33 original reports, 21 compiled libraries clean, 3 header-only libraries clean, 0 with declaration findings, 9 with only unresolved link use; [ARM64 DWYU](https://app.buildbuddy.io/invocation/20ab314d-33f5-4826-9e15-ba688f39b3b2): 35/35 original reports, 22 compiled libraries clean, 3 header-only libraries clean, 0 with declaration findings, 10 with only unresolved link use. A report with only unresolved link use does not establish an unused dependency.
+
+## 06cd225af
+
+[06cd225af](https://github.com/dzbarsky/clickhouse/commit/06cd225afedcba4133e9f551f86604fb9c7323d4): Compile ClickHouse with the Linux headers from llvm@0.8.26.
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Compared with |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/4d670d60-ddc4-4d1b-a75e-c008a0af594a) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/4d670d60-ddc4-4d1b-a75e-c008a0af594a) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/4d670d60-ddc4-4d1b-a75e-c008a0af594a) | `//src:unit_tests_dbms` | `6c7a927df0328c38debc566680fa9b3c5bffe8f3a6225a66139e373e65152350` | 811968280 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/634d86b4-b8d6-44c6-bb2e-69f0661f8dd5) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/634d86b4-b8d6-44c6-bb2e-69f0661f8dd5) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/634d86b4-b8d6-44c6-bb2e-69f0661f8dd5) | `//src:unit_tests_dbms` | `03a6e01f641d05d267e71bec7f73f876ad06c79e16d4a0352ba34ec75cb0a118` | 795060896 | Differs from previous Bazel |
+
+Only the stripped ClickHouse executable is compared with native CMake. The raw and unit-test comparisons use the [preceding Bazel build](#d6515b94f). The table records the current unit-test digests.
+
+[x86-64 workflow](https://app.buildbuddy.io/invocation/a32a02d8-33b9-4013-8c2f-b2c901a71b77): 6 registered SQL cases and 16 decimal boundary values matched; 38 selected GoogleTest cases and 10 IntervalTree tests passed. The native SDK, fetched glibc and Linux headers (including glibc’s corrected `string.h`), the contrib entry in `MODULE.bazel.lock`, and the cppkafka archive in the ClickHouse link were verified. The CppCompile header and independent HDFS action queries both exited 1; their action graphs are unavailable. The DWYU owner queries failed before the DWYU build; all 5 selected owners remain ungraded.
+
+[ARM64 workflow](https://app.buildbuddy.io/invocation/df0b4b9f-9118-4e7d-a1b6-adc1e93222d4): 6 registered SQL cases and 16 decimal boundary values matched; 38 selected GoogleTest cases and 10 IntervalTree tests passed. The native SDK, fetched glibc and Linux headers (including glibc’s corrected `string.h`), the contrib entry in `MODULE.bazel.lock`, and the cppkafka archive in the ClickHouse link were verified. The CppCompile header and independent HDFS action queries both exited 1; their action graphs are unavailable. The DWYU owner queries failed before the DWYU build; all 5 selected owners remain ungraded.
+
+DWYU did not run on either CPU; no libraries were graded.
+
+Bazel's `buildMetrics.actionSummary.runnerCount` reported the following:
+
+| CPU | Remote executions | Remote cache hits | DWYU executions | DWYU cache hits |
+| --- | ---: | ---: | ---: | ---: |
+| x86-64 | 16,630 | 20,844 | Unavailable | Unavailable |
+| ARM64 | 25,254 | 12,192 | Unavailable | Unavailable |
