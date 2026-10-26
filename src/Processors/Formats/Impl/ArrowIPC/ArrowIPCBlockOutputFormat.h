@@ -43,8 +43,12 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
-    /// Encodes one chunk as exactly one record batch, preceded by the dictionary batches it references.
+    /// Writes one chunk as record batches of at most `output_format_arrow_row_group_size` rows.
     void writeChunk(Chunk chunk);
+    /// Encodes one chunk as exactly one record batch, preceded by the dictionary batches it references.
+    void writeRecordBatch(Chunk chunk);
+    /// Rejects `output_format_arrow_row_group_size = 0`.
+    void checkRowGroupSize() const;
 
     void writeSchemaIfNeeded();
     /// Writes one encapsulated message for an encoded batch (a record batch, or a dictionary batch
