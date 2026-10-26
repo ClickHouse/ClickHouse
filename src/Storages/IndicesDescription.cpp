@@ -56,8 +56,13 @@ ASTPtr makePersistedIndexDefinitionAST(
 {
     chassert(expression_list_ast != nullptr);
 
+    /// `extractKeyExpressionList` unwraps a top-level `tuple`, so a sole expression that is
+    /// itself a `tuple` must stay wrapped, otherwise one tuple-valued key would be reparsed
+    /// as several scalar keys.
     ASTPtr persisted_expression;
-    if (expression_list_ast->children.size() == 1)
+    const auto * sole_function = expression_list_ast->children.size() == 1
+        ? expression_list_ast->children.front()->as<ASTFunction>() : nullptr;
+    if (expression_list_ast->children.size() == 1 && !(sole_function && sole_function->name == "tuple"))
         persisted_expression = expression_list_ast->children.front()->clone();
     else
     {
