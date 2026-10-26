@@ -337,9 +337,8 @@ DBMS_PUBLIC_HEADERS = {
     "Storages/Distributed": ("DistributedSettings.h", "parseRemoteFunctionArguments.h"),
     "Storages/Hive": ("HiveSettings.h", "StorageHive.h"),
     "Storages/MergeTree": (
-        "*PlainMergeTreeTask.h", "IPostingListCodec.h", "MergeMutateSelectedEntry.h",
-        "MergeTreeCleanupThread.h", "MergeTreeDeduplicationLog.h", "MergeTreeIndexConditionText.h",
-        "MergeTreeIndexJSONSubcolumnHelper.h", "MergeTreeIndexText.h", "MergeTreeMutationEntry.h",
+        "IPostingListCodec.h", "MergeTreeDeduplicationLog.h", "MergeTreeIndexConditionText.h",
+        "MergeTreeIndexJSONSubcolumnHelper.h", "MergeTreeIndexText.h",
         "MergedPartOffsets.h", "PostingListBlockCodec.h", "PostingListSegment.h",
         "StorageFromMergeTreeProjection.h", "TextIndexBlockedPositionsCodec.h",
     ),
@@ -491,7 +490,8 @@ def declare_dbms_private_headers(rows, files):
         'glob(["Backups/BackupCoordinationReplicated*.h", '
         '"Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/*.h", '
         '"Interpreters/HashJoin/*.h", "Processors/Formats/Impl/Parquet/*.h", '
-        '"Storages/BigQuery/BigQuery*.h", "Storages/FileLog/FileLog*.h"], exclude=['
+        '"Storages/BigQuery/BigQuery*.h", "Storages/FileLog/FileLog*.h", '
+        '"Storages/MergeTree/*PlainMergeTreeTask.h"], exclude=['
         '"Interpreters/HashJoin/HashJoin.h", "Interpreters/HashJoin/ScatteredBlock.h", '
         '"Processors/Formats/Impl/Parquet/Reader.h"])'
     )
@@ -516,6 +516,9 @@ def declare_dbms_private_headers(rows, files):
         "Storages/FileLog/DirectoryWatcherBase.h",
         "Storages/Hive/HiveCommon.h",
         "Storages/Hive/HiveFile.h",
+        "Storages/MergeTree/MergeMutateSelectedEntry.h",
+        "Storages/MergeTree/MergeTreeCleanupThread.h",
+        "Storages/MergeTree/MergeTreeMutationEntry.h",
         "Storages/MergeTree/UniqueKey/BlockAllocation.h",
         "Storages/NATS/NATS_fwd.h",
         "Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h",
