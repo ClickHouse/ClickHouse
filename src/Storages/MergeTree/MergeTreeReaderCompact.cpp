@@ -726,75 +726,6 @@ bool MergeTreeReaderCompact::canReadWholeColumnsCacheStripe(size_t mark)
     return columns_cache_writes_possible && canWriteToColumnsCache() && admitStripeToColumnsCache(stripe);
 }
 
-void MergeTreeReaderCompact::serveRowsFromColumnsCache(
-    const ColumnsCacheEntry & entry, size_t pos, size_t first_mark, size_t end_mark, MutableColumns & res_columns, Columns & shared_columns)
-{
-    const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-    serveRowsFromColumnsCacheEntry(entry, pos, index_granularity.getMarkStartingRow(first_mark),
-        index_granularity.getRowsCountInRange(first_mark, end_mark), res_columns, shared_columns);
-
-    if (count_compressed_bytes_read)
-        for (size_t mark = first_mark; mark < end_mark; ++mark)
-            granules_from_columns_cache.emplace_back(pos, mark);
-}
-
-std::vector<size_t> MergeTreeReaderCompact::getPositionsInMarks(size_t pos) const
-{
-    const size_t column_position = *column_positions[pos];
-    if (!has_substream_marks)
-        return {column_position};
-
-    const auto & name_and_type = columns_to_read[pos];
-    std::vector<size_t> positions;
-    if (!name_and_type.isSubcolumn())
-    {
-        for (size_t position = columns_substreams.getFirstSubstreamPosition(column_position);
-             position <= columns_substreams.getLastSubstreamPosition(column_position); ++position)
-            positions.push_back(position);
-        return positions;
-    }
-
-    /// A subcolumn is read from its own substreams, see `readData`.
-    serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-    {
-        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-            return;
-        if (auto position = columns_substreams.tryGetSubstreamPosition(column_position, name_and_type, substream_path, storage_settings))
-            positions.push_back(*position);
-    });
-    std::ranges::sort(positions);
-    positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
-    return positions;
-}
-
-size_t MergeTreeReaderCompact::takeCompressedBytesOfColumnsCacheHits(MergeTreeReaderStream & stream)
-{
-    const size_t positions = has_substream_marks ? columns_substreams.getTotalSubstreams() : data_part_info_for_read->getColumns().size();
-    size_t bytes = 0;
-    for (const auto & [pos, mark] : granules_from_columns_cache)
-    {
-        /// A block that a column read from the part in the granule loaded is not loaded again: without
-        /// `compress_per_column_in_compact_parts`, the columns of a granule share their blocks.
-        std::unordered_set<size_t> blocks_loaded;
-        if (auto it = columns_read_from_part_in_granules.find(mark); it != columns_read_from_part_in_granules.end())
-            for (const size_t read_pos : it->second)
-                for (const size_t position : getPositionsInMarks(read_pos))
-                    blocks_loaded.insert(stream.getCompressedBlockOfGranulePosition(mark, position));
-
-        for (const size_t position : getPositionsInMarks(pos))
-        {
-            const size_t block = stream.getCompressedBlockOfGranulePosition(mark, position);
-            if (blocks_loaded.contains(block) || !counted_columns_cache_blocks.insert(block).second)
-                continue;
-            const auto [begin, end] = stream.getCompressedBlocksOfGranulePosition(mark, position, positions);
-            bytes += end - begin;
-        }
-    }
-    granules_from_columns_cache.clear();
-    columns_read_from_part_in_granules.clear();
-    return bytes;
-}
-
 size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
     size_t from_mark, size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns)
 {
@@ -849,7 +780,10 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
         for (size_t mark = from_mark; mark < end_mark;)
         {
             const size_t chunk_end = std::min(end_mark, stripes.endMark(stripes.stripeOf(mark), index_granularity.getMarksCountWithoutFinal()));
-            serveRowsFromColumnsCache(*cachedEntryFor(pos, mark), pos, mark, chunk_end, res_columns, shared_columns);
+            serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, mark), pos,
+                index_granularity.getMarkStartingRow(mark), index_granularity.getRowsCountInRange(mark, chunk_end), res_columns, shared_columns);
+            if (count_compressed_bytes_read)
+                addGranulesServedFromColumnsCache(pos, mark, chunk_end);
             mark = chunk_end;
         }
         ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, end_mark - from_mark);
@@ -874,6 +808,7 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
     for (size_t mark = from_mark; mark < end_mark; ++mark)
     {
         const size_t granule_rows = index_granularity.getMarkRows(mark);
+        const size_t granule_row_begin = index_granularity.getMarkStartingRow(mark);
 
         bool any_from_disk = false;
         size_t served_columns = 0;
@@ -886,7 +821,9 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
 
             if (column_cacheable[pos] && isGranuleColumnCached(pos, mark))
             {
-                serveRowsFromColumnsCache(*cachedEntryFor(pos, mark), pos, mark, mark + 1, res_columns, shared_columns);
+                serveRowsFromColumnsCacheEntry(*cachedEntryFor(pos, mark), pos, granule_row_begin, granule_rows, res_columns, shared_columns);
+                if (count_compressed_bytes_read)
+                    addGranulesServedFromColumnsCache(pos, mark, mark + 1);
                 ++served_columns;
                 continue;
             }
@@ -903,15 +840,6 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
 
         if (any_from_disk)
             readGranule(mark, granule_rows, res_columns, &columns_mask);
-
-        if (count_compressed_bytes_read && any_from_disk
-            && (served_columns || std::ranges::any_of(all_served, [](bool served) { return served; })))
-        {
-            auto & read_from_part = columns_read_from_part_in_granules[mark];
-            for (size_t pos = 0; pos < num_columns; ++pos)
-                if (columns_mask[pos])
-                    read_from_part.push_back(pos);
-        }
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {

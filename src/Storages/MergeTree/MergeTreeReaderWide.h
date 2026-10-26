@@ -63,6 +63,7 @@ public:
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
     std::optional<size_t> takeCompressedBytesRead() override;
+    void countCompressedBytesRead() override;
 
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
@@ -83,8 +84,7 @@ private:
         void release(const String & stream_name);
         /// Valid only while no task runs: a running task can `release` streams.
         std::vector<MergeTreeReaderStream *> getAll() const;
-        /// The compressed size of the blocks loaded by all the streams so far, the released ones included.
-        size_t getCompressedBytesOfBlocksRead() const;
+        void forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const;
 
         bool isPrefetched(const String & stream_name) const;
         void markPrefetched(const String & stream_name);
@@ -95,18 +95,20 @@ private:
         mutable std::mutex mutex;
         std::map<String, std::unique_ptr<MergeTreeReaderStream>> streams;
         std::unordered_set<String> prefetched;
-        size_t compressed_bytes_of_blocks_read_by_released_streams = 0;
     };
 
     FileStreams streams;
-    /// The part of `streams.getCompressedBytesOfBlocksRead` that `takeCompressedBytesRead` returned.
-    size_t compressed_bytes_taken = 0;
-    /// See `countCompressedBytesRead`.
-    size_t compressed_bytes_of_columns_cache_hits = 0;
-    /// The compressed blocks counted for the granules served from the cache, by stream: a block holds many granules, and a
-    /// granule is served in pieces when rows are skipped.
+
+    /// The ranges in the files of the compressed blocks read, and of those that hold the granules served from the columns
+    /// cache, by stream, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`. Only
+    /// after `countCompressedBytesRead`. The buffers of the streams append to the ranges of their own stream, the map is guarded.
+    std::mutex ranges_read_mutex;
+    std::unordered_map<String, CompressedBlockRanges> ranges_read;
+    CompressedBlockRanges & getRangesRead(const String & stream_name);
+    /// The blocks that hold granules served from the cache, by stream, that are counted already: a block holds many
+    /// granules, which are served in several read steps.
     std::unordered_map<String, std::unordered_set<size_t>> counted_columns_cache_blocks;
-    void addCompressedBytesOfColumnsCacheHit(size_t mark, const std::vector<bool> & from_disk);
+    void addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk);
 
     struct StreamInfo
     {

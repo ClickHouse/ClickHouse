@@ -44,11 +44,42 @@ catch (...)
 
 std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
-    /// The stream also holds the marks the granules served from the columns cache are priced by.
-    if (!granules_from_columns_cache.empty())
-        init();
-    const size_t total = stream ? stream->getCompressedBytesOfBlocksRead() : 0;
-    return total - std::exchange(compressed_bytes_taken, total) + (stream ? takeCompressedBytesOfColumnsCacheHits(*stream) : 0);
+    if (!count_compressed_bytes_read)
+        return std::nullopt;
+
+    return takeBytesOfCompressedBlockRanges(ranges_read);
+}
+
+void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark)
+{
+    init();
+
+    /// With marks of substreams, a subcolumn is read from the substreams it needs, and a column from all of them.
+    const size_t column_position = *column_positions[pos];
+    const auto & column = columns_to_read[pos];
+    std::vector<size_t> positions;
+    if (!has_substream_marks)
+    {
+        positions.push_back(column_position);
+    }
+    else if (column.isSubcolumn() && !column.getTypeInStorage()->hasDynamicSubcolumns())
+    {
+        serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (!needSkipStream(pos, substream_path))
+                positions.push_back(columns_substreams.getSubstreamPosition(column_position, column, substream_path, storage_settings));
+        });
+    }
+    else
+    {
+        for (size_t position = columns_substreams.getFirstSubstreamPosition(column_position);
+             position <= columns_substreams.getLastSubstreamPosition(column_position); ++position)
+            positions.push_back(position);
+    }
+
+    for (size_t mark = from_mark; mark < to_mark; ++mark)
+        for (const size_t position : positions)
+            stream->addRangeOfPosition(mark, position, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(
@@ -130,6 +161,8 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
+    if (count_compressed_bytes_read)
+        stream->setBlocksReadSink(&ranges_read);
 
     initialized = true;
 }

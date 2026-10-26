@@ -17,6 +17,10 @@ class CachedCompressedReadBuffer;
 
 /// Basic and the most low-level class
 /// for reading single columns or indexes.
+/// The bytes the ranges cover, each byte once: a compressed block may hold the data of several columns, read or served from
+/// the columns cache, and may be loaded more than once. Clears the ranges.
+size_t takeBytesOfCompressedBlockRanges(CompressedBlockRanges & ranges);
+
 class MergeTreeReaderStream
 {
 public:
@@ -61,17 +65,14 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
-    /// The compressed size of the blocks read so far, see `CompressedReadBufferBase::getCompressedBytesOfBlocksRead`.
-    /// Must not be called for a stream of uncompressed data.
-    size_t getCompressedBytesOfBlocksRead() const;
+    /// See `CompressedReadBufferBase::setBlocksReadSink`. Must not be called for a stream of uncompressed data.
+    void setBlocksReadSink(CompressedBlockRanges * blocks_read_);
 
-    /// The compressed blocks that reading the data at `position` of the granule `mark` from the file loads, as the offsets
-    /// [begin, end): from the block it begins in to the next mark in the file at a later offset. A stream has `positions` marks
-    /// in a granule: one for a single column, one for each column or substream in a compact part. The data of several marks
-    /// may share a block, so the caller counts a block once by its `begin`.
-    std::pair<size_t, size_t> getCompressedBlocksOfGranulePosition(size_t mark, size_t position, size_t positions);
-    /// The `begin` of `getCompressedBlocksOfGranulePosition`, without looking for the end.
-    size_t getCompressedBlockOfGranulePosition(size_t mark, size_t position);
+    /// Appends the range in the file, [begin, end), of the compressed blocks that hold the data at `position` in the granule
+    /// `mark`: from its mark to the mark of the next position in the file. If the next position starts inside a compressed
+    /// block, which then holds the end of this data too, up to the next mark at a later offset.
+    /// A stream of one column has one position in a granule, a compact part one for each column or substream.
+    void addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges);
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
@@ -101,6 +102,7 @@ private:
     ReadBuffer * data_buffer = nullptr;
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;
+    CompressedBlockRanges * blocks_read = nullptr;
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;
@@ -163,7 +165,6 @@ public:
         : MergeTreeReaderStream{std::forward<Args>(args)...}
     {
     }
-
 
 protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);

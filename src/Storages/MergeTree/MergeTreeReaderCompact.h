@@ -57,19 +57,9 @@ protected:
     /// the columns `columns_mask` selects, or all of them that are in the part if it is null.
     virtual void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) = 0;
 
-    /// The granules served from the columns cache, by the position of the column in `columns_to_read`, since
-    /// `takeCompressedBytesRead` was called. Only with `countCompressedBytesRead`.
-    std::vector<std::pair<size_t, size_t>> granules_from_columns_cache;
-    /// The columns read from the part in the granules that also have columns served from the cache, by granule.
-    std::unordered_map<size_t, std::vector<size_t>> columns_read_from_part_in_granules;
-    /// The compressed blocks counted for the granules served from the cache: a block can hold several granules and columns.
-    std::unordered_set<size_t> counted_columns_cache_blocks;
-
-    /// The positions in the marks that the column at `pos` of `columns_to_read` is read from.
-    std::vector<size_t> getPositionsInMarks(size_t pos) const;
-
-    /// The compressed size of the data reading `granules_from_columns_cache` from the part would load. Resets them.
-    size_t takeCompressedBytesOfColumnsCacheHits(MergeTreeReaderStream & stream);
+    /// For the granules [from_mark, to_mark) of the column at `pos` that are served from the columns cache instead of being read
+    /// from the part: makes `takeCompressedBytesRead` count the compressed blocks of the part that hold them, as if they were read.
+    virtual void addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark) = 0;
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 
@@ -180,11 +170,6 @@ private:
     bool isGranuleColumnCached(size_t pos, size_t mark) const;
 
     size_t readGranulesWithColumnsCache(size_t from_mark, size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns);
-
-    /// `serveRowsFromColumnsCacheEntry` for the granules [first_mark, end_mark), which also remembers them, see
-    /// `granules_from_columns_cache`.
-    void serveRowsFromColumnsCache(
-        const ColumnsCacheEntry & entry, size_t pos, size_t first_mark, size_t end_mark, MutableColumns & res_columns, Columns & shared_columns);
 
     /// Copy the `rows` rows of granule `mark` of the column at `pos`, which start at `offset` of
     /// `column`, for the cache.

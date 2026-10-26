@@ -34,6 +34,7 @@ DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_small_blocks;
 DROP TABLE IF EXISTS t_compact_cached_column;
 DROP TABLE IF EXISTS t_compact_cached_short_rows;
+DROP TABLE IF EXISTS t_compact_cached_shared_blocks;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate is taken differently for the two.
@@ -139,6 +140,20 @@ SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=1, enable_read
 SELECT count() FROM t_compact_cached_short_rows WHERE id < 8192 AND s LIKE '%needle%' AND cityHash64(a) != 0
 SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=0, log_comment='cached_short_rows_0';
 
+-- The columns of a granule share compressed blocks, which are counted once for all the columns served from the cache.
+CREATE TABLE t_compact_cached_shared_blocks(id UInt64, c0 UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64)
+ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=0;
+INSERT INTO t_compact_cached_shared_blocks SELECT number, cityHash64(number, 0), cityHash64(number, 1), cityHash64(number, 2), cityHash64(number, 3),
+    cityHash64(number, 4), cityHash64(number, 5), cityHash64(number, 6), cityHash64(number, 7) FROM numbers(65536);
+SELECT sum(c0), sum(c1), sum(c2), sum(c3), sum(c4), sum(c5), sum(c6), sum(c7) FROM t_compact_cached_shared_blocks
+SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1, columns_cache_max_bytes_to_write_to_cache=0,
+    columns_cache_max_estimated_bytes_to_write_to_cache=0 FORMAT Null;
+SELECT sum(c0), sum(c1), sum(c2), sum(c3), sum(c4), sum(c5), sum(c6), sum(c7) FROM t_compact_cached_shared_blocks
+SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_shared_blocks_1' FORMAT Null;
+SELECT sum(c0), sum(c1), sum(c2), sum(c3), sum(c4), sum(c5), sum(c6), sum(c7) FROM t_compact_cached_shared_blocks
+SETTINGS use_columns_cache=0, log_comment='cached_shared_blocks_0' FORMAT Null;
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -182,12 +197,14 @@ FROM (
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'columns_cache_%') AND (type = 'QueryFinish')
 );
 
+-- A read from the cache is estimated as the same read from the part, which is checked against what is read above: the
+-- compressed blocks read, counted once even if they are read again, e.g. those shared by columns.
 SELECT name, filter_applied, hits > 0, greatest(estimate, read) / least(estimate, read) < 1.3
 FROM (
     SELECT
         replaceRegexpOne(log_comment, '_[01]$', '') AS name,
         sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], endsWith(log_comment, '_1')) AS estimate,
-        sumIf(ProfileEvents['ReadCompressedBytes'], endsWith(log_comment, '_0')) AS read,
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], endsWith(log_comment, '_0')) AS read,
         sumIf(ProfileEvents['ColumnsCacheHits'], endsWith(log_comment, '_1')) AS hits,
         sumIf(ProfileEvents['StringValueFilterValuesReplaced'], endsWith(log_comment, '_1')) > 0 AS filter_applied
     FROM system.query_log
@@ -206,3 +223,4 @@ DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_small_blocks;
 DROP TABLE t_compact_cached_column;
 DROP TABLE t_compact_cached_short_rows;
+DROP TABLE t_compact_cached_shared_blocks;
